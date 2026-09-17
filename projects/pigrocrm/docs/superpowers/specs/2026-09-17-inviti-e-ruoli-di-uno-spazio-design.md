@@ -13,7 +13,7 @@ The only way a second person gets into a space today is `POST /api/users`
 ten characters long (`MIN_PASSWORD_LENGTH`, `packages/core/src/pigrocrm/core/auth/schemas.py:10`)
 that the admin types into the «Nuovo utente» dialog
 (`apps/web/src/features/settings/UsersPanel.tsx:202-283`) and hands to the new person
-however they can — the dialog's own copy says so: «Comunicala tu all'utente: il sistema
+however they can, the dialog's own copy says so: «Comunicala tu all'utente: il sistema
 non invia email in questa versione» (`UsersPanel.tsx:207-209`). Lorenzo, 2026-09-17:
 «dobbiamo aggiungere la possibilità di invitare altri utenti nella tua istanza con anche
 una gestione dei permessi (direi ruoli fissi assegnabili agli utenti per ora)».
@@ -35,8 +35,8 @@ nobody asked for.
 ## 1. The decisions, one paragraph each
 
 **Storage: a table of its own, `invitations`, in the space's own database.** Not a
-half-formed `User` row. The alternative — a `users` row created at invite time with no
-password and `attivo=False` — reads tidy until revoke: an admin who reconsiders an
+half-formed `User` row. The alternative, a `users` row created at invite time with no
+password and `attivo=False`, reads tidy until revoke: an admin who reconsiders an
 invitation has to delete a user row that MCP tools, the timeline
 (`GET /api/users/{id}/timeline`, `apps/api/src/pigrocrm_api/routers/users.py:43-64`) and
 every foreign key touching `users.id` were written to assume is permanent, and the
@@ -57,11 +57,11 @@ accepted_at = now() WHERE id = :id AND accepted_at IS NULL AND revoked_at IS NUL
 RETURNING id`, so two racing spends of the same raw token (a mail scanner's prefetch
 against the real click) still create exactly one user. Seven days, not fifteen minutes:
 an invitation is not a login, it is handed to someone who may not open their mail until
-tomorrow, and revocation — not a short fuse — is what takes back an invitation sent to
+tomorrow, and revocation, not a short fuse, is what takes back an invitation sent to
 the wrong address. Unlike the magic link, an invitation's three failure states are told
 apart rather than folded into one sentence: «scaduto», «revocato» and «già usato» read
 differently to an admin who just revoked one and to a person who let one sit for eight
-days, and telling them apart costs nothing here — the oracle risk `INVALID_LINK`'s single
+days, and telling them apart costs nothing here, the oracle risk `INVALID_LINK`'s single
 sentence (`apps/api/src/pigrocrm_api/routers/auth.py:197`) guards against is guessing a
 password or an email, not distinguishing outcomes of a 32-byte token nobody can guess in
 the first place. `invitations.revoked_at` and `.accepted_at` staying on the row (never
@@ -71,8 +71,8 @@ deleted) is what makes the distinction possible after the fact.
 `apps/web/src/routes/app/entra.tsx`, which is the existing page for the same family of
 problem (spend a token from the query string, open a session, leave for the Home) but not
 reused directly: `entra.tsx` auto-spends on mount with no visible state
-(`EnterPage`, `entra.tsx:28-77|85-90`) because a magic link has nothing to show before
-spending it. An invitation does — the space's name and who invited the person — so the
+(`EnterPage`, `entra.tsx:28-78|85-90`) because a magic link has nothing to show before
+spending it. An invitation does, the space's name and who invited the person, so the
 page needs a read before the spend: a `GET /api/auth/invito?t=` peek that answers
 `{spazio, invitato_da, nome}` (`nome` is `null` when the invitation carried none) without
 touching `accepted_at`, followed by a `POST /api/auth/invito` with `{t, nome}` (the second
@@ -80,7 +80,7 @@ touching `accepted_at`, followed by a `POST /api/auth/invito` with `{t, nome}` (
 (`auth.py:309-338`): spends the token, opens the session with the same cookie pair, and
 the page then calls the same `homeAfterEntry()` this spec re-lands on
 (`entra.tsx:12-16`). One button, «Entra nello spazio». A name field only when the peek
-said none. A dead link — expired, revoked, already used — renders the matching sentence
+said none. A dead link, expired, revoked, already used, renders the matching sentence
 and the same «Torna al login» affordance `entra.tsx:70-72` already draws, because asking
 the admin to send another invitation is the actual next step, not asking again for a
 magic link.
@@ -112,7 +112,7 @@ repeat one (`magic_link.py:34-56`).
 
 **Resend and revoke act on the one pending row, never append a second one.** Resend
 overwrites `token_hash` and pushes `expires_at` out another seven days on the same
-`invitations` row — the old raw value stops working the instant the hash it matched is
+`invitations` row, the old raw value stops working the instant the hash it matched is
 gone, which is «the old one dead» with no separate revocation bookkeeping. Revoke sets
 `revoked_at` and nothing else; the row stays, because a revoked invitation is exactly the
 record an admin needs to see was undone, and `accepted_at`/`revoked_at` both being `NULL`
@@ -121,12 +121,12 @@ is the one property that makes a row "pending" for every other check in this doc
 **A space keeps one active admin, always.** The check belongs where the two ways to lose
 one live: `UserService.update` (`auth/service.py:120-151`), the single method behind both
 a role change and a deactivation (`PATCH /api/users/{id}`,
-`apps/api/src/pigrocrm_api/routers/users.py:28-30`) — a write that would leave zero users
+`apps/api/src/pigrocrm_api/routers/users.py:28-30`), a write that would leave zero users
 with `ruolo="admin"` and `attivo=True` in the space is refused before it is applied, with
 an Italian sentence naming the reason («lo spazio deve avere almeno un amministratore
 attivo»). Acceptance never has to defend against this: the invitation flow only ever adds
 a user, through `UserService.create` (see below), and `create` cannot reduce anybody's
-role or activation — the rule is stated here because REB-289 is where the product commits
+role or activation, the rule is stated here because REB-289 is where the product commits
 to it, and REB-292 is where `update`'s guard is actually written; I list it in the
 decisions section because the CLI recovery it leaves open (`pigrocrm createadmin`,
 `packages/core/src/pigrocrm/core/cli.py:38-62`) needs SSH access to the server, which a
@@ -136,15 +136,15 @@ self-hosted operator locked out by their own click may not have at hand.
 `admin`, `collaboratore`, `readonly` (`Role`, `actor.py:9`); `WRITE_ROLES = ("admin",
 "collaboratore")` and `ADMIN_ROLES = ("admin",)` (`actor.py:11-12`) are what
 `Actor.require_write`/`Actor.require_admin` check (`actor.py:194-202`), called
-service-by-service rather than read from one central table — which is exactly the gap
+service-by-service rather than read from one central table, which is exactly the gap
 REB-293 exists to close with a generated route sweep. Nothing about the invitation flow
 introduces a fourth role or a per-record permission; `POST /api/users/invites` and its
 siblings are new call sites of the same two checks (`require_write`/`require_admin`), not
 new authorization machinery.
 
 **`POST /api/users` with a password is removed.** The endpoint stays open only to admin
-identity questions no invitation needs to answer, and keeping two ways to add a person —
-one that mails a token, one that hands over a password by hallway — is the two-mechanism
+identity questions no invitation needs to answer, and keeping two ways to add a person,
+one that mails a token, one that hands over a password by hallway, is the two-mechanism
 problem this repository's own DECISIONS.md warns against everywhere else (row
 2026-09-09, "one deployable starts serving what another served"). `UserService.create`
 itself (`auth/service.py:66-118`) is untouched: it already refuses `password=None` from
@@ -152,12 +152,13 @@ anyone but `Actor.system()` (`service.py:69-79`), which is exactly what
 `TenantService.provision` and the invitation's own acceptance path (below) both rely on.
 Only the REST route that lets an authenticated admin type a password for somebody else
 goes. `pigrocrm createadmin` (`cli.py:38-62`) is unaffected: it calls `UserService.create`
-directly, never the API, and exists for a different problem — bootstrapping the very
+directly, never the API, and exists for a different problem, bootstrapping the very
 first account on an installation with nobody in it yet, and recovering a space with zero
 active admins, neither of which an invitation (which needs an existing admin to send it)
-can do. Eight test files call the endpoint today, purely as setup for a second logged-in
-actor of a given role; they move to the core service or the fixture already used for
-exactly that (see § Tests).
+can do. Nine test files call the endpoint today, eight purely as setup for a second
+logged-in actor of a given role and one asserting its verified-identity guard; they move
+to the core service, the fixture already used for exactly that, or the new invite route
+(see § Tests).
 
 ## 2. Data model and migration
 
@@ -183,20 +184,28 @@ migration number). Modelled on `MagicLinkToken`
 
 Indexes: `token_hash` unique (lookup key); a **partial** unique index on `lower(email)`
 `WHERE accepted_at IS NULL AND revoked_at IS NULL`, the same functional-index shape
-`uq_users_email_lower` already uses (`auth/models.py:42`), so at most one *pending*
-invitation exists per address at a time — a second `POST /api/users/invites` for an email
-already pending hits this index and comes back as the same `Conflict`→409 pattern
-`UserService.create`'s own `IntegrityError` handler already follows
-(`auth/service.py:99-117`). The predicate matters: it excludes exactly the two terminal
-states, so the same address can be invited again once its earlier invitation was revoked
-or accepted (an accepted invitation's email is by then also a real user, caught by the
-separate "already an active user" check below, not by this index). This is the one place
-in the design where a partial index's predicate has to be checked against every state the
-caller means to exclude, and it is: pending only, both terminal states let a retry
-through.
+`uq_users_email_lower` already uses (`auth/models.py:42`), so at most one *open*
+invitation exists per address at a time. The predicate excludes the two terminal states
+that are written on the row, accepted and revoked, so the same address can be invited
+again once its earlier invitation ended that way (an accepted invitation's email is by
+then also a real user, caught by the separate "already an active user" check below, not
+by this index). Expiry is not a column state, it is `expires_at < now()`, so an expired
+row is still inside the index and still claims the address; a re-invite must not answer
+409 for it. `InvitationService.create` therefore reads the open row for that address
+first: none, insert; open and expired, overwrite it in place exactly as a resend does
+(new `token_hash`, new `expires_at`, `updated_at`); open and not yet expired, the
+`Conflict`→409 the card asks for, «esiste già un invito in attesa per questa email», the
+same pattern `UserService.create`'s own `IntegrityError` handler follows
+(`auth/service.py:109-117`). The index stays as the race guard behind that read; the
+expired case never reaches it because the row is updated, not inserted. The
+«Inviti in attesa» list (§3) reads the same predicate plus `expires_at > now()`, so a
+dead invitation is not shown as waiting, and an expired one is what a resend revives.
+This is the one place in the design where a partial index's predicate has to be checked
+against every state the caller means to exclude, and the answer is that it excludes two
+of the three and the service handles the third.
 
 An email that already owns an **active user** in the space is a 409 raised by the service
-before any row is written, in Italian, as REB-290's own body specifies — a plain
+before any row is written, in Italian, as REB-290's own body specifies, a plain
 `self.repo.get_by_email` read against `users`, the same call `UserService.create` already
 makes (`service.py:87`).
 
@@ -208,7 +217,7 @@ New service, `pigrocrm.core.auth.invitations.InvitationService`, alongside
 | Endpoint | Who | Behaviour |
 |---|---|---|
 | `POST /api/users/invites` | admin, verified identity | Creates the row, mails the invitation, writes the audit trail. 409 on a pending duplicate or an existing active user for that email. |
-| `GET /api/users/invites` | admin | Pending invitations only (`accepted_at IS NULL AND revoked_at IS NULL`), newest first — the list «Inviti in attesa» reads. |
+| `GET /api/users/invites` | admin | Open and not yet expired invitations only (`accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()`), newest first, the list «Inviti in attesa» reads. |
 | `POST /api/users/invites/{id}/resend` | admin | New token, `expires_at` reset, mail sent again. 404 for another space's or an already-terminal invitation. |
 | `DELETE /api/users/invites/{id}` | admin | Sets `revoked_at`; 204; 404 if already terminal or not found. |
 | `GET /api/auth/invito` | anyone, unauthenticated | Peek: `{spazio, invitato_da, nome}` or one of three problem sentences. Never spends the token. |
@@ -216,7 +225,7 @@ New service, `pigrocrm.core.auth.invitations.InvitationService`, alongside
 
 The four `/api/users/invites` routes belong in the existing
 `apps/api/src/pigrocrm_api/routers/users.py`, which already owns the `/api/users` prefix
-(`users.py:15`) — a second `APIRouter` under the same prefix would only add ceremony. The
+(`users.py:15`), a second `APIRouter` under the same prefix would only add ceremony. The
 two `/api/auth/invito` routes belong in `apps/api/src/pigrocrm_api/routers/auth.py`,
 directly beside `request_link`/`enter_with_link` (`auth.py:187-338`), which are the same
 shape: unauthenticated, space-scoped by the same `TenantPrefixMiddleware`
@@ -226,14 +235,14 @@ goes through, so neither route needs to know it is under a prefix at all.
 `require_verified_identity` (`auth/service.py:44-58`) gates
 `POST /api/users/invites` and its resend exactly as it already gates `UserService.create`
 and `PatService.create` (`service.py:68`, `pat_service.py:77`): an admin who has never
-proven their own address — the system-created first admin of a space that has not yet
-opened its welcome mail — cannot mint a durable credential for somebody else either. An
+proven their own address, the system-created first admin of a space that has not yet
+opened its welcome mail, cannot mint a durable credential for somebody else either. An
 invitation is at least as durable as a personal access token in this sense, and the
 existing helper's own reasoning applies unchanged; nothing new is written, only a second
 caller of it (action name `"invite_user"`).
 
 Rate limits: the two `/api/auth/invito` routes are the only new anonymous surface,
-`spend_one` (`apps/api/src/pigrocrm_api/ratelimit.py:97-119`) with its own scopes — the
+`spend_one` (`apps/api/src/pigrocrm_api/ratelimit.py:97-119`) with its own scopes, the
 peek at a generous per-minute ceiling like `disponibile`'s (a page reload or the browser's
 own retry must not lock someone out of reading their own invitation), the accept at the
 same five-per-minute default `/api/auth/link` already uses. The four admin routes carry
@@ -248,12 +257,12 @@ one of: a name field plus «Entra nello spazio» button (peek's `nome` was `null
 confirmation with the space's name and the inviter's, one button (peek's `nome` existed);
 or one of the three dead-link states, each with its own sentence and the same «Torna al
 login» link `entra.tsx:70-72` uses. On success, the same `homeAfterEntry()`
-(`entra.tsx:12-16`) and full navigation `entra.tsx:48` performs — the invited person's
+(`entra.tsx:12-16`) and full navigation `entra.tsx:48` performs, the invited person's
 session is exactly a signed-in session, nothing about it is provisional once accepted.
 
 `UsersPanel.tsx` (`apps/web/src/features/settings/UsersPanel.tsx`): the «Nuovo utente»
 dialog (lines 202-283) becomes «Invita», keeping `email` and `ruolo` and dropping
-`password` and its ten-character copy (lines 206-209, 245-257) entirely — `nome` stays,
+`password` and its ten-character copy (lines 206-209, 245-257) entirely, `nome` stays,
 optional, since the invitation may carry none. A new «Inviti in attesa» list beside the
 members table, reading `GET /api/users/invites`, each row with a resend and a revoke
 action through `RowActions` (the same component the existing table already uses at
@@ -268,7 +277,7 @@ action through `RowActions` (the same component the existing table already uses 
 draft in § 1; the HTML mirrors `welcome_mail`'s shape (`mail.py:317-342`) with one button
 and the same footnote about ignoring an unexpected mail. Sent in `BackgroundTasks` after
 the row commits, exactly like `request_link` (`auth.py:280-306`) sends the magic link
-after its own commit — never before, and never inside the transaction that could still
+after its own commit, never before, and never inside the transaction that could still
 roll back.
 
 ## 6. Tests
@@ -282,44 +291,58 @@ peek never mutates `accepted_at`; the accept route sets the session cookies exac
 `enter_with_link`'s own test does. Web: the invite dialog has no password field; the three
 dead-link renders; the token never reaches PostHog (the same assertion
 `entra.test.tsx` already makes for `/app/entra`, since `shared/analytics/browser.ts`'s
-`scrubTrackingToken` strips any `?t=` unconditionally — `shared/analytics/browser.ts:14-18|96`
-— and needs no per-page opt-in).
+`scrubTrackingToken` strips any `?t=` unconditionally (`shared/analytics/browser.ts:14-18|96`)
+and needs no per-page opt-in).
 
-**Tests that change when `POST /api/users` goes**, all in `apps/api/tests/`, all using the
-endpoint only as setup for a second logged-in actor (never asserting anything about
-invitations, so they move to the core service or the `readonly_client`/
+**Tests that change when `POST /api/users` goes**, all in `apps/api/tests/`, all but one
+using the endpoint only as setup for a second logged-in actor (never asserting anything
+about invitations, so they move to the core service or the `readonly_client`/
 `collaborator_client` fixtures `conftest.py:131-152` already builds that way):
 
 - `test_analytics_api.py`: `_second_actor` (35-48) and `_seed_deal_and_user` (90-130).
 - `test_audit_api.py`: `_create_collaborator` (15-22).
 - `test_costs_api.py`: `_second_actor` (9-23).
-- `test_drive_api.py`: its own copy of `_second_actor` (80-83).
-- `test_invoices_api.py`: `_second_actor` (25-52) — the copy every sibling's docstring
+- `test_drive_api.py`: its own copy of `_second_actor` (70-88).
+- `test_invoices_api.py`: `_second_actor` (25-52), the copy every sibling's docstring
   names as the original.
-- `test_invoices_import_api.py`: its own copy of `_second_actor` (24-27).
+- `test_invoices_import_api.py`: its own copy of `_second_actor` (11-34).
 - `test_time_entries_api.py`: `_second_actor` (12-26) and `_seed_deal_and_user` (33-51).
 - `test_input_bounds_sweep.py`: two tests that assert the endpoint's own body validation
-  rather than use it as setup — the NUL-byte `nome` rejection (113-116) and the
+  rather than use it as setup, the NUL-byte `nome` rejection (113-116) and the
   over-length `nome` rejection (155-161). These move to `PATCH /api/users/{id}`, which
   carries the identical `SafeStr`/`NOME_MAX_LENGTH` bound on `UserUpdate.nome`
   (`auth/schemas.py:54`) against `admin_user` itself, rather than to
   `POST /api/users/invites`, whose own `nome` is optional and would leave one of the two
   tests with nothing to send.
+- `test_tenants_api.py` (468-477): the one test that asserts the endpoint's own contract,
+  a 422 for an admin who has not yet proven their address («Nothing durable before the
+  address is proven: no token, no second user»), the only HTTP-level coverage of
+  `require_verified_identity` on user creation. The assertion moves to
+  `POST /api/users/invites`, which §3 puts behind the same guard, and keeps its meaning.
 
-No test asserts `POST /api/users`'s own contract as a feature — there is no
-`test_users_api.py` in this repository — so none of the above is a loss of coverage, only
-a change of which fixture builds the second actor.
+Beyond those, `apps/mcp/tests/test_mcp_surface_coverage.py` (732-744) walks every public
+method of every service class in `packages/core` and fails unless each is reachable from
+an MCP tool or carries a named exclusion with an Italian reason (`ESCLUSIONI`, for
+instance `("UserService", "create")` at 360). Every public method of `InvitationService`
+(create, list, resend, revoke, peek, accept) is declared there as an exclusion, not a
+tool: inviting people is administration of the space, the same reason `UserService`'s
+methods already carry.
+
+No test asserts `POST /api/users` beyond the one in `test_tenants_api.py`, there is no
+`test_users_api.py` in this repository, so none of the above is a loss of coverage, only
+a change of which fixture builds the second actor and of which route carries the one
+contract assertion.
 
 ## 7. PostHog
 
-Three events, in the project's own convention (Italian, snake_case, a past participle —
+Three events, in the project's own convention (Italian, snake_case, a past participle,
 `.claude/skills/posthog-analytics/SKILL.md` § "An event's shape"), reusing the exact name
 the entry point for a magic link already earns rather than inventing a fourth spelling:
 
 | What the card calls it | Event name | Fired by |
 |---|---|---|
-| invite sent | `invito_inviato` | `apps/web/src/lib/analytics.ts`'s `EVENTS` table (`analytics.ts:32-43`), two new rows: `POST /api/users/invites` and `POST /api/users/invites/{id}/resend` — a resend is "sent" again, the same reuse `documento_creato` already gets for two routes (`analytics.ts:37-38`). |
-| invite accepted | `entrato_con_invito` | A third row, `POST /api/auth/invito`, named after the existing `entrato_con_link` for `POST /api/auth/entra` (`analytics.ts:34`) — the same action, a different door. |
+| invite sent | `invito_inviato` | `apps/web/src/lib/analytics.ts`'s `EVENTS` table (`analytics.ts:32-43`), two new rows: `POST /api/users/invites` and `POST /api/users/invites/{id}/resend`, a resend is "sent" again, the same reuse `documento_creato` already gets for two routes (`analytics.ts:37-38`). |
+| invite accepted | `entrato_con_invito` | A third row, `POST /api/auth/invito`, named after the existing `entrato_con_link` for `POST /api/auth/entra` (`analytics.ts:34`), the same action, a different door. |
 | invite revoked | `invito_revocato` | A fourth row, `DELETE /api/users/invites/{id}`. |
 
 All three are captured by the existing browser middleware
@@ -327,8 +350,8 @@ All three are captured by the existing browser middleware
 server-side `Tracker` event like the weekly digest's `digest_inviato`
 (`packages/core/src/pigrocrm/core/telemetry.py`, referenced in
 `docs/superpowers/plans/2026-09-16-reb-221-il-resoconto-settimanale.md:454-469`), because
-every one of these three actions is always triggered by a live browser request — the
-admin's for send/resend/revoke, the invitee's own for accept — unlike the digest, which a
+every one of these three actions is always triggered by a live browser request, the
+admin's for send/resend/revoke, the invitee's own for accept, unlike the digest, which a
 cron sends with nobody's browser open. No properties beyond the event name: nothing here
 needs a `tipo` or a `via`, and the identity is whichever distinct id the two people's
 sessions already carry (an anonymous one for the not-yet-signed-in invitee, exactly as
@@ -340,28 +363,45 @@ Two entities, both through the existing `ActivityService.record`
 (`packages/core/src/pigrocrm/core/activities/service.py:38-68`):
 
 - **`invitation`**, keyed on the row's own `id`: kinds `created` (`{email, ruolo}`),
-  `resent` (`{email}`), `revoked` (`{email}`), `accepted` (`{email}`) — the invitation's
+  `resent` (`{email}`), `revoked` (`{email}`), `accepted` (`{email}`), the invitation's
   own lifecycle, complete even though no screen reads it yet (REB-296/297 send an admin
   to the accepted user's own timeline instead, not a per-invitation one).
 - **`user`**, keyed on the created user's `id`, `ENTITY = "user"` (`auth/service.py:25`):
   `InvitationService.accept` calls `UserService(session).create` with `Actor.system()`
-  and `password=None` — the exact call `TenantService.provision` already makes
-  (`tenants/service.py:148-153`) — which writes the existing `"created"` entry
+  and `password=None`, the exact call `TenantService.provision` already makes
+  (`tenants/service.py:148-153`), which writes the existing `"created"` entry
   unmodified, then sets `email_verificata_il` on the row directly (the same thing
   `MagicLinkService.enter` does at `magic_link.py:87-89`, since `UserCreate` has no such
-  field) and writes one more entry, kind `invited`, payload `{invited_by}`, in the same
-  transaction. `UserService.create`'s own audited shape is never touched, so nothing that
-  asserts its exact payload (several tests do) needs to change.
+  field) and writes one more entry, kind `invited`, payload `{invited_by}`.
+  `UserService.create`'s own audited shape is never touched, so nothing that asserts its
+  exact payload (several tests do) needs to change. This is not one transaction:
+  `UserService.create` commits on its own (`auth/service.py:108`) and rolls the session
+  back on conflict (`:114`), and `ActivityService.record`'s docstring
+  (`activities/service.py:46-53`) warns against following it with another committing
+  call in the same session. So `accept` orders its writes around that commit: first the
+  "already an active user" read, then `UserService.create` (its commit is the point of
+  no return for the user row), then, in a second commit, the conditional `UPDATE` that
+  spends the token, `email_verificata_il`, the two activity rows and the session. A
+  `create` that raises `Conflict` leaves `accepted_at` untouched, so the link still
+  works once the admin has sorted the duplicate out; a crash between the two commits
+  leaves a user with an unspent invitation, which the next click on the same link turns
+  into the 409 from the first read, and the person signs in with a magic link instead,
+  nothing lost.
 
-## 9. Rollout — the order the chain lands in
+## 9. Rollout: the order the chain lands in
 
 1. **REB-290** (API + core): the table, the migration, `InvitationService`, the six
    routes, `PostHog`'s three events' server-visible surface (the routes themselves), the
-   removal of `POST /api/users`. Everything else depends on this existing.
-2. **REB-291** (web): `/app/invito`, the «Invita» dialog, «Inviti in attesa». Depends on
-   REB-290's routes and wire shapes.
-3. **REB-292** (last-admin guard): can land independently of 290/291 — it only touches
-   `UserService.update`, which exists today — but reads this document for the rule's
+   `ESCLUSIONI` rows. Additive only: `POST /api/users` stays until its caller is gone,
+   because `apps/web/src/features/settings/queries.ts:157` still posts to it and a deploy
+   of `main` between the two merges would ship a «Crea» button that 404s with no other
+   way to add a person (`api-types.ts` is generated by hand, `apps/web/package.json:13`,
+   so CI would not catch it). Everything else depends on this existing.
+2. **REB-291** (web): `/app/invito`, the «Invita» dialog, «Inviti in attesa», and, in the
+   same PR, the removal of `POST /api/users` with the test moves of § 6, since that PR is
+   the one that replaces the caller. Depends on REB-290's routes and wire shapes.
+3. **REB-292** (last-admin guard): can land independently of 290/291, it only touches
+   `UserService.update`, which exists today, but reads this document for the rule's
    exact wording and scope.
 4. **REB-293** (readonly sweep): independent of the invitation work; touches the same
    `actor.py` vocabulary this document cites in § "the three roles hold... today".
@@ -393,11 +433,11 @@ state that A1 never introduces, for the sole benefit of not adding one table.
   mail round-trip.
 
 Recommendation: B1. Nobody has asked for B2's scripted case, and a second, parallel way to
-create a person defeats the reason invitations exist — an address proven by its own
+create a person defeats the reason invitations exist, an address proven by its own
 click, never a password somebody else chose.
 
 **C. How far does the one-active-admin rule reach?**
-- C1 (recommended). A hard refusal, synchronous, inside `UserService.update` only —
+- C1 (recommended). A hard refusal, synchronous, inside `UserService.update` only,
   exactly REB-292's own scope. Recovery from a space that already has zero active admins
   (should one exist from before this rule) stays `pigrocrm createadmin` at the server.
 - C2. The same refusal, but with an admin-only override that requires typing a
