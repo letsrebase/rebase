@@ -75,21 +75,42 @@ export function spaceLoginUrl(slug: string): string {
   return `/${slug}/app/login`
 }
 
+/** The three pages a visitor reaches under `/app` without a session (routes/app.tsx's
+ *  guard never bounces them): the login, the signup that makes a space (spec
+ *  2026-09-08) and the page that spends a link by mail (spec 2026-09-12 §6.2). Shared
+ *  with the guard so the two checks below cannot drift apart. */
+export const PUBLIC_APP_ROUTES = new Set(['/app/login', '/app/registrati', '/app/entra'])
+
 /**
  * Whether a `redirect` search value captured by `/app`'s guard is safe to send a
  * freshly authenticated visitor to. The guard only ever records the router's own
  * basepath-relative `href` (never the tenant prefix, never another origin), so a
- * legitimate value always starts with `/app/`; a hand-edited query string could claim
- * anything, including a scheme or a protocol-relative address, so both are rejected
- * here rather than trusted. The login and link-by-mail pages are excluded too: the
- * guard never records them (they are public routes, see routes/app.tsx), so a value
- * naming one is not a deep link that got interrupted, it is a query string someone
- * wrote by hand.
+ * legitimate value always resolves under `/app/`; a hand-edited query string could
+ * claim anything, including a scheme, a protocol-relative address, or a `..` segment
+ * walking back out of `/app` (plain or percent-encoded: `%2e%2e` is a dot segment to
+ * the URL parser exactly as `..` is), so the value is parsed and normalized by `URL`
+ * itself -- the same parser `navigate({ href })` uses -- rather than pattern-matched.
+ * `PUBLIC_APP_ROUTES` is excluded too, case- and trailing-slash-insensitively and
+ * after decoding, since the guard never records them (they are the pages a visitor
+ * without a session already reaches): a value naming one, in any spelling, is not a
+ * deep link that got interrupted, it is a query string someone wrote by hand.
  */
 export function safeAppRedirect(target: string | undefined): string | undefined {
-  if (!target || !target.startsWith('/app/') || target.startsWith('//') || target.includes('://'))
+  if (!target || !target.startsWith('/') || target.startsWith('//')) return undefined
+  let parsed: URL
+  try {
+    parsed = new URL(target, 'http://internal.invalid')
+  } catch {
     return undefined
-  const path = target.split(/[?#]/, 1)[0]
-  if (path === '/app/login' || path === '/app/entra') return undefined
-  return target
+  }
+  if (parsed.origin !== 'http://internal.invalid') return undefined
+  let decodedPath: string
+  try {
+    decodedPath = decodeURIComponent(parsed.pathname)
+  } catch {
+    return undefined
+  }
+  const normalized = decodedPath.toLowerCase().replace(/\/+$/, '')
+  if (!normalized.startsWith('/app/') || PUBLIC_APP_ROUTES.has(normalized)) return undefined
+  return decodedPath + parsed.search + parsed.hash
 }

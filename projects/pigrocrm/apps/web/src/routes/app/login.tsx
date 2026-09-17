@@ -1,6 +1,6 @@
 import { BrandMark } from '@/components/BrandMark'
 import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { defaultDashboardSearch } from '@/features/dashboard/search'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,10 @@ export function LoginPage() {
   const { user, login } = useAuth()
   const navigate = useNavigate()
   const { redirect } = useSearch({ from: '/app/login' })
+  // Read once, for the one-time root-detection effect below: that effect intentionally
+  // never re-runs, so it closes over the `redirect` this page was mounted with rather
+  // than depending on a value it would otherwise have to re-fire on.
+  const initialRedirect = useRef(redirect).current
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -42,13 +46,17 @@ export function LoginPage() {
       }
       if (`/${slug}` !== tenantPrefix) return
       // The login is nobody's page (decision 2026-09-09): a person who has just logged
-      // out, or whose session ran out, must not read a space's name in the address.
-      // The root's login lives at the bare `/app/login`, which nginx leaves alone and
-      // which sets the root's cookies at `/`, the one jar this page and `/<slug>/app`
-      // both read. A replace, not a push: the aliased address is not worth a history
-      // entry.
-      window.location.replace('/app/login')
+      // out, or whose session ran out, must not read a space's name in the address. The
+      // root's login lives at the bare `/app/login`, which nginx leaves alone and which
+      // sets the root's cookies at `/`, the one jar this page and `/<slug>/app` both
+      // read. A replace, not a push: the aliased address is not worth a history entry.
+      // A `redirect` this page arrived with names a deep link, still meant for the
+      // root's login once it gets there, so it rides along on the query string.
+      window.location.replace(
+        initialRedirect ? `/app/login?redirect=${encodeURIComponent(initialRedirect)}` : '/app/login',
+      )
     }).catch(() => setRootSlug(''))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initialRedirect is a ref read once by design
   }, [])
 
   /**
@@ -81,23 +89,26 @@ export function LoginPage() {
     // rather than guessing: a push to `/app` first and a hop afterwards would flash the
     // bare home for a moment.
     if (tenantPrefix === '' && rootSlug === null) return
-    if (tenantPrefix === '' && rootSlug !== '') {
-      window.location.assign(`/${rootSlug}/app/`)
-      return
-    }
     // A deep link interrupted by the guard (routes/app.tsx) names its own return path
     // in `redirect`; a session that reached this page any other way (typed the
     // address, followed a bookmark) has none, and gets the dashboard as before.
+    // `safeAppRedirect` (lib/tenant.ts) is the one gate on it: a value it accepts is
+    // basepath-relative, so it composes with a root name the same way `/app/` itself
+    // does below.
+    const safeRedirect = safeAppRedirect(redirect)
+    if (tenantPrefix === '' && rootSlug !== '') {
+      window.location.assign(safeRedirect ? `/${rootSlug}${safeRedirect}` : `/${rootSlug}/app/`)
+      return
+    }
+    if (safeRedirect) {
+      void navigate({ href: safeRedirect })
+      return
+    }
     // `/app/` declares `validateSearch` since slice 6, so its search params are part of
     // its type and this redirect has to name them. A fresh login has no period in mind,
     // which is what `defaultDashboardSearch()` answers -- and landing with the month
     // already in the URL means the first thing the user could screenshot or paste to a
     // colleague already says which period it is about (§4).
-    const safeRedirect = safeAppRedirect(redirect)
-    if (safeRedirect) {
-      void navigate({ href: safeRedirect })
-      return
-    }
     void navigate({ to: '/app', search: defaultDashboardSearch() })
   }, [user, navigate, rootSlug, redirect])
 
