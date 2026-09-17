@@ -4,13 +4,12 @@ import { AppShell } from '@/components/AppShell'
 import { GmailBanner } from '@/components/GmailBanner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/lib/auth'
-
-const PUBLIC_ROUTES = new Set(['/app/login', '/app/registrati', '/app/entra'])
+import { PUBLIC_APP_ROUTES } from '@/lib/tenant'
 
 function AppLayout() {
   const { user, isLoading } = useAuth()
   const navigate = useNavigate()
-  const { pathname } = useLocation()
+  const { pathname, href } = useLocation()
   // Task A7 moved the login page to routes/app/login.tsx so its URL is
   // /app/login, which makes it a CHILD of this very layout route in TanStack
   // Router's file-based nesting (confirmed in routeTree.gen.ts:
@@ -26,11 +25,15 @@ function AppLayout() {
   // 2026-09-12 §6.2). Everything else under /app bounces to the login.
   // Without a trailing slash: `/app/registrati/` is the same page, and a visitor who
   // arrived through a redirect that kept one must not be bounced to the login for it.
-  const isLoginRoute = PUBLIC_ROUTES.has(pathname.replace(/\/+$/, ''))
+  const isLoginRoute = PUBLIC_APP_ROUTES.has(pathname.replace(/\/+$/, ''))
 
   useEffect(() => {
-    if (!isLoginRoute && !isLoading && !user) void navigate({ to: '/app/login' })
-  }, [isLoginRoute, isLoading, user, navigate])
+    // The href is basepath-relative (main.tsx's `createRouter({ basepath })` strips the
+    // tenant prefix before the router ever sees a path), so it is already exactly the
+    // shape `safeAppRedirect` (lib/tenant.ts) checks against: never carries the slug,
+    // never another origin. The login page reads it back once a session exists.
+    if (!isLoginRoute && !isLoading && !user) void navigate({ to: '/app/login', search: { redirect: href } })
+  }, [isLoginRoute, isLoading, user, navigate, href])
 
   if (isLoginRoute) return <Outlet />
 

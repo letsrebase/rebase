@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { slugProblem, slugify, tenantPrefixFrom } from './tenant'
+import { safeAppRedirect, slugProblem, slugify, tenantPrefixFrom } from './tenant'
 
 describe('the space prefix', () => {
   it('is read from /<slug>/app/... and nothing else', () => {
@@ -37,5 +37,33 @@ describe('slugProblem', () => {
     expect(slugProblem('Studio')).toMatch(/minuscole/)
     expect(slugProblem('app')).toMatch(/riservato/)
     expect(slugProblem('mcp')).toMatch(/riservato/)
+  })
+})
+
+describe('safeAppRedirect', () => {
+  it('accepts a deep link under /app, search and all', () => {
+    expect(safeAppRedirect('/app/fatture/42')).toBe('/app/fatture/42')
+    expect(safeAppRedirect('/app/clienti?search=rossi')).toBe('/app/clienti?search=rossi')
+  })
+
+  it('refuses anything not resolving under /app, undefined, a scheme or a protocol-relative address', () => {
+    expect(safeAppRedirect(undefined)).toBeUndefined()
+    expect(safeAppRedirect('/clienti')).toBeUndefined()
+    expect(safeAppRedirect('https://evil.example/steal')).toBeUndefined()
+    expect(safeAppRedirect('//evil.example/app/steal')).toBeUndefined()
+  })
+
+  it('refuses a `..` segment walking back out of /app, plain or percent-encoded', () => {
+    expect(safeAppRedirect('/app/../evil')).toBeUndefined()
+    expect(safeAppRedirect('/app/%2e%2e/evil')).toBeUndefined()
+  })
+
+  it('refuses the public routes in every spelling, since the guard never records them', () => {
+    expect(safeAppRedirect('/app/login')).toBeUndefined()
+    expect(safeAppRedirect('/app/login/')).toBeUndefined()
+    expect(safeAppRedirect('/app/LOGIN')).toBeUndefined()
+    expect(safeAppRedirect('/app/%6cogin')).toBeUndefined()
+    expect(safeAppRedirect('/app/registrati')).toBeUndefined()
+    expect(safeAppRedirect('/app/entra')).toBeUndefined()
   })
 })

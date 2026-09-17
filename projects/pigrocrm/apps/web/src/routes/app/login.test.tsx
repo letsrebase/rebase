@@ -8,17 +8,23 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const navigate = vi.fn()
+let search: { redirect?: string } = {}
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
   return {
     ...actual,
     useNavigate: () => navigate,
+    useSearch: () => search,
     createFileRoute: () => (options: unknown) => options,
   }
 })
 
 const login = vi.fn()
-vi.mock('@/lib/auth', () => ({ useAuth: () => ({ user: null, login }) }))
+const user: { value: unknown } = { value: null }
+vi.mock('@/lib/auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/auth')>()
+  return { ...actual, useAuth: () => ({ user: user.value, login }) }
+})
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -36,8 +42,30 @@ beforeEach(() => {
   POST.mockReset()
   login.mockReset()
   navigate.mockReset()
+  search = {}
+  user.value = null
   // `/api/tenants/root`: this installation has no name.
   GET.mockResolvedValue({ data: { slug: null }, response: { status: 200 } })
+})
+
+describe('the post-session redirect', () => {
+  beforeEach(() => {
+    user.value = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin' }
+  })
+
+  it('sends an already-authenticated visitor to the deep link the guard recorded', async () => {
+    search = { redirect: '/app/fatture/42' }
+    render(<LoginPage />)
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ href: '/app/fatture/42' }))
+  })
+
+  it('ignores a redirect that does not point under this app, falling back to the dashboard', async () => {
+    search = { redirect: 'https://evil.example/steal' }
+    render(<LoginPage />)
+    await waitFor(() => expect(navigate).toHaveBeenCalled())
+    expect(navigate).not.toHaveBeenCalledWith({ href: 'https://evil.example/steal' })
+    expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ to: '/app' }))
+  })
 })
 
 describe('the login page', () => {
