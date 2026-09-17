@@ -1,4 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMemo } from 'react'
 import { api, fetchWithRefresh, toProblem, unwrap } from '@/lib/api'
 import type { StatusTone } from '@/components/StatusPill'
 import type { components } from '@/lib/api-types'
@@ -137,15 +138,85 @@ export function useInvoices(filters: InvoiceFilters = {}) {
   })
 }
 
+export type InvoicesListFilters = Omit<InvoiceFilters, 'limit' | 'cursor'>
+
+export interface InvoicesListResult {
+  items: Invoice[]
+  isLoading: boolean
+  isError: boolean
+  error: unknown
+  /** True once the last loaded page's own `next_cursor` says there is more beyond it. */
+  hasMore: boolean
+  isFetchingMore: boolean
+  /** True if the *next* page's own fetch failed; the pages already shown are
+   *  unaffected, `error` carries the failure, and `loadMore` can simply be tried
+   *  again. */
+  loadMoreError: boolean
+  loadMore: () => void
+}
+
+/**
+ * Walks `next_cursor` one page at a time, the way `fetchAllDeals` in
+ * `features/deals/queries.ts` walks it -- except that hook exhausts the cursor eagerly
+ * because the Kanban needs every deal for its column totals, and this one stops after
+ * each page because the invoice list is a fiscal register a person reads, not a total
+ * to compute (REB-231): the caller decides when to fetch the next fifty with
+ * `loadMore`, and that is the "Carica altre" button `InvoicesList` and `InvoicesTab`
+ * both show next to a truncated page.
+ *
+ * `filters` excludes `limit`/`cursor`: both are `useInfiniteQuery`'s own job here, so a
+ * state chip or the type select changing `filters` starts a fresh walk at the first
+ * page instead of resuming a stale cursor against a different query.
+ */
+function useInvoicesPaged(filters: InvoicesListFilters): InvoicesListResult {
+  const query = useInfiniteQuery({
+    queryKey: queryKeys.invoicesList(filters),
+    queryFn: ({ pageParam }) =>
+      unwrap(api.GET('/api/invoices', { params: { query: { ...filters, cursor: pageParam } } })),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage: InvoicePage) => lastPage.next_cursor ?? undefined,
+  })
+  // Memoized on the page array's own reference, not recomputed on every render: a
+  // fresh `items` array on each render would defeat `DataTable`'s row-model memo
+  // (keyed on `data`'s identity), rebuilding every loaded row on a re-render the
+  // fetched pages had no part in -- opening the type `Select`, pressing a chip.
+  const items = useMemo(
+    () => query.data?.pages.flatMap((page) => page.items) ?? [],
+    [query.data?.pages],
+  )
+  return {
+    items,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+    hasMore: query.hasNextPage,
+    isFetchingMore: query.isFetchingNextPage,
+    loadMoreError: query.isFetchNextPageError,
+    loadMore: () => void query.fetchNextPage(),
+  }
+}
+
+/**
+ * The invoice list page's own data. Every filter it takes is server-side (`tipo`,
+ * `stato`, `escludi_consumate`, `scadute`), so a chip or the type select changing
+ * mid-walk asks the server for a fresh first page rather than filtering the rows
+ * already on screen -- the state chips and the type select keep working across
+ * however many pages are loaded (REB-231).
+ */
+export function useInvoicesList(filters: InvoicesListFilters = {}): InvoicesListResult {
+  return useInvoicesPaged(filters)
+}
+
 /**
  * The invoices belonging to a customer or a deal, for the "Fatture" tab on either
- * entity's detail page. A thin wrapper over `useInvoices` so both call sites share
- * the same query key shape and cache entry as the plain list page.
+ * entity's detail page. Shares `useInvoicesPaged` with the plain list page, so both
+ * walk the cursor the same way and land in the same cache entry once their filters
+ * match.
  */
-export function useInvoicesForOwner(owner: InvoiceOwner) {
+export function useInvoicesForOwner(owner: InvoiceOwner): InvoicesListResult {
   // The tab has no state chips, so it never asks for the consumed ones by state: the
   // fattura stands for its proforma here as it does on the list page (ORB-169).
-  return useInvoices({ ...ownerQuery(owner), escludi_consumate: true })
+  return useInvoicesPaged({ ...ownerQuery(owner), escludi_consumate: true })
 }
 
 export function useInvoice(invoiceId: string) {
@@ -206,6 +277,9 @@ function useInvoiceInvalidation() {
   const queryClient = useQueryClient()
   return (invoiceId?: string) => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.invoices() })
+    // `invoicesList` is a distinct key (see `lib/query.ts`), so a new or changed
+    // invoice needs its own invalidation to reach `InvoicesList`/`InvoicesTab`.
+    void queryClient.invalidateQueries({ queryKey: ['invoices-list'] })
     if (invoiceId !== undefined) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.invoice(invoiceId) })
       void queryClient.invalidateQueries({ queryKey: queryKeys.invoiceLines(invoiceId) })

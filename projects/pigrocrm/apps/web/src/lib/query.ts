@@ -47,6 +47,12 @@ export const queryKeys = {
   templateDescription: (id: string) => ['template-description', id] as const,
   emitter: ['emitter'] as const,
   invoices: (params?: unknown) => ['invoices', params ?? {}] as const,
+  // Distinct from `invoices` above: that key holds one `InvoicePage`, this one holds
+  // an `useInfiniteQuery`'s own `{pages, pageParams}` shape (`useInvoicesPaged`,
+  // REB-231). A caller reading one cache entry under the other's key would misread
+  // `data.items` as `data.pages` or vice versa with no type error to catch it, so the
+  // two never share a key even where their filters happen to coincide.
+  invoicesList: (params?: unknown) => ['invoices-list', params ?? {}] as const,
   invoice: (id: string) => ['invoice', id] as const,
   invoiceLines: (id: string) => ['invoice-lines', id] as const,
   // The document id is in the key for the null -> id transition (a proforma's first

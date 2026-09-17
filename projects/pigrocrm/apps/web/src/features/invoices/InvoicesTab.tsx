@@ -2,6 +2,7 @@ import { useNavigate } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { DataTable } from '@/components/DataTable'
 import { buildInvoiceColumns } from './columns'
+import { LoadMoreInvoices } from './LoadMoreInvoices'
 import { useInvoicesForOwner, type InvoiceOwner } from './queries'
 
 /**
@@ -23,17 +24,28 @@ export function InvoicesTab({ owner, actions }: { owner: InvoiceOwner; actions?:
   const invoices = useInvoicesForOwner(owner)
 
   const table = (
-    <DataTable
-      columns={buildInvoiceColumns()}
-      data={invoices.data?.items ?? []}
-      isLoading={invoices.isLoading}
-      isError={invoices.isError}
-      error={invoices.error}
-      onRowClick={(row) =>
-        void navigate({ to: '/app/fatture/$invoiceId', params: { invoiceId: row.id } })
-      }
-      emptyMessage="Nessuna fattura."
-    />
+    <>
+      <DataTable
+        columns={buildInvoiceColumns()}
+        data={invoices.items}
+        isLoading={invoices.isLoading}
+        isError={invoices.isError}
+        error={invoices.error}
+        onRowClick={(row) =>
+          void navigate({ to: '/app/fatture/$invoiceId', params: { invoiceId: row.id } })
+        }
+        emptyMessage="Nessuna fattura."
+      />
+      {invoices.hasMore && (
+        <LoadMoreInvoices
+          shown={invoices.items.length}
+          isFetchingMore={invoices.isFetchingMore}
+          hasError={invoices.loadMoreError}
+          error={invoices.error}
+          onLoadMore={invoices.loadMore}
+        />
+      )}
+    </>
   )
 
   if (actions === undefined) return table

@@ -13,11 +13,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { buildInvoiceColumns } from '@/features/invoices/columns'
+import { LoadMoreInvoices } from '@/features/invoices/LoadMoreInvoices'
 import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
 import { booleanSearchParam } from '@/lib/searchParams'
 import {
   INVOICE_STATE_LABELS,
-  useInvoices,
+  useInvoicesList,
   type InvoiceStato,
   type InvoiceTipo,
 } from '@/features/invoices/queries'
@@ -69,7 +70,7 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
   // number lives on the fattura it became, and listing both doubled every issued proforma
   // (ORB-169). So with no state chosen the server leaves them out; the «Consumata» chip
   // asks for exactly them and gets them.
-  const invoices = useInvoices({
+  const invoices = useInvoicesList({
     tipo: tipo === ANY ? undefined : (tipo as InvoiceTipo),
     stato: stato ?? undefined,
     escludi_consumate: stato === null ? true : undefined,
@@ -133,7 +134,7 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
 
         <DataTable
           columns={columns}
-          data={invoices.data?.items ?? []}
+          data={invoices.items}
           isLoading={invoices.isLoading}
           isError={invoices.isError}
           error={invoices.error}
@@ -142,6 +143,15 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
           }
           emptyMessage="Nessuna fattura."
         />
+        {invoices.hasMore && (
+          <LoadMoreInvoices
+            shown={invoices.items.length}
+            isFetchingMore={invoices.isFetchingMore}
+            hasError={invoices.loadMoreError}
+            error={invoices.error}
+            onLoadMore={invoices.loadMore}
+          />
+        )}
       </div>
     </>
   )

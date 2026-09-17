@@ -79,6 +79,24 @@ function mockInvoices(items: Record<string, unknown>[]): void {
       : ok({ items: [], next_cursor: null })) as never)
 }
 
+/** Makes the list endpoint answer two pages: the first carries `next_cursor`, and a
+ *  request that sends that cursor back gets the second page with none after it. */
+function mockInvoicesPages(
+  first: Record<string, unknown>[],
+  second: Record<string, unknown>[],
+): void {
+  mockGet.mockImplementation(((
+    path: string,
+    options?: { params?: { query?: Record<string, unknown> } },
+  ) => {
+    if (path !== '/api/invoices') return ok({ items: [], next_cursor: null })
+    const cursor = options?.params?.query?.cursor
+    return cursor === undefined
+      ? ok({ items: first, next_cursor: 'page-2' })
+      : ok({ items: second, next_cursor: null })
+  }) as never)
+}
+
 /** The query the page last sent to the list endpoint. */
 function lastRequestedQuery(): Record<string, unknown> {
   const calls = mockGet.mock.calls.filter((call) => call[0] === '/api/invoices')
@@ -210,5 +228,38 @@ describe('the invoice list', () => {
   it('still explains the «scadute» drill-through it arrives with', async () => {
     renderList(true)
     expect(await screen.findByRole('status')).toHaveTextContent(/scadute e non incassate/i)
+  })
+
+  /**
+   * `useInvoices` sends no `limit`/`cursor` and the page dropped `next_cursor` on the
+   * floor (REB-231): a space with more than one page of invoices had everything past
+   * the first fifty silently unreachable. The button walks the cursor one page at a
+   * time, the way `fetchAllDeals` already does for the Kanban.
+   */
+  it('offers "Carica altre" when the page is truncated, and loads the next page on click', async () => {
+    mockInvoicesPages(
+      [
+        invoice({ id: 'f1', customer_ragione_sociale: 'ACME S.r.l.' }),
+        invoice({ id: 'f1b', customer_ragione_sociale: 'ACME S.r.l.' }),
+      ],
+      [invoice({ id: 'f2', customer_ragione_sociale: 'Beta S.r.l.' })],
+    )
+    renderList()
+
+    expect((await screen.findAllByRole('cell', { name: 'ACME S.r.l.' }))).toHaveLength(2)
+    expect(screen.queryByRole('cell', { name: 'Beta S.r.l.' })).not.toBeInTheDocument()
+
+    const loadMore = screen.getByRole('button', { name: 'Carica altre' })
+    expect(screen.getByText('Mostrate 2 fatture, ce ne sono altre.')).toBeInTheDocument()
+
+    await userEvent.click(loadMore)
+
+    expect(await screen.findByRole('cell', { name: 'Beta S.r.l.' })).toBeInTheDocument()
+    expect(screen.getAllByRole('cell', { name: 'ACME S.r.l.' })).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: 'Carica altre' })).not.toBeInTheDocument()
+    // The second request has to carry the exact cursor the first page returned, not
+    // merely *some* cursor: a stale or wrong-but-defined value would still pass every
+    // assertion above.
+    expect(lastRequestedQuery().cursor).toBe('page-2')
   })
 })
