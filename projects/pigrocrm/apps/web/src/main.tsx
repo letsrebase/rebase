@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client'
 import { analyticsMiddleware } from './lib/analytics'
 import { api } from './lib/api'
 import { AuthProvider } from './lib/auth'
+import { stripEntraToken } from './lib/entra-token'
 import { queryClient } from './lib/query'
 import { tenantPrefix } from './lib/tenant'
 import { routeTree } from './routeTree.gen'
@@ -20,6 +21,12 @@ declare module '@tanstack/react-router' {
     router: typeof router
   }
 }
+
+// Before anything else, including analytics: `initAnalytics` (below) captures a
+// pageview with the URL as its first act, so a magic-link token sitting in `?t=`
+// would already be in that event by the time the entra route ever mounts to strip it
+// itself (REB-229). A no-op on every other route.
+stripEntraToken()
 
 // Once, before anything renders: `initAnalytics` decides on the hostname whether this
 // page is measured at all (nothing on localhost), and every wrapper after it is a
