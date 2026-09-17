@@ -74,3 +74,22 @@ export const tenantPrefix: string =
 export function spaceLoginUrl(slug: string): string {
   return `/${slug}/app/login`
 }
+
+/**
+ * Whether a `redirect` search value captured by `/app`'s guard is safe to send a
+ * freshly authenticated visitor to. The guard only ever records the router's own
+ * basepath-relative `href` (never the tenant prefix, never another origin), so a
+ * legitimate value always starts with `/app/`; a hand-edited query string could claim
+ * anything, including a scheme or a protocol-relative address, so both are rejected
+ * here rather than trusted. The login and link-by-mail pages are excluded too: the
+ * guard never records them (they are public routes, see routes/app.tsx), so a value
+ * naming one is not a deep link that got interrupted, it is a query string someone
+ * wrote by hand.
+ */
+export function safeAppRedirect(target: string | undefined): string | undefined {
+  if (!target || !target.startsWith('/app/') || target.startsWith('//') || target.includes('://'))
+    return undefined
+  const path = target.split(/[?#]/, 1)[0]
+  if (path === '/app/login' || path === '/app/entra') return undefined
+  return target
+}

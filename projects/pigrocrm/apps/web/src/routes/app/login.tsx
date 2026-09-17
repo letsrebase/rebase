@@ -1,5 +1,5 @@
 import { BrandMark } from '@/components/BrandMark'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { defaultDashboardSearch } from '@/features/dashboard/search'
@@ -9,11 +9,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api, toProblem, unwrap } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
-import { tenantPrefix } from '@/lib/tenant'
+import { safeAppRedirect, tenantPrefix } from '@/lib/tenant'
 
 export function LoginPage() {
   const { user, login } = useAuth()
   const navigate = useNavigate()
+  const { redirect } = useSearch({ from: '/app/login' })
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
@@ -84,13 +85,21 @@ export function LoginPage() {
       window.location.assign(`/${rootSlug}/app/`)
       return
     }
+    // A deep link interrupted by the guard (routes/app.tsx) names its own return path
+    // in `redirect`; a session that reached this page any other way (typed the
+    // address, followed a bookmark) has none, and gets the dashboard as before.
     // `/app/` declares `validateSearch` since slice 6, so its search params are part of
     // its type and this redirect has to name them. A fresh login has no period in mind,
     // which is what `defaultDashboardSearch()` answers -- and landing with the month
     // already in the URL means the first thing the user could screenshot or paste to a
     // colleague already says which period it is about (§4).
+    const safeRedirect = safeAppRedirect(redirect)
+    if (safeRedirect) {
+      void navigate({ href: safeRedirect })
+      return
+    }
     void navigate({ to: '/app', search: defaultDashboardSearch() })
-  }, [user, navigate, rootSlug])
+  }, [user, navigate, rootSlug, redirect])
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault()
@@ -243,4 +252,9 @@ export function LoginPage() {
   )
 }
 
-export const Route = createFileRoute('/app/login')({ component: LoginPage })
+export const Route = createFileRoute('/app/login')({
+  component: LoginPage,
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
+    redirect: typeof search.redirect === 'string' ? search.redirect : undefined,
+  }),
+})

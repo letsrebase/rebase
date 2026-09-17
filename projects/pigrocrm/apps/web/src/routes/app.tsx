@@ -10,7 +10,7 @@ const PUBLIC_ROUTES = new Set(['/app/login', '/app/registrati', '/app/entra'])
 function AppLayout() {
   const { user, isLoading } = useAuth()
   const navigate = useNavigate()
-  const { pathname } = useLocation()
+  const { pathname, href } = useLocation()
   // Task A7 moved the login page to routes/app/login.tsx so its URL is
   // /app/login, which makes it a CHILD of this very layout route in TanStack
   // Router's file-based nesting (confirmed in routeTree.gen.ts:
@@ -29,8 +29,12 @@ function AppLayout() {
   const isLoginRoute = PUBLIC_ROUTES.has(pathname.replace(/\/+$/, ''))
 
   useEffect(() => {
-    if (!isLoginRoute && !isLoading && !user) void navigate({ to: '/app/login' })
-  }, [isLoginRoute, isLoading, user, navigate])
+    // The href is basepath-relative (main.tsx's `createRouter({ basepath })` strips the
+    // tenant prefix before the router ever sees a path), so it is already exactly the
+    // shape `safeAppRedirect` (lib/auth.tsx) checks against: never carries the slug,
+    // never another origin. The login page reads it back once a session exists.
+    if (!isLoginRoute && !isLoading && !user) void navigate({ to: '/app/login', search: { redirect: href } })
+  }, [isLoginRoute, isLoading, user, navigate, href])
 
   if (isLoginRoute) return <Outlet />
 
