@@ -367,11 +367,14 @@ describe('AppShell', () => {
     expect(within(screen.getByRole('main')).getByText('contenuto')).toBeInTheDocument()
   })
 
-  it('rounds the content panel to the 16 the spec draws, not to the 18 of --radius-2xl', () => {
-    // `lg:rounded-2xl` computed to 18px in the browser (10 × 1.8): the derived card
-    // radius, not the panel's own. Spec §4 says 16.
+  it('draws the content panel square, with its line and no radius', () => {
+    // It carried a literal 16px corner at the lg breakpoint until 2026-09-18, the one
+    // corner the old spec drew larger than the derived card radius. The application is
+    // squared now and the panel reads the shared tokens like everything else.
     renderShell(<p>contenuto</p>)
-    expect(screen.getByRole('main').parentElement!.className).toContain('lg:rounded-[16px]')
+    const panel = screen.getByRole('main').parentElement!.className
+    expect(panel).toContain('lg:border')
+    expect(panel).not.toMatch(/rounded/)
   })
 
   it('says the role in Italian under the name, not the stored enum', () => {

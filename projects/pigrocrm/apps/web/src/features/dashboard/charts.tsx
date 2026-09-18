@@ -148,7 +148,7 @@ export function BarRows({ caption, rows }: { caption: string; rows: BarRow[] }) 
                     <div
                       data-testid="bar-fill"
                       aria-hidden="true"
-                      className="h-2 rounded-r-[3px]"
+                      className="h-2"
                       style={{
                         width: widthPercent(row.ratio),
                         backgroundColor: row.color ?? toneColor(row.tone),

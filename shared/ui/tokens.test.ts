@@ -304,13 +304,29 @@ describe('the squared shapes', () => {
     expect(root).toMatch(/--sidebar-foreground:\s*var\(--color-paper\)/)
     expect(root).toMatch(/--sidebar-primary:\s*var\(--color-watermelon-strong\)/)
     expect(root).toMatch(/--sidebar-accent:\s*color-mix\(in oklab, #ffffff 10%, var\(--color-prussian-blue\)\)/)
+    // The label on an active or hovered item, which has to stay legible on that tile.
+    expect(root).toMatch(/--sidebar-accent-foreground:\s*#ffffff/)
     expect(root).toMatch(/--sidebar-border:\s*color-mix\(in oklab, #ffffff 12%, var\(--color-prussian-blue\)\)/)
     // Paper, not --ring: Watermelon at 50% over Prussian Blue is 1.73:1 on the panel.
     expect(root).toMatch(/--sidebar-ring:\s*var\(--color-paper\)/)
   })
 
-  it('makes the quiet fill Paper itself, which is what a table row hover has to be', () => {
+  it('builds both quiet fills out of the palette, never a hand-written hex', () => {
+    // `--muted` is the table's hover and every quiet fill, and it *is* Paper, since
+    // that is what the spec's «hover Paper» means and what `ui/table.tsx` draws as
+    // `hover:bg-muted`. `--secondary` is the secondary button and badge, one step of
+    // the ink above the card. Both were hand-mixed hexes with a green-cyan cast
+    // (#eef4f2, #e6ecea) until 2026-09-08, belonging to no tint in the palette: a
+    // tint, or a mix of tints toward white, is all either may be.
     expect(declaration(':root', '--muted')).toBe('var(--color-paper)')
+    const secondary = declaration(':root', '--secondary')
+    expect(secondary).toMatch(/^(?:var\(--color-[a-z-]+\)|color-mix\(in oklab,)/)
+    for (const hex of secondary.match(/#[0-9a-fA-F]{3,8}/g) ?? []) {
+      expect(hex.toLowerCase(), 'hex in --secondary').toBe('#ffffff')
+    }
+    for (const [, name] of secondary.matchAll(/var\(--([a-z0-9-]+)\)/g)) {
+      expect(name, 'var in --secondary').toMatch(/^color-/)
+    }
   })
 
   it('hands the viewport height down to #root', () => {

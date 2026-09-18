@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 /**
  * A Card casts nothing at all. It sits *on* the page -- a CRM screen shows many at
  * once, and any shadow on every one of them draws the page in shadows instead of
- * content. Its whole edge is the 12% line, and the shadow tokens are reserved for the
+ * content. Its whole edge is the ink line, and the shadow tokens are reserved for the
  * surfaces that genuinely float above the page: menus, dialogs, popovers, the sheet.
  * (Until 2026-09-08 it cast `4px 4px 0 0` of the border colour, the pixel system's
  * step; the landing and the community page keep that shape in their own stylesheets.)

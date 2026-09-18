@@ -76,7 +76,8 @@ describe('Button', () => {
 
   it('reads the radius token rather than a literal corner', () => {
     const { container } = render(<Button>Crea</Button>)
-    // rounded-lg resolves to --radius-lg, which is --radius (10px).
+    // rounded-lg resolves to --radius-lg, which is --radius: zero since the
+    // application-variant record of 2026-09-18, and whatever it becomes after.
     expect(container.querySelector('[data-slot="button"]')!.className).toContain('rounded-lg')
   })
 
@@ -85,7 +86,7 @@ describe('Button', () => {
     expect(container.querySelector('[data-slot="button"]')!.className).toContain('bg-primary')
   })
 
-  it('draws the secondary button as a 12% line on the card', () => {
+  it('draws the secondary button as the ink line on the card', () => {
     const { container } = render(<Button variant="outline">Esporta</Button>)
     const button = container.querySelector('[data-slot="button"]')!
     expect(button.className).toContain('border-border')
@@ -115,7 +116,7 @@ describe('the floating surfaces', () => {
   const source = (name: string) => readFileSync(join(__dirname, `${name}.tsx`), 'utf-8')
 
   it.each(['dialog', 'dropdown-menu', 'popover', 'select'])(
-    '%s floats on a soft shadow-lg, rounded-xl',
+    '%s floats on shadow-lg, the one step shadow, and reads the radius scale',
     (name) => {
       const content = source(name)
         .split('\n')

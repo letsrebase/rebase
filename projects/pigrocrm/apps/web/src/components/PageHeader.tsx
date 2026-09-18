@@ -44,7 +44,7 @@ export function PageHeader({
               fixed anchor the eye finds at the same spot on every page. Decorative -- it
               says what the title already says, so it is hidden from a screen reader. */}
           <span
-            className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-background text-foreground"
+            className="flex size-10 shrink-0 items-center justify-center bg-background text-foreground"
             aria-hidden="true"
           >
             <Icon className="size-5" aria-hidden="true" />

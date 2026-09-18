@@ -101,6 +101,7 @@
       "when": [
         "shared/ui/**",
         "shared/brand/palette.css",
+        "shared/brand/font.css",
         "pnpm-lock.yaml"
       ],
       "why": "The token contract both applications render on: every colour resolved back through the brand palette, the five chart mixes evaluated the way a browser does, and the rules of the 2026-09-18 record (zero radius, ink lines, no blur, one scheme). A second of vitest with nothing installed to start."

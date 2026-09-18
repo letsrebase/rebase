@@ -186,7 +186,7 @@ const IS_APPLE =
 const FOCUS =
   'outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring focus-visible:ring-offset-0'
 
-const ITEM = 'flex items-center gap-3 rounded-[10px] px-3 py-2 text-sm transition-colors'
+const ITEM = 'flex items-center gap-3 px-3 py-2 text-sm transition-colors'
 // The active pill: a lighter, translucent fill on the dark sidebar rather than the solid
 // Watermelon the flat list used -- with grouped navigation there are two things to mark at
 // once (the group and the item inside it), and two solid fills would fight.
@@ -370,7 +370,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             onClick={() => setSearchOpen(true)}
             aria-label="Cerca in tutto il CRM"
             className={cn(
-              'flex w-full items-center gap-2 rounded-[10px] border border-sidebar-border bg-sidebar-accent/50 px-3 py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
+              'flex w-full items-center gap-2 border border-sidebar-border bg-sidebar-accent/50 px-3 py-2 text-sm text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground',
               FOCUS,
               rail && 'justify-center px-0',
             )}
@@ -462,7 +462,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 className={cn(
-                  'flex w-full items-center gap-3 rounded-[10px] px-2 py-2 text-left transition-colors hover:bg-sidebar-accent',
+                  'flex w-full items-center gap-3 px-2 py-2 text-left transition-colors hover:bg-sidebar-accent',
                   FOCUS,
                   rail && 'justify-center px-0',
                 )}
@@ -527,9 +527,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           inset and the radius drop to nothing and the panel simply is the page -- a 12px
           frame around a phone screen is 12px of nothing. */}
       <div className="flex min-w-0 flex-1 flex-col p-0 lg:p-3">
-        {/* 16, the radius spec §4 draws the panel with -- not `rounded-2xl`, whose 18px
-            is the derived *card* radius (--radius × 1.8). */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-0 border-border bg-card lg:rounded-[16px] lg:border">
+        {/* No radius: the panel is square like everything else since the
+            application-variant record (2026-09-18). It used to carry a literal 16px,
+            the one corner the spec drew larger than the derived card radius. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-0 border-border bg-card lg:border">
           <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
         </div>
       </div>
@@ -594,7 +595,7 @@ function subItem({ to, label }: { to: LinkTo; label: string }) {
         activeOptions={{ includeSearch: false }}
         activeProps={{ 'aria-current': 'page' }}
         className={cn(
-          'block truncate rounded-[10px] px-3 py-1.5 text-sm transition-colors',
+          'block truncate px-3 py-1.5 text-sm transition-colors',
           QUIET,
           ACTIVE,
           FOCUS,

@@ -15,10 +15,12 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY projects/pigrocrm/apps/web/package.json projects/pigrocrm/apps/web/
 COPY shared/brand/package.json shared/brand/
 COPY shared/analytics/package.json shared/analytics/
+COPY shared/ui/package.json shared/ui/
 RUN pnpm install --frozen-lockfile --filter web...
 
 COPY shared/brand ./shared/brand
 COPY shared/analytics ./shared/analytics
+COPY shared/ui ./shared/ui
 COPY projects/pigrocrm/apps/web ./projects/pigrocrm/apps/web
 RUN pnpm --filter web build
 

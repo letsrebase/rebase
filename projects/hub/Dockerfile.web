@@ -4,15 +4,17 @@ RUN corepack enable && corepack prepare pnpm@11.6.0 --activate
 WORKDIR /app
 
 # The build context is the repository root: the pnpm workspace root, the single
-# lockfile and the two `shared/` packages the hub imports live above this project.
+# lockfile and the three `shared/` packages the hub imports live above this project.
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY projects/hub/apps/web/package.json projects/hub/apps/web/
 COPY shared/brand/package.json shared/brand/
 COPY shared/analytics/package.json shared/analytics/
+COPY shared/ui/package.json shared/ui/
 RUN pnpm install --frozen-lockfile --filter hub...
 
 COPY shared/brand ./shared/brand
 COPY shared/analytics ./shared/analytics
+COPY shared/ui ./shared/ui
 COPY projects/hub/apps/web ./projects/hub/apps/web
 RUN pnpm --filter hub build
 
