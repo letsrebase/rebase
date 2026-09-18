@@ -1,0 +1,29 @@
+{
+  "name": "@rebase/ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The application tokens every rebase application renders on: the squared system of the site, one weight lighter.",
+  "exports": {
+    "./tokens.css": "./tokens.css",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "tokens.css"
+  ],
+  "scripts": {
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:",
+    "@rebase/brand": "workspace:*",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "globals": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vitest": "catalog:"
+  }
+}

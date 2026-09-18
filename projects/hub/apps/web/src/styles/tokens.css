@@ -1,82 +1,27 @@
-/* The hub's stylesheet: PigroCRM's tokens, verbatim where they matter, so the two
-   products look like one family. The palette and the typeface come from shared/brand,
-   the semantic slots and the radius scale are copied from the CRM's tokens.css (a copy
-   on purpose -- the two products must be able to diverge, hub spec 2026-09-09).
+/* The hub's stylesheet. Every application token now comes from `@rebase/ui`, declared
+   once for both products (REB-299): until that card this file was a copy of the CRM's,
+   said so in its own header, and could drift from it silently.
+
    No shadcn/tailwind.css and no tw-animate-css: the six primitives here need neither.
 
-   That copy is the application's tokens, and it governs the admin area, which is an
-   application. The hub also serves four pages that are not the application: the
-   chooser, the two wizards and the thanks page, reached mid-sentence from the
-   landing's own call to action. `docs/design/DECISIONS.md` (2026-09-10, ORB-73) says
-   those four follow the site's own visual system instead -- no radius, a solid ink
-   line, a stepped offset shadow, never a blur -- and the `.site` scope below is that
-   system, restated here because `projects/website` builds separately and imports
-   nothing from this project. `Shell` carries the `site` class on all four public
-   pages (ORB-74); the two wizards' own fields and buttons are still ORB-75. */
+   What is left below is the hub's alone: the `.site` scope. The chooser, the two
+   wizards and the thanks page are the landing continued, reached mid-sentence from its
+   own call to action (`docs/design/DECISIONS.md`, 2026-09-10, ORB-73), so they keep the
+   site's own weights, a 2px line and an 8px step, where the application now draws 1px
+   and 4px (the record of 2026-09-18). Squared and the ink colours are no longer this
+   scope's business: they are the default everywhere. `Shell` carries the `site` class
+   on all four public pages (ORB-74). */
 @import 'tailwindcss';
-@import '@rebase/brand/font.css';
-@import '@rebase/brand/palette.css';
+@import '@rebase/ui/tokens.css';
 
-/* Tailwind v4 defaults `dark:` to the OS `prefers-color-scheme` media query. The hub
-   has no dark theme (no dark tokens, nothing that sets a class), so that default's one
-   visible effect was a visitor's OS filling every Input and Textarea with
-   `dark:bg-input/30`: ink at 30% over the paper, grey-blue where the landing's fields
-   are white (ORB-138, `docs/design/DECISIONS.md` 2026-09-10). Bound to a `.dark` class
-   nobody adds, the shadcn primitives' `dark:` utilities stay inert. The CRM's tokens.css
-   carries the same line for the opposite reason: it owns a `.dark` token block and wants
-   the variant to follow that class rather than the OS. Same binding, no theme here. */
-@custom-variant dark (&:is(.dark *));
-
-@theme {
-  --radius: 10px;
-}
-
-:root {
-  --background: var(--color-paper);
-  --foreground: var(--color-prussian-blue);
-  --card: #ffffff;
-  --card-foreground: var(--color-prussian-blue);
-  --popover: #ffffff;
-  --popover-foreground: var(--color-prussian-blue);
-  --primary: var(--color-watermelon-strong);
-  --primary-foreground: #ffffff;
-  --secondary: color-mix(in oklab, var(--color-charcoal-blue) 14%, #ffffff);
-  --secondary-foreground: var(--color-prussian-blue);
-  --muted: var(--color-paper);
-  --muted-foreground: var(--color-charcoal-blue);
-  --accent: var(--color-royal-gold);
-  --accent-foreground: var(--color-prussian-blue);
-  --destructive: var(--color-watermelon-strong);
-  --destructive-foreground: #ffffff;
-  --border: color-mix(in oklab, var(--color-prussian-blue) 12%, #ffffff);
-  --input: color-mix(in oklab, var(--color-prussian-blue) 20%, #ffffff);
-  --ring: var(--color-watermelon);
-  --shadow-ink-weak: color-mix(in oklab, var(--color-prussian-blue) 6%, transparent);
-  --shadow-ink: color-mix(in oklab, var(--color-prussian-blue) 8%, transparent);
-  --shadow-ink-strong: color-mix(in oklab, var(--color-prussian-blue) 12%, transparent);
-  /* The application's own shadow shapes, named so `@theme inline` below can point at
-     them as a single var() each: Tailwind v4 decomposes a compound theme value
-     (`0 1px 1px var(--shadow-ink-weak)`) at build time, baking the "0 1px 1px" into
-     every `shadow-xs` utility and leaving only the innermost var() live, which is
-     why a `.site` override of `--shadow-xs` itself never reached a single rendered
-     element -- confirmed by compiling this file and reading `.shadow-xs` back out of
-     it. A bare `var(--shadow-app-xs)` is not decomposed, so `.site` overriding
-     *this* property is what a `shadow-xs` element actually resolves. */
-  --shadow-app-xs: 0 1px 1px var(--shadow-ink-weak);
-  --shadow-app-sm: 0 1px 2px var(--shadow-ink);
-  --shadow-app-md: 0 4px 12px var(--shadow-ink);
-  --shadow-app-lg: 0 8px 24px var(--shadow-ink-strong);
-}
-
-/* --- The public wizard surface (ORB-73, 2026-09-10 decision): the chooser, the two
-   wizards and the thanks page, not the admin area. Every colour below already equals
-   this scope's inherited application token (`--landing-cta` is the same watermelon as
-   `--primary`, `--landing-focus` the same as `--ring`): restated under the site's own
-   names so a component reaches for `var(--landing-ink)` rather than back across this
-   file for `var(--color-prussian-blue)`. What actually changes for a descendant of
-   `.site` is shape -- radius, border and shadow -- which the four values after the
-   colours repoint. `tokens.test.ts` pins the colours against the shared palette and
-   the shape rules against this block. */
+/* --- The public wizard surface: the site's own weights, on top of the shared tokens.
+   The `--landing-*` colours are the same values the scope already inherits
+   (`--landing-cta` is the same watermelon as `--primary`, `--landing-focus` the same
+   as `--ring`), restated under the site's own names so a wizard component reaches for
+   `var(--landing-ink)` rather than back across this file. What actually changes for a
+   descendant of `.site` is weight: the border width, the step, and the shadow slots
+   the step feeds. `tokens.test.ts` pins the colours against the shared palette and
+   the weights against this block. */
 .site {
   --landing-surface: var(--color-paper);
   --landing-ink: var(--color-prussian-blue);
@@ -85,24 +30,19 @@
   --landing-cta-ink: #ffffff;
   --landing-focus: var(--color-watermelon);
   /* The shadow is an offset, never a blur, moved by this many pixels in the colour of
-     the border (landing.css:31). */
+     the border (landing.css:31). Twice the application's `--step`, which is the whole
+     difference between a page of the site and a screen of the product. */
   --landing-step: 8px;
-  /* landing.css types 2px on each component that carries a line -- `.box` (141),
-     `.card` (156), `.rule` (250), `.cta` (264) -- and never names it; named here so a
+  /* landing.css types 2px on each component that carries a line, `.box` (141),
+     `.card` (156), `.rule` (250), `.cta` (264), and never names it; named here so a
      component reaches for a token instead of typing 2px again. */
   --landing-border-width: 2px;
 
-  /* The shape tokens every primitive already reads, repointed at the site's values
-     instead of the application's. `--radius-sm` .. `--radius-4xl` in `@theme inline`
-     below all derive from `--radius`, so zeroing it here zeroes the whole scale for
-     anything under `.site`, the application's own scale stays intact everywhere
-     else. */
-  --radius: 0px;
-  --border: var(--landing-ink);
-  --input: var(--landing-ink);
   /* landing.css's own two magnitudes, never a graduated scale: `.card`'s step is
      three quarters of `.box`'s (landing.css:158), and the site draws nothing bigger
-     than a box. */
+     than a box. The shared `@theme inline` points every `--shadow-*` at one of these
+     four indirections, which is why overriding them here reaches a rendered element
+     and overriding `--shadow-xs` itself would not. */
   --shadow-app-xs: calc(var(--landing-step) * 0.75) calc(var(--landing-step) * 0.75) 0 var(--landing-ink);
   --shadow-app-sm: calc(var(--landing-step) * 0.75) calc(var(--landing-step) * 0.75) 0 var(--landing-ink);
   --shadow-app-md: var(--landing-step) var(--landing-step) 0 var(--landing-ink);
@@ -120,71 +60,16 @@
   --landing-control-padding-inline: 1rem;
 }
 
-@layer base {
-  * {
-    border-color: var(--border);
-  }
-  body {
-    background-color: var(--background);
-    color: var(--foreground);
-    font-family: var(--font-sans);
-    -webkit-font-smoothing: antialiased;
-  }
-  html,
-  body,
-  #root {
-    height: 100%;
-  }
-}
-
-@theme inline {
-  --shadow-xs: var(--shadow-app-xs);
-  --shadow-sm: var(--shadow-app-sm);
-  --shadow-md: var(--shadow-app-md);
-  --shadow-lg: var(--shadow-app-lg);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
-}
-
 /* --- The page ground for the .site scope (ORB-74): the same faint grid the landing
-   sits on, `projects/website/src/system.css`'s `--system-grid`/`--system-cell`
-   restated here for the reason the block above restates its colours -- the two
-   projects build separately and share no CSS. A second `.site` rule rather than a
-   line inside the first: the shape tokens above are ORB-73's and this is the ground
-   ORB-74 adds on top of them, so an edit to one never has to scroll past the other's
-   comment to find its own declarations. `--landing-ink` is already this scope's
-   colour, so the tile is drawn from a token this file declares elsewhere, never a
-   fresh mix. `--landing-link-pad` is the one pad `landing.css`'s `.top a` and
-   `footer .quiet-link` both use (landing.css:104-108) to keep a link legible over a
-   tile it sits on; named here so `Shell` reaches for it once instead of typing
-   `0.2rem 0.45rem` on every link that needs it. Wrapped in `@layer base` so a
-   `bg-*` utility on the same element still wins over the ground: Tailwind emits
-   its own utilities into `@layer utilities`, and an unlayered rule beats a layered
-   one regardless of specificity. */
+   sits on, at the site's own 7% where the application draws it at 4%
+   (`projects/website/src/system.css`'s `--system-grid`/`--system-cell`, restated for
+   the reason the block above restates its colours: the two projects build separately
+   and share no CSS). A second `.site` rule rather than a line inside the first: the
+   weights above are ORB-73's and this is the ground ORB-74 adds on top of them.
+   `--landing-link-pad` is the one pad `landing.css`'s `.top a` and `footer
+   .quiet-link` both use (landing.css:104-108) to keep a link legible over a tile it
+   sits on. Wrapped in `@layer base` so a `bg-*` utility on the same element still
+   wins, and so it overrides the shared ground on the body rather than fighting it. */
 @layer base {
   .site {
     --landing-grid: color-mix(in oklab, var(--landing-ink) 7%, transparent);

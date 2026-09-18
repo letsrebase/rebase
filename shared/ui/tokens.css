@@ -1,0 +1,207 @@
+/* The application tokens, declared once for every rebase application.
+   Squared by default, per the application-variant record
+   (`docs/design/2026-09-18-application-variant-brief.md`, and the two rows of
+   `docs/design/DECISIONS.md` dated 2026-09-18): radius zero across the derived scale,
+   1px full-strength ink lines, one ink step shadow with no blur on what floats and
+   nothing on what sits in the page, the site's 16px grid behind the page.
+
+   Imported by each SPA's own `styles/tokens.css`, after `@import 'tailwindcss'` so
+   this file's `@theme` wins over Tailwind's defaults. The palette and the typeface
+   come from `@rebase/brand`, which is the one source of colour for every surface,
+   the landing included.
+
+   What is NOT here: anything true of one surface only. The hub's `.site` scope (the
+   public wizards, which keep the landing's own 2px line and 8px step) stays in the
+   hub. */
+@import '@rebase/brand/font.css';
+@import '@rebase/brand/palette.css';
+
+/* Tailwind v4 defaults `dark:` to the OS `prefers-color-scheme` media query. No
+   application here has a dark theme since 2026-09-18, and nothing sets a `.dark`
+   class, so the variant is bound to that class and every `dark:` utility the shadcn
+   primitives carry stays inert. Bound to the OS instead, a visitor whose laptop is in
+   dark mode would get `dark:bg-input/30` on every field: ink at 30% over the paper,
+   which is the bug ORB-138 fixed in the hub. The binding is what keeps the utilities
+   harmless; the block they would read does not exist. */
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  /* Zero, and the whole derived scale with it (`@theme inline` below). The site draws
+     no radius and the applications now follow it: the 10px the CRM carried from
+     2026-09-08 to 2026-09-18 is what the record replaced. */
+  --radius: 0px;
+}
+
+:root {
+  --background: var(--color-paper);
+  --foreground: var(--color-prussian-blue);
+  --card: #ffffff;
+  --card-foreground: var(--color-prussian-blue);
+  --popover: #ffffff;
+  --popover-foreground: var(--color-prussian-blue);
+  --primary: var(--color-watermelon-strong);
+  --primary-foreground: #ffffff;
+  /* The two quiet fills, from the palette and never a hand-mixed hex. `--muted` *is*
+     Paper, because that is what a table row hover has to be; `--secondary` is one step
+     of the ink above the card, so a secondary button is still a surface and not a
+     second white. */
+  --secondary: color-mix(in oklab, var(--color-charcoal-blue) 14%, #ffffff);
+  --secondary-foreground: var(--color-prussian-blue);
+  --muted: var(--color-paper);
+  --muted-foreground: var(--color-charcoal-blue);
+  --accent: var(--color-royal-gold);
+  --accent-foreground: var(--color-prussian-blue);
+  --destructive: var(--color-watermelon-strong);
+  --destructive-foreground: #ffffff;
+  /* The line is the ink itself, full strength, the way the landing's universal
+     selector sets `border-color: var(--landing-ink)` with no mixing at all. The 12%
+     and 20% tints the applications drew until 2026-09-18 were the soft system; the
+     weight now comes from the width, 1px here against the site's 2px, not from
+     fading the colour. */
+  --border: var(--color-prussian-blue);
+  --input: var(--color-prussian-blue);
+  --ring: var(--color-watermelon);
+  /* The two widths, so a component reaches for a token instead of typing a number:
+     1px everywhere, and the site's own 2px on the primary button and the focus ring,
+     which is where the eye lands and where the signature stays visible. */
+  --line: 1px;
+  --line-strong: 2px;
+
+  /* The step: an ink offset, never a blur, moved by this many pixels in the colour of
+     the ink. Half the site's 8px (`projects/website/src/landing.css`), which is what
+     "the same system, one weight lighter" means on a dense screen. */
+  --step: 4px;
+  /* The four shadow shapes, named so `@theme inline` below can point at them as a
+     single var() each: Tailwind v4 decomposes a compound theme value at build time,
+     baking the lengths into every utility and leaving only the innermost var() live,
+     so a scope overriding `--shadow-xs` itself never reaches a rendered element. A
+     bare `var(--shadow-app-xs)` is not decomposed, which is what makes the hub's
+     `.site` scope able to repoint it. Resting surfaces cast nothing: a card, a table
+     and a page header sit on the page with their border. */
+  --shadow-app-xs: none;
+  --shadow-app-sm: none;
+  --shadow-app-md: var(--step) var(--step) 0 var(--color-prussian-blue);
+  --shadow-app-lg: var(--step) var(--step) 0 var(--color-prussian-blue);
+
+  /* The ground: the same 16px tile the site sits on
+     (`projects/website/src/system.css`), at 4% of the ink where the site draws 7%.
+     One shade lighter, so a dense page does not fight its own paper. A card is opaque
+     white over it. */
+  --grid-ink: color-mix(in oklab, var(--color-prussian-blue) 4%, transparent);
+  --grid-cell: 16px;
+
+  /* Five chart hues, every one derived from the five existing tints: no sixth colour
+     enters the product. #ffffff is the one literal permitted inside a color-mix(), as
+     the neutral being mixed toward rather than a tint.
+
+     Declared here and not in `@theme`: an entry holding a color-mix() of a var()
+     cannot be resolved into Tailwind utilities at build time, which is what @theme's
+     literal hexes are for. These are read only as `var(--chart-n)` in inline styles.
+
+     One set, deliberately: in every shape in the CRM's dashboard the bar sits in its
+     own labelled row with the accessible table beside it, so the hue is decoration.
+     `tokens.test.ts` records what that costs in contrast and what would have to change
+     first if a shape ever made colour the only thing telling two series apart. */
+  --chart-1: color-mix(in oklab, var(--color-watermelon) 78%, #ffffff);
+  --chart-2: color-mix(in oklab, var(--color-prussian-blue) 72%, #ffffff);
+  --chart-3: color-mix(in oklab, var(--color-royal-gold) 82%, var(--color-charcoal-blue));
+  --chart-4: color-mix(in oklab, var(--color-charcoal-blue) 84%, #ffffff);
+  --chart-5: color-mix(in oklab, var(--color-watermelon) 40%, var(--color-prussian-blue));
+
+  /* The sidebar primitive reads these directly; they are not separate colours, only
+     the palette re-pointed at its slots. The Prussian Blue panel with Paper text is
+     the most recognisable trait of the application, and the record keeps it in both:
+     Paper on it measures 14.7:1. The active item is marked by a Watermelon Strong
+     tile, `-strong` because it is the one surface that renders white text on it
+     (4.67:1 against 4.22:1). Hover is the same white-into-blue mix at 6%
+     (`hover:bg-sidebar-accent/60` in the shells). */
+  --sidebar: var(--color-prussian-blue);
+  --sidebar-foreground: var(--color-paper);
+  --sidebar-primary: var(--color-watermelon-strong);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: color-mix(in oklab, #ffffff 10%, var(--color-prussian-blue));
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: color-mix(in oklab, #ffffff 12%, var(--color-prussian-blue));
+  /* Paper, not --ring: the focus ring is drawn *on the sidebar*, where Watermelon at
+     50% over Prussian Blue is 1.73:1 and effectively invisible. Paper is the same ink
+     the sidebar's own text uses, so a focused control is unmistakable. */
+  --sidebar-ring: var(--color-paper);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  /* The grid is back on the body, at 4%: the record's Ground paragraph. It was dropped
+     on 2026-09-08 with the soft system and is what makes an application page and a
+     site page the same paper. Layered so a `bg-*` utility on the same element still
+     wins: Tailwind emits its utilities into `@layer utilities`, and an unlayered rule
+     beats a layered one regardless of specificity. */
+  body {
+    background-color: var(--background);
+    background-image:
+      linear-gradient(to right, var(--grid-ink) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid-ink) 1px, transparent 1px);
+    background-size: var(--grid-cell) var(--grid-cell);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* The viewport height, handed down the old-fashioned way. Both shells are `h-full`
+     of #root rather than `100dvh`: in an embedded webview or a browser that
+     mis-reports dynamic viewport units the page grows past the window and the
+     sidebar's profile block is cut off at the bottom (seen live on 2026-09-08). A
+     percentage chain from html cannot disagree with what the browser shows. */
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+}
+
+/* Registers the semantic slots above as Tailwind theme colours (bg-background,
+   text-primary-foreground, border-input, ...) and derives the radius scale from the
+   single --radius, so every primitive resolves to this palette instead of its own
+   defaults. */
+@theme inline {
+  --shadow-xs: var(--shadow-app-xs);
+  --shadow-sm: var(--shadow-app-sm);
+  --shadow-md: var(--shadow-app-md);
+  --shadow-lg: var(--shadow-app-lg);
+  --shadow-xl: var(--shadow-app-lg);
+  --shadow-2xl: var(--shadow-app-lg);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}

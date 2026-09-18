@@ -192,6 +192,7 @@ jobs:
               - 'projects/pigrocrm/deploy/nginx/pigro.letsrebase.conf'
               - 'shared/brand/**'
               - 'shared/analytics/**'
+              - 'shared/ui/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
@@ -222,6 +223,7 @@ jobs:
               - 'projects/hub/apps/web/**'
               - 'shared/brand/**'
               - 'shared/analytics/**'
+              - 'shared/ui/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
@@ -237,6 +239,18 @@ jobs:
               - 'pnpm-workspace.yaml'
               - '.github/workflows/ci.yml'
               - '.github/workflows/_node-gate.yml'
+            # shared/ui's own suite, for the same reason as shared/analytics above: the
+            # SPAs install it as a dependency and never run the dependency's own
+            # lint/test/tsc, so the token contract would go unchecked on a change that
+            # touches nothing else (REB-299).
+            shared_ui:
+              - 'shared/ui/**'
+              - 'shared/brand/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/_node-gate.yml'
             # Everything the two images copy in, which after the website split is
             # the whole of this project plus the root manifests the build context
             # carries. `projects/website/**` used to be here and is not a mistake
@@ -246,6 +260,7 @@ jobs:
               - 'projects/pigrocrm/**'
               - 'shared/brand/**'
               - 'shared/analytics/**'
+              - 'shared/ui/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
@@ -266,6 +281,7 @@ jobs:
               - 'projects/hub/**'
               - 'shared/brand/**'
               - 'shared/analytics/**'
+              - 'shared/ui/**'
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
@@ -466,6 +482,17 @@ jobs:
       filter: '@rebase/analytics'
       build: false
 
+  # shared/ui's own suite: the token contract test, run by no other tier for the same
+  # reason as shared/analytics above. `build: false`: the package ships one stylesheet.
+  shared-ui:
+    name: shared/ui · web
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.shared_ui == 'true') }}
+    uses: ./.github/workflows/_node-gate.yml
+    with:
+      filter: '@rebase/ui'
+      build: false
+
   # Tier 3, and scoped like everything else: an image nobody can have changed is an
   # image not worth two minutes of a metered runner.
   pigrocrm-images:
@@ -535,7 +562,7 @@ jobs:
     # arrives. This is the only status check the repository should ever be asked to
     # require: every job name above can change forever without touching a ruleset.
     if: always()
-    needs: [changes, pigrocrm-py, pigrocrm-py-corpus, pigrocrm-web, website, hub-py, hub-web, shared-analytics, pigrocrm-images, website-image, hub-images]
+    needs: [changes, pigrocrm-py, pigrocrm-py-corpus, pigrocrm-web, website, hub-py, hub-web, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

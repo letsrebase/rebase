@@ -58,7 +58,8 @@
       "when": [
         "projects/pigrocrm/apps/web/**",
         "package.json",
-        "pnpm-workspace.yaml"
+        "pnpm-workspace.yaml",
+        "shared/ui/**"
       ]
     },
     {
@@ -68,7 +69,8 @@
         "projects/pigrocrm/apps/web/**",
         "projects/pigrocrm/deploy/nginx/pigro.letsrebase.conf",
         "pnpm-lock.yaml",
-        "pnpm-workspace.yaml"
+        "pnpm-workspace.yaml",
+        "shared/ui/**"
       ],
       "why": "vitest, jsdom, no services. Also the step that writes src/routeTree.gen.ts, which the typecheck below needs and which nothing else generates. The vhost path is here, not under apps/web, because src/test/robots.test.ts (REB-107) reads it directly."
     },
@@ -79,7 +81,8 @@
         "projects/pigrocrm/apps/web/**",
         "package.json",
         "pnpm-lock.yaml",
-        "pnpm-workspace.yaml"
+        "pnpm-workspace.yaml",
+        "shared/ui/**"
       ],
       "why": "Build before typecheck, always: a bare tsc --noEmit on a clean checkout fails every route file with TS2307 because src/routeTree.gen.ts is gitignored and only a Vite run writes it."
     },
@@ -91,6 +94,16 @@
         "pnpm-lock.yaml"
       ],
       "why": "The one PostHog project every surface reports to, and the init policy the two SPAs share. A second of vitest with posthog-js mocked; the consumers test their own wiring."
+    },
+    {
+      "id": "ui-unit",
+      "run": "pnpm --filter @rebase/ui lint && pnpm --filter @rebase/ui test && pnpm --filter @rebase/ui exec tsc --noEmit",
+      "when": [
+        "shared/ui/**",
+        "shared/brand/palette.css",
+        "pnpm-lock.yaml"
+      ],
+      "why": "The token contract both applications render on: every colour resolved back through the brand palette, the five chart mixes evaluated the way a browser does, and the rules of the 2026-09-18 record (zero radius, ink lines, no blur, one scheme). A second of vitest with nothing installed to start."
     },
     {
       "id": "website-lint",
@@ -174,7 +187,8 @@
       "when": [
         "projects/hub/apps/web/**",
         "package.json",
-        "pnpm-workspace.yaml"
+        "pnpm-workspace.yaml",
+        "shared/ui/**"
       ]
     },
     {
@@ -184,6 +198,7 @@
         "projects/hub/apps/web/**",
         "shared/brand/**",
         "shared/analytics/**",
+        "shared/ui/**",
         "pnpm-lock.yaml",
         "pnpm-workspace.yaml"
       ],
@@ -196,6 +211,7 @@
         "projects/hub/apps/web/**",
         "shared/brand/**",
         "shared/analytics/**",
+        "shared/ui/**",
         "pnpm-lock.yaml",
         "pnpm-workspace.yaml"
       ],
@@ -232,7 +248,8 @@
       "when": [
         "projects/pigrocrm/apps/web/**",
         "projects/pigrocrm/apps/api/**",
-        "projects/pigrocrm/packages/core/src/**"
+        "projects/pigrocrm/packages/core/src/**",
+        "shared/ui/**"
       ],
       "serial": true,
       "why": "The Playwright suite against a real API and a real Postgres. `serial` because it binds three fixed host ports -- 55433 for its own Postgres, 8000 for the API, 5173 for Vite -- which are hardcoded in projects/pigrocrm/apps/web/scripts/e2e-env.sh rather than read from the environment. On a shared box that is also a collision with anything else holding them, and the script clears :5173 and :8000 before it starts."

@@ -4,12 +4,16 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Pins the `.site` scope added by ORB-73 (`docs/design/DECISIONS.md`, 2026-09-10): the
- * chooser, the two wizards and the thanks page follow `letsrebase.com`'s own visual
- * system rather than the application's, and the admin area must not drift with it.
- * These assertions check the rules the decision creates -- no radius, no blur shadow,
- * a solid ink line -- rather than restating every literal, the way
- * `projects/website/src/landing-tokens.test.ts` pins the site's own stylesheet.
+ * What is left of this file after REB-299: the hub's own `.site` scope, and nothing
+ * the two applications share. Every semantic slot, the radius scale, the shadow
+ * indirections and the palette are `@rebase/ui`'s, and its `tokens.test.ts` is the
+ * contract for them.
+ *
+ * The scope itself is ORB-73 (`docs/design/DECISIONS.md`, 2026-09-10): the chooser,
+ * the two wizards and the thanks page are the landing continued and keep its own
+ * weights, a 2px line and an 8px step, where the application draws 1px and 4px since
+ * 2026-09-18. Squared corners and the ink colours are no longer this scope's job:
+ * they are the default everywhere, which is what that record changed.
  */
 const tokensCss = readFileSync(join(__dirname, 'tokens.css'), 'utf-8')
 const brandCss = readFileSync(
@@ -22,12 +26,12 @@ const css = `${brandCss}\n${tokensCss}`
  *  selector like `.site` can legitimately appear more than once (ORB-74 adds a
  *  second `.site` rule for the page ground rather than editing ORB-73's), and a
  *  non-global match would silently see only the first one, exempting every later
- *  occurrence from the assertions below -- including the raw-hex guard. */
+ *  occurrence from the assertions below, including the raw-hex guard. */
 function block(selector: string): string {
   const escaped = selector.replace(/[.[\]*+?^${}()|\\]/g, '\\$&')
   const bodies = [
-    ...css.matchAll(new RegExp(`(?:^|\\n)[ \\t]*${escaped}\\s*\\{([\\s\\S]*?)\\n[ \\t]*\\}`, 'g')),
-  ].map((match) => match[1])
+    ...css.matchAll(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([\\s\\S]*?)\\n\\s*\\}`, 'g')),
+  ].map((match) => match[1]!)
   if (bodies.length === 0) throw new Error(`rule "${selector}" not found in tokens.css`)
   return bodies.join('\n')
 }
@@ -66,11 +70,10 @@ function contrastRatio(hexA: string, hexB: string): number {
  *  this file and `landing.css` import. A hand-mixed hex here would be a second
  *  palette; this is what keeps that mechanically impossible rather than discouraged. */
 function siteColourHex(token: string): string {
-  const value = declaration('.site', token)
-  const match = value.match(/^var\((--color-[\w-]+)\)$/)
-  if (!match) throw new Error(`${token} is not var(--color-…): ${value}`)
-  const hex = css.match(new RegExp(`${match[1]}:\\s*(#[0-9a-fA-F]{6})`))?.[1]
-  if (!hex) throw new Error(`${match[1]} is not defined in the shared palette`)
+  const reference = declaration('.site', token).match(/^var\(--color-([a-z-]+)\)$/)
+  if (!reference) throw new Error(`${token} in .site is not a palette reference`)
+  const hex = css.match(new RegExp(`--color-${reference[1]}:\\s*(#[0-9a-fA-F]{6})`))?.[1]
+  if (!hex) throw new Error(`palette has no --color-${reference[1]}`)
   return hex
 }
 
@@ -85,46 +88,15 @@ describe('the .site scope (ORB-73)', () => {
     expect(siteColourHex('--landing-focus')).toBe('#ed254e')
   })
 
-  it('carries the CTA at 4.5:1 for its own ink, the same pair the application already relies on', () => {
-    expect(contrastRatio(declaration('.site', '--landing-cta-ink'), siteColourHex('--landing-cta'))).toBeGreaterThanOrEqual(4.5)
+  it('carries the CTA at 4.5:1 for its own ink, the same pair the application relies on', () => {
+    expect(
+      contrastRatio(declaration('.site', '--landing-cta-ink'), siteColourHex('--landing-cta')),
+    ).toBeGreaterThanOrEqual(4.5)
   })
 
   it('contains no raw hexadecimal in the .site block, other than white', () => {
     for (const hex of site.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []) {
       expect(hex.toLowerCase(), `raw hex in .site: ${hex}`).toBe('#ffffff')
-    }
-  })
-
-  it('zeroes --radius, which zeroes the whole derived scale for its own subtree', () => {
-    // --radius-sm .. --radius-4xl all read calc(var(--radius) * n) from the shared
-    // @theme inline block: zeroing --radius here is enough, and a future rung added to
-    // that scale inherits the same zero without a second edit to .site.
-    expect(declaration('.site', '--radius')).toMatch(/^0(px)?$/)
-  })
-
-  it('draws a solid ink border and input line, never a tint', () => {
-    // The application's own --border/--input are color-mix() tints of the ink; the
-    // site's is the ink itself, full strength, the way landing.css's universal
-    // selector sets border-color: var(--landing-ink) with no mixing at all.
-    for (const token of ['--border', '--input']) {
-      expect(declaration('.site', token), token).toBe('var(--landing-ink)')
-    }
-  })
-
-  const SHADOWS = ['xs', 'sm', 'md', 'lg']
-
-  it('points every @theme inline --shadow-* at a bare var(), never a compound expression', () => {
-    // Tailwind v4 decomposes a compound theme value (`0 1px 1px var(--x)`) at build
-    // time, baking the "0 1px 1px" into every `shadow-xs` utility and leaving only
-    // the innermost var() live -- confirmed by compiling this file and reading
-    // `.shadow-xs` back out of the built CSS, where it read `--shadow-ink-weak` and
-    // never `--shadow-xs`. A `.site` override of `--shadow-xs` itself would therefore
-    // never reach a rendered element; this is the one property `.site` must repoint
-    // instead, and this test is what stops a future edit from re-inlining it.
-    for (const step of SHADOWS) {
-      expect(declaration('@theme inline', `--shadow-${step}`), `--shadow-${step}`).toBe(
-        `var(--shadow-app-${step})`,
-      )
     }
   })
 
@@ -148,14 +120,14 @@ describe('the .site scope (ORB-73)', () => {
     return parts
   }
 
+  const SHADOWS = ['xs', 'sm', 'md', 'lg']
+
   it('casts every shadow as an ink offset, never a blur or a tint', () => {
     for (const step of SHADOWS) {
-      const value = declaration('.site', `--shadow-app-${step}`)
+      const parts = shadowParts(declaration('.site', `--shadow-app-${step}`))
       // <offset-x> <offset-y> 0 var(--landing-ink): the third length is the blur
       // radius, held at exactly 0 (landing.css:31, "an offset, never a blur"), and the
-      // colour is the opaque ink rather than one of the application's low-opacity
-      // shadow-ink-* tints.
-      const parts = shadowParts(value)
+      // colour is the opaque ink.
       expect(parts, `--shadow-app-${step}`).toHaveLength(4)
       expect(parts[0], `--shadow-app-${step} offset-x`).toMatch(/^(?:calc\(.*\)|var\(.*\)|[\d.]+px)$/)
       expect(parts[1], `--shadow-app-${step} offset-y`).toMatch(/^(?:calc\(.*\)|var\(.*\)|[\d.]+px)$/)
@@ -164,21 +136,35 @@ describe('the .site scope (ORB-73)', () => {
     }
   })
 
-  it('draws the box step no smaller than the card step, and neither past 8px', () => {
-    // landing.css's own two magnitudes: 6px for .card, 8px for .box, the smaller one
-    // three quarters of the larger (landing.css:31, landing.css:158).
+  it('keeps the site at its own weights, twice the application it sits inside', () => {
+    // landing.css's own two magnitudes: 8px for .box, 6px for .card, the smaller one
+    // three quarters of the larger (landing.css:31, landing.css:158), and a 2px line
+    // where the application draws 1px. This is the whole difference between a public
+    // page of the hub and its admin area, now that squared is the shared default.
     expect(declaration('.site', '--landing-step')).toBe('8px')
+    expect(declaration('.site', '--landing-border-width')).toBe('2px')
     expect(declaration('.site', '--shadow-app-xs')).toBe(declaration('.site', '--shadow-app-sm'))
     expect(declaration('.site', '--shadow-app-md')).toBe(declaration('.site', '--shadow-app-lg'))
     expect(shadowParts(declaration('.site', '--shadow-app-md'))[0]).toBe('var(--landing-step)')
-    expect(shadowParts(declaration('.site', '--shadow-app-xs'))[0]).toBe('calc(var(--landing-step) * 0.75)')
+    expect(shadowParts(declaration('.site', '--shadow-app-xs'))[0]).toBe(
+      'calc(var(--landing-step) * 0.75)',
+    )
   })
 
-  it('leaves the admin area on the application tokens', () => {
-    // :root, not .site, is what the admin area inherits: its radius and shadow scale
-    // must still be the CRM's copy this file opens with.
-    expect(css).toMatch(/@theme\s*\{\s*--radius:\s*10px;\s*\}/)
-    expect(block(':root')).toMatch(/--shadow-ink-strong:\s*color-mix\(in oklab, var\(--color-prussian-blue\) 12%, transparent\)/)
+  it('declares nothing the shared tokens already decide', () => {
+    // Radius, the ink colours and the semantic slots are `@rebase/ui`'s since REB-299:
+    // a `--radius` or a `--border` restated here would be a second source for a value
+    // the record settled for both applications.
+    expect(site).not.toMatch(/--radius:/)
+    expect(site).not.toMatch(/--border:/)
+    expect(site).not.toMatch(/--input:/)
+  })
+
+  it('draws the site ground at 7%, over the 4% the application draws', () => {
+    expect(declaration('.site', '--landing-grid')).toBe(
+      'color-mix(in oklab, var(--landing-ink) 7%, transparent)',
+    )
+    expect(declaration('.site', '--landing-cell')).toBe('16px')
   })
 })
 
@@ -195,21 +181,13 @@ describe('the dark variant (ORB-138)', () => {
     join(webRoot, 'index.html'),
   ].map((path) => ({ path, text: readFileSync(path, 'utf-8') }))
 
-  it('binds dark: to a .dark class, never to the OS preference', () => {
-    // Tailwind v4 defaults `dark:` to `prefers-color-scheme: dark`. The hub has no
-    // dark theme, so the only effect that default ever had was a visitor's OS filling
-    // every Input and Textarea ink-at-30% (`dark:bg-input/30`), grey-blue where the
-    // landing's fields are white (ORB-138). Bound to a class instead, as the CRM's
-    // tokens.css binds it for its own `.dark` block, the OS reaches nothing.
-    expect(tokensCss).toMatch(/@custom-variant dark \(&:is\(\.dark \*\)\);/)
-  })
-
   it('has nothing that adds the .dark class, so every dark: utility stays inert', () => {
-    // The shadcn primitives keep their `dark:` utilities (the next one pasted in will
-    // carry them too). What makes that harmless is that no string in the app, and no
-    // rule in this stylesheet, ever names the bare class the variant now depends on:
-    // a `dark` inside a string literal that is not the `dark:` prefix is the day a
-    // half-designed second theme starts, and this is where that fails.
+    // The primitives keep their `dark:` utilities (the next one pasted in will carry
+    // them too), and `@rebase/ui` binds the variant to a class instead of the OS
+    // preference. What makes that harmless is that no string in the app, and no rule
+    // in this stylesheet, ever names the bare class: a `dark` inside a string literal
+    // that is not the `dark:` prefix is the day a half-designed second theme starts,
+    // and this is where that fails.
     expect(sources.some(({ text }) => text.includes('dark:'))).toBe(true)
     for (const { path, text } of sources) {
       expect(text, path).not.toMatch(/(["'`])[^"'`\n]*\bdark\b(?!:)[^"'`\n]*\1/)
