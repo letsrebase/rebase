@@ -110,6 +110,7 @@ jobs:
       hub_py: ${{ steps.filter.outputs.hub_py }}
       hub_web: ${{ steps.filter.outputs.hub_web }}
       shared_analytics: ${{ steps.filter.outputs.shared_analytics }}
+      shared_ui: ${{ steps.filter.outputs.shared_ui }}
       hub_image: ${{ steps.filter.outputs.hub_image }}
       pigrocrm_deploy: ${{ steps.filter.outputs.pigrocrm_deploy }}
       website_deploy: ${{ steps.filter.outputs.website_deploy }}
