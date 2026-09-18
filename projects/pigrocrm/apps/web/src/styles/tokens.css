@@ -1,22 +1,13 @@
-/* `@import "tailwindcss"` expands inline into a large stylesheet; any @import
-   textually after it would then sit behind non-import rules in the emitted
-   CSS, which is invalid: the production optimiser drops it rather than
-   reorder it. Every other @import therefore has to come first. */
-/* Required by the generated ui/*.tsx components themselves, not a design choice:
-   tw-animate-css backs their animate-in/out transitions, and shadcn/tailwind.css
-   defines the data-open/data-checked/... custom variants their class names use. */
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
-@import 'tailwindcss';
-/* Every token this application renders on, declared once for both applications
-   (REB-299): the palette and the typeface from `@rebase/brand`, the semantic slots,
-   the zero radius scale, the ink lines, the step shadow and the grid of the
-   application-variant record (`docs/design/2026-09-18-application-variant-brief.md`).
-   After `tailwindcss`, never before, so its `@theme` wins over Tailwind's defaults.
+/* Everything this application renders on comes from `@rebase/ui`, in the order that
+   package's `before-tailwind.css` explains: the two stylesheets the primitives need
+   have to precede Tailwind's expansion, and the tokens have to follow it so their
+   `@theme` wins.
 
    Nothing is declared here any more. What used to be: a `--radius` of 10px, the 12%
-   and 20% border tints, four blurred shadow tints, a `.dark` block and the chart
-   tokens, all of which either moved into `@rebase/ui` or were replaced by the record.
-   A value that is genuinely this application's alone goes below this import, with the
-   reason; there is none today. */
+   and 20% border tints, four blurred shadow tints, a `.dark` block, the chart tokens
+   (REB-299), and the two imports above, which moved with the primitives they serve
+   (REB-300). A value that is genuinely this application's alone goes below the last
+   import, with the reason; there is none today. */
+@import '@rebase/ui/before-tailwind.css';
+@import 'tailwindcss';
 @import '@rebase/ui/tokens.css';

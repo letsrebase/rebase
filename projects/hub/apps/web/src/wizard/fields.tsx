@@ -1,8 +1,8 @@
 import { Upload } from 'lucide-react'
 import { useEffect, useRef, type ReactNode } from 'react'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
+import { Input } from '@rebase/ui/input'
+import { Textarea } from '@rebase/ui/textarea'
+import { cn } from '@rebase/ui/cn'
 
 /** The controls a step renders: each one large, alone on its screen, focused on arrival. */
 

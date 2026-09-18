@@ -1,7 +1,7 @@
 import { FileText } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton } from '@rebase/ui/skeleton'
 import { useInvoicePdf, type Invoice } from './queries'
 
 /**

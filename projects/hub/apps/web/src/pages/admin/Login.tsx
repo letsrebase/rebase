@@ -1,9 +1,9 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useState, type FormEvent } from 'react'
 import { BrandMark } from '@/components/BrandMark'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Button } from '@rebase/ui/button'
+import { Input } from '@rebase/ui/input'
+import { Label } from '@rebase/ui/label'
 import { ApiError } from '@/lib/api'
 import { useLogin } from '@/lib/auth'
 

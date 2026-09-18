@@ -2,7 +2,7 @@ import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import { BookOpen, Boxes, Briefcase, LogIn, LogOut, Mail, Plug, ShieldCheck, UserRound } from 'lucide-react'
 import { useEffect } from 'react'
 import { BrandMark } from '@/components/BrandMark'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import { useIdentifyAdmin } from '@/lib/analytics'
 import { useAdmin, useLogout } from '@/lib/auth'
 

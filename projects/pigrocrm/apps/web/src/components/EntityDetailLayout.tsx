@@ -1,7 +1,7 @@
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { PageHeader } from '@/components/PageHeader'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import type { TimelineEntityType } from '@/lib/schema'
 import { Timeline } from './Timeline'
 

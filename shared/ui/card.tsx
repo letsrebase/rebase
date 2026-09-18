@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { cn } from "@/lib/utils"
+import { cn } from "./cn"
 
 /**
  * A Card casts nothing at all. It sits *on* the page -- a CRM screen shows many at

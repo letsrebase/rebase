@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -11,17 +11,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+} from '@rebase/ui/dialog'
+import { Input } from '@rebase/ui/input'
+import { Label } from '@rebase/ui/label'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
+} from '@rebase/ui/select'
+import { Textarea } from '@rebase/ui/textarea'
 import { useCustomer, useCustomers } from '@/features/customers/queries'
 import { useDeal, useDeals } from '@/features/deals/queries'
 import { toProblem, type ProblemDetail } from '@/lib/api'

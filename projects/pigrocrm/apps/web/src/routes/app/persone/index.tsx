@@ -5,15 +5,15 @@ import { toast } from 'sonner'
 import { DataTable } from '@/components/DataTable'
 import { FilterRow } from '@/components/FilterRow'
 import { PageHeader } from '@/components/PageHeader'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { Button } from '@rebase/ui/button'
+import { Input } from '@rebase/ui/input'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
+} from '@rebase/ui/select'
 import { useCustomers } from '@/features/customers/queries'
 import { buildPersonColumns } from '@/features/people/columns'
 import { PersonForm } from '@/features/people/PersonForm'

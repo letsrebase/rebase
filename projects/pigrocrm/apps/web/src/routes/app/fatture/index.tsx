@@ -4,14 +4,14 @@ import { useState } from 'react'
 import { DataTable } from '@/components/DataTable'
 import { FilterChips, FilterRow } from '@/components/FilterRow'
 import { PageHeader } from '@/components/PageHeader'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
+} from '@rebase/ui/select'
 import { buildInvoiceColumns } from '@/features/invoices/columns'
 import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
 import { booleanSearchParam } from '@/lib/searchParams'

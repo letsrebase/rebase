@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { DynamicForm } from '@/components/DynamicForm'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
+} from '@rebase/ui/dialog'
 import type { ProblemDetail } from '@/lib/api'
 import { clearedNativeValue, type FieldDefinition } from '@/lib/schema'
 import type { Customer } from './queries'

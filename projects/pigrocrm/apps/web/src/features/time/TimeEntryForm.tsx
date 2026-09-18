@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { DynamicForm } from '@/components/DynamicForm'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
+} from '@rebase/ui/dialog'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import type { FieldDefinition } from '@/lib/schema'

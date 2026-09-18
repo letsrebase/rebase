@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { cn } from '@/lib/utils'
+import { cn } from '@rebase/ui/cn'
 
 /**
  * The header of a page, inside the white panel (spec 2026-09-08 §4).

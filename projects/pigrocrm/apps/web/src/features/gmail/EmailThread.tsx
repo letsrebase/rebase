@@ -1,5 +1,5 @@
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Badge } from '@rebase/ui/badge'
+import { Button } from '@rebase/ui/button'
 import { formatInstant } from './instants'
 import type { GmailMessageRead } from './queries'
 

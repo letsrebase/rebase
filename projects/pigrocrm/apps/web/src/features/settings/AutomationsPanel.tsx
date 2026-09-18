@@ -1,11 +1,11 @@
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton } from '@rebase/ui/skeleton'
 import {
   useAutomations,
   useUpdateAutomationConfig,
   type AutomationConfigUpdate,
 } from '@/features/dashboard/queries'
-import { cn } from '@/lib/utils'
+import { cn } from '@rebase/ui/cn'
 
 /**
  * §9.5's third observability surface: the two rules, their switch, and the last executions

@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { cn } from '@rebase/ui/cn'
 
 /**
  * The four tiles that stand before the name, everywhere the product signs itself:

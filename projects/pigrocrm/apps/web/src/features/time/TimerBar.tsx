@@ -1,21 +1,21 @@
 import { BadgeEuro, Pencil, Play, Square, Timer, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Button } from '@rebase/ui/button'
+import { Checkbox } from '@rebase/ui/checkbox'
+import { Input } from '@rebase/ui/input'
+import { Label } from '@rebase/ui/label'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
+} from '@rebase/ui/select'
 import type { Deal } from '@/features/deals/queries'
 import { toProblem } from '@/lib/api'
 import { toIsoDate } from '@/lib/dates'
-import { cn } from '@/lib/utils'
+import { cn } from '@rebase/ui/cn'
 import { formatHoursValue } from './columns'
 import { elapsedSince, formatElapsed } from './elapsed'
 import {
@@ -184,7 +184,11 @@ export function TimerBar({
     <div
       className={cn(
         'flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3',
-        timer && 'border-foreground/30',
+        // A running timer is the one row on the screen that has to stand out, and
+        // since 2026-09-18 the weight comes from the width: `--line-strong`, the
+        // site's own 2px, where this used to fade the ink to 30% and now would read
+        // lighter than the resting border rather than heavier.
+        timer && 'border-(length:--line-strong)',
       )}
     >
       <Input

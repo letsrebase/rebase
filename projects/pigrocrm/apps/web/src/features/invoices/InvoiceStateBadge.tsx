@@ -1,5 +1,5 @@
 import { StatusPill } from '@/components/StatusPill'
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@rebase/ui/badge'
 import {
   INVOICE_STATE_LABELS,
   INVOICE_STATE_TONE,

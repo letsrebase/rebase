@@ -1,7 +1,7 @@
 import { capture } from '@rebase/analytics/browser'
 import { Link } from '@tanstack/react-router'
 import { ArrowUpRight, Download, LogOut, Pencil } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import { member } from '@/lib/api'
 import { formatBytes } from '@/lib/format'
 import { GUIDE } from '@/lib/perks'

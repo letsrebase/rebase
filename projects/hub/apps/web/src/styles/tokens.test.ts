@@ -181,15 +181,17 @@ describe('the dark variant (ORB-138)', () => {
     join(webRoot, 'index.html'),
   ].map((path) => ({ path, text: readFileSync(path, 'utf-8') }))
 
-  it('has nothing that adds the .dark class, so every dark: utility stays inert', () => {
-    // The primitives keep their `dark:` utilities (the next one pasted in will carry
-    // them too), and `@rebase/ui` binds the variant to a class instead of the OS
-    // preference. What makes that harmless is that no string in the app, and no rule
-    // in this stylesheet, ever names the bare class: a `dark` inside a string literal
-    // that is not the `dark:` prefix is the day a half-designed second theme starts,
-    // and this is where that fails.
-    expect(sources.some(({ text }) => text.includes('dark:'))).toBe(true)
+  it('names dark nowhere at all, in any form', () => {
+    // Until REB-300 this app had primitives of its own and they carried `dark:`
+    // utilities, so the check here was that none of them, and no rule in this
+    // stylesheet, ever named the bare class: that is the day a half-designed second
+    // theme starts. The primitives moved into `@rebase/ui`, which strips those
+    // utilities and pins the variant binding in its own test, so what is left to
+    // prove here is stronger and simpler: this application does not mention dark in
+    // any form, prefix or class.
+    expect(sources.length).toBeGreaterThan(20)
     for (const { path, text } of sources) {
+      expect(text, path).not.toMatch(/\bdark:/)
       expect(text, path).not.toMatch(/(["'`])[^"'`\n]*\bdark\b(?!:)[^"'`\n]*\1/)
     }
     expect(tokensCss).not.toMatch(/^\s*\.dark\b/m)

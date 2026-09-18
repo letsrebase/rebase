@@ -2,7 +2,7 @@ import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/rea
 import { useEffect } from 'react'
 import { AppShell } from '@/components/AppShell'
 import { GmailBanner } from '@/components/GmailBanner'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton } from '@rebase/ui/skeleton'
 import { useAuth } from '@/lib/auth'
 
 const PUBLIC_ROUTES = new Set(['/app/login', '/app/registrati', '/app/entra'])

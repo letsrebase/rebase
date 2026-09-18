@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -9,9 +9,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+} from '@rebase/ui/dialog'
+import { Input } from '@rebase/ui/input'
+import { Label } from '@rebase/ui/label'
 import { toProblem } from '@/lib/api'
 import { tenantPrefix } from '@/lib/tenant'
 import { formatInstant } from './instants'

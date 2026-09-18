@@ -97,14 +97,14 @@
     },
     {
       "id": "ui-unit",
-      "run": "pnpm --filter @rebase/ui lint && pnpm --filter @rebase/ui test && pnpm --filter @rebase/ui exec tsc --noEmit",
+      "run": "pnpm --filter @rebase/ui lint && pnpm --filter @rebase/ui test && pnpm --filter @rebase/ui build && pnpm --filter @rebase/ui exec tsc --noEmit",
       "when": [
         "shared/ui/**",
         "shared/brand/palette.css",
         "shared/brand/font.css",
         "pnpm-lock.yaml"
       ],
-      "why": "The token contract both applications render on: every colour resolved back through the brand palette, the five chart mixes evaluated the way a browser does, and the rules of the 2026-09-18 record (zero radius, ink lines, no blur, one scheme). A second of vitest with nothing installed to start."
+      "why": "The token contract both applications render on and the eighteen primitives that read it: every colour resolved back through the brand palette, the five chart mixes evaluated the way a browser does, the rules of the 2026-09-18 record (zero radius, ink lines, no blur, one scheme), and the gallery built, which is what proves the primitives still compile against Tailwind outside an application."
     },
     {
       "id": "website-lint",

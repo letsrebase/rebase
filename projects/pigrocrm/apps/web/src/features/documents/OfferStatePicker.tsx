@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { StatusPill } from '@/components/StatusPill'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import {
   OFFER_STATE_LABELS,

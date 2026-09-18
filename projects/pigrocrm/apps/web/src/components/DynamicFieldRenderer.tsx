@@ -1,6 +1,6 @@
-import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Checkbox } from '@rebase/ui/checkbox'
+import { Input } from '@rebase/ui/input'
+import { Label } from '@rebase/ui/label'
 import {
   Select,
   SelectContent,
@@ -8,8 +8,8 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
+} from '@rebase/ui/select'
+import { Textarea } from '@rebase/ui/textarea'
 import { formatIsoDateItalian } from '@/lib/dates'
 import type { FieldDefinition } from '@/lib/schema'
 

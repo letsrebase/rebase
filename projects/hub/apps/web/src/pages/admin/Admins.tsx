@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Plus } from 'lucide-react'
 import { useRef, useState, type FormEvent } from 'react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Badge } from '@rebase/ui/badge'
+import { Button } from '@rebase/ui/button'
 import {
   Dialog,
   DialogClose,
@@ -11,9 +11,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+} from '@rebase/ui/dialog'
+import { Input } from '@rebase/ui/input'
+import { Label } from '@rebase/ui/label'
 import { ApiError, admin, type Admin, type AdminCreate } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { Empty, Header } from './lists'

@@ -1,5 +1,5 @@
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Input } from '@rebase/ui/input'
+import { Label } from '@rebase/ui/label'
 import type { AccrualPeriodDraft } from './accrualPeriod'
 
 /**

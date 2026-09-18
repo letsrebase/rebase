@@ -3,8 +3,8 @@ import { Settings, ShieldAlert } from 'lucide-react'
 import { defaultDashboardSearch } from '@/features/dashboard/search'
 import { SETTINGS_TABS } from '@/features/settings/tabs'
 import { PageHeader } from '@/components/PageHeader'
-import { Button } from '@/components/ui/button'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@rebase/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { useIsAdmin } from '@/lib/auth'
 
 /**

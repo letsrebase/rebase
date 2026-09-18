@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
 import { ArrowLeft, Download } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@rebase/ui/badge'
+import { Button } from '@rebase/ui/button'
+import { Textarea } from '@rebase/ui/textarea'
 import { admin, type Comment, type Company, type Freelancer, type Signup } from '@/lib/api'
 import {
   COMPANY_STATES,
@@ -17,7 +17,7 @@ import {
   formatDateTime,
   formatEuro,
 } from '@/lib/format'
-import { cn } from '@/lib/utils'
+import { cn } from '@rebase/ui/cn'
 import { Comments } from './Comments'
 
 const TONE: Record<string, string> = {

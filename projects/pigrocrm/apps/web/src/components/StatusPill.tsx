@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Badge, type BadgeDot } from '@/components/ui/badge'
+import { Badge, type BadgeDot } from '@rebase/ui/badge'
 
 /**
  * The five tints a state can read as, and the only five (design spec §3: no new

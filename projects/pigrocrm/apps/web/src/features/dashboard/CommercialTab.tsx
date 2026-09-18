@@ -1,5 +1,5 @@
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton } from '@rebase/ui/skeleton'
 import { BarRows, BigNumber, type BarRow } from './charts'
 import { money, percent } from './format'
 import { Freshness } from './Freshness'

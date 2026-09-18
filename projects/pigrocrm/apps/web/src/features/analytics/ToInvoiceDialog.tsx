@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@rebase/ui/button'
+import { Checkbox } from '@rebase/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -10,9 +10,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
-import { Skeleton } from '@/components/ui/skeleton'
+} from '@rebase/ui/dialog'
+import { Label } from '@rebase/ui/label'
+import { Skeleton } from '@rebase/ui/skeleton'
 import { formatHoursValue, formatMoneyValue } from '@/features/time/columns'
 import { useTimeEntries } from '@/features/time/queries'
 import { toProblem, type ProblemDetail } from '@/lib/api'

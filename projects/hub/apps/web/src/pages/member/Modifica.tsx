@@ -1,6 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import { ApiError, type FreelancerApplication } from '@/lib/api'
 import { toApplication, toUpdate, useMember, useReplaceCv, useUpdateProfile } from '@/lib/member'
 import { FREELANCER_FIELDS } from '@/pages/FreelancerWizard'

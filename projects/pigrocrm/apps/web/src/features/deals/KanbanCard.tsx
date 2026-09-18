@@ -1,6 +1,6 @@
 import { useDraggable } from '@dnd-kit/core'
-import { Card, CardContent } from '@/components/ui/card'
-import { cn } from '@/lib/utils'
+import { Card, CardContent } from '@rebase/ui/card'
+import { cn } from '@rebase/ui/cn'
 import { formatMoney } from './columns'
 import type { Deal } from './queries'
 

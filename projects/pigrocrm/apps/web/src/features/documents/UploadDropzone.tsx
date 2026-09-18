@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { Upload } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn } from '@rebase/ui/cn'
 
 interface Props {
   onFiles: (files: File[]) => void
@@ -38,7 +38,7 @@ export function UploadDropzone({ onFiles, busy, accept }: Props) {
       }}
       className={cn(
         'rounded-lg border-2 border-dashed p-6 text-center transition-colors',
-        over ? 'border-primary bg-primary/5' : 'border-muted-foreground/30',
+        over ? 'border-primary bg-primary/5' : 'border-border',
         busy && 'opacity-60',
       )}
     >

@@ -1,9 +1,10 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "jsx": "react-jsx",
     "noEmit": true,
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -12,5 +13,5 @@
     "skipLibCheck": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["*.ts"]
+  "include": ["*.ts", "*.tsx", "gallery/**/*.ts", "gallery/**/*.tsx", "*.config.ts"]
 }

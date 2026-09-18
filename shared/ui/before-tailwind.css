@@ -1,0 +1,23 @@
+/* The two stylesheets the primitives in this package need, and the one thing about
+   them that is load-bearing: they have to be imported BEFORE `tailwindcss`.
+
+   `@import 'tailwindcss'` expands inline into a large stylesheet, so any `@import`
+   textually after it sits behind non-import rules in the emitted CSS, which is
+   invalid: the production optimiser drops it rather than reorder it. That is why this
+   file exists instead of two lines inside `tokens.css`, which is imported after
+   Tailwind on purpose (its `@theme` has to win).
+
+   Neither is a design choice. `tw-animate-css` backs the `animate-in`/`animate-out`
+   transitions of dialog, sheet, popover, dropdown-menu, select and tooltip;
+   `shadcn/tailwind.css` defines the `data-open`, `data-checked` and sibling custom
+   variants their class names use. An application that imports the primitives and not
+   this file renders them with no transitions and with those variants dead.
+
+   An application's own stylesheet therefore reads, in this order:
+
+     @import '@rebase/ui/before-tailwind.css';
+     @import 'tailwindcss';
+     @import '@rebase/ui/tokens.css';
+*/
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";

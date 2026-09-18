@@ -1,6 +1,6 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import { ApiError } from '@/lib/api'
 import { takeEntraToken } from '@/lib/entra-token'
 import { useEnter } from '@/lib/member'

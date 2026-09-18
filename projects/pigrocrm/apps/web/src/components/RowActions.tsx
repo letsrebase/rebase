@@ -1,12 +1,12 @@
 import { MoreHorizontal } from 'lucide-react'
 import type { KeyboardEvent, MouseEvent } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+} from '@rebase/ui/dropdown-menu'
 
 /**
  * One thing a row can do.

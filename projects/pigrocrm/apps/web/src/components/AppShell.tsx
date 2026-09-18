@@ -29,7 +29,7 @@ import { SETTINGS_TABS, type SettingsTabValue } from '@/features/settings/tabs'
 import { ConnectAgentDialog } from '@/features/tokens/ConnectAgentDialog'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,10 +37,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+} from '@rebase/ui/dropdown-menu'
 import { useAuth, useIsAdmin } from '@/lib/auth'
 import { roleLabel } from '@/lib/roles'
-import { cn } from '@/lib/utils'
+import { cn } from '@rebase/ui/cn'
 
 /**
  * The shell of the app: a dark sidebar on the left, everything else in a white panel

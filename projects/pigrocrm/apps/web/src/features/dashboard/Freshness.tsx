@@ -1,6 +1,6 @@
 import { RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 
 /**
  * §7.2: the age of the answer is shown, not implied. A number with no age is a number the

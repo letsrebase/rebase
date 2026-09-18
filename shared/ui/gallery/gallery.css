@@ -1,0 +1,10 @@
+/* The gallery renders on exactly what an application renders on, in the order the
+   package requires: the two stylesheets the primitives need before Tailwind's
+   expansion, Tailwind, then the tokens. If this page and a product disagree, one of
+   them is not importing the package the way `before-tailwind.css` documents. */
+@import '../before-tailwind.css';
+@import 'tailwindcss';
+@import '../tokens.css';
+
+/* `root` is this directory (vite.config.ts), so Tailwind scans it automatically; the
+   primitives one level up are declared by `tokens.css` itself. Nothing else here. */

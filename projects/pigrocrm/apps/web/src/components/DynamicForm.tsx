@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { DynamicFieldRenderer } from './DynamicFieldRenderer'
 import { fieldErrorFrom, type ProblemDetail } from '@/lib/api'
 import type { FieldDefinition } from '@/lib/schema'
-import { cn } from '@/lib/utils'
+import { cn } from '@rebase/ui/cn'
 
 interface Props {
   fields: FieldDefinition[]

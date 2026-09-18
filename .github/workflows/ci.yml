@@ -492,7 +492,11 @@ jobs:
     uses: ./.github/workflows/_node-gate.yml
     with:
       filter: '@rebase/ui'
-      build: false
+      # The package ships source, which each application bundles itself, so there was
+      # nothing to build until REB-300. Its build is the gallery, and building it is
+      # what proves the eighteen primitives still compile against Tailwind and the
+      # tokens outside an application.
+      build: true
 
   # Tier 3, and scoped like everything else: an image nobody can have changed is an
   # image not worth two minutes of a metered runner.

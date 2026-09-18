@@ -5,7 +5,7 @@
  */
 import { Copy } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 
 export function CopyPrompt({ text, summary = 'Prompt per l’assistente' }: { text: string; summary?: string }) {
   async function copy() {

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { RowActions } from '@/components/RowActions'
 import { StatusPill } from '@/components/StatusPill'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import { DataTable, type DataTableFeatures } from '@/components/DataTable'
 import {
   Dialog,
@@ -12,17 +12,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+} from '@rebase/ui/dialog'
+import { Input } from '@rebase/ui/input'
+import { Label } from '@rebase/ui/label'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
+} from '@rebase/ui/select'
+import { Textarea } from '@rebase/ui/textarea'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { fieldErrorFrom } from '@/lib/api'

@@ -1,6 +1,6 @@
 import { DndContext, PointerSensor, useDroppable, useSensor, useSensors } from '@dnd-kit/core'
 import type { DragEndEvent } from '@dnd-kit/core'
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@rebase/ui/badge'
 import { KanbanCard } from './KanbanCard'
 import { sumValorePrevisto } from './columns'
 import type { Deal, Stage } from './queries'

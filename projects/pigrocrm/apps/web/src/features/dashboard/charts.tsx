@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { cn } from '@rebase/ui/cn'
 
 /**
  * Four shapes, no charting library: big numbers, horizontal bars as CSS widths, one

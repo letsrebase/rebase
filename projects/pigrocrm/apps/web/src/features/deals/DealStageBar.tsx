@@ -1,4 +1,4 @@
-import { cn } from '@/lib/utils'
+import { cn } from '@rebase/ui/cn'
 import type { Deal, Stage } from './queries'
 
 /**

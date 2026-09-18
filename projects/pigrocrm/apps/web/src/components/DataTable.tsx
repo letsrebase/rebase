@@ -1,7 +1,7 @@
 import { tableFeatures, useTable, type ColumnDef, type RowData } from '@tanstack/react-table'
 import type { KeyboardEvent } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton } from '@rebase/ui/skeleton'
 import {
   Table,
   TableBody,
@@ -9,8 +9,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table'
-import { cn } from '@/lib/utils'
+} from '@rebase/ui/table'
+import { cn } from '@rebase/ui/cn'
 
 // TanStack Table v9 (pinned exactly in package.json) is a from-scratch rewrite of
 // v8, the API the original brief for this component was written against --

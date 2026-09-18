@@ -1,6 +1,6 @@
 import { LayoutDashboard } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { CommercialTab } from './CommercialTab'
 import { EconomicTab } from './EconomicTab'
 import { PeriodPicker } from './PeriodPicker'

@@ -1,16 +1,16 @@
 import { useState } from 'react'
 import { DynamicForm } from '@/components/DynamicForm'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+} from '@rebase/ui/dialog'
+import { Input } from '@rebase/ui/input'
+import { Label } from '@rebase/ui/label'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import type { FieldDefinition, FieldType } from '@/lib/schema'
 import {

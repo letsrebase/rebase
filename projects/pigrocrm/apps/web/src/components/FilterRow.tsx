@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { Button } from '@rebase/ui/button'
+import { cn } from '@rebase/ui/cn'
 
 /**
  * The «riga filtri» of the design spec (§4): the chips on the left, the search box and

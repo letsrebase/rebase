@@ -1,8 +1,12 @@
-/* The hub's stylesheet. Every application token now comes from `@rebase/ui`, declared
-   once for both products (REB-299): until that card this file was a copy of the CRM's,
-   said so in its own header, and could drift from it silently.
+/* The hub's stylesheet. Every application token and every primitive now comes from
+   `@rebase/ui`, declared once for both products (REB-299 for the tokens, REB-300 for
+   the primitives): until the first of those this file was a copy of the CRM's, said so
+   in its own header, and could drift from it silently.
 
-   No shadcn/tailwind.css and no tw-animate-css: the six primitives here need neither.
+   The import order is the package's and is load-bearing: `before-tailwind.css` first
+   (the animation and variant stylesheets the primitives need, which Tailwind's
+   expansion would strand), then `tailwindcss`, then the tokens, whose `@theme` has to
+   win over Tailwind's defaults.
 
    What is left below is the hub's alone: the `.site` scope. The chooser, the two
    wizards and the thanks page are the landing continued, reached mid-sentence from its
@@ -11,6 +15,7 @@
    and 4px (the record of 2026-09-18). Squared and the ink colours are no longer this
    scope's business: they are the default everywhere. `Shell` carries the `site` class
    on all four public pages (ORB-74). */
+@import '@rebase/ui/before-tailwind.css';
 @import 'tailwindcss';
 @import '@rebase/ui/tokens.css';
 

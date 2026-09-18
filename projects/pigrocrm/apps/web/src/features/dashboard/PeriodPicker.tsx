@@ -1,4 +1,4 @@
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import { currentMonth, presetQuarter, presetYear, type Periodo } from './periodo'
 
 /**

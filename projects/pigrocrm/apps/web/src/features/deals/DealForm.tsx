@@ -1,21 +1,21 @@
 import { useState } from 'react'
 import { DynamicForm } from '@/components/DynamicForm'
-import { Button } from '@/components/ui/button'
+import { Button } from '@rebase/ui/button'
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog'
-import { Label } from '@/components/ui/label'
+} from '@rebase/ui/dialog'
+import { Label } from '@rebase/ui/label'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
+} from '@rebase/ui/select'
 import { useCustomers } from '@/features/customers/queries'
 import type { ProblemDetail } from '@/lib/api'
 import { clearedNativeValue, type FieldDefinition } from '@/lib/schema'

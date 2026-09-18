@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
+import { Button } from '@rebase/ui/button'
+import { Textarea } from '@rebase/ui/textarea'
 import { ApiError, admin, type Comment, type CommentKind } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 

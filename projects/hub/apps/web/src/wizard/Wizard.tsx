@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { Button } from '@rebase/ui/button'
+import { cn } from '@rebase/ui/cn'
 import './site-controls.css'
 
 /**

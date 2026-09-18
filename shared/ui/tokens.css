@@ -16,6 +16,14 @@
 @import '@rebase/brand/font.css';
 @import '@rebase/brand/palette.css';
 
+/* The primitives live beside this file, and Tailwind scans no path under
+   `node_modules`, which is where a consuming application sees them (a pnpm symlink to
+   `shared/ui`). Declared here rather than in each application's stylesheet: a class
+   used only by a primitive, `animate-in` or `data-[state=checked]:bg-primary`, is
+   emitted for every consumer because this import carries its own sources with it.
+   Resolved against this file, so it follows the package wherever it is linked. */
+@source './*.tsx';
+
 /* Tailwind v4 defaults `dark:` to the OS `prefers-color-scheme` media query. No
    application here has a dark theme since 2026-09-18, and nothing sets a `.dark`
    class, so the variant is bound to that class and every `dark:` utility the shadcn

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Input } from '@/components/ui/input'
+import { Input } from '@rebase/ui/input'
 import { toProblem } from '@/lib/api'
 import { formatHoursValue } from './columns'
 import { useDeleteTimeEntry, useLogTime, useUpdateHours } from './queries'
