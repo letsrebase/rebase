@@ -5,7 +5,7 @@
   "tsx": true,
   "tailwind": {
     "config": "",
-    "css": "src/styles/tokens.css",
+    "css": "gallery/gallery.css",
     "baseColor": "neutral",
     "cssVariables": true,
     "prefix": ""
@@ -13,11 +13,11 @@
   "iconLibrary": "lucide",
   "rtl": false,
   "aliases": {
-    "components": "@/components",
-    "utils": "@rebase/ui/cn",
-    "ui": "@/components/ui",
-    "lib": "@/lib",
-    "hooks": "@/hooks"
+    "components": ".",
+    "utils": "./cn",
+    "ui": ".",
+    "lib": ".",
+    "hooks": "."
   },
   "menuColor": "default",
   "menuAccent": "subtle",

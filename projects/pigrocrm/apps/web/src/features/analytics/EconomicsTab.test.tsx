@@ -26,7 +26,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 const mockAuth = { isAdmin: true }
 vi.mock('@/lib/auth', () => ({ useIsAdmin: () => mockAuth.isAdmin }))
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('@rebase/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const DEAL = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
 const CUSTOMER = 'bbbbbbbb-bbbb-7bbb-8bbb-bbbbbbbbbbbb'

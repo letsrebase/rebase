@@ -1,6 +1,6 @@
 import { BadgeEuro, Play } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { RowActions } from '@/components/RowActions'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'

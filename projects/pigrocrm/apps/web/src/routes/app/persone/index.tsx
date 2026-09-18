@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Plus, Search, Users } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { DataTable } from '@/components/DataTable'
 import { FilterRow } from '@/components/FilterRow'
 import { PageHeader } from '@/components/PageHeader'

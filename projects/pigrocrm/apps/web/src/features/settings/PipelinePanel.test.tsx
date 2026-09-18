@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PipelinePanel } from './PipelinePanel'
 import { api } from '@/lib/api'
@@ -10,7 +10,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), DELETE: vi.fn(), PATCH: vi.fn() } }
 })
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
 // openapi-fetch resolves with `{data|error, response}` for every HTTP outcome --
 // it never rejects for an HTTP error status. See queries.test.tsx's identical

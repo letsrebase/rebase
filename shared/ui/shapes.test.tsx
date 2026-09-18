@@ -130,9 +130,11 @@ describe('the floating surfaces', () => {
   )
 
   it('leaves no step shadow anywhere in the primitives', () => {
-    // `shadow-[4px_4px_0_0_...]` was the pixel system's signature. The one arbitrary
-    // shadow that stays is the sidebar rail's `0 0 0 1px` ring, which is a border
-    // drawn as a shadow, not a step.
+    // `shadow-[4px_4px_0_0_...]` was the pixel system's signature, and it arrives
+    // through a token now, never typed into a component. This scans the directory it
+    // sits in, which since REB-300 is the package: the five generated components that
+    // stayed in the CRM, the sidebar rail's `0 0 0 1px` ring among them, are scanned by
+    // that application's own `components/ui/shadows.test.tsx`.
     for (const name of readdirSync(__dirname).filter((f) => f.endsWith('.tsx') && !f.includes('.test.'))) {
       for (const [, value] of readFileSync(join(__dirname, name), 'utf-8').matchAll(/shadow-\[([^\]]+)\]/g)) {
         expect(value, name).toMatch(/^0_0_0_1px_/)

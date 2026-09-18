@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { toast } from 'sonner'
 
 import { Badge } from '../badge'
 import { Button } from '../button'
@@ -65,7 +64,7 @@ import {
   SheetTrigger,
 } from '../sheet'
 import { Skeleton } from '../skeleton'
-import { Toaster } from '../sonner'
+import { Toaster, toast } from '../sonner'
 import {
   Table,
   TableBody,
@@ -96,6 +95,8 @@ const open = new URLSearchParams(window.location.search).get('open')
 
 const BUTTON_VARIANTS = ['default', 'outline', 'secondary', 'ghost', 'destructive', 'link'] as const
 const BUTTON_SIZES = ['xs', 'sm', 'default', 'lg'] as const
+const ICON_SIZES = ['icon-xs', 'icon-sm', 'icon', 'icon-lg'] as const
+const SHEET_SIDES = ['right', 'left', 'top', 'bottom'] as const
 const BADGE_VARIANTS = ['default', 'secondary', 'destructive', 'outline', 'ghost', 'link', 'pill'] as const
 const DOT_TINTS = ['ink', 'muted', 'accent', 'gold', 'danger'] as const
 
@@ -113,7 +114,7 @@ function Section({
   return (
     <section className="flex flex-col gap-3 border-t border-border py-8" id={title.toLowerCase().replace(/\s+/g, '-')}>
       <header className="flex flex-col gap-1">
-        <h2 className="font-heading text-base font-medium">{title}</h2>
+        <h2 className="text-base font-medium">{title}</h2>
         {note ? <p className="max-w-prose text-sm text-muted-foreground">{note}</p> : null}
       </header>
       <div className={cn('flex flex-wrap items-start gap-6', className)}>{children}</div>
@@ -135,17 +136,18 @@ export function Gallery() {
     <TooltipProvider>
       <div className="mx-auto flex max-w-5xl flex-col px-6 py-10">
         <header className="flex flex-col gap-2 pb-6">
-          <h1 className="font-heading text-2xl font-medium">@rebase/ui</h1>
+          <h1 className="text-2xl font-medium">@rebase/ui</h1>
           <p className="max-w-prose text-sm text-muted-foreground">
             The eighteen primitives the hub and the CRM share, on the tokens of the
             application-variant record: squared, 1px ink lines, one 4px step shadow on
-            what floats and none on what rests.
+            what floats and none on what rests. Every variant, every size and every
+            state each one declares, so a review has one page instead of two products.
           </p>
         </header>
 
         <Section
           title="Button"
-          note="Six variants, four sizes, plus the icon sizes, disabled and invalid. The primary carries the 2px line of the site; the rest carry 1px."
+          note="Six variants, the four text sizes and the four icon sizes, each plus disabled and invalid. The primary carries the 2px line of the site; the rest carry 1px."
         >
           {BUTTON_VARIANTS.map((variant) => (
             <Row key={variant} label={variant}>
@@ -162,13 +164,12 @@ export function Gallery() {
               </Button>
             ))}
           </Row>
-          <Row label="icon">
-            <Button size="icon" aria-label="Aggiungi">
-              +
-            </Button>
-            <Button size="icon-sm" variant="outline" aria-label="Aggiungi">
-              +
-            </Button>
+          <Row label="icon sizes">
+            {ICON_SIZES.map((size) => (
+              <Button key={size} size={size} variant="outline" aria-label={`Aggiungi (${size})`}>
+                +
+              </Button>
+            ))}
           </Row>
           <Row label="invalid">
             <Button aria-invalid>Salva</Button>
@@ -275,9 +276,9 @@ export function Gallery() {
               <Button variant="outline">Apri</Button>
             </CardFooter>
           </Card>
-          <Card className="w-72">
+          <Card className="w-72" size="sm">
             <CardHeader>
-              <CardTitle>Skeleton</CardTitle>
+              <CardTitle>Skeleton, in the sm card</CardTitle>
               <CardDescription>Lo stato di caricamento</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
@@ -332,7 +333,7 @@ export function Gallery() {
           </div>
         </Section>
 
-        <Section title="Tabs" note="Both variants: the underlined row, and the same row with no rule under it.">
+        <Section title="Tabs" note="Both variants, and the vertical orientation: the underlined row, the same row with no rule under it, and the column.">
           <Tabs defaultValue="uno" className="w-72">
             <TabsList>
               <TabsTrigger value="uno">Dati</TabsTrigger>
@@ -351,6 +352,13 @@ export function Gallery() {
             </TabsList>
             <TabsContent value="uno">Senza la riga sotto.</TabsContent>
           </Tabs>
+          <Tabs defaultValue="uno" orientation="vertical" className="w-72">
+            <TabsList>
+              <TabsTrigger value="uno">Dati</TabsTrigger>
+              <TabsTrigger value="due">Fatture</TabsTrigger>
+            </TabsList>
+            <TabsContent value="uno">In verticale.</TabsContent>
+          </Tabs>
         </Section>
 
         <Section title="Separator" note="Both orientations.">
@@ -368,7 +376,7 @@ export function Gallery() {
 
         <Section
           title="Floating surfaces"
-          note="Dialog, sheet, dropdown, popover and tooltip: each on the 4px step shadow. Open one on load with ?open=dialog, sheet, menu, popover or select."
+          note="Dialog, sheet on all four sides, dropdown, popover and tooltip: each on the 4px step shadow. Open one on load with ?open=dialog, sheet, sheet-left, sheet-top, sheet-bottom, menu, popover or select."
         >
           <Row label="dialog">
             <Dialog defaultOpen={open === 'dialog'}>
@@ -392,24 +400,26 @@ export function Gallery() {
             </Dialog>
           </Row>
           <Row label="sheet">
-            <Sheet defaultOpen={open === 'sheet'}>
-              <SheetTrigger asChild>
-                <Button variant="outline">Apri lo sheet</Button>
-              </SheetTrigger>
-              <SheetContent>
-                <SheetHeader>
-                  <SheetTitle>Nuova fattura</SheetTitle>
-                  <SheetDescription>I campi minimi, il resto dopo.</SheetDescription>
-                </SheetHeader>
-                <div className="flex flex-col gap-3 px-4">
-                  <Label htmlFor="g-sheet-amount">Importo</Label>
-                  <Input id="g-sheet-amount" placeholder="1.200,00" />
-                </div>
-                <SheetFooter>
-                  <Button>Salva</Button>
-                </SheetFooter>
-              </SheetContent>
-            </Sheet>
+            {SHEET_SIDES.map((side) => (
+              <Sheet key={side} defaultOpen={open === `sheet-${side}` || (side === 'right' && open === 'sheet')}>
+                <SheetTrigger asChild>
+                  <Button variant="outline">{side}</Button>
+                </SheetTrigger>
+                <SheetContent side={side}>
+                  <SheetHeader>
+                    <SheetTitle>Nuova fattura</SheetTitle>
+                    <SheetDescription>I campi minimi, il resto dopo.</SheetDescription>
+                  </SheetHeader>
+                  <div className="flex flex-col gap-3 px-4">
+                    <Label htmlFor={`g-sheet-${side}`}>Importo</Label>
+                    <Input id={`g-sheet-${side}`} placeholder="1.200,00" />
+                  </div>
+                  <SheetFooter>
+                    <Button>Salva</Button>
+                  </SheetFooter>
+                </SheetContent>
+              </Sheet>
+            ))}
           </Row>
           <Row label="dropdown">
             <DropdownMenu defaultOpen={open === 'menu'}>

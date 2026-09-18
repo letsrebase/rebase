@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { Link } from '@tanstack/react-router'
 import { Button } from '@rebase/ui/button'
 import {

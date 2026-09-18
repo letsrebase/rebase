@@ -1,4 +1,4 @@
-import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { Toaster as Sonner, toast, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
 // `light`, not next-themes' `system`: the application has one colour scheme since
@@ -36,7 +36,13 @@ const Toaster = ({ ...props }: ToasterProps) => {
       }
       toastOptions={{
         classNames: {
-          toast: "cn-toast",
+          // The step shadow, like every other surface that floats: sonner's own
+          // stylesheet hardcodes `box-shadow: 0 4px 12px rgba(0,0,0,.1)` on
+          // `[data-sonner-toast]` and exposes no variable for it, so the only way to
+          // reach it is a class with more specificity than a single attribute
+          // selector, which `shadow-md!` is. Without this the one floating surface in
+          // the product with a blur is the toast.
+          toast: "cn-toast shadow-md! ring-1 ring-foreground/10",
         },
       }}
       {...props}
@@ -44,4 +50,12 @@ const Toaster = ({ ...props }: ToasterProps) => {
   )
 }
 
-export { Toaster }
+/**
+ * `toast` is re-exported rather than imported from `sonner` directly by each caller,
+ * and that is not a convenience. The toast queue is module state inside sonner: two
+ * resolutions of the package mean the `<Toaster>` rendered here listens to one queue
+ * while `toast()` pushes onto the other, so every toast in the application silently
+ * stops appearing, with a green build and a green suite. One import path is what makes
+ * that impossible: the application declares no `sonner` of its own.
+ */
+export { Toaster, toast }

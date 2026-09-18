@@ -347,9 +347,10 @@ describe('one colour scheme', () => {
   })
 
   it('still binds dark: to that class, so no OS preference reaches a utility', () => {
-    // Tailwind v4 defaults `dark:` to prefers-color-scheme. The generated primitives
-    // carry `dark:` utilities (`dark:bg-input/30` on every field), and bound to the OS
-    // they would fill a visitor's fields with ink at 30% over the paper, which is the
+    // Tailwind v4 defaults `dark:` to prefers-color-scheme. The primitives in this
+    // package carry no `dark:` utility since REB-300, but the five generated components
+    // that stayed in the CRM still do (`dark:bg-input/30` on a field), and bound to the
+    // OS they would fill a visitor's fields with ink at 30% over the paper, which is the
     // bug ORB-138 fixed in the hub. Bound to a class nobody adds, they stay inert.
     expect(tokensCss).toMatch(/@custom-variant dark \(&:is\(\.dark \*\)\);/)
   })

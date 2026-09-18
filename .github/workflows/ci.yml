@@ -483,8 +483,9 @@ jobs:
       filter: '@rebase/analytics'
       build: false
 
-  # shared/ui's own suite: the token contract test, run by no other tier for the same
-  # reason as shared/analytics above. `build: false`: the package ships one stylesheet.
+  # shared/ui's own suite: the token contract test and the three primitive suites that
+  # came with the components in REB-300, run by no other tier for the same reason as
+  # shared/analytics above.
   shared-ui:
     name: shared/ui · web
     needs: changes

@@ -1,7 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import { Plus, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { RowActions } from '@/components/RowActions'
 import { StatusPill } from '@/components/StatusPill'
 import { Button } from '@rebase/ui/button'

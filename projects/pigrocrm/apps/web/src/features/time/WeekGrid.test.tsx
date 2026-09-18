@@ -40,7 +40,7 @@ vi.mock('@/lib/auth', () => ({
   useAuth: () => ({ user: session.user, isLoading: false, login: vi.fn(), logout: vi.fn() }),
 }))
 
-vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
+vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
 
 const DEAL = 'aaaaaaaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa'
 

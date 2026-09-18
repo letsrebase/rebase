@@ -19,17 +19,19 @@
 /* The primitives live beside this file, and Tailwind scans no path under
    `node_modules`, which is where a consuming application sees them (a pnpm symlink to
    `shared/ui`). Declared here rather than in each application's stylesheet: a class
-   used only by a primitive, `animate-in` or `data-[state=checked]:bg-primary`, is
+   used only by a primitive, `animate-in` or `data-checked:bg-primary`, is
    emitted for every consumer because this import carries its own sources with it.
    Resolved against this file, so it follows the package wherever it is linked. */
 @source './*.tsx';
 
 /* Tailwind v4 defaults `dark:` to the OS `prefers-color-scheme` media query. No
    application here has a dark theme since 2026-09-18, and nothing sets a `.dark`
-   class, so the variant is bound to that class and every `dark:` utility the shadcn
-   primitives carry stays inert. Bound to the OS instead, a visitor whose laptop is in
-   dark mode would get `dark:bg-input/30` on every field: ink at 30% over the paper,
-   which is the bug ORB-138 fixed in the hub. The binding is what keeps the utilities
+   class, so the variant is bound to that class instead. The eighteen primitives in
+   this package carry no `dark:` utility at all since REB-300; what this binding still
+   protects is the five generated components that stayed in the CRM, which do
+   (`input-group.tsx`, `avatar.tsx`, `calendar.tsx`). Bound to the OS, a visitor whose
+   laptop is in dark mode would get `dark:bg-input/30` on those fields: ink at 30% over
+   the paper, which is the bug ORB-138 fixed in the hub. The binding is what keeps them
    harmless; the block they would read does not exist. */
 @custom-variant dark (&:is(.dark *));
 

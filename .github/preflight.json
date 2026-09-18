@@ -264,6 +264,7 @@
         "projects/pigrocrm/docker-compose.yml",
         "projects/pigrocrm/deploy/nginx/spa.conf",
         ".dockerignore",
+        "shared/ui/**",
         "pnpm-lock.yaml",
         "uv.lock"
       ],
@@ -296,6 +297,7 @@
         "projects/hub/docker-compose.yml",
         "projects/hub/deploy/**",
         ".dockerignore",
+        "shared/ui/**",
         "pnpm-lock.yaml",
         "uv.lock"
       ],

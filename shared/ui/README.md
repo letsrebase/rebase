@@ -1,7 +1,9 @@
 # @rebase/ui
 
-The tokens every rebase application renders on. One file, `tokens.css`, imported by
-each SPA in place of a copy of its own.
+The squared system every rebase application renders on: the tokens, the eighteen
+primitives that read them, the class merger they compose with, and a gallery that shows
+the lot on one page. Each SPA imports this package instead of keeping a copy of its
+own.
 
 Squared by default: radius zero across the derived scale, 1px full-strength ink lines
 with the site's 2px reserved for the primary button and the focus ring, one ink step
@@ -29,19 +31,6 @@ typeface arrive through that file, from `@rebase/brand`, so an application does 
 import them a second time, and it carries `@source './*.tsx'` so the classes used only
 by a primitive are emitted for every consumer: Tailwind scans no path under
 `node_modules`, which is where an application sees this package.
-
-## What stays in the application
-
-- **The hub's `.site` scope.** The chooser, the two wizards and the thanks page are
-  the landing continued, not the application, so they keep its own 2px line and 8px
-  step and its 7% grid. They are the one surface that overrides what is here, which is
-  why the shadow slots are declared as `--shadow-app-*` and read through a bare
-  `var()` in `@theme inline`: Tailwind v4 bakes the lengths of a compound theme value
-  into every utility at build time, so a scope can only repoint the indirection, never
-  `--shadow-xs` itself.
-- **Anything one product has and the other does not.** Five of the CRM's generated
-  components, listed below, and its `tw-animate-css` and `shadcn/tailwind.css` imports
-  until REB-300, which moved them here with the primitives they serve.
 
 ## What moved in here, and what it replaced
 
@@ -72,7 +61,16 @@ of letting a visitor's OS apply them.
 
 ## What stays in the application, and why
 
-Five of the CRM's generated components did not move: `avatar`, `calendar`, `command`,
+**The hub's `.site` scope.** The chooser, the two wizards and the thanks page are the
+landing continued, not the application, so they keep its own 2px line and 8px step and
+its 7% grid. They are the one surface that overrides what is here, which is why the
+shadow slots are declared as `--shadow-app-*` and read through a bare `var()` in
+`@theme inline`: Tailwind v4 bakes the lengths of a compound theme value into every
+utility at build time, so a scope can only repoint the indirection, never `--shadow-xs`
+itself. Those overrides target `[data-slot=...]`, so they still reach the primitives
+after the move, which is what the hub's wizard proves on every render.
+
+**Five of the CRM's generated components.** They did not move: `avatar`, `calendar`, `command`,
 `input-group` and `sidebar`. None of them has a second consumer. The hub's shell is its
 own (REB-279 rewrites it) and its screens have no command palette, no date picker and no
 avatar, so moving those would be moving one application's code into a package for three.
@@ -84,6 +82,17 @@ The hub's seven hand-written primitives (button, input, textarea, card, label, b
 dialog) were deleted rather than merged: the CRM's radix versions are the ones with the
 states, the variants and the tests behind them.
 
+`sonner` is the one dependency an application may not declare for itself. Its toast
+queue is module state, so two resolutions mean the `<Toaster>` this package renders
+listens to one queue while `toast()` pushes onto the other and every toast disappears
+with a green build: `@rebase/ui/sonner` exports both, and the CRM's callers import
+`toast` from there.
+
+`components.json` here is the generator's own configuration, so a nineteenth primitive
+is added in this package (`pnpm --filter @rebase/ui exec shadcn add <name>`) rather than
+in an application and moved afterwards. The CRM keeps its own, pointing at the five that
+stayed, with its `utils` alias now naming `@rebase/ui/cn`.
+
 ## The gallery
 
 ```
@@ -91,10 +100,11 @@ pnpm --filter @rebase/ui dev     # serves gallery/index.html
 pnpm --filter @rebase/ui build   # emits gallery/dist
 ```
 
-One page, every primitive, every variant, size and state, in the order a reader expects
-rather than the order the files are in. Overlays cannot be shown by rendering them,
-since each lives behind a trigger and a portal, so `?open=dialog|sheet|menu|popover|select`
-opens exactly one on load: a screenshot of an open surface is a URL rather than a
+One page, every primitive, every variant, size and state it declares, in the order a
+reader expects rather than the order the files are in. Overlays cannot be shown by
+rendering them, since each lives behind a trigger and a portal, so
+`?open=dialog|sheet|sheet-left|sheet-top|sheet-bottom|menu|popover|select` opens exactly
+one on load: a screenshot of an open surface is a URL rather than a
 sequence of clicks. It renders on the same three imports an application uses, in the
 same order, so a difference between this page and a product screen is a difference in
 how that product imports the package.

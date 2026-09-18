@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { InvoiceActions } from './InvoiceActions'
 import { InvoiceStateBadge } from './InvoiceStateBadge'
@@ -16,7 +16,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
     api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), PATCH: vi.fn(), DELETE: vi.fn() },
   }
 })
-vi.mock('sonner', () => ({
+vi.mock('@rebase/ui/sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }))
 // «Segna trasmessa» follows the server's own admin gate; the rest of the actions do

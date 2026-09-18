@@ -1,6 +1,6 @@
 import { Download, FileSpreadsheet, Loader2 } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'

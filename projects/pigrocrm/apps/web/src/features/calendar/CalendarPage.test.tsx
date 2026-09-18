@@ -20,7 +20,7 @@ vi.mock('@/lib/auth', () => ({
   }),
 }))
 
-vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
+vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }))
 
 // `Link` needs a router; what these tests are about is what the day shows, so the link
 // is rendered as an anchor and its target asserted as a prop would be.

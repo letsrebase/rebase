@@ -6,7 +6,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { api } from '@/lib/api'
 import { GetStartedPage } from './GetStartedPage'
 import { INTRO_PROMPT, STEP_PROMPTS } from './prompts'
@@ -30,7 +30,7 @@ vi.mock('@/lib/auth', () => ({
   useCanWrite: () => auth.user?.ruolo !== 'readonly',
 }))
 
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('@rebase/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ to, children, className }: { to: string; children: React.ReactNode; className?: string }) => (

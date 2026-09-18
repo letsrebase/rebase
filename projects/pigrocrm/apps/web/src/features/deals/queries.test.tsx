@@ -1,14 +1,14 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fetchAllDeals, useMoveDeal } from './queries'
 import type { Deal } from './queries'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query'
 
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
 const mockGet = vi.spyOn(api, 'GET')
 const mockPatch = vi.spyOn(api, 'PATCH')

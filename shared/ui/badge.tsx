@@ -43,8 +43,8 @@ const BADGE_DOTS = {
   ink: "bg-foreground",
   muted: "bg-muted-foreground",
   accent: "bg-accent",
-  danger: "bg-[var(--color-watermelon)]",
-  gold: "bg-[var(--color-royal-gold)]",
+  danger: "bg-watermelon",
+  gold: "bg-royal-gold",
 } as const
 
 type BadgeDot = keyof typeof BADGE_DOTS

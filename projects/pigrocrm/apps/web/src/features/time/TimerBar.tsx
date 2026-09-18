@@ -1,6 +1,6 @@
 import { BadgeEuro, Pencil, Play, Square, Timer, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { Button } from '@rebase/ui/button'
 import { Checkbox } from '@rebase/ui/checkbox'
 import { Input } from '@rebase/ui/input'

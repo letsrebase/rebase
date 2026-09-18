@@ -27,7 +27,7 @@ describe('Badge', () => {
     expect(badge.className).toContain('font-medium')
     expect(badge.className).toContain('px-2.5')
     expect(badge.className).toContain('py-0.5')
-    expect(badge.className).toContain('bg-[var(--color-paper)]')
+    expect(badge.className).toContain('bg-paper')
     expect(badge.className).toContain('text-foreground')
   })
 
@@ -40,8 +40,8 @@ describe('Badge', () => {
     ['ink', 'bg-foreground'],
     ['muted', 'bg-muted-foreground'],
     ['accent', 'bg-accent'],
-    ['danger', 'bg-[var(--color-watermelon)]'],
-    ['gold', 'bg-[var(--color-royal-gold)]'],
+    ['danger', 'bg-watermelon'],
+    ['gold', 'bg-royal-gold'],
   ] as const)('draws a 6px %s dot before the label', (dot, expected) => {
     const { container } = render(
       <Badge variant="pill" dot={dot}>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { Input } from '@rebase/ui/input'
 import { toProblem } from '@/lib/api'
 import { formatHoursValue } from './columns'

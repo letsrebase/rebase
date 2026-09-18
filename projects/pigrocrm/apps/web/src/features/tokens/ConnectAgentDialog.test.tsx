@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useBlocker } from '@tanstack/react-router'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConnectAgentDialog } from './ConnectAgentDialog'
 import { api } from '@/lib/api'
@@ -12,7 +12,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), DELETE: vi.fn(), PATCH: vi.fn() } }
 })
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 // `useCreateToken` (queries.ts) reads `useAuth()` for the query-invalidation key, the
 // same as `TokensPanel`'s own test mocks it: this dialog needs no `AuthProvider` of its
 // own, just a signed-in user for that hook to read.

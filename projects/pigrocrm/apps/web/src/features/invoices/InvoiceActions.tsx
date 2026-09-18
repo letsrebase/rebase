@@ -10,7 +10,7 @@ import {
   Undo2,
 } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { Button } from '@rebase/ui/button'
 import {
   Dialog,

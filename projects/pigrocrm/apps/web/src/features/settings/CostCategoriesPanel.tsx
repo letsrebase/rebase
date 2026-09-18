@@ -1,6 +1,6 @@
 import { Plus, Sparkles } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { RowActions, type RowAction } from '@/components/RowActions'
 import { StatusPill } from '@/components/StatusPill'

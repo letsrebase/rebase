@@ -1,7 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import { Copy, KeyRound, Plus } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { DateCell } from '@/components/cells'
 import { PageHeader } from '@/components/PageHeader'
 import { RowActions } from '@/components/RowActions'

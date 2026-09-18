@@ -4,7 +4,7 @@
  * stays short, and the prompt is one click away with no state to keep.
  */
 import { Copy } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { Button } from '@rebase/ui/button'
 
 export function CopyPrompt({ text, summary = 'Prompt per l’assistente' }: { text: string; summary?: string }) {

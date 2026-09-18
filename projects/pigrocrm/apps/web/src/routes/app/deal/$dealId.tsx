@@ -1,7 +1,7 @@
 import { Link, createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { Handshake, Pencil, ThumbsDown, Trophy } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@rebase/ui/sonner'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
 import { EntityDetailLayout } from '@/components/EntityDetailLayout'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'

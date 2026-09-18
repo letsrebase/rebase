@@ -54,7 +54,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 // The connect-agent dialog copies text via `sonner`'s toast; nothing here asserts on the
 // toast copy, only that clicking a copy button does not throw for want of a mock.
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
 const mockAuth = vi.hoisted(() => ({ ruolo: 'admin' as string }))
 vi.mock('@/lib/auth', () => ({
