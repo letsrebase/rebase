@@ -9,6 +9,7 @@ import {
   contrastRatio,
   hexToRgb,
   paletteFrom,
+  srgbToLinear,
 } from '@rebase/brand/contrast'
 
 /**
@@ -28,9 +29,12 @@ const brandCss = readFileSync(
 )
 const css = `${brandCss}\n${tokensCss}`
 
-/* The contrast maths and the palette reader come from `@rebase/brand` since REB-301:
-   the same WCAG formula was written here, in the hub's test and in the site's, with
-   two different knees in the sRGB transfer function between them. */
+/* The contrast maths, the palette reader and the sRGB transfer function come from
+   `@rebase/brand` since REB-301: the same WCAG formula was written here, in the hub's
+   test and in the site's, and one of the three had the wrong knee. The Oklab pipeline
+   below stays local, because a chart mix is this package's problem rather than the
+   palette's, but its first step is that same transfer function and there is one of
+   it now. */
 
 /** Reads whatever the palette currently assigns a colour token, so every contrast
  *  figure below is recomputed from the live value on every run. A future edit to a hex
@@ -50,8 +54,6 @@ function tokenHex(name: string): string {
    below is the CSS Color 4 definition of that mix, verified against Chromium's own
    `getComputedStyle` output for all five expressions: it agrees to the byte. */
 
-const srgbToLinear = (c: number): number =>
-  c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
 const linearToSrgb = (c: number): number =>
   c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055
 

@@ -1,4 +1,8 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+
 import AxeBuilder from '@axe-core/playwright'
+import { hexToRgb, paletteFrom } from '@rebase/brand/contrast'
 import { expect, test, type Page } from '@playwright/test'
 
 /**
@@ -17,7 +21,14 @@ import { expect, test, type Page } from '@playwright/test'
  * have been a fourth thing to keep true. The browser already knows.
  */
 
-const OVERLAYS = ['dialog', 'sheet', 'menu', 'popover', 'select'] as const
+/** Each overlay the gallery can open on a query parameter, and the slot it portals. */
+const OVERLAYS = {
+  dialog: 'dialog-content',
+  sheet: 'sheet-content',
+  menu: 'dropdown-menu-content',
+  popover: 'popover-content',
+  select: 'select-content',
+} as const
 
 /**
  * The violations this page is known to carry, asserted exactly rather than filtered
@@ -48,13 +59,26 @@ async function axeIds(page: Page): Promise<string[]> {
   const { violations } = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
-  return [
-    ...new Set(
-      violations
-        .filter((v) => v.impact === 'critical' || v.impact === 'serious' || v.impact === 'moderate')
-        .map((v) => v.id),
-    ),
-  ].sort()
+  // Every violation, at every impact: the list below is an assertion, so filtering by
+  // severity here would be the quiet exception it exists to prevent.
+  return [...new Set(violations.map((v) => v.id))].sort()
+}
+
+/**
+ * The palette as the brand package declares it, so this suite never carries a second
+ * copy of a colour: a hex typed here would be exactly the hand-mixed value the
+ * neighbouring `tokens.test.ts` goes out of its way to make impossible, and a palette
+ * edit would fail these lines pointing at the literal instead of at the token.
+ */
+const palette = paletteFrom(
+  readFileSync(fileURLToPath(import.meta.resolve('@rebase/brand/palette.css')), 'utf-8'),
+)
+
+function rgbOf(token: string): string {
+  const hex = palette[`--color-${token}`]
+  if (!hex) throw new Error(`--color-${token} is not in the brand palette`)
+  const [r, g, b] = hexToRgb(hex)
+  return `rgb(${r}, ${g}, ${b})`
 }
 
 async function computedOf(page: Page, selector: string, property: string): Promise<string> {
@@ -74,12 +98,15 @@ test.describe('the gallery renders the system', () => {
     expect(await axeIds(page), 'axe on the gallery').toEqual(KNOWN['/'])
   })
 
-  for (const overlay of OVERLAYS) {
+  for (const [overlay, slot] of Object.entries(OVERLAYS)) {
     test(`carries exactly the written-down findings with the ${overlay} open`, async ({ page }) => {
       const path = `/?open=${overlay}`
       await page.goto(path)
-      // The surface is portalled and animated: wait for the element, not a timeout.
-      await expect(page.locator('[data-slot$="-content"]').first()).toBeVisible()
+      // The surface is portalled and animated, so wait for the element rather than a
+      // timeout, and for that overlay's own slot: waiting on anything ending in
+      // `-content` is satisfied by the first card on the page, which would let the
+      // whole `?open=` mechanism break without a single test noticing.
+      await expect(page.locator(`[data-slot="${slot}"]`)).toBeVisible()
       expect(await axeIds(page), `axe with ${overlay} open`).toEqual(KNOWN[path])
     })
   }
@@ -98,9 +125,10 @@ test.describe('the gallery renders the system', () => {
         cardBackground: cs(document.querySelector('[data-slot="card"]'))?.backgroundColor ?? null,
       }
     })
-    expect(pairs.destructiveText).toBe('rgb(229, 19, 62)')
-    expect(pairs.linkOnCardText).toBe('rgb(229, 19, 62)')
-    // White, which is the only ground this colour clears AA on (4.67:1).
+    expect(pairs.destructiveText).toBe(rgbOf('watermelon-strong'))
+    expect(pairs.linkOnCardText).toBe(rgbOf('watermelon-strong'))
+    // Plain white, which is the one ground this colour clears AA on and the only
+    // value here that is not a brand token: the card is white, not Paper.
     expect(pairs.cardBackground).toBe('rgb(255, 255, 255)')
   })
 
@@ -148,7 +176,8 @@ test.describe('the gallery renders the system', () => {
   test('draws every line as the ink itself, at one of the two widths', async ({ page }) => {
     await page.goto('/')
     const ink = await computedOf(page, ':root', '--color-prussian-blue')
-    expect(ink.trim()).toBe('#011936')
+    expect(ink.trim()).toBe(palette['--color-prussian-blue'])
+    const inkRgb = rgbOf('prussian-blue')
     const lines = await page.evaluate(() => {
       const out = new Set<string>()
       // Two deliberate exceptions: a field the caller marks invalid draws the
@@ -167,13 +196,15 @@ test.describe('the gallery renders the system', () => {
     })
     expect(lines.length, 'no bordered primitive found').toBeGreaterThan(0)
     for (const line of lines) {
-      expect(line, 'a line that is not 1px or 2px of ink').toMatch(/^(1px|2px) rgb\(1, 25, 54\)$/)
+      expect(line, 'a line that is not 1px or 2px of ink').toMatch(
+        new RegExp(`^(1px|2px) ${inkRgb.replace(/[()]/g, '\\$&')}$`),
+      )
     }
     const invalid = await page.evaluate(() => {
       const el = document.querySelector('[data-slot="input"][aria-invalid]')
       return el ? getComputedStyle(el).borderTopColor : null
     })
-    expect(invalid, 'an invalid field should draw the destructive line').toBe('rgb(229, 19, 62)')
+    expect(invalid, 'an invalid field should draw the destructive line').toBe(rgbOf('watermelon-strong'))
   })
 
   test('ignores an operating system in dark mode, which is ORB-138', async ({ page }) => {
@@ -192,7 +223,7 @@ test.describe('the gallery renders the system', () => {
       text: await computedOf(page, 'body', 'color'),
     }
     expect(dark, 'the OS preference reached a utility').toEqual(light)
-    expect(light.body).toBe('rgb(241, 242, 243)')
+    expect(light.body).toBe(rgbOf('paper'))
   })
 
   test('sits on the 16px grid, and paints it behind the page rather than on a wrapper', async ({ page }) => {

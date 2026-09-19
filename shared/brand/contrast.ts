@@ -6,10 +6,11 @@
  * property of two colours, and the colours are here. Until REB-301 the same WCAG
  * formula was written three times, in `projects/website/src/landing-tokens.test.ts`,
  * `projects/hub/apps/web/src/styles/tokens.test.ts` and `shared/ui/tokens.test.ts`,
- * each with its own rounding of the sRGB transfer function: two used 0.03928 as the
- * knee and one 0.04045, which is the difference between the standard and a typo that
- * has been copied around the web for twenty years. It never changed a verdict at these
- * colours, and that is exactly why nobody would have noticed it start to.
+ * and one of the three wrote the sRGB knee as 0.03928, which is not the number in the
+ * specification but a typo copied around the web for twenty years. On eight-bit
+ * colour the two agree exactly, since no channel value falls between them, so nothing
+ * ever measured differently: what three copies cost is that the next edit to one of
+ * them would not have been.
  *
  * What is deliberately NOT here: resolving a stylesheet. Walking selectors, working
  * out which rule wins on an element and compositing an ancestor chain is the site's
@@ -23,7 +24,6 @@ export type Rgb = [number, number, number]
 
 /** WCAG's own thresholds, named so a test says which one it is asserting. */
 export const AA_TEXT = 4.5
-export const AA_LARGE_TEXT = 3
 /** A border, an icon, a focus ring: WCAG 2.1 SC 1.4.11, non-text contrast. */
 export const AA_NON_TEXT = 3
 
@@ -33,6 +33,9 @@ export function hexToRgb(hex: string): Rgb {
     value.length === 3
       ? `${value[0]}${value[0]}${value[1]}${value[1]}${value[2]}${value[2]}`
       : value
+  // An `#rrggbbaa` would otherwise be read as its opaque half and measured against a
+  // ground it never touches, which is a wrong answer rather than an error.
+  if (full.length !== 6) throw new Error(`${hex} is not a 3 or 6 digit hex colour`)
   return [
     parseInt(full.slice(0, 2), 16),
     parseInt(full.slice(2, 4), 16),
@@ -40,14 +43,21 @@ export function hexToRgb(hex: string): Rgb {
   ]
 }
 
-/** sRGB to linear light, with the 0.04045 knee of the specification. */
-function toLinear(channel: number): number {
-  const c = channel / 255
+/**
+ * One channel of sRGB, 0 to 1, to linear light, with the 0.04045 knee of the
+ * specification. Exported because the chart colours in `@rebase/ui` walk the same
+ * transfer function on their way to OKLab, and that constant may exist once.
+ */
+export function srgbToLinear(c: number): number {
   return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
 }
 
-export function relativeLuminance([r, g, b]: Rgb): number {
-  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b)
+function relativeLuminance([r, g, b]: Rgb): number {
+  return (
+    0.2126 * srgbToLinear(r / 255) +
+    0.7152 * srgbToLinear(g / 255) +
+    0.0722 * srgbToLinear(b / 255)
+  )
 }
 
 /** WCAG 2.x contrast ratio, order-independent. */
@@ -81,7 +91,9 @@ export function blendSrgb(hexA: string, hexB: string, weightAPercent: number): s
  */
 export function paletteFrom(css: string): Record<string, string> {
   const palette: Record<string, string> = {}
-  for (const declaration of css.matchAll(/(--color-[\w-]+)\s*:\s*(#[0-9a-fA-F]{3,8})\s*;/g)) {
+  for (const declaration of css.matchAll(
+    /(--color-[\w-]+)\s*:\s*(#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}))\s*;/g,
+  )) {
     const [, name, hex] = declaration
     if (name && hex) palette[name] = hex.toLowerCase()
   }

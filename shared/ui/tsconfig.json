@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
@@ -15,17 +11,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "skipLibCheck": true,
-    "types": [
-      "node",
-      "vitest/globals"
-    ]
+    "types": ["node", "vitest/globals"]
   },
-  "include": [
-    "*.ts",
-    "*.tsx",
-    "gallery/**/*.ts",
-    "gallery/**/*.tsx",
-    "e2e/**/*.ts",
-    "*.config.ts"
-  ]
+  "include": ["*.ts", "*.tsx", "gallery/**/*.ts", "gallery/**/*.tsx", "e2e/**/*.ts", "*.config.ts"]
 }

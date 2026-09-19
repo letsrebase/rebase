@@ -15,7 +15,9 @@
   /* White text on raw Watermelon measures 4.22:1, enough for a UI component (3:1)
      but short of the 4.5:1 body-text threshold, and that pair is live on the primary
      button label and the default badge. Prussian Blue on top does not fix it either
-     (3.96:1), so this is a same-hue, same-saturation, darker step (HSL h=347.7
+     (4.1685:1, measured with `contrast.ts`; this comment said 3.96:1 until 2026-09-18
+     and no pair in the palette lands on that number), so this is a same-hue,
+     same-saturation, darker step (HSL h=347.7
      s=84.7% l=53.7% -> l=48.7%): white on top is 4.67:1. Watermelon itself is
      unchanged and remains the brand colour for every accent, border, icon and other
      non-text use.
