@@ -1,13 +1,15 @@
 # @rebase/brand
 
-The palette, the typeface, the four-tile mark and the wordmark. One source, no copies,
-read by every surface.
+The palette, the typeface, the four-tile mark, the wordmark, and the contrast maths
+every surface measures its colour pairs with. One source, no copies, read by every
+surface.
 
 | File | What it holds | Who reads it |
 |---|---|---|
 | `palette.css` | Six colours and `--font-sans`, in a Tailwind `@theme` block | The CRM's `tokens.css` imports it; the website extracts it at build time |
 | `font.css` + `fonts/` | Outfit, self-hosted, one variable file for the 300-700 range | Both surfaces |
 | `mark.ts` | The order of the four tiles, and how each surface names them | Both surfaces' tests |
+| `contrast.ts` | WCAG's ratio, the sRGB blend and the palette reader, with the AA thresholds named | The site's token test, the hub's, and `@rebase/ui`'s |
 | `wordmark.svg` | «rebase», as outlines | Any surface that shows the name, and every export |
 | `lockup.svg` | The mark at cap height, then the word | The same, plus the social pictures |
 | `wordmark-paper.svg`, `lockup-paper.svg` | The same two on a dark ground | The landing's dark bands, a dark slide |

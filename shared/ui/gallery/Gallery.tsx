@@ -97,7 +97,7 @@ const BUTTON_VARIANTS = ['default', 'outline', 'secondary', 'ghost', 'destructiv
 const BUTTON_SIZES = ['xs', 'sm', 'default', 'lg'] as const
 const ICON_SIZES = ['icon-xs', 'icon-sm', 'icon', 'icon-lg'] as const
 const SHEET_SIDES = ['right', 'left', 'top', 'bottom'] as const
-const BADGE_VARIANTS = ['default', 'secondary', 'destructive', 'outline', 'ghost', 'link', 'pill'] as const
+const BADGE_VARIANTS = ['default', 'secondary', 'destructive', 'outline', 'ghost', 'pill'] as const
 const DOT_TINTS = ['ink', 'muted', 'accent', 'gold', 'danger'] as const
 
 function Section({
@@ -134,7 +134,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 export function Gallery() {
   return (
     <TooltipProvider>
-      <div className="mx-auto flex max-w-5xl flex-col px-6 py-10">
+      <main className="mx-auto flex max-w-5xl flex-col px-6 py-10">
         <header className="flex flex-col gap-2 pb-6">
           <h1 className="text-2xl font-medium">@rebase/ui</h1>
           <p className="max-w-prose text-sm text-muted-foreground">
@@ -149,7 +149,7 @@ export function Gallery() {
           title="Button"
           note="Six variants, the four text sizes and the four icon sizes, each plus disabled and invalid. The primary carries the 2px line of the site; the rest carry 1px."
         >
-          {BUTTON_VARIANTS.map((variant) => (
+          {BUTTON_VARIANTS.filter((variant) => variant !== 'link').map((variant) => (
             <Row key={variant} label={variant}>
               <Button variant={variant}>Salva</Button>
               <Button variant={variant} disabled>
@@ -157,6 +157,23 @@ export function Gallery() {
               </Button>
             </Row>
           ))}
+          {/* The link variants render on a card, not on the page ground, because that
+              is where the products use them (the CRM's login and signup) and the only
+              ground the watermelon text clears AA on: 4.67:1 on white against 4.17:1
+              on Paper. The gallery showing them on Paper would be the gallery drawing
+              a pair the system does not allow. */}
+          <Card size="sm" className="w-64">
+            <CardContent className="flex flex-col gap-2">
+              <span className="text-xs tracking-wide text-muted-foreground">link, on a card</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="link">Salva</Button>
+                <Button variant="link" disabled>
+                  Salva
+                </Button>
+                <Badge variant="link">Attiva</Badge>
+              </div>
+            </CardContent>
+          </Card>
           <Row label="sizes">
             {BUTTON_SIZES.map((size) => (
               <Button key={size} size={size}>
@@ -179,7 +196,7 @@ export function Gallery() {
           </Row>
         </Section>
 
-        <Section title="Badge" note="Seven variants and the five dot tints.">
+        <Section title="Badge" note="Seven variants and the five dot tints. The link variant is with the buttons, on the card the system requires for it.">
           {BADGE_VARIANTS.map((variant) => (
             <Row key={variant} label={variant}>
               <Badge variant={variant}>Attiva</Badge>
@@ -202,16 +219,16 @@ export function Gallery() {
             <div className="flex w-56 flex-col gap-2">
               <Label htmlFor="g-input">Ragione sociale</Label>
               <Input id="g-input" placeholder="Studio Marangoni S.r.l." />
-              <Input defaultValue="Studio Marangoni S.r.l." />
-              <Input placeholder="Disabilitato" disabled />
-              <Input defaultValue="non valido" aria-invalid />
+              <Input defaultValue="Studio Marangoni S.r.l." aria-label="Ragione sociale, compilata" />
+              <Input placeholder="Disabilitato" disabled aria-label="Ragione sociale, disabilitata" />
+              <Input defaultValue="non valido" aria-invalid aria-label="Ragione sociale, non valida" />
             </div>
           </Row>
           <Row label="textarea">
             <div className="flex w-56 flex-col gap-2">
-              <Textarea placeholder="Note" />
-              <Textarea defaultValue="non valido" aria-invalid />
-              <Textarea placeholder="Disabilitato" disabled />
+              <Textarea placeholder="Note" aria-label="Note" />
+              <Textarea defaultValue="non valido" aria-invalid aria-label="Note, non valide" />
+              <Textarea placeholder="Disabilitato" disabled aria-label="Note, disabilitate" />
             </div>
           </Row>
           <Row label="checkbox">
@@ -236,7 +253,7 @@ export function Gallery() {
           </Row>
           <Row label="select">
             <Select defaultOpen={open === 'select'}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-48" aria-label="Stato della fattura">
                 <SelectValue placeholder="Scegli uno stato" />
               </SelectTrigger>
               <SelectContent>
@@ -250,7 +267,7 @@ export function Gallery() {
               </SelectContent>
             </Select>
             <Select disabled>
-              <SelectTrigger className="w-48" size="sm">
+              <SelectTrigger className="w-48" size="sm" aria-label="Stato, disabilitato">
                 <SelectValue placeholder="Disabilitato" />
               </SelectTrigger>
               <SelectContent />
@@ -466,7 +483,7 @@ export function Gallery() {
           </Row>
         </Section>
         <Toaster />
-      </div>
+      </main>
     </TooltipProvider>
   )
 }

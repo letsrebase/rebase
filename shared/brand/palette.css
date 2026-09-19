@@ -12,14 +12,18 @@
    design, so a radius scale is the application's own and stays in its tokens.css. */
 @theme {
   --color-watermelon: #ed254e;
-  /* White text on raw Watermelon measures 4.22:1 — enough for a UI component
-     (3:1) but short of the 4.5:1 body-text threshold, and that pair is live on
-     the primary button label and the default badge. Prussian Blue on top
-     doesn't fix it either (3.96:1), so this is a same-hue, same-saturation,
-     darker step (HSL h=347.7° s=84.7% l=53.7% -> l=48.7%): white on top is
-     4.67:1, and it still contrasts 4.58:1 against the light app background and
-     3.77:1 against the dark one. Watermelon itself is unchanged and remains
-     the brand colour for every accent/border/icon/non-text use. */
+  /* White text on raw Watermelon measures 4.22:1, enough for a UI component (3:1)
+     but short of the 4.5:1 body-text threshold, and that pair is live on the primary
+     button label and the default badge. Prussian Blue on top does not fix it either
+     (3.96:1), so this is a same-hue, same-saturation, darker step (HSL h=347.7
+     s=84.7% l=53.7% -> l=48.7%): white on top is 4.67:1. Watermelon itself is
+     unchanged and remains the brand colour for every accent, border, icon and other
+     non-text use.
+     What this step does NOT do is clear AA in the other direction, as text: on the
+     Paper ground it measures 4.17:1 and on its own 10% tint 3.57:1, which is why the
+     link and destructive variants are only allowed on a white card today. The number
+     4.58:1 stood here until 2026-09-18 and was measured against the Mint Cream ground
+     the CRM had until 2026-09-08, not against Paper. REB-307 carries the decision. */
   --color-watermelon-strong: #e5133e;
   --color-royal-gold: #f9dc5c;
   /* The page's ground: a neutral light grey (was Mint Cream #f4fffd until 2026-09-08,

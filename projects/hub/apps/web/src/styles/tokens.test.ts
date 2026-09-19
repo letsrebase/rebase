@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
+import { AA_TEXT, contrastRatio } from '@rebase/brand/contrast'
+
 /**
  * What is left of this file after REB-299: the hub's own `.site` scope, and nothing
  * the two applications share. Every semantic slot, the radius scale, the shadow
@@ -45,26 +47,6 @@ function declaration(selector: string, token: string): string {
   return value.trim()
 }
 
-function hexToRgb(hex: string): [number, number, number] {
-  const value = hex.replace('#', '')
-  return [parseInt(value.slice(0, 2), 16), parseInt(value.slice(2, 4), 16), parseInt(value.slice(4, 6), 16)]
-}
-
-function relativeLuminance([r, g, b]: [number, number, number]): number {
-  const channel = (c: number) => {
-    const srgb = c / 255
-    return srgb <= 0.03928 ? srgb / 12.92 : Math.pow((srgb + 0.055) / 1.055, 2.4)
-  }
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-}
-
-/** WCAG 2.x contrast ratio between two colours, order-independent. */
-function contrastRatio(hexA: string, hexB: string): number {
-  const a = relativeLuminance(hexToRgb(hexA))
-  const b = relativeLuminance(hexToRgb(hexB))
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
-}
-
 /** Resolves a `--landing-*` colour declared in `.site` to the sRGB hex a browser
  *  would compute, by following its `var(--color-…)` back into the shared palette both
  *  this file and `landing.css` import. A hand-mixed hex here would be a second
@@ -91,7 +73,7 @@ describe('the .site scope (ORB-73)', () => {
   it('carries the CTA at 4.5:1 for its own ink, the same pair the application relies on', () => {
     expect(
       contrastRatio(declaration('.site', '--landing-cta-ink'), siteColourHex('--landing-cta')),
-    ).toBeGreaterThanOrEqual(4.5)
+    ).toBeGreaterThanOrEqual(AA_TEXT)
   })
 
   it('contains no raw hexadecimal in the .site block, other than white', () => {

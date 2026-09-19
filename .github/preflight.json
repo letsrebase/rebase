@@ -100,8 +100,7 @@
       "run": "pnpm --filter @rebase/ui lint && pnpm --filter @rebase/ui test && pnpm --filter @rebase/ui build && pnpm --filter @rebase/ui exec tsc --noEmit",
       "when": [
         "shared/ui/**",
-        "shared/brand/palette.css",
-        "shared/brand/font.css",
+        "shared/brand/**",
         "pnpm-lock.yaml"
       ],
       "why": "The token contract both applications render on and the eighteen primitives that read it: every colour resolved back through the brand palette, the five chart mixes evaluated the way a browser does, the rules of the 2026-09-18 record (zero radius, ink lines, no blur, one scheme), and the gallery built, which is what proves the primitives still compile against Tailwind outside an application."
@@ -227,6 +226,16 @@
         "shared/analytics/**"
       ],
       "why": "Vitest transpiles without typechecking, so unit tests pass on code tsc rejects. This project has noUncheckedIndexedAccess on and the trunk went red that way once (ORB-15)."
+    },
+    {
+      "id": "ui-e2e",
+      "run": "pnpm --filter @rebase/ui test:e2e",
+      "when": [
+        "shared/ui/**",
+        "shared/brand/**"
+      ],
+      "serial": true,
+      "why": "Playwright against the gallery on 4174, which is the half of the token contract only a browser knows: what the cascade computes on a rendered primitive, what axe measures on the pixels, and that an OS in dark mode still reaches nothing (ORB-138). Serial because the port is fixed, like the website's 4173 next to it."
     },
     {
       "id": "website-e2e",

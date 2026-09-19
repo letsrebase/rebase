@@ -381,9 +381,15 @@ importers:
         specifier: ^1.4.0
         version: 1.4.0
     devDependencies:
+      '@axe-core/playwright':
+        specifier: 'catalog:'
+        version: 4.13.0(playwright-core@1.62.1)
       '@eslint/js':
         specifier: 'catalog:'
         version: 9.39.5
+      '@playwright/test':
+        specifier: 'catalog:'
+        version: 1.62.1
       '@tailwindcss/vite':
         specifier: 4.3.3
         version: 4.3.3(vite@8.2.0(@types/node@24.13.3)(esbuild@0.28.1)(jiti@2.7.0))

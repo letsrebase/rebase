@@ -3,6 +3,14 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
+import {
+  AA_NON_TEXT,
+  AA_TEXT,
+  contrastRatio,
+  hexToRgb,
+  paletteFrom,
+} from '@rebase/brand/contrast'
+
 /**
  * The contract of the one token layer both applications render on. It reads the
  * stylesheet as text, resolves every colour back through the brand palette (so a
@@ -20,35 +28,18 @@ const brandCss = readFileSync(
 )
 const css = `${brandCss}\n${tokensCss}`
 
-function hexToRgb(hex: string): [number, number, number] {
-  const value = hex.replace('#', '')
-  return [parseInt(value.slice(0, 2), 16), parseInt(value.slice(2, 4), 16), parseInt(value.slice(4, 6), 16)]
-}
-
-function relativeLuminance([r, g, b]: [number, number, number]): number {
-  const channel = (c: number) => {
-    const srgb = c / 255
-    return srgb <= 0.03928 ? srgb / 12.92 : Math.pow((srgb + 0.055) / 1.055, 2.4)
-  }
-  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
-}
-
-/** WCAG 2.x contrast ratio between two colours, order-independent. */
-function contrastRatio(hexA: string, hexB: string): number {
-  const a = relativeLuminance(hexToRgb(hexA))
-  const b = relativeLuminance(hexToRgb(hexB))
-  const lighter = Math.max(a, b)
-  const darker = Math.min(a, b)
-  return (lighter + 0.05) / (darker + 0.05)
-}
+/* The contrast maths and the palette reader come from `@rebase/brand` since REB-301:
+   the same WCAG formula was written here, in the hub's test and in the site's, with
+   two different knees in the sRGB transfer function between them. */
 
 /** Reads whatever the palette currently assigns a colour token, so every contrast
  *  figure below is recomputed from the live value on every run. A future edit to a hex
  *  is what this checks; a hand-written expected ratio would not notice. */
+const palette = paletteFrom(brandCss)
+
 function tokenHex(name: string): string {
-  const match = css.match(new RegExp(`--color-${name}:\\s*(#[0-9a-fA-F]{6})`))
-  const hex = match?.[1]
-  if (!hex) throw new Error(`token --color-${name} not found in tokens.css`)
+  const hex = palette[`--color-${name}`]
+  if (!hex) throw new Error(`token --color-${name} not found in the brand palette`)
   return hex
 }
 
@@ -177,11 +168,11 @@ describe('the palette every slot resolves through', () => {
   })
 
   it('white text on watermelon-strong clears the 4.5:1 AA text threshold', () => {
-    expect(contrastRatio('#ffffff', tokenHex('watermelon-strong'))).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio('#ffffff', tokenHex('watermelon-strong'))).toBeGreaterThanOrEqual(AA_TEXT)
   })
 
   it('carries Paper text on the blue sidebar at AA', () => {
-    expect(contrastRatio(tokenHex('paper'), tokenHex('prussian-blue'))).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio(tokenHex('paper'), tokenHex('prussian-blue'))).toBeGreaterThanOrEqual(AA_TEXT)
   })
 
   it('loads no webfont other than Outfit, and declares the face nowhere but brand', () => {
@@ -422,7 +413,7 @@ describe('the chart hues', () => {
     for (const [token, hex] of Object.entries(CHART_HEX)) {
       const onLight = contrastRatio(hex, light)
       const onInk = contrastRatio(hex, ink)
-      expect(Math.max(onLight, onInk), `${token} on its better surface`).toBeGreaterThanOrEqual(3)
+      expect(Math.max(onLight, onInk), `${token} on its better surface`).toBeGreaterThanOrEqual(AA_NON_TEXT)
       // 1.5:1 is the floor below which a fill stops reading as a shape at all. The
       // measured worst is --chart-5 against the ink at 1.64:1; this is the ratchet that
       // keeps a future edit from spending that headroom.

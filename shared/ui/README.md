@@ -124,6 +124,26 @@ accident:
   `rounded-lg` is correct and `rounded-[10px]` is not, even though the second one
   looked identical the day it was written.
 
+## The two halves of the contract
+
+`tokens.test.ts` reads this package's stylesheet and proves what it *declares*. It runs
+in a second and needs no browser, which is why it is the gate on every pull request.
+
+`e2e/gallery.spec.ts` asks Chromium what it *computes*, on the gallery, which is the
+half a stylesheet cannot answer: between a declaration and a pixel sit Tailwind's
+utilities, the cascade and the browser's own colour maths. It measures the radius, the
+shadow layers, the lines and the grid on rendered elements, runs axe over the page and
+over each open overlay, and emulates an operating system in dark mode to prove that
+nothing reaches a `dark:` utility (ORB-138). `pnpm --filter @rebase/ui test:e2e`, and
+`preflight`'s `ui-e2e` runs it before a pull request exists, next to the website's own
+Playwright suite.
+
+Two findings are written into that spec's `KNOWN` list rather than filtered away, so a
+new one fails and so does fixing one without deleting its line: the watermelon as text
+(4.17:1 on Paper, 3.57:1 on its own tint, against AA's 4.5:1, which is REB-307 and a
+palette decision) and radix-ui's own `aria-hidden` focus scope with a menu open
+(REB-308).
+
 ## The contract test
 
 `tokens.test.ts` is the gate: it resolves every colour token back through the brand

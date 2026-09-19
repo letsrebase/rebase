@@ -2,36 +2,17 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { extractSharedTokens } from './palette-plugin'
 
-const shared = extractSharedTokens(readFileSync(fileURLToPath(import.meta.resolve('@rebase/brand/palette.css')), 'utf-8'))
+import { AA_NON_TEXT, AA_TEXT, blendSrgb, contrastRatio, paletteFrom } from '@rebase/brand/contrast'
+
+/** The palette, and the maths every surface measures its pairs with, both from
+ *  `@rebase/brand` (REB-301). The site is the reference for the two applications, so
+ *  the one thing that must not differ between their tests is the formula. */
+const shared = paletteFrom(readFileSync(fileURLToPath(import.meta.resolve('@rebase/brand/palette.css')), 'utf-8'))
 const landingCss = readFileSync(join(__dirname, 'landing.css'), 'utf-8')
 const pitchCss = readFileSync(join(__dirname, 'pitch.css'), 'utf-8')
 const pigrocrmCss = readFileSync(join(__dirname, 'pigrocrm.css'), 'utf-8')
 const pigrocrmHtml = readFileSync(join(__dirname, 'pigrocrm.html'), 'utf-8')
-
-type Triple = [number, number, number]
-
-function toLinear(channel: number): number {
-  const c = channel / 255
-  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
-}
-
-function hexToRgb(hex: string): Triple {
-  const v = hex.replace('#', '')
-  return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)]
-}
-
-function relativeLuminance([r, g, b]: Triple): number {
-  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b)
-}
-
-/** WCAG 2.x contrast ratio, order-independent. Same formula as tokens.test.ts. */
-function contrastRatio(hexA: string, hexB: string): number {
-  const a = relativeLuminance(hexToRgb(hexA))
-  const b = relativeLuminance(hexToRgb(hexB))
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
-}
 
 const LANDING_DECLARATION = /--landing-[\w-]+\s*:\s*[^;]+;/g
 // pitch.css keeps its own short names (REB-248): the pattern reaches only these six
@@ -111,14 +92,6 @@ function landingVarsRaw(css: string): Record<string, string> {
  *  place a ratio on the right side of 4.5 without claiming false precision. */
 const COLOR_MIX = /^color-mix\(in [\w-]+, var\((--color-[\w-]+)\) (\d+(?:\.\d+)?)%, transparent\)$/
 
-function blendHex(hexA: string, hexB: string, weightAPercent: number): string {
-  const a = hexToRgb(hexA)
-  const b = hexToRgb(hexB)
-  const w = weightAPercent / 100
-  const channel = (i: 0 | 1 | 2) => Math.round(a[i] * w + b[i] * (1 - w))
-  return `#${[channel(0), channel(1), channel(2)].map((c) => c.toString(16).padStart(2, '0')).join('')}`
-}
-
 /** Strips comments and every `@media`/`@font-face`/`@keyframes` block: REB-267's own
  *  `@media (min-width: 60rem)` addition to `pigrocrm.css` carries a `min-block-size`,
  *  no colour, and stripping it here keeps the one-rule-at-a-time scan below from
@@ -155,7 +128,7 @@ function resolveValue(
   if (!backdrop) return undefined
   const mix = COLOR_MIX.exec(rawVars[name] ?? '')
   const inner = mix && shared[mix[1] ?? '']
-  return inner ? blendHex(inner, backdrop, Number(mix[2])) : undefined
+  return inner ? blendSrgb(inner, backdrop, Number(mix[2])) : undefined
 }
 
 /** Every rule in `css` that declares the given property, next to the selector list
@@ -314,7 +287,7 @@ describe('landing tokens', () => {
       [quiet, '#ffffff'],
       ['#ffffff', resolveColour('--landing-cta', landingCss)],
     ] as const) {
-      expect(contrastRatio(text, background), `${text} on ${background}`).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(text, background), `${text} on ${background}`).toBeGreaterThanOrEqual(AA_TEXT)
     }
   })
 
@@ -323,7 +296,7 @@ describe('landing tokens', () => {
       resolveColour('--landing-focus', landingCss),
       resolveColour('--landing-surface', landingCss),
     )
-    expect(ratio).toBeGreaterThanOrEqual(3)
+    expect(ratio).toBeGreaterThanOrEqual(AA_NON_TEXT)
   })
 
   it('never uses raw Watermelon as a solid fill', () => {
@@ -456,7 +429,7 @@ describe('pigrocrm.css text pairs', () => {
 
   it('reaches 4.5:1 on every text pair pigrocrm.css participates in', () => {
     for (const [text, background] of pairs) {
-      expect(contrastRatio(text, background), `${text} on ${background}`).toBeGreaterThanOrEqual(4.5)
+      expect(contrastRatio(text, background), `${text} on ${background}`).toBeGreaterThanOrEqual(AA_TEXT)
     }
   })
 
@@ -473,12 +446,12 @@ describe('pigrocrm.css text pairs', () => {
     const failing = derivePairs(pigrocrmHtml, colourRules, failingBackgrounds, vars, rawVars)
     const failingWho = failing.find(([, , element]) => element.matches('.voices-light .who'))
     expect(failingWho?.[1]).toBe('#9aa0a6')
-    expect(contrastRatio(failingWho![0], failingWho![1])).toBeLessThan(4.5)
+    expect(contrastRatio(failingWho![0], failingWho![1])).toBeLessThan(AA_TEXT)
 
     const passingCss = `${pigrocrmCss}\n.voices-light { background-color: #ffffff; }\n`
     const passingBackgrounds = [...landingBackgroundRules, ...extractDeclarations(passingCss, 'background')]
     const passing = derivePairs(pigrocrmHtml, colourRules, passingBackgrounds, vars, rawVars)
     const passingWho = passing.find(([, , element]) => element.matches('.voices-light .who'))
-    expect(contrastRatio(passingWho![0], passingWho![1])).toBeGreaterThanOrEqual(4.5)
+    expect(contrastRatio(passingWho![0], passingWho![1])).toBeGreaterThanOrEqual(AA_TEXT)
   })
 })

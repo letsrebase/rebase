@@ -23,6 +23,8 @@ export default defineConfig({
         extends: true,
         test: { name: 'primitives', include: ['*.test.tsx'], environment: 'jsdom' },
       },
+      // `e2e/` is Playwright's, driven by `pnpm test:e2e` against the built gallery:
+      // neither project globs it, and neither `include` above would match it anyway.
     ],
   },
 })
