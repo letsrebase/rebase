@@ -33,7 +33,9 @@ const OVERLAYS = {
 /**
  * The violations this page is known to carry, asserted exactly rather than filtered
  * away: a new one fails, and so does fixing one of these without deleting its line,
- * which is what makes somebody read the reason.
+ * which is what makes somebody read the reason. Each entry names the rule *and* the
+ * elements axe reported it on, so the same rule appearing somewhere else is a failure
+ * rather than a line that already looked accounted for.
  *
  * - `color-contrast`: the watermelon as *text*. It measures 4.17:1 on the Paper ground
  *   and 3.57:1 on its own 10% tint, against the 4.5:1 AA needs, so the destructive
@@ -41,27 +43,59 @@ const OVERLAYS = {
  *   passes. That is the palette's, not this page's: the ramp has one darkened step
  *   (`--color-watermelon-strong`, added for white text on a fill) and no step dark
  *   enough to be read as text on a light ground. REB-307.
- * - `aria-hidden-focus`: with a menu or a select open, Radix marks the rest of the
- *   document `aria-hidden` while its trigger stays in the tab order, which axe reads as
- *   a focusable element inside a hidden subtree. It is radix-ui's own focus-scope
- *   behaviour, identical in both products. REB-308.
+ * - `aria-hidden-focus`, with a menu or a select open: radix marks every sibling of
+ *   the open surface `aria-hidden` (`hideOthers`, from the `aria-hidden` package) and
+ *   leaves their contents in the tab order, so axe sees five hidden sections of this
+ *   page holding focusable elements. The reported node is the section, not the trigger.
+ *   Radix traps Tab inside the surface, so nothing is actually reachable, but axe reads
+ *   the static DOM and cannot see a focus trap; the remedy it accepts is `inert` on the
+ *   background, which radix does not use. A dialog and a sheet put the identical
+ *   attributes on the identical sections and are NOT reported, because axe suppresses
+ *   the rule while a modal is open and its modal detection looks for `role="dialog"`,
+ *   which a `role="menu"` and a `role="listbox"` are not. Measured on radix-ui 1.6.7,
+ *   which is the latest release. REB-308.
  */
 const KNOWN: Record<string, string[]> = {
   '/': ['color-contrast'],
   '/?open=dialog': ['color-contrast'],
   '/?open=sheet': [],
-  '/?open=menu': ['aria-hidden-focus'],
+  '/?open=menu': [
+    'aria-hidden-focus #button',
+    'aria-hidden-focus #card',
+    'aria-hidden-focus #fields',
+    'aria-hidden-focus #floating-surfaces',
+    'aria-hidden-focus #tabs',
+  ],
   '/?open=popover': ['color-contrast'],
-  '/?open=select': ['aria-hidden-focus'],
+  '/?open=select': [
+    'aria-hidden-focus #button',
+    'aria-hidden-focus #card',
+    'aria-hidden-focus #fields',
+    'aria-hidden-focus #floating-surfaces',
+    'aria-hidden-focus #tabs',
+  ],
 }
 
+/**
+ * Every violation, at every impact, as `<rule> <target>` pairs. A rule whose nodes are
+ * the whole document or a generated class chain would be unreadable in the list above,
+ * so a target is only appended when it is a single stable selector: the sections have
+ * ids, and the two colour findings are on utility-class chains that change with the
+ * variant, which is why those stay bare rule names.
+ */
 async function axeIds(page: Page): Promise<string[]> {
   const { violations } = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
-  // Every violation, at every impact: the list below is an assertion, so filtering by
-  // severity here would be the quiet exception it exists to prevent.
-  return [...new Set(violations.map((v) => v.id))].sort()
+  const found = new Set<string>()
+  for (const violation of violations) {
+    const ids = violation.nodes
+      .map((node) => (node.target.length === 1 ? String(node.target[0]) : ''))
+      .filter((target) => /^#[\w-]+$/.test(target))
+    if (ids.length === 0) found.add(violation.id)
+    for (const id of ids) found.add(`${violation.id} ${id}`)
+  }
+  return [...found].sort()
 }
 
 /**

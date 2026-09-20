@@ -153,10 +153,25 @@ nothing reaches a `dark:` utility (ORB-138). `pnpm --filter @rebase/ui test:e2e`
 Playwright suite.
 
 Two findings are written into that spec's `KNOWN` list rather than filtered away, so a
-new one fails and so does fixing one without deleting its line: the watermelon as text
-(4.17:1 on Paper, 3.57:1 on its own tint, against AA's 4.5:1, which is REB-307 and a
-palette decision) and radix-ui's own `aria-hidden` focus scope with a menu open
-(REB-308).
+new one fails and so does fixing one without deleting its line. Each entry names the
+rule and the element axe reported it on, so the same rule appearing somewhere else is a
+failure rather than a line that already looked accounted for.
+
+The first is the watermelon as text: 4.17:1 on Paper and 3.57:1 on its own tint against
+AA's 4.5:1, which is a palette decision and REB-307.
+
+The second is `aria-hidden-focus` with a menu or a select open, and it is worth having
+in full, because the obvious reading of it is wrong (REB-308). Radix marks every sibling
+of the open surface `aria-hidden`, through the `aria-hidden` package's `hideOthers`, and
+leaves their contents in the tab order, so the reported nodes are five sections of this
+gallery and not the trigger. Radix does trap Tab inside the surface, so nothing outside
+is reachable in practice, but axe reads the static DOM and cannot see a focus trap; the
+remedy it accepts is `inert` on the background, which radix does not use. A dialog and a
+sheet put the identical attributes on the identical sections and are not reported at
+all, because axe suppresses the rule while a modal is open and its modal detection looks
+for `role="dialog"`, which a `role="menu"` and a `role="listbox"` are not. Measured on
+radix-ui 1.6.7, which is the latest release: there is nothing to upgrade to, and nothing
+to fix from here short of reimplementing radix's own hiding, so it stays recorded.
 
 ## The contract test
 
