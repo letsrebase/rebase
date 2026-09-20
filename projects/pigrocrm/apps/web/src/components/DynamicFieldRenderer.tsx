@@ -40,8 +40,9 @@ const CLEAR_OPTION = '\u0000'
  *  the semantic `destructive` token (the darkened Watermelon step every `aria-invalid`
  *  state in `@rebase/ui` already uses, declared in `@rebase/ui/tokens.css`), never the
  *  raw brand `--color-watermelon` that AppShell and the login reserve for decorative
- *  accents: this asterisk is small body text, not a logo. How far that step actually
- *  clears AA as text is REB-307. */
+ *  accents: this asterisk is small body text, not a logo. How far that step clears AA
+ *  as text was REB-307, answered on 2026-09-18: the token moved to the deep step and
+ *  measures 5.38:1 on the page ground and 6.04:1 on a white card. */
 function RequiredMark() {
   return <span className="ml-1 text-destructive">*</span>
 }

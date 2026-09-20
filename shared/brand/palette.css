@@ -24,7 +24,7 @@
      What `-strong` does not do is clear AA in the other direction, as text: on the
      Paper ground it measures 4.17:1 and on its own 10% tint 3.57:1, so a colour used
      as a label rather than as a fill was below AA everywhere but on a white card.
-     `-deep` is the third step and answers that: 5.39:1 on Paper, 4.54:1 on its own 10%
+     `-deep` is the third step and answers that: 5.38:1 on Paper, 4.54:1 on its own 10%
      tint over Paper, 6.04:1 under white text. It is where the application's --primary
      and --destructive point, which is why the destructive and link variants may now be
      written anywhere (REB-307; the number 4.58:1 stood here until 2026-09-18 and had
@@ -32,13 +32,19 @@
 
      It is a hair more saturated rather than a pure lightness step (h=347.6 s=87.6%
      l=41.2%): the strict continuation of the ramp is #c31035 (l=41.5% at s=84.7%) and
-     it measures within 0.05 of this on every pair, so the two are interchangeable by
-     the numbers and this is the one that was chosen by eye.
+     it measures within 0.06 of this on every pair (the widest gap is 0.059, white on
+     the fill), so the two are interchangeable by the numbers and this is the one that
+     was chosen by eye.
 
      Who reads which: raw Watermelon is every accent, border, icon, focus ring and
-     decorative tile; `-strong` fills where white text sits on it and the surface is
-     not the application's primary (the site's call to action, the CRM sidebar's active
-     tile); `-deep` is the application's primary and destructive, fill and text alike. */
+     decorative tile. `-strong` is the site's own red and stays with it: the landing's
+     call to action and the hub's `.site` scope, the community page's invalid-field
+     border and its error note (4.67:1 on the white box it sits in), the CRM sidebar's
+     active tile and the `costi` bar of the dashboard. `-deep` is the application's
+     primary and destructive, fill and text alike.
+     One ceiling on `-deep` as text: its own tint clears AA up to 10% over Paper
+     (4.54:1) and fails past it (4.17:1 at 15%, 3.80:1 at 20%), so a chip or a hover
+     that deepens the tint has to darken the text with it. */
   --color-watermelon-strong: #e5133e;
   --color-watermelon-deep: #c50d33;
   --color-royal-gold: #f9dc5c;

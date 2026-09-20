@@ -76,6 +76,17 @@ describe('the .site scope (ORB-73)', () => {
     ).toBeGreaterThanOrEqual(AA_TEXT)
   })
 
+  it('fills a primary control with the site call to action, not the application red', () => {
+    // These four pages are entered from the landing's own call to action, and nothing
+    // in the scope paints a fill: a primitive fills from `--primary`. When the
+    // application's primary moved to the deep watermelon (REB-307) the wizard's
+    // forward button silently became a different red from the button that led to it,
+    // which is what this line prevents from happening again. The hex the CTA resolves
+    // to is pinned above.
+    expect(declaration('.site', '--primary')).toBe('var(--landing-cta)')
+    expect(declaration('.site', '--primary-foreground')).toBe('var(--landing-cta-ink)')
+  })
+
   it('contains no raw hexadecimal in the .site block, other than white', () => {
     for (const hex of site.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []) {
       expect(hex.toLowerCase(), `raw hex in .site: ${hex}`).toBe('#ffffff')

@@ -13,10 +13,10 @@ const SYSTEM_CSS = resolve(__dirname, 'system.css')
  *  `:root`. */
 const FONT_CSS = fileURLToPath(import.meta.resolve('@rebase/brand/font.css'))
 
-/** The palette and the font stack, and nothing else. Eight today, the seventh colour
- *  being the deep watermelon REB-307 added; the count is asserted so that a token
- *  added to or removed from palette.css is a failing test rather than a silently
- *  thinner landing. */
+/** The palette and the font stack, and nothing else. Eight today, the newest colour
+ *  being the deep watermelon REB-307 added, third in declaration order; the count is
+ *  asserted so that a token added to or removed from palette.css is a failing test
+ *  rather than a silently thinner landing. */
 const EXPECTED_TOKEN_COUNT = 8
 
 /**

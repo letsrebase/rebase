@@ -1,6 +1,6 @@
 /* The landing page's own stylesheet. It has no Tailwind, no framework and no
    palette of its own: palette-plugin.ts prepends the eight shared tokens out of
-   src/styles/tokens.css, then landing/system.css, so the five colours and the font
+   src/styles/tokens.css, then landing/system.css, so the seven colours and the font
    stack are literally the values the app renders, and the grid line, the tile and
    the glyph are written once for this sheet and community.css.
 

@@ -20,19 +20,28 @@
 @import '@rebase/ui/tokens.css';
 
 /* --- The public wizard surface: the site's own weights, on top of the shared tokens.
-   The `--landing-*` colours are the same values the scope already inherits
-   (`--landing-cta` is the same watermelon as `--primary`, `--landing-focus` the same
-   as `--ring`), restated under the site's own names so a wizard component reaches for
-   `var(--landing-ink)` rather than back across this file. What actually changes for a
-   descendant of `.site` is weight: the border width, the step, and the shadow slots
-   the step feeds. `tokens.test.ts` pins the colours against the shared palette and
-   the weights against this block. */
+   The `--landing-*` colours are the site's, restated under the site's own names so a
+   wizard component reaches for `var(--landing-ink)` rather than back across this file.
+   `--landing-focus` is the same raw watermelon as `--ring`; `--landing-cta` is no
+   longer the same colour as the application's `--primary`, which moved to the deep
+   step on 2026-09-18 (REB-307) while the site's call to action stayed on `-strong`.
+   Nothing in this scope paints a fill of its own, so these four pages would have
+   drawn the application's red on the button the landing hands them over with: the
+   `--primary` line below re-points it, and the wizard's «Avanti» is the same red as
+   the «Entra come talento» that led to it. What else changes for a descendant of
+   `.site` is weight: the border width, the step, and the shadow slots the step feeds.
+   `tokens.test.ts` pins the colours against the shared palette and the weights
+   against this block. */
 .site {
   --landing-surface: var(--color-paper);
   --landing-ink: var(--color-prussian-blue);
   --landing-ink-quiet: var(--color-charcoal-blue);
   --landing-cta: var(--color-watermelon-strong);
   --landing-cta-ink: #ffffff;
+  /* The whole reason the two reds cannot drift: every primitive inside this scope
+     fills from `--primary`, so the site's call to action is this scope's primary. */
+  --primary: var(--landing-cta);
+  --primary-foreground: var(--landing-cta-ink);
   --landing-focus: var(--color-watermelon);
   /* The shadow is an offset, never a blur, moved by this many pixels in the colour of
      the border (landing.css:31). Twice the application's `--step`, which is the whole

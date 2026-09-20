@@ -152,7 +152,7 @@ export function Gallery() {
           {/* Every variant sits on the page ground, the link included, which it could
               not until REB-307: the watermelon as text measured 4.17:1 on Paper, so the
               gallery kept the link variants on a white card because that was the one
-              ground the system allowed them on. The deep step reads 5.39:1 there, and
+              ground the system allowed them on. The deep step reads 5.38:1 there, and
               this page is where a browser proves it. */}
           {BUTTON_VARIANTS.map((variant) => (
             <Row key={variant} label={variant}>

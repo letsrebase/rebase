@@ -173,18 +173,36 @@ describe('the palette every slot resolves through', () => {
     expect(css).toMatch(/--destructive:\s*var\(--color-watermelon-deep\)/)
   })
 
+  /** The hex a `:root` slot ends up on, through the palette reference it holds. */
+  function slotHex(slot: string): string {
+    const reference = declaration(':root', slot).match(/^var\((--color-[\w-]+)\)$/)
+    if (!reference) throw new Error(`${slot} is not a bare palette reference`)
+    const hex = palette[reference[1]!]
+    if (!hex) throw new Error(`${reference[1]} is not in the brand palette`)
+    return hex
+  }
+
   it.each([
-    ['the Paper ground', () => tokenHex('paper')],
-    ['a white card', () => '#ffffff'],
-    ['its own 10% tint over Paper', () => blendSrgb(tokenHex('watermelon-deep'), tokenHex('paper'), 0.1)],
-    ['its own 10% tint over a white card', () => blendSrgb(tokenHex('watermelon-deep'), '#ffffff', 0.1)],
-  ])('reads the deep Watermelon as text at AA on %s', (_ground, background) => {
-    // The four grounds the destructive and link variants actually land on: the page,
-    // a card, and the 10% tint each of those two wears under `bg-destructive/10`.
-    // `-strong` cleared only the second of the four, which is what REB-307 was about.
-    expect(
-      contrastRatio(tokenHex('watermelon-deep'), background()),
-    ).toBeGreaterThanOrEqual(AA_TEXT)
+    ['--primary', 'the Paper ground', () => tokenHex('paper')],
+    ['--primary', 'a white card', () => '#ffffff'],
+    ['--destructive', 'the Paper ground', () => tokenHex('paper')],
+    ['--destructive', 'a white card', () => '#ffffff'],
+    ['--destructive', 'its own 10% tint over Paper', () => blendSrgb(slotHex('--destructive'), tokenHex('paper'), 10)],
+    ['--destructive', 'its own 10% tint over a white card', () => blendSrgb(slotHex('--destructive'), '#ffffff', 10)],
+  ])('reads %s as text at AA on %s', (slot, _ground, background) => {
+    // Through the slot rather than against a hex: a test that measures
+    // `--color-watermelon-deep` proves a property of a colour nothing has to point
+    // at, and a revert of the two slots would leave it green. These are the four
+    // grounds the destructive and link variants land on, the tint being what
+    // `bg-destructive/10` puts under its own text. `-strong` cleared one of the four.
+    //
+    // blendSrgb takes a percent, not a fraction: 0.1 would blend 0.1% and hand back
+    // the ground untouched, which is the same easy pair as the rows above and would
+    // let a step through that fails the real tint (#c8112f measures 5.20 that way and
+    // 4.42 on the tint it is meant to guard). 10% is also the ceiling: at 15% the
+    // same text is 4.17:1, which is why no variant deepens a tint without darkening
+    // its text (REB-309).
+    expect(contrastRatio(slotHex(slot), background())).toBeGreaterThanOrEqual(AA_TEXT)
   })
 
   it('carries white text on both filled steps at AA', () => {
