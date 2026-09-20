@@ -12,21 +12,35 @@
    design, so a radius scale is the application's own and stays in its tokens.css. */
 @theme {
   --color-watermelon: #ed254e;
-  /* White text on raw Watermelon measures 4.22:1, enough for a UI component (3:1)
-     but short of the 4.5:1 body-text threshold, and that pair is live on the primary
-     button label and the default badge. Prussian Blue on top does not fix it either
-     (4.1685:1, measured with `contrast.ts`; this comment said 3.96:1 until 2026-09-18
-     and no pair in the palette lands on that number), so this is a same-hue,
-     same-saturation, darker step (HSL h=347.7
-     s=84.7% l=53.7% -> l=48.7%): white on top is 4.67:1. Watermelon itself is
-     unchanged and remains the brand colour for every accent, border, icon and other
-     non-text use.
-     What this step does NOT do is clear AA in the other direction, as text: on the
-     Paper ground it measures 4.17:1 and on its own 10% tint 3.57:1, which is why the
-     link and destructive variants are only allowed on a white card today. The number
-     4.58:1 stood here until 2026-09-18 and was measured against the Mint Cream ground
-     the CRM had until 2026-09-08, not against Paper. REB-307 carries the decision. */
+  /* Two darker steps below it, and the reason they exist is contrast in the two
+     directions a colour can be read. White text on raw Watermelon measures 4.22:1,
+     enough for a UI component (3:1) but short of the 4.5:1 body-text threshold, and
+     that pair is live on the primary button label and the default badge. Prussian Blue
+     on top does not fix it either (4.1685:1, measured with `contrast.ts`; this comment
+     said 3.96:1 until 2026-09-18 and no pair in the palette lands on that number).
+     `-strong` is the same-hue, same-saturation, darker step that answers it (HSL
+     h=347.7 s=84.7% l=53.7% -> l=48.7%): white on top is 4.67:1.
+
+     What `-strong` does not do is clear AA in the other direction, as text: on the
+     Paper ground it measures 4.17:1 and on its own 10% tint 3.57:1, so a colour used
+     as a label rather than as a fill was below AA everywhere but on a white card.
+     `-deep` is the third step and answers that: 5.39:1 on Paper, 4.54:1 on its own 10%
+     tint over Paper, 6.04:1 under white text. It is where the application's --primary
+     and --destructive point, which is why the destructive and link variants may now be
+     written anywhere (REB-307; the number 4.58:1 stood here until 2026-09-18 and had
+     been measured against the Mint Cream ground the CRM lost on 2026-09-08).
+
+     It is a hair more saturated rather than a pure lightness step (h=347.6 s=87.6%
+     l=41.2%): the strict continuation of the ramp is #c31035 (l=41.5% at s=84.7%) and
+     it measures within 0.05 of this on every pair, so the two are interchangeable by
+     the numbers and this is the one that was chosen by eye.
+
+     Who reads which: raw Watermelon is every accent, border, icon, focus ring and
+     decorative tile; `-strong` fills where white text sits on it and the surface is
+     not the application's primary (the site's call to action, the CRM sidebar's active
+     tile); `-deep` is the application's primary and destructive, fill and text alike. */
   --color-watermelon-strong: #e5133e;
+  --color-watermelon-deep: #c50d33;
   --color-royal-gold: #f9dc5c;
   /* The page's ground: a neutral light grey (was Mint Cream #f4fffd until 2026-09-08,
      a tint of cyan that read as "azzurrino" and made white cards and text sit less

@@ -37,12 +37,12 @@ const OVERLAYS = {
  * has an id, the entry names the rule and that id, so the same rule on a different
  * element is a failure rather than a line that already looked accounted for.
  *
- * - `color-contrast`: the watermelon as *text*. It measures 4.17:1 on the Paper ground
- *   and 3.57:1 on its own 10% tint, against the 4.5:1 AA needs, so the destructive
- *   badge and the destructive button fail as text while white-on-watermelon (4.67:1)
- *   passes. That is the palette's, not this page's: the ramp has one darkened step
- *   (`--color-watermelon-strong`, added for white text on a fill) and no step dark
- *   enough to be read as text on a light ground. REB-307.
+ * - `color-contrast` was here until REB-307, on the watermelon read as *text*: 4.17:1
+ *   on the Paper ground and 3.57:1 on its own 10% tint, against the 4.5:1 AA needs.
+ *   The palette grew a third step (`--color-watermelon-deep`), `--primary` and
+ *   `--destructive` point at it, and the page now renders the link variants on Paper
+ *   with every other one instead of hiding them on a white card. Nothing replaced the
+ *   entry: axe reports no contrast violation on any of these six URLs.
  * - `aria-hidden-focus`, with a menu or a select open: radix calls `hideOthers` (from
  *   the `aria-hidden` package), which walks down from `<body>` marking `aria-hidden`
  *   everything that is not on the path to the open surface, sparing every `[aria-live]`
@@ -65,11 +65,11 @@ const HIDDEN_SECTIONS = ['#button', '#card', '#fields', '#floating-surfaces', '#
 )
 
 const KNOWN: Record<string, string[]> = {
-  '/': ['color-contrast'],
-  '/?open=dialog': ['color-contrast'],
+  '/': [],
+  '/?open=dialog': [],
   '/?open=sheet': [],
   '/?open=menu': HIDDEN_SECTIONS,
-  '/?open=popover': ['color-contrast'],
+  '/?open=popover': [],
   '/?open=select': HIDDEN_SECTIONS,
 }
 
@@ -143,25 +143,41 @@ test.describe('the gallery renders the system', () => {
     })
   }
 
-  test('measures the watermelon text pairs the palette cannot yet clear', async ({ page }) => {
-    // The numbers behind REB-307, read off the render rather than recomputed: if a
-    // palette change fixes them, this fails and the exclusion above goes with it.
+  test('writes the destructive and link text in the deep step, on the page ground', async ({ page }) => {
+    // The numbers behind REB-307, read off the render rather than recomputed. Both
+    // variants sit on Paper here, which is the ground they failed on before the deep
+    // step existed, and axe measures them as part of the assertions above: this test
+    // is what says *which* colour cleared it, so a revert to `-strong` fails here
+    // rather than quietly passing on a card.
     await page.goto('/')
     const pairs = await page.evaluate(() => {
       const badge = document.querySelector('[data-slot="badge"][data-variant="destructive"]')
-      const onCard = document.querySelector('[data-slot="card"] [data-slot="button"][data-variant="link"]')
+      const link = document.querySelector('[data-slot="button"][data-variant="link"]')
       const cs = (el: Element | null) => (el ? getComputedStyle(el) : null)
+      // The nearest *opaque* ancestor background: the badge's own `bg-destructive/10`
+      // is a tint of the same colour and not a ground, and Chromium reports a
+      // Tailwind alpha utility as a color-mix() result whose serialisation is not
+      // worth pinning. What matters is what the tint sits on.
+      const ground = (el: Element | null): string | null => {
+        for (let node = el; node instanceof Element; node = node.parentElement) {
+          const colour = getComputedStyle(node).backgroundColor
+          if (/^rgb\(/.test(colour)) return colour
+        }
+        return null
+      }
       return {
         destructiveText: cs(badge)?.color ?? null,
-        linkOnCardText: cs(onCard)?.color ?? null,
-        cardBackground: cs(document.querySelector('[data-slot="card"]'))?.backgroundColor ?? null,
+        linkText: cs(link)?.color ?? null,
+        destructiveGround: ground(badge),
+        linkGround: ground(link),
       }
     })
-    expect(pairs.destructiveText).toBe(rgbOf('watermelon-strong'))
-    expect(pairs.linkOnCardText).toBe(rgbOf('watermelon-strong'))
-    // Plain white, which is the one ground this colour clears AA on and the only
-    // value here that is not a brand token: the card is white, not Paper.
-    expect(pairs.cardBackground).toBe('rgb(255, 255, 255)')
+    expect(pairs.destructiveText).toBe(rgbOf('watermelon-deep'))
+    expect(pairs.linkText).toBe(rgbOf('watermelon-deep'))
+    // Neither is on a white card any more: both read on Paper, which is the pair that
+    // measured 4.17:1 and 3.57:1 before the deep step.
+    expect(pairs.linkGround).toBe(rgbOf('paper'))
+    expect(pairs.destructiveGround).toBe(rgbOf('paper'))
   })
 
   test('computes no radius anywhere, other than the pill that asks for one', async ({ page }) => {
@@ -236,7 +252,7 @@ test.describe('the gallery renders the system', () => {
       const el = document.querySelector('[data-slot="input"][aria-invalid]')
       return el ? getComputedStyle(el).borderTopColor : null
     })
-    expect(invalid, 'an invalid field should draw the destructive line').toBe(rgbOf('watermelon-strong'))
+    expect(invalid, 'an invalid field should draw the destructive line').toBe(rgbOf('watermelon-deep'))
   })
 
   test('ignores an operating system in dark mode, which is ORB-138', async ({ page }) => {

@@ -301,10 +301,11 @@ describe('landing tokens', () => {
 
   it('never uses raw Watermelon as a solid fill', () => {
     // The regression banned by name. In the app this is solved: --primary and
-    // --destructive both point at --color-watermelon-strong, because white on raw
-    // Watermelon is 4.221:1 and misses the 4.5:1 body-text floor. The landing must
-    // not re-introduce it on the one element that IS a solid fill under white
-    // text: the call to action.
+    // --destructive point at --color-watermelon-deep (REB-307) and the CRM sidebar's
+    // active tile at --color-watermelon-strong, because white on raw Watermelon is
+    // 4.221:1 and misses the 4.5:1 body-text floor. The landing must not re-introduce
+    // it on the one element that IS a solid fill under white text: the call to action,
+    // which fills with `-strong` and is measured as a text pair above.
     for (const [, property, value] of landingCss.matchAll(
       /(?:^|[;{])\s*(background|background-color|fill)\s*:\s*([^;}]+)/g,
     )) {

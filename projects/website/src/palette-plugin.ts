@@ -13,10 +13,11 @@ const SYSTEM_CSS = resolve(__dirname, 'system.css')
  *  `:root`. */
 const FONT_CSS = fileURLToPath(import.meta.resolve('@rebase/brand/font.css'))
 
-/** The palette, the font stack and the radius scale, and nothing else. Fifteen
- *  today; the count is asserted so that a token added to or removed from
- *  palette.css is a failing test rather than a silently thinner landing. */
-const EXPECTED_TOKEN_COUNT = 7
+/** The palette and the font stack, and nothing else. Eight today, the seventh colour
+ *  being the deep watermelon REB-307 added; the count is asserted so that a token
+ *  added to or removed from palette.css is a failing test rather than a silently
+ *  thinner landing. */
+const EXPECTED_TOKEN_COUNT = 8
 
 /**
  * Reads the custom properties `palette.css` declares inside a `@theme` block and
@@ -26,7 +27,7 @@ const EXPECTED_TOKEN_COUNT = 7
  * `@theme` at-rule, whose literal hex values are what let the app generate
  * `bg-watermelon/50`-style utilities. Pointing `@theme` at `var()` indirections to
  * make the block shareable would break that. The landing has no Tailwind at all, so
- * it cannot consume `@theme` either way. Copying the six hexes into `landing.css`
+ * it cannot consume `@theme` either way. Copying the seven hexes into `landing.css`
  * is the obvious alternative and is exactly the fork this function exists to make
  * impossible: there is one source of colour, and a landing built from a stale copy
  * of it cannot happen because no copy exists.

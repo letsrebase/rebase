@@ -6,13 +6,19 @@ import { extractSharedTokens } from './palette-plugin'
 const tokensCss = readFileSync(fileURLToPath(import.meta.resolve('@rebase/brand/palette.css')), 'utf-8')
 
 describe('extractSharedTokens', () => {
-  it('extracts exactly the seven tokens the brand shares: six colours and the typeface', () => {
+  it('extracts exactly the eight tokens the brand shares: seven colours and the typeface', () => {
     expect(Object.keys(extractSharedTokens(tokensCss)).sort()).toEqual([
       '--color-charcoal-blue',
       '--color-paper',
       '--color-prussian-blue',
       '--color-royal-gold',
       '--color-watermelon',
+      // The third step of the watermelon ramp (REB-307) arrives here because the
+      // palette is extracted whole, not because the landing draws with it: the site's
+      // call to action fills with `-strong` and reads white on it. A token the landing
+      // receives and does not use costs one custom property; a token it needs and does
+      // not receive is a dangling var(), which the guard below is about.
+      '--color-watermelon-deep',
       '--color-watermelon-strong',
       '--font-sans',
     ])

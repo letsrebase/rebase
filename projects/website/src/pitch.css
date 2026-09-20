@@ -1,7 +1,7 @@
 /* The pitch deck as a page of the site (ORB-153). The same file the deck on Ivan's
    desk renders from, with one change for the web beyond hashing the pictures: pitch.css
    is a `TOKEN_CONSUMERS` entry, like landing.css and community.css, so palette-plugin.ts
-   prepends the shared font, the seven tokens and system.css here too (REB-248). The six
+   prepends the shared font, the eight tokens and system.css here too (REB-248). The six
    variables below are `var()`s of the injected `--color-*` custom properties, not a
    second copy of the palette, so a colour changed in `shared/brand` reaches this deck
    the same build. No consent notice and no pixel: the page measures nothing. */

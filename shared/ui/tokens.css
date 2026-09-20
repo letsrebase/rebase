@@ -49,7 +49,12 @@
   --card-foreground: var(--color-prussian-blue);
   --popover: #ffffff;
   --popover-foreground: var(--color-prussian-blue);
-  --primary: var(--color-watermelon-strong);
+  /* The deep step, not `-strong`: both slots are read as text as often as they are
+     filled (`text-primary` is the link variant, `text-destructive` is every form error
+     in both applications), and only the deep step clears AA as text on Paper and on
+     its own 10% tint. White on it goes from 4.67:1 to 6.04:1, so the fills gain too.
+     REB-307. */
+  --primary: var(--color-watermelon-deep);
   --primary-foreground: #ffffff;
   /* The two quiet fills, from the palette and never a hand-mixed hex. `--muted` *is*
      Paper, because that is what a table row hover has to be; `--secondary` is one step
@@ -61,7 +66,7 @@
   --muted-foreground: var(--color-charcoal-blue);
   --accent: var(--color-royal-gold);
   --accent-foreground: var(--color-prussian-blue);
-  --destructive: var(--color-watermelon-strong);
+  --destructive: var(--color-watermelon-deep);
   --destructive-foreground: #ffffff;
   /* The line is the ink itself, full strength, the way the landing's universal
      selector sets `border-color: var(--landing-ink)` with no mixing at all. The 12%
@@ -122,10 +127,14 @@
      no sidebar primitive any more, since the CRM's generated one had no importer and
      left with REB-304. They are not separate colours, only the palette re-pointed at
      its slots. The Prussian Blue panel with Paper text is the most recognisable trait
-     of the application, and the record keeps it in both: Paper on it measures 14.7:1. The active item is marked by a Watermelon Strong
-     tile, `-strong` because it is the one surface that renders white text on it
-     (4.67:1 against 4.22:1). Hover is the same white-into-blue mix at 6%
-     (`hover:bg-sidebar-accent/60` in the shells). */
+     of the application, and the record keeps it in both: Paper on it measures 14.7:1.
+     The active item is marked by a Watermelon Strong tile, `-strong` because it is the
+     one surface that renders white text on it (4.67:1 against 4.22:1) and never text
+     in the colour, so the deep step REB-307 gave --primary buys it nothing. That does
+     leave the application with two reds on a fill, the button's and this tile's, seven
+     points of lightness apart and never adjacent on a screen; whether the tile should
+     follow the button is a decision and not a fix. Hover is the same white-into-blue
+     mix at 6% (`hover:bg-sidebar-accent/60` in the shells). */
   --sidebar: var(--color-prussian-blue);
   --sidebar-foreground: var(--color-paper);
   --sidebar-primary: var(--color-watermelon-strong);

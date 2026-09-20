@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AA_NON_TEXT,
   AA_TEXT,
+  blendSrgb,
   contrastRatio,
   hexToRgb,
   paletteFrom,
@@ -154,6 +155,7 @@ describe('the palette every slot resolves through', () => {
   it.each([
     ['watermelon', '#ed254e'],
     ['watermelon-strong', '#e5133e'],
+    ['watermelon-deep', '#c50d33'],
     ['royal-gold', '#f9dc5c'],
     ['paper', '#f1f2f3'],
     ['prussian-blue', '#011936'],
@@ -162,14 +164,33 @@ describe('the palette every slot resolves through', () => {
     expect(css).toContain(`--color-${name}: ${hex}`)
   })
 
-  it('uses the accessible Watermelon variant as the primary and destructive colour', () => {
+  it('uses the deep Watermelon as the primary and destructive colour', () => {
     // Raw --color-watermelon stays the brand colour for accents, borders and the focus
-    // ring; a solid fill carrying white text needs the darker, AA-compliant variant.
-    expect(css).toMatch(/--primary:\s*var\(--color-watermelon-strong\)/)
-    expect(css).toMatch(/--destructive:\s*var\(--color-watermelon-strong\)/)
+    // ring. These two slots take the deepest step because they are read as text as
+    // often as they are filled: `text-primary` is the link variant and
+    // `text-destructive` is every form error in both applications (REB-307).
+    expect(css).toMatch(/--primary:\s*var\(--color-watermelon-deep\)/)
+    expect(css).toMatch(/--destructive:\s*var\(--color-watermelon-deep\)/)
   })
 
-  it('white text on watermelon-strong clears the 4.5:1 AA text threshold', () => {
+  it.each([
+    ['the Paper ground', () => tokenHex('paper')],
+    ['a white card', () => '#ffffff'],
+    ['its own 10% tint over Paper', () => blendSrgb(tokenHex('watermelon-deep'), tokenHex('paper'), 0.1)],
+    ['its own 10% tint over a white card', () => blendSrgb(tokenHex('watermelon-deep'), '#ffffff', 0.1)],
+  ])('reads the deep Watermelon as text at AA on %s', (_ground, background) => {
+    // The four grounds the destructive and link variants actually land on: the page,
+    // a card, and the 10% tint each of those two wears under `bg-destructive/10`.
+    // `-strong` cleared only the second of the four, which is what REB-307 was about.
+    expect(
+      contrastRatio(tokenHex('watermelon-deep'), background()),
+    ).toBeGreaterThanOrEqual(AA_TEXT)
+  })
+
+  it('carries white text on both filled steps at AA', () => {
+    // -deep fills the primary button and -strong the sidebar's active tile, which is
+    // the one fill left on the middle step.
+    expect(contrastRatio('#ffffff', tokenHex('watermelon-deep'))).toBeGreaterThanOrEqual(AA_TEXT)
     expect(contrastRatio('#ffffff', tokenHex('watermelon-strong'))).toBeGreaterThanOrEqual(AA_TEXT)
   })
 

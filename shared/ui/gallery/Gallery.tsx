@@ -97,7 +97,7 @@ const BUTTON_VARIANTS = ['default', 'outline', 'secondary', 'ghost', 'destructiv
 const BUTTON_SIZES = ['xs', 'sm', 'default', 'lg'] as const
 const ICON_SIZES = ['icon-xs', 'icon-sm', 'icon', 'icon-lg'] as const
 const SHEET_SIDES = ['right', 'left', 'top', 'bottom'] as const
-const BADGE_VARIANTS = ['default', 'secondary', 'destructive', 'outline', 'ghost', 'pill'] as const
+const BADGE_VARIANTS = ['default', 'secondary', 'destructive', 'outline', 'ghost', 'link', 'pill'] as const
 const DOT_TINTS = ['ink', 'muted', 'accent', 'gold', 'danger'] as const
 
 function Section({
@@ -149,7 +149,12 @@ export function Gallery() {
           title="Button"
           note="Six variants, the four text sizes and the four icon sizes, each plus disabled and invalid. The primary carries the 2px line of the site; the rest carry 1px."
         >
-          {BUTTON_VARIANTS.filter((variant) => variant !== 'link').map((variant) => (
+          {/* Every variant sits on the page ground, the link included, which it could
+              not until REB-307: the watermelon as text measured 4.17:1 on Paper, so the
+              gallery kept the link variants on a white card because that was the one
+              ground the system allowed them on. The deep step reads 5.39:1 there, and
+              this page is where a browser proves it. */}
+          {BUTTON_VARIANTS.map((variant) => (
             <Row key={variant} label={variant}>
               <Button variant={variant}>Salva</Button>
               <Button variant={variant} disabled>
@@ -157,23 +162,6 @@ export function Gallery() {
               </Button>
             </Row>
           ))}
-          {/* The link variants render on a card, not on the page ground, because that
-              is where the products use them (the CRM's login and signup) and the only
-              ground the watermelon text clears AA on: 4.67:1 on white against 4.17:1
-              on Paper. The gallery showing them on Paper would be the gallery drawing
-              a pair the system does not allow. */}
-          <Card size="sm" className="w-64">
-            <CardContent className="flex flex-col gap-2">
-              <span className="text-xs tracking-wide text-muted-foreground">link, on a card</span>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="link">Salva</Button>
-                <Button variant="link" disabled>
-                  Salva
-                </Button>
-                <Badge variant="link">Attiva</Badge>
-              </div>
-            </CardContent>
-          </Card>
           <Row label="sizes">
             {BUTTON_SIZES.map((size) => (
               <Button key={size} size={size}>
@@ -196,7 +184,7 @@ export function Gallery() {
           </Row>
         </Section>
 
-        <Section title="Badge" note="Seven variants and the five dot tints. The link variant is with the buttons, on the card the system requires for it.">
+        <Section title="Badge" note="Seven variants and the five dot tints, all on the page ground.">
           {BADGE_VARIANTS.map((variant) => (
             <Row key={variant} label={variant}>
               <Badge variant={variant}>Attiva</Badge>

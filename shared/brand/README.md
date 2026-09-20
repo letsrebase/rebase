@@ -6,7 +6,7 @@ surface.
 
 | File | What it holds | Who reads it |
 |---|---|---|
-| `palette.css` | Six colours and `--font-sans`, in a Tailwind `@theme` block | The CRM's `tokens.css` imports it; the website extracts it at build time |
+| `palette.css` | Seven colours, three of them steps of the same watermelon, and `--font-sans`, in a Tailwind `@theme` block | The CRM's `tokens.css` imports it; the website extracts it at build time |
 | `font.css` + `fonts/` | Outfit, self-hosted, one variable file for the 300-700 range | Both surfaces |
 | `mark.ts` | The order of the four tiles, and how each surface names them | Both surfaces' tests |
 | `contrast.ts` | WCAG's ratio, the sRGB blend and the palette reader, with the AA thresholds named | The site's token test, the hub's, and `@rebase/ui`'s |
@@ -40,7 +40,7 @@ Edit `palette.css`. Both surfaces pick it up from the same declaration, and thre
 suites will tell you if something drifted: the application's `tokens.test.ts` checks
 contrast ratios against the values, the website's `landing-tokens.test.ts` checks that
 no stylesheet restates them, and `palette-plugin.test.ts` asserts the exact set of
-seven tokens the website receives.
+eight tokens the website receives.
 
 ## The wordmark, and why it is not a font
 

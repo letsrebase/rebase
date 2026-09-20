@@ -1,4 +1,4 @@
-/* The community page. palette-plugin.ts prepends the fifteen shared tokens and landing/system.css
+/* The community page. palette-plugin.ts prepends the eight shared tokens and landing/system.css
    (grid line, tile, glyph, contrast guard), exactly as for landing.css. What is left
    here is this page's own layout: the field over the whole viewport and one box. */
 :root {
