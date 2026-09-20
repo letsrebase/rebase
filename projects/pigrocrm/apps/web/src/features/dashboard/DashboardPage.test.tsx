@@ -151,8 +151,9 @@ describe('DashboardPage', () => {
   it('draws the three period presets as controls and not as bare text', () => {
     // What the 1440 screenshot of the 2026-09-08 visual pass caught: as `variant="ghost"`
     // buttons, «Mese / Trimestre / Anno» had neither line nor fill, so the one cluster in
-    // the top right of Home read as a caption. Spec §4 gives the controls of a filter row
-    // a 12% line on the white panel.
+    // the top right of Home read as a caption. Spec §4 gives the controls of a filter
+    // row a line on the white panel; since REB-299 that line is 1px of the ink itself,
+    // which is what `border-border` resolves to.
     renderPage()
     for (const label of ['Mese', 'Trimestre', 'Anno']) {
       expect(screen.getByRole('button', { name: label }).className, label).toContain(

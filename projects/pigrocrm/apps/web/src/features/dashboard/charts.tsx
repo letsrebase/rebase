@@ -13,9 +13,11 @@ import { cn } from '@rebase/ui/cn'
  * That is also what makes one set of five hues legal for both colour modes. Colour here
  * encodes *nothing*: every bar sits in its own row beside its own label and its own value
  * as text, so a reader who cannot separate two hues has lost no information. The five
- * tokens are below the 3:1-on-both-surfaces bar a mark carrying meaning would have to
- * clear, and `styles/tokens.test.ts` records exactly what that costs and what would have
- * to change first if a shape ever made the hue the only thing telling two series apart.
+ * tokens are below the 3:1 bar a mark carrying meaning would have to clear, and
+ * `shared/ui/tokens.test.ts` records exactly what that costs and what would have to
+ * change first if a shape ever made the hue the only thing telling two series apart: the
+ * five tokens and the test that evaluates their `color-mix()` moved into `@rebase/ui`
+ * with the token layer (REB-299), since both applications render on it.
  *
  * **Nothing here parses a number.** Values arrive as the strings the API sent, already
  * formatted, and `ratio` arrives as a number the *server* derived. These components format
@@ -104,7 +106,7 @@ export type BarRow = {
   /**
    * An explicit fill for a row that means something the sequence does not -- the pipeline
    * card's «Vinto» and «Perso», which are outcomes and not two more steps. A `var()` or a
-   * `color-mix()` of the existing tokens, never a literal colour: `styles/tokens.css`
+   * `color-mix()` of the existing tokens, never a literal colour: `@rebase/ui/tokens.css`
    * stays the single source of colour.
    */
   color?: string

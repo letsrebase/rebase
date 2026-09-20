@@ -35,6 +35,16 @@ tools/           the one script that turns that prose into a file a member downl
 `packages/core` may import neither adapter, and neither adapter may import the other:
 each directory's `ruff.toml` says so.
 
+**The UI comes from `@rebase/ui`, and this application writes no primitive at all.**
+The seven hand-written ones it used to carry were deleted when the package took over
+(REB-300), so `apps/web/src/components/` holds only what is genuinely the hub's
+(`BrandMark`, `Shell`) and everything else is imported from the package.
+`src/styles/tokens.css` is the entry file that fixes the import order, plus the one
+thing that is really local: the `.site` scope, where the chooser, the two wizards and
+the thanks page keep the landing's own 2px line, 8px step and 7% grid by repointing
+`--shadow-app-*`. There is no `components.json` here: a new primitive is generated in
+`shared/ui` (`pnpm --filter @rebase/ui exec shadcn add <name>`).
+
 ## The MCP server is an admin's, by token
 
 Since REB-213 every transport resolves a personal token (`rebase_core.admin_tokens`,

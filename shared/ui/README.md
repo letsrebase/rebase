@@ -70,13 +70,18 @@ utility at build time, so a scope can only repoint the indirection, never `--sha
 itself. Those overrides target `[data-slot=...]`, so they still reach the primitives
 after the move, which is what the hub's wizard proves on every render.
 
-**Five of the CRM's generated components.** They did not move: `avatar`, `calendar`, `command`,
-`input-group` and `sidebar`. None of them has a second consumer. The hub's shell is its
-own (REB-279 rewrites it) and its screens have no command palette, no date picker and no
-avatar, so moving those would be moving one application's code into a package for three.
+**Three of the CRM's generated components.** They did not move: `avatar`, `command` and
+`input-group`, which `command` composes. None of them has a second consumer: the hub's
+shell is its own (REB-279 rewrites it) and its screens have no command palette and no
+avatar, so moving them would be moving one application's code into a package for three.
 They import what they need from here, which is what makes the boundary visible: a file
 under `projects/pigrocrm/apps/web/src/components/ui/` that imports `@rebase/ui/button`
 is CRM-only on purpose. The day the hub needs one, it moves.
+
+Five stayed when the eighteen moved (REB-300). `calendar` and `sidebar` were two of
+them and had no importer in the CRM at all, so REB-304 deleted them, along with
+`react-day-picker` and the `use-mobile` hook that existed only for those two files. A
+date picker or a second shell is generated here when something actually renders one.
 
 The hub's seven hand-written primitives (button, input, textarea, card, label, badge,
 dialog) were deleted rather than merged: the CRM's radix versions are the ones with the
@@ -88,10 +93,10 @@ listens to one queue while `toast()` pushes onto the other and every toast disap
 with a green build: `@rebase/ui/sonner` exports both, and the CRM's callers import
 `toast` from there.
 
-`components.json` here is the generator's own configuration, so a nineteenth primitive
-is added in this package (`pnpm --filter @rebase/ui exec shadcn add <name>`) rather than
-in an application and moved afterwards. The CRM keeps its own, pointing at the five that
-stayed, with its `utils` alias now naming `@rebase/ui/cn`.
+`components.json` here is the generator's own configuration, and since REB-304 it is
+the only one in the repository: a nineteenth primitive is added in this package
+(`pnpm --filter @rebase/ui exec shadcn add <name>`) and never in an application, which
+is what the CRM's own `components.json` quietly invited for as long as it existed.
 
 ## The gallery
 

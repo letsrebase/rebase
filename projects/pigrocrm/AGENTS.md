@@ -47,6 +47,18 @@ still copied into this project's web image and served at the document root, whic
 a serving arrangement and not a dependency of the application on it. The palette,
 the typeface and the brand mark both surfaces use live in `shared/brand`.
 
+**The UI comes from `@rebase/ui`, and a primitive is not written here.** The token
+layer and the eighteen shared primitives live in that package (REB-299, REB-300):
+`src/styles/tokens.css` is a three-line entry file that only fixes the import order
+and declares nothing, and a component imports `@rebase/ui/button`, never a local copy.
+Three generated files stayed under `src/components/ui/`, because nothing else renders
+them: `avatar`, `command` and the `input-group` it composes. There is no
+`components.json` in this application, on purpose: `shadcn add` is run in `shared/ui`
+(`pnpm --filter @rebase/ui exec shadcn add <name>`), and a fourth local primitive here
+needs a reason written down, not a generator flag. `shadows.test.tsx` holds those three
+to the rule, and the package's `tokens.test.ts` and `e2e/gallery.spec.ts` hold the
+system itself.
+
 **`packages/core` may import neither adapter, and neither adapter may import the
 other.** This is enforced twice and both are load-bearing: `ruff.toml`'s
 `flake8-tidy-imports.banned-api` at the project level, narrowed by each adapter's own

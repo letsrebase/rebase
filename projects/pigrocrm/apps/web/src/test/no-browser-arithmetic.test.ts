@@ -2,9 +2,11 @@
  * **Criterion 14.** No number is born in the browser.
  *
  * Slice 4 §14.4 describes this test as already written; it is not -- slice 4 is not
- * implemented and `apps/web` has no source-reading test other than `styles/tokens.test.ts`,
- * which parses CSS with a regex. So this slice **creates** it, scoped to the dashboard
- * modules it introduces.
+ * implemented and, when this file was written, `apps/web` had no source-reading test
+ * other than a regex over its own `tokens.css`. So this slice **creates** it, scoped to
+ * the dashboard modules it introduces. (That CSS test now lives in `@rebase/ui`, with
+ * the tokens; what reads source here is this file and
+ * `components/ui/shadows.test.tsx`.)
  *
  * Deliberately out of scope, and named so nobody widens the scope without deciding to: the
  * five existing `Number()` call sites in `features/settings/FieldsPanel.tsx`,

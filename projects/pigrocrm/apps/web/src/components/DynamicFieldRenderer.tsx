@@ -37,10 +37,11 @@ const EMPTY = '—'
 const CLEAR_OPTION = '\u0000'
 
 /** Shared by both the label above a control and the label beside a checkbox. Always
- *  the semantic `destructive` token (the AA-compliant Watermelon variant every
- *  `aria-invalid` state in components/ui already uses — see styles/tokens.css),
- *  never the raw brand `--color-watermelon` that AppShell/login reserve for
- *  decorative accents: this asterisk is small body text, not a logo. */
+ *  the semantic `destructive` token (the darkened Watermelon step every `aria-invalid`
+ *  state in `@rebase/ui` already uses, declared in `@rebase/ui/tokens.css`), never the
+ *  raw brand `--color-watermelon` that AppShell and the login reserve for decorative
+ *  accents: this asterisk is small body text, not a logo. How far that step actually
+ *  clears AA as text is REB-307. */
 function RequiredMark() {
   return <span className="ml-1 text-destructive">*</span>
 }
