@@ -118,10 +118,11 @@
   --chart-4: color-mix(in oklab, var(--color-charcoal-blue) 84%, #ffffff);
   --chart-5: color-mix(in oklab, var(--color-watermelon) 40%, var(--color-prussian-blue));
 
-  /* The sidebar primitive reads these directly; they are not separate colours, only
-     the palette re-pointed at its slots. The Prussian Blue panel with Paper text is
-     the most recognisable trait of the application, and the record keeps it in both:
-     Paper on it measures 14.7:1. The active item is marked by a Watermelon Strong
+  /* The two hand-written shells read these directly, and nothing else does: there is
+     no sidebar primitive any more, since the CRM's generated one had no importer and
+     left with REB-304. They are not separate colours, only the palette re-pointed at
+     its slots. The Prussian Blue panel with Paper text is the most recognisable trait
+     of the application, and the record keeps it in both: Paper on it measures 14.7:1. The active item is marked by a Watermelon Strong
      tile, `-strong` because it is the one surface that renders white text on it
      (4.67:1 against 4.22:1). Hover is the same white-into-blue mix at 6%
      (`hover:bg-sidebar-accent/60` in the shells). */

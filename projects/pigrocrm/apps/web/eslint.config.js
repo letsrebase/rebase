@@ -23,16 +23,18 @@ export default defineConfig([
   {
     // shadcn generates these files verbatim; hand-editing them to satisfy lint
     // is pointless since the next `shadcn add --overwrite` puts them back as
-    // the CLI's own template produces them. Both rules below flag a pattern
-    // the generator itself ships on every relevant component — a file
-    // exporting its component alongside its cva() variants function, and
-    // useIsMobile's effect setting state synchronously off a media-query
-    // listener — never an actual defect here. Scoped to exactly this file
-    // set, not disabled project-wide.
-    files: ['src/components/ui/**/*.{ts,tsx}', 'src/hooks/use-mobile.ts'],
+    // the CLI's own template produces them. The rule below flags a pattern the
+    // generator itself ships on every relevant component, a file exporting its
+    // component alongside its cva() variants function, never an actual defect here.
+    // Scoped to exactly this file set, not disabled project-wide.
+    //
+    // `set-state-in-effect` was off here too, for `useIsMobile`, which the sidebar
+    // primitive needed; both left with REB-304, and the hook this application did
+    // keep (`hooks/use-media-query.ts`) is written on `useSyncExternalStore`
+    // precisely so it never trips that rule.
+    files: ['src/components/ui/**/*.{ts,tsx}'],
     rules: {
       'react-refresh/only-export-components': 'off',
-      'react-hooks/set-state-in-effect': 'off',
     },
   },
   {

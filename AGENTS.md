@@ -28,8 +28,8 @@ the policy the SPAs initialise it with. `shared/ui` is the third and the largest
 token layer both SPAs render on and the eighteen primitives they share, with a gallery
 that renders every one of them and the contract tests that hold them to the record. **A
 primitive is generated there and nowhere else**: the repository has exactly one
-`components.json`, in that package, so `shadcn add` cannot quietly grow a
-twentieth local copy inside an application (REB-304). A project small enough to be a
+`components.json`, in that package, so `shadcn add` cannot quietly grow another local
+copy inside an application (REB-304). A project small enough to be a
 single artifact may be one package at its own root rather than growing an `apps/`
 directory with one entry in it, which is what
 `projects/website` is. `tooling/` is still empty, and a directory is not created

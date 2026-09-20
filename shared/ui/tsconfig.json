@@ -11,7 +11,8 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "skipLibCheck": true,
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals"],
+    "paths": { "@/*": ["./*"] }
   },
   "include": ["*.ts", "*.tsx", "gallery/**/*.ts", "gallery/**/*.tsx", "e2e/**/*.ts", "*.config.ts"]
 }

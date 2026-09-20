@@ -41,8 +41,8 @@ The seven hand-written ones it used to carry were deleted when the package took 
 (`BrandMark`, `Shell`) and everything else is imported from the package.
 `src/styles/tokens.css` is the entry file that fixes the import order, plus the one
 thing that is really local: the `.site` scope, where the chooser, the two wizards and
-the thanks page keep the landing's own 2px line, 8px step and 7% grid by repointing
-`--shadow-app-*`. There is no `components.json` here: a new primitive is generated in
+the thanks page keep the landing's own 2px line, 8px step and 7% grid, the step by
+repointing `--shadow-app-*` and the line and the grid in that same block. There is no `components.json` here: a new primitive is generated in
 `shared/ui` (`pnpm --filter @rebase/ui exec shadcn add <name>`).
 
 ## The MCP server is an admin's, by token

@@ -98,6 +98,15 @@ the only one in the repository: a nineteenth primitive is added in this package
 (`pnpm --filter @rebase/ui exec shadcn add <name>`) and never in an application, which
 is what the CRM's own `components.json` quietly invited for as long as it existed.
 
+That command needs one thing that looks out of place in `tsconfig.json`: a `@/*` entry
+in `paths`. The CLI resolves every alias in `components.json` through tsconfig paths and
+refuses to run at all without them, which is why `shadcn add` used to fail in both
+places it was configured. Nothing in this package imports `@/`: a primitive here imports
+its sibling by name, and `cn` from `./cn`. And the `paths` entry deliberately comes
+without a `baseUrl`, which TypeScript has allowed since 4.1: with `baseUrl: "."` a bare
+`import { toast } from 'sonner'` resolves to this package's own `sonner.tsx` before it
+reaches the dependency, and `tsc` fails on three circular aliases.
+
 ## The gallery
 
 ```
