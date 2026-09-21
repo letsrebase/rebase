@@ -127,8 +127,11 @@ def test_a_signed_in_member_without_the_admin_role_is_403_on_every_token_route(
 ) -> None:
     """REB-287: minting lives behind the admin group. A member's cookie is a real
     identity at the wrong door, so 403, not the signed-out 401."""
+    # The cookie jar survives a login (only `_login` itself or a logout clears it), so
+    # sign out first: this test must fail if it ever runs behind an admin's session.
+    client.post("/api/hub/me/logout")
     _apply(client, "ada.member@studio.it")
     _login(client, sender, "ada.member@studio.it")
+    assert client.get("/api/hub/me").json()["role"] == "member"
     assert client.get("/api/hub/tokens").status_code == 403
     assert client.post("/api/hub/tokens", json={"nome": "x"}).status_code == 403
-    assert client.get("/api/hub/me").status_code == 200
