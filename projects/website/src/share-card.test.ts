@@ -20,7 +20,7 @@ const PAGES = [
   'community.html',
   'pitch.html',
   'privacy.html',
-  'termini.html',
+  'terms.html',
 ] as const
 
 /** The name carries a number and a redraw takes the next one: LinkedIn, Facebook and
@@ -69,7 +69,7 @@ describe.each(PAGES)('%s shares with the card', (name) => {
     // than the Open Graph one, so both are declared and both say the same thing.
     //
     // A word of warning for whoever edits these heads: `landing-pages.test.ts` refuses
-    // the string «SLA» anywhere in termini.html, with no word boundary, so a comment
+    // the string «SLA» anywhere in terms.html, with no word boundary, so a comment
     // there that names a certain chat application fails a test about subscriptions.
     expect(meta(page, 'og:image:alt')).toBe(CARD_ALT)
     expect(meta(page, 'twitter:image:alt')).toBe(CARD_ALT)

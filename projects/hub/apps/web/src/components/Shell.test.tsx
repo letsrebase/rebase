@@ -61,7 +61,7 @@ describe('the public frame', () => {
     )
     expect(screen.getByRole('link', { name: 'Termini' })).toHaveAttribute(
       'href',
-      'https://letsrebase.com/termini',
+      'https://letsrebase.com/terms',
     )
   })
 })

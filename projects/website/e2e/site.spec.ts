@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 
-const PAGES = ['/', '/pigrocrm', '/privacy', '/termini', '/community', '/pitch'] as const
+const PAGES = ['/', '/pigrocrm', '/privacy', '/terms', '/community', '/pitch'] as const
 const BUDGET_BYTES = 40 * 1024
 // The hosts these pages may ever talk to besides their own: the ChatGPT Ads measurement
 // SDK and PostHog. "May ever" is the whole subtlety -- `consent.js` injects both only
@@ -532,6 +532,12 @@ test.describe('the path map, as production serves it', () => {
     expect(response.headers()['location']).toBe('/community')
   })
 
+  test('/termini redirects to /terms, its name before REB-318', async ({ request }) => {
+    const response = await request.get('/termini', { maxRedirects: 0 })
+    expect(response.status()).toBe(301)
+    expect(response.headers()['location']).toBe('/terms')
+  })
+
   test('/pigrocrm is the CRM\'s own page again (ORB-159)', async ({ page }) => {
     await page.goto('/pigrocrm')
     await expect(page).toHaveTitle(source('pigrocrm.html')!)
@@ -575,7 +581,7 @@ test.describe('the path map, as production serves it', () => {
     expect(response.status()).toBe(200)
     expect(response.headers()['content-type']).toBe('text/xml; charset=utf-8')
     const built = readFileSync(new URL('../dist/sitemap.xml', import.meta.url), 'utf-8')
-    for (const path of ['/', '/pigrocrm', '/community', '/privacy', '/termini']) {
+    for (const path of ['/', '/pigrocrm', '/community', '/privacy', '/terms']) {
       expect(built).toContain(`<loc>https://letsrebase.com${path}</loc>`)
     }
     // /pitch is noindex and stays out of the sitemap, the point of REB-110.
@@ -591,7 +597,7 @@ test.describe('the path map, as production serves it', () => {
 // either page fails here instead of in a visitor's hand.
 test.describe('the policy pages on a phone', () => {
   for (const width of [360, 390]) {
-    for (const path of ['/privacy', '/termini'] as const) {
+    for (const path of ['/privacy', '/terms'] as const) {
       test(`${path} does not scroll sideways at ${width}px`, async ({ page }) => {
         await page.setViewportSize({ width, height: 844 })
         await page.goto(path, { waitUntil: 'networkidle' })

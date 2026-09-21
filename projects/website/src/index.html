@@ -49,14 +49,14 @@
       pixel and PostHog: consent.js shows the notice and injects both SDKs only once
       somebody has said yes, so before a decision this page asks nothing of anyone. Here,
       on pigrocrm.html and on community.html, the three pages an ad can land on;
-      privacy.html and termini.html have no tracker and so nothing to ask about. The
+      privacy.html and terms.html have no tracker and so nothing to ask about. The
       pixel id, the PostHog key and the SDK URLs live in that one file rather than in
       three heads, and the Conversions API key appears in no page at all: it is in the
       server's .env, used only by the API. -->
     <script type="module" src="./consent.js"></script>
     <!-- REB-113: WebSite and Organization structured data, on this page only, the one
       a search result attaches to. Every value already appears elsewhere on the site:
-      privacy.html and termini.html name the legal entity, its VAT number and its
+      privacy.html and terms.html name the legal entity, its VAT number and its
       contact address; og:image above already names the share card this points at as
       a logo. No FAQPage, no Product, no Review: nothing here that is not true anywhere
       else on the site. -->
@@ -316,7 +316,7 @@
         <p class="fine" style="display: flex; gap: 1.5rem; flex-wrap: wrap">
           <a class="quiet-link" href="/">rebase</a>
           <a class="quiet-link" href="/privacy">Privacy</a>
-          <a class="quiet-link" href="/termini">Termini</a>
+          <a class="quiet-link" href="/terms">Termini</a>
           <a class="quiet-link" href="https://humancraft.tech/">Humancraft</a>
           <a class="quiet-link" href="/hub/admin/freelance">Admin</a>
         </p>

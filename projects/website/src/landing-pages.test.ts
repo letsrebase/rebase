@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { SITE_HOST } from './path-map-plugin'
 
-const PAGES = ['index.html', 'pigrocrm.html', 'privacy.html', 'termini.html'] as const
+const PAGES = ['index.html', 'pigrocrm.html', 'privacy.html', 'terms.html'] as const
 const html = Object.fromEntries(
   PAGES.map((name) => [name, readFileSync(join(__dirname, name), 'utf-8')]),
 ) as Record<(typeof PAGES)[number], string>
@@ -22,7 +22,7 @@ describe.each(PAGES)('%s', (name) => {
   it('carries its own title, description and Open Graph', () => {
     const title = page.match(/<title>([^<]+)<\/title>/)?.[1] ?? ''
     // Until 2026-09-10 every page here titled itself PigroCRM, including the two
-    // legal pages. ORB-36: privacy.html and termini.html are served on
+    // legal pages. ORB-36: privacy.html and terms.html are served on
     // letsrebase.com, not on pigro.letsrebase.com, and it is the Orbiters signup
     // form that links to them, so they title themselves after the site they are on
     // rather than after the CRM. index.html is the landing (at / since ORB-145;
@@ -106,7 +106,7 @@ describe.each(PAGES)('%s', (name) => {
   it('signs itself with the four-tile glyph before the name', () => {
     // Until 2026-09-10 the landing signed as Orbiters and the two legal pages kept
     // PigroCRM, on the reasoning that a legal page belongs to the product it
-    // covers. ORB-36 reopened that: privacy.html and termini.html are served on
+    // covers. ORB-36 reopened that: privacy.html and terms.html are served on
     // letsrebase.com, not on pigro.letsrebase.com, the Orbiters signup form is
     // what links to them, and their own text already covers Orbiters' data (the
     // signup) alongside PigroCRM's (community.test.ts separately asserts
@@ -237,13 +237,13 @@ describe('index.html', () => {
 
   it('links the two pages Google reads during verification', () => {
     expect(page).toMatch(/href="\/privacy"/)
-    expect(page).toMatch(/href="\/termini"/)
+    expect(page).toMatch(/href="\/terms"/)
   })
 
   it('carries WebSite and Organization structured data, with nothing invented', () => {
     // REB-113: one block, on this page only (links.test.ts checks the other five carry
     // none). The legal entity, its VAT number and its contact address are the ones
-    // privacy.html and termini.html already state.
+    // privacy.html and terms.html already state.
     const scripts = [...page.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)]
     expect(scripts).toHaveLength(1)
     const data = JSON.parse(scripts[0]![1]!)
@@ -355,8 +355,8 @@ describe('privacy.html', () => {
   })
 })
 
-describe('termini.html', () => {
-  const page = html['termini.html']
+describe('terms.html', () => {
+  const page = html['terms.html']
 
   it('is honest that there is no service being provided', () => {
     for (const claim of ['nessuna garanzia', 'software', 'licenza']) {

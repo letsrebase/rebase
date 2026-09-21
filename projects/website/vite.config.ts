@@ -36,7 +36,7 @@ export default defineConfig({
         index: path.resolve(__dirname, 'src/index.html'),
         pigrocrm: path.resolve(__dirname, 'src/pigrocrm.html'),
         privacy: path.resolve(__dirname, 'src/privacy.html'),
-        termini: path.resolve(__dirname, 'src/termini.html'),
+        terms: path.resolve(__dirname, 'src/terms.html'),
         community: path.resolve(__dirname, 'src/community.html'),
         pitch: path.resolve(__dirname, 'src/pitch.html'),
       },

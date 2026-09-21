@@ -19,7 +19,7 @@
    @font-face (shared/brand/font.css) already avoids invisible text, but the swap
    itself still reflows every line under it, because the reader's own `sans-serif`
    has a different average glyph width and a different ascent/descent than Outfit.
-   `termini.html` measured 0.165 of CLS from exactly that swap on its one paragraph,
+   `terms.html` measured 0.165 of CLS from exactly that swap on its one paragraph,
    and the same swap reflows the hero conversation on `pigrocrm.html` (measured: the
    chat figure renders 24px taller with the fallback active than with Outfit loaded,
    at a 390px viewport). The descriptors below give a *fallback* font Outfit's own

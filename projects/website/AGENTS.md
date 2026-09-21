@@ -40,7 +40,7 @@ silently thinner site.
 
 `src/landing.css`, `src/landing.js` and the three `landing-*.test.ts` files are named
 after the landing page, `index.html`, which is PigroCRM's own page and shares its
-stylesheet with `/privacy` and `/termini`. The **project** was renamed from `landing` to
+stylesheet with `/privacy` and `/terms`. The **project** was renamed from `landing` to
 `website` on 2026-09-09 because it is the whole site; the page inside it did not go
 anywhere. `src/community.*` is the community page and stands apart; `/orbiters` is its
 name before REB-212 (2026-09-15), kept as a 301.

@@ -109,7 +109,7 @@ describe('the landing shares the product system', () => {
     const index = readFileSync(join(__dirname, 'index.html'), 'utf-8')
     expect(index).toMatch(/<script>\s*document\.documentElement\.classList\.add\('js'\)/)
     expect(index).toMatch(/classList\.add\('reveal-all'\)\s*\}, 3000\)/)
-    for (const name of ['privacy.html', 'termini.html', 'community.html']) {
+    for (const name of ['privacy.html', 'terms.html', 'community.html']) {
       expect(readFileSync(join(__dirname, name), 'utf-8')).not.toMatch(/data-reveal|class="deck"/)
     }
   })
@@ -149,7 +149,7 @@ describe('the landing shares the product system', () => {
   it('tracks out the deck\'s kicker on the landing only; the policy pages keep the sentence with its tile', () => {
     // ORB-145: the landing's kicker is the pitch deck's, capitals in the accent, and it
     // lives under `.deck`, which only index.html's <main> carries. `.kicker` itself is
-    // unchanged, so privacy.html and termini.html still open with a sentence and a
+    // unchanged, so privacy.html and terms.html still open with a sentence and a
     // tile, and a <time> inside it still flows as text.
     expect(rule('.deck .kicker')).toMatch(/text-transform:\s*uppercase/)
     expect(rule('.deck .kicker')).toMatch(/letter-spacing:\s*0\.12em/)
@@ -221,7 +221,7 @@ describe('the landing shares the product system', () => {
     expect(rule('.brand:hover')).toMatch(/box-shadow:\s*4px 4px 0 var\(--landing-ink\)/)
 
     // The same class doubles as an inline citation in privacy.html and
-    // termini.html's running text, which must stay underlined prose rather
+    // terms.html's running text, which must stay underlined prose rather
     // than turn into a button mid-sentence: a later edit that moves the box
     // properties onto the generic rule would be the regression to catch.
     expect(rule('.quiet-link')).toMatch(/text-decoration:\s*underline/)

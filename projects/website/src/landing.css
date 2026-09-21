@@ -152,7 +152,7 @@ footer .quiet-link {
   text-decoration: none;
 }
 
-/* Plain inline flow otherwise (termini.html's two-link footer and privacy.html's
+/* Plain inline flow otherwise (terms.html's two-link footer and privacy.html's
    own, three since REB-251, carry no gap of their own), so consecutive links need
    their own breathing room; the first stays flush with the content edge. On
    index.html's flex footer, which already carries a flex `gap`, the DOM adjacency
@@ -344,7 +344,7 @@ li {
 }
 
 /* The generic form: an underlined citation inline in running text, on privacy.html
-   and termini.html. The header link and the footer's carry the bordered control
+   and terms.html. The header link and the footer's carry the bordered control
    above instead, which wins on specificity without needing `!important`. */
 .quiet-link {
   color: var(--landing-ink-quiet);

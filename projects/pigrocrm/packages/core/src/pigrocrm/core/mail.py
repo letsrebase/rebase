@@ -187,7 +187,7 @@ def _frame(title: str, body: str) -> str:
         (
             _quiet_link(f"{SITE}/pigrocrm", "PigroCRM"),
             _quiet_link(f"{SITE}/privacy", "Privacy"),
-            _quiet_link(f"{SITE}/termini", "Termini"),
+            _quiet_link(f"{SITE}/terms", "Termini"),
         )
     )
     return "\n".join(

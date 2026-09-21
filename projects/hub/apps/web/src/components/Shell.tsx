@@ -63,7 +63,7 @@ export function Shell({ children, panel = true }: { children: ReactNode; panel?:
           Privacy
         </a>
         <a
-          href="https://letsrebase.com/termini"
+          href="https://letsrebase.com/terms"
           className="bg-[var(--landing-surface)] p-[var(--landing-link-pad)] underline-offset-2 hover:underline"
         >
           Termini

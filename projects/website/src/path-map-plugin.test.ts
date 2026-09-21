@@ -59,13 +59,14 @@ describe('the path map, against deploy/nginx.conf', () => {
 })
 
 describe('route', () => {
-  it('puts the landing at the front door, the community page at /community, and redirects its old name (ORB-145, REB-212)', () => {
+  it('puts the landing at the front door, the community page at /community, and redirects its old name (ORB-145, REB-212, REB-318)', () => {
     expect(route('/')).toEqual({ kind: 'page', file: '/index.html' })
     expect(route('/community')).toEqual({ kind: 'page', file: '/community.html' })
     expect(route('/orbiters')).toEqual({ kind: 'redirect', to: '/community' })
     expect(route('/pitch')).toEqual({ kind: 'page', file: '/pitch.html' })
     expect(route('/privacy')).toEqual({ kind: 'page', file: '/privacy.html' })
-    expect(route('/termini')).toEqual({ kind: 'page', file: '/termini.html' })
+    expect(route('/terms')).toEqual({ kind: 'page', file: '/terms.html' })
+    expect(route('/termini')).toEqual({ kind: 'redirect', to: '/terms' })
   })
 
   it('serves PigroCRM its own page at /pigrocrm again (ORB-159), and keeps no redirect of its own', () => {

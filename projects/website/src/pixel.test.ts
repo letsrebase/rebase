@@ -22,7 +22,7 @@ const SDK_URL = 'https://bzrcdn.openai.com/sdk/oaiq.min.js'
 const POSTHOG_URL = `${POSTHOG_ASSET_HOST}/static/array.js`
 
 const MEASURED = ['index.html', 'pigrocrm.html', 'community.html'] as const
-const UNMEASURED = ['privacy.html', 'termini.html'] as const
+const UNMEASURED = ['privacy.html', 'terms.html'] as const
 const ALL = [...MEASURED, ...UNMEASURED]
 
 // Keyed by the literal names rather than by `string`: `noUncheckedIndexedAccess` makes

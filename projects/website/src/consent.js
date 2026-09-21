@@ -17,7 +17,7 @@
  *     refusal measures nothing.
  *
  * The three pages that carry this are the three an ad can land on. privacy.html and
- * termini.html have no tracker and therefore nothing to ask about.
+ * terms.html have no tracker and therefore nothing to ask about.
  *
  * The PostHog key and hosts are the ones in `shared/analytics/posthog.ts`, copied here
  * as literals because this file runs without a bundler; `pixel.test.ts` compares the

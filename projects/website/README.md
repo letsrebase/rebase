@@ -2,7 +2,7 @@
 
 letsrebase.com: the public site. Today that is the rebase landing at `/`, the
 community page with its signup form at `/community`, and the two policy pages
-(`/privacy`, `/termini`); it is called `website` rather than `landing` because it is
+(`/privacy`, `/terms`); it is called `website` rather than `landing` because it is
 expected to grow past those.
 
 Six HTML pages, six scripts, five stylesheets. No React, no Tailwind, no router.
@@ -30,7 +30,7 @@ pnpm --filter website lint
 | `src/pigrocrm.html` | `/pigrocrm` | PigroCRM's own page (ORB-159): one door into rebase beside a drawn Claude conversation, the four things inside, the guide, the closing box. Its own `pigrocrm.css` on top of `landing.css` |
 | `src/community.html` | `/community` | The community page and its signup form, the front door until 2026-09-11. `/orbiters` still answers, as a 301 (REB-212, 2026-09-15) |
 | `src/privacy.html` | `/privacy` | Privacy notice |
-| `src/termini.html` | `/termini` | Terms |
+| `src/terms.html` | `/terms` | Terms |
 | `src/pitch.html` | `/pitch` | The pitch deck, nineteen slides with keyboard, swipe and wheel navigation; shared by link, `noindex`. Its own stylesheet, `pitch.css`; its pictures under `src/pitch/` |
 
 The community form posts to `POST /api/community/signups`, which since 2026-09-09 is

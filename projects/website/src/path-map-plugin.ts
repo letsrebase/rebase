@@ -31,13 +31,14 @@ export const PAGES: Readonly<Record<string, string>> = {
   '/community': '/community.html',
   '/pitch': '/pitch.html',
   '/privacy': '/privacy.html',
-  '/termini': '/termini.html',
+  '/terms': '/terms.html',
 }
 
 /** `location = <path> { return 301 <to>; }`. nginx's `return` drops the query string
  *  and so does this. `/orbiters` is the community page's name before REB-212 moved it
- *  to `/community`; kept so a bookmark or an inbound link still lands. */
-export const REDIRECTS: Readonly<Record<string, string>> = { '/orbiters': '/community' }
+ *  to `/community`, and `/termini` is the terms page's name before REB-318 moved it to
+ *  `/terms`; both kept so a bookmark or an inbound link still lands. */
+export const REDIRECTS: Readonly<Record<string, string>> = { '/orbiters': '/community', '/termini': '/terms' }
 
 /** Paths nginx serves via `try_files`, exactly like `PAGES`, whose file this plugin
  *  writes at build time instead of Vite building it from an HTML input named in

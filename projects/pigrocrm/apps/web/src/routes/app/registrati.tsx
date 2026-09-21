@@ -30,7 +30,7 @@ interface Member {
   spazi: number
 }
 
-const TERMINI = 'https://letsrebase.com/termini'
+const TERMINI = 'https://letsrebase.com/terms'
 const PRIVACY = 'https://letsrebase.com/privacy'
 
 /**
