@@ -214,6 +214,16 @@ jobs:
               - 'projects/hub/packages/**'
               - 'projects/hub/conftest.py'
               - 'projects/hub/ruff.toml'
+              # The guide PDF's own inputs (REB-310): `test_guide_pdf.py` under
+              # `packages/core/tests` asserts the hash of every source recorded in
+              # `tools/guide-pdf.lock.json`, and none of the lock's five sources nor
+              # the lock file itself sit under the paths above unless listed here.
+              # PR #197 changed `shared/brand/palette.css`, did not trigger this job,
+              # and the stale lock reached main (fixed ad hoc in PR #199). `hub_web`
+              # below already treats `shared/brand/**` this way for the web side.
+              - 'projects/hub/content/**'
+              - 'projects/hub/tools/**'
+              - 'shared/brand/**'
               - 'pyproject.toml'
               - 'uv.lock'
               - 'ruff.toml'
