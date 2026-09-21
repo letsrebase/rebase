@@ -32,7 +32,7 @@ from pigrocrm_api.errors import PROBLEM_RESPONSES
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"], responses=PROBLEM_RESPONSES)
 
 
-@router.get("/commerciale", response_model=CommercialDashboard)
+@router.get("/sales", response_model=CommercialDashboard)
 def commerciale(
     session: SnapshotSessionDep,
     actor: ActorDep,
@@ -46,7 +46,7 @@ def commerciale(
     return DashboardService(session).get_commercial_dashboard(PeriodoQuery(da=da, a=a), actor)
 
 
-@router.get("/economica", response_model=EconomicDashboard)
+@router.get("/economic", response_model=EconomicDashboard)
 def economica(
     session: SnapshotSessionDep,
     actor: ActorDep,
@@ -60,7 +60,7 @@ def economica(
     return DashboardService(session).get_economic_dashboard(PeriodoQuery(da=da, a=a), actor)
 
 
-@router.get("/operativa", response_model=OperationalDashboard)
+@router.get("/operational", response_model=OperationalDashboard)
 def operativa(session: SnapshotSessionDep, actor: ActorDep) -> OperationalDashboard:
     """No period parameter, and not an optional one either.
 

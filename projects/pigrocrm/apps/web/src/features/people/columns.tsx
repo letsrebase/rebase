@@ -114,7 +114,7 @@ export function buildPersonColumns(
         if (!customer_id || label === EMPTY) return label
         return (
           <Link
-            to="/app/clienti/$customerId"
+            to="/app/customers/$customerId"
             params={{ customerId: customer_id }}
             className="underline underline-offset-2"
             // The whole row is already clickable (`DataTable`'s `onRowClick` sends it

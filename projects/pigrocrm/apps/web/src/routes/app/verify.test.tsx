@@ -16,7 +16,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 
 import { api, unwrap } from '@/lib/api'
-import { EnterPage } from './entra'
+import { EnterPage } from './verify'
 
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 const POST = api.POST as unknown as ReturnType<typeof vi.fn>
@@ -30,7 +30,7 @@ beforeEach(() => {
   // The real `AuthProvider` does exactly this and publishes the user; here the seam is
   // the API client, as in every other route test.
   enterWithLink.mockImplementation(async (t: string) => {
-    await unwrap(api.POST('/api/auth/entra', { body: { t } }))
+    await unwrap(api.POST('/api/auth/verify', { body: { t } }))
   })
 })
 
@@ -40,7 +40,7 @@ describe('the entry page', () => {
     const go = vi.fn()
     render(<EnterPage token="abc" go={go} />)
     await waitFor(() => expect(enterWithLink).toHaveBeenCalledWith('abc'))
-    expect(POST).toHaveBeenCalledWith('/api/auth/entra', { body: { t: 'abc' } })
+    expect(POST).toHaveBeenCalledWith('/api/auth/verify', { body: { t: 'abc' } })
     await waitFor(() => expect(go).toHaveBeenCalledWith('/app/'))
   })
 

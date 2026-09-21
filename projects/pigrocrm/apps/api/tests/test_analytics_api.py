@@ -340,7 +340,7 @@ def test_an_unestimated_deal_is_excluded_from_the_budget_aggregates(
 
 def test_the_fiscal_report_is_admin_only(logged_in: TestClient) -> None:
     collaboratore = _second_actor(logged_in, "collaboratore")
-    response = collaboratore.get("/api/analytics/fiscale", params={"anno": ANNO})
+    response = collaboratore.get("/api/analytics/fiscal", params={"anno": ANNO})
     assert response.status_code == 403
     assert response.json()["code"] == "permission_denied"
 
@@ -363,7 +363,7 @@ def test_the_fiscal_report_is_labelled_an_estimate_in_its_own_payload(
     assert issued.status_code == 200, issued.text
     assert issued.json()["imponibile"] == "400.00"
 
-    response = logged_in.get("/api/analytics/fiscale", params={"anno": ANNO})
+    response = logged_in.get("/api/analytics/fiscal", params={"anno": ANNO})
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["anno"] == ANNO
@@ -487,7 +487,7 @@ def test_the_openapi_document_describes_every_analytics_route(logged_in: TestCli
         "/api/analytics/pnl",
         "/api/analytics/budget",
         "/api/analytics/backlog",
-        "/api/analytics/fiscale",
+        "/api/analytics/fiscal",
     ):
         assert path in paths, path
     names = {param["name"] for param in paths["/api/analytics/pnl"]["get"]["parameters"]}
@@ -499,7 +499,7 @@ def test_the_economic_overview_answers_everyone_and_keeps_the_estimate_for_admin
     logged_in: TestClient, collaborator_client: TestClient
 ) -> None:
     anno = ANNO
-    admin = logged_in.get("/api/analytics/panoramica", params={"anno": anno})
+    admin = logged_in.get("/api/analytics/overview", params={"anno": anno})
     assert admin.status_code == 200, admin.text
     body = admin.json()
     assert body["cassa"]["anno"] == anno
@@ -509,7 +509,7 @@ def test_the_economic_overview_answers_everyone_and_keeps_the_estimate_for_admin
     # Without a fiscal profile even an admin gets cash alone, never a 404.
     assert body["fiscale"] is None
 
-    other = collaborator_client.get("/api/analytics/panoramica", params={"anno": anno})
+    other = collaborator_client.get("/api/analytics/overview", params={"anno": anno})
     assert other.status_code == 200, other.text
     assert other.json()["fiscale"] is None
 
@@ -524,20 +524,20 @@ def test_the_economic_overview_takes_a_cash_base_and_defaults_to_accrual(
     echoed under `cassa.base` so the page can label what it draws, and a 422 for any
     other word -- `emissione` included, which is the P&L's base and not this view's. The
     arithmetic of the two readings is `packages/core/tests/test_analytics_cash.py`."""
-    default = logged_in.get("/api/analytics/panoramica", params={"anno": ANNO})
+    default = logged_in.get("/api/analytics/overview", params={"anno": ANNO})
     assert default.status_code == 200, default.text
     assert default.json()["cassa"]["base"] == "competenza"
 
-    incasso = logged_in.get("/api/analytics/panoramica", params={"anno": ANNO, "base": "incasso"})
+    incasso = logged_in.get("/api/analytics/overview", params={"anno": ANNO, "base": "incasso"})
     assert incasso.status_code == 200, incasso.text
     assert incasso.json()["cassa"]["base"] == "incasso"
 
     for wrong in ("emissione", "cassa"):
-        refused = logged_in.get("/api/analytics/panoramica", params={"anno": ANNO, "base": wrong})
+        refused = logged_in.get("/api/analytics/overview", params={"anno": ANNO, "base": wrong})
         assert refused.status_code == 422, refused.text
 
     paths: dict[str, Any] = logged_in.get("/openapi.json").json()["paths"]
-    params = {p["name"]: p for p in paths["/api/analytics/panoramica"]["get"]["parameters"]}
+    params = {p["name"]: p for p in paths["/api/analytics/overview"]["get"]["parameters"]}
     assert params["base"]["required"] is False
     assert set(params["base"]["schema"]["enum"]) == {"competenza", "incasso"}
     assert params["base"]["schema"]["default"] == "competenza"

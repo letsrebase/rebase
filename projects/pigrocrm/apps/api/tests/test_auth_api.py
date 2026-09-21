@@ -515,7 +515,7 @@ def test_link_answers_202_and_mails_a_known_address(
     mail = sender.sent[0]
     assert mail.to == ADMIN_EMAIL and "15 minuti" in mail.text
     # The link wears the configured public origin, never the request's Host.
-    assert f"{PUBLIC_URL}/app/entra?t=" in mail.text and "testserver" not in mail.text
+    assert f"{PUBLIC_URL}/app/verify?t=" in mail.text and "testserver" not in mail.text
 
 
 def test_link_answers_202_and_mails_nothing_for_an_unknown_address(
@@ -560,19 +560,19 @@ def test_entra_sets_the_cookies_and_me_answers(
 ) -> None:
     client.post("/api/auth/link", json={"email": ADMIN_EMAIL})
     token = _token_from(sender.sent[0].text)
-    response = client.post("/api/auth/entra", json={"t": token})
+    response = client.post("/api/auth/verify", json={"t": token})
     assert response.status_code == 200, response.text
     assert response.json()["email"] == ADMIN_EMAIL
     set_cookie = response.headers.get_list("set-cookie")
     assert any("pigrocrm_access=" in c and "Path=/" in c for c in set_cookie)
     assert client.get("/api/auth/me").status_code == 200
     # Spent: the same link a second time is a 401 with the sentence the page shows.
-    again = client.post("/api/auth/entra", json={"t": token})
+    again = client.post("/api/auth/verify", json={"t": token})
     assert again.status_code == 401 and "link" in again.json()["detail"]
 
 
 def test_entra_with_garbage_is_401(client: TestClient) -> None:
-    assert client.post("/api/auth/entra", json={"t": "x"}).status_code == 401
+    assert client.post("/api/auth/verify", json={"t": "x"}).status_code == 401
 
 
 def test_link_is_503_without_a_public_url(client: TestClient, admin_user) -> None:
@@ -599,7 +599,7 @@ def test_the_first_entry_kills_the_earlier_session_and_keeps_its_own(
 
     client.post("/api/auth/link", json={"email": ADMIN_EMAIL})
     token = _token_from(sender.sent[0].text)
-    entered = client.post("/api/auth/entra", json={"t": token})
+    entered = client.post("/api/auth/verify", json={"t": token})
     assert entered.status_code == 200, entered.text
     # The new session refreshes.
     assert client.post("/api/auth/refresh").status_code == 200

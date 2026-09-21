@@ -3,7 +3,7 @@
  * cliente» come from `PageHeader`, and the search box lives in the filter row above the
  * table rather than floating between a local `<header>` and the rows.
  *
- * `api.GET` is spied on directly, mirroring `clienti/$customerId.test.tsx`.
+ * `api.GET` is spied on directly, mirroring `customers/$customerId.test.tsx`.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'

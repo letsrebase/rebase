@@ -63,8 +63,8 @@ OPERATIONAL_KEYS = {"calcolato_alle", "settimana", "arretrato", "segnali", "atti
 # failure in its purest form, and one no core-side test can see, because the link is only a
 # string until an adapter has to honour it.
 SIGNAL_LINK_TARGETS = {
-    "/app/deal/lista": "/api/deals",
-    "/app/fatture": "/api/invoices",
+    "/app/deal/list": "/api/deals",
+    "/app/invoices": "/api/invoices",
 }
 
 
@@ -211,7 +211,7 @@ def test_the_commercial_dashboard_is_one_request(
 ) -> None:
     """One endpoint, not one per card (§7.1). The key set is asserted whole: a card added
     to the schema without a place on the page, or one quietly dropped, both fail here."""
-    response = logged_in.get("/api/dashboard/commerciale")
+    response = logged_in.get("/api/dashboard/sales")
     assert response.status_code == 200, response.text
     assert set(response.json()) == EXPECTED_KEYS
 
@@ -228,7 +228,7 @@ def test_authentication_does_not_poison_the_snapshot(
     every dashboard request a 500. So there are two sessions, and this is the test that
     says so: it fails the moment the route stops asking for its own.
     """
-    response = logged_in.get("/api/dashboard/commerciale")
+    response = logged_in.get("/api/dashboard/sales")
     assert response.status_code == 200, response.text
     assert response.json()["calcolato_alle"]
 
@@ -242,7 +242,7 @@ def test_the_endpoint_returns_what_the_service_returns(
     committed corpus -- not against numbers recomputed here, which would make this file a
     second source of truth for figures §3 says only one place may produce.
     """
-    body = logged_in.get("/api/dashboard/commerciale").json()
+    body = logged_in.get("/api/dashboard/sales").json()
     with session_factory(dashboard_corpus)() as session:
         direct = DashboardService(session).get_commercial_dashboard(PeriodoQuery(), SEED)
     expected = direct.model_dump(mode="json")
@@ -256,7 +256,7 @@ def test_the_period_round_trips_through_the_query_string(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
     response = logged_in.get(
-        "/api/dashboard/commerciale", params={"da": "2026-03-01", "a": "2026-03-31"}
+        "/api/dashboard/sales", params={"da": "2026-03-01", "a": "2026-03-31"}
     )
     assert response.json()["periodo"] == {"da": "2026-03-01", "a": "2026-03-31"}
 
@@ -265,7 +265,7 @@ def test_an_inverted_period_is_a_422_naming_the_field(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
     response = logged_in.get(
-        "/api/dashboard/commerciale", params={"da": "2026-03-31", "a": "2026-03-01"}
+        "/api/dashboard/sales", params={"da": "2026-03-31", "a": "2026-03-01"}
     )
     assert response.status_code == 422
     assert response.json()["field"] == "da"
@@ -278,7 +278,7 @@ def test_half_a_period_is_a_422_naming_the_missing_bound(
     """Both spellings, because a rule written as `if da is None` alone accepts the other
     one -- and `field` is what `fieldErrorFrom` in the web client reads."""
     params = {key: value for key, value in (("da", da), ("a", a)) if value is not None}
-    response = logged_in.get("/api/dashboard/commerciale", params=params)
+    response = logged_in.get("/api/dashboard/sales", params=params)
     assert response.status_code == 422
     assert response.json()["field"] == ("da" if da is None else "a")
 
@@ -290,7 +290,7 @@ def test_money_is_serialised_as_a_string(logged_in: TestClient, dashboard_corpus
     Asserted over a corpus with a real value in it, so the loop cannot pass by iterating
     over nothing -- and on the closure figures too, which are a different schema.
     """
-    body = logged_in.get("/api/dashboard/commerciale").json()
+    body = logged_in.get("/api/dashboard/sales").json()
     assert body["pipeline"], "the corpus produced no stage rows, so this test proved nothing"
     for row in body["pipeline"]:
         assert isinstance(row["valore_totale"], str), row
@@ -304,11 +304,11 @@ def test_a_readonly_actor_sees_the_dashboard(
 ) -> None:
     """§13: this slice adds no role and no authorisation rule. Every figure here comes
     from a read every role already has."""
-    assert readonly_client.get("/api/dashboard/commerciale").status_code == 200
+    assert readonly_client.get("/api/dashboard/sales").status_code == 200
 
 
 def test_an_unauthenticated_request_is_a_401(client: TestClient, dashboard_corpus: Engine) -> None:
-    assert client.get("/api/dashboard/commerciale").status_code == 401
+    assert client.get("/api/dashboard/sales").status_code == 401
 
 
 # -- the economic dashboard ------------------------------------------------------
@@ -322,7 +322,7 @@ def test_the_economic_dashboard_is_one_request(
     a `ricavi` key at the top level would mean somebody had recombined the two columns on
     the way out."""
     response = logged_in.get(
-        "/api/dashboard/economica", params={"da": "2026-03-01", "a": "2026-03-31"}
+        "/api/dashboard/economic", params={"da": "2026-03-01", "a": "2026-03-31"}
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -348,7 +348,7 @@ def test_the_economic_endpoint_returns_what_the_service_returns(
     `calcolato_alle` is excluded because the two calls are two transactions and two
     instants -- that it differs is the property, not a discrepancy.
     """
-    body = logged_in.get("/api/dashboard/economica").json()
+    body = logged_in.get("/api/dashboard/economic").json()
     with session_factory(dashboard_corpus)() as session:
         direct = DashboardService(session).get_economic_dashboard(PeriodoQuery(), SEED)
     expected = direct.model_dump(mode="json")
@@ -370,7 +370,7 @@ def test_the_economic_dashboard_carries_no_fiscal_field(
     nested anywhere inside `pnl` -- where a future field on `PeriodPnl` would land without
     this file ever being edited -- fails here too.
     """
-    body = logged_in.get("/api/dashboard/economica").text
+    body = logged_in.get("/api/dashboard/economic").text
     for forbidden in ("imponibile_fiscale", "imposta_sostitutiva", "contributi", "netto_stimato"):
         assert forbidden not in body, forbidden
 
@@ -381,7 +381,7 @@ def test_an_inverted_period_on_the_economic_endpoint_is_a_422_naming_the_field(
     """The same `PeriodoQuery.resolve`, so the same answer: the route adds no validation
     of its own and must not lose the one the service performs."""
     response = logged_in.get(
-        "/api/dashboard/economica", params={"da": "2026-03-31", "a": "2026-03-01"}
+        "/api/dashboard/economic", params={"da": "2026-03-31", "a": "2026-03-01"}
     )
     assert response.status_code == 422
     assert response.json()["field"] == "da"
@@ -402,10 +402,10 @@ def test_the_operational_dashboard_takes_no_period(
     worked.
     """
     schema = logged_in.get("/openapi.json").json()
-    params = schema["paths"]["/api/dashboard/operativa"]["get"].get("parameters", [])
+    params = schema["paths"]["/api/dashboard/operational"]["get"].get("parameters", [])
     assert [p["name"] for p in params] == []
 
-    response = logged_in.get("/api/dashboard/operativa")
+    response = logged_in.get("/api/dashboard/operational")
     assert response.status_code == 200, response.text
     assert set(response.json()) == OPERATIONAL_KEYS
 
@@ -421,9 +421,9 @@ def test_a_period_on_the_operational_endpoint_is_ignored_not_honoured(
     `calcolato_alle` and `attivita_recenti` are excluded: the first is a different instant
     by construction, and the second is a global feed any other committed activity moves.
     """
-    plain = logged_in.get("/api/dashboard/operativa").json()
+    plain = logged_in.get("/api/dashboard/operational").json()
     with_period = logged_in.get(
-        "/api/dashboard/operativa", params={"da": "2020-01-01", "a": "2020-01-31"}
+        "/api/dashboard/operational", params={"da": "2020-01-01", "a": "2020-01-31"}
     )
     assert with_period.status_code == 200, with_period.text
     body = with_period.json()
@@ -434,7 +434,7 @@ def test_a_period_on_the_operational_endpoint_is_ignored_not_honoured(
 def test_the_operational_endpoint_returns_what_the_service_returns(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
-    body = logged_in.get("/api/dashboard/operativa").json()
+    body = logged_in.get("/api/dashboard/operational").json()
     with session_factory(dashboard_corpus)() as session:
         direct = DashboardService(session).get_operational_dashboard(SEED)
     expected = direct.model_dump(mode="json")
@@ -447,7 +447,7 @@ def test_every_signal_carries_a_drill_through_link(
 ) -> None:
     """§6.2's three signals, in order, each with somewhere to go. A count with no way to
     see the rows behind it is a number nobody can act on."""
-    body = logged_in.get("/api/dashboard/operativa").json()
+    body = logged_in.get("/api/dashboard/operational").json()
     assert [s["codice"] for s in body["segnali"]] == [
         "fatturato_non_vinto",
         "vinto_da_fatturare",
@@ -474,7 +474,7 @@ def test_every_signal_link_names_a_filter_the_api_actually_declares(
     OpenAPI schema of the list endpoint it corresponds to, then sent for real: declared,
     accepted, and narrowing. A parameter FastAPI does not declare is one it ignores.
     """
-    body = logged_in.get("/api/dashboard/operativa").json()
+    body = logged_in.get("/api/dashboard/operational").json()
     schema = logged_in.get("/openapi.json").json()
     assert body["segnali"], "no signals, so this test proved nothing"
 
@@ -507,19 +507,19 @@ def test_money_is_serialised_as_a_string_on_both_new_dashboards(
     The corpus puts a real invoice behind `da_incassare`, so this is not the type of a
     zero a route wired to nothing would also produce.
     """
-    economic = logged_in.get("/api/dashboard/economica").json()
+    economic = logged_in.get("/api/dashboard/economic").json()
     assert isinstance(economic["da_incassare"], str)
     assert isinstance(economic["scaduto"], str)
     assert isinstance(economic["pnl"]["chiusi"]["ricavi"], str)
     assert isinstance(economic["pnl"]["in_corso"]["ricavi"], str)
     assert economic["da_incassare"] != "0.00"
 
-    operational = logged_in.get("/api/dashboard/operativa").json()
+    operational = logged_in.get("/api/dashboard/operational").json()
     assert isinstance(operational["arretrato"]["valore_maturato"], str)
     assert isinstance(operational["settimana"]["ore_totali"], str)
 
 
-@pytest.mark.parametrize("path", ["commerciale", "economica", "operativa"])
+@pytest.mark.parametrize("path", ["sales", "economic", "operational"])
 def test_authentication_does_not_poison_the_snapshot_on_any_dashboard(
     logged_in: TestClient, dashboard_corpus: Engine, path: str
 ) -> None:
@@ -537,7 +537,7 @@ def test_authentication_does_not_poison_the_snapshot_on_any_dashboard(
     assert response.json()["calcolato_alle"]
 
 
-@pytest.mark.parametrize("path", ["commerciale", "economica", "operativa"])
+@pytest.mark.parametrize("path", ["sales", "economic", "operational"])
 def test_a_readonly_actor_sees_all_three_dashboards(
     readonly_client: TestClient, dashboard_corpus: Engine, path: str
 ) -> None:
@@ -545,7 +545,7 @@ def test_a_readonly_actor_sees_all_three_dashboards(
     assert readonly_client.get(f"/api/dashboard/{path}").status_code == 200
 
 
-@pytest.mark.parametrize("path", ["commerciale", "economica", "operativa"])
+@pytest.mark.parametrize("path", ["sales", "economic", "operational"])
 def test_an_unauthenticated_request_to_any_dashboard_is_a_401(
     client: TestClient, dashboard_corpus: Engine, path: str
 ) -> None:

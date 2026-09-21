@@ -31,7 +31,7 @@ import { tenantPrefix } from './tenant'
  */
 const EVENTS: ReadonlyArray<readonly [string, string]> = [
   ['POST /api/tenants', 'spazio_creato'],
-  ['POST /api/auth/entra', 'entrato_con_link'],
+  ['POST /api/auth/verify', 'entrato_con_link'],
   ['POST /api/customers', 'cliente_creato'],
   ['POST /api/deals', 'deal_creato'],
   ['POST /api/documents', 'documento_creato'],

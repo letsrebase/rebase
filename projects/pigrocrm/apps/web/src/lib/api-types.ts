@@ -36,7 +36,9 @@ export interface paths {
          *     user. At the root, every space the registry says this address owns gets a link in
          *     one mail, and the root itself is tried when none does. 202 whether the address is
          *     known or not, and the mail leaves after the response, so neither the status nor the
-         *     timing says which; 503 while no sender is configured.
+         *     timing says which; 503 while no sender is configured. Unauthenticated by design, like
+         *     `member` and `signup`, so the bucket is what stops a script from mail-bombing a known
+         *     address (ORB-173's limiter; REB-228).
          */
         post: operations["request_link_api_auth_link_post"];
         delete?: never;
@@ -45,7 +47,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/auth/entra": {
+    "/api/auth/verify": {
         parameters: {
             query?: never;
             header?: never;
@@ -58,7 +60,7 @@ export interface paths {
          * Enter With Link
          * @description Spends the link and opens the session, with the cookies `login` sets.
          */
-        post: operations["enter_with_link_api_auth_entra_post"];
+        post: operations["enter_with_link_api_auth_verify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -985,7 +987,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/documents/{document_id}/stato": {
+    "/api/documents/{document_id}/status": {
         parameters: {
             query?: never;
             header?: never;
@@ -995,7 +997,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Set Offer State */
-        post: operations["set_offer_state_api_documents__document_id__stato_post"];
+        post: operations["set_offer_state_api_documents__document_id__status_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1067,7 +1069,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/documents/{document_id}/testo": {
+    "/api/documents/{document_id}/text": {
         parameters: {
             query?: never;
             header?: never;
@@ -1085,7 +1087,7 @@ export interface paths {
          *     would be a route whose response type nobody can state. `numero` carries the same
          *     bounds as the download's, from the same reasoning.
          */
-        get: operations["testo_api_documents__document_id__testo_get"];
+        get: operations["testo_api_documents__document_id__text_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1876,7 +1878,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/analytics/panoramica": {
+    "/api/analytics/overview": {
         parameters: {
             query?: never;
             header?: never;
@@ -1890,7 +1892,7 @@ export interface paths {
          *     tool, for the estimate's own reasons. `base` moves the charts and the cash cards
          *     between the two readings (ORB-133); the fiscal block stays on the money.
          */
-        get: operations["economic_overview_api_analytics_panoramica_get"];
+        get: operations["economic_overview_api_analytics_overview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1899,7 +1901,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/analytics/fiscale": {
+    "/api/analytics/fiscal": {
         parameters: {
             query?: never;
             header?: never;
@@ -1912,7 +1914,7 @@ export interface paths {
          *     `if` is a router the MCP adapter cannot reuse, and this figure has no MCP tool at all
          *     (§11's exclusion list), so the check has to live where both adapters share it.
          */
-        get: operations["fiscal_estimate_api_analytics_fiscale_get"];
+        get: operations["fiscal_estimate_api_analytics_fiscal_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2301,7 +2303,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/dashboard/commerciale": {
+    "/api/dashboard/sales": {
         parameters: {
             query?: never;
             header?: never;
@@ -2309,7 +2311,7 @@ export interface paths {
             cookie?: never;
         };
         /** Commerciale */
-        get: operations["commerciale_api_dashboard_commerciale_get"];
+        get: operations["commerciale_api_dashboard_sales_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2318,7 +2320,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/dashboard/economica": {
+    "/api/dashboard/economic": {
         parameters: {
             query?: never;
             header?: never;
@@ -2326,7 +2328,7 @@ export interface paths {
             cookie?: never;
         };
         /** Economica */
-        get: operations["economica_api_dashboard_economica_get"];
+        get: operations["economica_api_dashboard_economic_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2335,7 +2337,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/dashboard/operativa": {
+    "/api/dashboard/operational": {
         parameters: {
             query?: never;
             header?: never;
@@ -2353,7 +2355,7 @@ export interface paths {
          *     ignores undeclared query parameters, so `?da=2020-01-01` is answered with the current
          *     week rather than with a period nobody can supply.
          */
-        get: operations["operativa_api_dashboard_operativa_get"];
+        get: operations["operativa_api_dashboard_operational_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2493,7 +2495,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/tenants/membro": {
+    "/api/tenants/member": {
         parameters: {
             query?: never;
             header?: never;
@@ -2512,7 +2514,7 @@ export interface paths {
          *     `spazi` comes from this installation's own registry and answers even when the hub
          *     does not.
          */
-        post: operations["member_api_tenants_membro_post"];
+        post: operations["member_api_tenants_member_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2529,7 +2531,12 @@ export interface paths {
         /**
          * Availability
          * @description Whether a name can still be taken, and if not why -- reserved, malformed or in
-         *     use -- in the words the page shows while the person is still typing.
+         *     use -- in the words the page shows while the person is still typing. Unauthenticated
+         *     by design, like `member` and `signup`, so it is throttled the same way (REB-228) --
+         *     but on its own budget (`scope="disponibile"`, `DISPONIBILE_REQUESTS_PER_MINUTE`),
+         *     since this is the one route of the three a person's own typing calls repeatedly: a
+         *     shared bucket with `member` and `signup` would let a few hesitations while naming a
+         *     business starve the tokens the actual `POST /` still needs to create the space.
          */
         get: operations["availability_api_tenants__slug__disponibile_get"];
         put?: never;
@@ -2558,7 +2565,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/attivita": {
+    "/api/activities": {
         parameters: {
             query?: never;
             header?: never;
@@ -2566,17 +2573,17 @@ export interface paths {
             cookie?: never;
         };
         /** List Attivita */
-        get: operations["list_attivita_api_attivita_get"];
+        get: operations["list_attivita_api_activities_get"];
         put?: never;
         /** Create */
-        post: operations["create_api_attivita_post"];
+        post: operations["create_api_activities_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/attivita/{attivita_id}": {
+    "/api/activities/{attivita_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -2584,22 +2591,22 @@ export interface paths {
             cookie?: never;
         };
         /** Get */
-        get: operations["get_api_attivita__attivita_id__get"];
+        get: operations["get_api_activities__attivita_id__get"];
         put?: never;
         post?: never;
         /**
          * Archive
-         * @description Archiving, which is for the typo. The change of plan is `annulla` -- and the two
+         * @description Archiving, which is for the typo. The change of plan is `cancel` -- and the two
          *     being different operations is the whole reason there are three states.
          */
-        delete: operations["archive_api_attivita__attivita_id__delete"];
+        delete: operations["archive_api_activities__attivita_id__delete"];
         options?: never;
         head?: never;
         /** Update */
-        patch: operations["update_api_attivita__attivita_id__patch"];
+        patch: operations["update_api_activities__attivita_id__patch"];
         trace?: never;
     };
-    "/api/attivita/{attivita_id}/completa": {
+    "/api/activities/{attivita_id}/complete": {
         parameters: {
             query?: never;
             header?: never;
@@ -2609,14 +2616,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Complete */
-        post: operations["complete_api_attivita__attivita_id__completa_post"];
+        post: operations["complete_api_activities__attivita_id__complete_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/attivita/{attivita_id}/annulla": {
+    "/api/activities/{attivita_id}/cancel": {
         parameters: {
             query?: never;
             header?: never;
@@ -2626,14 +2633,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Cancel */
-        post: operations["cancel_api_attivita__attivita_id__annulla_post"];
+        post: operations["cancel_api_activities__attivita_id__cancel_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/attivita/{attivita_id}/riapri": {
+    "/api/activities/{attivita_id}/reopen": {
         parameters: {
             query?: never;
             header?: never;
@@ -2643,14 +2650,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Reopen */
-        post: operations["reopen_api_attivita__attivita_id__riapri_post"];
+        post: operations["reopen_api_activities__attivita_id__reopen_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/attivita/{attivita_id}/restore": {
+    "/api/activities/{attivita_id}/restore": {
         parameters: {
             query?: never;
             header?: never;
@@ -2660,14 +2667,14 @@ export interface paths {
         get?: never;
         put?: never;
         /** Restore */
-        post: operations["restore_api_attivita__attivita_id__restore_post"];
+        post: operations["restore_api_activities__attivita_id__restore_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/calendario": {
+    "/api/calendar": {
         parameters: {
             query?: never;
             header?: never;
@@ -2687,7 +2694,7 @@ export interface paths {
          *     the page means. An `mcp` actor carries the id of the token's owner (slice 1 §9), so
          *     an agent asking about the month gets that person's days and not the space's.
          */
-        get: operations["month_api_calendario_get"];
+        get: operations["month_api_calendar_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6680,6 +6687,19 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            429: {
+                headers: {
+                    /** @description Secondi da attendere prima di riprovare. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
         };
     };
     request_link_api_auth_link_post: {
@@ -6801,9 +6821,22 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
+            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            429: {
+                headers: {
+                    /** @description Secondi da attendere prima di riprovare. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
         };
     };
-    enter_with_link_api_auth_entra_post: {
+    enter_with_link_api_auth_verify_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -14687,7 +14720,7 @@ export interface operations {
             };
         };
     };
-    set_offer_state_api_documents__document_id__stato_post: {
+    set_offer_state_api_documents__document_id__status_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -15293,7 +15326,7 @@ export interface operations {
             };
         };
     };
-    testo_api_documents__document_id__testo_get: {
+    testo_api_documents__document_id__text_get: {
         parameters: {
             query?: {
                 numero?: number | null;
@@ -22658,7 +22691,7 @@ export interface operations {
             };
         };
     };
-    economic_overview_api_analytics_panoramica_get: {
+    economic_overview_api_analytics_overview_get: {
         parameters: {
             query: {
                 anno: number;
@@ -22779,7 +22812,7 @@ export interface operations {
             };
         };
     };
-    fiscal_estimate_api_analytics_fiscale_get: {
+    fiscal_estimate_api_analytics_fiscal_get: {
         parameters: {
             query: {
                 anno: number;
@@ -25636,7 +25669,7 @@ export interface operations {
             };
         };
     };
-    commerciale_api_dashboard_commerciale_get: {
+    commerciale_api_dashboard_sales_get: {
         parameters: {
             query?: {
                 da?: string | null;
@@ -25756,7 +25789,7 @@ export interface operations {
             };
         };
     };
-    economica_api_dashboard_economica_get: {
+    economica_api_dashboard_economic_get: {
         parameters: {
             query?: {
                 da?: string | null;
@@ -25876,7 +25909,7 @@ export interface operations {
             };
         };
     };
-    operativa_api_dashboard_operativa_get: {
+    operativa_api_dashboard_operational_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -26824,7 +26857,7 @@ export interface operations {
             };
         };
     };
-    member_api_tenants_membro_post: {
+    member_api_tenants_member_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -27060,6 +27093,19 @@ export interface operations {
                         [key: string]: unknown;
                     };
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Troppe richieste da questo indirizzo nell'ultimo minuto (il bucket è per client, non per rotta): il client deve attendere `Retry-After` secondi prima di riprovare. */
+            429: {
+                headers: {
+                    /** @description Secondi da attendere prima di riprovare. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
                 };
             };
         };
@@ -27302,7 +27348,7 @@ export interface operations {
             };
         };
     };
-    list_attivita_api_attivita_get: {
+    list_attivita_api_activities_get: {
         parameters: {
             query?: {
                 stato?: ("aperta" | "completata" | "annullata") | null;
@@ -27433,7 +27479,7 @@ export interface operations {
             };
         };
     };
-    create_api_attivita_post: {
+    create_api_activities_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -27554,7 +27600,7 @@ export interface operations {
             };
         };
     };
-    get_api_attivita__attivita_id__get: {
+    get_api_activities__attivita_id__get: {
         parameters: {
             query?: never;
             header?: never;
@@ -27673,7 +27719,7 @@ export interface operations {
             };
         };
     };
-    archive_api_attivita__attivita_id__delete: {
+    archive_api_activities__attivita_id__delete: {
         parameters: {
             query?: never;
             header?: never;
@@ -27790,7 +27836,7 @@ export interface operations {
             };
         };
     };
-    update_api_attivita__attivita_id__patch: {
+    update_api_activities__attivita_id__patch: {
         parameters: {
             query?: never;
             header?: never;
@@ -27913,7 +27959,7 @@ export interface operations {
             };
         };
     };
-    complete_api_attivita__attivita_id__completa_post: {
+    complete_api_activities__attivita_id__complete_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -28032,7 +28078,7 @@ export interface operations {
             };
         };
     };
-    cancel_api_attivita__attivita_id__annulla_post: {
+    cancel_api_activities__attivita_id__cancel_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -28151,7 +28197,7 @@ export interface operations {
             };
         };
     };
-    reopen_api_attivita__attivita_id__riapri_post: {
+    reopen_api_activities__attivita_id__reopen_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -28270,7 +28316,7 @@ export interface operations {
             };
         };
     };
-    restore_api_attivita__attivita_id__restore_post: {
+    restore_api_activities__attivita_id__restore_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -28389,7 +28435,7 @@ export interface operations {
             };
         };
     };
-    month_api_calendario_get: {
+    month_api_calendar_get: {
         parameters: {
             query: {
                 /** @description AAAA-MM */

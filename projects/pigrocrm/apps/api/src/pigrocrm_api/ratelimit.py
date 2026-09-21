@@ -1,7 +1,7 @@
 """One small token bucket per client, for the public routes of the signup.
 
 There was no limiter anywhere in this API until ORB-173: everything else is behind a
-session or a token. `POST /api/tenants/membro` is unauthenticated by design and relays
+session or a token. `POST /api/tenants/member` is unauthenticated by design and relays
 each question to the hub, so without a bucket anyone could sweep a mailing list through
 it. The shape is the hub's `rebase_api.ratelimit`, which itself came from PigroCRM's
 old signup route on 2026-09-09; the two products share no code (`AGENTS.md`), so this
@@ -20,7 +20,7 @@ from fastapi import HTTPException, Request, status
 REQUESTS_PER_MINUTE = 5
 # `GET /api/tenants/{slug}/disponibile` is a typeahead, not a submit: registrati.tsx
 # asks it once per 350ms pause while a person is still deciding a name, so sharing
-# `REQUESTS_PER_MINUTE`'s budget with `POST /api/tenants/membro` and
+# `REQUESTS_PER_MINUTE`'s budget with `POST /api/tenants/member` and
 # `POST /api/tenants/` would let ordinary typing starve the tokens the actual signup
 # needs (REB-228) -- five hesitations while naming a business is not a scripted sweep.
 # A generous ceiling on a read-only lookup that sends no mail and provisions nothing.
@@ -98,7 +98,7 @@ def spend_one(request: Request, *, scope: str = "", per_minute: int = REQUESTS_P
     """A token bucket per client, refilling at `per_minute`. `scope` namespaces the
     bucket away from the default one: REB-228 gave `GET /api/tenants/{slug}/disponibile`
     its own (`scope="disponibile"`, a higher `per_minute`) precisely so a typeahead
-    probing a name has its own budget rather than starving `POST /api/tenants/membro`
+    probing a name has its own budget rather than starving `POST /api/tenants/member`
     and `POST /api/tenants/` -- the actual submit actions -- of the tokens a person
     needs to finish signing up."""
     key = f"{scope}:{client_key(request)}" if scope else client_key(request)

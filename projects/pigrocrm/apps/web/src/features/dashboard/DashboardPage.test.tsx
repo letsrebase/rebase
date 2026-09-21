@@ -78,9 +78,9 @@ const EMPTY_ESTIMATE = {
  *  called. The economic one reads two -- the overview behind its cards and the estimate
  *  behind the «Stima fiscale» card under them. */
 const BY_PATH: Record<string, unknown> = {
-  '/api/dashboard/commerciale': EMPTY_DASHBOARD,
-  '/api/analytics/panoramica': EMPTY_OVERVIEW,
-  '/api/analytics/fiscale': EMPTY_ESTIMATE,
+  '/api/dashboard/sales': EMPTY_DASHBOARD,
+  '/api/analytics/overview': EMPTY_OVERVIEW,
+  '/api/analytics/fiscal': EMPTY_ESTIMATE,
 }
 
 const SEARCH: DashboardSearch = {
@@ -126,15 +126,15 @@ describe('DashboardPage', () => {
     // transactions to draw a screen nobody is looking at. Asserted by which endpoints were
     // read, not by a call count -- the economic tab legitimately reads two of them, the
     // overview behind its cards and the estimate behind the «Stima fiscale» card.
-    expect(api.GET).toHaveBeenCalledWith('/api/analytics/panoramica', expect.anything())
-    expect(api.GET).toHaveBeenCalledWith('/api/analytics/fiscale', expect.anything())
-    expect(api.GET).not.toHaveBeenCalledWith('/api/dashboard/commerciale', expect.anything())
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/overview', expect.anything())
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/fiscal', expect.anything())
+    expect(api.GET).not.toHaveBeenCalledWith('/api/dashboard/sales', expect.anything())
   })
 
   it('passes the period from the URL through to the request', async () => {
     renderPage({ tab: 'commerciale', da: '2024-06-01', a: '2024-06-30', base: 'competenza' })
     expect(await screen.findByText(/nessun dato nel periodo/i)).toBeInTheDocument()
-    expect(api.GET).toHaveBeenCalledWith('/api/dashboard/commerciale', {
+    expect(api.GET).toHaveBeenCalledWith('/api/dashboard/sales', {
       params: { query: { da: '2024-06-01', a: '2024-06-30' } },
     })
   })
@@ -183,7 +183,7 @@ describe('DashboardPage', () => {
     // so a shared link reopens on the same reading.
     const { onSearchChange } = renderPage({ ...SEARCH, tab: 'economica', base: 'incasso' })
     await screen.findByRole('group', { name: 'Ricavi incassati' })
-    expect(api.GET).toHaveBeenCalledWith('/api/analytics/panoramica', {
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/overview', {
       params: { query: { anno: 2026, base: 'incasso' } },
     })
     await userEvent.click(screen.getByRole('radio', { name: 'Competenza' }))

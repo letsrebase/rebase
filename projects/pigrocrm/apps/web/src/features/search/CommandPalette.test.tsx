@@ -137,7 +137,7 @@ describe('CommandPalette', () => {
     await user.click(await screen.findByRole('option', { name: /Rossi Ingegneria Srl/ }))
 
     expect(navigate).toHaveBeenCalledWith({
-      to: '/app/clienti/$customerId',
+      to: '/app/customers/$customerId',
       params: { customerId: CUSTOMER_ID },
     })
     expect(onOpenChange).toHaveBeenCalledWith(false)
@@ -173,7 +173,7 @@ describe('CommandPalette', () => {
     // The term travels in the URL, or the list the user lands on is not the list the
     // palette was describing.
     expect(navigate).toHaveBeenCalledWith({
-      to: '/app/clienti',
+      to: '/app/customers',
       search: { search: 'rossi' },
     })
   })

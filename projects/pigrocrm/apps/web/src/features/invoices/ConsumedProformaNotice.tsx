@@ -22,7 +22,7 @@ export function ConsumedProformaNotice({ proforma }: { proforma: Invoice }) {
         <>
           Questa proforma è stata emessa come fattura{' '}
           <Link
-            to="/app/fatture/$invoiceId"
+            to="/app/invoices/$invoiceId"
             params={{ invoiceId: fattura.id }}
             className="text-foreground font-medium underline underline-offset-4"
           >

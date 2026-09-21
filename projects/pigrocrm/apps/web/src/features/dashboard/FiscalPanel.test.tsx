@@ -179,7 +179,7 @@ describe('FiscalPanel', () => {
       string,
       { params: { query: { anno: number } } },
     ]
-    expect(path).toBe('/api/analytics/fiscale')
+    expect(path).toBe('/api/analytics/fiscal')
     expect(options.params.query.anno).toBe(2025)
   })
 })

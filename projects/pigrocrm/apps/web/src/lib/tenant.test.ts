@@ -3,9 +3,9 @@ import { safeAppRedirect, slugProblem, slugify, tenantPrefixFrom } from './tenan
 
 describe('the space prefix', () => {
   it('is read from /<slug>/app/... and nothing else', () => {
-    expect(tenantPrefixFrom('/studio/app/clienti/abc')).toBe('/studio')
+    expect(tenantPrefixFrom('/studio/app/customers/abc')).toBe('/studio')
     expect(tenantPrefixFrom('/studio/app')).toBe('/studio')
-    expect(tenantPrefixFrom('/app/clienti')).toBe('')
+    expect(tenantPrefixFrom('/app/customers')).toBe('')
     expect(tenantPrefixFrom('/')).toBe('')
     expect(tenantPrefixFrom('/studio/clienti')).toBe('')
   })
@@ -42,8 +42,8 @@ describe('slugProblem', () => {
 
 describe('safeAppRedirect', () => {
   it('accepts a deep link under /app, search and all', () => {
-    expect(safeAppRedirect('/app/fatture/42')).toBe('/app/fatture/42')
-    expect(safeAppRedirect('/app/clienti?search=rossi')).toBe('/app/clienti?search=rossi')
+    expect(safeAppRedirect('/app/invoices/42')).toBe('/app/invoices/42')
+    expect(safeAppRedirect('/app/customers?search=rossi')).toBe('/app/customers?search=rossi')
   })
 
   it('refuses anything not resolving under /app, undefined, a scheme or a protocol-relative address', () => {
@@ -63,7 +63,7 @@ describe('safeAppRedirect', () => {
     expect(safeAppRedirect('/app/login/')).toBeUndefined()
     expect(safeAppRedirect('/app/LOGIN')).toBeUndefined()
     expect(safeAppRedirect('/app/%6cogin')).toBeUndefined()
-    expect(safeAppRedirect('/app/registrati')).toBeUndefined()
-    expect(safeAppRedirect('/app/entra')).toBeUndefined()
+    expect(safeAppRedirect('/app/register')).toBeUndefined()
+    expect(safeAppRedirect('/app/verify')).toBeUndefined()
   })
 })

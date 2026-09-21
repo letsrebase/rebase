@@ -1,36 +1,11 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { DrivePanel } from '@/features/drive/DrivePanel'
-import { messaggioEsito } from '@/features/drive/esito'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-/**
- * Where `GET /api/drive/oauth/callback` lands the browser after a consent flow --
- * the Drive twin of `routes/app/impostazioni/gmail.tsx`, same reasoning throughout:
- * `validateSearch` narrows `?esito=` to a string or nothing, and `messaggioEsito` looks
- * it up in a fixed table rather than rendering it, so a link somebody else crafted
- * cannot put a sentence of their choosing on this page.
- *
- * Exports nothing but `Route`, on purpose: a route file that exports anything else opts
- * that route out of the router plugin's automatic code splitting, with a
- * `routeTree.gen.ts` warning as the only sign.
- */
-function DriveSettingsRoute() {
-  const { esito } = Route.useSearch()
-  const messaggio = messaggioEsito(esito)
-  return (
-    <div className="space-y-4">
-      {messaggio ? (
-        <p role="status" className="rounded-lg border bg-muted/50 px-3 py-2 text-sm">
-          {messaggio}
-        </p>
-      ) : null}
-      <DrivePanel />
-    </div>
-  )
-}
-
+// Old path support (Italian route names retired 2026-09-21, see
+// docs/design/DECISIONS.md): `settings/drive.tsx` is the real page now. The Drive
+// OAuth callback (`_SETTINGS_PAGE` in apps/api/src/pigrocrm_api/routers/drive.py)
+// already lands on the new path directly, so this covers only a stale bookmark.
 export const Route = createFileRoute('/app/impostazioni/drive')({
-  validateSearch: (search: Record<string, unknown>): { esito?: string } => ({
-    esito: typeof search.esito === 'string' ? search.esito : undefined,
-  }),
-  component: DriveSettingsRoute,
+  beforeLoad: () => {
+    throw redirect({ to: '/app/settings/drive' })
+  },
 })

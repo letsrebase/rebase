@@ -36,7 +36,7 @@ export default defineConfig({
       autoCodeSplitting: true,
       // Without this, a `*.test.tsx` colocated next to a route file (the same
       // convention every other feature in this codebase already uses -- see
-      // `routes/app/clienti/$customerId.test.tsx` and its two siblings) is scanned
+      // `routes/app/customers/$customerId.test.tsx` and its two siblings) is scanned
       // as a route candidate too, and warns on every dev/build/test run ("does not
       // export a Route") since it obviously does not export one. A raw regex
       // source string, matched against the bare filename (confirmed by reading

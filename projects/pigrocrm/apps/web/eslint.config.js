@@ -127,8 +127,8 @@ export default defineConfig([
     // `createFileRoute`'s own descriptor object, not a component -- is what this
     // rule would otherwise flag, mixed in the same file as a real component export.
     files: [
-      'src/routes/app/clienti/$customerId.tsx',
-      'src/routes/app/persone/$personId.tsx',
+      'src/routes/app/customers/$customerId.tsx',
+      'src/routes/app/people/$personId.tsx',
       'src/routes/app/deal/$dealId.tsx',
     ],
     rules: {

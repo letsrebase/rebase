@@ -48,7 +48,7 @@ test.describe('ricerca globale', () => {
   test('si apre con Cmd/Ctrl+K da qualunque schermata', async ({ page }) => {
     // Not the dashboard: the palette is mounted by the shell, so it has to answer on a
     // screen that has a search box of its own competing for the shortcut.
-    await page.goto('/app/clienti')
+    await page.goto('/app/customers')
     await openPalette(page)
   })
 
@@ -98,7 +98,7 @@ test.describe('ricerca globale', () => {
     await input.fill('Elenco')
     await page.getByRole('option', { name: /vedi tutti/i }).click()
 
-    await expect(page).toHaveURL(/\/app\/clienti\?search=Elenco/)
+    await expect(page).toHaveURL(/\/app\/customers\?search=Elenco/)
     // The URL carrying the term is only half of the promise: the list has to be the one
     // the palette was describing. Stated as "every row but the header is an Elenco row"
     // rather than as an exact count, because the seeded rows are the only ones this

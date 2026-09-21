@@ -1,4 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { SpacePanel } from '@/features/settings/SpacePanel'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-export const Route = createFileRoute('/app/impostazioni/spazio')({ component: SpacePanel })
+// Old path support (Italian route names retired 2026-09-21, see
+// docs/design/DECISIONS.md): `settings/space.tsx` is the real page now.
+export const Route = createFileRoute('/app/impostazioni/spazio')({
+  beforeLoad: () => {
+    throw redirect({ to: '/app/settings/space' })
+  },
+})

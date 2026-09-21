@@ -31,7 +31,7 @@ export const RESERVED_SLUGS = new Set([
   'mcp',
 ])
 
-/** `"/studio"` for `/studio/app/clienti`, `""` for `/app/clienti` or anything else. */
+/** `"/studio"` for `/studio/app/customers`, `""` for `/app/customers` or anything else. */
 export function tenantPrefixFrom(pathname: string): string {
   const match = /^\/([a-z0-9][a-z0-9-]{1,30}[a-z0-9])\/app(?:\/|$)/.exec(pathname)
   if (!match) return ''
@@ -79,7 +79,7 @@ export function spaceLoginUrl(slug: string): string {
  *  guard never bounces them): the login, the signup that makes a space (spec
  *  2026-09-08) and the page that spends a link by mail (spec 2026-09-12 §6.2). Shared
  *  with the guard so the two checks below cannot drift apart. */
-export const PUBLIC_APP_ROUTES = new Set(['/app/login', '/app/registrati', '/app/entra'])
+export const PUBLIC_APP_ROUTES = new Set(['/app/login', '/app/register', '/app/verify'])
 
 /**
  * Whether a `redirect` search value captured by `/app`'s guard is safe to send a

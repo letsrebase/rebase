@@ -15,7 +15,7 @@
  * `openapi-fetch` serialises, so `?scadute=false` never reaches an API that treats the
  * presence of the key as the filter.
  *
- * Shared by `routes/app/deal/lista.tsx` and `routes/app/fatture/index.tsx` rather than
+ * Shared by `routes/app/deal/list.tsx` and `routes/app/invoices/index.tsx` rather than
  * written twice: a route file may export nothing but `Route` (anything else opts the route
  * out of the router plugin's code-splitting), so a helper the two share has nowhere to
  * live except a module of its own -- which is also the only way it can be tested at all.

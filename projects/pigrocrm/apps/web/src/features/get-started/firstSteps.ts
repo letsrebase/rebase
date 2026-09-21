@@ -16,7 +16,7 @@ import { queryKeys } from '@/lib/query'
 import { tenantPrefix } from '@/lib/tenant'
 
 export type StepId = 'fiscali' | 'cliente' | 'lavoro' | 'documento'
-export type StepTarget = '/app/impostazioni/emittente' | '/app/clienti' | '/app/deal'
+export type StepTarget = '/app/settings/issuer' | '/app/customers' | '/app/deal'
 
 export interface FirstStep {
   id: StepId
@@ -152,7 +152,7 @@ export function useFirstSteps({ enabled = true }: { enabled?: boolean } = {}): F
       hint: isAdmin
         ? 'Partita IVA o codice fiscale, indirizzo, regime: finiscono su offerte e fatture.'
         : 'Li imposta l’amministratore dello spazio, in Impostazioni.',
-      to: '/app/impostazioni/emittente',
+      to: '/app/settings/issuer',
       canDo: isAdmin,
       done: value(fiscali),
     },
@@ -160,7 +160,7 @@ export function useFirstSteps({ enabled = true }: { enabled?: boolean } = {}): F
       id: 'cliente',
       title: 'Il primo cliente',
       hint: 'Un’azienda o una persona per cui lavori. Tutto il resto parte da qui.',
-      to: '/app/clienti',
+      to: '/app/customers',
       canDo: true,
       done: value(cliente),
     },

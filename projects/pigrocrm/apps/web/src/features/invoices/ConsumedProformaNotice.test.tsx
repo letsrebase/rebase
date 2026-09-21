@@ -59,7 +59,7 @@ describe('ConsumedProformaNotice', () => {
     wrap(<ConsumedProformaNotice proforma={CONSUMED} />)
 
     const link = await screen.findByRole('link', { name: '2026/18' })
-    expect(link).toHaveAttribute('href', '/app/fatture/inv-18')
+    expect(link).toHaveAttribute('href', '/app/invoices/inv-18')
     expect(screen.getByTestId('consumed-proforma-notice').textContent).toContain(
       'emessa come fattura',
     )

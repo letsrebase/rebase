@@ -19,7 +19,7 @@ type AttivitaUpdateBody = components['schemas']['AttivitaUpdate']
 export function useCalendarMonth(mese: string) {
   return useQuery({
     queryKey: queryKeys.calendarMonth(mese),
-    queryFn: () => unwrap(api.GET('/api/calendario', { params: { query: { mese } } })),
+    queryFn: () => unwrap(api.GET('/api/calendar', { params: { query: { mese } } })),
   })
 }
 
@@ -40,7 +40,7 @@ function invalidateAfterWrite(queryClient: ReturnType<typeof useQueryClient>) {
 export function useCreateAttivita() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body: AttivitaCreateBody) => unwrap(api.POST('/api/attivita', { body })),
+    mutationFn: (body: AttivitaCreateBody) => unwrap(api.POST('/api/activities', { body })),
     onSuccess: () => invalidateAfterWrite(queryClient),
   })
 }
@@ -50,7 +50,7 @@ export function useUpdateAttivita() {
   return useMutation({
     mutationFn: ({ id, changes }: { id: string; changes: AttivitaUpdateBody }) =>
       unwrap(
-        api.PATCH('/api/attivita/{attivita_id}', {
+        api.PATCH('/api/activities/{attivita_id}', {
           params: { path: { attivita_id: id } },
           body: changes,
         }),
@@ -66,12 +66,12 @@ export function useUpdateAttivita() {
  * needed» writes neither a date nor a deletion. The state machine is the service's, and
  * a single hook taking a target state would invite the browser to think it owns it.
  */
-function useClosure(path: 'completa' | 'annulla' | 'riapri') {
+function useClosure(path: 'complete' | 'cancel' | 'reopen') {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: string) =>
       unwrap(
-        api.POST(`/api/attivita/{attivita_id}/${path}` as '/api/attivita/{attivita_id}/completa', {
+        api.POST(`/api/activities/{attivita_id}/${path}` as '/api/activities/{attivita_id}/complete', {
           params: { path: { attivita_id: id } },
         }),
       ),
@@ -80,13 +80,13 @@ function useClosure(path: 'completa' | 'annulla' | 'riapri') {
 }
 
 export function useCompleteAttivita() {
-  return useClosure('completa')
+  return useClosure('complete')
 }
 
 export function useCancelAttivita() {
-  return useClosure('annulla')
+  return useClosure('cancel')
 }
 
 export function useReopenAttivita() {
-  return useClosure('riapri')
+  return useClosure('reopen')
 }

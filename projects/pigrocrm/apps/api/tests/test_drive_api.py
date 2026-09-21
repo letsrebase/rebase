@@ -305,7 +305,7 @@ def test_the_callback_never_renders_the_upstream_error_to_the_browser(
     )
     assert response.status_code == 307
     location = response.headers["location"]
-    assert location.startswith("/app/impostazioni/drive?esito=")
+    assert location.startswith("/app/settings/drive?esito=")
     assert "access_denied" not in location
 
 
@@ -316,7 +316,7 @@ def test_a_callback_with_a_state_nobody_issued_never_reports_a_connection(
         "/api/drive/oauth/callback?code=abc&state=mai-emesso", follow_redirects=False
     )
     assert response.status_code == 307, response.text
-    assert response.headers["location"] == "/app/impostazioni/drive?esito=errore"
+    assert response.headers["location"] == "/app/settings/drive?esito=errore"
 
 
 # --- the roots configuration -------------------------------------------------------------

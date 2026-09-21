@@ -124,7 +124,7 @@ export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
             <li key={document.id} className="flex items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <a
-                  href={`/app/documenti/${document.id}`}
+                  href={`/app/documents/${document.id}`}
                   className="block truncate font-medium underline-offset-2 hover:underline"
                 >
                   {document.titolo}

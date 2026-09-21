@@ -27,7 +27,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 
 import { api } from '@/lib/api'
-import { SignupPage } from './registrati'
+import { SignupPage } from './register'
 
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 const POST = api.POST as unknown as ReturnType<typeof vi.fn>
@@ -56,12 +56,12 @@ beforeEach(() => {
 
 describe('the signup wizard', () => {
   it('asks the email first and greets a member with the name already written', async () => {
-    answers({ '/api/tenants/membro': MEMBER })
+    answers({ '/api/tenants/member': MEMBER })
     const user = userEvent.setup()
     render(<SignupPage />)
     expect(screen.getByText(/1 di 2/)).toBeInTheDocument()
     await throughStepOne(user)
-    expect(POST).toHaveBeenCalledWith('/api/tenants/membro', { body: { email: 'ada@studio.it' } })
+    expect(POST).toHaveBeenCalledWith('/api/tenants/member', { body: { email: 'ada@studio.it' } })
     expect(await screen.findByText(/Sei dei nostri: ciao Ada/)).toBeInTheDocument()
     expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toHaveValue('Ada Lovelace')
     await waitFor(() =>
@@ -74,7 +74,7 @@ describe('the signup wizard', () => {
   })
 
   it('lets somebody who is not a member in anyway, with the name to type', async () => {
-    answers({ '/api/tenants/membro': NOBODY })
+    answers({ '/api/tenants/member': NOBODY })
     const user = userEvent.setup()
     render(<SignupPage />)
     await throughStepOne(user, 'bob@studio.it')
@@ -84,7 +84,7 @@ describe('the signup wizard', () => {
   })
 
   it('offers the link by mail to an address that already owns a space, and a way to make another', async () => {
-    answers({ '/api/tenants/membro': OWNER, '/api/auth/link': { ok: true } })
+    answers({ '/api/tenants/member': OWNER, '/api/auth/link': { ok: true } })
     const user = userEvent.setup()
     render(<SignupPage />)
     await throughStepOne(user)
@@ -99,7 +99,7 @@ describe('the signup wizard', () => {
   })
 
   it('opens the address only on «cambia» and refuses a reserved one before asking the server', async () => {
-    answers({ '/api/tenants/membro': NOBODY })
+    answers({ '/api/tenants/member': NOBODY })
     const user = userEvent.setup()
     render(<SignupPage />)
     await throughStepOne(user, 'bob@studio.it')
@@ -118,7 +118,7 @@ describe('the signup wizard', () => {
   })
 
   it('creates the space without a password and lands inside it', async () => {
-    answers({ '/api/tenants/membro': MEMBER, '/api/tenants/': { slug: 'ada-lovelace' } })
+    answers({ '/api/tenants/member': MEMBER, '/api/tenants/': { slug: 'ada-lovelace' } })
     const go = vi.fn()
     const user = userEvent.setup()
     render(<SignupPage go={go} />)
@@ -159,7 +159,7 @@ describe('the signup wizard', () => {
   })
 
   it('proposes the name to an owner who wants a second space, and lets everyone change the email', async () => {
-    answers({ '/api/tenants/membro': OWNER })
+    answers({ '/api/tenants/member': OWNER })
     const user = userEvent.setup()
     render(<SignupPage />)
     await throughStepOne(user)
@@ -176,15 +176,15 @@ describe('the signup wizard', () => {
   })
 
   it('trims the email before asking about it', async () => {
-    answers({ '/api/tenants/membro': NOBODY })
+    answers({ '/api/tenants/member': NOBODY })
     const user = userEvent.setup()
     render(<SignupPage />)
     await throughStepOne(user, '  bob@studio.it ')
-    expect(POST).toHaveBeenCalledWith('/api/tenants/membro', { body: { email: 'bob@studio.it' } })
+    expect(POST).toHaveBeenCalledWith('/api/tenants/member', { body: { email: 'bob@studio.it' } })
   })
 
   it('shows the throttle message instead of leaving the availability check stuck (REB-228)', async () => {
-    answers({ '/api/tenants/membro': NOBODY })
+    answers({ '/api/tenants/member': NOBODY })
     GET.mockResolvedValueOnce({
       error: { detail: 'Troppe richieste da qui. Riprova tra un minuto.' },
       response: { status: 429 },
@@ -205,7 +205,7 @@ describe('the signup wizard', () => {
   })
 
   it('lets the person submit anyway when the availability probe throws (REB-236)', async () => {
-    answers({ '/api/tenants/membro': NOBODY })
+    answers({ '/api/tenants/member': NOBODY })
     GET.mockRejectedValue(new Error('network down'))
     const user = userEvent.setup()
     render(<SignupPage />)
@@ -224,7 +224,7 @@ describe('the signup wizard', () => {
   })
 
   it('lets the person submit anyway when the availability probe answers a server error (REB-236)', async () => {
-    answers({ '/api/tenants/membro': NOBODY })
+    answers({ '/api/tenants/member': NOBODY })
     GET.mockResolvedValue({
       error: { detail: 'Il servizio non risponde, riprova.' },
       response: { status: 503 },
@@ -245,7 +245,7 @@ describe('the signup wizard', () => {
   })
 
   it('ignores an older probe answer that resolves after a newer one already landed (REB-265)', async () => {
-    answers({ '/api/tenants/membro': NOBODY })
+    answers({ '/api/tenants/member': NOBODY })
     let resolveAlpha: (value: unknown) => void = () => {}
     let resolveBeta: (value: unknown) => void = () => {}
     GET.mockImplementationOnce(() => new Promise((resolve) => (resolveAlpha = resolve)))

@@ -101,7 +101,7 @@ describe('Get started', () => {
     expect(screen.getAllByText('Da fare:')).toHaveLength(4)
     expect(screen.getByRole('link', { name: 'I tuoi dati fiscali' })).toHaveAttribute(
       'href',
-      '/app/impostazioni/emittente',
+      '/app/settings/issuer',
     )
     expect(window.localStorage.getItem('pigrocrm.get-started.visto:/:u1')).toBe('1')
   })

@@ -36,7 +36,7 @@ router = APIRouter(prefix="/api/drive", tags=["drive"], responses=PROBLEM_RESPON
 # Where the SPA renders the outcome of a consent flow -- the same fixed table of three
 # codes as `routers/gmail.py`'s own constants, on Drive's own settings tab so that
 # nothing an attacker appends to this URL can put words of their own on the screen.
-_SETTINGS_PAGE = "/app/impostazioni/drive"
+_SETTINGS_PAGE = "/app/settings/drive"
 _ESITO_COLLEGATO = "collegato"
 _ESITO_NEGATO = "negato"
 _ESITO_ERRORE = "errore"

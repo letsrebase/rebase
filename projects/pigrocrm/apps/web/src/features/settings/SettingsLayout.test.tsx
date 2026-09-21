@@ -6,8 +6,8 @@ const mockAuth = vi.hoisted(() => ({ isAdmin: true }))
 vi.mock('@/lib/auth', () => ({ useIsAdmin: () => mockAuth.isAdmin }))
 
 // Defaults to the admin suite's usual page; the two REB-221 tests below point this at
-// `/app/impostazioni/profilo` instead, the one path a non-admin may also reach.
-const mockLocation = vi.hoisted(() => ({ pathname: '/app/impostazioni/campi' }))
+// `/app/settings/profile` instead, the one path a non-admin may also reach.
+const mockLocation = vi.hoisted(() => ({ pathname: '/app/settings/fields' }))
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
@@ -23,9 +23,9 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   }
 })
 
-describe('SettingsLayout (the /app/impostazioni route guard)', () => {
+describe('SettingsLayout (the /app/settings route guard)', () => {
   beforeEach(() => {
-    mockLocation.pathname = '/app/impostazioni/campi'
+    mockLocation.pathname = '/app/settings/fields'
   })
 
   it('opens with its title as the page heading, from PageHeader', () => {
@@ -56,15 +56,15 @@ describe('SettingsLayout (the /app/impostazioni route guard)', () => {
     render(<SettingsLayout />)
     expect(screen.getByRole('tab', { name: 'Categorie costo' })).toHaveAttribute(
       'href',
-      '/app/impostazioni/categorie-costo',
+      '/app/settings/cost-categories',
     )
     expect(screen.getByRole('tab', { name: 'Tariffe' })).toHaveAttribute(
       'href',
-      '/app/impostazioni/tariffe',
+      '/app/settings/rates',
     )
     expect(screen.getByRole('tab', { name: 'Periodi' })).toHaveAttribute(
       'href',
-      '/app/impostazioni/periodi',
+      '/app/settings/periods',
     )
   })
 
@@ -79,7 +79,7 @@ describe('SettingsLayout (the /app/impostazioni route guard)', () => {
     render(<SettingsLayout />)
     expect(screen.getByRole('tab', { name: 'Automazioni' })).toHaveAttribute(
       'href',
-      '/app/impostazioni/automazioni',
+      '/app/settings/automations',
     )
   })
 
@@ -122,14 +122,14 @@ describe('SettingsLayout (the /app/impostazioni route guard)', () => {
 
   /**
    * REB-221's second round: the weekly digest's own opt-out link (spec 2026-09-16
-   * §3.6) sends a non-admin recipient to `/app/impostazioni/profilo`, so this one
+   * §3.6) sends a non-admin recipient to `/app/settings/profile`, so this one
    * path must not hit the wall above. `queryByText('Accesso riservato')` absent is
    * as load-bearing as `outlet-content` present: a fix that rendered both would
    * still look broken to whoever followed the link.
    */
   it('lets a non-admin reach the profilo tab, and no other', () => {
     mockAuth.isAdmin = false
-    mockLocation.pathname = '/app/impostazioni/profilo'
+    mockLocation.pathname = '/app/settings/profile'
     render(<SettingsLayout />)
     expect(screen.queryByText('Accesso riservato')).not.toBeInTheDocument()
     expect(screen.getByTestId('outlet-content')).toBeInTheDocument()
@@ -140,7 +140,7 @@ describe('SettingsLayout (the /app/impostazioni route guard)', () => {
 
   it('still refuses a non-admin who tries any other settings path', () => {
     mockAuth.isAdmin = false
-    mockLocation.pathname = '/app/impostazioni/utenti'
+    mockLocation.pathname = '/app/settings/users'
     render(<SettingsLayout />)
     expect(screen.getByText('Accesso riservato')).toBeInTheDocument()
     expect(screen.queryByTestId('outlet-content')).not.toBeInTheDocument()

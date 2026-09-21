@@ -755,7 +755,7 @@ describe("a tab inside a space carries the space's prefix", () => {
       .mockResolvedValueOnce(new Response('%PDF', { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const tab = await openTabAt('/spazio-x/app/documenti/d1')
+    const tab = await openTabAt('/spazio-x/app/documents/d1')
     const response = await tab.fetchWithRefresh('/api/documents/d1/pdf')
 
     expect(response.status).toBe(200)

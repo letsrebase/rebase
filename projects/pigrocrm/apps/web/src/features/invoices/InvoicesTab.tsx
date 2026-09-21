@@ -32,7 +32,7 @@ export function InvoicesTab({ owner, actions }: { owner: InvoiceOwner; actions?:
         isError={invoices.isError}
         error={invoices.error}
         onRowClick={(row) =>
-          void navigate({ to: '/app/fatture/$invoiceId', params: { invoiceId: row.id } })
+          void navigate({ to: '/app/invoices/$invoiceId', params: { invoiceId: row.id } })
         }
         emptyMessage="Nessuna fattura."
       />

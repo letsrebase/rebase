@@ -92,21 +92,21 @@ def test_the_magic_link_mail_carries_every_link_and_the_minutes() -> None:
     mail = magic_link_mail(
         "ada@x.it",
         [
-            ("studio-ada", "https://pigro.test/studio-ada/app/entra?t=abc"),
-            ("secondo", "https://pigro.test/secondo/app/entra?t=def"),
+            ("studio-ada", "https://pigro.test/studio-ada/app/verify?t=abc"),
+            ("secondo", "https://pigro.test/secondo/app/verify?t=def"),
         ],
         15,
     )
     assert mail.to == "ada@x.it"
     assert "15 minuti" in mail.text
-    assert "https://pigro.test/studio-ada/app/entra?t=abc" in mail.text
-    assert "https://pigro.test/secondo/app/entra?t=def" in mail.text
+    assert "https://pigro.test/studio-ada/app/verify?t=abc" in mail.text
+    assert "https://pigro.test/secondo/app/verify?t=def" in mail.text
     assert mail.html is not None and "studio-ada" in mail.html and "&lt;" not in mail.text
     # One space: no label, just the door.
-    one = magic_link_mail("a@x.it", [("x", "https://pigro.test/x/app/entra?t=abc")], 15)
-    assert one.text.count("https://pigro.test/x/app/entra?t=abc") == 1 and "x:" not in one.text
+    one = magic_link_mail("a@x.it", [("x", "https://pigro.test/x/app/verify?t=abc")], 15)
+    assert one.text.count("https://pigro.test/x/app/verify?t=abc") == 1 and "x:" not in one.text
     # A token that tried to close the tag is escaped in the HTML.
-    hostile = magic_link_mail("a@x.it", [("x", 'https://pigro.test/x/app/entra?t="><script>')], 15)
+    hostile = magic_link_mail("a@x.it", [("x", 'https://pigro.test/x/app/verify?t="><script>')], 15)
     assert hostile.html is not None and "<script>" not in hostile.html
 
 
@@ -118,7 +118,7 @@ def test_the_recording_sender_keeps_what_it_was_given() -> None:
 
 
 def test_the_welcome_mail_enters_with_a_link_and_says_what_to_do_first() -> None:
-    entra = "https://pigro.test/ada/app/entra?t=abc"
+    entra = "https://pigro.test/ada/app/verify?t=abc"
     login = "https://pigro.test/ada/app/login"
     member = welcome_mail("ada@x.it", entra, login, membro=True)
     assert member.subject == "Il tuo spazio PigroCRM è pronto"
@@ -135,7 +135,7 @@ def test_the_welcome_mail_enters_with_a_link_and_says_what_to_do_first() -> None
     assert "letsrebase.com/hub/freelance" in guest.text
     assert guest.html is not None and "hub/freelance" in guest.html
     hostile = welcome_mail(
-        "x@x.it", 'https://pigro.test/x/app/entra?t="><script>', login, membro=True
+        "x@x.it", 'https://pigro.test/x/app/verify?t="><script>', login, membro=True
     )
     assert hostile.html is not None and "<script>" not in hostile.html
 
@@ -290,7 +290,7 @@ def test_only_sections_with_rows_appear_and_every_link_says_da_digest() -> None:
     # The switch lives in the profile tab every user can reach (spec §3.6), not the
     # admin-only users panel -- the opt-out link must land somewhere a non-admin
     # recipient can actually open.
-    assert "https://pigro.letsrebase.com/ada/app/impostazioni/profilo?da=digest" in mail.html
+    assert "https://pigro.letsrebase.com/ada/app/settings/profile?da=digest" in mail.html
     assert "Emesse questa settimana" in mail.text
     # §3.1 item 3: «Numero, cliente, importo, stato» -- the number is part of the row.
     assert "2026/1" in mail.text and "2026/1" in mail.html
@@ -348,7 +348,7 @@ def test_the_overdue_list_links_to_the_full_list() -> None:
         "a@b.it", digest_with(scaduto=Decimal("100")), public_url="https://pigro.test/ada"
     )
     assert mail.html is not None
-    assert "https://pigro.test/ada/app/fatture?scadute=true&da=digest" in mail.text
+    assert "https://pigro.test/ada/app/invoices?scadute=true&da=digest" in mail.text
 
 
 def test_a_quiet_week_offers_the_assistant() -> None:
@@ -386,13 +386,13 @@ def test_da_emettere_only_appears_with_something_to_bill() -> None:
     assert "Da emettere" not in still.html
     mail = digest_mail("a@b.it", digest_with(vinti_da_fatturare=2), public_url="https://x")
     assert "Da emettere" in mail.html and "2 deal vinti da fatturare" in mail.text
-    assert "https://x/app/deal/lista?da_fatturare=true&da=digest" in mail.text
-    # The hours link is `/app/ore` bare: `routes/app/ore.tsx` declares no `validateSearch`,
+    assert "https://x/app/deal/list?da_fatturare=true&da=digest" in mail.text
+    # The hours link is `/app/hours` bare: `routes/app/hours.tsx` declares no `validateSearch`,
     # so a `?fatturato=false` would be dropped on arrival and the link would promise a
     # filtered list nobody ever sees. Only `da=digest` survives the trip.
     ore = digest_mail("a@b.it", digest_with(ore_non_fatturate=Decimal("8")), public_url="https://x")
     assert "8 ore fatturabili non fatturate" in ore.text
-    assert "https://x/app/ore?da=digest" in ore.text
+    assert "https://x/app/hours?da=digest" in ore.text
     assert "fatturato=false" not in ore.text
 
 

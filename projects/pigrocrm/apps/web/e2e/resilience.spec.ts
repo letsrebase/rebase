@@ -22,7 +22,7 @@ test('a dead API reads as a failure, not an empty list, and the app recovers onc
   test.setTimeout(60_000)
 
   await loginAsAdmin(page)
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   // Confirms the list genuinely works before the API dies, so what follows is a
   // regression against a real success, not against a page that never loaded.
   await expect(page.getByRole('button', { name: /nuovo cliente/i })).toBeVisible()
@@ -56,11 +56,11 @@ test('a dead API reads as a failure, not an empty list, and the app recovers onc
   // query to refetch from nothing, `GET /api/auth/me` included -- which is
   // also the one request that can only succeed if the relaunched process was
   // handed the *same* PIGROCRM_JWT_SECRET, since that is what verifies the
-  // still-current session cookie's signature. Staying on /app/clienti here is
+  // still-current session cookie's signature. Staying on /app/customers here is
   // therefore proof of both a working database connection and a correctly
   // propagated secret, not just an HTTP server that answers.
   await page.reload()
-  await expect(page).toHaveURL(/\/app\/clienti/)
+  await expect(page).toHaveURL(/\/app\/customers/)
   await expect(page.getByRole('alert')).not.toBeVisible()
   await expect(page.getByRole('button', { name: /nuovo cliente/i })).toBeVisible()
 })

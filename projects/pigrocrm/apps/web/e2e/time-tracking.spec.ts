@@ -109,8 +109,8 @@ test.describe('time tracking', () => {
     const mesePerEsteso = `${MESI[lunedi.getMonth()]} ${anno}`
 
     async function apriLaSettimana(): Promise<void> {
-      await page.goto('/app/ore')
-      // The grid is a tab now. `/app/ore` opens on «Registro» -- the timer bar and the
+      await page.goto('/app/hours')
+      // The grid is a tab now. `/app/hours` opens on «Registro» -- the timer bar and the
       // week as a list -- since 2026-09-09, and the grid this spec drives is one click
       // away under «Settimana». Without the click the page is perfectly healthy and
       // `grid-total` simply is not on it, which is how this spec spent three minutes
@@ -162,7 +162,7 @@ test.describe('time tracking', () => {
 
     // 3. Raising the deal rate must not move the hour already written (criterion 2,
     //    first half): the rate is copied onto the row when the row is created.
-    await page.goto('/app/impostazioni/tariffe')
+    await page.goto('/app/settings/rates')
     const campoTariffa = page.getByLabel(`Tariffa oraria del deal ${nome}`)
     const rigaTariffa = page.getByRole('row').filter({ has: campoTariffa })
     await campoTariffa.fill('150')
@@ -216,7 +216,7 @@ test.describe('time tracking', () => {
     //    client-side guard on the grid at all, which is the point: the toast carries
     //    `toProblem(error).detail`, the exact sentence `PeriodLockService.assert_open`
     //    raised.
-    await page.goto('/app/impostazioni/periodi')
+    await page.goto('/app/settings/periods')
     await page.getByLabel(/chiudi il mese/i).fill(mese)
     await page.getByRole('button', { name: 'Chiudi periodo' }).click()
     await expect(page.getByText(mesePerEsteso, { exact: true })).toBeVisible()
@@ -235,7 +235,7 @@ test.describe('time tracking', () => {
     // makes the refusal above attributable to the lock rather than to anything else on
     // that screen -- and it leaves the database as this test found it, so a second run
     // against a surviving database is not met by "il periodo è già chiuso".
-    await page.goto('/app/impostazioni/periodi')
+    await page.goto('/app/settings/periods')
     // «Riapri» moved behind the row's «⋯» (UI revision of 2026-09-08) and its
     // confirmation stopped being a second button that swapped itself into the row:
     // `PeriodsPanel` asks with a `window.confirm`. Playwright dismisses an unhandled
@@ -265,7 +265,7 @@ test.describe('time tracking', () => {
   test('a failed request never looks like an empty week', async ({ page }) => {
     await loginAsAdmin(page)
     await page.route('**/api/time-entries*', (route) => route.abort('failed'))
-    await page.goto('/app/ore')
+    await page.goto('/app/hours')
     // `lib/query.ts` retries a non-401/403 failure twice with backoff before the query
     // is allowed to be an error at all, which outlasts the config's 8s expect timeout on
     // a loaded machine -- the same allowance `resilience.spec.ts` makes for the same

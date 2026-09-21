@@ -6,7 +6,7 @@ test.beforeEach(async ({ page }) => {
 })
 
 async function createTextField(page: Page, label: string): Promise<void> {
-  await page.goto('/app/impostazioni/campi')
+  await page.goto('/app/settings/fields')
   await page.getByRole('button', { name: /nuovo campo/i }).click()
   const dialog = page.getByRole('dialog')
   await typeLikeAHuman(dialog.getByLabel('Etichetta'), label)
@@ -15,7 +15,7 @@ async function createTextField(page: Page, label: string): Promise<void> {
 }
 
 /** The value cell immediately to the right of a `Row`'s own label
- *  (routes/app/clienti/$customerId.tsx: `<span>{label}</span><span>{value}</span>`,
+ *  (routes/app/customers/$customerId.tsx: `<span>{label}</span><span>{value}</span>`,
  *  siblings inside one flex row) -- located relative to the label itself so it
  *  cannot be confused with an unrelated "0"/"Sì"/"No" elsewhere on a page that
  *  also shows a VAT number, a probability, or another field's own value. */
@@ -62,7 +62,7 @@ test("a custom field's whole life: appears everywhere with no restart, and a cle
   const isGet = (response: Response, path: string): boolean =>
     new URL(response.url()).pathname.endsWith(path) && response.request().method() === 'GET'
   await Promise.all([
-    page.goto('/app/clienti'),
+    page.goto('/app/customers'),
     page.waitForResponse((response) => isGet(response, '/api/schema/customer')),
     page.waitForResponse((response) => isGet(response, '/api/customers')),
   ])
@@ -116,7 +116,7 @@ test('archiving a field a record still holds a value for does not lock that reco
   await createTextField(page, 'Codice interno')
 
   const name = `Archived Trap ${Date.now()}`
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   const createDialog = page.getByRole('dialog')
   await createDialog.getByLabel('Ragione sociale').fill(name)
@@ -129,7 +129,7 @@ test('archiving a field a record still holds a value for does not lock that reco
   expect(customerId).toBeTruthy()
 
   // Archive the definition while this record still holds a value for it.
-  await page.goto('/app/impostazioni/campi')
+  await page.goto('/app/settings/fields')
   // Through the row's «⋯» menu, which is where per-row actions have lived since the UI
   // revision of 2026-09-08 -- see `helpers.ts::rowAction`.
   await rowAction(page, 'Codice interno', 'Archivia')
@@ -142,7 +142,7 @@ test('archiving a field a record still holds a value for does not lock that reco
 
   // The UI genuinely cannot show it any more -- this is exactly why the
   // assertions below go through the API instead.
-  await page.goto(`/app/clienti/${customerId}`)
+  await page.goto(`/app/customers/${customerId}`)
   await expect(page.getByText('Codice interno', { exact: true })).not.toBeVisible()
 
   // Edit the record, changing something unrelated. This must save cleanly --
@@ -178,14 +178,14 @@ test('archiving a field a record still holds a value for does not lock that reco
  */
 test('a numeric zero and a checkbox both read as real values, never as a dash', async ({ page }) => {
   const preexistingName = `Pre-esistente ${Date.now()}`
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(preexistingName)
   await page.getByRole('button', { name: 'Salva' }).click()
   await expect(page.getByText(preexistingName)).toBeVisible()
 
   // Both fields are defined *after* the customer above already exists.
-  await page.goto('/app/impostazioni/campi')
+  await page.goto('/app/settings/fields')
   await page.getByRole('button', { name: /nuovo campo/i }).click()
   let dialog = page.getByRole('dialog')
   await typeLikeAHuman(dialog.getByLabel('Etichetta'), 'Sconto applicato')
@@ -204,14 +204,14 @@ test('a numeric zero and a checkbox both read as real values, never as a dash', 
 
   // The pre-existing customer never had an opinion on either field -- the
   // checkbox must still read "No", never a dash, and never "Sì" either.
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   await page.getByText(preexistingName).click()
   await expect(detailValueFor(page, 'Attivo campagna')).toHaveText('No')
 
   // A second, brand-new customer sets the numeric field to exactly 0 and
   // switches the checkbox on.
   const zeroName = `Valori Zero ${Date.now()}`
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   const createDialog = page.getByRole('dialog')
   await createDialog.getByLabel('Ragione sociale').fill(zeroName)
@@ -227,7 +227,7 @@ test('a numeric zero and a checkbox both read as real values, never as a dash', 
   // And the same zero, scoped to this customer's own row, on the list column --
   // `!0` is `true` in JavaScript, which is exactly the trap that would render
   // this cell as blank/dash instead.
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   const zeroRow = page.getByRole('row').filter({ hasText: zeroName })
   await expect(zeroRow.getByRole('cell', { name: '0', exact: true })).toBeVisible()
 })

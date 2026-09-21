@@ -39,7 +39,7 @@ import {
  * /api/time-entries`, so the rate is frozen, a closed period refuses and the activity
  * row is written exactly as for any other hour -- this dialog is a way of filling that
  * form, not a second way of writing the table. Commitments go through `POST
- * /api/attivita` with this day as `scadenza`.
+ * /api/activities` with this day as `scadenza`.
  *
  * An invoice falling due is shown and linked, and cannot be changed from here: its due
  * date belongs to the invoice.
@@ -174,7 +174,7 @@ function Due({
         {fatture.map((fattura) => (
           <li key={fattura.id} className="flex items-center justify-between gap-3">
             <Link
-              to="/app/fatture/$invoiceId"
+              to="/app/invoices/$invoiceId"
               params={{ invoiceId: fattura.id }}
               className="underline underline-offset-4"
             >

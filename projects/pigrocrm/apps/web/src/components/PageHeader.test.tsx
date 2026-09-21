@@ -44,7 +44,7 @@ describe('PageHeader', () => {
       <PageHeader
         icon={LayoutDashboard}
         title="Fatture"
-        tabs={<a href="/app/fatture">Tutte</a>}
+        tabs={<a href="/app/invoices">Tutte</a>}
       >
         <p>filtri</p>
       </PageHeader>,

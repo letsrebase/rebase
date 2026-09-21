@@ -1,4 +1,4 @@
-"""`GET /api/calendario` and `/api/attivita`: the month in one request, and the
+"""`GET /api/calendar` and `/api/activities`: the month in one request, and the
 commitments that fill it.
 
 What the router adds to the service is the month parameter, whose validation has to be
@@ -50,7 +50,7 @@ def _me(client: TestClient) -> str:
 
 
 def test_a_month_with_nothing_in_it_answers_an_empty_grid(logged_in: TestClient) -> None:
-    response = logged_in.get("/api/calendario", params={"mese": MESE})
+    response = logged_in.get("/api/calendar", params={"mese": MESE})
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -66,18 +66,18 @@ def test_a_month_that_is_not_one_is_a_422_before_anything_is_read(
 ) -> None:
     """The pattern is on the query parameter as well as in `month_bounds`, and both are
     wanted: here it refuses before a session is touched."""
-    assert logged_in.get("/api/calendario", params={"mese": "2026-13"}).status_code == 422
-    assert logged_in.get("/api/calendario", params={"mese": "settembre"}).status_code == 422
-    assert logged_in.get("/api/calendario").status_code == 422
+    assert logged_in.get("/api/calendar", params={"mese": "2026-13"}).status_code == 422
+    assert logged_in.get("/api/calendar", params={"mese": "settembre"}).status_code == 422
+    assert logged_in.get("/api/calendar").status_code == 422
 
 
 def test_an_activity_appears_on_its_day_with_its_state(logged_in: TestClient) -> None:
     created = logged_in.post(
-        "/api/attivita", json={"titolo": "Sollecitare Rossi", "scadenza": PRIMO.isoformat()}
+        "/api/activities", json={"titolo": "Sollecitare Rossi", "scadenza": PRIMO.isoformat()}
     )
     assert created.status_code == 201, created.text
 
-    body = logged_in.get("/api/calendario", params={"mese": MESE}).json()
+    body = logged_in.get("/api/calendar", params={"mese": MESE}).json()
 
     assert [day["giorno"] for day in body["giorni"]] == [PRIMO.isoformat()]
     assert [item["titolo"] for item in body["giorni"][0]["attivita"]] == ["Sollecitare Rossi"]
@@ -87,9 +87,9 @@ def test_an_activity_appears_on_its_day_with_its_state(logged_in: TestClient) ->
 def test_an_activity_without_a_date_is_outside_the_grid(logged_in: TestClient) -> None:
     """The section under the calendar, never a cell: an undated commitment is not late
     and is not for today."""
-    logged_in.post("/api/attivita", json={"titolo": "Chiedere il codice SDI"})
+    logged_in.post("/api/activities", json={"titolo": "Chiedere il codice SDI"})
 
-    body = logged_in.get("/api/calendario", params={"mese": MESE}).json()
+    body = logged_in.get("/api/calendar", params={"mese": MESE}).json()
 
     assert body["giorni"] == []
     assert [item["titolo"] for item in body["attivita_senza_scadenza"]] == [
@@ -116,7 +116,7 @@ def test_the_calendar_shows_the_hours_of_whoever_is_asking(
     )
     assert logged.status_code == 201, logged.text
 
-    body = logged_in.get("/api/calendario", params={"mese": MESE}).json()
+    body = logged_in.get("/api/calendar", params={"mese": MESE}).json()
 
     assert [day["giorno"] for day in body["giorni"]] == [PRIMO.isoformat()]
     day = body["giorni"][0]
@@ -132,26 +132,26 @@ def test_the_calendar_shows_the_hours_of_whoever_is_asking(
 def test_a_commitment_can_be_completed_cancelled_and_reopened(logged_in: TestClient) -> None:
     """Three closures, three routes: the state machine is the service's business, and
     «done» has a side effect -- the day -- a caller must not be able to supply."""
-    attivita_id = logged_in.post("/api/attivita", json={"titolo": "Da fare"}).json()["id"]
+    attivita_id = logged_in.post("/api/activities", json={"titolo": "Da fare"}).json()["id"]
 
-    done = logged_in.post(f"/api/attivita/{attivita_id}/completa").json()
+    done = logged_in.post(f"/api/activities/{attivita_id}/complete").json()
     assert done["stato"] == "completata"
     assert done["completata_il"] is not None
 
-    reopened = logged_in.post(f"/api/attivita/{attivita_id}/riapri").json()
+    reopened = logged_in.post(f"/api/activities/{attivita_id}/reopen").json()
     assert (reopened["stato"], reopened["completata_il"]) == ("aperta", None)
 
-    cancelled = logged_in.post(f"/api/attivita/{attivita_id}/annulla").json()
+    cancelled = logged_in.post(f"/api/activities/{attivita_id}/cancel").json()
     assert cancelled["stato"] == "annullata"
 
 
 def test_completing_a_cancelled_commitment_is_a_409_that_says_what_to_do(
     logged_in: TestClient,
 ) -> None:
-    attivita_id = logged_in.post("/api/attivita", json={"titolo": "Annullata"}).json()["id"]
-    logged_in.post(f"/api/attivita/{attivita_id}/annulla")
+    attivita_id = logged_in.post("/api/activities", json={"titolo": "Annullata"}).json()["id"]
+    logged_in.post(f"/api/activities/{attivita_id}/cancel")
 
-    response = logged_in.post(f"/api/attivita/{attivita_id}/completa")
+    response = logged_in.post(f"/api/activities/{attivita_id}/complete")
 
     assert response.status_code == 409
     assert "riaprila" in response.json()["detail"]
@@ -162,7 +162,7 @@ def test_two_references_are_a_422_naming_the_second_one(logged_in: TestClient) -
     deal_id = _deal(logged_in)
 
     response = logged_in.post(
-        "/api/attivita",
+        "/api/activities",
         json={"titolo": "Due riferimenti", "customer_id": customer_id, "deal_id": deal_id},
     )
 
@@ -175,11 +175,11 @@ def test_the_date_can_be_removed_through_its_own_flag(logged_in: TestClient) -> 
     whose date turns out to be wrong has to be able to lose it rather than keep an
     invented one."""
     attivita_id = logged_in.post(
-        "/api/attivita", json={"titolo": "Con data", "scadenza": PRIMO.isoformat()}
+        "/api/activities", json={"titolo": "Con data", "scadenza": PRIMO.isoformat()}
     ).json()["id"]
 
     cleared = logged_in.patch(
-        f"/api/attivita/{attivita_id}", json={"scadenza_da_rimuovere": True}
+        f"/api/activities/{attivita_id}", json={"scadenza_da_rimuovere": True}
     ).json()
 
     assert cleared["scadenza"] is None
@@ -188,24 +188,24 @@ def test_the_date_can_be_removed_through_its_own_flag(logged_in: TestClient) -> 
 def test_a_commitment_filtered_by_due_date_never_includes_the_undated_ones(
     logged_in: TestClient,
 ) -> None:
-    logged_in.post("/api/attivita", json={"titolo": "Senza data"})
-    logged_in.post("/api/attivita", json={"titolo": "Con data", "scadenza": PRIMO.isoformat()})
+    logged_in.post("/api/activities", json={"titolo": "Senza data"})
+    logged_in.post("/api/activities", json={"titolo": "Con data", "scadenza": PRIMO.isoformat()})
 
-    body = logged_in.get("/api/attivita", params={"scade_entro": ULTIMO.isoformat()}).json()
+    body = logged_in.get("/api/activities", params={"scade_entro": ULTIMO.isoformat()}).json()
 
     assert [item["titolo"] for item in body["items"]] == ["Con data"]
 
 
 def test_archiving_hides_it_from_the_list_and_from_the_month(logged_in: TestClient) -> None:
     attivita_id = logged_in.post(
-        "/api/attivita", json={"titolo": "Creata per errore", "scadenza": PRIMO.isoformat()}
+        "/api/activities", json={"titolo": "Creata per errore", "scadenza": PRIMO.isoformat()}
     ).json()["id"]
 
-    assert logged_in.delete(f"/api/attivita/{attivita_id}").status_code == 204
-    assert logged_in.get("/api/attivita").json()["items"] == []
-    assert logged_in.get("/api/calendario", params={"mese": MESE}).json()["giorni"] == []
+    assert logged_in.delete(f"/api/activities/{attivita_id}").status_code == 204
+    assert logged_in.get("/api/activities").json()["items"] == []
+    assert logged_in.get("/api/calendar", params={"mese": MESE}).json()["giorni"] == []
 
-    restored = logged_in.post(f"/api/attivita/{attivita_id}/restore")
+    restored = logged_in.post(f"/api/activities/{attivita_id}/restore")
     assert restored.status_code == 200
     assert restored.json()["scadenza"] == PRIMO.isoformat()
 
@@ -213,7 +213,7 @@ def test_archiving_hides_it_from_the_list_and_from_the_month(logged_in: TestClie
 def test_a_collaborator_can_write_their_own_commitments(collaborator_client: TestClient) -> None:
     """Nothing here is admin-gated: a commitment is not a fiscal act, and the refusals
     that exist live in the service."""
-    response = collaborator_client.post("/api/attivita", json={"titolo": "La mia"})
+    response = collaborator_client.post("/api/activities", json={"titolo": "La mia"})
 
     assert response.status_code == 201, response.text
 
@@ -221,12 +221,12 @@ def test_a_collaborator_can_write_their_own_commitments(collaborator_client: Tes
 def test_the_openapi_document_declares_the_new_routes(logged_in: TestClient) -> None:
     paths = logged_in.get("/openapi.json").json()["paths"]
     for path in (
-        "/api/calendario",
-        "/api/attivita",
-        "/api/attivita/{attivita_id}",
-        "/api/attivita/{attivita_id}/completa",
-        "/api/attivita/{attivita_id}/annulla",
-        "/api/attivita/{attivita_id}/riapri",
+        "/api/calendar",
+        "/api/activities",
+        "/api/activities/{attivita_id}",
+        "/api/activities/{attivita_id}/complete",
+        "/api/activities/{attivita_id}/cancel",
+        "/api/activities/{attivita_id}/reopen",
     ):
         assert path in paths, path
 
@@ -246,9 +246,9 @@ def test_a_day_can_carry_hours_a_commitment_and_nothing_else_it_did_not_earn(
             "descrizione": "Mezza",
         },
     )
-    logged_in.post("/api/attivita", json={"titolo": "Sollecito", "scadenza": PRIMO.isoformat()})
+    logged_in.post("/api/activities", json={"titolo": "Sollecito", "scadenza": PRIMO.isoformat()})
 
-    day = logged_in.get("/api/calendario", params={"mese": MESE}).json()["giorni"][0]
+    day = logged_in.get("/api/calendar", params={"mese": MESE}).json()["giorni"][0]
 
     assert day["giorno"] == PRIMO.isoformat()
     assert day["ore"] == "4.00"
@@ -261,6 +261,6 @@ def test_a_day_can_carry_hours_a_commitment_and_nothing_else_it_did_not_earn(
 def test_the_month_says_which_day_is_today(logged_in: TestClient) -> None:
     """`oggi` travels because «today» is a day in the emitter's zone, and a browser in
     another timezone would otherwise mark the wrong cell."""
-    body = logged_in.get("/api/calendario", params={"mese": MESE}).json()
+    body = logged_in.get("/api/calendar", params={"mese": MESE}).json()
 
     assert date.fromisoformat(body["oggi"])

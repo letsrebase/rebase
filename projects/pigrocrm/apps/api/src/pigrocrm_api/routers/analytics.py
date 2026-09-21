@@ -82,7 +82,7 @@ def budget_vs_actual(
     )
 
 
-@router.get("/panoramica", response_model=EconomicOverview)
+@router.get("/overview", response_model=EconomicOverview)
 def economic_overview(
     session: SessionDep,
     actor: ActorDep,
@@ -109,7 +109,7 @@ def economic_overview(
     return AnalyticsService(session).economic_overview(anno, actor, base)
 
 
-@router.get("/fiscale", response_model=FiscalEstimate)
+@router.get("/fiscal", response_model=FiscalEstimate)
 def fiscal_estimate(
     session: SessionDep, actor: ActorDep, anno: Annotated[int, Query(ge=2000, le=2200)]
 ) -> FiscalEstimate:

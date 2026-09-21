@@ -23,7 +23,7 @@ test.beforeEach(async ({ page }) => {
 test('typing a field label one keystroke at a time still derives the whole key, and the field appears on the customer form immediately', async ({
   page,
 }) => {
-  await page.goto('/app/impostazioni/campi')
+  await page.goto('/app/settings/fields')
   await page.getByRole('button', { name: /nuovo campo/i }).click()
 
   const dialog = page.getByRole('dialog')
@@ -40,7 +40,7 @@ test('typing a field label one keystroke at a time still derives the whole key, 
   // live (strict-mode violation, two matches) before adding this.
   await expect(page.getByText('Settore', { exact: true })).toBeVisible()
 
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await expect(page.getByLabel('Settore')).toBeVisible()
 })
@@ -48,14 +48,14 @@ test('typing a field label one keystroke at a time still derives the whole key, 
 test('creating a customer, a person and a deal, then moving it across the board', async ({ page }) => {
   const name = `ACME ${Date.now()}`
 
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(name)
   await page.getByLabel('P.IVA').fill('12345678901')
   await page.getByRole('button', { name: 'Salva' }).click()
   await expect(page.getByText(name)).toBeVisible()
 
-  await page.goto('/app/persone')
+  await page.goto('/app/people')
   await page.getByRole('button', { name: /nuova persona/i }).click()
   // Neither a bare `getByLabel('Nome')` nor `{ exact: true }` is right here.
   // "Nome" is required (`DynamicFieldRenderer`'s `RequiredMark` appends " *" to
@@ -110,7 +110,7 @@ test('creating a customer, a person and a deal, then moving it across the board'
 })
 
 test('an invalid VAT number surfaces the API message on the field', async ({ page }) => {
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill('Test IVA')
   await page.getByLabel('P.IVA').fill('123')
@@ -122,7 +122,7 @@ test('an invalid VAT number surfaces the API message on the field', async ({ pag
 
 test('the timeline records what happened', async ({ page }) => {
   const name = `Timeline ${Date.now()}`
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(name)
   await page.getByRole('button', { name: 'Salva' }).click()

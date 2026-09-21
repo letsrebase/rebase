@@ -20,7 +20,7 @@ test('a collaboratore is not offered Settings and cannot reach it by URL, but ca
 
   // Admin creates the collaboratore -- there is no public registration.
   await loginAsAdmin(page)
-  await page.goto('/app/impostazioni/utenti')
+  await page.goto('/app/settings/users')
   await page.getByRole('button', { name: /nuovo utente/i }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Nome').fill('Collaboratore E2E')
@@ -41,7 +41,7 @@ test('a collaboratore is not offered Settings and cannot reach it by URL, but ca
   // Cannot reach it by typing the URL either -- SettingsLayout itself refuses,
   // in place, with no redirect (routes/app.tsx's own guard only checks "is
   // anyone logged in", not role).
-  await page.goto('/app/impostazioni/campi')
+  await page.goto('/app/settings/fields')
   await expect(page.getByText('Accesso riservato')).toBeVisible()
   await expect(page.getByRole('tab')).toHaveCount(0)
 

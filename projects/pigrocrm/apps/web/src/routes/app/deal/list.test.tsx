@@ -14,7 +14,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
-import { DealsList } from './lista'
+import { DealsList } from './list'
 
 const navigate = vi.fn()
 
@@ -66,7 +66,7 @@ function nextSearch(previous: Record<string, unknown>): Record<string, unknown> 
     to: string
     search: (prev: Record<string, unknown>) => Record<string, unknown>
   }
-  expect(call.to).toBe('/app/deal/lista')
+  expect(call.to).toBe('/app/deal/list')
   expect(typeof call.search).toBe('function')
   return call.search(previous)
 }

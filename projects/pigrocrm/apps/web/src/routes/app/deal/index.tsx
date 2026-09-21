@@ -73,7 +73,7 @@ function DealsKanban() {
         actions={
           <>
             <Button variant="outline" asChild>
-              <Link to="/app/deal/lista">
+              <Link to="/app/deal/list">
                 <List className="mr-2 size-4" />
                 Vista lista
               </Link>

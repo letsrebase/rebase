@@ -114,7 +114,7 @@ describe('CommercialTab', () => {
     vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
     renderTab({ da: '2025-01-01', a: '2025-12-31' })
     await screen.findByRole('table', { name: /pipeline per stato/i })
-    expect(api.GET).toHaveBeenCalledWith('/api/dashboard/commerciale', {
+    expect(api.GET).toHaveBeenCalledWith('/api/dashboard/sales', {
       params: { query: { da: '2025-01-01', a: '2025-12-31' } },
     })
   })

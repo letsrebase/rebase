@@ -369,7 +369,7 @@ function NewProformaDialog({
         // Straight to the document: confirming and issuing live there
         // (`InvoiceActions`), and so does correcting anything this short form does not
         // ask for.
-        void navigate({ to: '/app/fatture/$invoiceId', params: { invoiceId: invoice.id } })
+        void navigate({ to: '/app/invoices/$invoiceId', params: { invoiceId: invoice.id } })
       },
       onError: (error) => setProblem(toProblem(error)),
     })

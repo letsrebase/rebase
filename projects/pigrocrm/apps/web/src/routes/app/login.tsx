@@ -248,10 +248,10 @@ export function LoginPage() {
               className="mt-4 w-full"
               onClick={() =>
                 tenantPrefix === ''
-                  ? void navigate({ to: '/app/registrati' })
+                  ? void navigate({ to: '/app/register' })
                   : // The signup page lives at the unprefixed root: a different basepath
                     // is a different application instance, so this is a navigation.
-                    window.location.assign('/app/registrati')
+                    window.location.assign('/app/register')
               }
             >
               Crea il tuo spazio

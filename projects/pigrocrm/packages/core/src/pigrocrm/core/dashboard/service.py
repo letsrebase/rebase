@@ -230,19 +230,19 @@ class DashboardService:
                     codice="fatturato_non_vinto",
                     etichetta="Fatturato ma non vinto",
                     conteggio=self.invoices.count_deals_invoiced_not_won(),
-                    collegamento="/app/deal/lista?fatturato_non_vinto=true",
+                    collegamento="/app/deal/list?fatturato_non_vinto=true",
                 ),
                 Signal(
                     codice="vinto_da_fatturare",
                     etichetta="Vinto ma da fatturare",
                     conteggio=self.entries.count_won_deals_to_invoice(),
-                    collegamento="/app/deal/lista?da_fatturare=true",
+                    collegamento="/app/deal/list?da_fatturare=true",
                 ),
                 Signal(
                     codice="scaduto_non_incassato",
                     etichetta="Scaduto e non incassato",
                     conteggio=self.invoices.count_scadute_non_incassate(),
-                    collegamento="/app/fatture?scadute=true",
+                    collegamento="/app/invoices?scadute=true",
                 ),
             ],
             attivita_recenti=[

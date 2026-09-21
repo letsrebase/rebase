@@ -138,15 +138,15 @@ def test_set_offer_state_and_refuse_an_undeclared_transition(logged_in: TestClie
         "/api/documents", json={"customer_id": customer_id, "tipo": "offerta", "titolo": "O"}
     ).json()["id"]
     assert (
-        logged_in.post(f"/api/documents/{document_id}/stato", json={"stato": "inviata"}).json()[
+        logged_in.post(f"/api/documents/{document_id}/status", json={"stato": "inviata"}).json()[
             "stato"
         ]
         == "inviata"
     )
-    conflict = logged_in.post(f"/api/documents/{document_id}/stato", json={"stato": "bozza"})
+    conflict = logged_in.post(f"/api/documents/{document_id}/status", json={"stato": "bozza"})
     assert conflict.status_code == 200  # inviata -> bozza is allowed
     # Now back in "bozza", whose only legal exit is "inviata": "accettata" is refused.
-    forbidden = logged_in.post(f"/api/documents/{document_id}/stato", json={"stato": "accettata"})
+    forbidden = logged_in.post(f"/api/documents/{document_id}/status", json={"stato": "accettata"})
     assert forbidden.status_code == 409
     assert forbidden.json()["code"] == "conflict"
 
@@ -248,7 +248,7 @@ def test_read_the_text_of_an_uploaded_file(logged_in: TestClient) -> None:
         files={"file": ("note.md", b"# Codice destinatario\n\nABCDEFG\n", "text/markdown")},
     )
 
-    response = logged_in.get(f"/api/documents/{document_id}/testo")
+    response = logged_in.get(f"/api/documents/{document_id}/text")
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -265,7 +265,7 @@ def test_reading_the_text_of_a_version_nobody_uploaded_is_a_404(logged_in: TestC
         "/api/documents", json={"customer_id": customer_id, "tipo": "documento", "titolo": "Doc"}
     ).json()["id"]
 
-    assert logged_in.get(f"/api/documents/{document_id}/testo").status_code == 404
+    assert logged_in.get(f"/api/documents/{document_id}/text").status_code == 404
 
 
 def test_the_openapi_document_declares_the_new_routes(logged_in: TestClient) -> None:
@@ -274,7 +274,7 @@ def test_the_openapi_document_declares_the_new_routes(logged_in: TestClient) -> 
         "/api/documents",
         "/api/documents/from-template",
         "/api/documents/{document_id}/download",
-        "/api/documents/{document_id}/testo",
+        "/api/documents/{document_id}/text",
         "/api/templates/{template_id}/describe",
         "/api/emitter",
     ):

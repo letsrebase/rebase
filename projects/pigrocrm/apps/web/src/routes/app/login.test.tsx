@@ -54,9 +54,9 @@ describe('the post-session redirect', () => {
   })
 
   it('sends an already-authenticated visitor to the deep link the guard recorded', async () => {
-    search = { redirect: '/app/fatture/42' }
+    search = { redirect: '/app/invoices/42' }
     render(<LoginPage />)
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ href: '/app/fatture/42' }))
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ href: '/app/invoices/42' }))
   })
 
   it('ignores a redirect that does not point under this app, falling back to the dashboard', async () => {

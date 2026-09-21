@@ -1,4 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { FieldsPanel } from '@/features/settings/FieldsPanel'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-export const Route = createFileRoute('/app/impostazioni/campi')({ component: FieldsPanel })
+// Old path support (Italian route names retired 2026-09-21, see
+// docs/design/DECISIONS.md): `settings/fields.tsx` is the real page now.
+export const Route = createFileRoute('/app/impostazioni/campi')({
+  beforeLoad: () => {
+    throw redirect({ to: '/app/settings/fields' })
+  },
+})

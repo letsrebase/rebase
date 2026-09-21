@@ -77,7 +77,7 @@ const TOP_LEVEL = [
   // Under Home, at Ivan's request (2026-09-09), and top-level rather than inside a
   // group for the same reason Home is: a month of one's own days and deadlines is a
   // cross-cutting view, not a step of «Vendite» or of «Amministrazione».
-  { to: '/app/calendario', label: 'Calendario', icon: CalendarDays, exact: false },
+  { to: '/app/calendar', label: 'Calendario', icon: CalendarDays, exact: false },
   { to: '/app/token', label: 'Token', icon: KeyRound, exact: false },
 ] as const
 
@@ -97,8 +97,8 @@ const GROUPS = [
     label: 'Vendite',
     icon: Briefcase,
     items: [
-      { to: '/app/clienti', label: 'Clienti', icon: Building2 },
-      { to: '/app/persone', label: 'Persone', icon: Users },
+      { to: '/app/customers', label: 'Clienti', icon: Building2 },
+      { to: '/app/people', label: 'Persone', icon: Users },
       { to: '/app/deal', label: 'Deal', icon: Handshake },
     ],
   },
@@ -107,8 +107,8 @@ const GROUPS = [
     label: 'Amministrazione',
     icon: Wallet,
     items: [
-      { to: '/app/fatture', label: 'Fatture', icon: Receipt },
-      { to: '/app/ore', label: 'Ore', icon: Clock },
+      { to: '/app/invoices', label: 'Fatture', icon: Receipt },
+      { to: '/app/hours', label: 'Ore', icon: Clock },
     ],
   },
 ] as const
@@ -135,27 +135,27 @@ const GROUPS = [
  * paths in the place that can typecheck them.
  */
 const SETTINGS_PATHS = {
-  profilo: '/app/impostazioni/profilo',
-  spazio: '/app/impostazioni/spazio',
-  campi: '/app/impostazioni/campi',
-  pipeline: '/app/impostazioni/pipeline',
-  template: '/app/impostazioni/template',
-  emittente: '/app/impostazioni/emittente',
-  fiscale: '/app/impostazioni/fiscale',
-  utenti: '/app/impostazioni/utenti',
-  'categorie-costo': '/app/impostazioni/categorie-costo',
-  tariffe: '/app/impostazioni/tariffe',
-  periodi: '/app/impostazioni/periodi',
-  gmail: '/app/impostazioni/gmail',
-  drive: '/app/impostazioni/drive',
-  automazioni: '/app/impostazioni/automazioni',
+  profile: '/app/settings/profile',
+  space: '/app/settings/space',
+  fields: '/app/settings/fields',
+  pipeline: '/app/settings/pipeline',
+  template: '/app/settings/template',
+  issuer: '/app/settings/issuer',
+  fiscal: '/app/settings/fiscal',
+  users: '/app/settings/users',
+  'cost-categories': '/app/settings/cost-categories',
+  rates: '/app/settings/rates',
+  periods: '/app/settings/periods',
+  gmail: '/app/settings/gmail',
+  drive: '/app/settings/drive',
+  automations: '/app/settings/automations',
 } as const satisfies Record<SettingsTabValue, string>
 
 const SETTINGS = {
   id: 'impostazioni',
   label: 'Impostazioni',
   icon: Settings,
-  base: '/app/impostazioni',
+  base: '/app/settings',
   items: SETTINGS_TABS.map((tab) => ({ to: SETTINGS_PATHS[tab.value], label: tab.label })),
 } as const
 
@@ -409,7 +409,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 // The first tab, under the group's own name: in the rail the label is the
                 // accessible name, and «Spazio» would say nothing about where it goes.
                 isAdmin
-                  ? leaf({ to: SETTINGS_PATHS.spazio, label: SETTINGS.label, icon: Settings })
+                  ? leaf({ to: SETTINGS_PATHS.space, label: SETTINGS.label, icon: Settings })
                   : null,
               ]
             : [
@@ -501,14 +501,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                   entry, because it is the one thing here that belongs to the person
                   rather than to the space. */}
               <DropdownMenuItem asChild>
-                <Link to="/app/impostazioni/profilo">
+                <Link to="/app/settings/profile">
                   <UserRound className="size-4" />
                   Profilo
                 </Link>
               </DropdownMenuItem>
               {isAdmin && (
                 <DropdownMenuItem asChild>
-                  <Link to="/app/impostazioni/spazio">
+                  <Link to="/app/settings/space">
                     <Settings className="size-4" />
                     Impostazioni dello spazio
                   </Link>

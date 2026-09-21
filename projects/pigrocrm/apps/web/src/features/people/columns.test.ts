@@ -150,7 +150,7 @@ describe("the person's company", () => {
     const rendered = renderedCell(azienda!, WITH_COMPANY)
     expect(isValidElement(rendered)).toBe(true)
     const props = (rendered as { props: Record<string, unknown> }).props
-    expect(props.to).toBe('/app/clienti/$customerId')
+    expect(props.to).toBe('/app/customers/$customerId')
     expect(props.params).toEqual({ customerId: 'c1' })
     expect(props.children).toBe('ACME Srl')
   })

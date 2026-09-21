@@ -73,7 +73,7 @@ describe('OfferStatePicker', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Segna come Inviata' }))
     await waitFor(() => {
       expect(mockPost).toHaveBeenCalledWith(
-        '/api/documents/{document_id}/stato',
+        '/api/documents/{document_id}/status',
         expect.objectContaining({
           params: { path: { document_id: 'doc-1' } },
           body: { stato: 'inviata' },

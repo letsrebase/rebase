@@ -11,13 +11,13 @@
  * Deliberately out of scope, and named so nobody widens the scope without deciding to: the
  * five existing `Number()` call sites in `features/settings/FieldsPanel.tsx`,
  * `features/settings/PipelinePanel.tsx`, `features/deals/columns.tsx`,
- * `components/DynamicFieldRenderer.tsx` and `routes/app/clienti/$customerId.tsx`. Each
+ * `components/DynamicFieldRenderer.tsx` and `routes/app/customers/$customerId.tsx`. Each
  * coerces a position, a probability or a form input -- none is an economic field from a
  * dashboard response. If slice 4 lands a wider guard later, this file's scope is subsumed
  * and it can be deleted.
  *
  * That last exclusion is why the scope below is `features/dashboard/` plus the dashboard
- * *route file*, and not the whole of `routes/app/`: `routes/app/clienti/$customerId.tsx`
+ * *route file*, and not the whole of `routes/app/`: `routes/app/customers/$customerId.tsx`
  * already carries `currencyFormatter.format(Number(value))`, so a `routes/app` root would
  * fail on the day it was written and would have to be bought back with an allowlist --
  * which is a weaker guard than a scope that means what criterion 14 says, "a dashboard

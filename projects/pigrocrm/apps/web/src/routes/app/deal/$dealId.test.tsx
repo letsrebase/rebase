@@ -14,7 +14,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
     useNavigate: () => vi.fn(),
     // The tabs below this header render links of their own, and a real `Link` needs a
     // router context this test has no reason to build. The house stub
-    // (deal/lista.test.tsx, fatture/index.test.tsx) renders it as a plain anchor.
+    // (deal/list.test.tsx, invoices/index.test.tsx) renders it as a plain anchor.
     Link: ({ children }: { children: ReactNode }) => <a href="#">{children}</a>,
   }
 })
@@ -24,7 +24,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 const auth = vi.hoisted(() => ({ canWrite: false }))
 vi.mock('@/lib/auth', () => ({ useCanWrite: () => auth.canWrite }))
 
-// `api.GET` is spied on directly, mirroring `clienti/$customerId.test.tsx`: what
+// `api.GET` is spied on directly, mirroring `customers/$customerId.test.tsx`: what
 // is under test is this route's own handling of what the real `unwrap` produces,
 // not a reimplementation of it. `DealDetail` also mounts `useEntitySchema` and
 // `useStages` unconditionally -- both resolve to a harmless empty success below,

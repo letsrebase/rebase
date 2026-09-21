@@ -320,16 +320,16 @@ def test_a_link_asked_at_the_root_reaches_the_space_that_address_owns(
     response = spaces_client.post("/api/auth/link", json={"email": SIGNUP["email"]})
     assert response.status_code == 202
     assert len(recording.sent) == 1
-    assert f"/{SLUG}/app/entra?t=" in recording.sent[0].text
+    assert f"/{SLUG}/app/verify?t=" in recording.sent[0].text
     token = recording.sent[0].text.split("?t=", 1)[1].split()[0]
 
-    entered = spaces_client.post(f"/{SLUG}/api/auth/entra", json={"t": token})
+    entered = spaces_client.post(f"/{SLUG}/api/auth/verify", json={"t": token})
     assert entered.status_code == 200, entered.text
     assert any(f"Path=/{SLUG}/" in c for c in entered.headers.get_list("set-cookie"))
     assert spaces_client.get(f"/{SLUG}/api/auth/me").json()["email"] == SIGNUP["email"]
     # The root itself never had this user: nothing is mailed for it, and the bare `entra`
     # does not know the token.
-    assert spaces_client.post("/api/auth/entra", json={"t": token}).status_code == 401
+    assert spaces_client.post("/api/auth/verify", json={"t": token}).status_code == 401
 
 
 def test_a_link_asked_under_a_space_reaches_that_space_only(spaces_client: TestClient) -> None:
@@ -346,7 +346,7 @@ def test_a_link_asked_under_a_space_reaches_that_space_only(spaces_client: TestC
     response = spaces_client.post(f"/{SLUG}/api/auth/link", json={"email": SIGNUP["email"]})
     assert response.status_code == 202
     assert len(recording.sent) == 1
-    assert f"https://pigro.test/{SLUG}/app/entra?t=" in recording.sent[0].text
+    assert f"https://pigro.test/{SLUG}/app/verify?t=" in recording.sent[0].text
     # An address the space does not know: 202 and no mail, like the root.
     assert (
         spaces_client.post(f"/{SLUG}/api/auth/link", json={"email": "x@studio.it"}).status_code
@@ -370,19 +370,19 @@ def test_the_signup_learns_whether_an_address_is_a_member_and_how_many_spaces_it
 
     monkeypatch.setattr("pigrocrm_api.routers.tenants.lookup_member", fake_lookup)
 
-    before = spaces_client.post("/api/tenants/membro", json={"email": "Ada@Studio.it"})
+    before = spaces_client.post("/api/tenants/member", json={"email": "Ada@Studio.it"})
     assert before.status_code == 200, before.text
     assert before.json() == {"membro": True, "nome": "Ada", "cognome": "Lovelace", "spazi": 0}
     assert asked == ["ada@studio.it"]
 
     created = spaces_client.post("/api/tenants/", json=SIGNUP)
     assert created.status_code == 201, created.text
-    after = spaces_client.post("/api/tenants/membro", json={"email": SIGNUP["email"]})
+    after = spaces_client.post("/api/tenants/member", json={"email": SIGNUP["email"]})
     assert after.json()["spazi"] == 1
     assert SLUG not in after.text
     # Somebody else's address owns nothing here, whatever the hub says about them.
     assert (
-        spaces_client.post("/api/tenants/membro", json={"email": "bob@studio.it"}).json()["spazi"]
+        spaces_client.post("/api/tenants/member", json={"email": "bob@studio.it"}).json()["spazi"]
         == 0
     )
 
@@ -395,7 +395,7 @@ def test_an_unreachable_hub_still_answers_and_says_not_a_member(
     fast lane, never a gate."""
     with_hub = container_settings.model_copy(update={"registry_token": REGISTRY_TOKEN})
     with _serving(with_hub) as client:
-        answer = client.post("/api/tenants/membro", json={"email": "ada@studio.it"})
+        answer = client.post("/api/tenants/member", json={"email": "ada@studio.it"})
         assert answer.status_code == 200, answer.text
         assert answer.json() == {"membro": False, "nome": None, "cognome": None, "spazi": 0}
 
@@ -404,11 +404,11 @@ def test_a_malformed_or_missing_address_is_a_422_and_the_query_string_is_not_rea
     spaces_client: TestClient,
 ) -> None:
     for body in ({"email": "non-una-mail"}, {"email": ""}, {}, None):
-        refused = spaces_client.post("/api/tenants/membro", json=body)
+        refused = spaces_client.post("/api/tenants/member", json=body)
         assert refused.status_code == 422, (body, refused.text)
     # The address in the URL is refused too: it would sit in every access log.
     assert (
-        spaces_client.post("/api/tenants/membro", params={"email": "ada@studio.it"}).status_code
+        spaces_client.post("/api/tenants/member", params={"email": "ada@studio.it"}).status_code
         == 422
     )
 
@@ -425,13 +425,13 @@ def test_the_member_question_is_throttled_per_client(
     )
     question = {"email": "ada@studio.it"}
     for _ in range(REQUESTS_PER_MINUTE):
-        assert spaces_client.post("/api/tenants/membro", json=question).status_code == 200
-    refused = spaces_client.post("/api/tenants/membro", json=question)
+        assert spaces_client.post("/api/tenants/member", json=question).status_code == 200
+    refused = spaces_client.post("/api/tenants/member", json=question)
     assert refused.status_code == 429, refused.text
     assert refused.headers["Retry-After"] == "60"
     # Another client has its own bucket.
     other = spaces_client.post(
-        "/api/tenants/membro", json={"email": "ada@studio.it"}, headers={"X-Real-IP": "10.0.0.7"}
+        "/api/tenants/member", json={"email": "ada@studio.it"}, headers={"X-Real-IP": "10.0.0.7"}
     )
     assert other.status_code == 200, other.text
 
@@ -481,8 +481,8 @@ def test_signing_up_enters_for_a_while_and_the_welcome_link_makes_it_durable(
     mail = recording.sent[0]
     assert mail.to == "ada@studio.it" and mail.subject == "Il tuo spazio PigroCRM è pronto"
     assert f"https://pigro.test/{SLUG}/app/login" in mail.text and "hub/freelance" in mail.text
-    raw = mail.text.split(f"/{SLUG}/app/entra?t=", 1)[1].split()[0]
-    entered = spaces_client.post(f"/{SLUG}/api/auth/entra", json={"t": raw})
+    raw = mail.text.split(f"/{SLUG}/app/verify?t=", 1)[1].split()[0]
+    entered = spaces_client.post(f"/{SLUG}/api/auth/verify", json={"t": raw})
     assert entered.status_code == 200, entered.text
     assert any(
         "pigrocrm_refresh=" in c and f"Path=/{SLUG}/" in c

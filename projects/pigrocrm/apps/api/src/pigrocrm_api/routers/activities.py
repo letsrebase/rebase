@@ -18,7 +18,7 @@ from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import ActorDep, SessionDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/attivita", tags=["attivita"], responses=PROBLEM_RESPONSES)
+router = APIRouter(prefix="/api/activities", tags=["attivita"], responses=PROBLEM_RESPONSES)
 
 
 @router.post("", response_model=AttivitaRead, status_code=status.HTTP_201_CREATED)
@@ -83,24 +83,24 @@ def update(
 # reasons: the state machine is the service's business (a cancelled activity does not
 # become completed by writing a column), and «done» has a side effect -- the day it was
 # done -- that a caller must not be able to supply.
-@router.post("/{attivita_id}/completa", response_model=AttivitaRead)
+@router.post("/{attivita_id}/complete", response_model=AttivitaRead)
 def complete(attivita_id: UUID, session: SessionDep, actor: ActorDep) -> AttivitaRead:
     return AttivitaService(session).complete(attivita_id, actor)
 
 
-@router.post("/{attivita_id}/annulla", response_model=AttivitaRead)
+@router.post("/{attivita_id}/cancel", response_model=AttivitaRead)
 def cancel(attivita_id: UUID, session: SessionDep, actor: ActorDep) -> AttivitaRead:
     return AttivitaService(session).cancel(attivita_id, actor)
 
 
-@router.post("/{attivita_id}/riapri", response_model=AttivitaRead)
+@router.post("/{attivita_id}/reopen", response_model=AttivitaRead)
 def reopen(attivita_id: UUID, session: SessionDep, actor: ActorDep) -> AttivitaRead:
     return AttivitaService(session).reopen(attivita_id, actor)
 
 
 @router.delete("/{attivita_id}", status_code=status.HTTP_204_NO_CONTENT)
 def archive(attivita_id: UUID, session: SessionDep, actor: ActorDep) -> None:
-    """Archiving, which is for the typo. The change of plan is `annulla` -- and the two
+    """Archiving, which is for the typo. The change of plan is `cancel` -- and the two
     being different operations is the whole reason there are three states."""
     AttivitaService(session).soft_delete(attivita_id, actor)
 

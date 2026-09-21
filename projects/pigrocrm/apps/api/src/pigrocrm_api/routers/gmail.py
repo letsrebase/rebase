@@ -59,7 +59,7 @@ router = APIRouter(prefix="/api/gmail", tags=["gmail"], responses=PROBLEM_RESPON
 # Where the SPA renders the outcome of a consent flow. Three codes and no free text:
 # `esito` is looked up in a fixed table on the page, so nothing an attacker appends to
 # this URL can put words of their own on the screen.
-_SETTINGS_PAGE = "/app/impostazioni/gmail"
+_SETTINGS_PAGE = "/app/settings/gmail"
 _ESITO_COLLEGATO = "collegato"
 _ESITO_NEGATO = "negato"
 _ESITO_ERRORE = "errore"

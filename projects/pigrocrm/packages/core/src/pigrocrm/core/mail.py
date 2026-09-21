@@ -529,7 +529,7 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
                 inv,
                 _ritardo(inv.giorni_di_ritardo),
             ),
-            url=link(f"/app/fatture/{inv.invoice_id}"),
+            url=link(f"/app/invoices/{inv.invoice_id}"),
             label="Prepara il sollecito",
         )
         for inv in digest.scadute
@@ -538,7 +538,7 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
         righe_incassare.append(
             _row(
                 "Tutte le fatture scadute",
-                url=link("/app/fatture?scadute=true"),
+                url=link("/app/invoices?scadute=true"),
                 label="Vai alle fatture",
             )
         )
@@ -555,7 +555,7 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
         righe_emettere.append(
             _row(
                 testo_deal_vinti,
-                url=link("/app/deal/lista?da_fatturare=true"),
+                url=link("/app/deal/list?da_fatturare=true"),
                 label="Vai ai deal",
             )
         )
@@ -564,11 +564,11 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
             _row(
                 f"{_ore_it(digest.ore_non_fatturate)} ore fatturabili non fatturate — "
                 f"{euro(digest.valore_maturato)} maturati",
-                # `/app/ore` bare: the page declares no `validateSearch`, so a
+                # `/app/hours` bare: the page declares no `validateSearch`, so a
                 # `?fatturato=false` would be dropped on arrival and the link would
                 # promise a filtered list the reader never gets. Only `da=digest`
                 # survives, and that one `link()` adds to every link the report hands out.
-                url=link("/app/ore"),
+                url=link("/app/hours"),
                 label="Vai alle ore",
             )
         )
@@ -618,7 +618,7 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     righe_pipeline += [
         _row(
             f"{offerta.titolo} — in attesa da {_conta(offerta.giorni, 'giorno', 'giorni')}",
-            url=link(f"/app/documenti/{offerta.document_id}"),
+            url=link(f"/app/documents/{offerta.document_id}"),
             label="Apri l'offerta",
         )
         for offerta in digest.offerte_in_attesa
@@ -655,7 +655,7 @@ def digest_mail(to: str, digest: WeeklyDigest, *, public_url: str) -> Mail:
     text_parts.append(f"Apri PigroCRM: {cta_url}")
     html_parts.append(f"<p {paragraph}>{_button(e(cta_url, quote=True), 'Apri PigroCRM')}</p>")
 
-    opt_out_url = link("/app/impostazioni/profilo")
+    opt_out_url = link("/app/settings/profile")
     text_parts.append("")
     text_parts.append(f"Non inviarmi più il resoconto: {opt_out_url}")
     html_parts.append(

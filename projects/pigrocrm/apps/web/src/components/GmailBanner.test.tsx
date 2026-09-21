@@ -95,7 +95,7 @@ describe('GmailBanner', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('entro il 22/08/2026 alle 10:00')
     expect(screen.getByRole('link', { name: /Impostazioni/ })).toHaveAttribute(
       'href',
-      '/app/impostazioni/gmail',
+      '/app/settings/gmail',
     )
   })
 

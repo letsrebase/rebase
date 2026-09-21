@@ -11,7 +11,7 @@ import { useFiscalEstimate } from './queries'
  *  profitability coefficient, the substitute-tax rate and the INPS rate all live on the
  *  fiscal profile, not on the hourly rates. */
 const SETTINGS_LINK = (
-  <Link to="/app/impostazioni/fiscale" className="underline">
+  <Link to="/app/settings/fiscal" className="underline">
     imposta i parametri fiscali
   </Link>
 )

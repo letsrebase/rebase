@@ -201,7 +201,7 @@ export function useSetOfferState(documentId: string) {
   return useMutation({
     mutationFn: (stato: OfferState) =>
       unwrap(
-        api.POST('/api/documents/{document_id}/stato', {
+        api.POST('/api/documents/{document_id}/status', {
           params: { path: { document_id: documentId } },
           body: { stato },
         }),

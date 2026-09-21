@@ -41,7 +41,7 @@ test.describe('Documenti', () => {
 
   test('una persona non ha una tab Documenti', async ({ page }) => {
     await loginAsAdmin(page)
-    await page.goto('/app/persone')
+    await page.goto('/app/people')
     const firstPerson = page.getByRole('link').first()
     if (await firstPerson.isVisible()) {
       await firstPerson.click()

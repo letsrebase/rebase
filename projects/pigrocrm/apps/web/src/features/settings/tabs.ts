@@ -21,20 +21,20 @@
  * receives the mail (spec 2026-09-16 §3.6).
  */
 export const SETTINGS_TABS = [
-  { value: 'profilo', label: 'Profilo' },
-  { value: 'spazio', label: 'Spazio' },
-  { value: 'campi', label: 'Campi' },
+  { value: 'profile', label: 'Profilo' },
+  { value: 'space', label: 'Spazio' },
+  { value: 'fields', label: 'Campi' },
   { value: 'pipeline', label: 'Pipeline' },
   { value: 'template', label: 'Template' },
-  { value: 'emittente', label: 'Emittente' },
-  { value: 'fiscale', label: 'Fiscale' },
-  { value: 'utenti', label: 'Utenti' },
-  { value: 'categorie-costo', label: 'Categorie costo' },
-  { value: 'tariffe', label: 'Tariffe' },
-  { value: 'periodi', label: 'Periodi' },
+  { value: 'issuer', label: 'Emittente' },
+  { value: 'fiscal', label: 'Fiscale' },
+  { value: 'users', label: 'Utenti' },
+  { value: 'cost-categories', label: 'Categorie costo' },
+  { value: 'rates', label: 'Tariffe' },
+  { value: 'periods', label: 'Periodi' },
   { value: 'gmail', label: 'Gmail' },
   { value: 'drive', label: 'Google Drive' },
-  { value: 'automazioni', label: 'Automazioni' },
+  { value: 'automations', label: 'Automazioni' },
 ] as const
 
 export type SettingsTabValue = (typeof SETTINGS_TABS)[number]['value']

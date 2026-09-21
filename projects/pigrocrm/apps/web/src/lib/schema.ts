@@ -107,7 +107,7 @@ export type EntityType =
  *
  * `attivita` joined them on 2026-09-09: slice 10 writes `activities` rows for every
  * closure of a commitment, so the timeline *data* exists, and
- * `GET /api/attivita/{id}/timeline` does not. Excluded until it does -- inventing the
+ * `GET /api/activities/{id}/timeline` does not. Excluded until it does -- inventing the
  * route in this type would give `Timeline` a fetcher that 404s.
  */
 export type TimelineEntityType = Exclude<EntityType, 'time_entry' | 'cost' | 'attivita'>

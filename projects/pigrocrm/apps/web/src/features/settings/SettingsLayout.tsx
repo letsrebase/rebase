@@ -33,7 +33,7 @@ import { useIsAdmin } from '@/lib/auth'
  * account for here. A non-admin gets an explanation in place, never a silent
  * redirect.
  *
- * Lives here, not in `routes/app/impostazioni.tsx` itself, so it can be
+ * Lives here, not in `routes/app/settings.tsx` itself, so it can be
  * imported by a plain component test (`SettingsLayout.test.tsx`) the same way
  * every other component in this codebase is -- a route file exporting
  * anything beyond `Route` also opts that route out of the router plugin's
@@ -43,7 +43,7 @@ import { useIsAdmin } from '@/lib/auth'
  * One tab is the exception to the admin gate above: `profilo` (`ProfilePanel`) is a
  * person's own preferences, not an admin-only write, and the weekly digest's own
  * opt-out link (spec 2026-09-16 §3.6) sends whoever received the mail straight to
- * `/app/impostazioni/profilo` -- a collaboratore or readonly account included. Without
+ * `/app/settings/profile` -- a collaboratore or readonly account included. Without
  * this exemption that link would be dead for anyone but an admin, which REB-221's
  * first round shipped and its second round exists to fix. A non-admin on that one path
  * sees a `tabs` list of exactly one entry, never the other admin-only tabs.
@@ -51,7 +51,7 @@ import { useIsAdmin } from '@/lib/auth'
 export function SettingsLayout() {
   const isAdmin = useIsAdmin()
   const { location } = useRouterState()
-  const onProfileTab = location.pathname.endsWith('profilo')
+  const onProfileTab = location.pathname.endsWith('profile')
 
   if (!isAdmin && !onProfileTab) {
     return (
@@ -82,10 +82,10 @@ export function SettingsLayout() {
   // A non-admin who got past the gate above is on `profilo` and nothing else, so the
   // tab strip shows them exactly that one tab -- never a row of admin-only tabs next
   // to the one page they are actually allowed to open.
-  const tabs = isAdmin ? SETTINGS_TABS : SETTINGS_TABS.filter((tab) => tab.value === 'profilo')
+  const tabs = isAdmin ? SETTINGS_TABS : SETTINGS_TABS.filter((tab) => tab.value === 'profile')
   const active =
     tabs.find((tab) => location.pathname.endsWith(tab.value))?.value ??
-    (isAdmin ? 'campi' : 'profilo')
+    (isAdmin ? 'fields' : 'profile')
 
   // `Tabs` wraps the header rather than sitting under it: the underline tabs of §4 are
   // *part* of the page's intestazione (`PageHeader`'s own `tabs` slot draws them and
@@ -101,7 +101,7 @@ export function SettingsLayout() {
           <TabsList variant="line">
             {tabs.map((tab) => (
               <TabsTrigger key={tab.value} value={tab.value} asChild>
-                <Link to={`/app/impostazioni/${tab.value}`}>{tab.label}</Link>
+                <Link to={`/app/settings/${tab.value}`}>{tab.label}</Link>
               </TabsTrigger>
             ))}
           </TabsList>

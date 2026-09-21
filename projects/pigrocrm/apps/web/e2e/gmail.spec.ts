@@ -31,7 +31,7 @@ test('a revoked credential shows a persistent banner in the app shell', async ({
     })
   })
 
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   await expect(page.getByRole('alert').filter({ hasText: 'è stato revocato' })).toBeVisible()
 
   // Persistent: still there after moving to a different page of the same shell, which
@@ -43,7 +43,7 @@ test('a revoked credential shows a persistent banner in the app shell', async ({
   // And it links to the one page that can fix it.
   await expect(page.getByRole('link', { name: /Impostazioni → Gmail/ })).toHaveAttribute(
     'href',
-    '/app/impostazioni/gmail',
+    '/app/settings/gmail',
   )
 })
 

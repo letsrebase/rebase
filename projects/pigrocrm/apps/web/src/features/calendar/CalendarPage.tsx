@@ -10,9 +10,9 @@ import { monthCells, monthLabel, monthOf, shiftMonth, WEEKDAY_LABELS } from './m
 import { useCalendarMonth, type CalendarDay } from './queries'
 
 /**
- * `/app/calendario`: the month, what was worked in it, and what falls due.
+ * `/app/calendar`: the month, what was worked in it, and what falls due.
  *
- * The page adds no data of its own -- `GET /api/calendario` answers the whole month in
+ * The page adds no data of its own -- `GET /api/calendar` answers the whole month in
  * one read (slice 10 §6) -- and it draws three things per cell: the hours logged that
  * day, the commitments due, and the invoices due. Only the first two can be *created*
  * from here, and the third is read-only on purpose: an invoice's due date is a property

@@ -8,7 +8,7 @@
  * pressed while the list behind it is unfiltered is a page lying about what it shows.
  *
  * `api.GET` is spied on directly rather than `useInvoices` being mocked, mirroring
- * `clienti/$customerId.test.tsx`: what is asserted is the query the page actually
+ * `customers/$customerId.test.tsx`: what is asserted is the query the page actually
  * sends.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'

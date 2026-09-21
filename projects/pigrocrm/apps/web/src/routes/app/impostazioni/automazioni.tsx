@@ -1,8 +1,9 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { AutomationsPanel } from '@/features/settings/AutomationsPanel'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-// Only `Route` is exported: anything else opts this route out of the router plugin's
-// automatic code-splitting. The panel itself lives in `features/settings/`.
+// Old path support (Italian route names retired 2026-09-21, see
+// docs/design/DECISIONS.md): `settings/automations.tsx` is the real page now.
 export const Route = createFileRoute('/app/impostazioni/automazioni')({
-  component: AutomationsPanel,
+  beforeLoad: () => {
+    throw redirect({ to: '/app/settings/automations' })
+  },
 })

@@ -12,7 +12,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 
 vi.mock('@/lib/auth', () => ({ useCanWrite: () => false }))
 
-// `api.GET` is spied on directly, mirroring `clienti/$customerId.test.tsx`: what
+// `api.GET` is spied on directly, mirroring `customers/$customerId.test.tsx`: what
 // is under test is this route's own handling of what the real `unwrap` produces,
 // not a reimplementation of it. `PersonDetail` also mounts `useEntitySchema`
 // unconditionally -- that path resolves to a harmless empty success below, since

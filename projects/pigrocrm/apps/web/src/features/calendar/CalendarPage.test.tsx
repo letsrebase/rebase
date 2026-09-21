@@ -26,7 +26,7 @@ vi.mock('@rebase/ui/sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), 
 // is rendered as an anchor and its target asserted as a prop would be.
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, params }: { children: React.ReactNode; params?: { invoiceId?: string } }) => (
-    <a href={`/app/fatture/${params?.invoiceId ?? ''}`}>{children}</a>
+    <a href={`/app/invoices/${params?.invoiceId ?? ''}`}>{children}</a>
   ),
 }))
 
@@ -114,7 +114,7 @@ function routeGet(overrides: Record<string, () => ReturnType<typeof ok>> = {}) {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     const response = overrides[path]
     if (response) return response()
-    if (path === '/api/calendario') return ok(month)
+    if (path === '/api/calendar') return ok(month)
     if (path === '/api/deals') return ok({ items: [deal], next_cursor: null })
     throw new Error(`unexpected GET ${path}`)
   }) as never)
@@ -173,7 +173,7 @@ describe('CalendarPage', () => {
     // was red.
     const calls = vi
       .mocked(api.GET)
-      .mock.calls.filter((call) => (call as unknown as unknown[])[0] === '/api/calendario')
+      .mock.calls.filter((call) => (call as unknown as unknown[])[0] === '/api/calendar')
     expect(calls).toHaveLength(1)
     const first = calls[0] as unknown as [string, { params: { query: { mese: string } } }]
     expect(first[1].params.query.mese).toBe('2026-09')
@@ -227,7 +227,7 @@ describe('CalendarPage', () => {
     // date belongs to the document.
     expect(screen.getByRole('link', { name: /Fattura 3\/2026/ })).toHaveAttribute(
       'href',
-      '/app/fatture/inv-1',
+      '/app/invoices/inv-1',
     )
   })
 
@@ -341,7 +341,7 @@ describe('CalendarPage', () => {
       string,
       { body: Record<string, unknown> },
     ]
-    expect(path).toBe('/api/attivita')
+    expect(path).toBe('/api/activities')
     expect(options.body).toMatchObject({ titolo: 'Mandare il preventivo', scadenza: '2026-09-18' })
   })
 
@@ -357,14 +357,14 @@ describe('CalendarPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Fatto' }))
 
     await waitFor(() => expect(api.POST).toHaveBeenCalled())
-    expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/attivita/{attivita_id}/completa')
+    expect(vi.mocked(api.POST).mock.calls[0]?.[0]).toBe('/api/activities/{attivita_id}/complete')
   })
 
   it('says so when the month could not be read, instead of drawing an empty one', async () => {
     // An empty grid for a failed request would claim a month in which nothing happened,
     // which is exactly the claim this screen exists to make.
     vi.mocked(api.GET).mockImplementation(((path: string) => {
-      if (path === '/api/calendario')
+      if (path === '/api/calendar')
         return Promise.resolve({
           error: { detail: 'Servizio non disponibile' },
           response: new Response(null, { status: 503 }),

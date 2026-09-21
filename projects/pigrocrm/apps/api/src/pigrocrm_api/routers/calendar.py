@@ -8,7 +8,7 @@ from pigrocrm.core.calendario.service import CalendarService
 from pigrocrm_api.deps import ActorDep, SessionDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
-router = APIRouter(prefix="/api/calendario", tags=["calendario"], responses=PROBLEM_RESPONSES)
+router = APIRouter(prefix="/api/calendar", tags=["calendario"], responses=PROBLEM_RESPONSES)
 
 
 @router.get("", response_model=CalendarMonth)
@@ -18,7 +18,7 @@ def month(
     mese: Annotated[str, Query(pattern=MESE_PATTERN, description="AAAA-MM")],
     # `tutti=true` is how an admin asks for the space's whole calendar instead of their
     # own. A boolean and not a `user_id`, because «somebody else's hours» is not a
-    # question this screen asks: the register at /app/ore already filters by person.
+    # question this screen asks: the register at /app/hours already filters by person.
     tutti: Annotated[bool, Query()] = False,
 ) -> CalendarMonth:
     """One month: the hours by day, the activities falling due, the invoices falling due.

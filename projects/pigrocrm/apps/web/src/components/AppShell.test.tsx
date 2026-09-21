@@ -6,7 +6,7 @@ import { SETTINGS_TABS } from '@/features/settings/tabs'
 import { AppShell } from './AppShell'
 import { SIDEBAR_GROUPS_KEY } from './sidebarGroups'
 
-const mockRoute = vi.hoisted(() => ({ pathname: '/app/clienti', search: '' }))
+const mockRoute = vi.hoisted(() => ({ pathname: '/app/customers', search: '' }))
 
 /**
  * `Link` is substituted rather than mounted in a router, as everywhere else in this
@@ -105,7 +105,7 @@ function sidebar() {
 beforeEach(() => {
   setViewport(true)
   mockAuth.ruolo = 'admin'
-  mockRoute.pathname = '/app/clienti'
+  mockRoute.pathname = '/app/customers'
   mockRoute.search = ''
   localStorage.clear()
 })
@@ -159,7 +159,7 @@ describe('AppShell', () => {
   })
 
   it('keeps a sub-item marked while its list carries a filter in the URL', () => {
-    mockRoute.pathname = '/app/clienti'
+    mockRoute.pathname = '/app/customers'
     mockRoute.search = '?q=acme'
     renderShell()
     expect(sidebar().getByRole('link', { name: 'Clienti' })).toHaveAttribute(
@@ -264,14 +264,14 @@ describe('AppShell', () => {
     await userEvent.click(sidebar().getByRole('button', { name: 'Impostazioni' }))
     const subItems = sidebar()
       .getAllByRole('link')
-      .filter((link) => link.getAttribute('href')?.startsWith('/app/impostazioni/'))
+      .filter((link) => link.getAttribute('href')?.startsWith('/app/settings/'))
     expect(subItems.map((link) => link.textContent)).toEqual(
       SETTINGS_TABS.map((tab) => tab.label),
     )
   })
 
   it('opens Impostazioni when the current route is one of its tabs', () => {
-    mockRoute.pathname = '/app/impostazioni/tariffe'
+    mockRoute.pathname = '/app/settings/rates'
     renderShell()
     const nav = sidebar()
     expect(nav.getByRole('button', { name: 'Impostazioni' })).toHaveAttribute(
@@ -349,7 +349,7 @@ describe('AppShell', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Espandi il menu' }))
     expect(sidebar().getByRole('button', { name: 'Vendite' })).toBeInTheDocument()
 
-    mockRoute.pathname = '/app/ore'
+    mockRoute.pathname = '/app/hours'
     refresh()
     expect(sidebar().queryByRole('button', { name: 'Vendite' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Chiudi il menu' })).not.toBeInTheDocument()
@@ -416,7 +416,7 @@ describe('AppShell', () => {
       const menu = within(await screen.findByRole('menu'))
       expect(menu.getByRole('link', { name: 'Profilo' })).toHaveAttribute(
         'href',
-        '/app/impostazioni/profilo',
+        '/app/settings/profile',
       )
     },
   )

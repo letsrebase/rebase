@@ -222,7 +222,7 @@ def _origin(settings: Settings) -> str:
 
 
 def _entra_url(origin: str, prefix: str, raw: str) -> str:
-    return f"{origin}{prefix}/app/entra?t={raw}"
+    return f"{origin}{prefix}/app/verify?t={raw}"
 
 
 def _owned_slugs(settings: Settings, email: str) -> list[str]:
@@ -306,7 +306,7 @@ def request_link(
     return Ack()
 
 
-@router.post("/entra", response_model=UserRead, responses={401: _UNAUTHENTICATED_RESPONSE})
+@router.post("/verify", response_model=UserRead, responses={401: _UNAUTHENTICATED_RESPONSE})
 def enter_with_link(
     payload: LinkToken,
     request: Request,

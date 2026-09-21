@@ -32,7 +32,7 @@ test.beforeEach(async ({ page }) => {
  */
 test('a move the server refuses puts the card back in its original column and says why', async ({ page }) => {
   const customerName = `Kanban Reject ${Date.now()}`
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   await page.getByRole('button', { name: /nuovo cliente/i }).click()
   await page.getByLabel('Ragione sociale').fill(customerName)
   await page.getByRole('button', { name: 'Salva' }).click()

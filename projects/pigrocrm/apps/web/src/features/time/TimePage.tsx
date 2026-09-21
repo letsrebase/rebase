@@ -19,7 +19,7 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id']
 
 /**
- * `/app/ore`, in two views over one week of one person's hours.
+ * `/app/hours`, in two views over one week of one person's hours.
  *
  * «Registro» is the Toggl shape asked for on 2026-09-09: a bar to start a timer or add a
  * line by hand, and under it the week as a list of what was done, day by day. «Settimana»

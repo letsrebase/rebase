@@ -147,7 +147,7 @@ def restore(
     return DocumentService(session, storage, settings).restore(document_id, actor)
 
 
-@router.post("/{document_id}/stato", response_model=DocumentRead)
+@router.post("/{document_id}/status", response_model=DocumentRead)
 def set_offer_state(
     document_id: UUID,
     body: OfferStateBody,
@@ -241,7 +241,7 @@ def download(
     )
 
 
-@router.get("/{document_id}/testo", response_model=DocumentTextRead)
+@router.get("/{document_id}/text", response_model=DocumentTextRead)
 def testo(
     document_id: UUID,
     session: SessionDep,

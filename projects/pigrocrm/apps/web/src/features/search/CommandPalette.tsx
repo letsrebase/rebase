@@ -80,15 +80,15 @@ export function CommandPalette({
     close()
     switch (hit.entity) {
       case 'customer':
-        return void navigate({ to: '/app/clienti/$customerId', params: { customerId: hit.id } })
+        return void navigate({ to: '/app/customers/$customerId', params: { customerId: hit.id } })
       case 'person':
-        return void navigate({ to: '/app/persone/$personId', params: { personId: hit.id } })
+        return void navigate({ to: '/app/people/$personId', params: { personId: hit.id } })
       case 'deal':
         return void navigate({ to: '/app/deal/$dealId', params: { dealId: hit.id } })
       case 'document':
-        return void navigate({ to: '/app/documenti/$documentId', params: { documentId: hit.id } })
+        return void navigate({ to: '/app/documents/$documentId', params: { documentId: hit.id } })
       case 'invoice':
-        return void navigate({ to: '/app/fatture/$invoiceId', params: { invoiceId: hit.id } })
+        return void navigate({ to: '/app/invoices/$invoiceId', params: { invoiceId: hit.id } })
     }
   }
 
@@ -102,17 +102,17 @@ export function CommandPalette({
   function seeAll(entity: SearchEntity, term: string): (() => void) | null {
     switch (entity) {
       case 'customer':
-        return () => void navigate({ to: '/app/clienti', search: { search: term } })
+        return () => void navigate({ to: '/app/customers', search: { search: term } })
       case 'person':
-        return () => void navigate({ to: '/app/persone', search: { search: term } })
+        return () => void navigate({ to: '/app/people', search: { search: term } })
       case 'deal':
-        return () => void navigate({ to: '/app/deal/lista', search: { search: term } })
+        return () => void navigate({ to: '/app/deal/list', search: { search: term } })
       // Documents are reached from the customer or deal that owns them; the app has no
       // documents list route to filter.
       case 'document':
         return null
       // The invoice branch exists since Task C12, so this group does get results -- a row
-      // opens the invoice. There is still no «vedi tutti» for it: `/app/fatture` has no
+      // opens the invoice. There is still no «vedi tutti» for it: `/app/invoices` has no
       // term filter to honour, and a link that dropped the term would answer a different
       // question from the one the palette was asked.
       case 'invoice':

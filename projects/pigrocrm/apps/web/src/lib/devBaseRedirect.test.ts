@@ -12,7 +12,7 @@ describe('redirectToBase', () => {
 
   it('leaves every other URL alone', () => {
     expect(redirectToBase('/app/', '/app/')).toBeNull()
-    expect(redirectToBase('/app/clienti', '/app/')).toBeNull()
+    expect(redirectToBase('/app/customers', '/app/')).toBeNull()
     expect(redirectToBase('/application', '/app/')).toBeNull()
     expect(redirectToBase('/api/auth/me', '/app/')).toBeNull()
     expect(redirectToBase('/', '/app/')).toBeNull()

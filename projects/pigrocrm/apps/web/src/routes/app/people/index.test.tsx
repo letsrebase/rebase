@@ -1,9 +1,9 @@
 /**
  * The people list's header and filter row (design spec §4). Same three assertions as
- * `clienti/index.test.tsx`, on the page next to it: the title and «Nuova persona» come
+ * `customers/index.test.tsx`, on the page next to it: the title and «Nuova persona» come
  * from `PageHeader`, and the search box lives in the filter row above the table. The
  * «Azienda» select is new: it navigates rather than filtering locally (same reasoning
- * as `deal/lista.test.tsx`'s chips) because `customer_id` is a real API filter
+ * as `deal/list.test.tsx`'s chips) because `customer_id` is a real API filter
  * (`GET /api/people?customer_id=`), and its value has to survive a remount the same way
  * the URL's own `?search=` term does.
  */
@@ -69,7 +69,7 @@ function lastRequestedCustomerId(): unknown {
 }
 
 /** What the page asks the router to make of the URL it is already on -- an updater,
- *  not a literal object, the same contract `deal/lista.test.tsx`'s `nextSearch` checks,
+ *  not a literal object, the same contract `deal/list.test.tsx`'s `nextSearch` checks,
  *  so the `?search=` term the box may hold survives a company chosen from the select. */
 function nextSearch(previous: Record<string, unknown>): Record<string, unknown> {
   const call = navigate.mock.calls.at(-1)?.[0] as {

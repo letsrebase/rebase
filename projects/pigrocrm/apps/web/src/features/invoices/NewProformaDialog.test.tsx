@@ -188,7 +188,7 @@ describe('NewProformaButton', () => {
       righe: [{ descrizione: 'Analisi', quantita: '2', prezzo_unitario: '150.00' }],
     })
     expect(navigate).toHaveBeenCalledWith({
-      to: '/app/fatture/$invoiceId',
+      to: '/app/invoices/$invoiceId',
       params: { invoiceId: 'inv-9' },
     })
     expect(toast.success).toHaveBeenCalled()

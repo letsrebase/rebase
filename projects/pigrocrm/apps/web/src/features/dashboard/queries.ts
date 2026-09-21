@@ -26,7 +26,7 @@ export const DASHBOARD_STALE_MS = 60_000
 export function useCommercialDashboard(periodo: Periodo) {
   return useQuery({
     queryKey: queryKeys.dashboard('commerciale', periodo),
-    queryFn: () => unwrap(api.GET('/api/dashboard/commerciale', { params: { query: periodo } })),
+    queryFn: () => unwrap(api.GET('/api/dashboard/sales', { params: { query: periodo } })),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
@@ -34,7 +34,7 @@ export function useCommercialDashboard(periodo: Periodo) {
 export function useEconomicDashboard(periodo: Periodo) {
   return useQuery({
     queryKey: queryKeys.dashboard('economica', periodo),
-    queryFn: () => unwrap(api.GET('/api/dashboard/economica', { params: { query: periodo } })),
+    queryFn: () => unwrap(api.GET('/api/dashboard/economic', { params: { query: periodo } })),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
@@ -47,7 +47,7 @@ export function useEconomicOverview(anno: number, base: CashBase) {
   return useQuery({
     queryKey: queryKeys.dashboard('panoramica', { anno: String(anno), base }),
     queryFn: () =>
-      unwrap(api.GET('/api/analytics/panoramica', { params: { query: { anno, base } } })),
+      unwrap(api.GET('/api/analytics/overview', { params: { query: { anno, base } } })),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
@@ -66,7 +66,7 @@ export function useEconomicOverview(anno: number, base: CashBase) {
 export function useFiscalEstimate(anno: number) {
   return useQuery({
     queryKey: queryKeys.fiscalEstimate(anno),
-    queryFn: () => unwrap(api.GET('/api/analytics/fiscale', { params: { query: { anno } } })),
+    queryFn: () => unwrap(api.GET('/api/analytics/fiscal', { params: { query: { anno } } })),
   })
 }
 

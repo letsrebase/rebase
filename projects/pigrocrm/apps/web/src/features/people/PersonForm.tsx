@@ -130,7 +130,7 @@ function CustomerPicker({
 }) {
   // `limit: 200` mirrors `DealForm`'s identical picker -- a one-shot cap for a
   // dropdown, not this screen's own list -- pagination for the Clienti list
-  // itself is a known limitation of `routes/app/clienti/index.tsx` (a single
+  // itself is a known limitation of `routes/app/customers/index.tsx` (a single
   // unpaginated page, no further-pages control), not something this picker
   // needs to solve.
   const customers = useCustomers({ limit: 200 })

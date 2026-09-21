@@ -32,14 +32,14 @@ function ok(data: unknown) {
 
 /**
  * Two endpoints answer this screen since the «Stima fiscale» card moved into it:
- * `/api/analytics/panoramica` for the cards and the charts, `/api/analytics/fiscale` for
+ * `/api/analytics/overview` for the cards and the charts, `/api/analytics/fiscal` for
  * the card below them. Mocked by path rather than with one `mockResolvedValue`, because a
  * single answer for both would feed the panel a payload with no `avvertenza` and no year
  * -- green on an assertion about a card that never rendered what it renders in the app.
  */
 function byPath(panoramica: unknown, fiscale: unknown = FISCALE) {
   return (path: string) =>
-    Promise.resolve(path === '/api/analytics/fiscale' ? ok(fiscale) : ok(panoramica))
+    Promise.resolve(path === '/api/analytics/fiscal' ? ok(fiscale) : ok(panoramica))
 }
 
 function failed(error: unknown, status: number) {
@@ -147,7 +147,7 @@ describe('EconomicTab', () => {
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
     renderTab({ da: '2025-03-01', a: '2025-03-31' })
     await screen.findByText(/Vista economica 2025/)
-    expect(api.GET).toHaveBeenCalledWith('/api/analytics/panoramica', {
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/overview', {
       params: { query: { anno: 2025, base: 'competenza' } },
     })
   })
@@ -175,7 +175,7 @@ describe('EconomicTab', () => {
     )
     renderTab(PERIODO, 'incasso')
     await screen.findByRole('figure', { name: 'Andamento economico 2026' })
-    expect(api.GET).toHaveBeenCalledWith('/api/analytics/panoramica', {
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/overview', {
       params: { query: { anno: 2026, base: 'incasso' } },
     })
     expect(screen.getByRole('radio', { name: 'Incasso' })).toHaveAttribute('aria-checked', 'true')
@@ -321,7 +321,7 @@ describe('EconomicTab', () => {
     renderTab({ da: '2025-03-01', a: '2025-03-31' })
 
     await screen.findByText('Stima fiscale 2025')
-    expect(api.GET).toHaveBeenCalledWith('/api/analytics/fiscale', {
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/fiscal', {
       params: { query: { anno: 2025 } },
     })
   })

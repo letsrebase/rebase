@@ -8,7 +8,7 @@ import { loginAsAdmin, seedDealWithRate } from './helpers'
  *
  * Deliberately not a repeat of the unit tests. What is proven here is that the *screens*
  * connect: a «giornata» written from the calendar is an ordinary time entry -- the same
- * row `/app/ore` lists and the deal's P&L counts -- and a commitment created on a day
+ * row `/app/hours` lists and the deal's P&L counts -- and a commitment created on a day
  * comes back on that day after a reload, which is the one thing a month assembled from
  * three tables can get wrong.
  */
@@ -37,14 +37,14 @@ test.describe('il calendario', () => {
     await expect(link).toBeVisible()
     await link.click()
 
-    await expect(page).toHaveURL(/\/app\/calendario/)
+    await expect(page).toHaveURL(/\/app\/calendar/)
     await expect(page.getByRole('heading', { level: 1, name: 'Calendario' })).toBeVisible()
     await expect(page.getByRole('grid')).toBeVisible()
   })
 
   test('il mese sta nell URL, quindi un link a un mese è un link', async ({ page }) => {
     await loginAsAdmin(page)
-    await page.goto(`/app/calendario?mese=${MESE}`)
+    await page.goto(`/app/calendar?mese=${MESE}`)
 
     await expect(page.getByRole('grid')).toBeVisible()
     await page.getByRole('button', { name: 'Mese precedente' }).click()
@@ -63,7 +63,7 @@ test.describe('il calendario', () => {
     // for that reason, and this spec's first run learned it the hard way.
     await seedDealWithRate(page.request, { nome, tariffa: '80.00' })
 
-    await page.goto(`/app/calendario?mese=${MESE}`)
+    await page.goto(`/app/calendar?mese=${MESE}`)
     // The cell is addressed by the label the component builds ("1: … ore"), not by a
     // loose substring: every cell contains a number.
     await page.getByRole('button', { name: CELLA_PRIMO }).click()
@@ -78,7 +78,7 @@ test.describe('il calendario', () => {
     await expect(dialog.getByText('8.00 h')).toBeVisible()
     await dialog.getByRole('button', { name: 'Chiudi' }).click()
 
-    // And `/app/ore` shows the same row, because it *is* the same row: the calendar
+    // And `/app/hours` shows the same row, because it *is* the same row: the calendar
     // fills `POST /api/time-entries`, it does not write the table a second way. The
     // register opens on the current week, which contains the 1st only in the first
     // week of a month -- so the assertion is made through the API, which is the same
@@ -95,7 +95,7 @@ test.describe('il calendario', () => {
     await loginAsAdmin(page)
     const titolo = `Scadenza E2E ${Date.now()}`
 
-    await page.goto(`/app/calendario?mese=${MESE}`)
+    await page.goto(`/app/calendar?mese=${MESE}`)
     await page.getByRole('button', { name: CELLA_PRIMO }).click()
 
     const dialog = page.getByRole('dialog')
@@ -115,7 +115,7 @@ test.describe('il calendario', () => {
     await loginAsAdmin(page)
     const titolo = `Da chiudere E2E ${Date.now()}`
 
-    await page.goto(`/app/calendario?mese=${MESE}`)
+    await page.goto(`/app/calendar?mese=${MESE}`)
     await page.getByRole('button', { name: CELLA_PRIMO }).click()
     const dialog = page.getByRole('dialog')
     await dialog.getByRole('textbox', { name: 'Titolo della scadenza' }).fill(titolo)

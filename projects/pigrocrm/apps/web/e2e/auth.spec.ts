@@ -8,7 +8,7 @@ const EMAIL = 'e2e@pigro.it'
 const PASSWORD = 'supersegreta1'
 
 test('an unauthenticated visitor is sent to the login page', async ({ page }) => {
-  await page.goto('/app/clienti')
+  await page.goto('/app/customers')
   await expect(page).toHaveURL(/\/app\/login$/)
 })
 

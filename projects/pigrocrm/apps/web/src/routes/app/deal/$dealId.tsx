@@ -82,7 +82,7 @@ function DealCustomerCard({ customerId }: { customerId: string }) {
           value={
             customer.data ? (
               <Link
-                to="/app/clienti/$customerId"
+                to="/app/customers/$customerId"
                 params={{ customerId }}
                 className="underline underline-offset-2"
               >
@@ -136,7 +136,7 @@ export function DealDetail() {
   const gmailConfigured = useGmailConfigured()
 
   if (isLoading) return <Skeleton className="m-8 h-96" />
-  // See `routes/app/clienti/$customerId.tsx`'s identical guard for the full
+  // See `routes/app/customers/$customerId.tsx`'s identical guard for the full
   // reasoning: without this, a 500/502/dropped connection reads as "Deal non
   // trovato." exactly like a genuine 404 does, since both leave `deal` undefined
   // once loading ends. `toProblem(error).status` is the one place that is never
@@ -290,7 +290,7 @@ export function DealDetail() {
                       label="Cliente"
                       value={
                         <Link
-                          to="/app/clienti/$customerId"
+                          to="/app/customers/$customerId"
                           params={{ customerId: deal.customer_id }}
                           className="underline underline-offset-2"
                         >

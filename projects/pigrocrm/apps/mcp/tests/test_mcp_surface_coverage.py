@@ -484,7 +484,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     ("AnalyticsService", "economic_overview"): (
         "la scheda economica della dashboard porta con se' la stima fiscale calcolata su "
         "incassato e proiettato: valgono le ragioni di `get_fiscal_estimate`, che non e' "
-        "e non sara' un tool. Raggiungibile solo da `GET /api/analytics/panoramica`"
+        "e non sara' un tool. Raggiungibile solo da `GET /api/analytics/overview`"
     ),
     ("AnalyticsService", "cash_overview"): (
         "la meta' senza fisco della stessa scheda (incassato, da incassare, bozze, costi, "
@@ -513,7 +513,7 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     ),
     ("TenantService", "count_for_owner"): (
         "il registro degli spazi non e' superficie di uno spazio: lo legge la registrazione "
-        "(`POST /api/tenants/membro`, ORB-173) per dire a chi torna che ha gia' aperto degli "
+        "(`POST /api/tenants/member`, ORB-173) per dire a chi torna che ha gia' aperto degli "
         "spazi, prima che esista un actor; un agente dentro uno spazio non ha motivo di leggerlo"
     ),
     ("DocumentService", "create"): "create_document_from_template e' l'unica creazione "

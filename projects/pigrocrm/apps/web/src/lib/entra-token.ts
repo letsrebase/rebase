@@ -5,7 +5,7 @@
  * `main.tsx` calls `stripEntraToken` as its very first statement, ahead of
  * `initAnalytics`: PostHog's `capture_pageview: 'history_change'` records the current
  * URL, including its query string, at `posthog.init` itself, so stripping the token
- * inside the `/app/entra` route component -- after React has mounted and PostHog has
+ * inside the `/app/verify` route component -- after React has mounted and PostHog has
  * already captured that first pageview -- is one render too late. Taking it out here,
  * before the SPA renders at all, is what keeps the token out of that first event, out
  * of the browser's history entry, and out of any `Referer` an outbound link on the page
@@ -18,12 +18,12 @@
  */
 let token: string | null = null
 
-/** Reads and clears the token, if the current URL is `/app/entra` (root or under a
+/** Reads and clears the token, if the current URL is `/app/verify` (root or under a
  *  space's prefix) and carries one. A no-op everywhere else, and idempotent: a second
  *  call anywhere in the same page load finds nothing left to take. */
 export function stripEntraToken(): void {
   if (typeof window === 'undefined') return
-  if (!/\/app\/entra$/.test(window.location.pathname)) return
+  if (!/\/app\/verify$/.test(window.location.pathname)) return
   const url = new URL(window.location.href)
   const t = url.searchParams.get('t')
   if (!t) return

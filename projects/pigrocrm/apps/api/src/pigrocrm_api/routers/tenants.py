@@ -98,7 +98,7 @@ class MemberAnswer(BaseModel):
 
 
 # With the other public signup routes: no account exists yet when this is asked.
-@router.post("/membro", response_model=MemberAnswer)
+@router.post("/member", response_model=MemberAnswer)
 def member(
     payload: MemberQuestion, request: Request, registry: TenantsRegistryDep, settings: SettingsDep
 ) -> MemberAnswer:
@@ -194,7 +194,7 @@ def signup(
             sender.send,
             welcome_mail(
                 tenant.owner_email,
-                f"{origin}/{tenant.slug}/app/entra?t={raw}",
+                f"{origin}/{tenant.slug}/app/verify?t={raw}",
                 f"{origin}/{tenant.slug}/app/login",
                 membro=data.membro,
             ),

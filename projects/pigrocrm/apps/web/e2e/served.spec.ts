@@ -45,7 +45,7 @@ test.describe('the served stack', () => {
   })
 
   test('a refresh on a deep link still serves the SPA shell', async ({ page }) => {
-    const response = await page.goto('/app/clienti/00000000-0000-7000-8000-000000000000')
+    const response = await page.goto('/app/customers/00000000-0000-7000-8000-000000000000')
     expect(response?.status()).toBe(200)
     await expect(page.locator('#root')).toHaveCount(1)
   })

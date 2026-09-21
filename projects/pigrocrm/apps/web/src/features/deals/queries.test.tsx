@@ -108,7 +108,7 @@ describe('fetchAllDeals', () => {
    * worse, silently stopping with no way for the caller to know. Not a state
    * this product's own target user is expected to reach -- see the constant's
    * own comment in queries.ts -- but if it ever happens, this is what the UI's
-   * truncation banner (routes/app/deal/index.tsx, routes/app/deal/lista.tsx)
+   * truncation banner (routes/app/deal/index.tsx, routes/app/deal/list.tsx)
    * keys off.
    */
   it('reports truncated and stops after the page cap, never looping indefinitely', async () => {

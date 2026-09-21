@@ -173,7 +173,7 @@ def _documents(engine: Engine, query: DocumentListQuery) -> list[Document]:
         return DocumentRepository(session).list(query)
 
 
-# -- card: deals aperti per stage -> /app/deal/lista?stage_id=... -----------------
+# -- card: deals aperti per stage -> /app/deal/list?stage_id=... -----------------
 
 
 def test_the_open_deals_card_equals_its_deal_list(seeded: Seeded) -> None:
@@ -211,7 +211,7 @@ def test_the_open_deals_card_excludes_the_soft_deleted_deal_on_both_sides(
     assert card.numero == len(nomi)
 
 
-# -- card: offerte in attesa -> /app/documenti?tipo=offerta&stato=inviata ---------
+# -- card: offerte in attesa -> /app/documents?tipo=offerta&stato=inviata ---------
 
 
 def test_the_pending_offers_card_equals_its_document_list(seeded: Seeded) -> None:

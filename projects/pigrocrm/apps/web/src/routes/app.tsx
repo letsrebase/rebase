@@ -23,7 +23,7 @@ function AppLayout() {
   // The three pages a visitor reaches without a session: the login, the signup that
   // makes a space (spec 2026-09-08) and the page that spends a link by mail (spec
   // 2026-09-12 §6.2). Everything else under /app bounces to the login.
-  // Without a trailing slash: `/app/registrati/` is the same page, and a visitor who
+  // Without a trailing slash: `/app/register/` is the same page, and a visitor who
   // arrived through a redirect that kept one must not be bounced to the login for it.
   const isLoginRoute = PUBLIC_APP_ROUTES.has(pathname.replace(/\/+$/, ''))
 

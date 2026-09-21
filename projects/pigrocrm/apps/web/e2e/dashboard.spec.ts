@@ -82,7 +82,7 @@ function currentMonth(): { da: string; a: string } {
  */
 async function readSignal(page: Page): Promise<number> {
   const { da, a } = currentMonth()
-  const response = await page.request.get('/api/dashboard/commerciale', { params: { da, a } })
+  const response = await page.request.get('/api/dashboard/sales', { params: { da, a } })
   expect(response.status(), await response.text()).toBe(200)
   const body = (await response.json()) as { offerte_accettate_deal_non_vinto: number }
   const value = body.offerte_accettate_deal_non_vinto
@@ -116,7 +116,7 @@ test.describe('il ciclo completo — metà umana', () => {
     await expect(palette).toBeFocused()
     await palette.fill(cycle.partitaIva.slice(3, 9))
     await page.getByRole('option', { name: cycle.customerName }).click()
-    await expect(page).toHaveURL(new RegExp(`/app/clienti/${cycle.customerId}$`))
+    await expect(page).toHaveURL(new RegExp(`/app/customers/${cycle.customerId}$`))
 
     // 3. From the customer to the deal, and from the deal's own Documenti tab to the offer.
     //    Not a `goto` straight to the document: the point of the cycle is that these screens
@@ -233,7 +233,7 @@ test.describe('il ciclo completo — metà umana', () => {
 
     // The operational tab left the dashboard on 2026-09-08; the signal's count still comes
     // from the API, and the list behind it is what this test compares it with.
-    const segnali = (await (await page.request.get('/api/dashboard/operativa')).json()) as {
+    const segnali = (await (await page.request.get('/api/dashboard/operational')).json()) as {
       segnali: { codice: string; conteggio: number }[]
     }
     const cartellino = segnali.segnali.find((s) => s.codice === 'vinto_da_fatturare')
@@ -241,8 +241,8 @@ test.describe('il ciclo completo — metà umana', () => {
     const sulCartellino = cartellino.conteggio
     expect(sulCartellino).toBeGreaterThanOrEqual(1)
 
-    await page.goto('/app/deal/lista?da_fatturare=true')
-    await expect(page).toHaveURL(/\/app\/deal\/lista\?da_fatturare=true/)
+    await page.goto('/app/deal/list?da_fatturare=true')
+    await expect(page).toHaveURL(/\/app\/deal\/list\?da_fatturare=true/)
     // Filtered rather than bare: `DataTable`'s own loading indicator is also a `status`,
     // so `getByRole('status')` alone is two elements and a strict-mode violation.
     const bandiera = page.getByRole('status').filter({ hasText: 'Vinto ma da fatturare' })
@@ -256,7 +256,7 @@ test.describe('il ciclo completo — metà umana', () => {
     // The other half of criterion 2, and the one its quiet failure hides behind: an
     // unfiltered list rendered under a label promising a filtered one would satisfy every
     // assertion above except this one.
-    await page.goto('/app/deal/lista')
+    await page.goto('/app/deal/list')
     await expect(page.getByRole('status').filter({ hasText: 'Vinto ma da fatturare' })).toHaveCount(
       0,
     )

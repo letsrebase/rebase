@@ -47,7 +47,7 @@ export function GmailBanner() {
     >
       <span>{text}</span>
       {/* The cure is always on the same page: re-authorise, or reconnect the mailbox. */}
-      <Link to="/app/impostazioni/gmail" className="underline underline-offset-2">
+      <Link to="/app/settings/gmail" className="underline underline-offset-2">
         Vai a Impostazioni → Gmail
       </Link>
     </div>
