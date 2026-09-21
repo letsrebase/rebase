@@ -98,8 +98,10 @@ describe.each(PAGES)('%s', (name) => {
     // on advertising copy. Until 2026-09-21 this sent everyone to PigroCRM's own
     // login (`/app/`), a leftover from before the hub had one of its own; the hub
     // is the front door now, and a member reaches PigroCRM from inside it
-    // (`Area.tsx`'s "Apri PigroCRM") or with its own URL directly.
-    expect(page).toMatch(/href="\/hub\/accedi"/)
+    // (`Area.tsx`'s "Apri PigroCRM") or with its own URL directly. REB-319 then
+    // renamed the hub's own `/accedi` to `/login`; the hub keeps a redirect from
+    // the old path, but this link points at the new one directly.
+    expect(page).toMatch(/href="\/hub\/login"/)
     expect(page).toContain('Accedi')
   })
 
