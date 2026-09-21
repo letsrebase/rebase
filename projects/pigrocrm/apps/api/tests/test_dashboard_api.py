@@ -255,18 +255,14 @@ def test_the_endpoint_returns_what_the_service_returns(
 def test_the_period_round_trips_through_the_query_string(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
-    response = logged_in.get(
-        "/api/dashboard/sales", params={"da": "2026-03-01", "a": "2026-03-31"}
-    )
+    response = logged_in.get("/api/dashboard/sales", params={"da": "2026-03-01", "a": "2026-03-31"})
     assert response.json()["periodo"] == {"da": "2026-03-01", "a": "2026-03-31"}
 
 
 def test_an_inverted_period_is_a_422_naming_the_field(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
-    response = logged_in.get(
-        "/api/dashboard/sales", params={"da": "2026-03-31", "a": "2026-03-01"}
-    )
+    response = logged_in.get("/api/dashboard/sales", params={"da": "2026-03-31", "a": "2026-03-01"})
     assert response.status_code == 422
     assert response.json()["field"] == "da"
 
