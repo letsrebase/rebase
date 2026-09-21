@@ -35,13 +35,13 @@ made better with no new capability; `chore` is maintenance with no change in beh
 `docs` is documentation that stands on its own. `test`, `ci`, `design`, `security` and
 `spike` mean what their names say.
 
-The projects on the board, read with `list_projects` on 2026-09-16 and 2026-09-17. This table is a
-snapshot and the board is the authority: `list_projects` with `team: "rebase"`, which
-answers completed projects too, is what to trust when the two disagree. Opening or closing
-a project is a board action with no PR of its own, so whoever does it adds or updates the
-row here, in the PR that ships the release or in one of its own.
+The projects on the board, read with `list_projects` on 2026-09-16, 2026-09-17 and
+2026-09-22. This table is a snapshot and the board is the authority: `list_projects` with
+`team: "rebase"`, which answers completed projects too, is what to trust when the two
+disagree. Opening or closing a project is a board action with no PR of its own, so whoever
+does it adds or updates the row here, in the PR that ships the release or in one of its own.
 
-| Initiative | Project | Lead | State on 2026-09-17 |
+| Initiative | Project | Lead | State on 2026-09-22 |
 |---|---|---|---|
 | `PigroCRM` | `PigroCRM v1 - first deploy from CI, with green gates` | Ivan | In Progress |
 | `PigroCRM` | `PigroCRM v2 - a space is born ready, and you enter with your email` | Ivan | In Progress, opened 2026-09-12 |
@@ -57,6 +57,10 @@ row here, in the PR that ships the release or in one of its own.
 | `Hub` | `Hub v2 - one hub, and an admin is a member with one more section` | Lorenzo | Planned, opened 2026-09-17 |
 | `PigroCRM` | `PigroCRM v3 - a space has a team` | Lorenzo | Planned, opened 2026-09-17 |
 | `Monorepo` | `Shared UI v1 - the hub and the CRM look like the site` | Lorenzo | Planned, opened 2026-09-17 |
+| `Website` | `Website v3 - routes in English` | Lorenzo | Completed, 2026-09-21 (opened and shipped the same day) |
+| `Hub` | `Hub v3 - routes in English` | Lorenzo | Completed, 2026-09-21 (opened and shipped the same day) |
+| `PigroCRM` | `PigroCRM v4 - routes in English` | Ivan | Completed, 2026-09-21 (opened and shipped the same day) |
+| `Monorepo` | `Brand v2 - the echo device earns its place` | Lorenzo | Planned, opened 2026-09-22 |
 
 `Monorepo hygiene v1` was where repository-wide work that belongs to no product went
 (CI cost, the licence, this page). It is closed, and nothing has replaced it: a
@@ -77,12 +81,13 @@ archive terminal issues of Completed projects. Never delete an issue to make roo
 archived issue keeps its URL, its comments and its links, a deleted one does not.
 
 Every project always carries a lead and both members, Lorenzo and Ivan, no matter who
-leads it. A project created without a lead or without both members is incomplete, and
-four of the eight above are: `Hub v1`, `Website v2`, `Deploy and access hygiene v1` and
-`Indexing and SEO v1` carry Lorenzo alone as of 2026-09-10. The MCP surface cannot repair
-that, since `save_project` takes a `lead` and has no member field (§ API details), so the
-second member is added by hand in the Linear UI, at creation, and on those four under
-REB-137.
+leads it. A project created without a lead or without both members is incomplete. The MCP
+surface cannot repair that, since `save_project` takes a `lead` and has no member field
+(§ API details), but the GraphQL API can: `projectUpdate` with `memberIds` sets the full
+member list, and the 2026-09-22 backlog audit used it to put both members on every live
+project, which is what REB-137 had been waiting for a hand UI pass to do. At creation,
+either add the second member with that call in the same breath, or read the project back
+and fix it before its first issue lands.
 
 This replaces the old rule that gave every monorepo project (`projects/pigrocrm`,
 `projects/website`) its own permanent Linear project. Initiatives are the permanent
