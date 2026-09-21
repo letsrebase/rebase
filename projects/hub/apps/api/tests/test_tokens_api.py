@@ -13,6 +13,7 @@ from rebase_core.mail import RecordingSender
 from rebase_core.models import User
 
 ADMIN_EMAIL = "ivan@rebase.it"
+PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 
 
 @pytest.fixture
@@ -33,7 +34,7 @@ def admin(api_session: Session) -> Iterator[None]:
     _bootstrap_admin(api_session, ADMIN_EMAIL, "Ivan")
     yield
     api_session.rollback()
-    for table in ("admin_tokens", "users"):
+    for table in ("admin_tokens", "freelancers", "users"):
         api_session.execute(text(f"DELETE FROM {table}"))
     api_session.commit()
 
@@ -43,6 +44,23 @@ def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL
     match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
+
+
+def _apply(client: TestClient, email: str) -> None:
+    """A freelancer application, the way a member's `users` row comes to exist."""
+    response = client.post(
+        "/api/hub/freelancers",
+        data={
+            "nome": "Ada",
+            "cognome": "Lovelace",
+            "email": email,
+            "tariffa_giornaliera": "450",
+            "posizione": "Backend developer",
+            "remoto": "remoto",
+        },
+        files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
+    )
+    assert response.status_code == 201, response.text
 
 
 def test_tokens_need_the_cookie(client: TestClient, admin: None) -> None:
@@ -102,3 +120,15 @@ def test_a_malformed_cursor_on_tokens_is_a_422(
     _login(client, sender)
     response = client.get("/api/hub/tokens", params={"cursor": "not-a-valid-cursor"})
     assert response.status_code == 422, response.text
+
+
+def test_a_signed_in_member_without_the_admin_role_is_403_on_every_token_route(
+    client: TestClient, admin: None, sender: RecordingSender
+) -> None:
+    """REB-287: minting lives behind the admin group. A member's cookie is a real
+    identity at the wrong door, so 403, not the signed-out 401."""
+    _apply(client, "ada.member@studio.it")
+    _login(client, sender, "ada.member@studio.it")
+    assert client.get("/api/hub/tokens").status_code == 403
+    assert client.post("/api/hub/tokens", json={"nome": "x"}).status_code == 403
+    assert client.get("/api/hub/me").status_code == 200
