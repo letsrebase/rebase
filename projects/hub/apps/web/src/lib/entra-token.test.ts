@@ -14,37 +14,37 @@ afterEach(() => {
 
 describe('stripEntraToken', () => {
   it('takes the token out of the URL', () => {
-    setLocation('/hub/entra?t=abc123')
+    setLocation('/hub/verify?t=abc123')
     stripEntraToken()
     expect(window.location.search).toBe('')
     expect(takeEntraToken()).toBe('abc123')
   })
 
   it('keeps other params and only removes t', () => {
-    setLocation('/hub/entra?t=abc123&x=1')
+    setLocation('/hub/verify?t=abc123&x=1')
     stripEntraToken()
     expect(window.location.search).toBe('?x=1')
     expect(takeEntraToken()).toBe('abc123')
   })
 
   it('is consumed once: a second read finds nothing', () => {
-    setLocation('/hub/entra?t=abc123')
+    setLocation('/hub/verify?t=abc123')
     stripEntraToken()
     expect(takeEntraToken()).toBe('abc123')
     expect(takeEntraToken()).toBeNull()
   })
 
-  it('does nothing off the entra path, token left in the URL', () => {
-    setLocation('/hub/accedi?t=abc123')
+  it('does nothing off the verify path, token left in the URL', () => {
+    setLocation('/hub/login?t=abc123')
     stripEntraToken()
     expect(window.location.search).toBe('?t=abc123')
     expect(takeEntraToken()).toBeNull()
   })
 
-  it('does nothing on entra with no token', () => {
-    setLocation('/hub/entra')
+  it('does nothing on verify with no token', () => {
+    setLocation('/hub/verify')
     stripEntraToken()
-    expect(window.location.pathname).toBe('/hub/entra')
+    expect(window.location.pathname).toBe('/hub/verify')
     expect(window.location.search).toBe('')
     expect(takeEntraToken()).toBeNull()
   })

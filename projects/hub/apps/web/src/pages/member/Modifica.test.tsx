@@ -42,11 +42,11 @@ const WITHOUT_CV = { ...PROFILE, cv_filename: null, cv_size: null, completa: fal
 
 function mount() {
   const root = createRootRoute({ component: () => <Outlet /> })
-  const modifica = createRoute({ getParentRoute: () => root, path: '/io/modifica', component: Modifica })
-  const io = createRoute({ getParentRoute: () => root, path: '/io', component: () => <h1>La tua area</h1> })
+  const edit = createRoute({ getParentRoute: () => root, path: '/me/edit', component: Modifica })
+  const me = createRoute({ getParentRoute: () => root, path: '/me', component: () => <h1>La tua area</h1> })
   const router = createRouter({
-    routeTree: root.addChildren([modifica, io]),
-    history: createMemoryHistory({ initialEntries: ['/io/modifica'] }),
+    routeTree: root.addChildren([edit, me]),
+    history: createMemoryHistory({ initialEntries: ['/me/edit'] }),
   })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -90,7 +90,7 @@ describe('the edit fields', () => {
   })
 })
 
-describe('/io/modifica', () => {
+describe('/me/edit', () => {
   it('starts from the current answers and saves them with PATCH', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')

@@ -61,7 +61,7 @@ export function Area() {
         </div>
         {profile.ha_scheda && (
           <Button asChild variant="outline" size="sm">
-            <Link to="/io/modifica">
+            <Link to="/me/edit">
               <Pencil className="mr-2 size-4" />
               Modifica
             </Link>
@@ -82,7 +82,7 @@ export function Area() {
                 perché le aziende possano trovarti.
               </p>
               <Button asChild size="sm" className="mt-3">
-                <Link to="/io/modifica">Completa la scheda</Link>
+                <Link to="/me/edit">Completa la scheda</Link>
               </Button>
             </div>
           )}
@@ -119,7 +119,7 @@ export function Area() {
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-lg font-semibold tracking-tight">La tua richiesta più recente</h2>
             <Button asChild variant="outline" size="sm">
-              <Link to="/io/modifica-azienda">
+              <Link to="/me/edit-company">
                 <Pencil className="mr-2 size-4" />
                 Modifica richiesta
               </Link>

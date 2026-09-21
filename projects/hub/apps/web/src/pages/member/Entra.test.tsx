@@ -40,14 +40,14 @@ function mount(path: string, { strict = false }: { strict?: boolean } = {}) {
   const root = createRootRoute({ component: () => <Outlet /> })
   const entra = createRoute({
     getParentRoute: () => root,
-    path: '/entra',
+    path: '/verify',
     validateSearch: (search: Record<string, unknown>): { t: string } => ({ t: String(search.t ?? '') }),
     component: Entra,
   })
-  const io = createRoute({ getParentRoute: () => root, path: '/io', component: () => <h1>La tua area</h1> })
-  const accedi = createRoute({ getParentRoute: () => root, path: '/accedi', component: () => <h1>Accedi</h1> })
+  const me = createRoute({ getParentRoute: () => root, path: '/me', component: () => <h1>La tua area</h1> })
+  const login = createRoute({ getParentRoute: () => root, path: '/login', component: () => <h1>Accedi</h1> })
   const router = createRouter({
-    routeTree: root.addChildren([entra, io, accedi]),
+    routeTree: root.addChildren([entra, me, login]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   const tree = (
@@ -66,10 +66,10 @@ afterEach(() => {
   takeEntraToken()
 })
 
-describe('/entra', () => {
+describe('/verify', () => {
   it('posts the token from the URL once and goes to the area', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
-    mount('/entra?t=abc-123_XYZ')
+    mount('/verify?t=abc-123_XYZ')
     await screen.findByRole('heading', { name: 'La tua area' })
     const enterCalls = fetchSpy.mock.calls.filter(([url]) => url === '/api/hub/auth/enter')
     expect(enterCalls).toHaveLength(1)
@@ -80,25 +80,25 @@ describe('/entra', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(401, { detail: 'Link non valido o scaduto. Chiedine un altro.' }),
     )
-    mount('/entra?t=abc-123_XYZ')
+    mount('/verify?t=abc-123_XYZ')
     expect(await screen.findByRole('alert')).toHaveTextContent('non è più valido')
-    expect(screen.getByRole('link', { name: /Chiedine un altro/ })).toHaveAttribute('href', '/accedi')
+    expect(screen.getByRole('link', { name: /Chiedine un altro/ })).toHaveAttribute('href', '/login')
   })
 
   it('reaches the area under StrictMode, whose double effect breaks the mutation observer', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
-    mount('/entra?t=abc-123_XYZ', { strict: true })
+    mount('/verify?t=abc-123_XYZ', { strict: true })
     await screen.findByRole('heading', { name: 'La tua area' })
   })
 
   it('posts the token stripEntraToken already took out of the URL, not only the search-param fallback', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
-    window.history.replaceState(null, '', '/hub/entra?t=abc-123_XYZ')
+    window.history.replaceState(null, '', '/hub/verify?t=abc-123_XYZ')
     stripEntraToken()
     // The router mounts at a clean path with no `t`: the only way the token reaches
     // `mutateAsync` is `takeEntraToken()`'s one-shot read, under StrictMode's double
     // invoke of the `useState` initialiser.
-    mount('/entra', { strict: true })
+    mount('/verify', { strict: true })
     await screen.findByRole('heading', { name: 'La tua area' })
     const enterCalls = fetchSpy.mock.calls.filter(([url]) => url === '/api/hub/auth/enter')
     expect(enterCalls).toHaveLength(1)
@@ -109,7 +109,7 @@ describe('/entra', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(429, { detail: 'Troppe richieste da qui. Riprova tra un minuto.' }),
     )
-    mount('/entra?t=abc-123_XYZ')
+    mount('/verify?t=abc-123_XYZ')
     expect(await screen.findByRole('alert')).toHaveTextContent('Troppe richieste da qui. Riprova tra un minuto.')
     expect(screen.getByRole('button', { name: 'Riprova' })).toBeInTheDocument()
     expect(screen.queryByText(/non è più valido/)).not.toBeInTheDocument()

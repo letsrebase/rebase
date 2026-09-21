@@ -48,13 +48,13 @@ function mount() {
   const root = createRootRoute({ component: () => <Outlet /> })
   const modificaAzienda = createRoute({
     getParentRoute: () => root,
-    path: '/io/modifica-azienda',
+    path: '/me/edit-company',
     component: ModificaAzienda,
   })
-  const io = createRoute({ getParentRoute: () => root, path: '/io', component: () => <h1>La tua area</h1> })
+  const me = createRoute({ getParentRoute: () => root, path: '/me', component: () => <h1>La tua area</h1> })
   const router = createRouter({
-    routeTree: root.addChildren([modificaAzienda, io]),
-    history: createMemoryHistory({ initialEntries: ['/io/modifica-azienda'] }),
+    routeTree: root.addChildren([modificaAzienda, me]),
+    history: createMemoryHistory({ initialEntries: ['/me/edit-company'] }),
   })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -89,7 +89,7 @@ describe('the edit fields', () => {
   })
 })
 
-describe('/io/modifica-azienda', () => {
+describe('/me/edit-company', () => {
   it('starts from the most recent request and saves the four answers with PATCH', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
@@ -110,7 +110,7 @@ describe('/io/modifica-azienda', () => {
     await user.click(screen.getByRole('button', { name: 'Salva' }))
     await screen.findByRole('heading', { name: 'La tua area' })
     const patch = fetchSpy.mock.calls.find(([, init]) => init?.method === 'PATCH')!
-    expect(patch[0]).toBe('/api/hub/me/azienda')
+    expect(patch[0]).toBe('/api/hub/me/company')
     expect(JSON.parse(patch[1]!.body as string)).toEqual({
       progetto: PROFILE.progetto,
       periodo_da: PROFILE.periodo_da,

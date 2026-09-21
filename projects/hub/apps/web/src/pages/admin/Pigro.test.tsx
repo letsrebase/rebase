@@ -49,7 +49,7 @@ describe('the Istanze Pigro page', () => {
     mount()
     const space = await screen.findByRole('link', { name: 'studio-ada' })
     expect(space).toHaveAttribute('href', 'https://pigro.letsrebase.com/studio-ada/app/')
-    expect(spy.mock.calls[0]![0]).toBe('/api/hub/pigro/istanze')
+    expect(spy.mock.calls[0]![0]).toBe('/api/hub/pigro/instances')
     // Ada is a member: her name links to her card, and her address is beside it.
     expect(screen.getByRole('link', { name: 'Ada Lovelace' })).toHaveAttribute('href', '/admin/freelance/f-1')
     expect(screen.getByText('ada@studio.it')).toBeInTheDocument()
@@ -83,7 +83,7 @@ describe('the Istanze Pigro page', () => {
     await user.type(screen.getByLabelText('Cerca istanze'), 'bob@example')
     // No request fires per keystroke; one fires once typing settles.
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2), { timeout: 2000 })
-    expect(spy.mock.calls[1]![0]).toBe('/api/hub/pigro/istanze?q=bob%40example')
+    expect(spy.mock.calls[1]![0]).toBe('/api/hub/pigro/instances?q=bob%40example')
     await waitFor(() => expect(screen.queryByRole('link', { name: 'studio-ada' })).toBeNull())
     expect(screen.getByText('bob@example.org')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /Istanze Pigro/ })).toHaveTextContent('1')
@@ -101,7 +101,7 @@ describe('the Istanze Pigro page', () => {
     await user.click(screen.getByRole('button', { name: 'Mostra altre' }))
     expect(await screen.findByRole('link', { name: 'bob-dev' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'studio-ada' })).toBeInTheDocument()
-    expect(spy.mock.calls[1]![0]).toBe('/api/hub/pigro/istanze?cursor=cursor-1')
+    expect(spy.mock.calls[1]![0]).toBe('/api/hub/pigro/instances?cursor=cursor-1')
     expect(screen.queryByRole('button', { name: 'Mostra altre' })).toBeNull()
   })
 })

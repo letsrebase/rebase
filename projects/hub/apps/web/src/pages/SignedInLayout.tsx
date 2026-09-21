@@ -10,13 +10,13 @@ import { useLogout, useMe } from '@/lib/me'
  *  overlapping views of the same people, are one entry, «Talenti», over the read
  *  model that merges them (REB-283); the rest keep their label, icon and path. */
 const ADMIN_NAV = [
-  { to: '/admin/talenti', label: 'Talenti', icon: UserRound },
-  { to: '/admin/aziende', label: 'Aziende', icon: Briefcase },
+  { to: '/admin/talent', label: 'Talenti', icon: UserRound },
+  { to: '/admin/companies', label: 'Aziende', icon: Briefcase },
   { to: '/admin/pigro', label: 'Istanze Pigro', icon: Boxes },
-  { to: '/admin/guida', label: 'La guida', icon: BookOpen },
-  { to: '/admin/accessi', label: 'Accessi', icon: LogIn },
-  { to: '/admin/amministratori', label: 'Amministratori', icon: ShieldCheck },
-  { to: '/admin/agenti', label: 'Agenti', icon: Plug },
+  { to: '/admin/guide', label: 'La guida', icon: BookOpen },
+  { to: '/admin/access', label: 'Accessi', icon: LogIn },
+  { to: '/admin/admins', label: 'Amministratori', icon: ShieldCheck },
+  { to: '/admin/agents', label: 'Agenti', icon: Plug },
 ] as const
 
 const NAV_LINK =
@@ -39,7 +39,7 @@ export function SignedInLayout() {
   useIdentify(me.data, me.data?.role)
 
   useEffect(() => {
-    if (!me.isPending && me.data === null) void navigate({ to: '/accedi', replace: true })
+    if (!me.isPending && me.data === null) void navigate({ to: '/login', replace: true })
   }, [me.isPending, me.data, navigate])
 
   if (me.isPending) return <p className="p-8 text-sm text-muted-foreground">Caricamento…</p>
@@ -49,12 +49,12 @@ export function SignedInLayout() {
   return (
     <div className="flex h-full">
       <aside className="flex h-full w-56 shrink-0 flex-col gap-6 overflow-y-auto bg-[var(--color-prussian-blue)] p-4 text-[var(--color-paper)]">
-        <Link to="/io" className="inline-flex items-center gap-2.5 px-2 font-semibold">
+        <Link to="/me" className="inline-flex items-center gap-2.5 px-2 font-semibold">
           <BrandMark className="size-3.5 [&>span:nth-child(1)]:bg-[var(--color-paper)] [&>span:nth-child(4)]:bg-[var(--color-paper)]" />
           rebase
         </Link>
         <nav className="flex flex-col gap-1">
-          <Link to="/io" className={NAV_LINK}>
+          <Link to="/me" className={NAV_LINK}>
             <Home className="size-4" aria-hidden="true" />
             La tua area
           </Link>

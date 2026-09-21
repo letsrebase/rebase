@@ -21,17 +21,17 @@ vi.mock('@rebase/analytics/browser', () => ({
 import { capture } from '@rebase/analytics/browser'
 
 /** The wizard mounted on its own little router, so `navigate` has somewhere to go. */
-function mount(path = '/aziende') {
+function mount(path = '/companies') {
   const root = createRootRoute({ component: () => <Outlet /> })
-  const aziende = createRoute({ getParentRoute: () => root, path: '/aziende', component: CompanyWizard })
-  const grazie = createRoute({
+  const companies = createRoute({ getParentRoute: () => root, path: '/companies', component: CompanyWizard })
+  const thanks = createRoute({
     getParentRoute: () => root,
-    path: '/grazie',
+    path: '/thanks',
     validateSearch: (s: Record<string, unknown>) => ({ chi: String(s.chi ?? '') }),
     component: () => <h1>Grazie</h1>,
   })
   const router = createRouter({
-    routeTree: root.addChildren([aziende, grazie]),
+    routeTree: root.addChildren([companies, thanks]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   render(<RouterProvider router={router} />)
@@ -78,7 +78,7 @@ describe('CompanyWizard', () => {
     expect(captured('wizard_completato')).toEqual([])
 
     await user.click(screen.getByRole('button', { name: /Invia/ }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/grazie'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
     expect(router.state.location.search).toEqual({ chi: 'azienda' })
     expect(captured('wizard_completato')).toEqual([{ tipo: 'azienda' }])
 
@@ -115,7 +115,7 @@ describe('CompanyWizard, the draft and the intro (REB-215)', () => {
     await user.type(screen.getByLabelText('Per quanto'), '3 mesi{Enter}')
     await user.type(screen.getByLabelText('Budget a giornata'), '500{Enter}')
     await user.click(screen.getByRole('button', { name: /Invia/ }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/grazie'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
     expect(loadDraft(COMPANY_DRAFT_KEY)).toBeNull()
     const body = JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string)
     expect(body.nome_azienda).toBe('ACME Srl')

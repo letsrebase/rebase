@@ -10,7 +10,7 @@ community site collects, the freelancer profiles and the company requests the hu
 wizards will collect, and the admin area that reads them. Its design record is
 `docs/superpowers/specs/`, English, one document per step; read the 2026-09-09 spec
 before changing the shape of anything. Since 2026-09-10 a freelancer can get back in
-with a magic link by mail (`/hub/accedi`, `/hub/io`): spec
+with a magic link by mail (`/hub/login`, `/hub/me`): spec
 `docs/superpowers/specs/2026-09-10-member-area-design.md`.
 
 ## The one rule
@@ -103,7 +103,7 @@ order of operations is the `posthog-analytics` skill.
 
 **Its `vite preview` serves under `/hub/`, not `/`.** The web app is built with
 `base: '/hub/'`, so the preview's root path 404s and the wizard pages are at `/hub/`,
-`/hub/freelance` and `/hub/aziende`. A blank page at `/` is that, not a broken build.
+`/hub/freelance` and `/hub/companies`. A blank page at `/` is that, not a broken build.
 Unlike the website's, this preview has no `strictPort`, so a second checkout does not
 collide with the first: it takes the next free port and logs it, confirmed live as `4174`
 while another agent held 4173 on 2026-09-10. Read the port off its own output rather than
@@ -141,7 +141,7 @@ Ports, loopback only, from the table in `docs/adding-a-project.md` §7: producti
 vhost that lives in `projects/website/deploy/letsrebase.conf`; nothing proxies the
 preview, which is reached on the host only. The member area's mail needs
 `REBASE_RESEND_API_KEY` and `REBASE_MAIL_FROM` in the host `.env`; without the key
-`/hub/accedi` answers 503 with a sentence. A preview stack that gets a key must also set
+`/hub/login` answers 503 with a sentence. A preview stack that gets a key must also set
 `REBASE_HUB_URL` to its own address, or every link it mints points at production.
 
 «Istanze Pigro» in the admin area (ORB-142) reads PigroCRM's registry of spaces through

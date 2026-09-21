@@ -138,7 +138,7 @@ def test_the_link_enters_once_sets_the_member_cookie_and_opens_only_the_members_
     client: TestClient, sender: RecordingSender, clean: None
 ) -> None:
     _apply(client, "ada@studio.it")
-    for path in ("/api/hub/me", "/api/hub/me/cv", "/api/hub/me/guida"):
+    for path in ("/api/hub/me", "/api/hub/me/cv", "/api/hub/me/guide"):
         assert client.get(path).status_code == 401, path
 
     profile, entered = _enter(client, sender, "ada@studio.it")
@@ -250,10 +250,10 @@ def test_the_guide_is_a_perk_of_the_session_and_not_a_public_file(
     downloads folder.
     """
     _apply(client, "ada@studio.it")
-    assert client.get("/api/hub/me/guida").status_code == 401
+    assert client.get("/api/hub/me/guide").status_code == 401
 
     _enter(client, sender, "ada@studio.it")
-    answer = client.get("/api/hub/me/guida")
+    answer = client.get("/api/hub/me/guide")
     assert answer.status_code == 200
     assert answer.headers["content-type"] == "application/pdf"
     assert (
@@ -263,7 +263,7 @@ def test_the_guide_is_a_perk_of_the_session_and_not_a_public_file(
     assert answer.content == GUIDE_PATH.read_bytes()
 
     client.post("/api/hub/me/logout")
-    assert client.get("/api/hub/me/guida").status_code == 401
+    assert client.get("/api/hub/me/guide").status_code == 401
 
 
 def test_every_download_of_the_guide_is_written_down_with_the_member_behind_it(
@@ -273,12 +273,12 @@ def test_every_download_of_the_guide_is_written_down_with_the_member_behind_it(
     by the same member are two rows for one person, an anonymous 401 writes nothing,
     and the bytes still arrive: recording is a side of the route, not a gate."""
     _apply(client, "ada@studio.it")
-    assert client.get("/api/hub/me/guida").status_code == 401
+    assert client.get("/api/hub/me/guide").status_code == 401
     assert api_session.scalar(select(func.count()).select_from(GuideDownload)) == 0
 
     profile, _ = _enter(client, sender, "ada@studio.it")
     for _ in range(2):
-        answer = client.get("/api/hub/me/guida")
+        answer = client.get("/api/hub/me/guide")
         assert answer.status_code == 200 and answer.content == GUIDE_PATH.read_bytes()
     api_session.expire_all()
     rows = api_session.scalars(select(GuideDownload)).all()
@@ -394,7 +394,7 @@ def test_a_company_contact_edits_their_most_recent_request(
     assert profile["ha_azienda"] is True and profile["durata"] == "3 mesi"
 
     refused = client.patch(
-        "/api/hub/me/azienda",
+        "/api/hub/me/company",
         json={
             "progetto": "Serve un backend developer per tre mesi, da ottobre.",
             "periodo_da": "2026-10-01",
@@ -407,7 +407,7 @@ def test_a_company_contact_edits_their_most_recent_request(
     assert refused.json()["detail"][0]["loc"][-1] == "stato"
 
     changed = client.patch(
-        "/api/hub/me/azienda",
+        "/api/hub/me/company",
         json={
             "progetto": "Serve un backend developer per tre mesi, da ottobre.",
             "periodo_da": "2026-10-01",
@@ -448,7 +448,7 @@ def test_a_member_with_no_company_gets_ha_azienda_false_and_a_404_on_edit(
     assert profile["progetto"] is None and profile["budget_giornaliero"] is None
 
     refused = client.patch(
-        "/api/hub/me/azienda",
+        "/api/hub/me/company",
         json={
             "progetto": "Un progetto qualsiasi abbastanza lungo da passare",
             "periodo_da": "2026-10-01",

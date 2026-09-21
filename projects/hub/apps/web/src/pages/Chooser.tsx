@@ -27,7 +27,7 @@ export function Chooser() {
           </span>
         </Link>
         <Link
-          to="/aziende"
+          to="/companies"
           className="group flex flex-col gap-3 border-[length:var(--landing-border-width)] bg-card p-6 shadow-sm transition-colors hover:bg-muted focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-(color:--landing-focus)"
         >
           <Briefcase className="size-6" aria-hidden="true" />

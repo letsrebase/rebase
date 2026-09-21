@@ -32,9 +32,9 @@ import { Modifica } from '@/pages/member/Modifica'
 import { ModificaAzienda } from '@/pages/member/ModificaAzienda'
 
 /** A present, non-empty string out of `Record<string, unknown>`'s raw search params,
- *  or `undefined` -- the shape every optional filter on `/admin/talenti` and
- *  `/admin/aziende` shares (REB-286), the same narrowing `grazie`'s `chi` and
- *  `entra`'s `t` do below for their own single required param.
+ *  or `undefined` -- the shape every optional filter on `/admin/talent` and
+ *  `/admin/companies` shares (REB-286), the same narrowing `thanks`'s `chi` and
+ *  `verify`'s `t` do below for their own single required param.
  *
  *  The router's default `parseSearch` runs `JSON.parse` on every raw query-string
  *  value before `validateSearch` sees it, so a purely numeric value in the URL
@@ -56,8 +56,15 @@ export function strParam(value: unknown): string | undefined {
  * admin area alike -- shares one guard and one frame, `SignedInLayout` (REB-279, merging
  * the old `AdminLayout` and `MemberGuard`). `/admin/*` carries one more guard of its own,
  * `AdminGuard`, gating on role rather than on being signed in at all: a signed-in
- * non-admin at `/admin/*` lands on `/io` with a sentence, never on a blank frame
+ * non-admin at `/admin/*` lands on `/me` with a sentence, never on a blank frame
  * (REB-106) or a login form.
+ *
+ * REB-319 retrofits every Italian route segment to English. Each renamed browser route
+ * keeps a `beforeLoad` redirect at its old path, the same shape `adminFreelanceRedirect`
+ * already used for `/admin/freelance` -> `/admin/talent` (REB-283, REB-319): so a bookmark, a
+ * mailed magic link or a shared URL at the old path never breaks. A route whose old path
+ * carried a required or UTM-bearing search param forwards it with `search: true`, since
+ * TanStack Router's redirect does not carry the query string over on its own.
  */
 const root = createRootRoute({ component: () => <Outlet /> })
 
@@ -87,27 +94,61 @@ const freelance = createRoute({
   path: '/freelance',
   component: FreelancerWizard,
 })
-const aziende = createRoute({
+const companies = createRoute({
   getParentRoute: () => publicLayout,
-  path: '/aziende',
+  path: '/companies',
   component: CompanyWizard,
 })
-const grazie = createRoute({
+// The wizard reads UTM straight off the URL's own search string (`CompanyWizard.tsx`),
+// so a campaign link at the old `/aziende` path has to carry its query string across,
+// not just resolve to the right page.
+const companiesRedirect = createRoute({
   getParentRoute: () => publicLayout,
-  path: '/grazie',
+  path: '/aziende',
+  beforeLoad: () => {
+    throw redirect({ to: '/companies', search: true })
+  },
+})
+const thanks = createRoute({
+  getParentRoute: () => publicLayout,
+  path: '/thanks',
   validateSearch: (search: Record<string, unknown>): { chi: 'freelance' | 'azienda' } => ({
     chi: search.chi === 'azienda' ? 'azienda' : 'freelance',
   }),
   component: Thanks,
 })
-const accedi = createRoute({ getParentRoute: () => publicLayout, path: '/accedi', component: Accedi })
-const entra = createRoute({
+const thanksRedirect = createRoute({
   getParentRoute: () => publicLayout,
-  path: '/entra',
+  path: '/grazie',
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/thanks', search: () => search as never })
+  },
+})
+const login = createRoute({ getParentRoute: () => publicLayout, path: '/login', component: Accedi })
+const loginRedirect = createRoute({
+  getParentRoute: () => publicLayout,
+  path: '/accedi',
+  beforeLoad: () => {
+    throw redirect({ to: '/login' })
+  },
+})
+const verify = createRoute({
+  getParentRoute: () => publicLayout,
+  path: '/verify',
   validateSearch: (search: Record<string, unknown>): { t: string } => ({
     t: typeof search.t === 'string' ? search.t : '',
   }),
   component: Entra,
+})
+// The token lives in the query string (`?t=`): every magic-link mail already sent
+// points at the old path, so this redirect has to carry `t` across or the link inside
+// it would stop working the moment this ships.
+const verifyRedirect = createRoute({
+  getParentRoute: () => publicLayout,
+  path: '/entra',
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/verify', search: () => search as never })
+  },
 })
 
 const signedInLayout = createRoute({
@@ -116,9 +157,9 @@ const signedInLayout = createRoute({
   component: SignedInLayout,
 })
 
-const io = createRoute({ getParentRoute: () => signedInLayout, path: '/io', component: () => <Outlet /> })
-const ioIndex = createRoute({
-  getParentRoute: () => io,
+const me = createRoute({ getParentRoute: () => signedInLayout, path: '/me', component: () => <Outlet /> })
+const meIndex = createRoute({
+  getParentRoute: () => me,
   path: '/',
   component: Area,
   // Set by `AdminGuard` when a signed-in non-admin is bounced off `/admin/*`
@@ -128,17 +169,42 @@ const ioIndex = createRoute({
     negato: search.negato === true || search.negato === 'true' ? true : undefined,
   }),
 })
-const ioModifica = createRoute({ getParentRoute: () => io, path: '/modifica', component: Modifica })
-const ioModificaAzienda = createRoute({
-  getParentRoute: () => io,
-  path: '/modifica-azienda',
+const meEdit = createRoute({ getParentRoute: () => me, path: '/edit', component: Modifica })
+const meEditCompany = createRoute({
+  getParentRoute: () => me,
+  path: '/edit-company',
   component: ModificaAzienda,
+})
+// `/io`, `/io/modifica` and `/io/modifica-azienda` each renamed their own segment, not
+// just the shared `/io` prefix, so a deep link to any of the three needs its own
+// redirect: TanStack Router does not cascade a parent's rename onto a child route that
+// renamed its own segment too.
+const meRedirect = createRoute({
+  getParentRoute: () => signedInLayout,
+  path: '/io',
+  beforeLoad: () => {
+    throw redirect({ to: '/me', search: true })
+  },
+})
+const meEditRedirect = createRoute({
+  getParentRoute: () => signedInLayout,
+  path: '/io/modifica',
+  beforeLoad: () => {
+    throw redirect({ to: '/me/edit' })
+  },
+})
+const meEditCompanyRedirect = createRoute({
+  getParentRoute: () => signedInLayout,
+  path: '/io/modifica-azienda',
+  beforeLoad: () => {
+    throw redirect({ to: '/me/edit-company' })
+  },
 })
 
 const adminArea = createRoute({ getParentRoute: () => signedInLayout, path: '/admin', component: AdminGuard })
-const adminTalenti = createRoute({
+const adminTalent = createRoute({
   getParentRoute: () => adminArea,
-  path: '/talenti',
+  path: '/talent',
   component: AdminTalenti,
   // REB-286: every filter and the search box live here too, so a reload or a shared
   // link reproduces the exact list -- `q` included even though the debounce that
@@ -166,10 +232,26 @@ const adminTalenti = createRoute({
     creato_a: strParam(search.creato_a),
   }),
 })
-const adminTalentoLead = createRoute({
+// Every filter on the old list has to survive the redirect too, or a saved/shared
+// filtered view at `/admin/talenti?...` would silently reset once it lands.
+const adminTalentRedirect = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/talenti',
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/talent', search: true })
+  },
+})
+const adminTalentLead = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/talent/$id',
+  component: AdminTalentoLead,
+})
+const adminTalentLeadRedirect = createRoute({
   getParentRoute: () => adminArea,
   path: '/talenti/$id',
-  component: AdminTalentoLead,
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: '/admin/talent/$id', params })
+  },
 })
 const adminFreelanceDetail = createRoute({
   getParentRoute: () => adminArea,
@@ -178,18 +260,19 @@ const adminFreelanceDetail = createRoute({
 })
 // The website's footer links to /hub/admin/freelance (ORB-106: the hub router has no
 // index route under /admin, so a signed-in admin sent to a bare /admin would see the
-// frame with an empty panel). Talenti replaced the list this used to be (REB-283); the
-// redirect keeps that one documented door open rather than 404ing it.
+// frame with an empty panel). Talent replaced the list this used to be (REB-283, then
+// REB-319 for the English path); the redirect keeps that one documented door open
+// rather than 404ing it.
 const adminFreelanceRedirect = createRoute({
   getParentRoute: () => adminArea,
   path: '/freelance',
   beforeLoad: () => {
-    throw redirect({ to: '/admin/talenti' })
+    throw redirect({ to: '/admin/talent' })
   },
 })
-const adminAziende = createRoute({
+const adminCompanies = createRoute({
   getParentRoute: () => adminArea,
-  path: '/aziende',
+  path: '/companies',
   component: AdminCompanies,
   validateSearch: (search: Record<string, unknown>): CompaniesFilters => ({
     stato: strParam(search.stato),
@@ -202,38 +285,101 @@ const adminAziende = createRoute({
     creato_a: strParam(search.creato_a),
   }),
 })
-const adminAziendeDetail = createRoute({
+const adminCompaniesRedirect = createRoute({
   getParentRoute: () => adminArea,
-  path: '/aziende/$id',
+  path: '/aziende',
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/companies', search: true })
+  },
+})
+const adminCompaniesDetail = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/companies/$id',
   component: AdminCompanyDetail,
 })
-const adminPigro = createRoute({ getParentRoute: () => adminArea, path: '/pigro', component: AdminPigro })
-const adminGuida = createRoute({ getParentRoute: () => adminArea, path: '/guida', component: AdminGuida })
-const adminAccessi = createRoute({ getParentRoute: () => adminArea, path: '/accessi', component: AdminAccessi })
-const adminAmministratori = createRoute({
+const adminCompaniesDetailRedirect = createRoute({
   getParentRoute: () => adminArea,
-  path: '/amministratori',
+  path: '/aziende/$id',
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: '/admin/companies/$id', params })
+  },
+})
+const adminPigro = createRoute({ getParentRoute: () => adminArea, path: '/pigro', component: AdminPigro })
+const adminGuide = createRoute({ getParentRoute: () => adminArea, path: '/guide', component: AdminGuida })
+const adminGuideRedirect = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/guida',
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/guide' })
+  },
+})
+const adminAccess = createRoute({ getParentRoute: () => adminArea, path: '/access', component: AdminAccessi })
+const adminAccessRedirect = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/accessi',
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/access' })
+  },
+})
+const adminAdmins = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/admins',
   component: AdminAdmins,
 })
-const adminAgenti = createRoute({ getParentRoute: () => adminArea, path: '/agenti', component: AdminAgenti })
+const adminAdminsRedirect = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/amministratori',
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/admins' })
+  },
+})
+const adminAgents = createRoute({ getParentRoute: () => adminArea, path: '/agents', component: AdminAgenti })
+const adminAgentsRedirect = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/agenti',
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/agents' })
+  },
+})
 
 const routeTree = root.addChildren([
   bareLayout.addChildren([chooser]),
-  publicLayout.addChildren([freelance, aziende, grazie, accedi, entra]),
+  publicLayout.addChildren([
+    freelance,
+    companies,
+    companiesRedirect,
+    thanks,
+    thanksRedirect,
+    login,
+    loginRedirect,
+    verify,
+    verifyRedirect,
+  ]),
   signedInLayout.addChildren([
-    io.addChildren([ioIndex, ioModifica, ioModificaAzienda]),
+    me.addChildren([meIndex, meEdit, meEditCompany]),
+    meRedirect,
+    meEditRedirect,
+    meEditCompanyRedirect,
     adminArea.addChildren([
-      adminTalenti,
-      adminTalentoLead,
+      adminTalent,
+      adminTalentRedirect,
+      adminTalentLead,
+      adminTalentLeadRedirect,
       adminFreelanceDetail,
       adminFreelanceRedirect,
-      adminAziende,
-      adminAziendeDetail,
+      adminCompanies,
+      adminCompaniesRedirect,
+      adminCompaniesDetail,
+      adminCompaniesDetailRedirect,
       adminPigro,
-      adminGuida,
-      adminAccessi,
-      adminAmministratori,
-      adminAgenti,
+      adminGuide,
+      adminGuideRedirect,
+      adminAccess,
+      adminAccessRedirect,
+      adminAdmins,
+      adminAdminsRedirect,
+      adminAgents,
+      adminAgentsRedirect,
     ]),
   ]),
 ])

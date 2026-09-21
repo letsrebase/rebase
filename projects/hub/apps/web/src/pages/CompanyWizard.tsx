@@ -234,7 +234,7 @@ export function CompanyWizard() {
       sent.current = true
       clearDraft(COMPANY_DRAFT_KEY)
       analytics.completed()
-      void navigate({ to: '/grazie', search: { chi: 'azienda' } })
+      void navigate({ to: '/thanks', search: { chi: 'azienda' } })
     } catch (error) {
       const failure = error instanceof ApiError ? error : null
       // `durata` shares a field with `periodo_da`; `email`, `referente_nome` and

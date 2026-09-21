@@ -7,7 +7,7 @@ import { Empty, Figure, Header } from './lists'
 /**
  * How the guide is doing (ORB-156): every download the members' route wrote down, the
  * distinct people behind them against everybody on file, the last week, and the latest
- * ones by name. Read-only: the rows are written by `GET /api/hub/me/guida` when a member
+ * ones by name. Read-only: the rows are written by `GET /api/hub/me/guide` when a member
  * takes the file, and by nothing else.
  */
 export function AdminGuida() {

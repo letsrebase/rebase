@@ -351,7 +351,7 @@ export function FreelancerWizard() {
       sent.current = true
       clearDraft(FREELANCER_DRAFT_KEY)
       analytics.completed()
-      void navigate({ to: '/grazie', search: { chi: 'freelance' } })
+      void navigate({ to: '/thanks', search: { chi: 'freelance' } })
     } catch (error) {
       const failure = error instanceof ApiError ? error : null
       setSubmitError({

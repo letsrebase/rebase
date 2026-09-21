@@ -12,17 +12,17 @@ import { Thanks } from './Thanks'
 
 function mount(chi: string) {
   const root = createRootRoute({ component: () => <Outlet /> })
-  const grazie = createRoute({
+  const thanks = createRoute({
     getParentRoute: () => root,
-    path: '/grazie',
+    path: '/thanks',
     validateSearch: (search: Record<string, unknown>): { chi: 'freelance' | 'azienda' } => ({
       chi: search.chi === 'azienda' ? 'azienda' : 'freelance',
     }),
     component: Thanks,
   })
   const router = createRouter({
-    routeTree: root.addChildren([grazie]),
-    history: createMemoryHistory({ initialEntries: [`/grazie?chi=${chi}`] }),
+    routeTree: root.addChildren([thanks]),
+    history: createMemoryHistory({ initialEntries: [`/thanks?chi=${chi}`] }),
   })
   render(<RouterProvider router={router} />)
 }
@@ -32,7 +32,7 @@ describe('the thank-you page', () => {
     mount('freelance')
     expect(await screen.findByRole('link', { name: /Entra nella tua area/ })).toHaveAttribute(
       'href',
-      '/accedi',
+      '/login',
     )
   })
 

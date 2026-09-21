@@ -15,7 +15,7 @@ export function AdminGuard() {
   const isAdmin = me.data?.role === 'admin'
 
   useEffect(() => {
-    if (me.data && !isAdmin) void navigate({ to: '/io', search: { negato: true }, replace: true })
+    if (me.data && !isAdmin) void navigate({ to: '/me', search: { negato: true }, replace: true })
   }, [me.data, isAdmin, navigate])
 
   if (!isAdmin) return null

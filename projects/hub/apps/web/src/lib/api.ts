@@ -232,7 +232,7 @@ export interface PigroSpace {
   membro: { id: string; nome: string; cognome: string } | null
 }
 
-/** The guide's numbers for the admin area (ORB-156), as `GET /api/hub/perks/guida` answers. */
+/** The guide's numbers for the admin area (ORB-156), as `GET /api/hub/perks/guide` answers. */
 export interface GuideStats {
   totale: number
   membri: number
@@ -292,7 +292,7 @@ export interface Talento {
 /** What an admin found about a signup on the public web (ORB-155): a name, maybe a
  *  LinkedIn profile, a position, some links, and at least one source, since a card
  *  written from research with no source is a card nobody can check. The body
- *  `POST /api/hub/signups/{id}/scheda` expects -- the same `draft_from_signup` the
+ *  `POST /api/hub/signups/{id}/card` expects -- the same `draft_from_signup` the
  *  MCP tool `create_freelancer_from_signup` calls. */
 export interface FreelancerDraft {
   nome: string
@@ -320,12 +320,12 @@ export interface CreatedToken extends AdminToken {
   token: string
 }
 
-/** What `GET /api/hub/talenti` takes beside `limit` (REB-285/286): `q` searches
+/** What `GET /api/hub/talent` takes beside `limit` (REB-285/286): `q` searches
  *  name/surname/email/`posizione`, trigram-ordered when present; every other field
  *  narrows the merged list of cards and bare sign-ups the same way the state pills
  *  always have. Mirrors `list_talenti`'s own parameters in
  *  `apps/api/src/rebase_api/routers/admin.py` one for one -- this is also the shape
- *  `/admin/talenti`'s own `validateSearch` carries in the URL (`router.tsx`). */
+ *  `/admin/talent`'s own `validateSearch` carries in the URL (`router.tsx`). */
 export interface TalentiFilters {
   stato?: string
   q?: string
@@ -349,7 +349,7 @@ export interface TalentoList {
 }
 
 /** What `GET /api/hub/companies` takes beside `limit` (REB-285/286), mirroring
- *  `list_companies`'s own parameters -- the shape `/admin/aziende`'s own
+ *  `list_companies`'s own parameters -- the shape `/admin/companies`'s own
  *  `validateSearch` carries in the URL. */
 export interface CompaniesFilters {
   stato?: string
@@ -432,16 +432,16 @@ export const admin = {
    *  its per-field narrowing, REB-286's own filter row sends straight through; `limit`
    *  is the one override `AdminTalentoLead` needs to see every lead at once rather
    *  than the server's own default page. */
-  talenti: (filters: TalentiFilters & { cursor?: string; limit?: number } = {}) => {
+  talent: (filters: TalentiFilters & { cursor?: string; limit?: number } = {}) => {
     const qs = filterQuery(filters)
-    return request<TalentoList>(`/api/hub/talenti${qs ? `?${qs}` : ''}`)
+    return request<TalentoList>(`/api/hub/talent${qs ? `?${qs}` : ''}`)
   },
   /** Drafts a card from a bare sign-up in place (ORB-155): the same `draft_from_signup`
    *  the MCP tool `create_freelancer_from_signup` calls, here behind the admin's
    *  cookie. 201 with the new (incomplete) card, or a 422 naming `email` when the
    *  person has already filled their own. */
   draftFromSignup: (signupId: string, data: FreelancerDraft) =>
-    request<Freelancer>(`/api/hub/signups/${signupId}/scheda`, json(data)),
+    request<Freelancer>(`/api/hub/signups/${signupId}/card`, json(data)),
   /** PigroCRM's spaces, read by the hub's API with the token it holds: the browser
    *  never talks to the CRM (ORB-142). A 503 carries the sentence the page shows.
    *  Newest first, `q` matched against the slug or the owner's address, paged with a
@@ -449,10 +449,10 @@ export const admin = {
    *  own route filters and slices what it already fetched before answering. */
   pigroSpaces: (params: ListPageParams = {}) =>
     request<{ totale: number; items: PigroSpace[]; next_cursor: string | null }>(
-      `/api/hub/pigro/istanze${listQuery(params)}`,
+      `/api/hub/pigro/instances${listQuery(params)}`,
     ),
   /** How the guide is doing: downloads, the members behind them, the latest (ORB-156). */
-  guideStats: () => request<GuideStats>('/api/hub/perks/guida'),
+  guideStats: () => request<GuideStats>('/api/hub/perks/guide'),
   /** Who comes back in: logins, the members behind them, the last week -- unchanged
    *  aggregate counters. `recenti` is searched and cursor-paginated since REB-313,
    *  no longer a hardcoded top 20 (ORB-158). */
@@ -548,7 +548,7 @@ export const member = {
       body: JSON.stringify(data),
     }),
   updateCompany: (data: CompanyUpdate) =>
-    request<Me>('/api/hub/me/azienda', {
+    request<Me>('/api/hub/me/company', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -562,6 +562,6 @@ export const member = {
   /** The guide, the community's second perk. A plain href rather than a fetch: the
    *  route answers with an attachment, and a session cookie travels with a navigation
    *  the same way it travels with a request. */
-  guideUrl: '/api/hub/me/guida',
+  guideUrl: '/api/hub/me/guide',
   logout: () => request<void>('/api/hub/me/logout', { method: 'POST' }),
 }

@@ -28,14 +28,14 @@ import { capture } from '@rebase/analytics/browser'
 function mount(path = '/freelance?utm_source=linkedin&da=pigrocrm', { strict = false } = {}) {
   const root = createRootRoute({ component: () => <Outlet /> })
   const freelance = createRoute({ getParentRoute: () => root, path: '/freelance', component: FreelancerWizard })
-  const grazie = createRoute({
+  const thanks = createRoute({
     getParentRoute: () => root,
-    path: '/grazie',
+    path: '/thanks',
     validateSearch: (s: Record<string, unknown>) => ({ chi: String(s.chi ?? '') }),
     component: () => <h1>Grazie</h1>,
   })
   const router = createRouter({
-    routeTree: root.addChildren([freelance, grazie]),
+    routeTree: root.addChildren([freelance, thanks]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   const app = <RouterProvider router={router} />
@@ -145,7 +145,7 @@ describe('FreelancerWizard', () => {
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
   })
 
-  it('walks the eight questions, posts the multipart body with the UTM and lands on grazie', async () => {
+  it('walks the eight questions, posts the multipart body with the UTM and lands on thanks', async () => {
     const user = userEvent.setup({ applyAccept: false })
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), { status: 201 }),
@@ -157,7 +157,7 @@ describe('FreelancerWizard', () => {
     expect(screen.getByText('Ada CV.pdf')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /Invia/ }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/grazie'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
     expect(router.state.location.search).toEqual({ chi: 'freelance' })
 
     const [url, init] = fetchSpy.mock.calls[0]!
@@ -202,7 +202,7 @@ describe('FreelancerWizard', () => {
     expect(screen.getByText('https://www.linkedin.com/in/ada-lovelace')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /Invia/ }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/grazie'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
     const body = fetchSpy.mock.calls[0]![1]?.body as FormData
     expect(body.get('linkedin_url')).toBe('https://www.linkedin.com/in/ada-lovelace')
   })
@@ -230,7 +230,7 @@ describe('FreelancerWizard', () => {
 
     expect(screen.getByRole('heading', { name: 'Tutto giusto?' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Invia/ }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/grazie'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
 
     const body = fetchSpy.mock.calls[0]![1]?.body as FormData
     expect(body.get('email')).toBe('ada@studio.it')
@@ -280,7 +280,7 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
     expect(captured('wizard_completato')).toEqual([])
 
     await user.click(screen.getByRole('button', { name: /Invia/ }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/grazie'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
     expect(captured('wizard_completato')).toEqual([{ tipo: 'freelance', perk: 'guida' }])
   })
 
@@ -349,7 +349,7 @@ describe('FreelancerWizard, the draft and the intro (REB-215)', () => {
     await walkToReview(user)
     expect(loadDraft(FREELANCER_DRAFT_KEY)).not.toBeNull()
     await user.click(screen.getByRole('button', { name: /Invia/ }))
-    await waitFor(() => expect(router.state.location.pathname).toBe('/grazie'))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
     expect(loadDraft(FREELANCER_DRAFT_KEY)).toBeNull()
     const body = fetchSpy.mock.calls[0]![1]?.body as FormData
     expect(body.get('distinct_id')).toBe('anon-1')

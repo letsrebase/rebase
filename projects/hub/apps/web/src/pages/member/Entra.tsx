@@ -34,7 +34,7 @@ export function Entra() {
     if (started.current || !t) return
     started.current = true
     mutateAsync(t).then(
-      () => void navigate({ to: '/io', replace: true }),
+      () => void navigate({ to: '/me', replace: true }),
       (error: unknown) => {
         const refusal = error instanceof ApiError ? error : null
         setFailure(refusal?.status === 401 ? 'invalid' : 'other')
@@ -57,7 +57,7 @@ export function Entra() {
         <p role="alert" className="text-muted-foreground">
           Il link non è più valido: vale quindici minuti e una volta sola.
         </p>
-        <Link to="/accedi" className="text-sm underline underline-offset-2">
+        <Link to="/login" className="text-sm underline underline-offset-2">
           Chiedine un altro
         </Link>
       </div>

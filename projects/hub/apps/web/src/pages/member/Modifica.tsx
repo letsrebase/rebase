@@ -68,7 +68,7 @@ export function Modifica() {
       await update.mutateAsync(toUpdate(value))
       saved = true
       if (value.cv) await replaceCv.mutateAsync(value.cv)
-      void navigate({ to: '/io' })
+      void navigate({ to: '/me' })
     } catch (error) {
       const refusal = error instanceof ApiError ? error : null
       // The PATCH and the CV replacement are two requests: when the first has already
@@ -132,7 +132,7 @@ export function Modifica() {
       )}
       <div className="flex items-center justify-between">
         <Button asChild variant="ghost">
-          <Link to="/io">Annulla</Link>
+          <Link to="/me">Annulla</Link>
         </Button>
         <Button type="button" onClick={() => void save()} disabled={saving}>
           {saving ? 'Salvo…' : 'Salva'}

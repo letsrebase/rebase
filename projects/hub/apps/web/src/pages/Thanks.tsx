@@ -33,7 +33,7 @@ export function Thanks() {
       {!azienda && (
         <p className="text-sm text-muted-foreground">
           Vuoi rileggere, cambiare o completare quello che ci hai mandato, CV compreso?{' '}
-          <Link to="/accedi" className="underline underline-offset-2">
+          <Link to="/login" className="underline underline-offset-2">
             Entra nella tua area
           </Link>
           .

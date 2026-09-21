@@ -23,7 +23,7 @@ from rebase_core.validation import SafeStr
 router = APIRouter(prefix="/api/hub/tokens", tags=["hub-admin"])
 
 Limit = Annotated[int, Query(ge=1, le=500)]
-# The same bounded shape REB-285 gives `/talenti` and `/companies`: an unbounded free-
+# The same bounded shape REB-285 gives `/talent` and `/companies`: an unbounded free-
 # text query or cursor reaching the database is a denial of service with extra steps.
 SearchQ = Annotated[str | None, Query(max_length=SEARCH_MAX_LENGTH)]
 Cursor = Annotated[str | None, Query(max_length=CURSOR_MAX_LENGTH)]

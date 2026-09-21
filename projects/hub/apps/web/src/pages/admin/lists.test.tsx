@@ -142,16 +142,16 @@ function settle(): Promise<void> {
  *  read `useParams` and render `Link`s, so a router has to be there. The pathless
  *  `signedIn` id mirrors the real tree (REB-279's `SignedInLayout`), since
  *  `AdminFreelancerDetail`'s and `AdminTalentoLead`'s own `useParams({ from })` name
- *  that full route id. `talenti`/`aziende` carry the same `validateSearch` shape
+ *  that full route id. `talent`/`companies` carry the same `validateSearch` shape
  *  `router.tsx` gives them (REB-286), duplicated rather than imported the same way
- *  `Thanks.test.tsx` duplicates `grazie`'s own. Returns the router so a test can read
+ *  `Thanks.test.tsx` duplicates `thanks`'s own. Returns the router so a test can read
  *  `router.state.location.search` back out after an interaction. */
 function mount(path: string) {
   const root = createRootRoute({ component: () => <Outlet /> })
   const signedIn = createRoute({ getParentRoute: () => root, id: 'signedIn', component: () => <Outlet /> })
-  const talenti = createRoute({
+  const talent = createRoute({
     getParentRoute: () => signedIn,
-    path: '/admin/talenti',
+    path: '/admin/talent',
     component: AdminTalenti,
     validateSearch: (search: Record<string, unknown>): TalentiFilters => ({
       stato: strParam(search.stato),
@@ -176,9 +176,9 @@ function mount(path: string) {
       creato_a: strParam(search.creato_a),
     }),
   })
-  const talentoLead = createRoute({
+  const talentLead = createRoute({
     getParentRoute: () => signedIn,
-    path: '/admin/talenti/$id',
+    path: '/admin/talent/$id',
     component: AdminTalentoLead,
   })
   const freelanceDetail = createRoute({
@@ -186,9 +186,9 @@ function mount(path: string) {
     path: '/admin/freelance/$id',
     component: AdminFreelancerDetail,
   })
-  const aziende = createRoute({
+  const companies = createRoute({
     getParentRoute: () => signedIn,
-    path: '/admin/aziende',
+    path: '/admin/companies',
     component: AdminCompanies,
     validateSearch: (search: Record<string, unknown>): CompaniesFilters => ({
       stato: strParam(search.stato),
@@ -202,7 +202,7 @@ function mount(path: string) {
     }),
   })
   const router = createRouter({
-    routeTree: root.addChildren([signedIn.addChildren([talenti, talentoLead, freelanceDetail, aziende])]),
+    routeTree: root.addChildren([signedIn.addChildren([talent, talentLead, freelanceDetail, companies])]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   render(
@@ -230,7 +230,7 @@ describe('the Talenti list (REB-282/283)', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, { totale: 2, items: [CARD_TALENTO, LEAD_TALENTO], per_stato: { nuovo: 1, lead: 1 } }),
     )
-    mount('/admin/talenti')
+    mount('/admin/talent')
 
     const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
     expect(within(cellUnder(ada, 'Stato')).getByText('Nuovo')).toBeInTheDocument()
@@ -242,14 +242,14 @@ describe('the Talenti list (REB-282/283)', () => {
     expect(within(cellUnder(bob, 'Stato')).getByText('Lead')).toBeInTheDocument()
     expect(cellUnder(bob, 'Provenienza')).toHaveTextContent('form')
     const bobLink = within(bob).getByRole('link')
-    expect(bobLink.getAttribute('href')).toMatch(/\/admin\/talenti\/s2$/)
+    expect(bobLink.getAttribute('href')).toMatch(/\/admin\/talent\/s2$/)
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('2')
   })
 
   it('filters by state through the same pills as before, «Lead» included', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/talenti')
+    mount('/admin/talent')
     await screen.findByRole('heading', { name: 'Talenti' })
     expect(screen.getByRole('button', { name: 'Nuovo' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Lead' })).toBeInTheDocument()
@@ -261,7 +261,7 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
       if (init?.method === 'POST') {
-        expect(url).toBe('/api/hub/signups/s2/scheda')
+        expect(url).toBe('/api/hub/signups/s2/card')
         expect(JSON.parse(init.body as string)).toEqual({
           nome: 'Bob',
           cognome: 'Ross',
@@ -276,7 +276,7 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
       }
       return answer(200, { totale: 1, items: [LEAD_TALENTO], per_stato: { lead: 1 } })
     })
-    mount('/admin/talenti/s2')
+    mount('/admin/talent/s2')
 
     await screen.findByRole('heading', { name: 'Bob Ross' })
     expect(screen.getByDisplayValue('Bob')).toBeInTheDocument()
@@ -296,7 +296,7 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, { totale: 1, items: [LEAD_TALENTO], per_stato: { lead: 1 } }),
     )
-    mount('/admin/talenti/s2')
+    mount('/admin/talent/s2')
     await screen.findByRole('heading', { name: 'Bob Ross' })
     expect(screen.getByLabelText('Fonti')).toBeRequired()
   })
@@ -416,14 +416,14 @@ describe('the search box debounces before it reaches the API and the URL (REB-28
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, { totale: 0, items: [], per_stato: {} }),
     )
-    mount('/admin/talenti')
+    mount('/admin/talent')
     await screen.findByRole('heading', { name: 'Talenti' })
     spy.mockClear()
 
     await userEvent.type(screen.getByLabelText('Cerca'), 'ada')
     await settle()
 
-    const calls = spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/hub/talenti'))
+    const calls = spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/hub/talent'))
     expect(calls).toHaveLength(1)
     expect(calls[0]).toContain('q=ada')
   })
@@ -432,7 +432,7 @@ describe('the search box debounces before it reaches the API and the URL (REB-28
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, { totale: 0, items: [], per_stato: {} }),
     )
-    mount('/admin/aziende')
+    mount('/admin/companies')
     await screen.findByRole('heading', { name: 'Aziende' })
     spy.mockClear()
 
@@ -448,7 +448,7 @@ describe('the search box debounces before it reaches the API and the URL (REB-28
 describe('every filter and the search box live in the URL, both ways (REB-286)', () => {
   it('reflects a state pill and a filter field into the address for Talenti', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    const router = mount('/admin/talenti')
+    const router = mount('/admin/talent')
     await screen.findByRole('heading', { name: 'Talenti' })
 
     await userEvent.click(screen.getByRole('button', { name: 'Nuovo' }))
@@ -461,7 +461,7 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
 
   it('reads a filter and a state back out of a URL a link already carries, for Talenti', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/talenti?posizione=CTO&stato=nuovo')
+    mount('/admin/talent?posizione=CTO&stato=nuovo')
     await screen.findByRole('heading', { name: 'Talenti' })
     expect(screen.getByLabelText('Posizione')).toHaveValue('CTO')
   })
@@ -472,14 +472,14 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
     // not a string -- exactly what happens opening a shared link or reloading, never
     // on an in-app navigate(). strParam has to coerce it back.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/talenti?tariffa_min=50')
+    mount('/admin/talent?tariffa_min=50')
     await screen.findByRole('heading', { name: 'Talenti' })
     expect(screen.getByLabelText('Tariffa min (€/giorno)')).toHaveValue(50)
   })
 
   it('reflects a filter field into the address for Aziende', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    const router = mount('/admin/aziende')
+    const router = mount('/admin/companies')
     await screen.findByRole('heading', { name: 'Aziende' })
 
     await userEvent.type(screen.getByLabelText('Pagina di provenienza'), 'home')
@@ -489,7 +489,7 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
 
   it('reads a filter back out of a URL a link already carries, for Aziende', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/aziende?origine=pigrocrm')
+    mount('/admin/companies?origine=pigrocrm')
     await screen.findByRole('heading', { name: 'Aziende' })
     expect(screen.getByLabelText('Pagina di provenienza')).toHaveValue('pigrocrm')
   })
@@ -503,7 +503,7 @@ describe('infinite scroll walks the cursor, a page at a time (REB-286)', () => {
       const url = new URL(String(input), 'http://test')
       return answer(200, url.searchParams.get('cursor') === 'CURSOR1' ? page2 : page1)
     })
-    mount('/admin/talenti')
+    mount('/admin/talent')
 
     await screen.findByText('ada@studio.it')
     expect(screen.queryByText('bob@example.org')).toBeNull()
@@ -523,7 +523,7 @@ describe('infinite scroll walks the cursor, a page at a time (REB-286)', () => {
       const url = new URL(String(input), 'http://test')
       return answer(200, url.searchParams.get('cursor') === 'CURSOR1' ? page2 : page1)
     })
-    mount('/admin/aziende')
+    mount('/admin/companies')
 
     await screen.findByText('Rossi Studio')
     expect(screen.getByText('Mostrate 1 aziende, ce ne sono altre.')).toBeInTheDocument()
@@ -538,25 +538,25 @@ describe('infinite scroll walks the cursor, a page at a time (REB-286)', () => {
 describe('two empty states, in Italian (REB-286)', () => {
   it('says the Talenti table itself is empty with no filter active', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/talenti')
+    mount('/admin/talent')
     expect(await screen.findByText('Nessun profilo qui.')).toBeInTheDocument()
   })
 
   it('names the filters when one narrows Talenti to nothing', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/talenti?posizione=Astrofisico')
+    mount('/admin/talent?posizione=Astrofisico')
     expect(await screen.findByText('Nessun risultato per questi filtri.')).toBeInTheDocument()
   })
 
   it('says the Aziende table itself is empty with no filter active', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/aziende')
+    mount('/admin/companies')
     expect(await screen.findByText('Nessuna richiesta qui.')).toBeInTheDocument()
   })
 
   it('names the filters when one narrows Aziende to nothing', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
-    mount('/admin/aziende?origine=home')
+    mount('/admin/companies?origine=home')
     expect(await screen.findByText('Nessun risultato per questi filtri.')).toBeInTheDocument()
   })
 })
@@ -566,7 +566,7 @@ describe('the Aziende list renders a request (REB-286, previously untested)', ()
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, { totale: 1, items: [COMPANY_A], per_stato: { nuovo: 1 } }),
     )
-    mount('/admin/aziende')
+    mount('/admin/companies')
     expect(await screen.findByText('Rossi Studio')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('1')
   })

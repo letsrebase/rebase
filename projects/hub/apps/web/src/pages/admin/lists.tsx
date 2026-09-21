@@ -223,12 +223,12 @@ export function Figure({ label, value, note }: { label: string; value: number; n
  *  single list that replaced «Developer e CTO» and «Iscrizioni». A card row opens the
  *  existing freelancer detail; a lead row opens the page that offers to draft one.
  *  REB-286 adds the search box, the filter row and infinite scroll, all three carried
- *  in the URL through `validateSearch` on `/admin/talenti` (`router.tsx`) so a reload
+ *  in the URL through `validateSearch` on `/admin/talent` (`router.tsx`) so a reload
  *  or a shared link reproduces the exact view; only `q` is debounced client-side
  *  before it reaches the URL and the query, everything else applies immediately like
  *  the state pills always have. */
 export function AdminTalenti() {
-  const search = useSearch({ from: '/signedIn/admin/talenti' })
+  const search = useSearch({ from: '/signedIn/admin/talent' })
   const navigate = useNavigate()
   const [qInput, setQInput] = useState(search.q ?? '')
   const debouncedQ = useDebounce(qInput, SEARCH_DEBOUNCE_MS)
@@ -236,7 +236,7 @@ export function AdminTalenti() {
   useEffect(() => {
     if (debouncedQ === (search.q ?? '')) return
     void navigate({
-      to: '/admin/talenti',
+      to: '/admin/talent',
       search: (prev: TalentiFilters) => ({ ...prev, q: debouncedQ || undefined }),
       replace: true,
     })
@@ -244,7 +244,7 @@ export function AdminTalenti() {
 
   function setFilter<K extends keyof TalentiFilters>(key: K, value: TalentiFilters[K]) {
     void navigate({
-      to: '/admin/talenti',
+      to: '/admin/talent',
       search: (prev: TalentiFilters) => ({ ...prev, [key]: value }),
       replace: true,
     })
@@ -254,7 +254,7 @@ export function AdminTalenti() {
   const list = useInfiniteQuery({
     queryKey: ['talenti', filters],
     queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      admin.talenti({ ...filters, cursor: pageParam }),
+      admin.talent({ ...filters, cursor: pageParam }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   })
@@ -425,7 +425,7 @@ export function AdminTalenti() {
 
 function TalentoRow({ item }: { item: Talento }) {
   const name = [item.nome, item.cognome].filter(Boolean).join(' ')
-  const to = item.stato === 'lead' ? '/admin/talenti/$id' : '/admin/freelance/$id'
+  const to = item.stato === 'lead' ? '/admin/talent/$id' : '/admin/freelance/$id'
   return (
     <tr className="border-b last:border-0 hover:bg-muted">
       <td className="px-6 py-2.5">
@@ -473,12 +473,12 @@ const LEAD_DRAFT_EMPTY: LeadDraft = {
  *  (`stato: 'lead'`): there is no single-sign-up fetch, so a direct visit refetches
  *  that page and reads its own row out of it. */
 export function AdminTalentoLead() {
-  const { id } = useParams({ from: '/signedIn/admin/talenti/$id' })
+  const { id } = useParams({ from: '/signedIn/admin/talent/$id' })
   const navigate = useNavigate()
   const client = useQueryClient()
   const leads = useQuery({
     queryKey: ['talenti', 'lead'],
-    queryFn: () => admin.talenti({ stato: 'lead', limit: 500 }),
+    queryFn: () => admin.talent({ stato: 'lead', limit: 500 }),
   })
   const lead = leads.data?.items.find((item) => item.id === id)
   const [draft, setDraft] = useState(LEAD_DRAFT_EMPTY)
@@ -659,7 +659,7 @@ export function AdminTalentoLead() {
         </form>
       </div>
       <p className="px-6 pb-6">
-        <Link to="/admin/talenti" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
+        <Link to="/admin/talent" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
           <ArrowLeft className="size-4" /> Tutti i talenti
         </Link>
       </p>
@@ -884,7 +884,7 @@ export function AdminFreelancerDetail() {
       )}
       <Comments kind="freelancers" id={f.id} comments={f.commenti} onAdded={onCommentAdded} />
       <p className="px-6 pb-6">
-        <Link to="/admin/talenti" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
+        <Link to="/admin/talent" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
           <ArrowLeft className="size-4" /> Tutti i talenti
         </Link>
       </p>
@@ -905,10 +905,10 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 
 /** «Aziende»: every company request as a list. REB-286 adds the search box, the
  *  filter row and infinite scroll, all three carried in the URL through
- *  `validateSearch` on `/admin/aziende` (`router.tsx`) the same way `AdminTalenti`
+ *  `validateSearch` on `/admin/companies` (`router.tsx`) the same way `AdminTalenti`
  *  carries its own -- see that component's own note for why only `q` is debounced. */
 export function AdminCompanies() {
-  const search = useSearch({ from: '/signedIn/admin/aziende' })
+  const search = useSearch({ from: '/signedIn/admin/companies' })
   const navigate = useNavigate()
   const [qInput, setQInput] = useState(search.q ?? '')
   const debouncedQ = useDebounce(qInput, SEARCH_DEBOUNCE_MS)
@@ -916,7 +916,7 @@ export function AdminCompanies() {
   useEffect(() => {
     if (debouncedQ === (search.q ?? '')) return
     void navigate({
-      to: '/admin/aziende',
+      to: '/admin/companies',
       search: (prev: CompaniesFilters) => ({ ...prev, q: debouncedQ || undefined }),
       replace: true,
     })
@@ -924,7 +924,7 @@ export function AdminCompanies() {
 
   function setFilter<K extends keyof CompaniesFilters>(key: K, value: CompaniesFilters[K]) {
     void navigate({
-      to: '/admin/aziende',
+      to: '/admin/companies',
       search: (prev: CompaniesFilters) => ({ ...prev, [key]: value }),
       replace: true,
     })
@@ -1035,7 +1035,7 @@ export function AdminCompanies() {
               {items.map((item) => (
                 <tr key={item.id} className="border-b last:border-0 hover:bg-muted">
                   <td className="px-6 py-2.5">
-                    <Link to="/admin/aziende/$id" params={{ id: item.id }} className="font-medium hover:underline">
+                    <Link to="/admin/companies/$id" params={{ id: item.id }} className="font-medium hover:underline">
                       {item.nome_azienda}
                     </Link>
                     <p className="text-xs text-muted-foreground">{item.referente} · {item.email}</p>
@@ -1063,7 +1063,7 @@ export function AdminCompanies() {
 }
 
 export function AdminCompanyDetail() {
-  const { id } = useParams({ from: '/signedIn/admin/aziende/$id' })
+  const { id } = useParams({ from: '/signedIn/admin/companies/$id' })
   const client = useQueryClient()
   const row = useQuery({ queryKey: ['company', id], queryFn: () => admin.company(id) })
   const move = useMutation({
@@ -1102,7 +1102,7 @@ export function AdminCompanyDetail() {
       </div>
       <Comments kind="companies" id={c.id} comments={c.commenti} onAdded={onCommentAdded} />
       <p className="px-6 pb-6">
-        <Link to="/admin/aziende" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
+        <Link to="/admin/companies" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
           <ArrowLeft className="size-4" /> Tutte le aziende
         </Link>
       </p>

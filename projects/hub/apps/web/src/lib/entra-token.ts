@@ -24,7 +24,7 @@ let token: string | null = null
  *  finds nothing left to take. */
 export function stripEntraToken(): void {
   if (typeof window === 'undefined') return
-  if (window.location.pathname !== '/hub/entra') return
+  if (window.location.pathname !== '/hub/verify') return
   const url = new URL(window.location.href)
   const t = url.searchParams.get('t')
   if (!t) return

@@ -40,7 +40,7 @@ describe('the La guida page', () => {
     mount()
     const who = await screen.findByRole('link', { name: 'Ada Lovelace' })
     expect(who).toHaveAttribute('href', '/admin/freelance/f-1')
-    expect(spy.mock.calls[0]![0]).toBe('/api/hub/perks/guida')
+    expect(spy.mock.calls[0]![0]).toBe('/api/hub/perks/guide')
     expect(screen.getByRole('heading', { name: /La guida/ })).toHaveTextContent('3')
     expect(screen.getByText('Membri che l’hanno scaricata').nextElementSibling).toHaveTextContent('1su 2')
     expect(screen.getByText('Ultimi 7 giorni').nextElementSibling).toHaveTextContent('3')

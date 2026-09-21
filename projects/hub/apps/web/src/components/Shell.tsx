@@ -33,7 +33,7 @@ export function Shell({ children, panel = true }: { children: ReactNode; panel?:
           rebase
         </Link>
         <nav className="flex items-center gap-4 text-sm">
-          <Link to="/io" className="text-muted-foreground underline-offset-2 hover:underline">
+          <Link to="/me" className="text-muted-foreground underline-offset-2 hover:underline">
             La tua area
           </Link>
           <a

@@ -67,10 +67,10 @@ def test_without_the_cookie_every_admin_route_is_a_401(client: TestClient, admin
         "/api/hub/freelancers",
         "/api/hub/companies",
         "/api/hub/signups",
-        "/api/hub/talenti",
+        "/api/hub/talent",
         "/api/hub/admins",
-        "/api/hub/pigro/istanze",
-        "/api/hub/perks/guida",
+        "/api/hub/pigro/instances",
+        "/api/hub/perks/guide",
     ):
         assert client.get(path).status_code == 401, path
     refused = client.post("/api/hub/admins/promote", json={"email": "x@rebase.it"})
@@ -85,7 +85,7 @@ def test_the_guide_page_counts_downloads_and_names_who_took_it(
     Two people on file, three downloads by one of them: totale 3, membri 1 of 2, all
     three in the last week, the latest first, each with the member's name."""
     _login(client, sender)
-    empty = client.get("/api/hub/perks/guida")
+    empty = client.get("/api/hub/perks/guide")
     assert empty.status_code == 200
     assert empty.json() == {
         "totale": 0,
@@ -108,7 +108,7 @@ def test_the_guide_page_counts_downloads_and_names_who_took_it(
     for _ in range(3):
         perks.record_guide_download(ada_user_id)
 
-    stats = client.get("/api/hub/perks/guida").json()
+    stats = client.get("/api/hub/perks/guide").json()
     assert (stats["totale"], stats["membri"], stats["membri_totali"]) == (3, 1, 2)
     assert stats["ultimi_7_giorni"] == 3
     assert len(stats["recenti"]) == 3
@@ -160,7 +160,7 @@ def test_talenti_merges_cards_and_leads_and_counts_per_state(
     signup_id = _signup(client, sender, "lead@studio.it")
     _apply(client, "ada@studio.it")
 
-    listed = client.get("/api/hub/talenti").json()
+    listed = client.get("/api/hub/talent").json()
     assert listed["totale"] == 2
     by_email = {item["email"]: item for item in listed["items"]}
     assert by_email["ada@studio.it"]["stato"] == "nuovo"
@@ -176,13 +176,13 @@ def test_talenti_merges_cards_and_leads_and_counts_per_state(
         "lead": 1,
     }
 
-    only_leads = client.get("/api/hub/talenti", params={"stato": "lead"}).json()
+    only_leads = client.get("/api/hub/talent", params={"stato": "lead"}).json()
     assert [item["email"] for item in only_leads["items"]] == ["lead@studio.it"]
     assert only_leads["totale"] == 1
     # `per_stato` counts the whole list regardless of the filter asked for.
     assert only_leads["per_stato"] == listed["per_stato"]
 
-    only_new = client.get("/api/hub/talenti", params={"stato": "nuovo"}).json()
+    only_new = client.get("/api/hub/talent", params={"stato": "nuovo"}).json()
     assert [item["email"] for item in only_new["items"]] == ["ada@studio.it"]
     assert only_new["totale"] == 1
 
@@ -191,11 +191,11 @@ def test_a_card_drafted_from_research_reads_origine_admin_on_talenti(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     signup_id = _signup(client, sender, "ricerca@studio.it")
-    created = client.post(f"/api/hub/signups/{signup_id}/scheda", json=DRAFT)
+    created = client.post(f"/api/hub/signups/{signup_id}/card", json=DRAFT)
     assert created.status_code == 201, created.text
     item = next(
         item
-        for item in client.get("/api/hub/talenti").json()["items"]
+        for item in client.get("/api/hub/talent").json()["items"]
         if item["email"] == "ricerca@studio.it"
     )
     assert item["origine"] == "admin" and item["stato"] == "nuovo"
@@ -206,7 +206,7 @@ def test_a_signed_in_member_hitting_talenti_is_403_not_401(
 ) -> None:
     _apply(client, "membro@studio.it")
     _login(client, sender, "membro@studio.it")
-    assert client.get("/api/hub/talenti").status_code == 403
+    assert client.get("/api/hub/talent").status_code == 403
 
 
 # ---- search, cursor pagination and filters over HTTP (REB-285) -----------------------
@@ -231,10 +231,10 @@ def test_talenti_search_hits_a_partial_surname_and_an_email_domain_over_http(
     _apply(client, "carol@other.it")
     _login(client, sender)
 
-    by_surname = client.get("/api/hub/talenti", params={"q": "oss"}).json()
+    by_surname = client.get("/api/hub/talent", params={"q": "oss"}).json()
     assert [item["email"] for item in by_surname["items"]] == ["bob@rossilab.it"]
 
-    by_domain = client.get("/api/hub/talenti", params={"q": "rossilab.it"}).json()
+    by_domain = client.get("/api/hub/talent", params={"q": "rossilab.it"}).json()
     assert [item["email"] for item in by_domain["items"]] == ["bob@rossilab.it"]
 
 
@@ -257,7 +257,7 @@ def test_talenti_filters_are_wired_through_the_router(
         )
         assert response.status_code == 201, response.text
 
-    only_remote = client.get("/api/hub/talenti", params={"remoto": "remoto"}).json()
+    only_remote = client.get("/api/hub/talent", params={"remoto": "remoto"}).json()
     assert [item["email"] for item in only_remote["items"]] == ["remote@studio.it"]
 
 
@@ -288,7 +288,7 @@ def test_a_malformed_cursor_is_a_422_on_both_lists(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     _login(client, sender)
-    for path in ("/api/hub/talenti", "/api/hub/companies"):
+    for path in ("/api/hub/talent", "/api/hub/companies"):
         response = client.get(path, params={"cursor": "not-a-valid-cursor"})
         assert response.status_code == 422, (path, response.text)
 
@@ -300,7 +300,7 @@ def test_admindep_is_enforced_before_the_new_search_params_are_even_read(
     cursor that would otherwise be refused as malformed, still answers 401: `AdminDep`
     runs before the query is ever built."""
     params = {"q": "ada", "cursor": "not-a-valid-cursor", "tariffa_min": "100"}
-    assert client.get("/api/hub/talenti", params=params).status_code == 401
+    assert client.get("/api/hub/talent", params=params).status_code == 401
     assert client.get("/api/hub/companies", params=params).status_code == 401
 
 
@@ -534,7 +534,7 @@ def test_without_a_pigro_token_the_spaces_are_a_503_sentence(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     _login(client, sender)
-    response = client.get("/api/hub/pigro/istanze")
+    response = client.get("/api/hub/pigro/instances")
     assert response.status_code == 503, response.text
     assert response.json()["detail"] == (
         "Il registro di Pigro non è configurato: manca REBASE_PIGRO_REGISTRY_TOKEN."
@@ -546,7 +546,7 @@ def test_the_spaces_come_from_the_crm_with_the_token_and_name_the_member_who_own
 ) -> None:
     _login(client, sender)
     _apply(client, email="ada@studio.it")
-    response = client.get("/api/hub/pigro/istanze")
+    response = client.get("/api/hub/pigro/instances")
     assert response.status_code == 200, response.text
 
     # One GET to the CRM, the token as a bearer, and nothing else in the request.
@@ -577,7 +577,7 @@ def test_a_member_is_matched_whatever_the_case_of_the_address(
 ) -> None:
     _login(client, sender)
     _apply(client, email="bob@example.org")
-    items = client.get("/api/hub/pigro/istanze").json()["items"]
+    items = client.get("/api/hub/pigro/instances").json()["items"]
     assert items[1]["owner_email"] == "Bob@Example.org"
     assert items[1]["membro"]["nome"] == "Ada"
 
@@ -586,11 +586,11 @@ def test_q_searches_the_slug_and_the_owner_address(
     client: TestClient, admin: None, pigro: FakePigro, sender: RecordingSender
 ) -> None:
     _login(client, sender)
-    by_slug = client.get("/api/hub/pigro/istanze", params={"q": "studio"}).json()
+    by_slug = client.get("/api/hub/pigro/instances", params={"q": "studio"}).json()
     assert [item["slug"] for item in by_slug["items"]] == ["studio-ada"]
-    by_email = client.get("/api/hub/pigro/istanze", params={"q": "bob@"}).json()
+    by_email = client.get("/api/hub/pigro/instances", params={"q": "bob@"}).json()
     assert [item["slug"] for item in by_email["items"]] == ["bob-dev"]
-    no_match = client.get("/api/hub/pigro/istanze", params={"q": "nessuno"}).json()
+    no_match = client.get("/api/hub/pigro/instances", params={"q": "nessuno"}).json()
     assert no_match["items"] == [] and no_match["totale"] == 0
 
 
@@ -613,7 +613,7 @@ def test_the_cursor_walks_every_space_once_with_no_gap_or_repeat(
     cursor: str | None = None
     for _ in range(10):
         params = {"limit": 2} | ({"cursor": cursor} if cursor else {})
-        page = client.get("/api/hub/pigro/istanze", params=params).json()
+        page = client.get("/api/hub/pigro/instances", params=params).json()
         seen.extend(item["slug"] for item in page["items"])
         cursor = page["next_cursor"]
         if cursor is None:
@@ -625,7 +625,7 @@ def test_a_malformed_cursor_is_a_422(
     client: TestClient, admin: None, pigro: FakePigro, sender: RecordingSender
 ) -> None:
     _login(client, sender)
-    response = client.get("/api/hub/pigro/istanze", params={"cursor": "non-un-cursore"})
+    response = client.get("/api/hub/pigro/instances", params={"cursor": "non-un-cursore"})
     assert response.status_code == 422, response.text
 
 
@@ -635,22 +635,22 @@ def test_when_the_crm_refuses_or_falls_over_the_answer_is_a_502_sentence(
     _login(client, sender)
     pigro.status = 401
     pigro.body = b'{"detail":"token non valido"}'
-    refused = client.get("/api/hub/pigro/istanze")
+    refused = client.get("/api/hub/pigro/instances")
     assert refused.status_code == 502, refused.text
     assert refused.json()["detail"] == "Pigro non ha risposto (401)."
     pigro.status = 200
     pigro.body = b"<html>not json</html>"
-    garbled = client.get("/api/hub/pigro/istanze")
+    garbled = client.get("/api/hub/pigro/instances")
     assert garbled.status_code == 502, garbled.text
     assert garbled.json()["detail"] == "Pigro ha risposto qualcosa che non è un elenco."
     pigro.body = b"[" + b"x" * MAX_BODY_BYTES  # what the seam's own cap would truncate to
-    too_long = client.get("/api/hub/pigro/istanze")
+    too_long = client.get("/api/hub/pigro/instances")
     assert too_long.status_code == 502, too_long.text
     assert too_long.json()["detail"] == "Pigro ha risposto qualcosa di troppo lungo."
     # A refused connection, a DNS miss or a timeout: the seam raises, and that is the most
     # likely failure of all, so it too is a 502 sentence rather than a traceback.
     pigro.raises = OSError("connection refused")
-    down = client.get("/api/hub/pigro/istanze")
+    down = client.get("/api/hub/pigro/instances")
     assert down.status_code == 502, down.text
     assert down.json()["detail"] == "Pigro non risponde."
 
@@ -766,7 +766,7 @@ DRAFT = {
 def test_without_the_cookie_the_card_from_a_signup_is_a_401(
     client: TestClient, admin: None
 ) -> None:
-    response = client.post(f"/api/hub/signups/{MISSING}/scheda", json=DRAFT)
+    response = client.post(f"/api/hub/signups/{MISSING}/card", json=DRAFT)
     assert response.status_code == 401
 
 
@@ -774,7 +774,7 @@ def test_an_admin_writes_an_incomplete_card_from_a_signup_and_the_list_points_at
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:
     signup_id = _signup(client, sender)
-    created = client.post(f"/api/hub/signups/{signup_id}/scheda", json=DRAFT)
+    created = client.post(f"/api/hub/signups/{signup_id}/card", json=DRAFT)
     assert created.status_code == 201, created.text
     card = created.json()
     assert card["email"] == "ada@studio.it"
@@ -797,8 +797,8 @@ def test_an_admin_writes_an_incomplete_card_from_a_signup_and_the_list_points_at
     assert client.get(f"/api/hub/freelancers/{card['id']}").json()["provenienza"] == "form"
 
     # A wrong id is a 404, a bad body a 422 naming the field, as everywhere else.
-    assert client.post(f"/api/hub/signups/{MISSING}/scheda", json=DRAFT).status_code == 404
-    bad = client.post(f"/api/hub/signups/{signup_id}/scheda", json={**DRAFT, "fonti": []})
+    assert client.post(f"/api/hub/signups/{MISSING}/card", json=DRAFT).status_code == 404
+    bad = client.post(f"/api/hub/signups/{signup_id}/card", json={**DRAFT, "fonti": []})
     assert bad.status_code == 422
     assert bad.json()["detail"][0]["loc"][-1] == "fonti"
 
@@ -821,7 +821,7 @@ def test_research_is_refused_on_a_card_the_person_filled(
     _apply(client)
     signup_id = _signup(client, sender)
     body = {**DRAFT, "posizione": "CTO"}
-    refused = client.post(f"/api/hub/signups/{signup_id}/scheda", json=body)
+    refused = client.post(f"/api/hub/signups/{signup_id}/card", json=body)
     assert refused.status_code == 422, refused.text
     assert refused.json()["detail"][0]["loc"][-1] == "email"
     assert client.get("/api/hub/freelancers").json()["items"][0]["posizione"] == "Backend developer"

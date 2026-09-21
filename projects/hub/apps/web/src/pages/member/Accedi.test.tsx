@@ -21,11 +21,11 @@ function answer(status: number, body: unknown) {
 
 function mount() {
   const root = createRootRoute({ component: () => <Outlet /> })
-  const accedi = createRoute({ getParentRoute: () => root, path: '/accedi', component: Accedi })
+  const login = createRoute({ getParentRoute: () => root, path: '/login', component: Accedi })
   const freelance = createRoute({ getParentRoute: () => root, path: '/freelance', component: () => <h1>Wizard</h1> })
   const router = createRouter({
-    routeTree: root.addChildren([accedi, freelance]),
-    history: createMemoryHistory({ initialEntries: ['/accedi'] }),
+    routeTree: root.addChildren([login, freelance]),
+    history: createMemoryHistory({ initialEntries: ['/login'] }),
   })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -36,7 +36,7 @@ function mount() {
 
 afterEach(() => vi.restoreAllMocks())
 
-describe('/accedi', () => {
+describe('/login', () => {
   it('says the same thing for any address', async () => {
     // A fresh Response per call: this test drives two real submissions, and a `Response`
     // body can only be read once (`mockResolvedValue` would hand out the same instance

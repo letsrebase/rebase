@@ -6,7 +6,7 @@ provider failure says whether an address is known. `POST /auth/enter` spends the
 and sets `orbiters_user`, for anyone with a `users` row, member or admin alike
 (REB-278): the identity resolution behind both lives in `rebase_core.users`, not here.
 Everything under `/me` reads the row from the session and never from the URL: there is
-no `/me/{id}`. `PATCH /me/azienda` (REB-314) is the same discipline for the referente's
+no `/me/{id}`. `PATCH /me/company` (REB-314) is the same discipline for the referente's
 company side: it reaches only their most recent `Company` request, never `stato`,
 `note` or the company's own identity.
 
@@ -129,7 +129,7 @@ def update_me(me: MeDep, session: SessionDep, payload: MemberUpdate) -> MeRead:
     return service.me_read(me.id)
 
 
-@router.patch("/me/azienda", response_model=MeRead)
+@router.patch("/me/company", response_model=MeRead)
 def update_my_company(me: MeDep, session: SessionDep, payload: CompanyUpdate) -> MeRead:
     return MemberService(session).update_company(me.id, payload)
 
@@ -161,7 +161,7 @@ def my_cv(me: MeDep, session: SessionDep) -> Response:
     return cv_response(cv)
 
 
-@router.get("/me/guida")
+@router.get("/me/guide")
 def my_guide(me: MeDep, session: SessionDep) -> Response:
     """The guide, to anyone signed in and to nobody else.
 

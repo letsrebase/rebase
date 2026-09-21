@@ -50,7 +50,7 @@ export function ModificaAzienda() {
     if (Object.keys(problems).length) return
     try {
       await update.mutateAsync(toCompanyUpdate(value))
-      void navigate({ to: '/io' })
+      void navigate({ to: '/me' })
     } catch (error) {
       const refusal = error instanceof ApiError ? error : null
       // `durata` shares a field with `periodo_da` (CompanyWizard.tsx's own comment):
@@ -113,7 +113,7 @@ export function ModificaAzienda() {
       )}
       <div className="flex items-center justify-between">
         <Button asChild variant="ghost">
-          <Link to="/io">Annulla</Link>
+          <Link to="/me">Annulla</Link>
         </Button>
         <Button type="button" onClick={() => void save()} disabled={saving}>
           {saving ? 'Salvo…' : 'Salva'}

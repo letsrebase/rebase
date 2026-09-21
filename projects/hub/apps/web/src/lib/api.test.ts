@@ -43,9 +43,9 @@ describe('the api client', () => {
   it('has a sentence for a 429 and for an unexplained failure', async () => {
     const spy = vi.spyOn(globalThis, 'fetch')
     spy.mockResolvedValueOnce(new Response('', { status: 429 }))
-    await expect(admin.talenti()).rejects.toMatchObject({ status: 429, message: /Riprova/ })
+    await expect(admin.talent()).rejects.toMatchObject({ status: 429, message: /Riprova/ })
     spy.mockResolvedValueOnce(new Response('boom', { status: 500 }))
-    await expect(admin.talenti()).rejects.toMatchObject({ status: 500, message: /500/ })
+    await expect(admin.talent()).rejects.toMatchObject({ status: 500, message: /500/ })
   })
 
   it('sends the freelancer as multipart with the UTM and without empty optionals', async () => {
@@ -119,7 +119,7 @@ describe('the api client', () => {
     const spy = vi.spyOn(globalThis, 'fetch')
     spy.mockResolvedValueOnce(answer(200, { totale: 1, items: [{ slug: 'studio-ada', owner_email: 'ada@studio.it', created_at: '2026-09-10T09:00:00Z', url: 'https://pigro.letsrebase.com/studio-ada/app/', membro: null }] }))
     const spaces = await admin.pigroSpaces()
-    expect(spy.mock.calls[0]![0]).toBe('/api/hub/pigro/istanze')
+    expect(spy.mock.calls[0]![0]).toBe('/api/hub/pigro/instances')
     expect(spaces.items[0]!.slug).toBe('studio-ada')
   })
 

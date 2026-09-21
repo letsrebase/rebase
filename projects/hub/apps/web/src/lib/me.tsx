@@ -82,7 +82,7 @@ export function useLogout() {
     onSettled: () => {
       resetUser()
       client.clear()
-      window.location.assign('/hub/accedi')
+      window.location.assign('/hub/login')
     },
   })
 }
@@ -138,7 +138,7 @@ export function toCompanyApplication(me: Me): CompanyRequest {
   }
 }
 
-/** What `PATCH /me/azienda` takes: the four project answers, trimmed the way the
+/** What `PATCH /me/company` takes: the four project answers, trimmed the way the
  *  wizard trims before posting. */
 export function toCompanyUpdate(value: CompanyRequest): CompanyUpdate {
   return {

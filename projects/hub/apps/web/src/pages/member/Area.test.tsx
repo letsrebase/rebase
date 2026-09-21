@@ -116,25 +116,25 @@ const BOTH = {
   budget_giornaliero: COMPANY_ONLY.budget_giornaliero,
 }
 
-function mount(path = '/io') {
+function mount(path = '/me') {
   const root = createRootRoute({ component: () => <Outlet /> })
-  const io = createRoute({ getParentRoute: () => root, path: '/io', component: () => <Outlet /> })
+  const me = createRoute({ getParentRoute: () => root, path: '/me', component: () => <Outlet /> })
   const index = createRoute({
-    getParentRoute: () => io,
+    getParentRoute: () => me,
     path: '/',
     component: Area,
     validateSearch: (search: Record<string, unknown>): { negato?: true } => ({
       negato: search.negato === true || search.negato === 'true' ? true : undefined,
     }),
   })
-  const modifica = createRoute({ getParentRoute: () => io, path: '/modifica', component: () => <h1>Modifica</h1> })
+  const edit = createRoute({ getParentRoute: () => me, path: '/edit', component: () => <h1>Modifica</h1> })
   const modificaAzienda = createRoute({
-    getParentRoute: () => io,
-    path: '/modifica-azienda',
+    getParentRoute: () => me,
+    path: '/edit-company',
     component: () => <h1>Modifica azienda</h1>,
   })
   const router = createRouter({
-    routeTree: root.addChildren([io.addChildren([index, modifica, modificaAzienda])]),
+    routeTree: root.addChildren([me.addChildren([index, edit, modificaAzienda])]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -151,7 +151,7 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-describe('/io, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)', () => {
+describe('/me, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)', () => {
   it('shows the answers under the wizard’s questions, the CV and the two perks', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
     mount()
@@ -168,10 +168,10 @@ describe('/io, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)'
     )
     expect(screen.getByRole('link', { name: /Scarica la guida/ })).toHaveAttribute(
       'href',
-      '/api/hub/me/guida',
+      '/api/hub/me/guide',
     )
     expect(screen.getByText('PDF, 6 pagine, 48 KB.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Modifica' })).toHaveAttribute('href', '/io/modifica')
+    expect(screen.getByRole('link', { name: 'Modifica' })).toHaveAttribute('href', '/me/edit')
     // A complete card gets no reminder, and no access-rule banner either.
     expect(screen.queryByRole('status')).toBeNull()
     expect(screen.queryByText('Nessun CV')).toBeNull()
@@ -208,7 +208,7 @@ describe('/io, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)'
     mount()
     const notice = await screen.findByRole('status')
     expect(notice).toHaveTextContent('La tua scheda è incompleta.')
-    expect(within(notice).getByRole('link', { name: 'Completa la scheda' })).toHaveAttribute('href', '/io/modifica')
+    expect(within(notice).getByRole('link', { name: 'Completa la scheda' })).toHaveAttribute('href', '/me/edit')
     expect(screen.getByText('Nessun CV')).toBeInTheDocument()
     expect(screen.getAllByRole('link').some((link) => link.getAttribute('href') === '/api/hub/me/cv')).toBe(false)
     // The unanswered questions read as dashes, not as a crash.
@@ -223,11 +223,11 @@ describe('/io, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)'
     link.addEventListener('click', (event) => event.preventDefault())
     await userEvent.setup().click(link)
     expect(capture).toHaveBeenCalledWith('guida_scaricata')
-    expect(link).toHaveAttribute('href', '/api/hub/me/guida')
+    expect(link).toHaveAttribute('href', '/api/hub/me/guide')
   })
 })
 
-describe('/io, no card (REB-279: a card-less admin reads name, email and role, not null fields)', () => {
+describe('/me, no card (REB-279: a card-less admin reads name, email and role, not null fields)', () => {
   it('shows no wizard-shaped section, no Modifica link, and the role instead', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, CARDLESS_ADMIN))
     mount()
@@ -246,7 +246,7 @@ describe('/io, no card (REB-279: a card-less admin reads name, email and role, n
   })
 })
 
-describe('/io, a company request (REB-314: reads `ha_azienda` independently of `ha_scheda`)', () => {
+describe('/me, a company request (REB-314: reads `ha_azienda` independently of `ha_scheda`)', () => {
   it('shows the project under the wizard’s own questions, with its own edit link', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, COMPANY_ONLY))
     mount()
@@ -258,7 +258,7 @@ describe('/io, a company request (REB-314: reads `ha_azienda` independently of `
     expect(screen.getByText('500.00 € / giorno')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Modifica richiesta/ })).toHaveAttribute(
       'href',
-      '/io/modifica-azienda',
+      '/me/edit-company',
     )
     // No freelancer card: no wizard-shaped card section, and the "Chi sei" fallback
     // does not show either, since the company section already says who this is.
@@ -272,25 +272,25 @@ describe('/io, a company request (REB-314: reads `ha_azienda` independently of `
     mount()
     expect(await screen.findByText('Come ti chiami?')).toBeInTheDocument()
     expect(screen.getByText('La tua richiesta più recente')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Modifica' })).toHaveAttribute('href', '/io/modifica')
+    expect(screen.getByRole('link', { name: 'Modifica' })).toHaveAttribute('href', '/me/edit')
     expect(screen.getByRole('link', { name: /Modifica richiesta/ })).toHaveAttribute(
       'href',
-      '/io/modifica-azienda',
+      '/me/edit-company',
     )
   })
 })
 
-describe('/io?negato=true (REB-279: AdminGuard bounces a signed-in non-admin here)', () => {
+describe('/me?negato=true (REB-279: AdminGuard bounces a signed-in non-admin here)', () => {
   it('shows a sentence instead of a blank screen or a raw refusal', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
-    mount('/io?negato=true')
+    mount('/me?negato=true')
     const notice = await screen.findByRole('status')
     expect(notice).toHaveTextContent('riservata a chi amministra')
   })
 
   it('says nothing extra without the flag', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
-    mount('/io')
+    mount('/me')
     await screen.findAllByText('Ada Lovelace')
     expect(screen.queryByRole('status')).toBeNull()
   })

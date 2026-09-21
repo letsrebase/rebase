@@ -12,7 +12,7 @@ from rebase_core.pigro import PigroRegistry, PigroSpaceList, PigroUnavailable
 router = APIRouter(prefix="/api/hub/pigro", tags=["hub-admin"])
 
 
-@router.get("/istanze", response_model=PigroSpaceList)
+@router.get("/instances", response_model=PigroSpaceList)
 def list_spaces(
     _: AdminDep,
     session: SessionDep,

@@ -67,7 +67,7 @@ def _send(sender: EmailSender, mail: Mail) -> None:
 
 
 Limit = Annotated[int, Query(ge=1, le=500)]
-# REB-285: shared by every list a cursor and a search box were added to (`/talenti`,
+# REB-285: shared by every list a cursor and a search box were added to (`/talent`,
 # `/companies`, and since REB-313 `/admins` and `/logins`). `SearchQ`'s bound is
 # `search.SEARCH_MAX_LENGTH`, `Cursor`'s is `pagination.CURSOR_MAX_LENGTH` -- both
 # bounded for the reason every free-text query parameter in this codebase is: an
@@ -231,11 +231,11 @@ def login_stats(
     return LoginService(session).stats(limit=limit, q=q, cursor=cursor)
 
 
-@router.get("/perks/guida", response_model=GuideStats)
+@router.get("/perks/guide", response_model=GuideStats)
 def guide_stats(_: AdminDep, session: SessionDep) -> GuideStats:
     """How the guide is doing (ORB-156): every download, the distinct members behind
     them, the last week, and the latest ones by name. Read-only; the rows are written by
-    `GET /me/guida` and by nothing else."""
+    `GET /me/guide` and by nothing else."""
     return PerkService(session).guide_stats()
 
 
@@ -244,7 +244,7 @@ def list_signups(_: AdminDep, session: SessionDep, limit: Limit = 100) -> Signup
     return SignupService(session).list_recent(limit=limit)
 
 
-@router.get("/talenti", response_model=TalentoList)
+@router.get("/talent", response_model=TalentoList)
 def list_talenti(
     _: AdminDep,
     session: SessionDep,
@@ -287,7 +287,7 @@ def list_talenti(
 
 
 @router.post(
-    "/signups/{signup_id}/scheda",
+    "/signups/{signup_id}/card",
     response_model=FreelancerRead,
     status_code=status.HTTP_201_CREATED,
 )
