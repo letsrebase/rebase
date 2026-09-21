@@ -9,7 +9,7 @@ import { GUIDE } from '@/lib/perks'
 import { COMPANY_FIELDS } from '@/pages/CompanyWizard'
 import { FREELANCER_FIELDS } from '@/pages/FreelancerWizard'
 
-const PIGROCRM_URL = 'https://pigro.letsrebase.com/app/registrati'
+const PIGROCRM_URL = 'https://pigro.letsrebase.com/app/register'
 const ROLE_LABELS: Record<string, string> = { admin: 'Amministratore', member: 'Membro' }
 
 /** What the person sent, under the wizard's own questions, and the perks. The email is
