@@ -94,9 +94,12 @@ describe.each(PAGES)('%s', (name) => {
   })
 
   it('offers a way into an existing installation', () => {
-    // Spec 9.1 purpose 4: whoever opens the root of their own instance must not
-    // be stranded on advertising copy.
-    expect(page).toMatch(/href="\/app\/"/)
+    // REB-317: whoever opens the root of their own instance must not be stranded
+    // on advertising copy. Until 2026-09-21 this sent everyone to PigroCRM's own
+    // login (`/app/`), a leftover from before the hub had one of its own; the hub
+    // is the front door now, and a member reaches PigroCRM from inside it
+    // (`Area.tsx`'s "Apri PigroCRM") or with its own URL directly.
+    expect(page).toMatch(/href="\/hub\/accedi"/)
     expect(page).toContain('Accedi')
   })
 
