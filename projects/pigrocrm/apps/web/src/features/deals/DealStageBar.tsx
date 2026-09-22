@@ -44,6 +44,19 @@ export function DealStageBar({
           const isCurrent = stage.id === deal.pipeline_stage_id
           // Everything up to the current stage is done; on a closed deal all of it is.
           const reached = outcome !== null || (currentIndex >= 0 && index <= currentIndex)
+          // The hover steps the chip without touching its text, and how it can step
+          // depends on the fill (REB-324): a solid ink ground takes the same /80 the
+          // primary button's hover takes, but a quiet chip cannot deepen its own
+          // ground without pulling its text below AA, so it raises a border instead,
+          // the destructive button's idiom from #232. The old whole-element
+          // `hover:opacity-80` composited text and fill together and dropped the
+          // lost chip to 3.73:1 and the unreached one to 4.32:1 while hovered.
+          const hover =
+            outcome === 'lost'
+              ? 'hover:border-destructive'
+              : reached
+                ? 'hover:bg-foreground/80'
+                : 'hover:border-muted-foreground'
           return (
             <li key={stage.id} className="min-w-0 flex-1">
               <button
@@ -66,14 +79,14 @@ export function DealStageBar({
                     : reached
                       ? 'bg-foreground text-background'
                       : 'bg-muted text-muted-foreground',
-                  canMove && !isCurrent && !busy && 'hover:opacity-80',
+                  canMove && !isCurrent && !busy && hover,
                   isCurrent && 'ring-2 ring-foreground/30 ring-offset-1 ring-offset-card',
                 )}
               >
                 <span className="truncate">{stage.nome}</span>
               </button>
             </li>
-          )
+          );
         })}
       </ol>
       <p className="text-xs text-muted-foreground">
