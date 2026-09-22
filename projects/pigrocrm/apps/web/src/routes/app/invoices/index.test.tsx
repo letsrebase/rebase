@@ -131,13 +131,16 @@ describe('the invoice list', () => {
 
   it('shows one state chip per invoice state, «Tutte» pressed to begin with', async () => {
     renderList()
-    const filters = await screen.findByRole('search')
-    expect(within(filters).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
+    // Scoped to the state row: the payment row (REB-325) has a «Tutte» of its own.
+    const stato = within(await screen.findByRole('search')).getByRole('group', {
+      name: 'Filtra per stato',
+    })
+    expect(within(stato).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
     for (const label of ['Bozza', 'Emessa', 'Annullata', 'Confermata', 'Consumata']) {
-      expect(within(filters).getByRole('button', { name: label })).toHaveAttribute(
+      expect(within(stato).getByRole('button', { name: label })).toHaveAttribute(
         'aria-pressed',
         'false',
       )
@@ -159,12 +162,14 @@ describe('the invoice list', () => {
 
   it('clears the state filter when the pressed chip is pressed again', async () => {
     renderList()
-    const filters = await screen.findByRole('search')
-    await userEvent.click(within(filters).getByRole('button', { name: 'Emessa' }))
-    await userEvent.click(within(filters).getByRole('button', { name: 'Emessa' }))
+    const stato = within(await screen.findByRole('search')).getByRole('group', {
+      name: 'Filtra per stato',
+    })
+    await userEvent.click(within(stato).getByRole('button', { name: 'Emessa' }))
+    await userEvent.click(within(stato).getByRole('button', { name: 'Emessa' }))
 
     expect(lastRequestedStato()).toBeUndefined()
-    expect(within(filters).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
+    expect(within(stato).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
@@ -191,6 +196,59 @@ describe('the invoice list', () => {
 
     await userEvent.click(within(filters).getByRole('button', { name: 'Emessa' }))
     expect(lastRequestedQuery()).toMatchObject({ escludi_consumate: true })
+  })
+
+  /**
+   * REB-325: «aggiungi un filtro per le fatture da incassare». The API has taken
+   * `stato_pagamento` since slice 3 and nothing on the page ever sent it. A second chip
+   * row, «Incasso», does now, server-side like the state chips, so it holds across
+   * loaded pages. What «da incassare» selects (an issued fattura nobody has paid, never
+   * a draft) is the server's call, in `InvoiceRepository`, not this page's.
+   */
+  it('offers a payment chip row, «Tutte» pressed to begin with', async () => {
+    renderList()
+    const filters = await screen.findByRole('search')
+    const incasso = within(filters).getByRole('group', { name: 'Filtra per incasso' })
+    expect(within(incasso).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    for (const label of ['Da incassare', 'Incassato']) {
+      expect(within(incasso).getByRole('button', { name: label })).toHaveAttribute(
+        'aria-pressed',
+        'false',
+      )
+    }
+    expect(lastRequestedQuery().stato_pagamento).toBeUndefined()
+  })
+
+  it('asks the API for the payment state whose chip is pressed, and clears it on a second press', async () => {
+    renderList()
+    const filters = await screen.findByRole('search')
+    const incasso = within(filters).getByRole('group', { name: 'Filtra per incasso' })
+
+    await userEvent.click(within(incasso).getByRole('button', { name: 'Da incassare' }))
+    expect(lastRequestedQuery().stato_pagamento).toBe('da_incassare')
+    // The state row is its own filter: pressing a payment chip leaves it at «Tutte».
+    expect(lastRequestedStato()).toBeUndefined()
+
+    await userEvent.click(within(incasso).getByRole('button', { name: 'Da incassare' }))
+    expect(lastRequestedQuery().stato_pagamento).toBeUndefined()
+    expect(within(incasso).getByRole('button', { name: 'Tutte' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+
+  it('combines the payment chip with the state chip instead of replacing it', async () => {
+    renderList()
+    const filters = await screen.findByRole('search')
+    const stato = within(filters).getByRole('group', { name: 'Filtra per stato' })
+    const incasso = within(filters).getByRole('group', { name: 'Filtra per incasso' })
+
+    await userEvent.click(within(stato).getByRole('button', { name: 'Emessa' }))
+    await userEvent.click(within(incasso).getByRole('button', { name: 'Incassato' }))
+    expect(lastRequestedQuery()).toMatchObject({ stato: 'emessa', stato_pagamento: 'incassato' })
   })
 
   it('keeps the type filter as a select in the same row', async () => {

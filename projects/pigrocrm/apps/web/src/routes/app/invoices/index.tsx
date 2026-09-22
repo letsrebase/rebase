@@ -18,9 +18,11 @@ import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
 import { booleanSearchParam } from '@/lib/searchParams'
 import {
   INVOICE_STATE_LABELS,
+  PAYMENT_STATE_LABELS,
   useInvoicesList,
   type InvoiceStato,
   type InvoiceTipo,
+  type StatoPagamento,
 } from '@/features/invoices/queries'
 
 /** `tutti` is a UI-only value: the API filter is simply absent when nothing is
@@ -43,6 +45,14 @@ const STATI = Object.entries(INVOICE_STATE_LABELS).map(([value, label]) => ({
   label,
 }))
 
+/** The two payment states, as a second chip row (REB-325: «aggiungi un filtro per le
+ *  fatture da incassare»). Built from the same map the `Pagamento` column's pill reads,
+ *  so the chip and the pill can never spell a state two ways. */
+const INCASSI = Object.entries(PAYMENT_STATE_LABELS).map(([value, label]) => ({
+  value: value as StatoPagamento,
+  label,
+}))
+
 /**
  * Exported so `index.test.tsx` can render the list without a router: the route
  * component below is what reads `scadute` out of the URL, and this is what draws the
@@ -53,6 +63,7 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
   const navigate = useNavigate()
   const [tipo, setTipo] = useState(ANY)
   const [stato, setStato] = useState<InvoiceStato | null>(null)
+  const [incasso, setIncasso] = useState<StatoPagamento | null>(null)
 
   // Cast at the boundary, not in the state: `Select` deals in strings, and the type
   // option list is built from the same constants the API's literals come from, so a
@@ -70,9 +81,17 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
   // number lives on the fattura it became, and listing both doubled every issued proforma
   // (ORB-169). So with no state chosen the server leaves them out; the «Consumata» chip
   // asks for exactly them and gets them.
+  //
+  // `incasso` is the payment row, orthogonal to the state row: «Emessa» + «Incassato»
+  // is a legal pair and sends both. What «Da incassare» selects is decided on the server
+  // (`InvoiceRepository.list`, REB-325): an issued fattura nobody has paid, the rows the
+  // dashboard's «Da incassare» card counts, and never a draft or a proforma although
+  // every row carries `da_incassare` from birth. Deciding that here would be the second
+  // definition of a receivable this product has, and the two would drift.
   const invoices = useInvoicesList({
     tipo: tipo === ANY ? undefined : (tipo as InvoiceTipo),
     stato: stato ?? undefined,
+    stato_pagamento: incasso ?? undefined,
     escludi_consumate: stato === null ? true : undefined,
     scadute,
   })
@@ -97,6 +116,14 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
             options={STATI}
             value={stato}
             onChange={setStato}
+          />
+
+          <FilterChips
+            label="Filtra per incasso"
+            allLabel="Tutte"
+            options={INCASSI}
+            value={incasso}
+            onChange={setIncasso}
           />
 
           <Select value={tipo} onValueChange={setTipo}>

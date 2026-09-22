@@ -671,6 +671,35 @@ def test_the_list_filters_by_tipo_stato_year_and_payment(
     } == set()
 
 
+def test_the_list_under_da_incassare_answers_only_the_receivables(
+    service: InvoiceService, db_session: Session, customer_id: UUID
+) -> None:
+    """REB-325: every row is born `da_incassare`, so an equality on the column listed
+    drafts and proformas as unpaid. The filter now means what the dashboard's «Da
+    incassare» card means (`_receivable_filter`): an issued fattura nobody has paid."""
+    service.create(InvoiceCreate(customer_id=customer_id), ADMIN)
+    service.create(InvoiceCreate(customer_id=customer_id, tipo="proforma"), ADMIN)
+    owed = _issued_row(db_session, customer_id)
+    _issued_row(
+        db_session,
+        customer_id,
+        numero=2,
+        stato_pagamento="incassato",
+        data_incasso=date(2026, 8, 25),
+    )
+    _issued_row(
+        db_session,
+        customer_id,
+        numero=3,
+        stato="annullata",
+        annullata_il=date(2026, 8, 21),
+        motivo_annullamento="storno",
+    )
+
+    receivable = service.list(InvoiceListQuery(stato_pagamento="da_incassare"), ADMIN).items
+    assert [i.id for i in receivable] == [owed.id]
+
+
 def test_the_list_paginates_on_the_uuid_v7_cursor(
     service: InvoiceService, customer_id: UUID
 ) -> None:

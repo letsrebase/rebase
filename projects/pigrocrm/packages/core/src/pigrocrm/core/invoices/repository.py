@@ -535,7 +535,15 @@ class InvoiceRepository:
             stmt = stmt.where(Invoice.stato == query.stato)
         if query.anno:
             stmt = stmt.where(Invoice.anno == query.anno)
-        if query.stato_pagamento:
+        if query.stato_pagamento == "da_incassare":
+            # «Da incassare» is the dashboard's word, so it is the dashboard's predicate
+            # (`_receivable_filter`, §5.2): an issued fattura nobody has paid. A plain
+            # equality on the column listed every draft and every proforma as unpaid,
+            # since a row is born `da_incassare` (REB-325). `incassato` below stays an
+            # equality: `set_payment_state` refuses any row that is not an issued fattura
+            # and the table's check constraint agrees, so the two spellings coincide.
+            stmt = stmt.where(*_receivable_filter())
+        elif query.stato_pagamento:
             stmt = stmt.where(Invoice.stato_pagamento == query.stato_pagamento)
         if query.origine_proforma_id:
             stmt = stmt.where(Invoice.origine_proforma_id == query.origine_proforma_id)
