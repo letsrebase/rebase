@@ -45,18 +45,29 @@ it and a document disagree, the document is right and the skill has a bug.
 
    ```bash
    git fetch origin
-   git worktree add -b <branch> ../<repo>-<name> origin/main   # new branch
-   git worktree add ../<repo>-<name> <branch>                  # milestone branch, already on origin
+   git worktree add -b <branch> ../<repo>-<name> origin/main   # the issue's own branch
    cd ../<repo>-<name>
    uv sync --frozen && pnpm install --frozen-lockfile --prefer-offline
    ```
 
    Other sessions write to the same index; a worktree is what keeps your commit yours.
-   A milestone branch is shared: pull before you start, and a rejected push means
-   `git pull --rebase` and again, never a force-push. When the milestone's draft PR
-   does not exist yet, the first card of the milestone opens it: branch
-   `<owner>/milestone-<slug>` (no issue id in it), `gh pr create --draft`, body with
-   the milestone name and a checklist of the cards it will land.
+   A milestone branch is shared, and git refuses the same branch checked out in two
+   worktrees (measured: `fatal: '<branch>' is already used by worktree at ...`, which
+   is what a second concurrent card hits). So detach from the remote tip and push with
+   an explicit refspec:
+
+   ```bash
+   git fetch origin
+   git worktree add --detach ../<repo>-<name> origin/<milestone-branch>
+   cd ../<repo>-<name>
+   git push origin HEAD:<milestone-branch>   # a rejection means: git fetch, rebase onto
+                                            # origin/<milestone-branch>, push again
+   ```
+
+   Never a force-push on the shared branch: it drops another card's commit. When the
+   milestone's draft PR does not exist yet, the first card of the milestone opens it:
+   branch `<owner>/milestone-<slug>` (no issue id in it), `gh pr create --draft`, body
+   with the milestone name and a checklist of the cards it will land.
 4. **Read the project's `AGENTS.md`** (`projects/<name>/AGENTS.md`) before its source.
 
 ## While the work happens

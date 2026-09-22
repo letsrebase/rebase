@@ -220,11 +220,13 @@ whose staging pipeline reads one Jira key per commit.
 card within seconds, and since 2026-09-16 the team's automation moves the state too
 (§ Commits and issues): the PR opening puts the card in `In Progress` (an `In Review`
 set before that fires is overwritten, REB-247), and the merge sets `Done` the moment it
-lands. So the evidence that would have closed the card goes in a comment before or right
-after the merge, not in a state change you make. From here to the merge the card keeps
+lands. On a milestone's draft PR none of that fires (§ Which PR): the URL goes on every
+card the PR lists, and each card moves by hand at its run's start and at the merge. So
+the evidence that would have closed the card goes in a comment before or right after
+the merge, not in a state change you make. From here to the merge the card keeps
 following the PR: the review's findings and what you did with them, a CI run that went
-red and why, a push that changed what the PR is. One line each is enough, and silence is
-not.
+red and why, a push that changed what the PR is. One line each is enough, and silence
+is not.
 
 **When you finish.** `Done` means verified on the surface the issue is about, and the
 comment that closes it says how. A green CI check closes a CI issue. A deploy issue

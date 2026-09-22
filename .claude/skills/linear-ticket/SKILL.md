@@ -220,7 +220,9 @@ at it.
 
 `REB-N` in a commit body or a comment is a pointer to an issue you have read. Never
 invent one. The branch is the issue's `gitBranchName`, read from `get_issue` (or
-`list_issues` with `fields: ["gitBranchName"]`), not typed by hand.
+`list_issues` with `fields: ["gitBranchName"]`), not typed by hand, unless the issue's
+milestone has an open draft PR: then the work commits onto that shared milestone branch
+instead, which carries no issue id on purpose (`docs/tracker.md` § Which PR).
 
 That name is rendered for **whoever asked for it**, not for the assignee: the same card
 answers `fiorelorenzo/reb-41-...` to one of us and `mariorossi/reb-41-...` to the other. So
