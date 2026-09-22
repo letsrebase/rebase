@@ -374,11 +374,15 @@ describe('landing.css text pairs', () => {
 
   it('reaches the bare kicker on the light band specifically, not just a non-empty list', () => {
     // The exact element REB-276 observed: a `.deck .kicker` sitting directly
-    // on the band's veil, no `.box` under it. Its ground composites to Paper
-    // (the veil is Paper at 80% over the Paper body), so the pair is the one
-    // the card measured at 4.17:1. If the derivation ever stopped resolving
-    // `--landing-veil`, this fails on the spot rather than the loop below
-    // passing quietly on whatever else it found.
+    // on the band's veil, no `.box` under it. The veil is Paper at 80% over
+    // transparent, so over the Paper body it composites to Paper and the pair
+    // is the one the card measured at 4.17:1. Where the fixed field canvas
+    // drifts a tile under the veil the real ground is darker, for every text
+    // colour on a light band alike: the deck's design accepts that (the veil
+    // exists so the tiles show through, and `prefers-contrast: more` turns the
+    // canvas off), and this contract measures the body ground, not the canvas.
+    // If the derivation ever stopped resolving `--landing-veil`, this fails on
+    // the spot rather than the loop below passing quietly on whatever it found.
     const voci = pairs.find(([, , element]) => element.id === 'voci')
     expect(voci).toBeDefined()
     expect(voci?.[0]).toBe('#c50d33')
@@ -405,10 +409,14 @@ describe('landing.css text pairs', () => {
       'color: var(--landing-accent);',
       'color: var(--landing-cta);',
     )
+    // Both rule lists come from the substituted sheet, so the drill is
+    // hermetic even if a future regression touches a background too. `vars`
+    // and `rawVars` are the `:root` block, which the substitution above
+    // cannot reach (its pattern matches only `color:` declarations).
     const preFixAll = derivePairs(
       pigrocrmHtml,
       extractDeclarations(preFixCss, 'color'),
-      backgroundRules,
+      extractDeclarations(preFixCss, 'background'),
       vars,
       rawVars,
     )
