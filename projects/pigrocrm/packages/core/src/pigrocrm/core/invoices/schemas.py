@@ -480,6 +480,9 @@ class InvoiceListQuery(BaseModel):
     tipo: InvoiceTipo | None = None
     stato: InvoiceStato | None = None
     anno: int | None = Field(default=None, ge=ANNO_MIN, le=ANNO_MAX)
+    # `da_incassare` selects the receivables as the dashboard counts them: an issued
+    # fattura nobody has paid, never a draft or a proforma, though every row carries the
+    # value from birth (REB-325, `InvoiceRepository.list`). `incassato` is the column.
     stato_pagamento: StatoPagamento | None = None
     # The drill-through of the operational dashboard's "scaduto e non incassato" card
     # (§6.2). A boolean and not a free-text filter: it selects one fixed predicate, and the
