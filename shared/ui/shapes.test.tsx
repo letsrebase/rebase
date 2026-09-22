@@ -32,21 +32,28 @@ describe('Table', () => {
     )
   }
 
-  it('sets its headers 12px, muted and lightly tracked', () => {
+  it('closes the header on the record\'s 2px rule, 12px muted and lightly tracked', () => {
     const { container } = renderTable()
     const head = container.querySelector('[data-slot="table-head"]')!
     expect(head.className).toContain('text-xs')
     expect(head.className).toContain('text-muted-foreground')
     expect(head.className).toContain('tracking-wide')
     expect(head.className).not.toContain('text-foreground')
+    // "a 2px rule under the header" (the application-variant record of 2026-09-18).
+    const header = container.querySelector('[data-slot="table-header"]')!
+    expect(header.className).toContain('[&_tr]:border-b-2')
   })
 
-  it('gives every row 56px, a near-invisible separator and a Paper hover', () => {
+  it('gives every row 48px, the ink separator, a column rule and a Paper hover', () => {
     const { container } = renderTable()
     for (const row of container.querySelectorAll('[data-slot="table-row"]')) {
-      expect(row.className).toContain('h-14')
+      // 48px, the record's middle density; the 56px this pinned was the soft system's.
+      expect(row.className).toContain('h-12')
       expect(row.className).toContain('border-b')
       expect(row.className).toContain('border-border')
+      // Ruled: the same ink line between the cells, never on the first column's outer edge.
+      expect(row.className).toContain('[&>*+*]:border-l')
+      expect(row.className).toContain('[&>*+*]:border-border')
       // Paper at full strength, not `hover:bg-muted/40`: since `--muted` became Paper
       // itself (tokens.css, this pass) a 40% mix of it over the white panel is #f9fafa --
       // a hover a pointer cannot see. The spec's «hover Paper» is the whole tint.

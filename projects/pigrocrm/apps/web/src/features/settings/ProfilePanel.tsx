@@ -33,15 +33,18 @@ function ReportSwitch({
       disabled={disabled}
       onClick={() => onToggle(!checked)}
       className={cn(
-        'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50',
+        'relative inline-flex h-5 w-9 shrink-0 items-center border border-input transition-colors disabled:opacity-50',
         checked ? 'bg-primary' : 'bg-muted',
       )}
     >
       <span
         aria-hidden="true"
         className={cn(
-          'inline-block size-4 rounded-full bg-card transition-transform',
-          checked ? 'translate-x-4' : 'translate-x-0.5',
+          // Off, the knob is the ink square the canvas draws on the left of the
+          // bordered track; on, it is the white one over the primary fill. A white
+          // knob on the Paper track is invisible, which is what `bg-card` was.
+          'inline-block size-4 transition-transform',
+          checked ? 'translate-x-4 bg-card' : 'translate-x-0.5 bg-foreground',
         )}
       />
     </button>

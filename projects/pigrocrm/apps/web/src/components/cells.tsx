@@ -122,7 +122,7 @@ function initialsOf(name: string): string {
  * so announcing "AS ACME Srl" would read the same thing twice, once as nonsense.
  *
  * A nameless record still has to render a row, so an empty name is the same em dash
- * every other empty cell shows, with no chip: an empty circle beside a dash reads as a
+ * every other empty cell shows, with no chip: an empty square beside a dash reads as a
  * broken image rather than as absence.
  */
 export function EntityCell({ name, sub }: { name: string; sub?: string | null }) {
@@ -134,7 +134,7 @@ export function EntityCell({ name, sub }: { name: string; sub?: string | null })
       <span
         data-slot="entity-initials"
         aria-hidden="true"
-        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-paper)] text-xs font-medium text-foreground"
+        className="flex size-8 shrink-0 items-center justify-center bg-[var(--color-paper)] text-xs font-medium text-foreground"
       >
         {initialsOf(label)}
       </span>

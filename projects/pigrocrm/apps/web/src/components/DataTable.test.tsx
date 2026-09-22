@@ -54,9 +54,8 @@ describe('DataTable', () => {
   it('loads inside the same container as the table, at the height of a real row', () => {
     render(<DataTable columns={COLUMNS} data={[]} isLoading />)
     const container = screen.getByRole('status')
-    expect(container.className).toContain('rounded-xl')
     expect(container.className).toContain('border-border')
-    expect(container.querySelector('.h-14')).not.toBeNull()
+    expect(container.querySelector('.h-12')).not.toBeNull()
   })
 
   it('shows an honest empty state -- the full table chrome, one row saying so -- once loading is over', () => {
@@ -213,12 +212,14 @@ describe('DataTable column meta', () => {
 })
 
 describe('the table container', () => {
-  /** Design spec §4: the table lives in a white rounded container with a hairline
-   *  border, and nothing may bleed out of its rounded corners. */
-  it('is a rounded, hairline-bordered card that clips its own corners, at the radius the spec names', () => {
+  /** The record of 2026-09-18: the table lives in a white container closed by a 1px
+   *  ink line and no corner at all. The `rounded-xl` this used to assert named a radius
+   *  the derived scale no longer gives; what the container must not carry is any
+   *  radius class of its own. */
+  it('is a square, hairline-bordered card that clips its own corners', () => {
     render(<DataTable columns={COLUMNS} data={DATA} />)
     const container = screen.getByRole('table').closest('[data-slot="data-table"]')
-    expect(container?.className).toContain('rounded-xl')
+    expect(container?.className).not.toMatch(/rounded/)
     expect(container?.className).toContain('border-border')
     expect(container?.className).toContain('bg-card')
   })
@@ -230,8 +231,8 @@ describe('the table container', () => {
    * (screenshots `deal-lista-390.png`, `impostazioni-390.png`).
    *
    * `overflow-y-hidden` and not the old `overflow-hidden`: the vertical clip is what
-   * keeps the first row's hover tint and the header's rule inside the rounded corners,
-   * and it has to stay, but the horizontal axis is now a scroll axis.
+   * keeps the first row's hover tint and the header's rule inside the box, and it has
+   * to stay, but the horizontal axis is now a scroll axis.
    */
   it('scrolls a too-wide table inside itself rather than widening the page', () => {
     render(<DataTable columns={COLUMNS} data={DATA} />)

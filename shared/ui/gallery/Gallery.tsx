@@ -294,7 +294,7 @@ export function Gallery() {
           </Card>
         </Section>
 
-        <Section title="Table" note="56px rows, a 40px header, the ink separator and the Paper hover." className="items-stretch">
+        <Section title="Table" note="48px rows, a 40px header closed by the 2px rule, the ink separators and the Paper hover." className="items-stretch">
           <div className="w-full border border-border bg-card px-3">
             <Table>
               <TableCaption>Le ultime fatture</TableCaption>

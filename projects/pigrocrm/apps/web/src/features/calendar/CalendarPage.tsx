@@ -201,7 +201,7 @@ function DayCell({
       <span
         className={cn(
           'text-xs font-medium',
-          isToday && 'rounded-full bg-primary px-1.5 py-0.5 text-primary-foreground',
+          isToday && 'bg-primary px-1.5 py-0.5 text-primary-foreground',
         )}
       >
         {day}

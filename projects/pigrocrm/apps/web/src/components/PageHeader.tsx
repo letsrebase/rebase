@@ -40,11 +40,13 @@ export function PageHeader({
           text beside it gave up all of its own (screenshots of 2026-09-08). */}
       <div className="flex flex-col gap-4 px-8 pt-6 pb-5 md:flex-row md:items-start">
         <div className="flex min-w-0 flex-1 items-start gap-4">
-          {/* Paper square, 40px, radius 10: the one piece of colour in the header, and a
-              fixed anchor the eye finds at the same spot on every page. Decorative -- it
-              says what the title already says, so it is hidden from a screen reader. */}
+          {/* Paper square, 40px, closed by the 1px ink line: the one piece of structure
+              in the header, and a fixed anchor the eye finds at the same spot on every
+              page. It used to carry a radius of 10, the soft system's; the derived scale
+              is zero since the record of 2026-09-18. Decorative -- it says what the title
+              already says, so it is hidden from a screen reader. */}
           <span
-            className="flex size-10 shrink-0 items-center justify-center bg-background text-foreground"
+            className="flex size-10 shrink-0 items-center justify-center border bg-background text-foreground"
             aria-hidden="true"
           >
             <Icon className="size-5" aria-hidden="true" />

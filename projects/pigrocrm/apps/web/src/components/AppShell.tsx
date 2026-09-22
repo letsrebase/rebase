@@ -186,12 +186,15 @@ const IS_APPLE =
 const FOCUS =
   'outline-none focus-visible:ring-[3px] focus-visible:ring-sidebar-ring focus-visible:ring-offset-0'
 
-const ITEM = 'flex items-center gap-3 px-3 py-2 text-sm transition-colors'
-// The active pill: a lighter, translucent fill on the dark sidebar rather than the solid
-// Watermelon the flat list used -- with grouped navigation there are two things to mark at
-// once (the group and the item inside it), and two solid fills would fight.
+const ITEM =
+  'relative flex items-center gap-3 px-3 py-2 text-sm transition-colors before:absolute before:left-0 before:top-1/2 before:size-1.5 before:-translate-y-1/2 before:bg-transparent before:content-[""]'
+// The active mark of the record of 2026-09-18: the lighter translucent fill on the dark
+// sidebar (the group and the item inside it are marked at once, and two solid fills
+// would fight), plus the Watermelon Strong tile beside the item -- a small square at the
+// row's left edge, drawn by `ITEM`'s `before:` and painted only when active, so the
+// label never shifts when a route changes which row carries it.
 const ACTIVE =
-  'data-[status=active]:bg-sidebar-accent data-[status=active]:text-sidebar-accent-foreground data-[status=active]:font-medium'
+  'data-[status=active]:before:bg-sidebar-primary data-[status=active]:bg-sidebar-accent data-[status=active]:text-sidebar-accent-foreground data-[status=active]:font-medium'
 const QUIET = 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
 
 /** Below this the sidebar is a rail whose expanded form is an overlay, not a column. */
@@ -298,7 +301,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   )
 
   return (
-    <div className="flex h-full overflow-hidden bg-background">
+    <div className="flex h-full overflow-hidden">
       {overlay && (
         <>
           {/* A real button, not an `aria-hidden` div: dismissing an overlay is something a
@@ -595,7 +598,7 @@ function subItem({ to, label }: { to: LinkTo; label: string }) {
         activeOptions={{ includeSearch: false }}
         activeProps={{ 'aria-current': 'page' }}
         className={cn(
-          'block truncate px-3 py-1.5 text-sm transition-colors',
+          'relative block truncate px-3 py-1.5 text-sm transition-colors before:absolute before:left-0 before:top-1/2 before:size-1.5 before:-translate-y-1/2 before:bg-transparent before:content-[""]',
           QUIET,
           ACTIVE,
           FOCUS,

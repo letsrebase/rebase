@@ -3,7 +3,7 @@
  *
  * The page is what the revision changed: the title and the primary action moved into
  * `PageHeader`, and the «stato» filter -- a `Select` until now -- became the row of
- * `rounded-full` chips the reference screenshots use. The chips are the part worth a
+ * squared chips the application-variant record draws. The chips are the part worth a
  * test: they are the only filter on this screen a user drives, and a chip that looks
  * pressed while the list behind it is unfiltered is a page lying about what it shows.
  *

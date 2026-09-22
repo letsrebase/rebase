@@ -21,10 +21,12 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
   return (
     <thead
       data-slot="table-header"
-      /* The header row is shorter than the data rows it labels (40px against 56px),
-         as in the reference. A descendant selector, so it beats TableRow's own `h-14`
-         on specificity without TableRow having to know it is in a header. */
-      className={cn("[&_tr]:h-10 [&_tr]:border-b", className)}
+      /* The header row is shorter than the data rows it labels (40px against 48px),
+         and closes on the record's 2px rule ("a 2px rule under the header", the
+         application-variant record of 2026-09-18). A descendant selector, so it beats
+         TableRow's own `h-12` on specificity without TableRow having to know it is in
+         a header. */
+      className={cn("[&_tr]:h-10 [&_tr]:border-b-2", className)}
       {...props}
     />
   )
@@ -58,13 +60,16 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
     <tr
       data-slot="table-row"
       className={cn(
-        /* 56px, a separator at 12% of the ink (`--border`, via `border-border`) and a
-           Paper hover: the reference's table breathes and separates with almost
-           nothing. */
+        /* Ruled, per the application-variant record of 2026-09-18: 48px rows, a
+           1px column separator between cells (`[&>*+*]:border-l`, so the first
+           column keeps its edge against the container's own line), the ink at
+           full strength, and a Paper hover. The 56px and the unruled body were
+           the soft system's, kept through the token move; the record's Tables
+           paragraph is the contract, and the canvas is not the source. */
         // Paper at full strength: `--muted` is Paper itself, and 40% of it over the white
         // panel (#f9fafa) is a hover nobody sees. `has-aria-expanded` keeps the row lit
         // while its «⋯» menu is open, so the open menu still says which row it belongs to.
-        "h-14 border-b border-border transition-colors hover:bg-muted has-aria-expanded:bg-muted data-[state=selected]:bg-secondary",
+        "h-12 border-b border-border transition-colors [&>*+*]:border-l [&>*+*]:border-border hover:bg-muted has-aria-expanded:bg-muted data-[state=selected]:bg-secondary",
         className
       )}
       {...props}

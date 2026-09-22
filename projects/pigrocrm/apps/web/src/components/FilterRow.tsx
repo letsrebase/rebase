@@ -35,7 +35,10 @@ export function FilterRow({ children, className }: { children: ReactNode; classN
 }
 
 /**
- * One filter chip: a `rounded-full` toggle button (§4).
+ * One filter chip: a squared toggle button, the control the record of 2026-09-18
+ * draws on the Fatture list. It used to be `rounded-full`, the soft system's pill
+ * kept through the token move; the derived scale is zero now and the chip follows
+ * it with no override of its own.
  *
  * `aria-pressed` and not a class is what says whether it is on -- a screen reader has to
  * hear a toggle's state, and it is also what the page tests assert, so a restyle cannot
@@ -44,8 +47,7 @@ export function FilterRow({ children, className }: { children: ReactNode; classN
  *
  * Ink-filled when on, the outline button's own 1px ink line when off. No new colour:
  * `--foreground` is Prussian Blue and `--background` is Paper, both from
- * `@rebase/ui/tokens.css`. The 12% tint this comment described was deleted with the old
- * token layer (REB-299): a line is the ink itself now.
+ * `@rebase/ui/tokens.css`.
  */
 export function FilterChip({
   pressed,
@@ -63,7 +65,7 @@ export function FilterChip({
       size="sm"
       aria-pressed={pressed}
       onClick={onPress}
-      className="rounded-full aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background"
+      className="aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background"
     >
       {children}
     </Button>

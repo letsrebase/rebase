@@ -123,20 +123,20 @@ export function DataTable<T extends RowData>({
 
   if (isLoading) {
     return (
-      /* The same container, and bars the height of the rows they stand in for (`h-14`,
+      /* The same container, and bars the height of the rows they stand in for (`h-12`,
          `ui/table.tsx`), so the table does not visibly jump the moment the request
          lands. It is still a deliberately different *shape* -- animated bars, no header
          -- because "something is happening" is not "here is your data"; what it stops
          being is a different size. */
       <div
         data-slot="data-table"
-        className="overflow-hidden rounded-xl border border-border bg-card p-2"
+        className="overflow-hidden border border-border bg-card p-2"
         role="status"
         aria-label="Caricamento"
       >
         <div className="space-y-2">
           {Array.from({ length: LOADING_ROW_COUNT }, (_, index) => (
-            <Skeleton key={index} className="h-14 w-full" />
+            <Skeleton key={index} className="h-12 w-full" />
           ))}
         </div>
       </div>
@@ -160,16 +160,17 @@ export function DataTable<T extends RowData>({
   }
 
   return (
-    /* Design spec §4, to the letter: a white container, a hairline border (the ink at
-       12%, `--border`) and a radius of 14 -- which is `rounded-xl`, `--radius * 1.4`,
-       and not `rounded-2xl`'s 18. `overflow-y-hidden` is what keeps the first row's hover
-       tint and the header's own bottom rule inside those corners instead of squaring them
-       off; the horizontal axis is a *scroll* axis instead, so a table with more columns
-       than a phone is wide scrolls inside this box rather than widening the page around
-       it (screenshots at 390 of 2026-09-08). */
+    /* The record's table: a white container closed by a 1px ink line and no corner at
+       all -- the radius the `rounded-xl` this carried named has been zero since the
+       application-variant record of 2026-09-18, and the class went with the comment
+       that explained it. `overflow-y-hidden` is what keeps the first row's hover tint
+       and the header's own bottom rule inside the box; the horizontal axis is a
+       *scroll* axis instead, so a table with more columns than a phone is wide scrolls
+       inside this box rather than widening the page around it (screenshots at 390 of
+       2026-09-08). */
     <div
       data-slot="data-table"
-      className="overflow-x-auto overflow-y-hidden rounded-xl border border-border bg-card"
+      className="overflow-x-auto overflow-y-hidden border border-border bg-card"
     >
       <Table>
         <TableHeader>
