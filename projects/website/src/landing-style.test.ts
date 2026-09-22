@@ -279,9 +279,9 @@ describe('the wordmark is an asset, not a second webfont', () => {
       // Scoped to before the word's `<path>`: the graft (REB-199) draws its own
       // rects after the word, and asserting on every `<rect>` in the file would
       // fold its dots into "the four tiles".
-      const drawn = [...svg[name].split('<path')[0].matchAll(/<rect[^>]+fill="([^"]+)"/g)].map(
-        (match) => match[1],
-      )
+      const drawn = [
+        ...(svg[name].split('<path')[0] ?? '').matchAll(/<rect[^>]+fill="([^"]+)"/g),
+      ].map((match) => match[1])
       const expected = BRAND_TILES.map((tile) =>
         tile === 'ink' ? tileInk : hex[BRAND_TILE_VARS[tile].replace(/var\(|\)/g, '')],
       )
@@ -311,7 +311,9 @@ describe('the wordmark is an asset, not a second webfont', () => {
     for (const name of ['lockup.svg', 'lockup-paper.svg'] as const) {
       // Scoped to before the word's `<path>`, same reason as above.
       const rects = [
-        ...svg[name].split('<path')[0].matchAll(/<rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)"/g),
+        ...(svg[name].split('<path')[0] ?? '').matchAll(
+          /<rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)"/g,
+        ),
       ]
       const tiles = rects.map((match) => match.slice(1, 4).map(Number) as [number, number, number])
       const tile = tiles[0]?.[2] ?? 0
