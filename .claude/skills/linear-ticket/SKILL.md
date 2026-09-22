@@ -134,7 +134,7 @@ wrong.
 | `milestone` | the milestone id from `list_milestones(project)`. It is accepted and not echoed back: trust `list_milestones` progress, not the response. |
 | `title` | starts with a verb and names the work, one clause (or two when the second names what makes the first visible), under 80 characters, per the `linear-content` skill. Not the body restated. |
 | `description` | per the `linear-content` skill. Real newlines, never `\n` escapes. |
-| `addLabels` | exactly two: one from the `type` group (`fix`, `feature`, `refactor`, `chore`, `docs`, `test`, `ci`, `design`, `security`, `spike`) and one from `Area` (`area:web`, `area:api`, `area:core`, `area:mcp`, `area:hub`, `area:infra`, `area:ci`, `area:website`, `area:brand`, `area:repo`). Both are groups: a second label from the same group is silently dropped. Use `addLabels`, never `labels`: `labels` replaces the whole set. |
+| `addLabels` | exactly two: one from the `type` group (`fix`, `feature`, `refactor`, `chore`, `docs`, `test`, `ci`, `design`, `security`, `spike`) and one from `Area` (`area:web`, `area:api`, `area:core`, `area:mcp`, `area:hub`, `area:infra`, `area:ci`, `area:website`, `area:brand`, `area:repo`). Both are groups: a second label from the same group is silently dropped.  Use `addLabels`, never `labels`: `labels` replaces the whole set. The id-based fields (`labelIds`, `addLabelIds`) answer `success` and apply nothing: names, not ids. |
 | `priority` | 1 Urgent, 2 High, 3 Medium, 4 Low. A field, never a label. |
 | `estimate` | the team's points. |
 | `assignee` | never omitted. `"me"` when you will do the work, the person who asked for it when they will. A card filed for later still gets one: an empty assignee reads as free to the other agent. |
