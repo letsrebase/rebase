@@ -250,7 +250,7 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
     // reads the two in this order and never ties on the timestamps.
     expect(vi.mocked(capture).mock.calls.slice(0, 2)).toEqual([
       ['wizard_iniziato', { tipo: 'freelance', perk: 'guida' }],
-      ['wizard_passo', { tipo: 'freelance', perk: 'guida', passo: 0, passi: 8 }],
+      ['wizard_passo', { tipo: 'freelance', perk: 'guida', passo: 0, passi: 8, schermata: 'nome' }],
     ])
 
     // Typing re-renders the page; the person did not start twice.
@@ -266,7 +266,18 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
     await user.type(screen.getByLabelText('Email'), 'ada@studio.it{Enter}')
     await user.click(screen.getByRole('button', { name: 'Indietro' }))
     expect(captured('wizard_passo').map((p) => p?.passo)).toEqual([0, 1, 2, 1])
-    expect(captured('wizard_passo')[0]).toEqual({ tipo: 'freelance', passo: 0, passi: 8 })
+    expect(captured('wizard_passo').map((p) => p?.schermata)).toEqual([
+      'nome',
+      'email',
+      'linkedin_url',
+      'email',
+    ])
+    expect(captured('wizard_passo')[0]).toEqual({
+      tipo: 'freelance',
+      passo: 0,
+      passi: 8,
+      schermata: 'nome',
+    })
   })
 
   it('reports wizard_completato once the API accepted the candidacy, with the review as the last step', async () => {
@@ -276,7 +287,13 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
     )
     const router = mount('/freelance?perk=guida')
     await walkToReview(user)
-    expect(captured('wizard_passo').at(-1)).toEqual({ tipo: 'freelance', perk: 'guida', passo: 8, passi: 8 })
+    expect(captured('wizard_passo').at(-1)).toEqual({
+      tipo: 'freelance',
+      perk: 'guida',
+      passo: 8,
+      passi: 8,
+      schermata: 'riepilogo',
+    })
     expect(captured('wizard_completato')).toEqual([])
 
     await user.click(screen.getByRole('button', { name: /Invia/ }))
@@ -298,7 +315,12 @@ describe('what the wizard reports to PostHog (ORB-185)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Questo indirizzo è già iscritto.')
     expect(router.state.location.pathname).toBe('/freelance')
     expect(captured('wizard_completato')).toEqual([])
-    expect(captured('wizard_passo').at(-1)).toEqual({ tipo: 'freelance', passo: 1, passi: 8 })
+    expect(captured('wizard_passo').at(-1)).toEqual({
+      tipo: 'freelance',
+      passo: 1,
+      passi: 8,
+      schermata: 'email',
+    })
   })
 })
 

@@ -124,8 +124,9 @@ the code does not decide what «first» means.
 The same `initAnalytics`, replay with inputs masked (the wizards are forms), pageviews
 on history change. Events, in the wizards and the member area:
 
-- `wizard_iniziato`, `wizard_passo` (with `passo`, the step index) and
-  `wizard_completato`, each with `tipo` (`freelance` or `azienda`) and, when present,
+- `wizard_iniziato`, `wizard_passo` (with `passo`, the step index, and since REB-122
+  `schermata`, the screen's own id) and `wizard_completato`, each with `tipo`
+  (`freelance` or `azienda`) and, when present,
   `perk` from the query string (`?perk=guida` is how the site's guide section arrives).
   `wizard_passo` is what makes «where do they leave» (ORB-122) a funnel, and the
   milestone «Three screens instead of eight» needs that baseline before the grouping.
@@ -159,6 +160,16 @@ and the top-level `mask_all_text`/`mask_all_element_attributes` (autocapture's
 `$el_text`/`attr__href` properties, a path replay's own masking never reaches). The
 wizard funnel events (`wizard_iniziato`, `wizard_passo`, `wizard_completato`) are
 unaffected, since they are explicit `capture` calls, neither replay nor autocapture.
+
+**Amended 2026-09-22 (REB-122).** `passo` alone stopped being enough to read a funnel
+by screen once REB-120/121 were scoped to regroup the wizards' fields onto fewer
+screens: the same numeric `passo` would mean a different screen before and after, so a
+baseline read today would go stale the moment the regroup ships. `wizard_passo` now
+also carries `schermata`, the screen's own id (`Screen<T>['id']`, a field's id today,
+one field per screen until the regroup), so the pre-regroup rows stay self-describing
+for as long as PostHog keeps them, independent of which commit's field order applied
+when they were captured. `wizard_iniziato` and `wizard_completato` are unchanged: they
+carry no step at all.
 
 ## The CRM's MCP server (ORB-186)
 
