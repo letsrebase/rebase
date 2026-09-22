@@ -205,6 +205,18 @@ describe('the palette every slot resolves through', () => {
     expect(contrastRatio(slotHex(slot), background())).toBeGreaterThanOrEqual(AA_TEXT)
   })
 
+  it.each([
+    ['15%', 15],
+    ['20%', 20],
+  ])('puts the destructive text below AA on its own %s tint over Paper, which is why 10% is the ceiling', (_step, percent) => {
+    // The ceiling as an assertion rather than a comment (REB-309): the uses this
+    // card retires drew the same text at 15% and 20%, and both fail on the Paper
+    // ground the computed ground below measures. A variant written in the slot
+    // may never deepen its tint past 10% without darkening its text with it.
+    const ground = blendSrgb(slotHex('--destructive'), tokenHex('paper'), percent)
+    expect(contrastRatio(slotHex('--destructive'), ground)).toBeLessThan(AA_TEXT)
+  })
+
   it('carries white text on both filled steps at AA', () => {
     // -deep fills the primary button and -strong the sidebar's active tile, which is
     // the one fill left on the middle step.

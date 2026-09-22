@@ -53,14 +53,16 @@ export function DealStageBar({
                 disabled={!canMove || busy || isCurrent}
                 onClick={() => onMove(stage.id)}
                 className={cn(
-                  'flex h-9 w-full items-center justify-center truncate rounded-md px-2 text-xs font-medium transition-colors',
+                  'flex h-9 w-full items-center justify-center truncate rounded-md border border-transparent px-2 text-xs font-medium transition-colors',
                   'disabled:cursor-default',
                   // Ink for what is done, the ink faded for what is not: a stage is a
                   // settled fact, not a call to action, so it does not wear the primary
                   // red -- a won deal drawn as four red blocks read as an alarm. Only a
-                  // lost deal changes colour, and to the tone every «Perso» pill has.
+                  // lost deal changes colour, and to the tone every «Perso» pill has:
+                  // the 10% ceiling (REB-307), the border weight carrying the step up
+                  // rather than a deeper tint, which would drop the text below AA.
                   outcome === 'lost'
-                    ? 'bg-destructive/15 text-destructive'
+                    ? 'bg-destructive/10 border-destructive/50 text-destructive'
                     : reached
                       ? 'bg-foreground text-background'
                       : 'bg-muted text-muted-foreground',

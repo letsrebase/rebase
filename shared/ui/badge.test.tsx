@@ -63,4 +63,16 @@ describe('Badge', () => {
     const { container } = render(<Badge variant="outline" dot="danger">In ritardo</Badge>)
     expect(container.querySelector('[data-slot="badge-dot"]')).not.toBeNull()
   })
+
+  it('keeps the destructive chip on the 10% ceiling and marks its link hover with an underline', () => {
+    // REB-309: the hover used to deepen the fill to 20%, which put the chip's own
+    // text below AA over Paper. The class list is the contract (jsdom loads no
+    // Tailwind), so the ceiling and the hover treatment are both asserted here;
+    // `[a]:hover:` is what the variant applies when the badge is an anchor.
+    render(<Badge variant="destructive">Elimina</Badge>)
+    const badge = screen.getByText('Elimina')
+    expect(badge.className).toContain('bg-destructive/10')
+    expect(badge.className).toContain('[a]:hover:underline')
+    expect(badge.className).not.toMatch(/hover:bg-destructive\/(?:1[1-9]|[2-9]\d*)/)
+  })
 })
