@@ -39,8 +39,11 @@ not a table in the document; this file is the table:
 * `POST /api/tokens` / `DELETE /api/tokens/{id}` are *not* role-gated, and the sweep
   asserts that stays true: a token inherits its owner's role, so a readonly person's
   token can do exactly what their session already can (the write routes refuse it), and
-  revocation is own-scoped (`PatService.revoke` filters on `user_id`). REB-295 is the
-  card that reopens what a frozen token means, not this one.
+  revocation is own-scoped (`PatService.revoke` filters on `user_id`). REB-295 landed
+  that inheritance as CURRENT rather than frozen: `resolve()` reads the owner fresh on
+  every call (demotion lowers the ceiling on the next request, deactivation answers
+  401), and a deactivation revokes the rows in its own transaction. None of that gates
+  minting, so the two rows and the spec §10 table below are unchanged.
 * `POST /api/templates/{id}/preview` is a render, not a write; the same content is
   reachable through the ungated `GET describe`.
 """
@@ -358,9 +361,9 @@ ROWS: list[Row] = [
     # inherits readonly, so every write route above refuses it the same way it refuses
     # the session; minting one is self-service like the digest switch. `revoke` filters
     # on `user_id`, so a foreign id is a 404 rather than a refusal -- which is the
-    # right shape: the row's nonexistence is the answer, not the role. REB-295 (a token
-    # keeping its owner's role frozen) is the card that changes this reading, and if it
-    # ever gates minting, its own commit updates this row and the spec §10 table.
+    # right shape: the row's nonexistence is the answer, not the role. REB-295 landed
+    # with the inheritance current, not frozen (see this module's docstring), and it
+    # did NOT gate minting: both rows and the spec §10 table stand as written.
     Row("POST", "/api/tokens", expect="open", body={"nome": "matrice-token"}),
     Row("DELETE", "/api/tokens/{token_id}", expect="open"),
     # --- users, invites, rates: admin (auth/service.py, auth/invitations.py) ---------

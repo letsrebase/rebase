@@ -123,6 +123,32 @@ class PatService:
         )
         self.session.commit()
 
+    def revoke_all_for(self, user_id: UUID, actor: Actor) -> None:
+        """Ends every live token of one user, inside the caller's transaction: flushes,
+        never commits. That is `ActivityService.record`'s contract extended to the rows
+        themselves -- the revocation and the change that triggered it (today exactly
+        one: the deactivation in `UserService.update`) must survive or roll back as one
+        unit, or a rolled-back deactivation would have silently burned the account's
+        credentials on its way out.
+
+        The audit trail mirrors `revoke`'s: one `pat_revoked` entry per token, recorded
+        against the owning user, carrying the ids and nothing that narrows a search for
+        the token value.
+        """
+        now = datetime.now(UTC)
+        rows = self.session.scalars(
+            select(PersonalAccessToken).where(
+                PersonalAccessToken.user_id == user_id,
+                PersonalAccessToken.revoked_at.is_(None),
+            )
+        ).all()
+        for record in rows:
+            record.revoked_at = now
+            self.activities.record(
+                USER_ENTITY, record.user_id, "pat_revoked", actor, _audit_payload(record)
+            )
+        self.session.flush()
+
     def resolve(self, raw_token: str) -> Actor:
         stmt = select(PersonalAccessToken).where(
             PersonalAccessToken.token_hash == _digest(raw_token)
@@ -134,7 +160,14 @@ class PatService:
             self._record_use_after_revocation(record)
             raise ValidationFailed("token", "token", INVALID_TOKEN)
 
-        user = self.session.get(User, record.user_id)
+        # `populate_existing` forces a fresh read of the owner even when this session
+        # already holds it: the role and `attivo` that build the Actor below are the
+        # CURRENT ones, never a copy a previous `resolve` cached. Over HTTP each
+        # request opens its own session and reads fresh anyway; the flag makes that
+        # true for every caller, which is the guarantee hub's `admin_tokens.resolve`
+        # was given in REB-278 (#225) and the shape copied here. The behavior is
+        # pinned by `test_a_second_resolve_on_the_same_session_sees_the_current_role`.
+        user = self.session.get(User, record.user_id, populate_existing=True)
         if user is None or not user.attivo:
             # Same message and details as above, on purpose -- see INVALID_TOKEN.
             raise ValidationFailed("token", "token", INVALID_TOKEN)

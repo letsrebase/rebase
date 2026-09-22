@@ -27,12 +27,13 @@ from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.pat_models import PersonalAccessToken
 from pigrocrm.core.auth.pat_service import PatService
 from pigrocrm.core.auth.repository import UserRepository
-from pigrocrm.core.auth.schemas import UserCreate
+from pigrocrm.core.auth.schemas import UserCreate, UserUpdate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.errors import Conflict
+from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.space_settings import SpaceSettingsService, SpaceSettingsUpdate
 from pigrocrm.core.tenants import TenantService, TenantSignup, ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
@@ -117,6 +118,20 @@ async def _call_tool(
         result = await session.call_tool(name, arguments)
         text = result.content[0].text  # type: ignore[union-attr]
         return json.loads(text)
+
+
+async def _call_tool_result(
+    app: McpHttpApp, url: str, token: str, name: str, arguments: dict[str, Any]
+) -> Any:
+    """The raw tool result, without `_call_tool`'s json parse: a refused call carries
+    the guidance text, not a JSON body."""
+    async with (
+        _authed(app, token) as authed,
+        streamable_http_client(url, http_client=authed) as streams,
+        ClientSession(streams[0], streams[1]) as session,
+    ):
+        await session.initialize()
+        return await session.call_tool(name, arguments)
 
 
 INITIALIZE = {
@@ -524,3 +539,138 @@ async def test_the_space_setting_decides_the_privileged_tools_and_a_change_rebui
     assert "issue_invoice" not in await _tool_names(
         app, "http://prova/spazio-due/mcp", spaces["spazio-due"][0]
     )
+
+
+# --- REB-295: the credential answers with the owner's CURRENT state -----------------
+#
+# The transport-level half of the guarantee. The service-level half (the identity-map
+# `populate_existing` read and the deactivation cascade's single commit) lives in
+# `packages/core/tests/test_auth_tokens.py`; what these pins is that an agent's already
+# open client sees it on its very next call, over the wire, with nobody restarting the
+# server in between. Hub's `test_http.py` (REB-278/#225) is the model for the shape;
+# the PigroCRM answer differs in one honest way: a demotion here is NOT a 401, because
+# a token follows its owner's account rather than the admin role. What a demoted
+# admin's agent loses is the admin-gated calls; a DEACTIVATION is the 401.
+
+
+ADMIN_EMAIL = "reb295-admin@prova.it"
+SURVIVOR_EMAIL = "reb295-superstite@prova.it"
+
+FISCAL_DATI = {"codice_regime": "RF19"}
+
+
+@pytest.fixture
+def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
+    """An admin in the root database and a PAT of theirs, plus a second active admin:
+    REB-292 refuses to take a space's last one, and these tests exercise what happens
+    AFTER the deactivation, not that guard. Removed after, along with the timeline,
+    the token rows, and the singleton fiscal profile the demotion test writes."""
+    with session_factory(mcp_engine)() as session:
+        users = UserService(session)
+        admin = users.create(
+            UserCreate(email=ADMIN_EMAIL, password="lunghissima1", nome="Admin PAT", ruolo="admin"),
+            Actor.system(),
+        )
+        survivor = users.create(
+            UserCreate(
+                email=SURVIVOR_EMAIL,
+                password="lunghissima1",
+                nome="Superstite",
+                ruolo="admin",
+            ),
+            Actor.system(),
+        )
+        _, raw = PatService(session, settings=Settings(_env_file=None)).create(  # type: ignore[call-arg]
+            "prova", Actor(id=admin.id, type="user", role="admin")
+        )
+        session.commit()
+        admin_id = admin.id
+    try:
+        yield raw, admin_id
+    finally:
+        with session_factory(mcp_engine)() as session:
+            ids = [admin_id, survivor.id]
+            session.execute(
+                delete(Activity).where(Activity.entity_id.in_(ids) | Activity.actor_id.in_(ids))
+            )
+            session.execute(delete(PersonalAccessToken).where(PersonalAccessToken.user_id.in_(ids)))
+            session.execute(delete(FiscalProfile))
+            session.execute(delete(User).where(User.id.in_(ids)))
+            session.commit()
+
+
+@pytest.mark.asyncio
+async def test_a_deactivated_owner_is_401_and_their_token_is_revoked(
+    served: tuple[McpHttpApp, httpx2.AsyncClient],
+    admin_root_token: tuple[str, UUID],
+    mcp_engine: Engine,
+) -> None:
+    """The card's deactivation requirement, end-to-end: the panel's PATCH answers, the
+    agent's next call answers 401, and the 401 is not merely a refusal at read time --
+    the token row is revoked in the SAME transaction as the deactivation, so
+    reactivating the account cannot hand the old credential back. The deactivation
+    goes through the real path (`UserService.update` in a session of its own, the way
+    the API serves it); checking `revoked_at` here is the half the 401 alone cannot
+    show, since `resolve` refuses an inactive owner whatever the row says."""
+    raw, admin_id = admin_root_token
+    app, client = served
+    first = await client.post("/mcp", json=INITIALIZE, headers={**ACCEPT, **_bearer(raw)})
+    assert first.status_code == 200
+
+    with session_factory(mcp_engine)() as session:
+        UserService(session).update(admin_id, UserUpdate(attivo=False), Actor.system())
+
+    second = await client.post("/mcp", json=INITIALIZE, headers={**ACCEPT, **_bearer(raw)})
+    assert second.status_code == 401
+    assert second.json() == {"detail": "Token non valido"}
+    with session_factory(mcp_engine)() as session:
+        [token] = session.scalars(
+            select(PersonalAccessToken).where(PersonalAccessToken.user_id == admin_id)
+        ).all()
+    assert token.revoked_at is not None, (
+        "the deactivation must revoke the token, not only out-refuse it"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_demoted_admins_agent_loses_the_admin_tools_on_its_next_call(
+    served: tuple[McpHttpApp, httpx2.AsyncClient],
+    admin_root_token: tuple[str, UUID],
+    mcp_engine: Engine,
+) -> None:
+    """The card's first requirement, over the wire: the Actor of every request carries
+    the owner's CURRENT role. An admin PAT writes the fiscal profile (admin-gated
+    through `require_admin`, and on the default surface since ORB-188); the demotion
+    goes through `UserService.update` in a session of its own; the very next call on
+    the SAME app (no restart, same cached space server) must be refused, and the
+    refusal must name the new role -- proof the request carried `collaboratore`, not
+    the role the token was minted under.
+
+    Honest difference from hub (its `test_a_demoted_owner_fails_a_resolve` answers
+    401): a PigroCRM token follows its owner's account, not the admin role, so a
+    demotion must NOT kill the credential -- only the calls above its new role. The
+    assertion below that the non-admin-gated write still works is the other half of
+    exactly that line."""
+    raw, admin_id = admin_root_token
+    app, _ = served
+    url = "http://prova/mcp"
+
+    written = await _call_tool(app, url, raw, "update_fiscal_profile", {"dati": FISCAL_DATI})
+    assert written["codice_regime"] == "RF19"
+
+    with session_factory(mcp_engine)() as session:
+        UserService(session).update(admin_id, UserUpdate(ruolo="collaboratore"), Actor.system())
+
+    refused = await _call_tool_result(app, url, raw, "update_fiscal_profile", {"dati": FISCAL_DATI})
+    assert refused.is_error
+    message = refused.content[0].text  # type: ignore[union-attr]
+    assert "collaboratore" in message, (
+        "the guidance must name the role the request actually carried, not the one "
+        "the token was minted under"
+    )
+    # The credential itself survives: a demotion moves the ceiling, it does not end
+    # the account (the deactivation test above is the one that ends it).
+    still_works = await _call_tool(
+        app, url, raw, "create_customer", {"ragione_sociale": "Cliente post-demotione"}
+    )
+    assert still_works["ragione_sociale"] == "Cliente post-demotione"

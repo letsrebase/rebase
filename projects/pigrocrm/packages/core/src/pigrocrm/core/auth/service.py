@@ -208,6 +208,21 @@ class UserService:
         # Nothing is recorded when the patch changed nothing: a deactivation that was
         # already in force is not a decision anyone took today. See `field_changes`.
         delta = field_changes(before, _snapshot(user))
+        # A deactivation ends the account's agent credentials in the same transaction
+        # (REB-295): `resolve()` already refuses a token whose owner is inactive, but
+        # refusing on every call left the rows live -- reactivating the account would
+        # silently hand the old tokens back. Revoking here makes the decision final:
+        # an agent has to be re-keyed by somebody, on purpose. Keyed to the real
+        # delta, not to the patch, so a no-op edit to an already-inactive user
+        # revokes nothing (same line the `updated` entry below draws). A demotion is
+        # NOT here on purpose: a demoted owner's tokens keep working at the new role,
+        # because `resolve()` carries the CURRENT role on every request.
+        # `pat_service` imports this module, so the import is local -- the same
+        # cycle-avoidance `templates/service.py` applies to `gmail`.
+        if "attivo" in delta.get("changed", []) and not user.attivo:
+            from pigrocrm.core.auth.pat_service import PatService
+
+            PatService(self.session).revoke_all_for(user.id, actor)
         if delta:
             self.activities.record(
                 ENTITY, user.id, "updated", actor, {"email": user.email, **delta}

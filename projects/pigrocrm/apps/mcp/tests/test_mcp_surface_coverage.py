@@ -350,6 +350,7 @@ _CREDENZIALI: dict[Method, str] = {
     ("PatService", "create"): "un agente non conia le proprie credenziali",
     ("PatService", "list"): "l'elenco dei token e' materiale di sicurezza",
     ("PatService", "revoke"): "revocare token e' amministrazione dell'account",
+    ("PatService", "revoke_all_for"): "e' l'effetto della disattivazione, non un'operazione",
     ("PatService", "resolve"): "e' il passo di autenticazione, non un'operazione",
     ("RefreshTokenService", "issue"): "sessione del browser, non superficie agentica",
     ("RefreshTokenService", "consume"): "sessione del browser, non superficie agentica",
