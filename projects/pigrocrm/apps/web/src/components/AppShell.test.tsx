@@ -393,15 +393,15 @@ describe('AppShell', () => {
     // wrapper carrying the scroll between the sidebar and `<main>`) read as a card
     // scrolling on its own inside the page. `<main>` is now a direct child of the shell
     // root and is what scrolls, full width from the sidebar to the edge of the window.
-    renderShell(<p>contenuto</p>)
+    const { container } = renderShell(<p>contenuto</p>)
     const main = screen.getByRole('main')
     expect(main.className).toContain('overflow-y-auto')
     expect(main.className).toContain('min-w-0')
     expect(main.className).toContain('bg-card')
     expect(main.className).not.toMatch(/rounded|lg:border|lg:p-/)
-    // No wrapper between the root and the page: the parent is the shell itself.
-    expect(main.parentElement!.className).toContain('overflow-hidden')
-    expect(main.parentElement!.className).not.toMatch(/lg:p-|lg:border/)
+    // Identity, not class names: the parent IS the shell root, so no wrapper -- inert
+    // or otherwise -- can sit between the sidebar and the page again.
+    expect(main.parentElement).toBe(container.firstElementChild)
   })
 
   it('says the role in Italian under the name, not the stored enum', () => {
