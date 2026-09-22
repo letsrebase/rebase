@@ -224,8 +224,10 @@ a fixup squashed into it before the push), so CI runs once, on the sha that will
 a review commit pushed after the PR opens pays for a second full cycle. Record the
 review on the PR as a comment right after it opens (or turns ready): each finding, what
 you did with it, and what you left as is and why, plus one line on each card
-(`**Review applied:** ...`, the `linear-content` shape). The card is where the other
-agent reads that the PR is not only what its author wrote.
+(`**Review applied:** ...`, the `linear-content` shape). Greptile is the second
+reviewer, and it reads the PR once it is open, or once a milestone's draft PR turns
+ready (§ After `gh pr create`, step 3). The card is where the other agent reads that
+the PR is not only what its author wrote.
 
 Open it in one command, with the pairs and the video attached (§ Screenshots and video):
 
@@ -241,21 +243,79 @@ gh pr create --body-file pr-body.md \
    is open, `Done` when it merges (REB-247, PR #161). The state is not yours from here;
    the comments are.
    On a milestone's draft PR the branch carries no issue id, so none of that fires:
-   comment the PR URL on every card it lists, and move each card itself (see 3).
+   comment the PR URL on every card it lists, and move each card itself (see 4).
 2. **Wait for CI in the background**: `gh pr checks <n> --watch` as a background job,
    never a foreground poll; there is nothing else to wait for, so do not sit on it. The
    `ci` job is the only status that matters; the others may skip by path filter. A red
    run gets a line on the card (`**CI red:** run ..., <job>, <cause>`) when you see it,
    and the sha of the fix on the same comment when you push it.
-3. **Merge with a merge commit**, the repository's shape:
+3. **Iterate on Greptile until nothing is left open.** Greptile reviews the PRs here
+   (the free plan, on since PR #262; it reviewed five of the six PRs from #262 to
+   #267): inline findings, each with a `P0`, `P1` or `P2` badge, and, when its summary
+   comment is turned on in app.greptile.com, a confidence score out of 5 at the top of
+   that comment. The PR does not merge over a finding. On a milestone's draft PR the
+   loop runs after `gh pr ready`, on the sha that will merge. A run shows on the commit
+   as the `Greptile Review` check run, whose summary counts the findings (`3 files
+   reviewed, 2 comments added.`), and, when there are findings, as a review by the bot
+   with an empty body. A clean run leaves only the check run (#268's fourth commit) and
+   a run can leave only the review (#268's third), so wait for either, as a background
+   job next to the CI watch. When the check run counts findings and no review is visible
+   yet, keep polling the reviews: on #268 the review landed three to six seconds before
+   the check run, but nothing promises that order. Then read what that run raised:
+
+   ```bash
+   sha=$(git rev-parse HEAD)
+   for i in $(seq 20); do   # ten minutes, then the @greptileai nudge below
+     run=$(gh api "repos/letsrebase/rebase/commits/$sha/check-runs" \
+         --jq '.check_runs[] | select(.name == "Greptile Review" and .status == "completed") | .output.summary')
+     rid=$(gh api repos/letsrebase/rebase/pulls/<n>/reviews \
+         --jq ".[] | select(.user.login == \"greptile-apps[bot]\" and .commit_id == \"$sha\") | .id" | tail -n 1)
+     [ -n "$run$rid" ] && break; sleep 30
+   done
+   echo "$run"
+   n=$(echo "$run" | grep -oE '[0-9]+ comments' | grep -oE '[0-9]+')
+   for i in $(seq 12); do   # the check run counted findings: the review is on its way
+     { [ "${n:-0}" = 0 ] || [ -n "$rid" ]; } && break; sleep 10
+     rid=$(gh api repos/letsrebase/rebase/pulls/<n>/reviews \
+         --jq ".[] | select(.user.login == \"greptile-apps[bot]\" and .commit_id == \"$sha\") | .id" | tail -n 1)
+   done
+   [ -n "$rid" ] && gh api repos/letsrebase/rebase/pulls/<n>/comments \
+       --jq ".[] | select(.pull_request_review_id == $rid and .in_reply_to_id == null) | \"\(.id) \(.path):\(.line // .original_line) \(.body)\""
+   gh api repos/letsrebase/rebase/issues/<n>/comments \
+       --jq '.[] | select(.user.login == "greptile-apps[bot]") | .body' | grep -oiE 'confidence score[^0-9]*[0-9]/5' | tail -n 1
+   ```
+
+   The last command reads the score: the summary is a conversation comment on the PR,
+   not a review, and it exists only where the setting is on (nothing printed means no
+   summary, not a score of zero).
+
+   Each finding is either **fixed**, in a commit that names it, or **answered**, with a
+   reply on its thread (`gh api repos/letsrebase/rebase/pulls/<n>/comments/<id>/replies
+   -f body=...`) saying why the code stays as it is. Push, wait for the run on the new
+   sha, read again. The loop ends when the run on the sha that will merge raised
+   nothing new, every earlier thread is fixed or answered, and, where the summary is
+   on, the score reads 5/5. A review with a body and no inline comment is Greptile not
+   reviewing (#259 and #260, `Your trial has ended`; the free plan's reviews here have
+   an empty body): say so on the card and tell the person before you merge. A finding
+   raised again after an answer is not closed by repeating the answer: it is a
+   disagreement for the card, as a `**Decision for the lead**` line. Ten minutes with
+   no run on the head sha (`$run` and `$rid` both empty): `gh pr comment <n> --body
+   '@greptileai'` once, which re-triggers it, and run the wait again; still nothing,
+   say so on the card and go on without the comments command. A later push may get no
+   run on its own: three of #268's five commits got none in ten minutes and one within
+   thirty seconds of the comment, the other two were reviewed unprompted (2026-09-22).
+   What the loop did goes on the card in the same `**Review applied:**` comment as the
+   independent review (the `linear-content` shape): how many findings, which changed
+   the code (sha), which were answered and why, and the final score when there is one.
+4. **Merge with a merge commit**, the repository's shape:
    `gh pr merge <n> --merge --delete-branch`. Then, right away, the
    `**Merged:**` comment on the card with the run ids, the commit sha, the test counts
    and what you opened and saw: on a single-card PR the automation sets `Done` at the
    merge without waiting for it, and a card that closes with nothing under it was
    closed by a robot. On a milestone PR nothing moves by itself: set each card it
    listed to `Done` in the same pass, each with its own evidence comment.
-4. **Clean up**: `git worktree remove ../<repo>-orb<N>`, `git worktree prune`.
-5. **Production is a separate step.** Preview deploys on the green trunk run;
+5. **Clean up**: `git worktree remove ../<repo>-<name>`, `git worktree prune`.
+6. **Production is a separate step.** Preview deploys on the green trunk run;
    **production moves only on a tag** (`docs/design/DECISIONS.md`, 2026-09-09) and only
    when asked, and when it does, the card gets its `**In production:**` comment with the
    tag and what answered.
@@ -263,4 +323,5 @@ gh pr create --body-file pr-body.md \
 ## What never goes in a PR
 
 Secrets, tokens, passwords, personal data of a customer, screenshots of real customer
-data, an issue id you did not read, a claim a test did not make, an AI trailer.
+data, an issue id you did not read, a claim a test did not make, an AI trailer, a
+Greptile finding neither fixed nor answered.
