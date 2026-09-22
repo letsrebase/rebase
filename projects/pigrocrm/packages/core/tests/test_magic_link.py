@@ -88,6 +88,12 @@ def test_an_expired_or_unknown_or_inactive_link_answers_none(db_session: Session
     assert links.enter(raw) is None
     raw2 = links.request("ada@x.it")
     assert raw2 is not None
+    # REB-292: Ada is the space's only admin, and even the system actor may not
+    # take the last one. A survivor first; this test is about the link, not the guard.
+    service.create(
+        UserCreate(email="superstite@x.it", password=None, nome="S", ruolo="admin"),
+        Actor.system(),
+    )
     user = UserRepository(db_session).get_by_email("ada@x.it")
     assert user is not None
     service.update(user.id, UserUpdate(attivo=False), Actor.system())

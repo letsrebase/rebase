@@ -240,6 +240,9 @@ def test_pat_for_deactivated_user_stops_working(db_session: Session) -> None:
     from pigrocrm.core.auth.schemas import UserUpdate
 
     user = _make_user(db_session, "pat4@test.it")
+    # A second active admin: REB-292 refuses to take a space's last one, and this
+    # test is about the PAT stopping, not about the guard.
+    _make_user(db_session, "pat4-superstite@test.it")
     actor = Actor(id=user.id, type="user", role="admin")
     _, raw = PatService(db_session).create("Token", actor)
     UserService(db_session).update(user.id, UserUpdate(attivo=False), ADMIN)

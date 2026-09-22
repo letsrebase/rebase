@@ -22,6 +22,13 @@ def _create_deactivated_user(session: Session, email: str) -> None:
     off -- must fail login exactly like a wrong password or an unknown email, per
     UserService.authenticate's own anti-enumeration contract."""
     users = UserService(session)
+    # A second active admin before the flip: REB-292's guard refuses to take a
+    # space's last one, even from the system actor, and this helper's test is about
+    # the login answer, not about the guard.
+    users.create(
+        UserCreate(email="superstite-auth@pigro.it", password=None, nome="S", ruolo="admin"),
+        Actor.system(),
+    )
     user = users.create(
         UserCreate(email=email, password="supersegreta1", nome="Disattivato", ruolo="admin"),
         Actor.system(),

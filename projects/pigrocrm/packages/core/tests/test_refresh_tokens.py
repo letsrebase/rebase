@@ -197,6 +197,7 @@ def test_get_active_rejects_an_unknown_user(db_session: Session) -> None:
 
 def test_get_active_rejects_a_deactivated_user(db_session: Session) -> None:
     user = _make_user(db_session)
+    _make_user(db_session, "refresh-superstite@test.it")  # REB-292: the guard needs a survivor
     UserService(db_session).update(user.id, UserUpdate(attivo=False), ADMIN)
 
     with pytest.raises(ValidationFailed):
