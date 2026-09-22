@@ -1,5 +1,5 @@
 /**
- * «Get started» (ORB-180): the assistant first, because it is what the landing sells and
+ * «Primi passi» (ORB-180): the assistant first, because it is what the landing sells and
  * what a space is for, then the four first steps with their state, each with a prompt to
  * copy into the assistant (ORB-182). Both read from the data
  * (`useFirstSteps`) and nothing is stored: the card stays until this user has a token, the
@@ -33,7 +33,7 @@ export function GetStartedPage() {
     <>
       <PageHeader
         icon={Rocket}
-        title="Get started"
+        title="Primi passi"
         description="Il tuo spazio, dal primo passo all’assistente che lavora per te."
       />
       <div className="space-y-4 px-8 py-6" data-testid="get-started">

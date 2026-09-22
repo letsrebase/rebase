@@ -1,5 +1,5 @@
 /**
- * «Get started» (ORB-180): the assistant card until this user has a token, the four
+ * «Primi passi» (ORB-180): the assistant card until this user has a token, the four
  * steps with their state read from six one-row requests, and the visit remembered for
  * the Home's one-time redirect. The API client is stubbed by path, `useAuth` by role.
  */
@@ -89,12 +89,12 @@ afterEach(() => {
   auth.user = { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin', attivo: true }
 })
 
-describe('Get started', () => {
+describe('the get-started page', () => {
   it('shows the assistant card and the four steps to do on an empty space, and remembers the visit', async () => {
     renderPage()
     // The prompts are fixed text (ORB-188): the page reads no space settings to pick them.
     expect(api.GET).not.toHaveBeenCalledWith('/api/settings/space')
-    expect(screen.getByRole('heading', { name: 'Get started' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Primi passi' })).toBeInTheDocument()
     expect(await screen.findByText('Il CRM che lavora al posto tuo')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Collega l.assistente/ })).toHaveAttribute('href', '/app/token')
     expect(screen.getByText(/0 di 4/)).toBeInTheDocument()

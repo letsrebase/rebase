@@ -74,7 +74,7 @@ const TOP_LEVEL = [
   { to: '/app', label: 'Home', icon: LayoutDashboard, exact: true },
   // Where the first login lands, and where the assistant and the first steps live
   // (ORB-180): its own entry, right under Home, for every role.
-  { to: '/app/get-started', label: 'Get started', icon: Rocket, exact: false },
+  { to: '/app/get-started', label: 'Primi passi', icon: Rocket, exact: false },
   // Under Home, at Ivan's request (2026-09-09), and top-level rather than inside a
   // group for the same reason Home is: a month of one's own days and deadlines is a
   // cross-cutting view, not a step of «Vendite» or of «Amministrazione».
@@ -415,7 +415,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           aria-label="Navigazione principale"
           className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 pb-3"
         >
-          {/* Home, then «Get started» right under it (ORB-180); the other top-level
+          {/* Home, then «Primi passi» right under it (ORB-180); the other top-level
               entries follow the groups. */}
           {leaf(TOP_LEVEL[0])}
           {leaf(TOP_LEVEL[1])}
