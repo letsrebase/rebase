@@ -30,6 +30,7 @@ ENTITY = "user"
 ADMIN_LIST_LIMIT_DEFAULT = 100
 ADMIN_LIST_LIMIT_MAX = 500
 _ADMIN_SEARCH_COLUMNS = (User.nome, User.cognome, User.email)
+_LINK_REQUEST_THROTTLE_SECONDS = 60
 
 
 def _hash(raw: str) -> str:
@@ -177,8 +178,12 @@ class UserService:
     # ---- the way in ----------------------------------------------------------------
 
     def request_link(self, email: str, note: str | None = None) -> Mail | None:
-        """The mail to send, or `None` when nobody with that address exists. Sweeps the
-        person's spent and expired tokens first: nothing needs a cron."""
+        """The mail to send, or `None` when nobody with that address exists, or when
+        the address already holds a live link younger than a minute (REB-100): no new
+        token, no mail, the same silence a caller sees either way -- the throttle is
+        per address, not per client, and sits beside the per-client bucket `spend_one`
+        already charges in the router. Sweeps the person's spent and expired tokens
+        first: nothing needs a cron."""
         assert self.settings is not None
         row = self.by_email(email)
         if row is None:
@@ -190,6 +195,16 @@ class UserService:
                 or_(MagicLinkToken.used_at.is_not(None), MagicLinkToken.expires_at <= now),
             )
         )
+        recent = self.session.scalar(
+            select(MagicLinkToken).where(
+                MagicLinkToken.user_id == row.id,
+                MagicLinkToken.used_at.is_(None),
+                MagicLinkToken.expires_at > now,
+                MagicLinkToken.created_at > now - timedelta(seconds=_LINK_REQUEST_THROTTLE_SECONDS),
+            )
+        )
+        if recent is not None:
+            return None
         raw = secrets.token_urlsafe(32)
         self.session.add(
             MagicLinkToken(
