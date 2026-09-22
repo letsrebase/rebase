@@ -281,11 +281,32 @@ describe('AppShell', () => {
     expect(nav.getByRole('link', { name: 'Tariffe' })).toHaveAttribute('aria-current', 'page')
   })
 
-  it('hides Impostazioni from a non-admin', () => {
-    mockAuth.ruolo = 'collaboratore'
+  it.each(['collaboratore', 'readonly'])('hides Impostazioni from a %s', (ruolo) => {
+    // The group button itself is gone, not merely closed: a non-admin who cannot open
+    // any settings tab should not see a control that would only fail on click.
+    mockAuth.ruolo = ruolo
     renderShell()
     expect(sidebar().queryByRole('button', { name: 'Impostazioni' })).not.toBeInTheDocument()
   })
+
+  it.each(['collaboratore', 'readonly'])(
+    'keeps the %s navigation surface intact: four top-level entries and both groups',
+    (ruolo) => {
+      // REB-294 hid controls, never navigation a role may read -- the readonly person's
+      // reading surface is unchanged. Asserted for both non-admin roles in one test
+      // because they are meant to see the same shell; only Impostazioni separates them,
+      // and that is pinned by its own test above.
+      mockAuth.ruolo = ruolo
+      renderShell()
+      const nav = sidebar()
+      for (const label of ['Home', 'Get started', 'Calendario', 'Token']) {
+        expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
+      }
+      for (const label of ['Vendite', 'Amministrazione']) {
+        expect(nav.getByRole('button', { name: label })).toBeInTheDocument()
+      }
+    },
+  )
 
   /**
    * A personal access token is not an admin setting -- `PatService` scopes it by

@@ -5,7 +5,8 @@ import { SETTINGS_TABS } from '@/features/settings/tabs'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@rebase/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
-import { useIsAdmin } from '@/lib/auth'
+import { useAuth, useIsAdmin } from '@/lib/auth'
+import { canSeeSettingsTab } from '@/lib/permissions'
 
 /**
  * Campi/Pipeline/Template/Emittente/Utenti are admin-only at the service layer
@@ -49,6 +50,7 @@ import { useIsAdmin } from '@/lib/auth'
  * sees a `tabs` list of exactly one entry, never the other admin-only tabs.
  */
 export function SettingsLayout() {
+  const { user } = useAuth()
   const isAdmin = useIsAdmin()
   const { location } = useRouterState()
   const onProfileTab = location.pathname.endsWith('profile')
@@ -79,10 +81,14 @@ export function SettingsLayout() {
     )
   }
 
-  // A non-admin who got past the gate above is on `profilo` and nothing else, so the
-  // tab strip shows them exactly that one tab -- never a row of admin-only tabs next
-  // to the one page they are actually allowed to open.
-  const tabs = isAdmin ? SETTINGS_TABS : SETTINGS_TABS.filter((tab) => tab.value === 'profile')
+  // REB-294: the tab strip is the table, not a private list. A non-admin who got past
+  // the gate above is on `profilo` and nothing else, because `profilo` is the only tab
+  // whose minimum is `null` -- every other one's services gate their writes on
+  // `require_admin`, which is what `canSeeSettingsTab` encodes. The same function
+  // filters the sidebar's «Impostazioni» sub-items, so the two cannot drift.
+  const tabs = SETTINGS_TABS.filter(
+    (tab) => user !== null && canSeeSettingsTab(user.ruolo, tab.value),
+  )
   const active =
     tabs.find((tab) => location.pathname.endsWith(tab.value))?.value ??
     (isAdmin ? 'fields' : 'profile')

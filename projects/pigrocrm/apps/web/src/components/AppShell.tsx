@@ -39,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from '@rebase/ui/dropdown-menu'
 import { useAuth, useIsAdmin } from '@/lib/auth'
+import { canSeeSettingsTab } from '@/lib/permissions'
 import { roleLabel } from '@/lib/roles'
 import { cn } from '@rebase/ui/cn'
 
@@ -150,13 +151,22 @@ const SETTINGS_PATHS = {
   drive: '/app/settings/drive',
   automations: '/app/settings/automations',
 } as const satisfies Record<SettingsTabValue, string>
-
 const SETTINGS = {
   id: 'impostazioni',
   label: 'Impostazioni',
   icon: Settings,
   base: '/app/settings',
-  items: SETTINGS_TABS.map((tab) => ({ to: SETTINGS_PATHS[tab.value], label: tab.label })),
+  // The tab value travels with the item so the sidebar can filter through the same
+  // `canSeeSettingsTab` the settings page filters its tabs with (REB-294): one table,
+  // two readers, no private list on either side. The group itself stays admin-only
+  // (`isAdmin ? ...` below), so today every tab passes for the group's only reader;
+  // what the filter buys is that a tab whose visibility changes at the page changes
+  // here too, without a second decision.
+  items: SETTINGS_TABS.map((tab) => ({
+    to: SETTINGS_PATHS[tab.value],
+    label: tab.label,
+    tab: tab.value,
+  })),
 } as const
 
 /**
@@ -232,6 +242,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   // trigger can sit in the sidebar as a plain button rather than a route.
   const [agentOpen, setAgentOpen] = useState(false)
 
+  // The «Impostazioni» sub-items this reader may see (REB-294): the same
+  // `canSeeSettingsTab` the settings page filters its own tabs with, so sidebar and
+  // page read one table and cannot drift. The group's own visibility stays the
+  // admin check below.
+  const settingsItems = SETTINGS.items.filter((item) =>
+    user === null ? false : canSeeSettingsTab(user.ruolo, item.tab),
+  )
   const groups = isAdmin ? [...GROUPS, SETTINGS] : GROUPS
   const activeGroup = groups.find((group) =>
     'base' in group
@@ -436,7 +453,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     open={isOpen(SETTINGS.id)}
                     onToggle={() => toggleGroup(SETTINGS.id)}
                   >
-                    {SETTINGS.items.map((item) => subItem(item))}
+                    {settingsItems.map((item) => subItem(item))}
                   </NavGroup>
                 ) : null,
               ]}

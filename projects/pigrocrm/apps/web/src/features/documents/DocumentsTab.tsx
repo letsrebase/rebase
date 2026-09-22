@@ -4,6 +4,7 @@ import { RowActions } from '@/components/RowActions'
 import { StatusPill } from '@/components/StatusPill'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
+import { useCanWrite } from '@/lib/auth'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { NewFromTemplateDialog } from './NewFromTemplateDialog'
 import {
@@ -49,6 +50,11 @@ function formatDate(iso: string): string {
  * rendered as the server's own message rather than as an empty list.
  */
 export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
+  // REB-294: every write this tab offers -- «Nuovo da template», the upload, the row's
+  // «Archivia» -- is `require_write` in the service (`create_document_from_template`,
+  // `create_document` + `add_document_version`, `delete_document`), so the tab gates
+  // them together on the coarse check and the reads stay open to every role.
+  const canWrite = useCanWrite()
   const documents = useDocuments(owner)
   const createDocument = useCreateDocument(owner)
   const deleteDocument = useDeleteDocument(owner)
@@ -94,7 +100,7 @@ export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-lg font-medium">Documenti</h2>
-        <Button onClick={() => setTemplateOpen(true)}>Nuovo da template</Button>
+        {canWrite && <Button onClick={() => setTemplateOpen(true)}>Nuovo da template</Button>}
       </div>
 
       {problem && (
@@ -106,11 +112,13 @@ export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
         </p>
       )}
 
-      <UploadDropzone
-        onFiles={(files) => void handleFiles(files)}
-        busy={uploading}
-        accept={ACCEPTED_UPLOAD_TYPES}
-      />
+      {canWrite && (
+        <UploadDropzone
+          onFiles={(files) => void handleFiles(files)}
+          busy={uploading}
+          accept={ACCEPTED_UPLOAD_TYPES}
+        />
+      )}
 
       {documents.isError && <QueryErrorBanner error={documents.error} />}
 
@@ -162,18 +170,22 @@ export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
                       )
                     },
                   },
-                  {
-                    // A soft delete the server can undo, but it takes the row out of the
-                    // list being read, so it reads in the destructive tone.
-                    label: 'Archivia',
-                    destructive: true,
-                    onSelect: () => {
-                      setProblem(null)
-                      deleteDocument.mutate(document.id, {
-                        onError: (error: unknown) => setProblem(toProblem(error)),
-                      })
-                    },
-                  },
+                  ...(canWrite
+                    ? [
+                        {
+                          // A soft delete the server can undo, but it takes the row out
+                          // of the list being read, so it reads in the destructive tone.
+                          label: 'Archivia',
+                          destructive: true,
+                          onSelect: () => {
+                            setProblem(null)
+                            deleteDocument.mutate(document.id, {
+                              onError: (error: unknown) => setProblem(toProblem(error)),
+                            })
+                          },
+                        },
+                      ]
+                    : []),
                 ]}
               />
             </li>

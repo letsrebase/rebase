@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { RowActions } from '@/components/RowActions'
+import { useCanWrite } from '@/lib/auth'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { downloadDocument, useDocumentVersions, useRegenerateVersion } from './queries'
 
@@ -41,6 +42,12 @@ function formatDateTime(iso: string): string {
  * "una versione di sei mesi prima si rigenera identica" a check anyone can run.
  */
 export function VersionHistory({ documentId }: { documentId: string }) {
+  // REB-294: «Rigenera» is `regenerate_document` (`collaboratore`); the download is a
+  // read. The item is dropped from the menu -- not disabled -- because unlike a
+  // template-less version (a state of *this row*), a readonly actor can never
+  // regenerate *any* row, and REB-294's rule is that a readonly person sees no write
+  // control.
+  const canWrite = useCanWrite()
   const versions = useDocumentVersions(documentId)
   const regenerate = useRegenerateVersion(documentId)
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
@@ -91,16 +98,20 @@ export function VersionHistory({ documentId }: { documentId: string }) {
                       )
                     },
                   },
-                  {
-                    label: 'Rigenera',
-                    disabled: version.template_id === null || regenerate.isPending,
-                    onSelect: () => {
-                      setProblem(null)
-                      regenerate.mutate(version.numero, {
-                        onError: (error: unknown) => setProblem(toProblem(error)),
-                      })
-                    },
-                  },
+                  ...(canWrite
+                    ? [
+                        {
+                          label: 'Rigenera',
+                          disabled: version.template_id === null || regenerate.isPending,
+                          onSelect: () => {
+                            setProblem(null)
+                            regenerate.mutate(version.numero, {
+                              onError: (error: unknown) => setProblem(toProblem(error)),
+                            })
+                          },
+                        },
+                      ]
+                    : []),
                 ]}
               />
             </li>

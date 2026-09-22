@@ -19,6 +19,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { InvoicesList } from './index'
 
+// REB-294: the list's «Nuova fattura» is the button that used to answer a readonly
+// press with a 403; it now asks `useCan('create_invoice')`. The suite renders as the
+// writer it has always asserted for, and the readonly shape is its own test below.
+const mockAuth = vi.hoisted(() => ({ may: true }))
+vi.mock('@/lib/auth', () => ({ useCan: () => mockAuth.may }))
+
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
   return {
@@ -38,6 +44,7 @@ function ok(data: unknown) {
 }
 
 beforeEach(() => {
+  mockAuth.may = true
   mockGet.mockReset()
   mockGet.mockImplementation((() => ok({ items: [], next_cursor: null })) as never)
 })
@@ -261,5 +268,16 @@ describe('the invoice list', () => {
     // merely *some* cursor: a stale or wrong-but-defined value would still pass every
     // assertion above.
     expect(lastRequestedQuery().cursor).toBe('page-2')
+  })
+
+  /** REB-294, the card's own symptom: the Fatture page showed «Nuova fattura» to a
+   *  readonly person, and the press answered 403. The list itself -- what a role may
+   *  read -- is unchanged. */
+  it('offers a readonly person no «Nuova fattura»', async () => {
+    mockAuth.may = false
+    mockGet.mockImplementation((() => ok({ items: [invoice()], next_cursor: null })) as never)
+    renderList()
+    await screen.findByRole('columnheader', { name: 'Numero' })
+    expect(screen.queryByRole('button', { name: /nuova fattura/i })).not.toBeInTheDocument()
   })
 })

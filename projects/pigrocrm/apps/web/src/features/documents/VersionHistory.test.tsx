@@ -7,6 +7,10 @@ import { api } from '@/lib/api'
 import { VersionHistory } from './VersionHistory'
 import type { DocumentVersion } from './queries'
 
+// REB-294: «Rigenera» is `regenerate_document` (`collaboratore`); the suite drives
+// the writer's menu. The readonly shape (no item at all) is its own test below.
+vi.mock('@/lib/auth', () => ({ useCanWrite: () => true }))
+
 const VERSIONS: DocumentVersion[] = [
   {
     id: 'v-2',

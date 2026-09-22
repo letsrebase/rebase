@@ -147,21 +147,30 @@ describe('FiscalPanel', () => {
     expect(screen.queryByText('fiscal_profile singleton not found')).not.toBeInTheDocument()
   })
 
-  /** The estimate is `admin`-only in the service and the tab is deliberately not hidden:
-   *  a non-admin gets the server's explanation rather than a feature that is not there. */
-  it('shows a refusal as the server worded it, with no figures under it', async () => {
+  /** The estimate is `admin`-only in the service and the tab is deliberately not
+   *  hidden: a non-admin gets the explanation rather than a feature that is not there.
+   *  REB-294 changed *what* that explanation reads: `toProblem` turns the server's
+   *  English `PermissionDenied` detail into an Italian sentence naming the person's
+   *  own role, because the machine string was the one a real readonly user saw on Home
+   *  and nobody could read. */
+  it('shows a refusal as an Italian sentence naming the role, with no figures under it', async () => {
     vi.mocked(api.GET).mockImplementation(() =>
       failed(
         {
           detail: 'get_fiscal_estimate requires one of [admin], actor has collaboratore',
           code: 'permission_denied',
+          required_roles: ['admin'],
+          actual_role: 'collaboratore',
         },
         403,
       ),
     )
     renderPanel()
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/requires one of \[admin\]/)
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/ruolo in questo spazio è «collaboratore»/)
+    expect(alert).toHaveTextContent(/riservata a «amministratore»/)
+    expect(alert).not.toHaveTextContent(/requires one of/)
     expect(screen.queryByRole('note')).not.toBeInTheDocument()
     expect(screen.queryByText(/reddito netto/i)).not.toBeInTheDocument()
   })

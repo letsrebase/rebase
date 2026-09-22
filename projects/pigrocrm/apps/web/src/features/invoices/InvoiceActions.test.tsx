@@ -19,9 +19,12 @@ vi.mock('@/lib/api', async (importOriginal) => {
 vi.mock('@rebase/ui/sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
 }))
-// «Segna trasmessa» follows the server's own admin gate; the rest of the actions do
-// not read the role at all, so an admin is the actor that shows every button.
-vi.mock('@/lib/auth', () => ({ useIsAdmin: () => true }))
+// REB-294: every button on this bar reads its own action through `useCan` (one check
+// per button, against the service's own `require_write`/`require_admin` string). The
+// suite's default actor is one the table answers true for, so an admin sees every
+// button; the readonly side flips the same switch below.
+const mockAuth = vi.hoisted(() => ({ may: true }))
+vi.mock('@/lib/auth', () => ({ useCan: () => mockAuth.may }))
 
 function ok(data: unknown) {
   return { data, response: new Response(null, { status: 200 }) } as never
@@ -49,6 +52,7 @@ function wrap(children: ReactNode) {
 }
 
 beforeEach(() => {
+  mockAuth.may = true
   vi.mocked(api.POST).mockReset()
   vi.mocked(api.PATCH).mockReset()
   vi.mocked(api.DELETE).mockReset()
@@ -324,6 +328,7 @@ describe('InvoiceActions', () => {
     ]
     expect(path).toContain('/payment')
     expect(options.body).toEqual({ stato_pagamento: 'incassato', data_incasso: '2026-09-01' })
+
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Incasso registrato'))
   })
 
@@ -393,6 +398,27 @@ describe('InvoiceActions', () => {
     expect(screen.getByRole('button', { name: /^PDF$/i })).toBeInTheDocument()
   })
 
+  /** REB-294: a readonly actor is offered nothing the service would answer 403 to.
+   *  The downloads stay -- `InvoiceService.download` gates on nothing but the session
+   *  -- and every button whose action the service gates is gone: no «Emetti», no
+   *  «Annulla», no «Segna incassata», no «Rigenera documenti», and on a draft, nothing
+   *  at all where «Conferma»/«Elimina bozza» used to stand. */
+  it('shows a readonly actor only the downloads of an issued invoice', () => {
+    mockAuth.may = false
+    wrap(<InvoiceActions invoice={ISSUED} />)
+    expect(screen.getByRole('button', { name: /^PDF$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /XML FatturaPA/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /segna/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /annulla/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /rigenera/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /emetti/i })).toBeNull()
+  })
+
+  it('shows a readonly actor no draft controls at all', () => {
+    mockAuth.may = false
+    wrap(<InvoiceActions invoice={DRAFT} />)
+    expect(screen.queryByRole('button')).toBeNull()
+  })
 })
 
 /** The badge lives in its own file (see there for why); its tests live here beside the

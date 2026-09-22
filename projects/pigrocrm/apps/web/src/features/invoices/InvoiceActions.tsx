@@ -24,7 +24,7 @@ import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { toProblem, type ProblemDetail } from '@/lib/api'
-import { useIsAdmin } from '@/lib/auth'
+import { useCan } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
 import { formatInvoiceNumber } from './format'
 import {
@@ -63,7 +63,20 @@ export function InvoiceActions({
   const [dataIncasso, setDataIncasso] = useState(() => toIsoDate(new Date()))
   const [transmitOpen, setTransmitOpen] = useState(false)
   const [dataTrasmissione, setDataTrasmissione] = useState(() => toIsoDate(new Date()))
-  const isAdmin = useIsAdmin()
+  // REB-294: one check per button, each against the action its own service passes to
+  // `require_write`/`require_admin`. This bar used to read the role only for
+  // «Segna trasmessa», so a readonly person stood in front of «Emetti», «Annulla» and
+  // «Elimina» on every draft and every issued invoice, and the press answered a 403.
+  // The `may` prefix because the document's state already owns `canIssue`, `canDelete`
+  // and the visibility flags below: a button exists only when its role check and its
+  // state check are both true, and the two reads say which is which.
+  const mayConfirm = useCan('confirm_proforma')
+  const mayIssue = useCan('issue_invoice')
+  const mayAnnul = useCan('annul_invoice')
+  const mayDelete = useCan('delete_invoice')
+  const maySetPayment = useCan('set_payment_state')
+  const mayProduce = useCan('produce_invoice_artifacts')
+  const mayMarkTransmitted = useCan('mark_transmitted_externally')
 
   const issue = useIssueInvoice(invoice.id)
   const confirm = useConfirmProforma(invoice.id)
@@ -95,11 +108,12 @@ export function InvoiceActions({
   // answers 409 for every other state), so the two payment buttons only exist there.
   // A proforma is never collected and a draft is not yet a document.
   const collected = invoice.stato_pagamento === 'incassato'
-  // Settable once and admin-only on the server (`mark_transmitted_externally`), and
-  // meaningless for an imported invoice: the system that issued it is the one that
-  // transmitted it, and the column already says so. The button follows all three.
-  const canMarkTransmitted =
-    isIssued && isAdmin && !isImported && invoice.trasmessa_esternamente_il === null
+  // Settable once, admin-only on the server (`mark_transmitted_externally`, and the
+  // `mayMarkTransmitted` check above is the UI half of that gate), and meaningless for
+  // an imported invoice: the system that issued it is the one that transmitted it, and
+  // the column already says so. The button follows all four.
+  const showMarkTransmitted =
+    isIssued && mayMarkTransmitted && !isImported && invoice.trasmessa_esternamente_il === null
 
   /**
    * No `window.confirm` here, unlike «Emetti» and «Elimina»: confirming consumes no
@@ -249,14 +263,14 @@ export function InvoiceActions({
       {problem ? <QueryErrorBanner error={problem} /> : null}
 
       <div className="flex flex-wrap gap-2">
-        {isDraftProforma ? (
+        {isDraftProforma && mayConfirm ? (
           <Button onClick={onConfirm} disabled={confirm.isPending}>
             <FileCheck2 className="mr-2 size-4" />
             Conferma
           </Button>
         ) : null}
 
-        {canIssue ? (
+        {canIssue && mayIssue ? (
           <Button onClick={onIssue} disabled={issue.isPending}>
             <FileCheck2 className="mr-2 size-4" />
             Emetti
@@ -268,18 +282,19 @@ export function InvoiceActions({
             {/* The state of the money comes first among an issued invoice's actions:
                 marking a collection is the thing done most often to an invoice after
                 it leaves, and the one the list's «Pagamento» pill is waiting for. */}
-            {collected ? (
-              <Button variant="outline" onClick={onUncollect} disabled={payment.isPending}>
-                <Undo2 className="mr-2 size-4" />
-                Segna da incassare
-              </Button>
-            ) : (
-              <Button onClick={() => setCollectOpen(true)} disabled={payment.isPending}>
-                <BadgeEuro className="mr-2 size-4" />
-                Segna incassata
-              </Button>
-            )}
-            {canMarkTransmitted ? (
+            {maySetPayment &&
+              (collected ? (
+                <Button variant="outline" onClick={onUncollect} disabled={payment.isPending}>
+                  <Undo2 className="mr-2 size-4" />
+                  Segna da incassare
+                </Button>
+              ) : (
+                <Button onClick={() => setCollectOpen(true)} disabled={payment.isPending}>
+                  <BadgeEuro className="mr-2 size-4" />
+                  Segna incassata
+                </Button>
+              ))}
+            {showMarkTransmitted ? (
               <Button
                 variant="outline"
                 onClick={() => setTransmitOpen(true)}
@@ -299,7 +314,7 @@ export function InvoiceActions({
                 XML FatturaPA
               </Button>
             )}
-            {isImported ? null : (
+            {!isImported && mayProduce ? (
               <Button
                 variant="outline"
                 onClick={() =>
@@ -313,11 +328,13 @@ export function InvoiceActions({
                 <RefreshCw className="mr-2 size-4" />
                 Rigenera documenti
               </Button>
-            )}
-            <Button variant="destructive" onClick={() => setAnnulOpen(true)}>
-              <Ban className="mr-2 size-4" />
-              Annulla
-            </Button>
+            ) : null}
+            {mayAnnul ? (
+              <Button variant="destructive" onClick={() => setAnnulOpen(true)}>
+                <Ban className="mr-2 size-4" />
+                Annulla
+              </Button>
+            ) : null}
           </>
         ) : null}
 
@@ -325,20 +342,24 @@ export function InvoiceActions({
           invoice.pdf_document_id === null ? (
             /* Until now the web never produced a proforma's PDF: the download button
                asked for a file that did not exist and got a 404 (ORB-30). The same
-               endpoint emission uses renders it; the preview beside shows it at once. */
-            <Button
-              variant="outline"
-              onClick={() =>
-                artifacts.mutate(undefined, {
-                  onSuccess: () => toast.success('PDF proforma generato'),
-                  onError: (error) => toast.error(toProblem(error).detail),
-                })
-              }
-              disabled={artifacts.isPending}
-            >
-              <FileText className="mr-2 size-4" />
-              Genera PDF proforma
-            </Button>
+               endpoint emission uses renders it; the preview beside shows it at once.
+               Rendering it is `produce_invoice_artifacts` on the server, so the button
+               follows that role too. */
+            mayProduce ? (
+              <Button
+                variant="outline"
+                onClick={() =>
+                  artifacts.mutate(undefined, {
+                    onSuccess: () => toast.success('PDF proforma generato'),
+                    onError: (error) => toast.error(toProblem(error).detail),
+                  })
+                }
+                disabled={artifacts.isPending}
+              >
+                <FileText className="mr-2 size-4" />
+                Genera PDF proforma
+              </Button>
+            ) : null
           ) : (
             <Button variant="outline" onClick={() => void onDownload('pdf')}>
               <Download className="mr-2 size-4" />
@@ -347,7 +368,7 @@ export function InvoiceActions({
           )
         ) : null}
 
-        {canDelete ? (
+        {canDelete && mayDelete ? (
           <Button variant="destructive" onClick={onDelete} disabled={remove.isPending}>
             <Trash2 className="mr-2 size-4" />
             {invoice.tipo === 'proforma' ? 'Elimina proforma' : 'Elimina bozza'}

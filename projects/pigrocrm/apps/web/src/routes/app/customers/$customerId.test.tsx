@@ -14,7 +14,13 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 // Hoisted so a single test can flip it: everything below is about what the page draws
 // for a reader, and only the Fatture tab's button is about what a writer may do.
 const auth = vi.hoisted(() => ({ canWrite: false }))
-vi.mock('@/lib/auth', () => ({ useCanWrite: () => auth.canWrite }))
+vi.mock('@/lib/auth', () => ({
+  useCanWrite: () => auth.canWrite,
+  // REB-294: the pages below mount controls that read their own action from the
+  // table (`NewProformaButton`, `DocumentsTab`); they follow the same switch, so a
+  // test asking for a writer gets every writer control and a reader gets none.
+  useCan: () => auth.canWrite,
+}))
 
 // `api.GET` is spied on directly (not `vi.mock('@/lib/api', ...)`), mirroring
 // Timeline.test.tsx: what is under test is this route's own handling of what the

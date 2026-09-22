@@ -45,6 +45,68 @@ describe('toProblem', () => {
     expect(toProblem(PROBLEM).code).toBe('validation_failed')
   })
 
+  /** REB-294: the role refusal is the one document whose `detail` the client rewrites,
+   *  because the server writes it for a log ("issue_invoice requires one of [admin],
+   *  actor has readonly") and the person reading the banner is not the log's audience.
+   *  The sentence names the reader's own role in Italian, via `roleLabel`. */
+  it('turns a permission refusal into an Italian sentence naming both roles', () => {
+    const problem = toProblem(
+      {
+        type: 'https://pigrocrm.dev/errors/permission_denied',
+        title: 'Permesso negato',
+        status: 403,
+        detail: 'issue_invoice requires one of [admin], actor has readonly',
+        code: 'permission_denied',
+        action: 'issue_invoice',
+        required_roles: ['admin'],
+        actual_role: 'readonly',
+      },
+      403,
+    )
+    expect(problem.detail).toBe(
+      'Il tuo ruolo in questo spazio è «sola lettura»: questa azione è riservata a «amministratore».',
+    )
+    expect(problem.code).toBe('permission_denied')
+    expect(problem.status).toBe(403)
+  })
+
+  it('names several required roles in Italian order', () => {
+    const problem = toProblem(
+      {
+        detail: 'x requires one of [admin, collaboratore], actor has readonly',
+        code: 'permission_denied',
+        required_roles: ['admin', 'collaboratore'],
+        actual_role: 'readonly',
+      },
+      403,
+    )
+    expect(problem.detail).toBe(
+      'Il tuo ruolo in questo spazio è «sola lettura»: questa azione è riservata a «amministratore» e «collaboratore».',
+    )
+  })
+
+  /** The fallback is the honest one: without the two structured fields this is not a
+   *  `PermissionDenied` the client can translate, so the server's own words stay. */
+  it('keeps the server detail when a refusal carries no structured roles', () => {
+    const problem = toProblem({ detail: 'Non permesso', code: 'permission_denied' }, 403)
+    expect(problem.detail).toBe('Non permesso')
+  })
+
+  it('leaves the agent refusal in the server’s Italian, untouched', () => {
+    // `agent_forbidden`'s detail is already written to be read out ("... è un atto che
+    // richiede una persona"); rewriting it would replace the one message the backend
+    // worded for this exact screen.
+    const problem = toProblem(
+      {
+        detail: 'issue_invoice non è eseguibile da un agente: è un atto che richiede una persona',
+        code: 'agent_forbidden',
+        action: 'issue_invoice',
+      },
+      403,
+    )
+    expect(problem.detail).toContain('richiede una persona')
+  })
+
   it('normalises a FastAPI request-validation array into the same shape', () => {
     const problem = toProblem(FASTAPI_VALIDATION_ERROR)
     expect(problem.code).toBe('validation_failed')
