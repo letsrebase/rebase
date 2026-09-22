@@ -185,7 +185,7 @@ describe('the sidebar, gated on role', () => {
 })
 
 describe('the frame keeps a fixed viewport height (REB-311)', () => {
-  it('pins the sidebar to the viewport height, scrolls it and main on their own axes, and lets the grid ground show behind the panel', async () => {
+  it('pins the sidebar to the viewport height and scrolls it and main on their own axes', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
     mount()
     await screen.findByRole('heading', { name: 'Dentro' })
@@ -193,14 +193,27 @@ describe('the frame keeps a fixed viewport height (REB-311)', () => {
     const aside = screen.getByRole('link', { name: 'rebase' }).closest('aside')
     expect(aside).toHaveClass('h-full', 'overflow-y-auto')
     expect(aside?.parentElement).toHaveClass('h-full')
+  })
 
-    // REB-302: the white moved from `main` to the panel that wraps it, which is what
-    // leaves the body's grid ground visible around the panel at `lg` (#228's shape).
-    const main = screen.getByRole('heading', { name: 'Dentro' }).closest('main')
-    expect(main).toHaveClass('overflow-y-auto')
-    const panel = main?.parentElement
-    expect(panel).toHaveClass('bg-card')
-    expect(panel?.className).not.toMatch(/rounded/)
+  // REB-348: the CRM's own inset panel (a `lg:p-3` grid-ground margin, an `lg:border`,
+  // and a wrapper carrying the scroll between the sidebar and `<main>`) was copied here
+  // and read as a card scrolling on its own inside the page, the same shape REB-328
+  // removed from `AppShell`. `<main>` is now the one scroller, full width from the
+  // sidebar to the edge of the window; the remaining wrapper only carries the mobile
+  // header above it and no longer insets or borders the page.
+  it('makes the page itself the one scroller, with no inset frame around it', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
+    mount()
+    const main = (await screen.findByRole('heading', { name: 'Dentro' })).closest('main')
+    expect(main).not.toBeNull()
+    expect(main!.className).toContain('overflow-y-auto')
+    expect(main!.className).toContain('bg-card')
+    expect(main!.className).not.toMatch(/rounded|lg:border|lg:p-/)
+    // The wrapper above it (which also carries the mobile header) is a plain column,
+    // not an inset or bordered panel.
+    expect(main!.parentElement!.className).toContain('min-w-0')
+    expect(main!.parentElement!.className).toContain('overflow-hidden')
+    expect(main!.parentElement!.className).not.toMatch(/lg:p-|lg:border/)
   })
 })
 
