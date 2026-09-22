@@ -33,6 +33,7 @@ const ADMIN = {
   ruolo: 'admin' as const,
   attivo: true,
   created_at: '2026-08-01T10:00:00Z',
+  last_login_at: '2026-09-20T08:30:00Z',
 }
 
 const DISABLED_USER = {
@@ -42,6 +43,7 @@ const DISABLED_USER = {
   ruolo: 'collaboratore' as const,
   attivo: false,
   created_at: '2026-08-01T10:00:00Z',
+  last_login_at: null,
 }
 
 const OTHER_ACTIVE_USER = {
@@ -51,6 +53,7 @@ const OTHER_ACTIVE_USER = {
   ruolo: 'collaboratore' as const,
   attivo: true,
   created_at: '2026-08-01T10:00:00Z',
+  last_login_at: null,
 }
 
 const PENDING_INVITE = {
@@ -131,6 +134,17 @@ describe('UsersPanel', () => {
     // exactly this, and it survives the next restyle.
     expect(await screen.findByText('Attivo')).toHaveAttribute('data-tone', 'ink')
     expect(screen.getByText('Disattivato')).toHaveAttribute('data-tone', 'muted')
+  })
+
+  it('shows «Ultimo accesso» as a formatted date when set, and an em dash when never (REB-297)', async () => {
+    respond({ ...lists, '/api/users': () => ok([ADMIN, DISABLED_USER]) })
+    renderPanel()
+
+    await screen.findByText('Ada Admin')
+    // The exact string depends on the runner's timezone, so the assertion names the
+    // shape (gg/mm/aaaa, hh:mm) rather than the hour, same as the invites' Scadenza.
+    expect(screen.getByText(/\d{2}\/\d{2}\/\d{2,4}, \d{2}:\d{2}/)).toBeInTheDocument()
+    expect(screen.getByText('—')).toBeInTheDocument()
   })
 
   it('shows a failed list as a distinct alert, not an empty-looking table', async () => {

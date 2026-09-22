@@ -45,9 +45,10 @@ const ROLES: { value: UserRecord['ruolo']; label: string }[] = [
 
 const KNOWN_FIELDS = ['email', 'nome', 'ruolo']
 
-/** «Scade il…»: the row's own `expires_at` as date and short time, the reader being
- *  when the link stops working (spec §2's seven-day window made visible). */
-const expiry = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' })
+/** «gg/mm/aaaa, hh:mm»: date and short time, shared by the invitation's «Scade il…»
+ *  (spec §2's seven-day window made visible) and the member's «Ultimo accesso»
+ *  (REB-297) -- one instant read the same way everywhere this panel shows one. */
+const shortDateTime = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' })
 
 function unattributed(problem: ProblemDetail | null): string | null {
   if (!problem) return null
@@ -158,6 +159,17 @@ export function UsersPanel() {
       ),
     },
     {
+      header: 'Ultimo accesso',
+      id: 'ultimo_accesso',
+      // `None` until the account's first session -- a password login or an accepted
+      // invitation (REB-297) -- so an em dash reads as "never", not as a blank cell
+      // that looks like a loading state.
+      cell: (info) => {
+        const { last_login_at } = info.row.original
+        return last_login_at ? shortDateTime.format(new Date(last_login_at)) : '—'
+      },
+    },
+    {
       header: '',
       id: 'actions',
       meta: { align: 'right' },
@@ -209,7 +221,7 @@ export function UsersPanel() {
     {
       header: 'Scadenza',
       id: 'scadenza',
-      cell: (info) => expiry.format(new Date(info.row.original.expires_at)),
+      cell: (info) => shortDateTime.format(new Date(info.row.original.expires_at)),
     },
     {
       header: '',

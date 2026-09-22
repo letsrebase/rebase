@@ -228,7 +228,8 @@ class InvitationService:
     def accept(self, raw: str, nome: str | None) -> UserRead:
         """Spends the token and opens the account: creates the active user with the
         invitation's role, sets `email_verificata_il` (the click proved the address,
-        same as the magic link's first entry), and audits the whole thing.
+        same as the magic link's first entry) and `last_login_at` (REB-297: the click
+        is also this account's first session), and audits the whole thing.
 
         This is not one transaction and deliberately so (spec §8): `UserService.create`
         commits on its own and rolls the session back on conflict, and `record` must be
@@ -270,10 +271,19 @@ class InvitationService:
             self.session.rollback()
             raise InvitationUsed
         fresh = self.session.get(User, user.id)
-        # `create` cannot set it (`UserCreate` has no such field) and the row is already
-        # committed, so this lands in the second commit alongside the spend.
-        if fresh is not None and fresh.email_verificata_il is None:
-            fresh.email_verificata_il = now
+        # `create` cannot set either field (`UserCreate` has no such fields) and the
+        # row is already committed, so both land in the second commit alongside the
+        # spend. `last_login_at` unconditionally: accepting an invitation opens the
+        # account's first session (REB-297), the same fact `login` records for a
+        # password account, and a freshly created row cannot already carry one.
+        # `user` is re-derived from `fresh` afterwards -- the `UserRead` `create`
+        # already answered was built before either write and would otherwise answer
+        # `last_login_at: None` for the row this call is opening a session on.
+        if fresh is not None:
+            if fresh.email_verificata_il is None:
+                fresh.email_verificata_il = now
+            fresh.last_login_at = now
+            user = UserRead.model_validate(fresh)
         self.activities.record(ENTITY, row.id, "accepted", Actor.system(), {"email": row.email})
         self.activities.record(
             "user", user.id, "invited", Actor.system(), {"invited_by": row.invited_by}

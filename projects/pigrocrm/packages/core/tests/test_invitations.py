@@ -233,6 +233,19 @@ def test_accept_creates_the_verified_user_and_audits_both_sides(db_session: Sess
     assert row.accepted_at is not None
 
 
+def test_accept_records_last_login_at_on_the_row_and_the_answer(db_session: Session) -> None:
+    """REB-297: accepting an invitation opens the account's first session, exactly
+    like `email_verificata_il` above -- and the `UserRead` this call answers must
+    carry it too, not just the row, since `create`'s own answer is built before
+    either write lands."""
+    _, raw = _invite(db_session, email="prima@x.it")
+    before = datetime.now(UTC)
+    user = InvitationService(db_session).accept(raw, None)
+    assert user.last_login_at is not None and user.last_login_at >= before
+    row = db_session.get(User, user.id)
+    assert row is not None and row.last_login_at is not None
+
+
 def test_accept_needs_a_name_when_the_invitation_carried_none(db_session: Session) -> None:
     _, raw = _invite(db_session, nome=None)
     service = InvitationService(db_session)

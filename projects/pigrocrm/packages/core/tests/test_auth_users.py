@@ -1,6 +1,7 @@
 import statistics
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -79,6 +80,29 @@ def test_authenticate_accepts_correct_credentials(db_session: Session) -> None:
         UserCreate(email="g@h.it", password="supersegreta1", nome="G", ruolo="admin"), ADMIN
     )
     assert service.authenticate("G@H.it", "supersegreta1").email == "g@h.it"
+
+
+def test_authenticate_records_last_login_at(db_session: Session) -> None:
+    """REB-297: `last_login_at` starts `None` and is written the moment a password
+    actually opens a session, not merely checked -- a wrong password below must
+    leave it untouched."""
+    service = UserService(db_session)
+    created = service.create(
+        UserCreate(email="k@h.it", password="supersegreta1", nome="K", ruolo="admin"), ADMIN
+    )
+    assert created.last_login_at is None
+    before = datetime.now(UTC)
+
+    with pytest.raises(ValidationFailed):
+        service.authenticate("k@h.it", "sbagliata")
+    row = db_session.get(User, created.id)
+    assert row is not None and row.last_login_at is None
+
+    logged_in = service.authenticate("k@h.it", "supersegreta1")
+    assert logged_in.last_login_at is not None and logged_in.last_login_at >= before
+
+    second = service.authenticate("k@h.it", "supersegreta1")
+    assert second.last_login_at is not None and second.last_login_at >= logged_in.last_login_at
 
 
 @pytest.mark.parametrize(

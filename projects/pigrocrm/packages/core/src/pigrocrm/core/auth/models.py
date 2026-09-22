@@ -30,6 +30,11 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     email_verificata_il: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None
     )
+    # The last time this account opened a session, whether by password login or by
+    # accepting an invitation (REB-297): both are the moment an account first starts
+    # being used, and neither happens through the other. `None` for an account that
+    # has never done either -- an invitation sent but not yet accepted, for instance.
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     # Level 3 of slice 4 §5.1's resolution order, for both numbers. There is
     # deliberately no `costo_orario` on `deals`: an hour's cost is a property of who
     # works it, not of the client they work it for, and adding the level would let

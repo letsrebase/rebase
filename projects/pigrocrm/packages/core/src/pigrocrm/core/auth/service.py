@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -301,4 +302,10 @@ class UserService:
         ok = verify_password(password, reference)
         if user is None or stored is None or not ok or not user.attivo:
             raise ValidationFailed("user", "credentials", INVALID_CREDENTIALS)
+        # `last_login_at` is written here and nowhere else on this path (REB-297): the
+        # moment a password actually opens a session, not the moment credentials were
+        # merely checked -- the branch above already returned for every way this call
+        # fails.
+        user.last_login_at = datetime.now(UTC)
+        self.session.commit()
         return UserRead.model_validate(user)
