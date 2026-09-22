@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2 2" width="512" height="512" shape-rendering="crispEdges">
-  <!-- The rebase glyph: the same four tiles community.css draws with box-shadow next to
-       the name (Prussian Blue, Royal Gold, Watermelon, Prussian Blue), as a file. -->
+  <!-- The rebase glyph: the same four tiles system.css's `.glyph` draws with box-shadow
+       next to the name (Prussian Blue, Royal Gold, Watermelon, Prussian Blue), as a file. -->
   <rect x="0" y="0" width="1" height="1" fill="#011936"/>
   <rect x="1" y="0" width="1" height="1" fill="#f9dc5c"/>
   <rect x="0" y="1" width="1" height="1" fill="#ed254e"/>

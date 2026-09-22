@@ -1,12 +1,12 @@
-/* The field of tiles, shared by the landing and by community.js.
+/* The field of tiles, mounted by landing.js on every page that carries it.
  *
  * Written as an IIFE that publishes `window.__pigroField`, not as an ES module with
- * exports: the page scripts that use it (`landing.js`, `community.js`) stay
- * self-contained, their tests can load them with `new Function`, and this one only
- * has to run first -- module scripts execute in document order, which is enough.
- * Colours are read from the CSS custom properties the palette plugin injects, so
- * there is no second copy of the palette in JavaScript. Nothing here is required for
- * the page: without it the grid is still there and the boxes still read.
+ * exports: the page script that uses it (`landing.js`) stays self-contained, its
+ * tests can load it with `new Function`, and this one only has to run first --
+ * module scripts execute in document order, which is enough. Colours are read from
+ * the CSS custom properties the palette plugin injects, so there is no second copy of
+ * the palette in JavaScript. Nothing here is required for the page: without it the
+ * grid is still there and the boxes still read.
  */
 ;(function () {
   var reduced =

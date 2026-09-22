@@ -23,13 +23,12 @@ describe.each(PAGES)('%s', (name) => {
     const title = page.match(/<title>([^<]+)<\/title>/)?.[1] ?? ''
     // Until 2026-09-10 every page here titled itself PigroCRM, including the two
     // legal pages. ORB-36: privacy.html and terms.html are served on
-    // letsrebase.com, not on pigro.letsrebase.com, and it is the Orbiters signup
-    // form that links to them, so they title themselves after the site they are on
-    // rather than after the CRM. index.html is the landing (at / since ORB-145;
-    // community.html is the community page at /community) and still names the CRM in
-    // its title, the largest of the perks, regardless of Ivan's separate «freelance»
-    // (ORB-24, positioning.md line 85); see the brand-link assertion below for the
-    // same title/brand split.
+    // letsrebase.com, not on pigro.letsrebase.com, and it is the hub's own signup
+    // wizards that link to them, so they title themselves after the site they are on
+    // rather than after the CRM. index.html is the landing, at / since ORB-145, and
+    // still names the CRM in its title, the largest of the perks, regardless of
+    // Ivan's separate «freelance» (ORB-24, positioning.md line 85); see the
+    // brand-link assertion below for the same title/brand split.
     expect(title).toContain(name === 'index.html' ? 'PigroCRM' : 'rebase')
     const description = meta(page, 'description') ?? ''
     expect(description.length).toBeGreaterThan(40)
@@ -109,12 +108,11 @@ describe.each(PAGES)('%s', (name) => {
     // Until 2026-09-10 the landing signed as Orbiters and the two legal pages kept
     // PigroCRM, on the reasoning that a legal page belongs to the product it
     // covers. ORB-36 reopened that: privacy.html and terms.html are served on
-    // letsrebase.com, not on pigro.letsrebase.com, the Orbiters signup form is
-    // what links to them, and their own text already covers Orbiters' data (the
-    // signup) alongside PigroCRM's (community.test.ts separately asserts
-    // privacy.html names Orbiters and links /community). All three pages here sign
-    // as Orbiters now; the titolare del trattamento the two legal pages name, and
-    // the substance of what each policy says, did not move with the brand.
+    // letsrebase.com, not on pigro.letsrebase.com, the hub's own signup wizards are
+    // what link to them, and their own text already covers rebase's data (the
+    // signup) alongside PigroCRM's. All three pages here sign as Orbiters now; the
+    // titolare del trattamento the two legal pages name, and the substance of what
+    // each policy says, did not move with the brand.
     expect(page).toMatch(
       /<a class="brand" href="\/"><span class="glyph" aria-hidden="true"><\/span>rebase<\/a>/,
     )
@@ -297,9 +295,9 @@ describe('index.html', () => {
     expect(page.match(/href="\/hub\/admin/g)).toHaveLength(1)
   })
 
-  it('mounts the same field as the community page behind the whole page, from the shared script', () => {
-    // Ivan, 2026-09-09: the landing has the same background as the community page. One fixed canvas
-    // right after <body>, the same id, the same mount options in landing.js.
+  it('mounts the field behind the whole page, from the shared script', () => {
+    // Ivan, 2026-09-09: one fixed canvas right after <body>, the same id, the same
+    // mount options in landing.js.
     expect(page).toMatch(/<body>\s*(?:<!--[\s\S]*?-->\s*)?<canvas id="field" aria-hidden="true"><\/canvas>/)
     expect(page).not.toContain('hero-field')
     expect(page).toMatch(/<script type="module" src="\.\/field\.js"><\/script>\s*<script type="module" src="\.\/landing\.js">/)

@@ -48,10 +48,10 @@
     <!-- The cookie notice, and with it the two trackers, the ChatGPT Ads measurement
       pixel and PostHog: consent.js shows the notice and injects both SDKs only once
       somebody has said yes, so before a decision this page asks nothing of anyone. Here,
-      on pigrocrm.html and on community.html, the three pages an ad can land on;
+      and on pigrocrm.html, the two pages an ad can land on;
       privacy.html and terms.html have no tracker and so nothing to ask about. The
       pixel id, the PostHog key and the SDK URLs live in that one file rather than in
-      three heads, and the Conversions API key appears in no page at all: it is in the
+      two heads, and the Conversions API key appears in no page at all: it is in the
       server's .env, used only by the API. -->
     <script type="module" src="./consent.js"></script>
     <!-- REB-113: WebSite and Organization structured data, on this page only, the one
@@ -83,7 +83,7 @@
     </script>
   </head>
   <body>
-    <!-- The same field as the community page on `/`: fixed behind the whole page, drifting
+    <!-- The field: fixed behind the whole page, drifting
       slowly, drawn by the shared script. Decoration the page never depends on. -->
     <canvas id="field" aria-hidden="true"></canvas>
 

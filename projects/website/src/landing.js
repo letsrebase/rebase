@@ -1,12 +1,10 @@
 /* The landing's own script: it mounts the field behind the page and the typewriter on
  * the title, and that is all.
  *
- * The same field as the community page on `/`, with the same options -- Ivan's ruling
- * of 2026-09-09: the two pages share one background. The canvas is fixed and the
- * page scrolls over it; `animate` drifts it slowly and field.js itself stands still
- * when the reader asked for reduced motion. The title's first word is typed by the shared
- * typewriter.js, and a screen reader hears the same line either way (see the sr-only
- * span in the h1).
+ * The field is fixed and the page scrolls over it; `animate` drifts it slowly and
+ * field.js itself stands still when the reader asked for reduced motion. The title's
+ * first word is typed by the shared typewriter.js, and a screen reader hears the same
+ * line either way (see the sr-only span in the h1).
  *
  * Since ORB-145 (Ivan, 2026-09-11) the blocks below the hero rise in as they scroll
  * into view, the pitch deck's own gesture: each `[data-reveal]` gets `in` when it
@@ -16,9 +14,8 @@
  * whatever happened here. Under reduced motion every block is marked at once.
  *
  * Carrying the campaign into the hub (ORB-166, ORB-167) moved to the shared `utm.js`
- * in REB-247, so `/community` gets it too without loading this whole file: `start`
- * below calls `window.__utm.carryUtm()`, guarded, the same way it guards the shared
- * field and the shared typewriter.
+ * in REB-247: `start` below calls `window.__utm.carryUtm()`, guarded, the same way it
+ * guards the shared field and the shared typewriter.
  */
 ;(function () {
   function reveal() {

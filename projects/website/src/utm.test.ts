@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
  * page's URL (ORB-166) and the page itself as `da=` (ORB-167) go onto every link into
  * `/hub/`, nothing else is touched, and both are remembered for the tab under the keys
  * the hub reads. Shared by every page with a door into the hub -- `landing.js` for `/`
- * and `/pigrocrm`, `community.js` for `/community` since REB-247 -- so this is the one
- * place the behaviour is pinned, rather than once per caller.
+ * and `/pigrocrm` -- so this is the one place the behaviour is pinned, rather than
+ * once per caller.
  */
 const source = readFileSync(join(__dirname, 'utm.js'), 'utf-8')
 
@@ -101,19 +101,14 @@ describe('carryUtm', () => {
 })
 
 describe('who calls it', () => {
-  // REB-247: community.html has a door into the hub too, but only landing.js called
-  // carryUtm, because community.html never loaded landing.js (and loading the whole of
-  // it would have mounted the shared field and the shared typewriter a second time,
-  // which community.js already does for this page). Pinned on the caller's own source,
-  // the same way typewriter.test.ts pins that both scripts call `window.__typewriter`.
+  // Pinned on the caller's own source, the same way typewriter.test.ts pins that
+  // both scripts call `window.__typewriter`.
   const callers = {
     'landing.js': readFileSync(join(__dirname, 'landing.js'), 'utf-8'),
-    'community.js': readFileSync(join(__dirname, 'community.js'), 'utf-8'),
   }
   const pages = {
     'index.html': readFileSync(join(__dirname, 'index.html'), 'utf-8'),
     'pigrocrm.html': readFileSync(join(__dirname, 'pigrocrm.html'), 'utf-8'),
-    'community.html': readFileSync(join(__dirname, 'community.html'), 'utf-8'),
   }
 
   it.each(Object.keys(callers) as (keyof typeof callers)[])('%s calls window.__utm.carryUtm()', (name) => {
@@ -124,10 +119,7 @@ describe('who calls it', () => {
     const page = pages[name]
     expect(page).toMatch(/<script type="module" src="\.\/utm\.js"><\/script>/)
     const utmIndex = page.indexOf('<script type="module" src="./utm.js">')
-    const callerIndex = Math.max(
-      page.indexOf('<script type="module" src="./landing.js">'),
-      page.indexOf('<script type="module" src="./community.js">'),
-    )
+    const callerIndex = page.indexOf('<script type="module" src="./landing.js">')
     expect(callerIndex).toBeGreaterThan(0)
     expect(utmIndex).toBeLessThan(callerIndex)
   })

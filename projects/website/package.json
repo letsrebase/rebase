@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "letsrebase.com: the rebase community page, the pages the product signs itself with, and the signup form.",
+  "description": "letsrebase.com: the rebase landing, the pages the product signs itself with.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -2,7 +2,7 @@
    palette of its own: palette-plugin.ts prepends the eight shared tokens out of
    src/styles/tokens.css, then landing/system.css, so the seven colours and the font
    stack are literally the values the app renders, and the grid line, the tile and
-   the glyph are written once for this sheet and community.css.
+   the glyph are written once for this sheet, shared with pitch.css.
 
    Since Orbiters (2026-09-07) the whole product shares one visual system: a faint
    grid the page sits on, tiles painted on it, opaque boxes with hard edges and a
@@ -126,8 +126,8 @@ code {
 }
 
 /* The header and the footer sit on the field, so each control carries a sliver of
-   the page's own ground behind it and stays readable over a dark tile: the same
-   move community.css makes for its footer. A border is what turns that sliver into
+   the page's own ground behind it and stays readable over a dark tile. A border is
+   what turns that sliver into
    a control instead of a hole punched through the tiles, and this tier carries no
    shadow, the same as the two hero doors below: a shadow reads as `.box`/`.card`,
    not as a link. `min-height` clears the 44px touch-target floor even at the
@@ -208,7 +208,7 @@ footer .quiet-link:hover {
   align-content: center;
 }
 
-/* --- The field: the same one the community page on `/` has. Fixed, behind everything
+/* --- The field: fixed, behind everything
    on the page, inert: decoration the script fills in, never something the page
    depends on. */
 #field {

@@ -1,17 +1,18 @@
 /* The part of the visual system every TOKEN_CONSUMERS sheet shares, injected once.
-   palette-plugin.ts prepends this file to landing.css, to community.css and to
-   pitch.css right after the tokens, so the grid line, the tile, the step and the glyph
-   are written here and nowhere else in the landing (pitch.css keeps its own larger,
-   `.dark`-aware drawing of the tiles for the deck's chrome, see its own comment). The app cannot consume this file (Tailwind owns its
-   cascade), so tokens.css restates the grid line and BrandMark.tsx the glyph; the
+   palette-plugin.ts prepends this file to landing.css and to pitch.css right after
+   the tokens, so the grid line, the tile, the step and the glyph are written here and
+   nowhere else in the landing (pitch.css keeps its own larger, `.dark`-aware drawing
+   of the tiles for the deck's chrome, see its own comment). The app cannot consume
+   this file (Tailwind owns its cascade), so tokens.css restates the grid line and
+   BrandMark.tsx the glyph; the
    test in landing-style.test.ts holds those two copies to these values.
 
    Every colour is a var() of a shared token; not even white is spelled out here. */
 :root {
   /* Prussian Blue at 7%: the line of the grid every page sits on. */
   --system-grid: color-mix(in oklab, var(--color-prussian-blue) 7%, transparent);
-  /* The tile. The community page shrinks it to 14px on a phone (see community.css) so the field
-     stays legible there; the landing and the app keep 16px. */
+  /* The tile, 16px, kept up here rather than per-page: the landing and the app share
+     it. */
   --system-cell: 16px;
 }
 
@@ -171,14 +172,12 @@
 }
 
 /* While the notice is up the page has the same room under its content, so that what the
-   notice sits over is ground and never the last line of a page (ORB-18: on a phone the
-   community page fits in one screen, so what was under the notice stayed under it until
+   notice sits over is ground and never the last line of a page (ORB-18: on a phone a
+   short page fits in one screen, so what was under the notice stayed under it until
    the visitor answered). consent.js measures the notice and writes `--consent-room` on
    the root element, the distance from its top edge to the bottom of the viewport; this
    spends it at the end of the body. A spacer rather than body padding, so that neither
-   sheet has to fold it into its own padding arithmetic: on the community page, where the
-   body is a grid with the box centred in its first row, this lands in the last row and
-   the box stays centred in what is left above the notice; on the landing it is the room
+   sheet has to fold it into its own padding arithmetic: on the landing it is the room
    the footer scrolls into. Nothing once the notice is gone, and nothing with JavaScript
    off, when there is no notice to make room for. */
 body::after {
@@ -198,9 +197,8 @@ body::after {
   }
 }
 
-/* Text for the ear only: the form's labels on the community page and the title's first line on
-   both pages, which names the roles the typewriter cycles through. Out of the layout
-   entirely, so it moves nothing. */
+/* Text for the ear only: the title's first line, which names the roles the typewriter
+   cycles through. Out of the layout entirely, so it moves nothing. */
 .sr-only {
   position: absolute;
   width: 1px;

@@ -1,11 +1,10 @@
 # website
 
-letsrebase.com: the public site. Today that is the rebase landing at `/`, the
-community page with its signup form at `/community`, and the two policy pages
-(`/privacy`, `/terms`); it is called `website` rather than `landing` because it is
-expected to grow past those.
+letsrebase.com: the public site. Today that is the rebase landing at `/` and the
+two policy pages (`/privacy`, `/terms`); it is called `website` rather than `landing`
+because it is expected to grow past those.
 
-Six HTML pages, six scripts, five stylesheets. No React, no Tailwind, no router.
+Five HTML pages, five scripts, four stylesheets. No React, no Tailwind, no router.
 That absence is the requirement rather than an omission: this is the first page a
 visitor loads, and it does not drag an application bundle behind it. The build takes
 about 300 milliseconds. Anything added here should keep that true.
@@ -28,12 +27,17 @@ pnpm --filter website lint
 |---|---|---|
 | `src/index.html` | `letsrebase.com/` | The rebase landing: two doors into the hub, how it works, the four voices, the perks. Since 2026-09-11 (ORB-145) |
 | `src/pigrocrm.html` | `/pigrocrm` | PigroCRM's own page (ORB-159): one door into rebase beside a drawn Claude conversation, the four things inside, the guide, the closing box. Its own `pigrocrm.css` on top of `landing.css` |
-| `src/community.html` | `/community` | The community page and its signup form, the front door until 2026-09-11. `/orbiters` still answers, as a 301 (REB-212, 2026-09-15) |
 | `src/privacy.html` | `/privacy` | Privacy notice |
 | `src/terms.html` | `/terms` | Terms |
 | `src/pitch.html` | `/pitch` | The pitch deck, nineteen slides with keyboard, swipe and wheel navigation; shared by link, `noindex`. Its own stylesheet, `pitch.css`; its pictures under `src/pitch/` |
 
-The community form posts to `POST /api/community/signups`, which since 2026-09-09 is
+The community page (its own signup form, at `/community`, `/orbiters` before
+REB-212) is gone (REB-72): both names 301 to `/` now, a week after the landing had
+held the front door long enough that nothing still pointed people at the old one. The
+hub owns every signup since 2026-09-09 (REB-17), so the page's own form was not
+carried forward.
+
+The landing's two calls to action point at `/hub/freelance` and `/hub/aziende`,
 implemented in the rebase hub's API (`projects/hub/apps/api`) and reached on the same
 origin. The landing's two calls to action point at `/hub/freelance` and `/hub/aziende`,
 the hub's wizards, on the same origin again. Those paths are the things this project
@@ -55,18 +59,19 @@ All three come from [`shared/brand`](../../shared/brand), and none of them may b
 restated here:
 
 - **Palette.** `src/palette-plugin.ts` reads the seven shared tokens out of
-  `@rebase/brand/palette.css` at build time and prepends them to its three consumers
-  (`landing.css`, `community.css`, `pitch.css`) as plain custom properties. The
+  `@rebase/brand/palette.css` at build time and prepends them to its two consumers
+  (`landing.css`, `pitch.css`) as plain custom properties. The
   application consumes the same file as part of its Tailwind theme. A hex pasted into a
   stylesheet here is the fork both mechanisms exist to prevent, and the plugin fails the
   build if the palette stops being extractable.
 - **Typeface.** Outfit, self-hosted, declared once in `@rebase/brand/font.css` and
   prepended the same way. Nothing is fetched from a CDN, on purpose: PigroCRM is sold
   on self-hosting, and a webfont request hands every visitor's IP to a third party.
-- **The mark.** The four tiles are `.glyph` in `src/system.css` here (shared by
-  `landing.css` and `community.css`), a second, larger drawing of the same four
-  colours in `pitch.css` for the deck's own chrome, and Tailwind classes in the
-  application's `BrandMark.tsx`. The first and third assert their order against
+- **The mark.** The four tiles are `.glyph` in `src/system.css` here, used by
+  `landing.css` alone now that the community page is gone (REB-72), a second, larger
+  drawing of the same four colours in `pitch.css` for the deck's own chrome, and
+  Tailwind classes in the application's `BrandMark.tsx`. The first and third assert
+  their order against
   `@rebase/brand/mark`, so those two cannot drift.
 
 ## How it is served
