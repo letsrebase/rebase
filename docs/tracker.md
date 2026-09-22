@@ -224,7 +224,9 @@ lands. On a milestone's draft PR none of that fires (§ Which PR): the URL goes 
 card the PR lists, and each card moves by hand at its run's start and at the merge. So
 the evidence that would have closed the card goes in a comment before or right after
 the merge, not in a state change you make. From here to the merge the card keeps
-following the PR: the review's findings and what you did with them, a CI run that went
+following the PR: the review's findings and what you did with them, Greptile's findings
+on each push and whether each was fixed or answered (the PR merges only when its last
+review leaves nothing open, and reads 5/5 where the score is on), a CI run that went
 red and why, a push that changed what the PR is. One line each is enough, and silence
 is not.
 
