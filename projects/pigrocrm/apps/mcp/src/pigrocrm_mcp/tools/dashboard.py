@@ -63,3 +63,13 @@ def get_operational_dashboard(context: McpContext) -> dict[str, Any]:
         .get_operational_dashboard(context.actor)
         .model_dump(mode="json")
     )
+
+
+def get_receivables_dashboard(context: McpContext) -> dict[str, Any]:
+    """No period, like the operational one: a receivable is owed today whatever window the
+    reader has in mind (slice 8 §2, REB-329)."""
+    return (
+        DashboardService(context.session)
+        .get_receivables_dashboard(context.actor)
+        .model_dump(mode="json")
+    )

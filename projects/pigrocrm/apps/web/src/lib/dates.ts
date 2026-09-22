@@ -67,6 +67,18 @@ export function formatIsoDayMonth(value: string): string {
   return dayMonthFormatter.format(local)
 }
 
+const monthYearFormatter = new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' })
+
+/**
+ * The month of an ISO date, named: `ottobre 2026`. The scadenziario's cash-by-month rows
+ * carry the month's first day, and a bar labelled `01/10/2026` would read as a day.
+ */
+export function formatIsoMonthYear(value: string): string {
+  const local = localDateFromIso(value)
+  if (local === null) return value
+  return monthYearFormatter.format(local)
+}
+
 const weekdayFormatter = new Intl.DateTimeFormat('it-IT', { weekday: 'short' })
 
 /**

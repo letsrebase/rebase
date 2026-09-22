@@ -123,7 +123,28 @@ async def test_the_dashboard_and_automation_tools_are_registered(dashboard_serve
     async with Client(dashboard_server) as client:
         names = {tool.name for tool in (await client.list_tools()).tools}
     assert "get_commercial_dashboard" in names
+    assert "get_receivables_dashboard" in names
     assert "describe_automations" in names
+
+
+async def test_the_receivables_tool_adds_up_to_the_economic_total(dashboard_server: Any) -> None:
+    """Slice 8 §2.2 on the wire (REB-329): the six buckets, every amount a string, their
+    codes in the page's order, and `totale` the very string the economic tool answers as
+    `da_incassare` -- two tools, one figure."""
+    async with Client(dashboard_server) as client:
+        page = _payload(await client.call_tool("get_receivables_dashboard", {}))
+        economic = _payload(await client.call_tool("get_economic_dashboard", {}))
+    assert [f["codice"] for f in page["fasce"]] == [
+        "scaduto",
+        "entro_30",
+        "da_31_a_60",
+        "da_61_a_90",
+        "oltre_90",
+        "senza_scadenza",
+    ]
+    assert all(isinstance(f["importo"], str) for f in page["fasce"])
+    assert isinstance(page["totale"], str)
+    assert page["totale"] == economic["da_incassare"]
 
 
 async def test_update_automation_config_has_no_tool(dashboard_server: Any) -> None:

@@ -95,7 +95,10 @@ export const queryKeys = {
   // than a refetch that briefly shows March's numbers under April's heading. Every
   // dashboard key starts with the literal 'dashboard' so a mutation that cannot know which
   // period is on screen can invalidate all of them by prefix.
-  dashboard: (kind: 'commerciale' | 'economica' | 'panoramica', params: Record<string, string>) =>
+  dashboard: (
+    kind: 'commerciale' | 'economica' | 'panoramica' | 'scadenziario',
+    params: Record<string, string>,
+  ) =>
     ['dashboard', kind, params] as const,
   automations: () => ['automations'] as const,
 }

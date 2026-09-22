@@ -2471,6 +2471,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/dashboard/receivables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scadenziario
+         * @description Slice 8 part A (REB-329). No period parameter, for `operativa`'s reason: what is
+         *     owed is owed today, and a `da`/`a` the service ignored would be a parameter the API
+         *     advertises and does not honour.
+         */
+        get: operations["scadenziario_api_dashboard_receivables_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/automation-config": {
         parameters: {
             query?: never;
@@ -3265,6 +3287,23 @@ export interface components {
             lordo_proiettato: string;
             /** Mesi */
             mesi: components["schemas"]["CashMonth"][];
+        };
+        /**
+         * CassaAttesaMese
+         * @description What is owed in one month of `data_scadenza`. `mese` is the month's first day.
+         */
+        CassaAttesaMese: {
+            /**
+             * Mese
+             * Format: date
+             */
+            mese: string;
+            /** Importo */
+            importo: string;
+            /** Numero */
+            numero: number;
+            /** Quota */
+            quota: number;
         };
         /** ClosedInPeriod */
         ClosedInPeriod: {
@@ -4419,6 +4458,93 @@ export interface components {
             custom_fields: {
                 [key: string]: unknown;
             }[];
+        };
+        /**
+         * EsposizioneCliente
+         * @description One customer's unpaid total, and how much of it is already past due.
+         */
+        EsposizioneCliente: {
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /** Ragione Sociale */
+            ragione_sociale: string;
+            /** Importo */
+            importo: string;
+            /** Numero */
+            numero: number;
+            /** Scaduto */
+            scaduto: string;
+            /** Quota */
+            quota: number;
+        };
+        /**
+         * FasciaScadenza
+         * @description One of the six ageing buckets of slice 8 §2.1, as `InvoiceRepository.ageing_receivables`
+         *     returns it: the sum and the count of the receivables whose due date falls in the
+         *     bucket. `da`/`a` are the bucket's own bounds, both `None` for «senza scadenza» and
+         *     `a` `None` for «oltre 90»; `quota` is the share of the largest bucket, in [0, 1],
+         *     computed there so the page scales a bar without coercing an amount.
+         *
+         *     `collegamento` is the drill-through, on the one bucket a list can answer today: the
+         *     overdue one, which is `?scadute=true` on the invoice list and the same
+         *     `_overdue_predicate` (criterion 2). The others carry `None` until the list takes a
+         *     due-date window.
+         */
+        FasciaScadenza: {
+            /** Codice */
+            codice: string;
+            /** Etichetta */
+            etichetta: string;
+            /** Da */
+            da: string | null;
+            /** A */
+            a: string | null;
+            /** Importo */
+            importo: string;
+            /** Numero */
+            numero: number;
+            /** Quota */
+            quota: number;
+            /** Collegamento */
+            collegamento: string | null;
+        };
+        /**
+         * FatturaScaduta
+         * @description One overdue receivable, with the reminders that actually left for it. Sent, not
+         *     prepared: `PaymentReminder.sent_at` is what counts, so a draft still sitting in the
+         *     mailbox does not read as a letter the customer ignored.
+         */
+        FatturaScaduta: {
+            /**
+             * Invoice Id
+             * Format: uuid
+             */
+            invoice_id: string;
+            /** Numero */
+            numero: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /** Cliente */
+            cliente: string;
+            /**
+             * Data Scadenza
+             * Format: date
+             */
+            data_scadenza: string;
+            /** Giorni Di Ritardo */
+            giorni_di_ritardo: number;
+            /** Importo */
+            importo: string;
+            /** Solleciti Inviati */
+            solleciti_inviati: number;
+            /** Ultimo Sollecito Il */
+            ultimo_sollecito_il: string | null;
         };
         /** FieldDefinitionCreate */
         FieldDefinitionCreate: {
@@ -5933,6 +6059,41 @@ export interface components {
         RecalculateResponse: {
             /** Voci Aggiornate */
             voci_aggiornate: number;
+        };
+        /**
+         * ReceivablesDashboard
+         * @description Slice 8 part A (REB-329): when the money already invoiced arrives.
+         *
+         *     **No period**, like the operational dashboard: a receivable is owed today whatever
+         *     window the reader is looking at, and `oggi` is the one date every bucket is measured
+         *     from. **No new data**: every figure is a `SUM` or a `COUNT` over `_receivable_filter`
+         *     in `InvoiceRepository`, and the six buckets add up to `totale`, which is
+         *     `sum_da_incassare` -- the same figure the economic dashboard prints, read the same
+         *     way, which is what `test_dashboard_receivables.py` pins to the cent (§2.2).
+         */
+        ReceivablesDashboard: {
+            /**
+             * Calcolato Alle
+             * Format: date-time
+             */
+            calcolato_alle: string;
+            /**
+             * Oggi
+             * Format: date
+             */
+            oggi: string;
+            /** Totale */
+            totale: string;
+            /** Fasce */
+            fasce: components["schemas"]["FasciaScadenza"][];
+            /** Per Mese */
+            per_mese: components["schemas"]["CassaAttesaMese"][];
+            /** Per Cliente */
+            per_cliente: components["schemas"]["EsposizioneCliente"][];
+            /** Scadute */
+            scadute: components["schemas"]["FatturaScaduta"][];
+            /** Scadute Totale */
+            scadute_totale: number;
         };
         /**
          * RegisterGapIn
@@ -26927,6 +27088,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OperationalDashboard"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scadenziario_api_dashboard_receivables_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReceivablesDashboard"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

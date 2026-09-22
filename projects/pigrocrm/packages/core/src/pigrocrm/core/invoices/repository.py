@@ -10,17 +10,18 @@ force either a new tool or an edit to another slice's declared list.
 """
 
 from collections.abc import Collection
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
-from typing import cast
+from typing import NamedTuple, cast
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, delete, distinct, func, select, text
+from sqlalchemy import ColumnElement, case, delete, distinct, func, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.gmail.models import PaymentReminder
 from pigrocrm.core.invoices.models import (
     PROFORMA_SEQUENCE_NAME,
     Invoice,
@@ -28,6 +29,7 @@ from pigrocrm.core.invoices.models import (
     InvoiceLine,
     InvoiceRegisterGap,
 )
+from pigrocrm.core.invoices.naming import numero_completo
 from pigrocrm.core.invoices.schemas import InvoiceListQuery
 from pigrocrm.core.money import round_money
 from pigrocrm.core.pipeline.models import PipelineStage
@@ -75,6 +77,63 @@ def _overdue_predicate() -> tuple[ColumnElement[bool], ...]:
         Invoice.data_scadenza.is_not(None),
         Invoice.data_scadenza < today_local(),
     )
+
+
+# The six ageing buckets of the scadenziario (slice 8 §2.1, REB-329), in the order the
+# page draws them. Six and not five: `data_scadenza` is nullable and a NULL is not today.
+FASCE_SCADENZIARIO: tuple[str, ...] = (
+    "scaduto",
+    "entro_30",
+    "da_31_a_60",
+    "da_61_a_90",
+    "oltre_90",
+    "senza_scadenza",
+)
+
+
+class FasciaRow(NamedTuple):
+    codice: str
+    da: date | None
+    a: date | None
+    importo: Decimal
+    numero: int
+    # The bucket's share of the largest bucket, in [0, 1], so a page can scale a bar
+    # without turning an amount string into a number (slice 6 criterion 14).
+    quota: float
+
+
+class MeseRow(NamedTuple):
+    mese: date  # the first day
+    importo: Decimal
+    numero: int
+    quota: float
+
+
+class ClienteRow(NamedTuple):
+    customer_id: UUID
+    ragione_sociale: str
+    importo: Decimal
+    numero: int
+    scaduto: Decimal
+    quota: float
+
+
+class ScadutaRow(NamedTuple):
+    invoice_id: UUID
+    numero: str
+    customer_id: UUID
+    cliente: str
+    data_scadenza: date
+    giorni_di_ritardo: int
+    importo: Decimal
+    solleciti_inviati: int
+    ultimo_sollecito_il: date | None
+
+
+def _quota(value: Decimal, of: Decimal) -> float:
+    """A share of the largest figure, the same rule `AnalyticsService.cash_overview` uses
+    for its months: zero when there is nothing to scale against."""
+    return float(value / of) if of > Decimal("0") else 0.0
 
 
 def invoiced_not_won_predicate() -> tuple[ColumnElement[bool], ...]:
@@ -494,6 +553,147 @@ class InvoiceRepository:
                 .limit(limit)
             ).scalars()
         )
+
+    def ageing_receivables(self, oggi: date) -> list[FasciaRow]:
+        """The receivables in the six buckets of slice 8 §2.1, each with its sum and count,
+        in the page's order and always all six -- an empty bucket is a row at zero, since a
+        bucket that vanishes when empty is a chart that changes shape.
+
+        One statement: a `CASE` on `data_scadenza` against the four bounds, grouped, over
+        `_receivable_filter()` imported and not restated (§2.2 and criterion 3), so the
+        six sums add up to `sum_da_incassare` by construction and not by care. `oggi` is a
+        parameter for the reason `list_scadute` gives; «scaduto» is strictly before it, as
+        `_overdue_predicate` reads it, and «entro 30» starts on it.
+        """
+        bounds = {
+            "entro_30": (oggi, oggi + timedelta(days=30)),
+            "da_31_a_60": (oggi + timedelta(days=31), oggi + timedelta(days=60)),
+            "da_61_a_90": (oggi + timedelta(days=61), oggi + timedelta(days=90)),
+        }
+        fascia = case(
+            (Invoice.data_scadenza.is_(None), "senza_scadenza"),
+            (Invoice.data_scadenza < oggi, "scaduto"),
+            (Invoice.data_scadenza <= bounds["entro_30"][1], "entro_30"),
+            (Invoice.data_scadenza <= bounds["da_31_a_60"][1], "da_31_a_60"),
+            (Invoice.data_scadenza <= bounds["da_61_a_90"][1], "da_61_a_90"),
+            else_="oltre_90",
+        ).label("fascia")
+        rows = self.session.execute(
+            select(fascia, func.coalesce(func.sum(Invoice.totale), 0), func.count(Invoice.id))
+            .where(*_receivable_filter())
+            .group_by(fascia)
+        ).all()
+        found = {row[0]: (round_money(Decimal(row[1])), int(row[2])) for row in rows}
+        zero = (Decimal("0.00"), 0)
+        largest = max((found.get(c, zero)[0] for c in FASCE_SCADENZIARIO), default=Decimal("0"))
+        out: list[FasciaRow] = []
+        for codice in FASCE_SCADENZIARIO:
+            importo, numero = found.get(codice, zero)
+            da, a = bounds.get(codice, (None, None))
+            if codice == "oltre_90":
+                da = bounds["da_61_a_90"][1] + timedelta(days=1)
+            out.append(FasciaRow(codice, da, a, importo, numero, _quota(importo, largest)))
+        return out
+
+    def receivables_by_due_month(self) -> list[MeseRow]:
+        """What is owed, month by month of `data_scadenza`, oldest first: the cash a person
+        can expect, told by when it is due rather than by when the work was done (the
+        economic charts' reading). Rows without a due date are not here: they are the sixth
+        bucket of `ageing_receivables`, and a month cannot hold a date that does not exist.
+        """
+        mese = func.date_trunc("month", Invoice.data_scadenza).label("mese")
+        rows = self.session.execute(
+            select(mese, func.coalesce(func.sum(Invoice.totale), 0), func.count(Invoice.id))
+            .where(*_receivable_filter(), Invoice.data_scadenza.is_not(None))
+            .group_by(mese)
+            .order_by(mese)
+        ).all()
+        importi = [round_money(Decimal(row[1])) for row in rows]
+        largest = max(importi, default=Decimal("0"))
+        return [
+            MeseRow(
+                mese=row[0].date() if hasattr(row[0], "date") else row[0],
+                importo=importo,
+                numero=int(row[2]),
+                quota=_quota(importo, largest),
+            )
+            for row, importo in zip(rows, importi, strict=True)
+        ]
+
+    def receivables_by_customer(self, oggi: date, limit: int) -> list[ClienteRow]:
+        """Who owes what, largest exposure first, with the overdue part of each: the
+        `unpaid_for_customer` reading turned around, over the same predicate. `oggi`
+        splits the overdue share the way `_overdue_predicate` does, strictly before."""
+        scaduto = func.coalesce(
+            func.sum(case((Invoice.data_scadenza < oggi, Invoice.totale), else_=0)), 0
+        )
+        totale = func.coalesce(func.sum(Invoice.totale), 0)
+        rows = self.session.execute(
+            select(Customer.id, Customer.ragione_sociale, totale, func.count(Invoice.id), scaduto)
+            .join(Customer, Customer.id == Invoice.customer_id)
+            .where(*_receivable_filter())
+            .group_by(Customer.id, Customer.ragione_sociale)
+            .order_by(totale.desc(), Customer.ragione_sociale)
+            .limit(limit)
+        ).all()
+        importi = [round_money(Decimal(row[2])) for row in rows]
+        largest = max(importi, default=Decimal("0"))
+        return [
+            ClienteRow(
+                customer_id=row[0],
+                ragione_sociale=row[1],
+                importo=importo,
+                numero=int(row[3]),
+                scaduto=round_money(Decimal(row[4])),
+                quota=_quota(importo, largest),
+            )
+            for row, importo in zip(rows, importi, strict=True)
+        ]
+
+    def overdue_with_reminders(self, oggi: date, limit: int) -> list[ScadutaRow]:
+        """The overdue rows worst first, each with how many reminders actually left and
+        when the last one did. Sent reminders are rows with `sent_at` (a prepared draft
+        is not a letter the customer received, `PaymentReminder`'s own docstring), counted
+        in a correlated subquery so the invoice row stays one row. Strictly before `oggi`,
+        as the «scaduto» bucket and `_overdue_predicate` read it."""
+        inviati = (
+            select(func.count(PaymentReminder.id))
+            .where(PaymentReminder.invoice_id == Invoice.id, PaymentReminder.sent_at.is_not(None))
+            .scalar_subquery()
+        )
+        ultimo = (
+            select(func.max(PaymentReminder.sent_at))
+            .where(PaymentReminder.invoice_id == Invoice.id, PaymentReminder.sent_at.is_not(None))
+            .scalar_subquery()
+        )
+        rows = self.session.execute(
+            select(Invoice, Customer.ragione_sociale, inviati, ultimo)
+            .join(Customer, Customer.id == Invoice.customer_id)
+            .where(
+                *_receivable_filter(),
+                Invoice.data_scadenza.is_not(None),
+                Invoice.data_scadenza < oggi,
+            )
+            .order_by(Invoice.data_scadenza, Invoice.numero)
+            .limit(limit)
+        ).all()
+        out: list[ScadutaRow] = []
+        for invoice, cliente, count, last in rows:
+            scadenza = cast(date, invoice.data_scadenza)
+            out.append(
+                ScadutaRow(
+                    invoice_id=invoice.id,
+                    numero=numero_completo(cast(int, invoice.anno), cast(int, invoice.numero)),
+                    customer_id=invoice.customer_id,
+                    cliente=cliente,
+                    data_scadenza=scadenza,
+                    giorni_di_ritardo=(oggi - scadenza).days,
+                    importo=round_money(Decimal(invoice.totale)),
+                    solleciti_inviati=int(count or 0),
+                    ultimo_sollecito_il=last.date() if last is not None else None,
+                )
+            )
+        return out
 
     def customer_names(self, customer_ids: Collection[UUID]) -> dict[UUID, str]:
         """The `ragione_sociale` of each given customer, in one query.

@@ -484,6 +484,9 @@ def test_the_service_has_exactly_the_dashboards_that_exist() -> None:
         "get_commercial_dashboard",
         "get_economic_dashboard",
         "get_operational_dashboard",
+        # Slice 8 part A (REB-329), registered as `get_receivables_dashboard` in the
+        # same commit.
+        "get_receivables_dashboard",
     }
 
 
