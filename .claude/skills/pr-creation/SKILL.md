@@ -259,7 +259,9 @@ gh pr create --body-file pr-body.md \
    reviewed, 2 comments added.`), and, when there are findings, as a review by the bot
    with an empty body. A clean run leaves only the check run (#268's fourth commit) and
    a run can leave only the review (#268's third), so wait for either, as a background
-   job next to the CI watch, then read what that run raised:
+   job next to the CI watch. When the check run counts findings and no review is visible
+   yet, keep polling the reviews: on #268 the review landed three to six seconds before
+   the check run, but nothing promises that order. Then read what that run raised:
 
    ```bash
    sha=$(git rev-parse HEAD)
@@ -271,6 +273,12 @@ gh pr create --body-file pr-body.md \
      [ -n "$run$rid" ] && break; sleep 30
    done
    echo "$run"
+   n=$(echo "$run" | grep -oE '[0-9]+ comments' | grep -oE '[0-9]+')
+   for i in $(seq 12); do   # the check run counted findings: the review is on its way
+     { [ "${n:-0}" = 0 ] || [ -n "$rid" ]; } && break; sleep 10
+     rid=$(gh api repos/letsrebase/rebase/pulls/<n>/reviews \
+         --jq ".[] | select(.user.login == \"greptile-apps[bot]\" and .commit_id == \"$sha\") | .id" | tail -n 1)
+   done
    [ -n "$rid" ] && gh api repos/letsrebase/rebase/pulls/<n>/comments \
        --jq ".[] | select(.pull_request_review_id == $rid and .in_reply_to_id == null) | \"\(.id) \(.path):\(.line // .original_line) \(.body)\""
    gh api repos/letsrebase/rebase/issues/<n>/comments \
@@ -294,7 +302,7 @@ gh pr create --body-file pr-body.md \
    no run on the head sha (`$run` and `$rid` both empty): `gh pr comment <n> --body
    '@greptileai'` once, which re-triggers it, and run the wait again; still nothing,
    say so on the card and go on without the comments command. A later push may get no
-   run on its own: two of #268's four commits got none in ten minutes and one within
+   run on its own: three of #268's five commits got none in ten minutes and one within
    thirty seconds of the comment, the other two were reviewed unprompted (2026-09-22).
    What the loop did goes on the card in the same `**Review applied:**` comment as the
    independent review (the `linear-content` shape): how many findings, which changed
