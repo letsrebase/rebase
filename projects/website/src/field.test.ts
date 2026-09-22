@@ -111,10 +111,14 @@ describe('field.js', () => {
         counters.rafCalls += 1
         return 1
       }) as typeof window.requestAnimationFrame
-      window.setTimeout = ((...args: unknown[]) => {
+      window.setTimeout = (() => {
         counters.timerCalls += 1
-        return originalTimeout(...(args as Parameters<typeof setTimeout>))
-      }) as typeof window.setTimeout
+        // Counted, never scheduled for real: field.js's own `tick` reschedules
+        // itself recursively, and letting even one real 125ms timer through outlives
+        // this test, firing later against a torn-down jsdom window (measured: an
+        // uncaught "window is not defined" once the suite grew past twelve files).
+        return 0
+      }) as unknown as typeof window.setTimeout
       // A minimal 2d context: the loop's own scheduling is the subject here, not the pixels.
       HTMLCanvasElement.prototype.getContext = (() => ({
         setTransform() {},
