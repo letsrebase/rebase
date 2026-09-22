@@ -165,7 +165,7 @@ export function EconomicTab({
             />
           </>
         ) : (
-          <div className="rounded-lg border bg-card p-4 sm:col-span-2">
+          <div className="border bg-card p-4 sm:col-span-2">
             <p className="text-sm text-muted-foreground">Stima fiscale</p>
             {/* No link out any more: the card below says which of the two is missing, in
                 the server's own words, and offers the settings screen when that is the

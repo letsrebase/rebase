@@ -94,7 +94,7 @@ function TotalsColumn({
 }) {
   const headingId = useId()
   return (
-    <div role="group" aria-labelledby={headingId} className="rounded-lg border p-4">
+    <div role="group" aria-labelledby={headingId} className="border p-4">
       <div className="mb-2 flex items-baseline justify-between gap-2">
         <h3 id={headingId} className="font-semibold">
           {label} ({totals.deal})

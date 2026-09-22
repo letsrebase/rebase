@@ -154,7 +154,7 @@ export function DynamicFieldRenderer({ field, value, onChange, error }: Props) {
           case 'multiselect': {
             const selected = Array.isArray(value) ? (value as string[]) : []
             return (
-              <div aria-invalid={invalid} className="flex flex-wrap gap-3 rounded-md border p-3 aria-invalid:border-destructive">
+              <div aria-invalid={invalid} className="flex flex-wrap gap-3 border p-3 aria-invalid:border-destructive">
                 {field.options.map((option) => (
                   <label key={option} className="flex items-center gap-2 text-sm">
                     <Checkbox

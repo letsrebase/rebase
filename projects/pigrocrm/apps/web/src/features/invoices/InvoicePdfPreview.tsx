@@ -34,7 +34,7 @@ export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
       // Sticky in its grid column from `xl`, as tall as the viewport minus the page
       // header (PageHeader, its tabs and the panel's own top margin: 11rem today).
       // `self-start` is what keeps a sticky item from being stretched to the row.
-      className="bg-muted/40 flex min-h-[32rem] flex-col overflow-hidden rounded-xl border xl:sticky xl:top-6 xl:h-[calc(100vh-11rem)] xl:self-start"
+      className="bg-muted/40 flex min-h-[32rem] flex-col overflow-hidden border xl:sticky xl:top-6 xl:h-[calc(100vh-11rem)] xl:self-start"
     >
       {empty ? (
         <Empty invoice={invoice} />

@@ -99,7 +99,7 @@ export function CalendarPage({
         ) : (
           <>
             <div
-              className="grid grid-cols-7 gap-px overflow-hidden rounded-lg border bg-border"
+              className="grid grid-cols-7 gap-px overflow-hidden border bg-border"
               role="grid"
               aria-label={`Calendario di ${monthLabel(mese)}`}
             >

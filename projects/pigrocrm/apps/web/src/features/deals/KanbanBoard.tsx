@@ -30,7 +30,7 @@ function Column({
 
       <div
         ref={setNodeRef}
-        className={`min-h-40 flex-1 space-y-2 rounded-md border border-dashed p-2 transition-colors ${
+        className={`min-h-40 flex-1 space-y-2 border border-dashed p-2 transition-colors ${
           isOver ? 'border-[var(--color-watermelon)] bg-muted' : ''
         }`}
       >

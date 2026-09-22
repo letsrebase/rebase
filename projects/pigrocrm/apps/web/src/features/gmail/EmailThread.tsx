@@ -34,7 +34,7 @@ export function EmailThread({ messages }: { messages: GmailMessageRead[] }) {
     <section role="group" aria-label={subject} className="space-y-3">
       <h3 className="text-base font-medium">{subject}</h3>
       {messages.map((message) => (
-        <article key={message.id} className="space-y-2 rounded-lg border bg-card p-3">
+        <article key={message.id} className="space-y-2 border bg-card p-3">
           <header className="flex flex-wrap items-baseline gap-2 text-sm">
             {/* Direction is decided at sync time against the connected mailbox, not
                 re-derived here from the roster -- which would call every message

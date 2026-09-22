@@ -66,7 +66,7 @@ export function PeriodsPanel() {
       {problem && (
         <p
           role="alert"
-          className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {problem.detail}
         </p>
@@ -102,7 +102,7 @@ export function PeriodsPanel() {
         </Button>
       </div>
 
-      <ul className="divide-y rounded-lg border">
+      <ul className="divide-y border">
         {(locks.data ?? []).map((lock) => (
           <li key={`${lock.anno}-${lock.mese}`} className="flex items-center justify-between p-3">
             <div>

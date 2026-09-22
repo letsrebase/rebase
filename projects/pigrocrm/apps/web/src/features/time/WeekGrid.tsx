@@ -43,7 +43,7 @@ export function WeekGrid({
 
   return (
     <div className="space-y-4">
-      <div className="overflow-x-auto rounded-lg border">
+      <div className="overflow-x-auto border">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b bg-muted/40">

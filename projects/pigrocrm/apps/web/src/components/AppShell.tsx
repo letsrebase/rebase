@@ -382,7 +382,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className={cn('flex-1 text-left', rail && 'sr-only')}>Cerca</span>
             <kbd
               className={cn(
-                'rounded border border-sidebar-border px-1.5 py-0.5 text-xs font-medium',
+                'border border-sidebar-border px-1.5 py-0.5 text-xs font-medium',
                 rail && 'sr-only',
               )}
             >

@@ -20,7 +20,7 @@ function GmailSettingsRoute() {
   return (
     <div className="space-y-4">
       {messaggio ? (
-        <p role="status" className="rounded-lg border bg-muted/50 px-3 py-2 text-sm">
+        <p role="status" className="border bg-muted/50 px-3 py-2 text-sm">
           {messaggio}
         </p>
       ) : null}

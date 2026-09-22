@@ -105,7 +105,7 @@ export function FiscalPanel({ anno }: { anno: number }) {
           the standing qualification on every figure below it. */}
       <p
         role="note"
-        className="rounded-lg border bg-muted/50 px-3 py-2 text-sm text-muted-foreground"
+        className="border bg-muted/50 px-3 py-2 text-sm text-muted-foreground"
       >
         {data.avvertenza}
       </p>

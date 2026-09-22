@@ -118,7 +118,7 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
         {scadute === true && (
           <p
             role="status"
-            className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm"
+            className="mb-4 flex flex-wrap items-center gap-2 border bg-card px-3 py-2 text-sm"
           >
             <span>
               <strong>Scadute e non incassate</strong> — solo le fatture emesse la cui scadenza è

@@ -80,7 +80,7 @@ export function TimeRegister({
       </p>
 
       {groups.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+        <p className="border border-dashed p-6 text-center text-sm text-muted-foreground">
           Nessuna ora registrata in questa settimana. Avvia il timer o aggiungi le ore a mano.
         </p>
       ) : (
@@ -92,7 +92,7 @@ export function TimeRegister({
                 {formatHoursValue(group.total)} h
               </span>
             </header>
-            <ul className="divide-y rounded-lg border bg-card">
+            <ul className="divide-y border bg-card">
               {group.entries.map((entry) => {
                 const billed = entry.invoice_line_id !== null
                 return (

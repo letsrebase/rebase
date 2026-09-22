@@ -120,7 +120,7 @@ export function ToInvoiceDialog({ dealId, open, onOpenChange }: ToInvoiceDialogP
 
         {!entries.isError && items.length > 0 && (
           <>
-            <ul className="divide-y rounded-lg border">
+            <ul className="divide-y border">
               {items.map((item) => (
                 <li key={item.id} className="flex items-center gap-3 px-3 py-2">
                   <Checkbox
@@ -165,7 +165,7 @@ export function ToInvoiceDialog({ dealId, open, onOpenChange }: ToInvoiceDialogP
             {problem && (
               <p
                 role="alert"
-                className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
               >
                 {refusalText(problem)}
               </p>

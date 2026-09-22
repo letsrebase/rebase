@@ -37,7 +37,7 @@ export function UploadDropzone({ onFiles, busy, accept }: Props) {
         if (files.length > 0) onFiles(files)
       }}
       className={cn(
-        'rounded-lg border-2 border-dashed p-6 text-center transition-colors',
+        'border-2 border-dashed p-6 text-center transition-colors',
         over ? 'border-primary bg-primary/5' : 'border-border',
         busy && 'opacity-60',
       )}

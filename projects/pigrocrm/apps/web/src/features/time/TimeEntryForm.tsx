@@ -158,7 +158,7 @@ export function TimeEntryForm({
         </DialogHeader>
 
         {locked && (
-          <p className="rounded-lg border border-muted bg-muted/40 px-3 py-2 text-sm">
+          <p className="border border-muted bg-muted/40 px-3 py-2 text-sm">
             La voce è su una fattura emessa: ore, data, tariffa e descrizione sono
             congelate. Restano modificabili le note interne e i campi personalizzati.
           </p>

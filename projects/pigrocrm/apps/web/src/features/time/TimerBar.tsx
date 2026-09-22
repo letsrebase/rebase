@@ -183,7 +183,7 @@ export function TimerBar({
   return (
     <div
       className={cn(
-        'flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3',
+        'flex flex-wrap items-center gap-3 border bg-card p-3',
         // A running timer is the one row on the screen that has to stand out, and
         // since 2026-09-18 the weight comes from the width: `--line-strong`, the
         // site's own 2px, where this used to fade the ink to 30% and now would read

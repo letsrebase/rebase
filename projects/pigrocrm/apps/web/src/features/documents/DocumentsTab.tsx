@@ -100,7 +100,7 @@ export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
       {problem && (
         <p
           role="alert"
-          className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {problem.detail}
         </p>
@@ -119,7 +119,7 @@ export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
       )}
 
       {!documents.isError && documents.data && documents.data.items.length > 0 && (
-        <ul className="divide-y rounded-lg border">
+        <ul className="divide-y border">
           {documents.data.items.map((document) => (
             <li key={document.id} className="flex items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">

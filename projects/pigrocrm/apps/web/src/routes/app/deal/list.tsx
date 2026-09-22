@@ -136,7 +136,7 @@ export function DealsList({
               <p
                 key={filter.key}
                 role="status"
-                className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm"
+                className="flex flex-wrap items-center gap-2 border bg-card px-3 py-2 text-sm"
               >
                 <span>
                   <strong>{filter.label}</strong> — {filter.explanation}
@@ -149,7 +149,7 @@ export function DealsList({
         {deals.data?.truncated && (
           <p
             role="status"
-            className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            className="mb-4 border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >
             Ci sono troppi deal da mostrare tutti insieme: alcuni potrebbero mancare da questo
             elenco. Contatta un amministratore.

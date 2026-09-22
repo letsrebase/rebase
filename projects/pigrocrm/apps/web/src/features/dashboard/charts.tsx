@@ -57,7 +57,7 @@ export function BigNumber({
   tone?: 'neutral' | 'accent'
 }) {
   return (
-    <div role="group" aria-label={label} className="overflow-hidden rounded-lg border bg-card">
+    <div role="group" aria-label={label} className="overflow-hidden border bg-card">
       {/* The accent is a mark, not coloured text. --chart-1 as a foreground measures
           2.86:1 on the light card, well under the 4.5:1 a number has to clear, and a
           figure the reader squints at is a worse dashboard than an unemphasised one.
@@ -89,7 +89,7 @@ export function BigNumber({
 
 function EmptyChart({ caption }: { caption: string }) {
   return (
-    <div className="rounded-lg border bg-card p-4">
+    <div className="border bg-card p-4">
       <p className="text-sm font-medium">{caption}</p>
       <p className="mt-2 text-sm text-muted-foreground">{EMPTY}</p>
     </div>
@@ -121,7 +121,7 @@ export type BarRow = {
 export function BarRows({ caption, rows }: { caption: string; rows: BarRow[] }) {
   if (rows.length === 0) return <EmptyChart caption={caption} />
   return (
-    <div className="overflow-x-auto rounded-lg border bg-card p-4">
+    <div className="overflow-x-auto border bg-card p-4">
       <table className="w-full text-sm">
         <caption className="mb-2 text-left text-sm font-medium">{caption}</caption>
         {/* The header names the two columns for a screen reader and would be pure noise on
@@ -144,9 +144,9 @@ export function BarRows({ caption, rows }: { caption: string; rows: BarRow[] }) 
               </th>
               <td className="py-1">
                 <div className="flex items-center gap-2">
-                  <div className="h-2 min-w-24 flex-1 rounded-sm bg-muted">
-                    {/* Square at the baseline, rounded at the data end: the shape says
-                        which side the bar grows from without a second axis to read. */}
+                  <div className="h-2 min-w-24 flex-1 bg-muted">
+                    {/* Both ends square since the squared system: the fill grows from the
+                        baseline, and the edge that moves is the only shape left to read. */}
                     <div
                       data-testid="bar-fill"
                       aria-hidden="true"
@@ -194,7 +194,7 @@ export function Sparkline({ caption, points }: { caption: string; points: SparkP
     .join(' ')
 
   return (
-    <div className="overflow-x-auto rounded-lg border bg-card p-4">
+    <div className="overflow-x-auto border bg-card p-4">
       <svg
         data-testid="sparkline-svg"
         aria-hidden="true"

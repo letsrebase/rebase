@@ -101,7 +101,7 @@ export function AutomationsPanel() {
         {data.regole.map((rule) => {
           const field = FIELD_BY_RULE[rule.codice]
           return (
-            <div key={rule.codice} className="flex items-start gap-4 rounded-lg border p-4">
+            <div key={rule.codice} className="flex items-start gap-4 border p-4">
               <RuleSwitch
                 label={rule.titolo}
                 checked={rule.attiva}

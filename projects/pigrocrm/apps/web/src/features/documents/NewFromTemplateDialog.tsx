@@ -163,7 +163,7 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
         {templates.isError && <QueryErrorBanner error={templates.error} />}
 
         {!templateId && !templates.isError && (
-          <ul className="divide-y rounded-lg border">
+          <ul className="divide-y border">
             {(templates.data?.items ?? []).map((template) => (
               <li key={template.id}>
                 <button
@@ -209,7 +209,7 @@ export function NewFromTemplateDialog({ open, onOpenChange, owner }: Props) {
             />
 
             {previewText !== null && (
-              <pre className="max-h-64 overflow-auto rounded-lg border bg-muted p-3 text-sm">
+              <pre className="max-h-64 overflow-auto border bg-muted p-3 text-sm">
                 {previewText}
               </pre>
             )}

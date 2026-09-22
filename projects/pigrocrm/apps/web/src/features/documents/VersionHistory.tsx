@@ -59,14 +59,14 @@ export function VersionHistory({ documentId }: { documentId: string }) {
       {problem && (
         <p
           role="alert"
-          className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {problem.detail}
         </p>
       )}
       {items.length === 0 && <p className="text-muted-foreground">Nessuna versione.</p>}
       {items.length > 0 && (
-        <ul className="divide-y rounded-lg border">
+        <ul className="divide-y border">
           {items.map((version) => (
             <li key={version.id} className="flex items-center gap-3 px-4 py-3">
               <span className="w-10 font-medium">v{version.numero}</span>

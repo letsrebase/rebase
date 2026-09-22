@@ -88,7 +88,7 @@ export function ProfilePanel() {
         <dd>{roleLabel(user.ruolo)}</dd>
       </dl>
 
-      <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+      <div className="flex items-start justify-between gap-4 border p-4">
         <div className="space-y-1">
           <p className="text-sm font-medium">Ricevi il resoconto settimanale</p>
           <p className="text-sm text-muted-foreground">

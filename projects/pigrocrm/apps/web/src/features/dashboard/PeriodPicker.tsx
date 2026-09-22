@@ -8,8 +8,8 @@ import { currentMonth, presetQuarter, presetYear, type Periodo } from './periodo
  *
  * The presets are `outline` and not `ghost`: they sit where §4 puts a page's one strong
  * action, and with no line and no fill they read as a caption rather than as three things
- * you can press (visual pass of 2026-09-08). The dates carry the same 10px radius as
- * every other control on a filter row.
+ * you can press (visual pass of 2026-09-08). The dates are square inputs carrying the
+ * same 1px ink line as every other control on a filter row.
  */
 export function PeriodPicker({
   periodo,
@@ -28,7 +28,7 @@ export function PeriodPicker({
         type="date"
         value={periodo.da}
         onChange={(event) => onChange({ ...periodo, da: event.target.value })}
-        className="min-w-0 rounded-lg border bg-background px-2 py-1 text-sm"
+        className="min-w-0 border bg-background px-2 py-1 text-sm"
       />
       <label className="text-sm text-muted-foreground" htmlFor="periodo-a">
         al
@@ -38,7 +38,7 @@ export function PeriodPicker({
         type="date"
         value={periodo.a}
         onChange={(event) => onChange({ ...periodo, a: event.target.value })}
-        className="min-w-0 rounded-lg border bg-background px-2 py-1 text-sm"
+        className="min-w-0 border bg-background px-2 py-1 text-sm"
       />
       <Button variant="outline" size="sm" onClick={() => onChange(currentMonth())}>
         Mese

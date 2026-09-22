@@ -23,7 +23,7 @@ export function CopyPrompt({ text, summary = 'Prompt per l’assistente' }: { te
         {summary}
       </summary>
       <div className="mt-2 space-y-2">
-        <p className="bg-muted/50 whitespace-pre-wrap rounded-md border p-3 leading-relaxed">{text}</p>
+        <p className="bg-muted/50 whitespace-pre-wrap border p-3 leading-relaxed">{text}</p>
         <Button type="button" variant="outline" size="sm" onClick={() => void copy()}>
           <Copy className="mr-2 size-4" aria-hidden />
           Copia il prompt

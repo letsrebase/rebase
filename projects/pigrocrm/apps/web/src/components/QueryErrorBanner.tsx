@@ -24,7 +24,7 @@ export function QueryErrorBanner({ error }: { error: unknown }) {
   return (
     <p
       role="alert"
-      className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+      className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
     >
       {toProblem(error).detail}
     </p>

@@ -229,7 +229,7 @@ export function Timeline({ entityType, entityId, limit = 50 }: TimelineProps) {
   return (
     <ol className="space-y-3">
       {data.map((entry) => (
-        <li key={entry.id} className="flex items-start gap-3 rounded-md border p-3">
+        <li key={entry.id} className="flex items-start gap-3 border p-3">
           <ActorBadge actorType={entry.actor_type} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">

@@ -306,7 +306,7 @@ export function FieldsPanel() {
             {banner && (
               <p
                 role="alert"
-                className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
               >
                 {banner}
               </p>
@@ -424,7 +424,7 @@ export function FieldsPanel() {
             {editBanner && (
               <p
                 role="alert"
-                className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
               >
                 {editBanner}
               </p>

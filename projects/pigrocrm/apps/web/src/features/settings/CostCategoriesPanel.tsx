@@ -196,7 +196,7 @@ export function CostCategoriesPanel() {
       {problem && (
         <p
           role="alert"
-          className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
           {problem}
         </p>
@@ -213,7 +213,7 @@ export function CostCategoriesPanel() {
         </Label>
       </div>
 
-      <ul className="divide-y rounded-lg border">
+      <ul className="divide-y border">
         {rows.map((category) => (
           <CategoryRow key={category.id} category={category} onProblem={setProblem} />
         ))}
@@ -230,7 +230,7 @@ export function CostCategoriesPanel() {
           {dialogBanner && (
             <p
               role="alert"
-              className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
             >
               {dialogBanner}
             </p>

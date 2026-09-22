@@ -483,7 +483,7 @@ export function TemplatesPanel() {
                 ) : null}
               </div>
               {previewText !== null ? (
-                <pre className="bg-muted max-h-64 overflow-auto rounded p-3 text-xs whitespace-pre-wrap">
+                <pre className="bg-muted max-h-64 overflow-auto p-3 text-xs whitespace-pre-wrap">
                   {previewText}
                 </pre>
               ) : null}

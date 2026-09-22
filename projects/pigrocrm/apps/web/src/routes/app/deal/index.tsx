@@ -24,7 +24,7 @@ function TruncatedNotice({ scope }: { scope: string }) {
   return (
     <p
       role="status"
-      className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+      className="mb-4 border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
     >
       Ci sono troppi deal da mostrare tutti insieme: alcuni potrebbero mancare {scope}. Contatta un
       amministratore.
