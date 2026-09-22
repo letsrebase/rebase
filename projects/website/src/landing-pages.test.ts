@@ -282,17 +282,11 @@ describe('index.html', () => {
     expect(page).not.toMatch(/Studio Rossi|example\.com/)
   })
 
-  it('opens a door into the hub admin area from its footer, and only there', () => {
-    // Ivan, 2026-09-10 (ORB-105): whoever reviews signups, freelancers and companies
-    // should not have to type the admin URL by hand. One quiet link, last in the
-    // footer, dressed like its neighbours. It goes to `/hub/admin/freelance`, the first
-    // screen of the area and where the hub's own login lands, rather than to `/hub/admin`:
-    // the hub router has no index route under `/admin`, so a signed-in admin sent there
-    // would see the frame with an empty panel (found in review of PR 28, filed as ORB-106).
-    // `AdminLayout` still sends a visitor without a session to its login first.
-    const footer = page.match(/<footer[\s\S]*?<\/footer>/)?.[0] ?? ''
-    expect(footer).toMatch(/<a[^>]*\bhref="\/hub\/admin\/freelance"[^>]*>Admin<\/a>\s*<\/p>/)
-    expect(page.match(/href="\/hub\/admin/g)).toHaveLength(1)
+  it('never links the admin area from a public footer', () => {
+    // REB-337: the ORB-105 door (Ivan, 2026-09-10) put the admin URL in plain sight
+    // for anyone who reads the page source. Removed; the hub's own login is the way
+    // in for whoever already knows the area exists.
+    expect(page).not.toMatch(/href="\/hub\/admin/)
   })
 
   it('mounts the field behind the whole page, from the shared script', () => {
