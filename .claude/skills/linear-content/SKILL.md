@@ -20,14 +20,16 @@ the person you work for said. Real newlines, never `\n` escapes. Markdown headin
 
 ## The title
 
-One sentence with a verb, **under 80 characters**, one clause. It states the
-observed problem or the outcome the card makes true, never the intended fix, and
-never repeats the body. A colon inside a title means the second half belongs in the
-body. The fix changes, and a title written as a fix ages into a lie.
+One sentence **under 80 characters, starting with a verb**, one clause, or two
+when the second only names what makes the first visible. It names the work the
+card does, the same shape as a project name. The observed problem is not lost: it
+is the `**Observed.**` line of the body, one screen down. A colon inside a title
+means the second half belongs in the body.
 
-- Good: `An issued invoice gets a due date nobody agreed on`
-- Good: `The dead confermata -> bozza transition is gone from both tables` (the outcome, not the instruction to make it)
-- Bad: `Add delete button to invoice page` (the fix, and it may not be this fix)
+- Good: `Drop the stale orbiters database from the CRM host`
+- Good: `Make the CV optional in the wizard and the member area`
+- Bad: `The dead confermata -> bozza transition is gone from both tables` (the
+  end state, not the work; it reads as a riddle to anyone who did not write it)
 - Bad: a two-hundred-character sentence that is the whole body, in the title
 
 ## The issue body
@@ -90,7 +92,7 @@ that says which kind it is, so a reader can skim the thread.
   names that went green, test counts, the request you made and what came back, what you
   opened in a browser and saw. Then `Left open on purpose:` if anything is.
 
-## Project naming and description
+## Project and milestone naming, and the description
 
 The name is a verb and the work it does (`Give every space its own team`, `Align
 the wizard UI with the site`). An outcome-only clause (`A space has a team`) reads
@@ -98,6 +100,9 @@ as a riddle to anyone who did not write it. No initiative prefix and no version
 number: the initiative field already says which product, and `vN` checks nothing.
 No state word either: `deployed`, `done`, `complete` repeat the status, which
 already says it, and go stale the day the status moves.
+
+A milestone carries the same shape (`Cut both wizards to three screens`), and its
+description is one sentence starting `Closes when` with the observable check.
 
 For `save_project`: `summary` is one sentence stating the outcome (under 255
 chars). The description is at most a short paragraph: what the project is, where it

@@ -14,7 +14,7 @@ are not part of this repo's flow.
 | Team | **rebase**, issue prefix `REB-`. The team was `Orbiters` with prefix `ORB-` until 2026-09-15; the rename kept every issue's number, so an `ORB-193` you find in older text or history is `REB-193` today. One team, and that does not change |
 | Initiative | a product, permanent: `Website`, `Hub`, `PigroCRM`, `Monorepo` |
 | Project | a release, or a body of work with an end. It closes when it ships, which is what lets its issues archive. Named with a verb and the work it does (`Give every space its own team`): no initiative prefix, no version number, no state word |
-| Milestone | the outcome a person can see or do once it closes, inside a project's release. Not an issue; costs nothing, shows progress on its own |
+| Milestone | the work that lands when it closes, named with a verb (`Cut both wizards to three screens`), inside a project's release. Not an issue; costs nothing, shows progress on its own |
 | Issue | one agent run, one PR, one worktree |
 | Priority | Linear's own field: Urgent, High, Medium, Low. Never a label |
 | Effort | Linear's own estimate field. Never a label |
@@ -236,13 +236,12 @@ board alone would mislead a reader is worse.
 The board is read by two people scanning for "who is doing what, how far", not
 studied. Every field has a budget, and the budget is the rule.
 
-- A **title under 80 characters**: one sentence with a verb; one clause, or two
-  when the second only names what makes the first visible. It states the outcome the
-  card makes true, or the observed defect, never the intended fix and never a
-  restatement of the body. A colon inside a title means the second half belongs in
-  the body. "the backend gate installs neither pandoc nor typst" rather than "add
-  pandoc to CI". The fix is often not the one you first thought of, and a title
-  written as a fix ages into a lie.
+- A **title under 80 characters, starting with a verb**: it names the work the
+  card does, the same shape as a project name (`Drop the stale orbiters database
+  from the CRM host`, `Make the CV optional in the wizard and the member area`).
+  One clause, or two when the second only names what makes the first visible; a
+  colon means the second half belongs in the body. The observed problem is not
+  lost: it is the `**Observed.**` line of the body, one screen down.
 - A **body that fits one screen**: at most four bold lead words
   (`**Observed.**`, `**Needed.**`, and only when they have something to say
   `**Done when.**`, `**Not here.**`, `**Adjacent.**`), each two or three sentences.
@@ -275,16 +274,15 @@ Applies to every project, milestone and issue title, and to the labels.
   of the work (`deployed`, `done`, `closed`, `complete`, `shipped`): the project's
   own status already says that, and a name that repeats it goes stale the moment
   the status moves.
-- **A milestone is the thing that becomes true when it closes**, in a few words a
-  non-specialist recognises: `Three screens instead of eight`, `You invite a
-  colleague by email`, `Every button reads as a button`. Its description is one
-  sentence starting `Closes when`, with the observable check: the page, the command,
-  the assertion. Nothing else: not the history, not the alternatives, not the file
-  list.
+- **A milestone is named with a verb and the work it lands**, like a project and
+  an issue: `Cut both wizards to three screens`, `Invite a colleague by email`.
+  Its description is one sentence starting `Closes when`, with the observable
+  check: the page, the command, the assertion. Nothing else: not the history, not
+  the alternatives, not the file list.
 - **A `**Done when.**` line is one of the lead words above, and it is one line.**
   If the check does not fit one line, it is not a done-when, it is the work.
 - **No emoji, no status words, no version of the same idea twice.** A title says
-  each thing once: `The CRM reports to PostHog and the funnel is visible` is
+  each thing once: `Make the CRM report to PostHog and show the funnel` is
   allowed to name the mechanism because the mechanism *is* the visible outcome;
   `Rewrite X, which means the funnel is now readable in Y` is two sentences in one
   title.
