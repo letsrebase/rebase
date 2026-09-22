@@ -91,10 +91,11 @@ export function Wizard<T>({
    *  silence. */
   submitError: { message: string; field?: string } | null
   submitLabel: string
-  /** Called with the screen on screen and how many there are, whenever it changes: the
-   *  first one on mount, the review as `screens.length`, a jump back on a server error
-   *  too. Memoise it, or it fires on every render. */
-  onStep?: (index: number, total: number) => void
+  /** Called with the screen on screen, how many there are, and that screen's own id,
+   *  whenever it changes: the first one on mount, the review as `screens.length` and
+   *  `'riepilogo'`, a jump back on a server error too. Memoise it, or it fires on every
+   *  render. */
+  onStep?: (index: number, total: number, screenId: string) => void
   /** Where to start: the screen a draft was left at (`wizard/draft.ts`), clamped to the
    *  review, so a draft written by a longer version of the form still opens. */
   initialIndex?: number
@@ -111,10 +112,13 @@ export function Wizard<T>({
   const screen = screens[index]
   const fields = screens.flatMap((candidate) => candidate.fields)
   const [handled, setHandled] = useState<{ message: string; field?: string } | null>(null)
+  // The review has no field of its own, so a funnel still needs one id for it: the
+  // same word its own heading reads («Tutto giusto?», announced here as «Riepilogo»).
+  const stepId = screen ? screen.id : 'riepilogo'
 
   useEffect(() => {
-    onStep?.(index, screens.length)
-  }, [index, screens.length, onStep])
+    onStep?.(index, screens.length, stepId)
+  }, [index, screens.length, stepId, onStep])
   useEffect(() => {
     onIndexChange?.(index)
   }, [index, onIndexChange])

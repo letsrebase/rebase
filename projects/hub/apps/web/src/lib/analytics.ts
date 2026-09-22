@@ -22,10 +22,13 @@ export function readPerkParam(search: string): string | null {
 
 /**
  * The three funnel events of one wizard. `onStep` is for the engine to call on every
- * step it shows, including the first and the review (`passo === passi`), so a
- * breakdown by `passo` needs no special case; its first call also sends
- * `wizard_iniziato`, once per mount, whatever the page re-renders for. `completed` is
- * for the page to call once the API said yes.
+ * step it shows, including the first and the review (`passo === passi`, `schermata`
+ * `'riepilogo'`), so a breakdown by `passo` or by `schermata` needs no special case;
+ * its first call also sends `wizard_iniziato`, once per mount, whatever the page
+ * re-renders for. `schermata` is the screen's own id -- a field's id today, one field
+ * per screen until REB-120/121 group some of them -- captured beside the numeric
+ * `passo` so a funnel read after the regroup still knows which screen a pre-regroup
+ * `passo` meant (REB-122). `completed` is for the page to call once the API said yes.
  */
 export function useWizardAnalytics(tipo: WizardKind, search: string) {
   const perk = readPerkParam(search)
@@ -36,12 +39,12 @@ export function useWizardAnalytics(tipo: WizardKind, search: string) {
   // child's effects commit before its parent's, so a separate effect would land
   // `wizard_passo { passo: 0 }` first and a funnel could tie on the timestamps.
   const onStep = useCallback(
-    (passo: number, passi: number) => {
+    (passo: number, passi: number, schermata: string) => {
       if (!started.current) {
         started.current = true
         capture('wizard_iniziato', base)
       }
-      capture('wizard_passo', { ...base, passo, passi })
+      capture('wizard_passo', { ...base, passo, passi, schermata })
     },
     [base],
   )

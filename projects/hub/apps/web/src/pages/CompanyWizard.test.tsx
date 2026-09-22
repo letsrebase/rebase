@@ -74,7 +74,20 @@ describe('CompanyWizard', () => {
     await user.type(screen.getByLabelText('Budget a giornata'), '500{Enter}')
     expect(screen.getByRole('heading', { name: 'Tutto giusto?' })).toBeInTheDocument()
     expect(captured('wizard_passo').map((p) => p?.passo)).toEqual([0, 1, 2, 3, 4, 5])
-    expect(captured('wizard_passo')[0]).toEqual({ tipo: 'azienda', passo: 0, passi: 5 })
+    expect(captured('wizard_passo').map((p) => p?.schermata)).toEqual([
+      'nome_azienda',
+      'referente',
+      'progetto',
+      'periodo_da',
+      'budget_giornaliero',
+      'riepilogo',
+    ])
+    expect(captured('wizard_passo')[0]).toEqual({
+      tipo: 'azienda',
+      passo: 0,
+      passi: 5,
+      schermata: 'nome_azienda',
+    })
     expect(captured('wizard_completato')).toEqual([])
 
     await user.click(screen.getByRole('button', { name: /Invia/ }))
