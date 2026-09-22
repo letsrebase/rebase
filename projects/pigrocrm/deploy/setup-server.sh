@@ -53,6 +53,7 @@ server {
     add_header X-Content-Type-Options nosniff always;
     add_header Referrer-Policy strict-origin always;
     add_header X-Frame-Options DENY always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://eu-assets.i.posthog.com; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; frame-src 'self' blob:; connect-src 'self' https://eu.i.posthog.com https://eu-assets.i.posthog.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" always;
 
     location / {
