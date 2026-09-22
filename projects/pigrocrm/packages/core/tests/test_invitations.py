@@ -18,8 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.actor import Actor
 from pigrocrm.core.activities.models import Activity
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.invitation_models import Invitation
 from pigrocrm.core.auth.invitations import (
     INVITATION_TTL_DAYS,
