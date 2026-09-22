@@ -276,7 +276,12 @@ describe('the wordmark is an asset, not a second webfont', () => {
       ['lockup.svg', ink],
       ['lockup-paper.svg', paper],
     ] as const) {
-      const drawn = [...svg[name].matchAll(/<rect[^>]+fill="([^"]+)"/g)].map((match) => match[1])
+      // Scoped to before the word's `<path>`: the graft (REB-199) draws its own
+      // rects after the word, and asserting on every `<rect>` in the file would
+      // fold its dots into "the four tiles".
+      const drawn = [...svg[name].split('<path')[0].matchAll(/<rect[^>]+fill="([^"]+)"/g)].map(
+        (match) => match[1],
+      )
       const expected = BRAND_TILES.map((tile) =>
         tile === 'ink' ? tileInk : hex[BRAND_TILE_VARS[tile].replace(/var\(|\)/g, '')],
       )
@@ -304,7 +309,10 @@ describe('the wordmark is an asset, not a second webfont', () => {
     // `build-wordmark.py` would move those without touching a single colour, and the
     // lockup would still look like a lockup in a diff.
     for (const name of ['lockup.svg', 'lockup-paper.svg'] as const) {
-      const rects = [...svg[name].matchAll(/<rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)"/g)]
+      // Scoped to before the word's `<path>`, same reason as above.
+      const rects = [
+        ...svg[name].split('<path')[0].matchAll(/<rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)"/g),
+      ]
       const tiles = rects.map((match) => match.slice(1, 4).map(Number) as [number, number, number])
       const tile = tiles[0]?.[2] ?? 0
       expect(tile, name).toBeGreaterThan(0)
@@ -339,6 +347,39 @@ describe('the wordmark is an asset, not a second webfont', () => {
     expect(drawn[0]).toBeTruthy()
     for (const [index, path] of drawn.entries()) {
       expect(path, names[index]).toBe(drawn[0])
+    }
+  })
+
+  it('grafts a quiet device onto the lockup only, in the word\'s own ink (REB-199)', () => {
+    // Direction A, docs/design/DECISIONS.md, 2026-09-22: the graft, drawn as a
+    // staircase of the mark's own square tiles rather than a stroke, and quiet by
+    // decision, so it never carries a colour of its own, let alone the Watermelon
+    // accent the card drew.
+    for (const plain of ['wordmark.svg', 'wordmark-paper.svg'] as const) {
+      expect(svg[plain], plain).not.toMatch(/<rect/)
+    }
+    for (const [name, colour] of [
+      ['lockup.svg', ink],
+      ['lockup-paper.svg', paper],
+    ] as const) {
+      const baseline = Number(svg[name].match(/translate\([-\d.]+ ([\d.]+)\)/)?.[1])
+      // Everything after the word's path is the graft: the mark's own four tiles
+      // are covered by the tests above.
+      const afterWord = svg[name].slice(svg[name].indexOf('/>', svg[name].indexOf('<path')))
+      const graftDots = [
+        ...afterWord.matchAll(/<rect x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)"[^>]+fill="([^"]+)"/g),
+      ]
+      // A device, not a single accent square: the riser alone is three tiles.
+      expect(graftDots.length, name).toBeGreaterThan(3)
+      for (const [, , y, , fill] of graftDots) {
+        // No colour of its own: every square is this file's own ink.
+        expect(fill, name).toBe(colour)
+        // Below the baseline, so it never collides with the mark or the word.
+        expect(Number(y), name).toBeGreaterThanOrEqual(baseline)
+      }
+      // All one size: a device built from one square, repeated, never two scales.
+      const sizes = new Set(graftDots.map((match) => match[3]))
+      expect(sizes.size, name).toBe(1)
     }
   })
 })

@@ -11,7 +11,7 @@ surface.
 | `mark.ts` | The order of the four tiles, and how each surface names them | Both surfaces' tests |
 | `contrast.ts` | WCAG's ratio, the sRGB blend and the palette reader, with the AA thresholds named | The site's token test, the hub's, and `@rebase/ui`'s |
 | `wordmark.svg` | «rebase», as outlines | Any surface that shows the name, and every export |
-| `lockup.svg` | The mark at cap height, then the word | The same, plus the social pictures |
+| `lockup.svg` | The mark at cap height, the word, then the graft | The same, plus the social pictures |
 | `wordmark-paper.svg`, `lockup-paper.svg` | The same two on a dark ground | The landing's dark bands, a dark slide |
 | `tools/build-wordmark.py` | How the four SVGs were drawn, and the only way to redraw them | Nobody at build time: run it by hand when the face changes |
 | `echo/` | The echo logo: «rebase» solid under three outlined copies of itself, six colourways as PNG | Covers, slides, social pictures; nothing yet at header size |
@@ -62,7 +62,15 @@ is the 18px chip in the header and a 1584px LinkedIn cover. All four spell their
 as literal hex, the way `orbiters-logo.svg` already does, because an SVG opened as a file
 resolves no custom property; what is new is that `landing-style.test.ts` holds those
 hexes to `palette.css`, the four tiles to `BRAND_TILES`, and the geometry to the
-proportions above.
+proportions above. Then the graft (direction A, `docs/design/DECISIONS.md`,
+2026-09-22): a small staircase of the mark's own square tiles, standing under the
+mark's own left edge and stepping up into a dotted line that runs on under the whole
+word, the way a `git rebase` replays a commit onto a new parent. It was chosen over
+Ivan's three-ghost stack, unreadable below 48px, and two other directions on the same
+card, because it reads at every size the mark itself does and needs no second colour:
+quiet by decision, drawn only in the same ink the word already stands in, never the
+Watermelon accent the card itself drew. `wordmark.svg` and `wordmark-paper.svg` carry
+no graft: the plain word is still what a chip, an avatar or an OG image draws.
 
 `wordmark-paper.svg` and `lockup-paper.svg` are the same geometry for a dark ground:
 the word in `--color-paper`, and in the lockup the two ink tiles too, since on Prussian

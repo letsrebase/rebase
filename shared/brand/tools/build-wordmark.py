@@ -162,6 +162,22 @@ def draw() -> dict[str, str]:
     lockup_height = round(max(y_max, 0) - lockup_top, 1)
     lockup_width = round(cap + gap + width, 1)
     word_x = round(cap + gap - x_min, 1)
+    baseline_y = round(-lockup_top, 1)
+
+    # The graft (direction A, docs/design/DECISIONS.md, 2026-09-22): rebase replaying
+    # a commit onto a new parent, drawn in the mark's own square tiles rather than a
+    # stroke, so "no radius" holds for this device too. A solid staircase, one tile
+    # tighter each step, rises from under the mark's own left edge to a line that then
+    # runs on, as a dotted rule, under the whole word: the branch being grafted, then
+    # the base it lands on. Quiet, per the decision: every square is `colour`, the
+    # same ink the word and the lockup's own ink tiles already stand in, so the device
+    # never needs a fifth colour or the accent square the card drew in Watermelon.
+    graft_unit = round(tile * 0.16, 1)
+    graft_rise = round(tile * 0.22, 1)
+    graft_pitch = round(tile * 0.34, 1)
+    graft_row = round(baseline_y + graft_rise, 1)
+    graft_bottom = round(graft_row + 3 * graft_unit, 1)
+    lockup_box_height = round(max(lockup_height, graft_bottom), 1)
 
     def svg(box_width: float, box_height: float, body: str, note: str) -> str:
         return (
@@ -193,19 +209,45 @@ def draw() -> dict[str, str]:
         )
         return f'  <g shape-rendering="crispEdges">\n{rects}\n  </g>\n'
 
+    def graft(colour: str) -> str:
+        # The riser: three squares, one tile tighter each step, standing under the
+        # mark's own left edge and stepping up to the line below the word. The run:
+        # the same squares, spaced out into a dotted line, filling the rest of the
+        # lockup's width. One shape, drawn twice at two rhythms, never a stroke.
+        riser = [
+            (round(step * graft_unit, 1), round((2 - step) * graft_unit, 1)) for step in range(3)
+        ]
+        dots = list(riser)
+        x = round(riser[-1][0] + graft_pitch, 1)
+        while x + graft_unit <= lockup_width:
+            dots.append((x, 0.0))
+            x = round(x + graft_pitch, 1)
+        rects = "\n".join(
+            f'    <rect x="{sx:g}" y="{round(graft_row + sy, 1):g}" '
+            f'width="{graft_unit:g}" height="{graft_unit:g}" fill="{colour}"/>'
+            for sx, sy in dots
+        )
+        return f'  <g shape-rendering="crispEdges">\n{rects}\n  </g>\n'
+
     word_note = f"«{WORD}» in Space Grotesk {WEIGHT} at {TRACKING:g}em, as outlines."
     lockup_note = (
         f"The mark and the word, one file: the four tiles at cap height, then\n"
-        f"       «{WORD}» in Space Grotesk {WEIGHT}. The tile order is BRAND_TILES in\n"
-        f"       mark.ts, the colours are palette.css and the proportions are the\n"
-        f"       README's; all three are asserted by\n"
-        f"       projects/website/src/landing-style.test.ts."
+        f"       «{WORD}» in Space Grotesk {WEIGHT}, then the graft (direction A,\n"
+        f"       docs/design/DECISIONS.md, 2026-09-22): a staircase of the same\n"
+        f"       square tiles, running on as a dotted line under the word. The tile\n"
+        f"       order is BRAND_TILES in mark.ts, the colours are palette.css and\n"
+        f"       the proportions are the README's; all three, plus the graft's own\n"
+        f"       tiles, are asserted by projects/website/src/landing-style.test.ts."
     )
     on_dark = " The paper cut, for a dark ground."
 
     def lockup(colour: str, note: str) -> str:
-        body = mark(colour, round(-cap - lockup_top, 1)) + word(colour, word_x, -lockup_top)
-        return svg(lockup_width, lockup_height, body, note)
+        body = (
+            mark(colour, round(-cap - lockup_top, 1))
+            + word(colour, word_x, baseline_y)
+            + graft(colour)
+        )
+        return svg(lockup_width, lockup_box_height, body, note)
 
     return {
         "wordmark.svg": svg(width, word_height, word(ink, -x_min, -y_min), word_note),
