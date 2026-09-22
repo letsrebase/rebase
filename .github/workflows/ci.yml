@@ -439,6 +439,70 @@ jobs:
     with:
       filter: web
 
+  # The committed `apps/web/src/lib/api-types.ts` is generated from the running API's
+  # own OpenAPI document, never written by hand (apps/web/package.json's
+  # `generate:api`). Nothing before REB-101 ever reran that generator and compared,
+  # so a route removed or a field dropped from a response schema left the committed
+  # file describing an API that no longer existed (REB-98). Neither shared gate
+  # boots the other stack -- `_node-gate.yml` never touches Python and
+  # `_python-gate.yml`'s `pytest -n auto` gives every worker its own disposable
+  # Postgres through testcontainers, never one long-lived process a second tool can
+  # address by URL -- so this needs its own job rather than a step bolted onto
+  # either file, the same way `pigrocrm-images` already has its own job for the one
+  # thing neither gate does. Cheap and path-scoped on purpose (regenerate one file
+  # and diff it, seconds once the stack answers) rather than deferred to
+  # `preflight.json`: this repository's own rule for a check that fits in the PR's
+  # critical path without becoming the twelve-minute suite (`docs/design/
+  # DECISIONS.md`, 2026-09-09 row on trunk-tier scoping) is that its cost decides
+  # where it runs, not whether the check needs a database. It runs whenever either
+  # side of the contract could have moved: the API's routers and schemas, or the
+  # generated file and the script that makes it.
+  pigrocrm-api-types:
+    name: pigrocrm · api types
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.pigrocrm_py == 'true' || needs.changes.outputs.pigrocrm_web == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: '0.9.24'
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - run: pnpm install --frozen-lockfile --filter web...
+
+      # apps/web/scripts/e2e-setup.sh is the one place this stack already gets
+      # booted from a cold start for a tool outside pytest: a disposable Postgres
+      # on :55434, migrated to head, seeded, with uvicorn answering on :8000. The
+      # seed data (an admin, the pipeline defaults, ...) is unused here -- the
+      # OpenAPI document comes from the routes and Pydantic models, not from any
+      # row -- but forking a thinner variant of a script this exact would be the
+      # second copy of a boot sequence this repository already has one of.
+      - name: Bring the API up
+        run: bash projects/pigrocrm/apps/web/scripts/e2e-setup.sh
+
+      - name: Regenerate api-types.ts against the running API
+        run: pnpm --filter web generate:api
+
+      - name: Fail if the committed file drifted from the API
+        run: git diff --exit-code -- projects/pigrocrm/apps/web/src/lib/api-types.ts
+
+      - name: Tear the API down
+        if: always()
+        run: bash projects/pigrocrm/apps/web/scripts/e2e-teardown.sh
+
   # letsrebase.com, the website. Its own project, so its own job: static pages with
   # no framework, which is why this one costs seconds where the application's gate
   # costs minutes. It shares `shared/brand` with the application, so a change there
@@ -578,7 +642,7 @@ jobs:
     # arrives. This is the only status check the repository should ever be asked to
     # require: every job name above can change forever without touching a ruleset.
     if: always()
-    needs: [changes, pigrocrm-py, pigrocrm-py-corpus, pigrocrm-web, website, hub-py, hub-web, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images]
+    needs: [changes, pigrocrm-py, pigrocrm-py-corpus, pigrocrm-web, pigrocrm-api-types, website, hub-py, hub-web, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
