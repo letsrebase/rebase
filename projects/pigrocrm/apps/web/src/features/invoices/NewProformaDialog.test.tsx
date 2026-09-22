@@ -23,6 +23,10 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }))
 
+// REB-294: the button renders nothing unless the table says the role may create an
+// invoice; the dialog's own flow is what this suite tests, so its actor is a writer.
+vi.mock('@/lib/auth', () => ({ useCan: () => true }))
+
 function ok(data: unknown) {
   return Promise.resolve({ data, response: new Response(null, { status: 200 }) }) as never
 }

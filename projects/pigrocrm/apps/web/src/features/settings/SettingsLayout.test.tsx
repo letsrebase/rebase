@@ -3,7 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { SettingsLayout } from './SettingsLayout'
 
 const mockAuth = vi.hoisted(() => ({ isAdmin: true }))
-vi.mock('@/lib/auth', () => ({ useIsAdmin: () => mockAuth.isAdmin }))
+// REB-294: the tab strip now filters through `canSeeSettingsTab`, which reads the
+// session's `ruolo` -- so the stub carries a user whose role agrees with `isAdmin`,
+// and the suite's existing `isAdmin` switch keeps its whole meaning.
+vi.mock('@/lib/auth', () => ({
+  useIsAdmin: () => mockAuth.isAdmin,
+  useAuth: () => ({ user: { ruolo: mockAuth.isAdmin ? 'admin' : 'collaboratore' } }),
+}))
 
 // Defaults to the admin suite's usual page; the two REB-221 tests below point this at
 // `/app/settings/profile` instead, the one path a non-admin may also reach.

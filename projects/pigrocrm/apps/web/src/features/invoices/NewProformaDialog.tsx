@@ -25,6 +25,7 @@ import { Textarea } from '@rebase/ui/textarea'
 import { useCustomer, useCustomers } from '@/features/customers/queries'
 import { useDeal, useDeals } from '@/features/deals/queries'
 import { toProblem, type ProblemDetail } from '@/lib/api'
+import { useCan } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
 import { AccrualPeriodFields } from './AccrualPeriodFields'
 import {
@@ -561,7 +562,13 @@ function NewProformaDialog({
  */
 export function NewProformaButton(props: { prefill?: ProformaPrefill } & FixedParties) {
   const [open, setOpen] = useState(false)
-
+  // REB-294: the button knows its own action, so every page that offers it offers it
+  // only to a role the service would accept. The customer and deal pages keep their
+  // coarser `canWrite` wrappers (they gate the whole header cluster); this is the one
+  // that closes the Fatture list, which used to show «Nuova fattura» to a readonly
+  // person and answer the press with a 403.
+  const canCreate = useCan('create_invoice')
+  if (!canCreate) return null
   return (
     <>
       <Button onClick={() => setOpen(true)}>

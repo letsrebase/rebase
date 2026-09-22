@@ -6,6 +6,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { DocumentsTab } from './DocumentsTab'
 
+// REB-294: the tab gates its writes (`useCanWrite`, the whole cluster is
+// `collaboratore` in the service); these tests drive that path, so the session is a
+// writer by default. The readonly shape is asserted in `DocumentsTab.readonly` below.
+vi.mock('@/lib/auth', () => ({ useCanWrite: () => true }))
+
 const DOCUMENT = {
   id: 'doc-1',
   customer_id: 'c-1',

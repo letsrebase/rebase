@@ -1,5 +1,6 @@
 import createClient from 'openapi-fetch'
 import type { paths } from './api-types'
+import { roleLabel } from './roles'
 import { tenantPrefix } from './tenant'
 
 export const api = createClient<paths>({
@@ -316,6 +317,37 @@ function asFastApiValidationErrors(
 }
 
 /**
+ * The one rendering of the server's role refusal (REB-294), or `null` to leave the
+ * server's own words alone.
+ *
+ * `PermissionDenied` carries a structured problem document -- `required_roles` and
+ * `actual_role` beside the `code` -- and a `detail` written for a log, not a person:
+ * `issue_invoice requires one of [admin], actor has readonly`. Once the table in
+ * `lib/permissions.ts` hides the controls a role may not press, a 403 that still
+ * arrives means the two have diverged (a tab the SPA forgot, a role changed in the
+ * last thirty seconds), and the interface must say that in Italian and name the
+ * person's own role rather than quote English. `agent_forbidden` needs nothing here:
+ * its detail is already Italian, written to be read out.
+ *
+ * The fallback is deliberate: a `permission_denied` without the two structured fields
+ * is not a `PermissionDenied` this function can honestly translate, and the server's
+ * own (Italian) sentence stays.
+ */
+function permissionDeniedSentence(problem: ProblemDetail): string | null {
+  if (problem.code !== 'permission_denied') return null
+  const required = Array.isArray(problem.required_roles)
+    ? problem.required_roles.filter((role): role is string => typeof role === 'string')
+    : []
+  const actual = problem.actual_role
+  if (required.length === 0 || typeof actual !== 'string') return null
+  // Italian lists take no Oxford comma and bind the last pair with `e`.
+  const names = required.map((role) => `«${roleLabel(role)}»`)
+  const reserved =
+    names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`
+  return `Il tuo ruolo in questo spazio è «${roleLabel(actual)}»: questa azione è riservata a ${reserved}.`
+}
+
+/**
  * Normalises every shape an API call can fail with into one `ProblemDetail`, so
  * every consumer -- a toast, a form field, the query retry policy -- reads the same
  * three or four properties no matter which of these produced it:
@@ -323,7 +355,8 @@ function asFastApiValidationErrors(
  *  - the domain problem document (RFC 9457, `application/problem+json`): a
  *    `DomainError` rendered by `domain_error_handler` -- `code`/`detail`/`field`/...
  *    already at the top level, passed through unchanged (still allowing `status` to
- *    be corrected below, since the transport layer is never wrong about it).
+ *    be corrected below, since the transport layer is never wrong about it). The one
+ *    exception is the role refusal: see `permissionDeniedSentence`.
  *  - FastAPI's own request-validation error (`application/json`): the request never
  *    reached an endpoint at all (a non-UUID path segment, a malformed body), so
  *    there is no domain `code` -- `detail` is an array of `{ type, loc, msg }`
@@ -381,7 +414,9 @@ export function toProblem(error: unknown, status?: number): ProblemDetail {
   const err = error as { code?: unknown; detail?: unknown }
   if (typeof err.code === 'string' && typeof err.detail === 'string') {
     const problem = error as ProblemDetail
-    return status === undefined ? problem : { ...problem, status }
+    const sentence = permissionDeniedSentence(problem)
+    const normalised = sentence === null ? problem : { ...problem, detail: sentence }
+    return status === undefined ? normalised : { ...normalised, status }
   }
   if (typeof err.detail === 'string') {
     return {

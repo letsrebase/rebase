@@ -39,8 +39,8 @@ export default defineConfig([
   },
   {
     // `auth.tsx` is a deliberate, permanent context-provider bundle: `AuthProvider`
-    // (the component) plus the three hooks that only make sense next to it
-    // (`useAuth`, `useCanWrite`, `useIsAdmin`) -- one module, matching this file's
+    // (the component) plus the four hooks that only make sense next to it
+    // (`useAuth`, `useCan`, `useCanWrite`, `useIsAdmin`) -- one module, matching this file's
     // place in the plan's own File Structure and what later screens import from
     // `@/lib/auth`. That is exactly the shape `react-refresh/only-export-components`
     // flags (a component file also exporting non-component values), but splitting a
@@ -49,15 +49,16 @@ export default defineConfig([
     // file forces a full remount of its subtree on save instead of a hot patch, and
     // this file changes rarely compared to the components actually iterated on.
     // `allowExportNames`, not a blanket `'off'`: the rule stays live for anything
-    // added to this file later that is *not* one of these three known, intentional
-    // exports -- an accidental new non-component export would still be caught.
+    // added to this file later that is *not* one of these known, intentional exports
+    // (`useCan` added with REB-294) -- an accidental new non-component export would
+    // still be caught.
     files: ['src/lib/auth.tsx'],
     rules: {
       // Same severity as the base `vite` preset ("error") -- only the options
       // change here, not how strictly the rule is enforced.
       'react-refresh/only-export-components': [
         'error',
-        { allowConstantExport: true, allowExportNames: ['useAuth', 'useCanWrite', 'useIsAdmin'] },
+        { allowConstantExport: true, allowExportNames: ['useAuth', 'useCan', 'useCanWrite', 'useIsAdmin'] },
       ],
     },
   },

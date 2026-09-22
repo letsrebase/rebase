@@ -22,13 +22,18 @@ import {
   useInvoiceLines,
   type StatoPagamento,
 } from '@/features/invoices/queries'
+import { useCan } from '@/lib/auth'
 
 export function InvoiceDetail() {
   const { invoiceId } = Route.useParams()
   const navigate = useNavigate()
+  // REB-294: the editors below save through `update_invoice`/`replace_invoice_lines`,
+  // both `collaboratore` in the service; a readonly person gets the stated rows rather
+  // than inputs that could only answer 403. Called before the early returns below --
+  // hooks cannot live after one.
+  const canEditInvoice = useCan('update_invoice')
   const invoice = useInvoice(invoiceId)
   const lines = useInvoiceLines(invoiceId)
-
   if (invoice.isLoading) return <p className="p-8">Caricamento…</p>
   if (invoice.isError) {
     return (
@@ -42,8 +47,12 @@ export function InvoiceDetail() {
   const row = invoice.data
   // The row's own state decides, never a prop a caller chose: an issued invoice's lines
   // are immutable in the database, so offering inputs would invite an edit that cannot
-  // be saved. A proforma stays editable until it is consumed.
-  const readOnly = !(row.stato === 'bozza' || (row.tipo === 'proforma' && row.stato !== 'consumata'))
+  // be saved. A proforma stays editable until it is consumed. The role is the other
+  // half (REB-294): a readonly person sees the same stated rows an issued invoice
+  // already renders.
+  const readOnly =
+    !canEditInvoice ||
+    !(row.stato === 'bozza' || (row.tipo === 'proforma' && row.stato !== 'consumata'))
   // Only a fattura has money to collect: a proforma reads as a dash in the list for the
   // same reason (`columns.tsx`), and a second pill here would claim a state it has not.
   const pagamento = row.tipo === 'fattura' ? (row.stato_pagamento as StatoPagamento) : null

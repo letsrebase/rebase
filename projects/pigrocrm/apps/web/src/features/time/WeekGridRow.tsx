@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { Input } from '@rebase/ui/input'
+import { useCanWrite } from '@/lib/auth'
 import { toProblem } from '@/lib/api'
 import { formatHoursValue } from './columns'
 import { useDeleteTimeEntry, useLogTime, useUpdateHours } from './queries'
@@ -31,6 +32,11 @@ export interface WeekGridRowProps {
  * tabbing across a week feel like a spreadsheet rather than like seven forms.
  */
 export function WeekGridRow({ dealId, dealName, userId, days, row }: WeekGridRowProps) {
+  // REB-294: a cell's blur logs or edits a `time_entry`, and clearing one deletes it --
+  // `log_time`, `update_time_entry`, `delete_time_entry`, all `collaboratore` in the
+  // service. A readonly person gets the same week as plain figures, never thirty-five
+  // boxes that look like a spreadsheet and answer a blur with a 403.
+  const canWrite = useCanWrite()
   const cells = row ?? EMPTY_ROW
   const [draft, setDraft] = useState<Record<string, string>>({})
   const log = useLogTime()
@@ -95,23 +101,27 @@ export function WeekGridRow({ dealId, dealName, userId, days, row }: WeekGridRow
         const cell = cells.get(day.iso)
         return (
           <td key={day.iso} className="p-1 text-center">
-            <Input
-              // Deal *and* day: "2,5" on its own tells a screen reader nothing about
-              // which of thirty-five identical boxes it is reading.
-              aria-label={`${dealName}, ${day.label}`}
-              inputMode="decimal"
-              className="h-9 w-16 text-center tabular-nums"
-              value={draft[day.iso] ?? hoursForInput(cell?.ore ?? null)}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, [day.iso]: event.target.value }))
-              }
-              onBlur={() => commit(day, cell)}
-              onKeyDown={(event) => {
-                // Enter commits by blurring rather than by calling `commit` directly, so
-                // there is exactly one path to a write and it cannot fire twice.
-                if (event.key === 'Enter') event.currentTarget.blur()
-              }}
-            />
+            {canWrite ? (
+              <Input
+                // Deal *and* day: "2,5" on its own tells a screen reader nothing about
+                // which of thirty-five identical boxes it is reading.
+                aria-label={`${dealName}, ${day.label}`}
+                inputMode="decimal"
+                className="h-9 w-16 text-center tabular-nums"
+                value={draft[day.iso] ?? hoursForInput(cell?.ore ?? null)}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, [day.iso]: event.target.value }))
+                }
+                onBlur={() => commit(day, cell)}
+                onKeyDown={(event) => {
+                  // Enter commits by blurring rather than by calling `commit` directly, so
+                  // there is exactly one path to a write and it cannot fire twice.
+                  if (event.key === 'Enter') event.currentTarget.blur()
+                }}
+              />
+            ) : (
+              <span className="tabular-nums">{hoursForInput(cell?.ore ?? null)}</span>
+            )}
           </td>
         )
       })}

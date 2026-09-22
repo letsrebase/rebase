@@ -3,6 +3,7 @@ import { createContext, use, useEffect, useRef, type ReactNode } from 'react'
 import { forgetSession, identifySession } from './analytics'
 import { api, unwrap } from './api'
 import type { components } from './api-types'
+import { can, canWrite, isAdmin, type Action } from './permissions'
 import { queryKeys } from './query'
 import { tenantPrefix } from './tenant'
 
@@ -152,11 +153,32 @@ export function useAuth(): AuthValue {
   return value
 }
 
+/**
+ * Whether the signed-in person may perform `action` in the interface (REB-294).
+ *
+ * One hook over one table (`lib/permissions.ts`), read from the session `AuthProvider`
+ * already caches -- no extra request, and the thirty-second poll is what makes a
+ * demotion reach an open tab's buttons as well as its analytics. The server is still
+ * the one that decides: this hides the controls whose press would only answer 403, so
+ * a readonly person is never invited to press them.
+ *
+ * `false` while there is no session: the guard in `routes/app.tsx` means no
+ * control-bearing page renders without one, so that branch is never *seen* -- it is
+ * what keeps the hook honest if it is ever reached from outside the guard.
+ */
+export function useCan(action: Action): boolean {
+  const { user } = useAuth()
+  return user !== null && can(user.ruolo, action)
+}
+
+/** The page-level "chi può scrivere nello spazio": everything the coarse write gates
+ *  asked for, now read from the same table as the named checks. */
 export function useCanWrite(): boolean {
   const { user } = useAuth()
-  return user?.ruolo === 'admin' || user?.ruolo === 'collaboratore'
+  return user !== null && canWrite(user.ruolo)
 }
 
 export function useIsAdmin(): boolean {
-  return useAuth().user?.ruolo === 'admin'
+  const { user } = useAuth()
+  return user !== null && isAdmin(user.ruolo)
 }
