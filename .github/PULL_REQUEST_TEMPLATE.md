@@ -17,7 +17,8 @@ or a path that is not covered by a test. Delete if there is genuinely nothing. -
 
 <!-- For anything a person could see: one before-and-after pair per change, composed
 into a single side-by-side image. For anything a person could do: one video of the
-feature in use, recorded with docs/pr-screenshots/record.mjs. Both attached with
-`gh pr edit <n> --attach` (see docs/pr-screenshots/README.md). If nothing visible
-changed, or a pair or the video cannot be captured, say so and why. Keep this section
-either way. -->
+feature in use, recorded with docs/pr-screenshots/record.mjs. Reference each file by its
+local path in the body and attach them all when you open the PR:
+`gh pr create --body-file body.md --attach ./pair-1.png --attach ./demo-1.mp4` (see
+docs/pr-screenshots/README.md). If nothing visible changed, or a pair or the video
+cannot be captured, say so and why. Keep this section either way. -->
