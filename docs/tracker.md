@@ -54,9 +54,9 @@ does it adds or updates the row here, in the PR that ships the release or in one
 | `Monorepo` | `Monorepo hygiene v1 - CI cost, licence and the English rule` | Lorenzo | Completed, 2026-09-10 |
 | `Monorepo` | `Rebrand v2 - orbiters leaves the code` | Lorenzo | Completed, 2026-09-16 (opened 2026-09-15) |
 | `Monorepo` | `Code audit v1 - what five read-only reviewers found on the trunk` | Lorenzo | In Progress, opened 2026-09-16 |
-| `Hub` | `Hub v2 - one hub, and an admin is a member with one more section` | Lorenzo | Planned, opened 2026-09-17 |
+| `Hub` | `Hub v2 - one hub, and an admin is a member with one more section` | Lorenzo | Completed, 2026-09-22 (opened 2026-09-17) |
 | `PigroCRM` | `PigroCRM v3 - a space has a team` | Lorenzo | Planned, opened 2026-09-17 |
-| `Monorepo` | `Shared UI v1 - the hub and the CRM look like the site` | Lorenzo | Planned, opened 2026-09-17 |
+| `Monorepo` | `Shared UI v1 - the hub and the CRM look like the site` | Lorenzo | Completed, 2026-09-22 (opened 2026-09-17) |
 | `Website` | `Website v3 - routes in English` | Lorenzo | Completed, 2026-09-21 (opened and shipped the same day) |
 | `Hub` | `Hub v3 - routes in English` | Lorenzo | Completed, 2026-09-21 (opened and shipped the same day) |
 | `PigroCRM` | `PigroCRM v4 - routes in English` | Ivan | Completed, 2026-09-21 (opened and shipped the same day) |
