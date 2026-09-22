@@ -298,8 +298,12 @@ gh pr create --body-file pr-body.md \
 
    Each finding is either **fixed**, in a commit that names it, or **answered**, with a
    reply on its thread (`gh api repos/letsrebase/rebase/pulls/<n>/comments/<id>/replies
-   -f body=...`) saying why the code stays as it is. Push, wait for the run on the new
-   sha, read again. The loop ends when the run on the sha that will merge raised
+   -f body=...`) saying why the code stays as it is. An answered finding still counts
+   against the score until Greptile reads the thread as closed: resolve it
+   (`gh api graphql -f query='mutation { resolveReviewThread(input:{threadId:"<id>"})
+   { thread { isResolved } } }'`, the id from the PR's `reviewThreads`) and comment
+   `@greptileai`; on #269 that took the score from 4/5 to 5/5 in ninety seconds with no
+   push. After a fix, push, wait for the run on the new sha, read again. The loop ends when the run on the sha that will merge raised
    nothing new, every earlier thread is fixed or answered, and the score reads 5/5. A
    review with a body and no inline comment is Greptile not reviewing (#259 and #260,
    `Your trial has ended`; its reviews here have an empty body): say so on the card and
