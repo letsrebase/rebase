@@ -12,7 +12,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.passwords import hash_password, verify_password
 from pigrocrm.core.auth.schemas import NOME_MAX_LENGTH, UserCreate, UserUpdate
-from pigrocrm.core.auth.service import UserService
+from pigrocrm.core.auth.service import LastActiveAdmin, SelfAccountChange, UserService
 from pigrocrm.core.errors import Conflict, PermissionDenied, ValidationFailed
 
 ADMIN = Actor(id=None, type="system", role="admin")
@@ -99,6 +99,13 @@ def test_authenticate_rejects_bad_credentials_without_saying_which(
 
 def test_deactivated_user_cannot_authenticate(db_session: Session) -> None:
     service = UserService(db_session)
+    # A second active admin first: REB-292's guard refuses to take the space's last
+    # one, and this test is about authentication, not about the guard (its own tests
+    # are at the bottom of this file).
+    service.create(
+        UserCreate(email="altro@j.it", password="supersegreta1", nome="Altro", ruolo="admin"),
+        ADMIN,
+    )
     user = service.create(
         UserCreate(email="i@j.it", password="supersegreta1", nome="I", ruolo="admin"), ADMIN
     )
@@ -483,3 +490,92 @@ def test_setting_the_digest_to_what_it_already_is_records_nothing(db_session: Se
     ultima = attivita.timeline("user", user.id, limit=50)[0]
     assert ultima.kind == "updated"
     assert ultima.payload == {"digest_settimanale": False}
+
+
+def _admin_actor(service: UserService, db_session: Session, email: str, nome: str):
+    admin = service.create(
+        UserCreate(email=email, password="lunghissima1", nome=nome, ruolo="admin"),
+        Actor.system(),
+    )
+    return Actor(id=admin.id, type="user", role="admin"), admin
+
+
+def test_the_last_admin_cannot_demote_themselves(db_session: Session) -> None:
+    """REB-292: a space with one admin is one click from having none, and the SPA's
+    disabled select was the only thing standing between. The service refuses, and the
+    sentence says what is missing, not who is not allowed: the caller IS an admin."""
+    service = UserService(db_session)
+    actor, solo = _admin_actor(service, db_session, "solo@x.it", "Solo")
+
+    with pytest.raises(LastActiveAdmin) as excinfo:
+        service.update(solo.id, UserUpdate(ruolo="readonly"), actor)
+
+    assert excinfo.value.details["field"] == "ruolo"
+    assert "almeno un amministratore attivo" in str(excinfo.value)
+
+
+def test_the_last_admin_cannot_deactivate_themselves(db_session: Session) -> None:
+    service = UserService(db_session)
+    actor, solo = _admin_actor(service, db_session, "solo2@x.it", "Solo")
+
+    with pytest.raises(LastActiveAdmin):
+        service.update(solo.id, UserUpdate(attivo=False), actor)
+
+
+def test_an_admin_can_demote_the_other_admin_while_two_exist(db_session: Session) -> None:
+    """The count rule alone would allow this pair: two admins, one demotes the other,
+    one remains, the invariant holds. This is the allowed half of the two-rule split,
+    pinned next to its mirror in `test_the_self_change_rule...`."""
+    service = UserService(db_session)
+    carla = service.create(
+        UserCreate(email="carla@x.it", password="lunghissima1", nome="Carla", ruolo="admin"),
+        Actor.system(),
+    )
+    actor, _ = _admin_actor(service, db_session, "giulia@x.it", "Giulia")
+
+    demoted = service.update(carla.id, UserUpdate(ruolo="readonly"), actor)
+
+    assert demoted.ruolo == "readonly"
+
+
+def test_an_admin_cannot_demote_themselves_while_two_exist(db_session: Session) -> None:
+    service = UserService(db_session)
+    # Two admins: the count rule passes, and the self-change rule is what refuses.
+    service.create(
+        UserCreate(email="prima@x.it", password="lunghissima1", nome="Prima", ruolo="admin"),
+        Actor.system(),
+    )
+    actor, second = _admin_actor(service, db_session, "seconda@x.it", "Seconda")
+    with pytest.raises(SelfAccountChange) as excinfo:
+        service.update(second.id, UserUpdate(ruolo="collaboratore"), actor)
+
+    assert excinfo.value.details["field"] == "ruolo"
+    assert "un altro amministratore" in str(excinfo.value)
+
+
+def test_an_admin_can_still_edit_their_own_ordinary_fields(db_session: Session) -> None:
+    """The refusal is about the privileged fields, not about the person: the same
+    actor patching their own name still writes."""
+    service = UserService(db_session)
+    actor, me = _admin_actor(service, db_session, "nome@x.it", "Nome")
+
+    renamed = service.update(me.id, UserUpdate(nome="Nome Secondo"), actor)
+
+    assert renamed.nome == "Nome Secondo"
+
+
+def test_nothing_refused_leaves_the_row_untouched(db_session: Session) -> None:
+    """Both refusals raise before the first `setattr`, so the session's identity map
+    never sees the pending change: a refused self-demote must not leave the row
+    demoted for whoever commits next on this session."""
+    from pigrocrm.core.auth.repository import UserRepository
+
+    service = UserService(db_session)
+    actor, solo = _admin_actor(service, db_session, "pulito@x.it", "Pulito")
+
+    with pytest.raises(LastActiveAdmin):
+        service.update(solo.id, UserUpdate(ruolo="readonly", attivo=False), actor)
+    db_session.commit()
+
+    row = UserRepository(db_session).get(solo.id)
+    assert row is not None and row.ruolo == "admin" and row.attivo is True

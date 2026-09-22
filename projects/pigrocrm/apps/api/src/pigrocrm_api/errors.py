@@ -34,6 +34,11 @@ STATUS_BY_CODE: dict[str, int] = {
     "invitation_expired": 410,
     "invitation_revoked": 410,
     "invitation_used": 410,
+    # REB-292: both refusals are about the state of the space's admins, not the
+    # request, and nothing about them is 403-shaped -- the caller IS an admin. 409,
+    # like the other "the world is not in a state where this write fits" codes.
+    "last_active_admin": 409,
+    "self_account_change": 409,
     "domain_error": 400,
 }
 
@@ -50,6 +55,8 @@ TITLE_BY_CODE: dict[str, str] = {
     "invitation_expired": "Invito scaduto",
     "invitation_revoked": "Invito revocato",
     "invitation_used": "Invito già usato",
+    "last_active_admin": "Amministratore insufficiente",
+    "self_account_change": "Modifica non consentita sul proprio account",
     "domain_error": "Errore di dominio",
 }
 

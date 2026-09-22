@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -10,7 +11,7 @@ from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.passwords import dummy_hash, hash_password, verify_password
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import MIN_PASSWORD_LENGTH, UserCreate, UserRead, UserUpdate
-from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
 INVALID_CREDENTIALS = "credenziali non valide"
@@ -30,6 +31,40 @@ ENTITY = "user"
 # audit exists. `password_hash` is not here and must never be -- it is not reachable
 # through `UserUpdate` at all, and the absence tests pin that.
 _AUDITED_FIELDS = ("nome", "ruolo", "attivo")
+
+# `update` refuses a change that would take the space's ability to administer itself
+# away. Two refusals, both in service of one invariant -- there is always at least one
+# active admin -- and each is its own problem code because they answer differently: the
+# first is about the space's state ("somebody else can do this, after you promote or
+# reactivate them"), the second is about the actor ("nobody can do this to their own
+# account, and asking a bigger admin would be asking yourself").
+LAST_ACTIVE_ADMIN = "lo spazio deve avere almeno un amministratore attivo"
+SELF_ACCOUNT_CHANGE = (
+    "non puoi cambiare ruolo o stato del tuo stesso account: chiedilo a un altro amministratore"
+)
+
+
+class LastActiveAdmin(DomainError):
+    code = "last_active_admin"
+
+    def __init__(self, field: str) -> None:
+        super().__init__(LAST_ACTIVE_ADMIN, entity="user", field=field, reason=LAST_ACTIVE_ADMIN)
+
+
+class SelfAccountChange(DomainError):
+    """A person changing the privileged fields of their own account, refused whatever
+    the headcount is. The count check cannot cover this case: two admins can each lock
+    out the other, and a session that demotes or deactivates itself leaves the person
+    who did it looking at a screen they cannot reopen. `createadmin` stays the
+    operator's way back in, which is why the sentence points at another administrator
+    rather than at a retry."""
+
+    code = "self_account_change"
+
+    def __init__(self, field: str) -> None:
+        super().__init__(
+            SELF_ACCOUNT_CHANGE, entity="user", field=field, reason=SELF_ACCOUNT_CHANGE
+        )
 
 
 def _snapshot(user: User) -> dict[str, object]:
@@ -137,6 +172,36 @@ class UserService:
         # worth recording -- somebody removing a default rate.
         changes = supplied_changes(data)
         reject_cleared_columns("user", User, changes)
+        # REB-292, both refusals before the first write, and neither outside the two
+        # privileged fields: nome and the rate defaults are ordinary edits, whoever
+        # makes them. The count check is about THIS row's contribution to the space's
+        # admins, so it runs only when the target is an active admin and the patch
+        # would stop that: an edit to a readonly row in a space that happens to have
+        # zero active admins (only reachable from before this guard existed) must not
+        # answer 409 about a change that touches no admin at all.
+        # A system actor (the CLI) has no id to compare against, so its writes see
+        # only the count rule; `pigrocrm createadmin` stays the operator's way back.
+        privileged = sorted({"ruolo", "attivo"} & changes.keys())
+        if privileged:
+            # The state the row WOULD hold, predicted rather than written: raising
+            # after `setattr` would leave the pending change on the session's
+            # identity map for whoever reads this row next in the same request.
+            final_ruolo = changes.get("ruolo", user.ruolo)
+            final_attivo = changes.get("attivo", user.attivo)
+            if (
+                user.ruolo == "admin"
+                and user.attivo
+                and (final_ruolo != "admin" or not final_attivo)
+            ):
+                other_active_admins = self.session.scalar(
+                    select(func.count(User.id)).where(
+                        User.id != user_id, User.ruolo == "admin", User.attivo.is_(True)
+                    )
+                )
+                if not other_active_admins:
+                    raise LastActiveAdmin(privileged[0])
+            if actor.id == user_id:
+                raise SelfAccountChange(privileged[0])
         for field, value in changes.items():
             setattr(user, field, value)
 
