@@ -33,22 +33,36 @@ next `plan` proposes to undo it.
 /zones/{zone}/dns_records` against that zone's token returns it), then `plan` — no
 changes is the proof the import is correct, before the first `apply`.
 
+**Before committing either**: the resource count and the import count for a zone
+must match, once every record in it already exists in the panel —
+`grep -c '^resource "cloudflare_dns_record"' rebase.tf` against
+`grep -c '^  to ' rebase-imports.tf` (the same pair for `orbiters.tf` /
+`orbiters-imports.tf`). `terraform plan` does not fail on a resource with no
+import, it just proposes to create it, and that silence is exactly how the two
+Google Search Console TXT records (REB-195) shipped with a resource block and no
+import block for eight days. The one standing exception is `orbiters.tf` itself,
+twelve against eleven until the gap in **The state** below is closed: a mismatch
+you introduce on top of that one is still yours to explain before you commit
+(REB-259).
+
 ## The state
 
 The state is a local `terraform.tfstate`, ignored by git, on the machine that ran the
 last `apply`. That is acceptable while one person runs this, because the state holds
 nothing that is not in Cloudflare and the `*-imports.tf` files rebuild it from nothing:
-`rebase.tf` and `orbiters.tf` declare twenty-three records, and on a fresh clone
-`terraform init && terraform apply` imports the twenty-two that carry an import block
-into a new state and changes none. The twenty-third, `orbiters_apex_google_site_verification_txt`
-(the second, change-of-address Search Console token from ORB-195, not the older
-`orbiters_apex_txt` imported above), still has no block: a fresh clone's `apply` plans
-it as a record to create, which either fails against Cloudflare's duplicate-record
-check or writes a second copy of a token that already verifies the zone, so read the
-plan and stop before `apply` if that record still shows up as an addition. That zone is
-Ivan's Cloudflare account, and the token to read the record's id is not on this
-machine. When a second person needs to run it, the decision to take is a remote
-backend, not a copied file.
+`rebase.tf` and `orbiters.tf` declare twenty-four records, and on a fresh clone
+`terraform init && terraform apply` imports the twenty-three that carry an import
+block into a new state and changes none. The twenty-fourth,
+`orbiters_apex_google_site_verification_txt` (the second, change-of-address Search
+Console token from ORB-195, not the older `orbiters_apex_txt` imported above),
+still has no block: a fresh clone's `apply` plans it as a record to create, which
+either fails against Cloudflare's duplicate-record check or writes a second copy of
+a token that already verifies the zone, so read the plan and stop before `apply` if
+that record still shows up as an addition. That zone is Ivan's Cloudflare account,
+and the token to read the record's id is still not on this machine: the Cloudflare
+token available here resolves `letsrebase.com` only and returns an authentication
+error against `joinorbiters.com`'s zone (checked again for REB-259). When a second
+person needs to run it, the decision to take is a remote backend, not a copied file.
 
 ## What is not here
 
