@@ -121,7 +121,7 @@ export const PAYMENT_STATE_TONE: Record<StatoPagamento, StatusTone> = {
  */
 export const INVOICE_TRANSITIONS: Record<InvoiceStato, InvoiceStato[]> = {
   bozza: ['emessa', 'confermata'],
-  confermata: ['consumata', 'bozza'],
+  confermata: ['consumata'],
   emessa: ['annullata'],
   annullata: [],
   consumata: [],
