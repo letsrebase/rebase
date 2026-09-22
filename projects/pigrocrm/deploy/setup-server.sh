@@ -42,8 +42,9 @@ server {
     # provisions /etc/nginx/snippets/ on a fresh self-hosted install, and an
     # \`include\` of a path that does not exist fails \`nginx -t\` outright.
     # \`frame-ancestors 'none'\` and nosniff cost nothing and are enforced from day
-    # one; the rest of the policy is the same guess at what the SPA loads and ships
-    # report-only for the same reason. No \`includeSubDomains\` on the HSTS line,
+    # one; the rest of the policy is the same set REB-306 proved against a real
+    # browser and flipped to enforcing, merged into the one header below.
+    # No \`includeSubDomains\` on the HSTS line,
     # unlike the committed vhost: \$PIGROCRM_DOMAIN here is a domain this script does
     # not own (a self-hoster's own apex), and pinning every sibling subdomain of it to
     # HTTPS for a year from a single CRM visit could brick an unrelated HTTP-only
@@ -52,9 +53,7 @@ server {
     add_header X-Content-Type-Options nosniff always;
     add_header Referrer-Policy strict-origin always;
     add_header X-Frame-Options DENY always;
-    add_header Content-Security-Policy "frame-ancestors 'none';" always;
-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
-    add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' https://eu-assets.i.posthog.com; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; frame-src 'self' blob:; connect-src 'self' https://eu.i.posthog.com https://eu-assets.i.posthog.com; object-src 'none'; base-uri 'self';" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://eu-assets.i.posthog.com; style-src 'self' 'unsafe-inline'; img-src 'self'; font-src 'self'; frame-src 'self' blob:; connect-src 'self' https://eu.i.posthog.com https://eu-assets.i.posthog.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none';" always;
 
     location / {
         proxy_pass http://127.0.0.1:8080;
