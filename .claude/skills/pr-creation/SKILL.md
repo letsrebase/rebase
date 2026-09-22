@@ -265,9 +265,15 @@ gh pr create --body-file pr-body.md \
          --jq ".[] | select(.user.login == \"greptile-apps[bot]\" and .commit_id == \"$sha\") | .id" | tail -n 1)
      [ -n "$rid" ] && break; sleep 30
    done
-   gh api repos/letsrebase/rebase/pulls/<n>/comments \
+   [ -n "$rid" ] && gh api repos/letsrebase/rebase/pulls/<n>/comments \
        --jq ".[] | select(.pull_request_review_id == $rid and .in_reply_to_id == null) | \"\(.id) \(.path):\(.line // .original_line) \(.body)\""
+   [ -n "$rid" ] && gh api repos/letsrebase/rebase/issues/<n>/comments \
+       --jq '.[] | select(.user.login == "greptile-apps[bot]") | .body' | grep -oiE 'confidence score[^0-9]*[0-9]/5' | tail -n 1
    ```
+
+   The third command reads the score: the summary is a conversation comment on the PR,
+   not a review, and it exists only where the setting is on (nothing printed means no
+   summary, not a score of zero).
 
    Each finding is either **fixed**, in a commit that names it, or **answered**, with a
    reply on its thread (`gh api repos/letsrebase/rebase/pulls/<n>/comments/<id>/replies
