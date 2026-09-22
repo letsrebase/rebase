@@ -19,6 +19,14 @@
      --color-watermelon-strong exists for: white on it is 4.673:1, white on raw
      Watermelon is 4.221:1 and fails the body-text floor. */
   --landing-cta: var(--color-watermelon-strong);
+  /* The accent as text: the deck's kicker and every `.accent` word. `-strong`
+     clears AA as a fill under white (4.67:1) but not as text on the light
+     ground: on the band's veil it reads 4.17:1 (REB-276). `-deep` is the
+     palette's text step for exactly that (5.38:1 on Paper, REB-307), and it
+     clears the white of a `.box` too, so the kicker needs no boxed variant.
+     The tile, the call to action and the avatar keep `--landing-cta`: they are
+     fills under white text or non-text marks, where `-strong` was always fine. */
+  --landing-accent: var(--color-watermelon-deep);
   --landing-cta-ink: #ffffff;
   /* Raw Watermelon is correct here: a focus ring is a component (3:1), not text,
      and it measures 4.14:1 against --landing-surface. */
@@ -549,7 +557,7 @@ a.avatar:hover {
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--landing-cta);
+  color: var(--landing-accent);
   margin-bottom: 1rem;
 }
 
@@ -580,7 +588,7 @@ a.avatar:hover {
 }
 
 .accent {
-  color: var(--landing-cta);
+  color: var(--landing-accent);
 }
 
 /* The deck's numbered agenda: the number large in the accent, a rule, the title. */

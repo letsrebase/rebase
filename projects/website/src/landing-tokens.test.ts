@@ -13,6 +13,9 @@ const landingCss = readFileSync(join(__dirname, 'landing.css'), 'utf-8')
 const pitchCss = readFileSync(join(__dirname, 'pitch.css'), 'utf-8')
 const pigrocrmCss = readFileSync(join(__dirname, 'pigrocrm.css'), 'utf-8')
 const pigrocrmHtml = readFileSync(join(__dirname, 'pigrocrm.html'), 'utf-8')
+const indexHtml = readFileSync(join(__dirname, 'index.html'), 'utf-8')
+const privacyHtml = readFileSync(join(__dirname, 'privacy.html'), 'utf-8')
+const termsHtml = readFileSync(join(__dirname, 'terms.html'), 'utf-8')
 
 const LANDING_DECLARATION = /--landing-[\w-]+\s*:\s*[^;]+;/g
 // pitch.css keeps its own short names (REB-248): the pattern reaches only these six
@@ -262,6 +265,8 @@ describe('landing tokens', () => {
     expect(resolveColour('--landing-ink-quiet', landingCss)).toBe('#465362')
     expect(resolveColour('--landing-cta', landingCss)).toBe('#e5133e')
     expect(resolveColour('--landing-focus', landingCss)).toBe('#ed254e')
+    // REB-276: the accent-as-text token, the palette's deep watermelon.
+    expect(resolveColour('--landing-accent', landingCss)).toBe('#c50d33')
   })
 
   it('contains no raw hexadecimal in the --landing-* block, other than white', () => {
@@ -279,6 +284,7 @@ describe('landing tokens', () => {
     const surface = resolveColour('--landing-surface', landingCss)
     const ink = resolveColour('--landing-ink', landingCss)
     const quiet = resolveColour('--landing-ink-quiet', landingCss)
+    const accent = resolveColour('--landing-accent', landingCss)
     // Boxes and cards are opaque white, so every text colour is also read on white.
     for (const [text, background] of [
       [ink, surface],
@@ -286,6 +292,13 @@ describe('landing tokens', () => {
       [ink, '#ffffff'],
       [quiet, '#ffffff'],
       ['#ffffff', resolveColour('--landing-cta', landingCss)],
+      // REB-276: the kicker/accent text pair this sheet used to render in
+      // `--landing-cta`, which reads 4.17:1 on the light band's ground. The veil
+      // is paper at four fifths over the paper body, so it resolves to paper;
+      // the full compositing derivation lives in `landing.css text pairs` below.
+      [accent, surface],
+      [accent, '#ffffff'],
+      [resolveColour('--landing-gold', landingCss), ink],
     ] as const) {
       expect(contrastRatio(text, background), `${text} on ${background}`).toBeGreaterThanOrEqual(AA_TEXT)
     }
@@ -337,6 +350,80 @@ describe('landing tokens', () => {
   })
 })
 
+// REB-276: the deck's kicker and `.accent` word read 4.17:1 on the light band's
+// veil when no white `.box` sat under them (/pigrocrm's `#voci` heading is the
+// case PR #186's review found; `--landing-cta` only clears AA as a fill under
+// white). The fix moved the text to `--landing-accent`; what stops it coming
+// back is this block, which derives every pair `landing.css` alone paints
+// crossed against the real markup of the pages that load it (pigrocrm.css's
+// overrides left to the suite below, which reads both sheets), instead of
+// naming pairs by hand.
+describe('landing.css text pairs', () => {
+  const vars = landingVars(landingCss)
+  const rawVars = landingVarsRaw(landingCss)
+  const colourRules = extractDeclarations(landingCss, 'color')
+  const backgroundRules = extractDeclarations(landingCss, 'background')
+
+  const pairs = [indexHtml, pigrocrmHtml, privacyHtml, termsHtml].flatMap((html) =>
+    derivePairs(html, colourRules, backgroundRules, vars, rawVars).filter(
+      // Elements `pigrocrm.css` also reaches belong to the suite below: its
+      // cascade, not `landing.css` alone, decides what paints there.
+      ([, , element]) => !touchesPigrocrmCss(element),
+    ),
+  )
+
+  it('reaches the bare kicker on the light band specifically, not just a non-empty list', () => {
+    // The exact element REB-276 observed: a `.deck .kicker` sitting directly
+    // on the band's veil, no `.box` under it. Its ground composites to Paper
+    // (the veil is Paper at 80% over the Paper body), so the pair is the one
+    // the card measured at 4.17:1. If the derivation ever stopped resolving
+    // `--landing-veil`, this fails on the spot rather than the loop below
+    // passing quietly on whatever else it found.
+    const voci = pairs.find(([, , element]) => element.id === 'voci')
+    expect(voci).toBeDefined()
+    expect(voci?.[0]).toBe('#c50d33')
+    expect(voci?.[1]).toBe('#f1f2f3')
+    // And not only this one page: index.html carries the same bare kicker on
+    // its two light bands.
+    expect(pairs.filter(([, , element]) => element.matches('.band:not(.dark) p.kicker'))).toHaveLength(3)
+  })
+
+  it('reaches 4.5:1 on every text pair landing.css renders alone', () => {
+    expect(pairs.length).toBeGreaterThan(0)
+    for (const [text, background] of pairs) {
+      expect(contrastRatio(text, background), `${text} on ${background}`).toBeGreaterThanOrEqual(AA_TEXT)
+    }
+  })
+
+  it('would have caught REB-276: the accent text back in --landing-cta on the veil', () => {
+    // The regression drill, same shape as REB-268's: put the pre-fix value
+    // into a copy of the real sheet, run it through the same extraction and
+    // derivation, and the `#voci` pair must come out failing. White (inside a
+    // `.box`) is the passing direction this drill also states: `-strong` was
+    // never wrong there, which is why the hero's own kicker hid the defect.
+    const preFixCss = landingCss.replaceAll(
+      'color: var(--landing-accent);',
+      'color: var(--landing-cta);',
+    )
+    const preFixAll = derivePairs(
+      pigrocrmHtml,
+      extractDeclarations(preFixCss, 'color'),
+      backgroundRules,
+      vars,
+      rawVars,
+    )
+    const failingVoci = preFixAll.find(
+      ([, , element]) => element.id === 'voci' && !touchesPigrocrmCss(element),
+    )
+    expect(failingVoci?.[0]).toBe('#e5133e')
+    expect(contrastRatio(failingVoci![0], failingVoci![1])).toBeLessThan(AA_TEXT)
+
+    const heroKicker = preFixAll.find(([, , element]) => element.matches('.hero .box .kicker'))
+    expect(heroKicker?.[0]).toBe('#e5133e')
+    expect(contrastRatio(heroKicker![0], heroKicker![1])).toBeGreaterThanOrEqual(AA_TEXT)
+  })
+})
+
 // pitch.css joined TOKEN_CONSUMERS in REB-248: it used to restate the six colours and
 // its own @font-face, a latent fork of shared/brand that a palette change would have
 // left the deck on. These hold the same two guarantees landing.css already had.
@@ -364,6 +451,33 @@ describe('pitch deck tokens', () => {
   })
 })
 
+/** Every selector `pigrocrm.css` names for *any* property, not only the ones
+ *  that win a `color`/`background`: `.voices-light` sets neither today, only
+ *  `border-top-color` and a `data-reveal` reset, so a filter over winning colour
+ *  or background rules would never reach the element REB-268 is about at all.
+ *  Module level since REB-276: the landing-only block above it uses the same
+ *  test to leave `pigrocrm.css`'s pairs to their own suite. */
+const pigrocrmSelectors = [...stripAtRules(pigrocrmCss).matchAll(/([^{}]+)\{/g)]
+  .map((rule) => rule[1]?.trim())
+  .filter((selector): selector is string => Boolean(selector) && selector !== ':root')
+
+/** Whether `element` or an ancestor is named by any `pigrocrm.css` selector --
+ *  the line between the pairs `pigrocrm.css` participates in and the ones
+ *  `landing.css` alone renders. */
+function touchesPigrocrmCss(element: Element): boolean {
+  for (let node: Element | null = element; node; node = node.parentElement) {
+    for (const selector of pigrocrmSelectors) {
+      let matches = false
+      try {
+        matches = node.matches(selector)
+      } catch {
+        // Same unsupported-pseudo-class case as elsewhere: names no element.
+      }
+      if (matches) return true
+    }
+  }
+  return false
+}
 // REB-268: /pigrocrm read 4.37:1 on the light band's role line, `.voices-light`
 // overriding the ground `landing.css`'s `.who .role` sits on -- a pair the test
 // above never saw, because it reads `landing.css` alone. These derive every pair
@@ -383,31 +497,6 @@ describe('pigrocrm.css text pairs', () => {
   const pigrocrmBackgroundRules = extractDeclarations(pigrocrmCss, 'background')
   const colourRules = [...landingColourRules, ...pigrocrmColourRules]
   const backgroundRules = [...landingBackgroundRules, ...pigrocrmBackgroundRules]
-  // Every selector `pigrocrm.css` names for *any* property, not only the ones
-  // that win a `color`/`background`: `.voices-light` sets neither today, only
-  // `border-top-color` and a `data-reveal` reset, so a filter over winning colour
-  // or background rules would never reach the element REB-268 is about at all.
-  const pigrocrmSelectors = [...stripAtRules(pigrocrmCss).matchAll(/([^{}]+)\{/g)]
-    .map((rule) => rule[1]?.trim())
-    .filter((selector): selector is string => Boolean(selector) && selector !== ':root')
-
-  /** Whether `element` or an ancestor is named by any `pigrocrm.css` selector --
-   *  the line between "this card's ground" and a finding that belongs to
-   *  `landing tokens` instead. */
-  function touchesPigrocrmCss(element: Element): boolean {
-    for (let node: Element | null = element; node; node = node.parentElement) {
-      for (const selector of pigrocrmSelectors) {
-        let matches = false
-        try {
-          matches = node.matches(selector)
-        } catch {
-          // Same unsupported-pseudo-class case as elsewhere: names no element.
-        }
-        if (matches) return true
-      }
-    }
-    return false
-  }
 
   const allPairs = derivePairs(pigrocrmHtml, colourRules, backgroundRules, vars, rawVars)
   const pairs = allPairs.filter(([, , element]) => touchesPigrocrmCss(element))
