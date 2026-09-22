@@ -53,7 +53,7 @@ does it adds or updates the row here, in the PR that ships the release or in one
 | `Monorepo` | `Indexing and SEO v1 - search sees the site` | Lorenzo | In Progress |
 | `Monorepo` | `Monorepo hygiene v1 - CI cost, licence and the English rule` | Lorenzo | Completed, 2026-09-10 |
 | `Monorepo` | `Rebrand v2 - orbiters leaves the code` | Lorenzo | Completed, 2026-09-16 (opened 2026-09-15) |
-| `Monorepo` | `Code audit v1 - what the five reviewers found` | Lorenzo | In Progress, opened 2026-09-16 |
+| `Monorepo` | `Code audit v1 - the trunk has no known defects left` | Lorenzo | In Progress, opened 2026-09-16 |
 | `Hub` | `Hub v2 - one hub, and an admin is a member with one more section` | Lorenzo | Completed, 2026-09-22 (opened 2026-09-17) |
 | `PigroCRM` | `PigroCRM v3 - a space has a team` | Lorenzo | Planned, opened 2026-09-17 |
 | `Monorepo` | `Shared UI v1 - the hub and the CRM look like the site` | Lorenzo | Completed, 2026-09-22 (opened 2026-09-17) |
@@ -232,17 +232,19 @@ board alone would mislead a reader is worse.
 The board is read by two people scanning for "who is doing what, how far", not
 studied. Every field has a budget, and the budget is the rule.
 
-- A **title under 80 characters**: one sentence, one clause, a verb. It states the
-  outcome the card makes true, or the observed defect, never the intended fix and
-  never a restatement of the body. Two clauses joined by a colon means the second
-  one belongs in the body. "the backend gate installs neither pandoc nor typst"
-  rather than "add pandoc to CI". The fix is often not the one you first thought
-  of, and a title written as a fix ages into a lie.
-- A **body that fits one screen**: at most three or four bold lead words
+- A **title under 80 characters**: one sentence with a verb; one clause, or two
+  when the second only names what makes the first visible. It states the outcome the
+  card makes true, or the observed defect, never the intended fix and never a
+  restatement of the body. A colon inside a title means the second half belongs in
+  the body. "the backend gate installs neither pandoc nor typst" rather than "add
+  pandoc to CI". The fix is often not the one you first thought of, and a title
+  written as a fix ages into a lie.
+- A **body that fits one screen**: at most four bold lead words
   (`**Observed.**`, `**Needed.**`, and only when they have something to say
-  `**Not here.**`, `**Adjacent.**`), each two or three sentences. Point at the
-  file and line, the spec section, the run id; do not paste them. The measurement,
-  the reproduction, the design options and the full neighbour scan belong in the
+  `**Done when.**`, `**Not here.**`, `**Adjacent.**`), each two or three sentences.
+  Point at the file and line, the spec section, the run id; do not paste them. The
+  measurement, the reproduction, the design options and the full neighbour scan
+  belong in the
   commit, the PR or the project's document; the card indexes them in one line.
   A body an agent had to write at midnight is a body its reader will not write
   back at noon.
@@ -274,8 +276,8 @@ Applies to every project, milestone and issue title, and to the labels.
   sentence starting `Closes when`, with the observable check: the page, the command,
   the assertion. Nothing else: not the history, not the alternatives, not the file
   list.
-- **A `**Done when.**` line is legal in an issue body and nothing else is longer.**
-  If the check is not one line, it is not a done-when, it is the work.
+- **A `**Done when.**` line is one of the lead words above, and it is one line.**
+  If the check does not fit one line, it is not a done-when, it is the work.
 - **No emoji, no status words, no version of the same idea twice.** A title says
   each thing once: `The CRM reports to PostHog and the funnel is visible` is
   allowed to name the mechanism because the mechanism *is* the visible outcome;

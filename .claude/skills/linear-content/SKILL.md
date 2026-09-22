@@ -26,13 +26,13 @@ never repeats the body. A colon inside a title means the second half belongs in 
 body. The fix changes, and a title written as a fix ages into a lie.
 
 - Good: `An issued invoice gets a due date nobody agreed on`
-- Good: `Drop the dead confermata -> bozza transition`
+- Good: `The dead confermata -> bozza transition is gone from both tables` (the outcome, not the instruction to make it)
 - Bad: `Add delete button to invoice page` (the fix, and it may not be this fix)
 - Bad: a two-hundred-character sentence that is the whole body, in the title
 
 ## The issue body
 
-**It fits one screen.** Three or four bold lead words, each two or three sentences.
+**It fits one screen.** At most four bold lead words, each two or three sentences.
 Skip one only when it has nothing to say, never because it is inconvenient. Point at
 the file and line, the spec section, the run id; never paste them. The full
 measurement, the design options and the long scan belong to the commit, the PR or a
@@ -44,6 +44,9 @@ A quote from the person who asked, in «guillemets», with the date, when the as
 
 **Needed.** The outcome, as behaviour a reader can check, not a list of files to
 edit. Where a design choice is already taken, say so and where it is recorded.
+
+**Done when.** One line, the check a reader can test. If the check needs more than
+one line it is the work, not a done-when.
 
 **Not here.** One sentence, when a reader might expect something and will not find
 it, so nobody reopens a closed question.
@@ -59,8 +62,9 @@ for the lead** (one question, the options, your recommendation first).
 
 ## Comments
 
-One comment per event that changes the issue, two or three sentences each. Each
-opens with a bold lead that says which kind it is, so a reader can skim the thread.
+One comment per event that changes the issue: two or three sentences, and the
+closing evidence bullets when it is the closing comment. Each opens with a bold lead
+that says which kind it is, so a reader can skim the thread.
 
 - **Progress.** `**Step 4 done and live:** ...` What landed, where to see it, the commit.
   Never "working on it".
