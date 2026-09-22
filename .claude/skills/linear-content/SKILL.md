@@ -92,10 +92,11 @@ that says which kind it is, so a reader can skim the thread.
 
 ## Project naming and description
 
-The name is `Scope vN - <what you get when it ships>`, in words a person who never
-read the spec recognises (`PigroCRM v3 - a space has a team`). It carries the
-version suffix and no state word: `deployed`, `done`, `complete` repeat the status,
-which already says it, and go stale the day the status moves.
+The name is the outcome clause alone, in words a person who never read the spec
+recognises (`A space has a team`). No initiative prefix and no version number: the
+initiative field already says which product, and `vN` checks nothing. No state word
+either: `deployed`, `done`, `complete` repeat the status, which already says it, and
+go stale the day the status moves.
 
 For `save_project`: `summary` is one sentence stating the outcome (under 255
 chars). The description is at most a short paragraph: what the project is, where it
