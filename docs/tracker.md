@@ -15,7 +15,7 @@ are not part of this repo's flow.
 | Initiative | a product, permanent: `Website`, `Hub`, `PigroCRM`, `Monorepo` |
 | Project | a release, or a body of work with an end. It closes when it ships, which is what lets its issues archive. Named with a verb and the work it does (`Give every space its own team`): no initiative prefix, no version number, no state word |
 | Milestone | the work that lands when it closes, named with a verb (`Cut both wizards to three screens`), inside a project's release. Not an issue; costs nothing, shows progress on its own |
-| Issue | one agent run, one PR, one worktree |
+| Issue | one agent run, one worktree; its PR is the milestone's when one is open, its own otherwise |
 | Priority | Linear's own field: Urgent, High, Medium, Low. Never a label |
 | Effort | Linear's own estimate field. Never a label |
 | Statuses | `Backlog`, `Todo`, `In Progress`, `In Review`, `Done`, `Canceled` |
@@ -206,15 +206,27 @@ are cheap and they are what makes an issue readable in a month, and a card that 
 `In Progress` for a day with nothing under it tells the other agent nothing when they
 are deciding whether to touch the same files.
 
+**Which PR.** A milestone in progress has one branch and one draft PR, opened when the
+work starts and merged when it closes: hand-driven cards in that milestone commit onto
+the milestone branch instead of opening a PR each. The milestone branch carries no
+issue id on purpose, so Linear's automation stays out of it and the cards move by
+hand: each to `In Progress` when its run starts, each to `Done` with the merge, with
+the closing evidence in its own comment. The PR body lists the cards it lands. A card
+outside an open milestone keeps its own branch and PR, and so do the two mechanisms
+that verify a merged PR per card: the unattended pickup loop, and the Sencare repos,
+whose staging pipeline reads one Jira key per commit.
+
 **When your PR is open.** Comment the PR URL on the issue. The PR links itself to the
 card within seconds, and since 2026-09-16 the team's automation moves the state too
 (§ Commits and issues): the PR opening puts the card in `In Progress` (an `In Review`
 set before that fires is overwritten, REB-247), and the merge sets `Done` the moment it
-lands. So the evidence that would have closed the card goes in a comment before or right
-after the merge, not in a state change you make. From here to the merge the card keeps
+lands. On a milestone's draft PR none of that fires (§ Which PR): the URL goes on every
+card the PR lists, and each card moves by hand at its run's start and at the merge. So
+the evidence that would have closed the card goes in a comment before or right after
+the merge, not in a state change you make. From here to the merge the card keeps
 following the PR: the review's findings and what you did with them, a CI run that went
-red and why, a push that changed what the PR is. One line each is enough, and silence is
-not.
+red and why, a push that changed what the PR is. One line each is enough, and silence
+is not.
 
 **When you finish.** `Done` means verified on the surface the issue is about, and the
 comment that closes it says how. A green CI check closes a CI issue. A deploy issue

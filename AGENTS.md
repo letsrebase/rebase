@@ -204,7 +204,9 @@ tested on a branch and is proven on the trunk instead.
   exist today (`Website`, `Hub`, `PigroCRM`, `Monorepo`). A **project** is a
   release, or a body of work with an end, and it closes when it ships. A **project
   milestone** is a coherent outcome inside a release, not an issue: epics are never
-  modelled as issues. An **issue** is one agent run, one PR, one worktree. The rest
+  modelled as issues. An **issue** is one agent run and one worktree; its changes land
+  on the open milestone's one draft PR, or on its own PR when no milestone is open
+  (`docs/tracker.md` § The loop). The rest
   of the convention, from what a title says to which labels are legal, is in
   `docs/tracker.md`.
 - **Every project always carries a lead and both members.** A project created
