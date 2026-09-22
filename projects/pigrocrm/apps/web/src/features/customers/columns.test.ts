@@ -28,6 +28,8 @@ const BASE_CUSTOMER: Customer = {
   sito_web: null,
   stato: null,
   note: null,
+  giorni_pagamento: null,
+  pagamento_fine_mese: false,
   custom_fields: {},
   created_at: '2026-08-06T00:00:00Z',
   updated_at: '2026-08-06T00:00:00Z',

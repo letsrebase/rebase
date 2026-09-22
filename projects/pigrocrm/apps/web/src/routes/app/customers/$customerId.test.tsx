@@ -64,6 +64,24 @@ function renderWithClient(ui: ReactElement) {
 }
 
 describe('CustomerDetail', () => {
+  /** REB-326: the terms the due date of every invoice to this customer is computed
+   *  from, stated on the card so a wrong one is seen before an emission prints it. */
+  describe('the payment terms row', () => {
+    it('states the agreed terms, end of month included', async () => {
+      mockCustomerFetch(ok({ ...(CUSTOMER as object), giorni_pagamento: 30, pagamento_fine_mese: true }))
+      renderWithClient(<CustomerDetail />)
+      expect(await screen.findByText('Termini di pagamento')).toBeInTheDocument()
+      expect(screen.getByText('30 giorni data fattura fine mese')).toBeInTheDocument()
+    })
+
+    it('says the profile decides when the customer has no days of its own', async () => {
+      mockCustomerFetch(ok({ ...(CUSTOMER as object), giorni_pagamento: null, pagamento_fine_mese: false }))
+      renderWithClient(<CustomerDetail />)
+      expect(await screen.findByText('Termini di pagamento')).toBeInTheDocument()
+      expect(screen.getByText('Dal profilo fiscale')).toBeInTheDocument()
+    })
+  })
+
   it('shows "Cliente non trovato" for a genuine 404', async () => {
     mockCustomerFetch(
       failed(

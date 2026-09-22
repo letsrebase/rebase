@@ -29,6 +29,7 @@ from pigrocrm.core.errors import (
 )
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
+from pigrocrm.core.invoices.scadenza import scadenza_da_termini
 from pigrocrm.core.invoices.schemas import (
     SNAPSHOT_VERSIONE,
     InvoiceCreate,
@@ -259,6 +260,72 @@ def test_the_same_date_as_the_previous_invoice_is_allowed(
 def test_the_due_date_comes_from_the_profile(service: InvoiceService, db_session: Session) -> None:
     invoice = service.issue(_draft(service, _customer(db_session)), InvoiceIssue(), ADMIN)
     assert invoice.data_scadenza == invoice.data_emissione + timedelta(days=30)
+
+
+def test_the_due_date_follows_the_customer_terms(
+    service: InvoiceService, db_session: Session
+) -> None:
+    """REB-326: the profile's days are the default, the customer's terms win. Issued on
+    22/09 to a customer at «30 giorni fine mese», 2026/21 was due 17/10 (the profile's
+    25 days) and the scadenziario, the digest and the reminders all read that date."""
+    emisfera = _customer(db_session, giorni_pagamento=30, pagamento_fine_mese=True)
+    invoice = service.issue(_draft(service, emisfera), InvoiceIssue(), ADMIN)
+    assert invoice.data_scadenza == scadenza_da_termini(TODAY, 30, fine_mese=True)
+    assert invoice.data_scadenza != TODAY + timedelta(days=30)
+
+    # Days without the switch: the profile's rule with the customer's number.
+    a_sessanta = _customer(db_session, partita_iva="12345678902", giorni_pagamento=60)
+    invoice = service.issue(_draft(service, a_sessanta), InvoiceIssue(), ADMIN)
+    assert invoice.data_scadenza == TODAY + timedelta(days=60)
+
+
+def test_a_due_date_written_on_the_draft_wins_over_the_terms(
+    service: InvoiceService, db_session: Session
+) -> None:
+    """A person who typed a date meant it. On a proforma it travels to the fattura born
+    from it; on a draft fattura it stays on the row. Cleared, the terms decide again."""
+    emisfera = _customer(db_session, giorni_pagamento=30, pagamento_fine_mese=True)
+    proforma = service.create(
+        InvoiceCreate(
+            customer_id=emisfera,
+            tipo="proforma",
+            righe=[InvoiceLineIn(descrizione="Saldo", prezzo_unitario=Decimal("4400.00"))],
+        ),
+        ADMIN,
+    )
+    service.update(proforma.id, InvoiceUpdate(data_scadenza=date(2026, 11, 15)), ADMIN)
+    service.confirm_proforma(proforma.id, ADMIN)
+    issued = service.issue(proforma.id, InvoiceIssue(), ADMIN)
+    assert issued.data_scadenza == date(2026, 11, 15)
+
+    draft = _draft(service, emisfera)
+    service.update(draft, InvoiceUpdate(data_scadenza=date(2026, 12, 1)), ADMIN)
+    service.update(draft, InvoiceUpdate(data_scadenza=None), ADMIN)
+    issued = service.issue(draft, InvoiceIssue(), ADMIN)
+    assert issued.data_scadenza == scadenza_da_termini(TODAY, 30, fine_mese=True)
+
+    # Frozen with the rest of the header once issued.
+    with pytest.raises(ImmutableField):
+        service.update(issued.id, InvoiceUpdate(data_scadenza=date(2026, 12, 31)), ADMIN)
+
+
+def test_an_editable_document_says_when_it_would_be_due(
+    service: InvoiceService, db_session: Session
+) -> None:
+    """`scadenza_prevista`: the date «Emetti» would print if pressed today, so a wrong
+    term is caught on the page before the XML leaves. An issued row has `data_scadenza`
+    and no forecast."""
+    emisfera = _customer(db_session, giorni_pagamento=30, pagamento_fine_mese=True)
+    draft = service.get(_draft(service, emisfera), ADMIN)
+    assert draft.data_scadenza is None
+    assert draft.scadenza_prevista == scadenza_da_termini(TODAY, 30, fine_mese=True)
+
+    service.update(draft.id, InvoiceUpdate(data_scadenza=date(2026, 12, 1)), ADMIN)
+    assert service.get(draft.id, ADMIN).scadenza_prevista == date(2026, 12, 1)
+
+    issued = service.issue(draft.id, InvoiceIssue(), ADMIN)
+    assert issued.scadenza_prevista is None
+    assert issued.data_scadenza == date(2026, 12, 1)
 
 
 # --- the refusals, each naming the field (criterion 9) ------------------------------

@@ -31,6 +31,9 @@ EMAIL_MAX_LENGTH = 320
 TELEFONO_MAX_LENGTH = 40
 SITO_WEB_MAX_LENGTH = 255
 STATO_MAX_LENGTH = 40
+# The same bounds as the fiscal profile's `giorni_scadenza` (REB-326).
+GIORNI_PAGAMENTO_MIN = 0
+GIORNI_PAGAMENTO_MAX = 365
 
 
 class CustomerCreate(BaseModel):
@@ -68,6 +71,14 @@ class CustomerCreate(BaseModel):
     sito_web: SafeStr | None = Field(default=None, max_length=SITO_WEB_MAX_LENGTH)
     stato: SafeStr | None = Field(default=None, max_length=STATO_MAX_LENGTH)
     note: SafeStr | None = None
+    # Payment terms (REB-326): the days after the invoice date, and the end-of-month
+    # slide. Absent days mean the fiscal profile's `giorni_scadenza`; the bounds are the
+    # profile's own (`fiscal/schemas.py`), because a term the profile could not hold is
+    # not one a customer can either.
+    giorni_pagamento: int | None = Field(
+        default=None, ge=GIORNI_PAGAMENTO_MIN, le=GIORNI_PAGAMENTO_MAX
+    )
+    pagamento_fine_mese: bool = False
     custom_fields: dict[str, Any] = {}
 
 
@@ -92,6 +103,10 @@ class CustomerUpdate(BaseModel):
     sito_web: SafeStr | None = Field(default=None, max_length=SITO_WEB_MAX_LENGTH)
     stato: SafeStr | None = Field(default=None, max_length=STATO_MAX_LENGTH)
     note: SafeStr | None = None
+    giorni_pagamento: int | None = Field(
+        default=None, ge=GIORNI_PAGAMENTO_MIN, le=GIORNI_PAGAMENTO_MAX
+    )
+    pagamento_fine_mese: bool | None = None
     custom_fields: dict[str, Any] | None = None
 
 
@@ -114,6 +129,8 @@ class CustomerRead(BaseModel):
     sito_web: str | None
     stato: str | None
     note: str | None
+    giorni_pagamento: int | None
+    pagamento_fine_mese: bool
     custom_fields: dict[str, Any]
     created_at: datetime
     updated_at: datetime

@@ -22,6 +22,8 @@ const BASE_CUSTOMER: Customer = {
   sito_web: null,
   stato: null,
   note: null,
+  giorni_pagamento: null,
+  pagamento_fine_mese: false,
   custom_fields: {},
   created_at: '2026-08-06T00:00:00Z',
   updated_at: '2026-08-06T00:00:00Z',
@@ -68,6 +70,7 @@ describe('CustomerForm', () => {
     expect(submitted(onSubmit)).toEqual({
       ragione_sociale: 'ACME Srl',
       nazione: 'IT',
+      pagamento_fine_mese: false,
       custom_fields: { settore: 'PMI' },
     })
   })
@@ -114,6 +117,7 @@ describe('CustomerForm', () => {
     expect(payload).toEqual({
       ragione_sociale: 'ACME Srl',
       nazione: 'IT',
+      pagamento_fine_mese: false,
       custom_fields: {},
     })
   })
@@ -135,7 +139,13 @@ describe('CustomerForm', () => {
     // `false`, not an omitted key: the record then reads "No", which is what the
     // unchecked box the user was looking at actually said. Omitting it stores nothing
     // and the detail page renders a dash, as if nobody had an opinion.
-    expect(submitted(onSubmit)).toEqual({ nazione: 'IT', custom_fields: { vip: false } })
+    // `pagamento_fine_mese` is the one native checkbox (REB-326) and follows the same
+    // rule: the unchecked box the user saw said "no", so "no" is what is sent.
+    expect(submitted(onSubmit)).toEqual({
+      nazione: 'IT',
+      pagamento_fine_mese: false,
+      custom_fields: { vip: false },
+    })
   })
 
   /**
@@ -168,6 +178,8 @@ describe('CustomerForm', () => {
       ragione_sociale: 'ACME Srl',
       nazione: 'IT',
       telefono: '02123456',
+      // A stored native value, like the two above it: sent as it is, not backfilled.
+      pagamento_fine_mese: false,
       custom_fields: {},
     })
   })
@@ -185,8 +197,8 @@ describe('CustomerForm', () => {
       />,
     )
 
-    expect(screen.getByRole('checkbox')).toBeChecked()
-    await userEvent.click(screen.getByRole('checkbox'))
+    expect(screen.getByLabelText('Cliente VIP')).toBeChecked()
+    await userEvent.click(screen.getByLabelText('Cliente VIP'))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     // `false`, not `null`: unchecking is choosing "no", not clearing the field.
@@ -207,8 +219,8 @@ describe('CustomerForm', () => {
       />,
     )
 
-    await userEvent.click(screen.getByRole('checkbox'))
-    await userEvent.click(screen.getByRole('checkbox'))
+    await userEvent.click(screen.getByLabelText('Cliente VIP'))
+    await userEvent.click(screen.getByLabelText('Cliente VIP'))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(submitted(onSubmit).custom_fields).toEqual({ vip: false })
@@ -241,6 +253,7 @@ describe('CustomerForm', () => {
       ragione_sociale: 'ACME Srl',
       nazione: 'IT',
       telefono: '',
+      pagamento_fine_mese: false,
       custom_fields: { settore: null },
     })
   })

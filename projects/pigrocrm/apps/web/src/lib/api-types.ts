@@ -3516,6 +3516,13 @@ export interface components {
             stato?: string | null;
             /** Note */
             note?: string | null;
+            /** Giorni Pagamento */
+            giorni_pagamento?: number | null;
+            /**
+             * Pagamento Fine Mese
+             * @default false
+             */
+            pagamento_fine_mese: boolean;
             /**
              * Custom Fields
              * @default {}
@@ -3568,6 +3575,10 @@ export interface components {
             stato: string | null;
             /** Note */
             note: string | null;
+            /** Giorni Pagamento */
+            giorni_pagamento: number | null;
+            /** Pagamento Fine Mese */
+            pagamento_fine_mese: boolean;
             /** Custom Fields */
             custom_fields: {
                 [key: string]: unknown;
@@ -3615,6 +3626,10 @@ export interface components {
             stato?: string | null;
             /** Note */
             note?: string | null;
+            /** Giorni Pagamento */
+            giorni_pagamento?: number | null;
+            /** Pagamento Fine Mese */
+            pagamento_fine_mese?: boolean | null;
             /** Custom Fields */
             custom_fields?: {
                 [key: string]: unknown;
@@ -5283,6 +5298,8 @@ export interface components {
             note_interne: string | null;
             /** Snapshot Versione */
             snapshot_versione: number | null;
+            /** Scadenza Prevista */
+            scadenza_prevista?: string | null;
             /** Customer Ragione Sociale */
             customer_ragione_sociale?: string | null;
             /** Custom Fields */
@@ -5332,6 +5349,8 @@ export interface components {
             note_interne?: string | null;
             /** Data Emissione */
             data_emissione?: string | null;
+            /** Data Scadenza */
+            data_scadenza?: string | null;
             /** Competenza Da */
             competenza_da?: string | null;
             /** Competenza A */

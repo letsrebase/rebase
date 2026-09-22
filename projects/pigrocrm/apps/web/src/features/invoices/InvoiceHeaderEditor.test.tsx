@@ -30,6 +30,8 @@ const DRAFT = {
   tipo: 'fattura',
   stato: 'bozza',
   data_emissione: null,
+  data_scadenza: null,
+  scadenza_prevista: '2026-10-31',
   competenza_da: null,
   competenza_a: null,
 } as unknown as Invoice
@@ -39,6 +41,8 @@ const PROFORMA = {
   tipo: 'proforma',
   stato: 'bozza',
   data_emissione: '2026-09-09',
+  data_scadenza: '2026-11-15',
+  scadenza_prevista: '2026-11-15',
   competenza_da: '2026-08-01',
   competenza_a: '2026-08-31',
 } as unknown as Invoice
@@ -99,6 +103,39 @@ describe('InvoiceHeaderEditor', () => {
       competenza_a: '2026-07-31',
     })
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Date salvate'))
+  })
+
+  /**
+   * REB-326: the due date used to be «emission plus the profile's days» and nothing on
+   * the page could say otherwise. The input is offered on both document kinds; empty, it
+   * shows the date the customer's terms would give today (`scadenza_prevista`, the
+   * server's forecast) so a wrong term is caught before «Emetti» prints it.
+   */
+  it('asks both documents for a due date and starts from the stored one', () => {
+    wrap(<InvoiceHeaderEditor invoice={PROFORMA} />)
+    expect(screen.getByLabelText('Scadenza')).toHaveValue('2026-11-15')
+  })
+
+  it('says what the terms would give when no due date is written', () => {
+    wrap(<InvoiceHeaderEditor invoice={DRAFT} />)
+    expect(screen.getByLabelText('Scadenza')).toHaveValue('')
+    expect(screen.getByText(/dai termini del cliente: 31\/10\/2026/)).toBeInTheDocument()
+  })
+
+  it('sends the due date it was given', async () => {
+    wrap(<InvoiceHeaderEditor invoice={DRAFT} />)
+    setDate('Scadenza', '2026-12-01')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva date' }))
+    await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
+    expect(sent()).toMatchObject({ data_scadenza: '2026-12-01' })
+  })
+
+  it('sends an explicit null when the due date is cleared, so the terms decide again', async () => {
+    wrap(<InvoiceHeaderEditor invoice={PROFORMA} />)
+    setDate('Scadenza', '')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva date' }))
+    await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
+    expect(sent()).toMatchObject({ data_scadenza: null })
   })
 
   it('never sends a date for a fattura, whose date is not this form’s to set', async () => {

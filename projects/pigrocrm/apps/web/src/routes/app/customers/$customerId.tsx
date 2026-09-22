@@ -18,6 +18,7 @@ import {
   useCustomerPeople,
   useDeleteCustomer,
   useUpdateCustomer,
+  type Customer,
   type RelatedDeal,
   type RelatedPerson,
 } from '@/features/customers/queries'
@@ -31,6 +32,20 @@ import { useCanWrite } from '@/lib/auth'
 import { useEntitySchema } from '@/lib/schema'
 
 const EMPTY = '—'
+
+/**
+ * The terms every due date to this customer is computed from (REB-326), in the words a
+ * contract uses: «30 giorni data fattura fine mese». Days absent means the fiscal
+ * profile's number applies at emission, and the row says so rather than printing a
+ * dash, since a dash would read as "no terms" on a customer that does have a rule.
+ */
+function paymentTerms(customer: Customer): string {
+  const fineMese = customer.pagamento_fine_mese ? ' fine mese' : ''
+  if (customer.giorni_pagamento === null || customer.giorni_pagamento === undefined) {
+    return `Dal profilo fiscale${fineMese ? `,${fineMese}` : ''}`
+  }
+  return `${customer.giorni_pagamento} giorni data fattura${fineMese}`
+}
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -224,6 +239,7 @@ export function CustomerDetail() {
                   }
                 />
                 <Row label="Nazione" value={displayNative(customer.nazione)} />
+                <Row label="Termini di pagamento" value={paymentTerms(customer)} />
               </CardContent>
             </Card>
 

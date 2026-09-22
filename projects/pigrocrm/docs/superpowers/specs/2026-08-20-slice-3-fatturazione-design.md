@@ -282,6 +282,16 @@ leggere «la data del numero precedente» è sicuro:
 Una data futura si rifiuta. `anno` è quindi sempre l'anno di `data_emissione`, che coincide con l'anno
 in corso: le due letture del §3 e del §8.1 non possono divergere.
 
+### 6.3 Data di scadenza (aggiunta 2026-09-22, REB-326)
+
+`data_scadenza` si calcola all'emissione dai **termini di pagamento del cliente**: `giorni_pagamento`
+(null: i `giorni_scadenza` del profilo fiscale) e `pagamento_fine_mese`. L'aritmetica è una sola,
+`invoices/scadenza.py`: prima i giorni, poi l'ultimo giorno del mese in cui si atterra, che è ciò che
+«30 giorni data fattura fine mese» significa. Una data scritta a mano sulla bozza o sulla proforma
+vince sul calcolo. Un documento ancora modificabile espone `scadenza_prevista`, la data che «Emetti»
+stamperebbe oggi. Una fattura emessa tiene la data con cui è nata: un termine cambiato dopo non la
+sposta. Regola in `docs/design/DECISIONS.md`, riga del 2026-09-22.
+
 ---
 
 ## 7. Il regime fiscale

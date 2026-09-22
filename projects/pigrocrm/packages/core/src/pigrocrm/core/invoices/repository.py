@@ -518,6 +518,20 @@ class InvoiceRepository:
         ).all()
         return {row[0]: row[1] for row in rows}
 
+    def payment_terms(self, customer_ids: Collection[UUID]) -> dict[UUID, tuple[int | None, bool]]:
+        """`(giorni_pagamento, pagamento_fine_mese)` of each given customer, in one query
+        (REB-326): what `issue` derives a due date from and what `get` forecasts one
+        with. Shaped like `customer_names` so a caller with a page of rows can ask once.
+        No `deleted_at` filter either: a draft for an archived customer still has terms."""
+        if not customer_ids:
+            return {}
+        rows = self.session.execute(
+            select(Customer.id, Customer.giorni_pagamento, Customer.pagamento_fine_mese).where(
+                Customer.id.in_(customer_ids)
+            )
+        ).all()
+        return {row[0]: (row[1], row[2]) for row in rows}
+
     # `list` must stay the last method defined in this class -- an unconditional
     # project rule (`test_module_imports.py`). Defining a method named `list` rebinds
     # that name in the *class* namespace, so any later method whose own return

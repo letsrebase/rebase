@@ -41,6 +41,36 @@ def test_fiscal_fields_are_first_class_columns(db_session: Session) -> None:
     assert customer.codice_sdi == "ABCDEFG"
 
 
+def test_payment_terms_are_columns_of_the_customer(db_session: Session) -> None:
+    """REB-326: «30 giorni data fattura fine mese» is a fact about Emisfera, not about
+    the emitter, so it lives on the customer and `InvoiceService.issue` reads it there.
+    Absent, both fall back: the days to the fiscal profile's, the end-of-month to no."""
+    service = CustomerService(db_session)
+    plain = service.create(CustomerCreate(ragione_sociale="Senza termini"), ADMIN)
+    assert plain.giorni_pagamento is None
+    assert plain.pagamento_fine_mese is False
+
+    agreed = service.create(
+        CustomerCreate(ragione_sociale="Emisfera", giorni_pagamento=30, pagamento_fine_mese=True),
+        ADMIN,
+    )
+    assert (agreed.giorni_pagamento, agreed.pagamento_fine_mese) == (30, True)
+
+    # Cleared with an explicit null, the days go back to the profile's; the switch is
+    # NOT NULL and a null aimed at it is refused like any other column's.
+    cleared = service.update(agreed.id, CustomerUpdate(giorni_pagamento=None), ADMIN)
+    assert cleared.giorni_pagamento is None
+    with pytest.raises(ValidationFailed) as exc:
+        service.update(agreed.id, CustomerUpdate(pagamento_fine_mese=None), ADMIN)
+    assert exc.value.details["field"] == "pagamento_fine_mese"
+
+
+@pytest.mark.parametrize("bad", [-1, 366])
+def test_payment_days_stay_within_a_year(bad: int) -> None:
+    with pytest.raises(ValidationError):
+        CustomerCreate(ragione_sociale="X", giorni_pagamento=bad)
+
+
 @pytest.mark.parametrize("bad", ["1234567890", "123456789012", "1234567890A"])
 def test_partita_iva_must_be_eleven_digits(db_session: Session, bad: str) -> None:
     with pytest.raises(ValidationFailed) as exc:

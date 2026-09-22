@@ -5,6 +5,7 @@ import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { toProblem, type ProblemDetail } from '@/lib/api'
+import { formatIsoDateItalian } from '@/lib/dates'
 import { AccrualPeriodFields } from './AccrualPeriodFields'
 import { accrualPeriodBody, validateAccrualPeriod, type AccrualPeriodDraft } from './accrualPeriod'
 import { useUpdateInvoice, type Invoice } from './queries'
@@ -32,6 +33,10 @@ export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
   // `?? ''`: a `null` from the API, and also an absent key from an API that predates
   // the two columns, both read as "not set" rather than as the string "undefined".
   const [dataEmissione, setDataEmissione] = useState(invoice.data_emissione ?? '')
+  // The due date (REB-326), on both kinds: written here it is what `issue` prints;
+  // empty, the customer's terms decide at emission and `scadenza_prevista` (the
+  // server's own forecast, never recomputed here) says what they would give today.
+  const [dataScadenza, setDataScadenza] = useState(invoice.data_scadenza ?? '')
   const [competenza, setCompetenza] = useState<AccrualPeriodDraft>({
     competenza_da: invoice.competenza_da ?? '',
     competenza_a: invoice.competenza_a ?? '',
@@ -54,6 +59,11 @@ export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
     // where the server accepts it.
     const body: Record<string, unknown> = accrualPeriodBody(competenza)
     if (isProforma) body.data_emissione = dataEmissione
+    // Sent only when it changed: an explicit `null` is how the server clears it back to
+    // the terms, and an untouched empty input must not clear anything.
+    if (dataScadenza !== (invoice.data_scadenza ?? '')) {
+      body.data_scadenza = dataScadenza === '' ? null : dataScadenza
+    }
     update.mutate(body, {
       onSuccess: () => toast.success('Date salvate'),
       onError: (error) => setProblem(toProblem(error)),
@@ -79,7 +89,22 @@ export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
           </div>
         ) : null}
         <AccrualPeriodFields idPrefix="fattura" value={competenza} onChange={setCompetenza} />
+        <div className="space-y-2">
+          <Label htmlFor="fattura-scadenza">Scadenza</Label>
+          <Input
+            id="fattura-scadenza"
+            type="date"
+            value={dataScadenza}
+            onChange={(event) => setDataScadenza(event.target.value)}
+          />
+        </div>
       </div>
+      {dataScadenza === '' && invoice.scadenza_prevista ? (
+        <p className="text-muted-foreground text-xs">
+          Scadenza vuota: all’emissione viene calcolata dai termini del cliente:{' '}
+          {formatIsoDateItalian(invoice.scadenza_prevista)} se emessa oggi.
+        </p>
+      ) : null}
       {errors.data ? <p className="text-sm text-destructive">{errors.data}</p> : null}
       {errors.competenza ? <p className="text-sm text-destructive">{errors.competenza}</p> : null}
 
@@ -91,7 +116,8 @@ export function InvoiceHeaderEditor({ invoice }: { invoice: Invoice }) {
           {isProforma
             ? 'La data è quella stampata sulla proforma; la fattura che ne nasce prende la propria all’emissione.'
             : 'La data di emissione viene assegnata all’emissione.'}{' '}
-          Il periodo di competenza dice a quale mese appartiene il lavoro.
+          Il periodo di competenza dice a quale mese appartiene il lavoro. La scadenza scritta
+          qui vince sui termini del cliente.
         </p>
         <Button variant="outline" size="sm" onClick={submit} disabled={update.isPending}>
           Salva date

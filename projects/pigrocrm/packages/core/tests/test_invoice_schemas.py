@@ -122,8 +122,10 @@ def test_update_exposes_the_editable_columns_and_custom_fields() -> None:
     `exclude_unset`, so an explicit `null` clears a typed column and an omitted key
     leaves it alone -- which is what lets three `date` columns sit here: the accrual
     period (cleared as a pair, the service checks) and a proforma's own document date
-    (never cleared, the service checks). All of them are editable only while the
-    document is a draft, which `InvoiceService.update` enforces with `ImmutableField`."""
+    (never cleared, the service checks), and since REB-326 the due date, which cleared
+    hands the decision back to the customer's terms at emission. All of them are editable
+    only while the document is a draft, which `InvoiceService.update` enforces with
+    `ImmutableField`."""
     assert set(InvoiceUpdate.model_fields) == {
         "causale",
         "note_interne",
@@ -131,6 +133,7 @@ def test_update_exposes_the_editable_columns_and_custom_fields() -> None:
         "competenza_da",
         "competenza_a",
         "data_emissione",
+        "data_scadenza",
     }
 
 

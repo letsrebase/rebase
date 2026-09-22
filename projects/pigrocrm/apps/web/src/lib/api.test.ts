@@ -547,7 +547,12 @@ describe('the typed client', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const body = { ragione_sociale: 'Rossi SRL', nazione: 'IT', custom_fields: {} }
+    const body = {
+      ragione_sociale: 'Rossi SRL',
+      nazione: 'IT',
+      pagamento_fine_mese: false,
+      custom_fields: {},
+    }
     await unwrap(api.POST('/api/customers', { baseUrl: BASE, body }))
 
     const [first, , retried] = fetchMock.mock.calls.map(([input]) => input as Request)
