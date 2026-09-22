@@ -156,8 +156,8 @@ async def test_a_token_lists_the_tools_and_signs_what_it_writes(
         names = {tool.name for tool in (await session.list_tools()).tools}
     assert {"read_freelancer_cv", "list_pigro_spaces", "add_freelancer_comment"} <= names
 
-    signups = await _call(app, ivan_token, "list_signups", {})
-    assert signups["totale"] == 0
+    talenti = await _call(app, ivan_token, "list_talenti", {})
+    assert talenti["totale"] == 0
 
     spaces = await _call(app, ivan_token, "list_pigro_spaces", {})
     assert spaces["totale"] == 1 and spaces["items"][0]["slug"] == "studio"

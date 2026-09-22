@@ -23,21 +23,23 @@ from mcp.server import MCPServer
 from mcp.server.context import ServerMiddleware
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
 from rebase_core.config import Settings
-from rebase_core.errors import DomainError
-from rebase_core.freelancers import FreelancerService
+from rebase_core.errors import DomainError, NotFound
+from rebase_core.freelancers import LEAD_STATE, FreelancerService
 from rebase_core.http import HttpCall
 from rebase_core.logins import LoginService
+from rebase_core.models import Freelancer, Signup, User
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
-from rebase_core.schemas import FreelancerDraft, FreelancerRead, StatusChange
+from rebase_core.schemas import FreelancerDraft, FreelancerRead, StatusChange, TalentoRead
 from rebase_core.search import SEARCH_MAX_LENGTH
-from rebase_core.service import LIST_LIMIT_DEFAULT, SignupService
+from rebase_core.service import LIST_LIMIT_DEFAULT
 from rebase_core.talenti import TalentiService
 
 SessionFactory = sessionmaker[Session]
@@ -106,19 +108,11 @@ def build_server(
     middleware: Sequence[ServerMiddleware[Any]] | None = None,
 ) -> MCPServer:
     """`admin` answers the admin behind the current call; `settings` and `http` are what
-    `list_pigro_spaces` needs to reach the CRM, and without them the tool answers the
-    same sentence the admin area shows when the registry is not configured. `middleware`
+    reaches the CRM, for `list_pigro_spaces` and for the `pigro_slug` of `get_talento`,
+    and without them the registry's tools answer the same sentence the admin area shows
+    when it is not configured while the slug stays `None`. `middleware`
     is the HTTP transport's way of binding the request's admin around each call."""
     mcp = MCPServer("rebase", instructions=INSTRUCTIONS, middleware=middleware)
-
-    @mcp.tool()
-    def list_signups(limit: int = LIST_LIMIT_DEFAULT) -> dict[str, Any]:
-        """Chi ha lasciato nome, cognome ed email su letsrebase.com per entrare nella
-        community rebase, dal più recente, con il profilo LinkedIn quando l'ha dato.
-        Solo lettura. `nome` e `cognome` sono vuoti solo per le iscrizioni raccolte
-        quando il form chiedeva la sola email. `totale` conta tutta la lista anche
-        quando `limit` ne restituisce una parte."""
-        return _run(lambda s: SignupService(s).list_recent(limit=limit))
 
     @mcp.tool()
     def create_freelancer_from_signup(
@@ -155,9 +149,9 @@ def build_server(
         )
         # `draft_from_signup` returns through `get()`, which now answers a
         # `FreelancerDetail` for the admin HTTP route (REB-284); this tool keeps the
-        # plain `FreelancerRead` shape it always had, since it has neither the
-        # `settings`/`http` the Pigro lookup needs nor a documented reason to grow
-        # the sign-up/login/download fields the admin's screen alone asked for.
+        # plain `FreelancerRead` shape it always had. The card was just drafted, so it
+        # has no logins, downloads or signup UTM to report yet, and the thread comes
+        # back on the write anyway. `get_talento` is the tool for the full detail.
         return _run(
             lambda s: FreelancerRead.model_validate(
                 FreelancerService(s)
@@ -165,19 +159,6 @@ def build_server(
                 .model_dump()
             )
         )
-
-    @mcp.tool()
-    def list_freelancers(
-        limit: int = LIST_LIMIT_DEFAULT, stato: str | None = None
-    ) -> dict[str, Any]:
-        """I freelance che hanno compilato il profilo sull'hub, dal più recente: nome,
-        email, posizione, tariffa a giornata, disponibilità (remoto/ibrido/in_sede), link,
-        stato della candidatura (nuovo, contattato, attivo, scartato) e note. Mai i byte
-        del CV: il testo lo legge `read_freelancer_cv`, il file si scarica dall'area
-        admin. `stato` filtra; `totale` conta tutto. `lead` sono le iscrizioni senza
-        scheda (nome se c'è, email, quando), `totale_lead` quante:
-        piene senza filtro o con `stato="lead"`, vuote con un altro stato."""
-        return _run(lambda s: FreelancerService(s).list_recent(limit=limit, stato=stato))
 
     @mcp.tool()
     def list_talenti(
@@ -200,8 +181,8 @@ def build_server(
         freelance e le iscrizioni senza scheda in un'unica lista, `stato` `lead` per
         le seconde, ognuna con id, nome, cognome, email, LinkedIn, stato, origine e
         data. Dal più recente, o dal più pertinente quando `q` restringe. L'`id` di
-        una scheda va a `get_freelancer`, quello di un lead a
-        `create_freelancer_from_signup`.
+        una riga va a `get_talento`, che per un lead risponde la riga stessa; la
+        scheda di un lead si crea con `create_freelancer_from_signup`.
         `q` cerca nome, cognome, email e posizione; `posizione` filtra per ruolo,
         `remoto` per disponibilità (remoto/ibrido/in_sede), `tariffa_min` e
         `tariffa_max` per tariffa a giornata (stringa decimale col punto, «500» o
@@ -237,6 +218,48 @@ def build_server(
                 creato_a=created_to,
             )
         )
+
+    @mcp.tool()
+    def get_talento(talento_id: str) -> dict[str, Any]:
+        """Un talento, per id: la riga che `list_talenti` mostra, letta una per una.
+        Per una scheda freelance risponde il dettaglio completo della schermata admin
+        (REB-284), lo stesso che legge «Dettaglio talento»: i dati della persona con
+        lo stato, le note e il thread dei `commenti`, l'attribuzione dell'iscrizione
+        `iscrizione_utm`, gli ultimi accessi e gli ultimi download della guida, e lo
+        spazio Pigro quando l'indirizzo ne ha uno. Per un'iscrizione senza scheda
+        risponde la riga nuda, `stato` `lead`, da cui la scheda si crea con
+        `create_freelancer_from_signup`; un id la cui email ha ormai una scheda
+        risponde la scheda, come la lista. Solo lettura."""
+        key = UUID(talento_id)
+
+        def call(session: Session) -> BaseModel:
+            if session.get(Freelancer, key) is not None:
+                return FreelancerService(session, settings, http).get(key)
+            signup = session.get(Signup, key)
+            if signup is None:
+                raise NotFound("talento", key)
+            # A sign-up whose address gained a card since the list was read is the
+            # card's person: answer the card, which is what «Talenti» shows for them.
+            holder = session.execute(
+                select(Freelancer.id)
+                .join(User, User.id == Freelancer.user_id)
+                .where(func.lower(User.email) == signup.email.lower())
+            ).first()
+            if holder is not None:
+                return FreelancerService(session, settings, http).get(holder[0])
+            return TalentoRead(
+                id=signup.id,
+                nome=signup.nome,
+                cognome=signup.cognome,
+                email=signup.email,
+                linkedin_url=signup.linkedin_url,
+                stato=LEAD_STATE,
+                origine="form",
+                utm_source=signup.utm_source,
+                created_at=signup.created_at,
+            )
+
+        return _run(call)
 
     @mcp.tool()
     def get_freelancer(freelancer_id: str) -> dict[str, Any]:
@@ -285,7 +308,7 @@ def build_server(
         )
 
     @mcp.tool()
-    def list_companies(
+    def list_aziende(
         limit: int = LIST_LIMIT_DEFAULT,
         stato: str | None = None,
         q: str | None = None,
@@ -391,7 +414,7 @@ def build_server(
         """Chi è entrato nella sua area e quando: `totale` gli accessi con il link via
         email, `membri` le persone diverse dietro, `membri_totali` quante hanno una
         scheda, `ultimi_7_giorni` gli accessi dell'ultima settimana e `recenti` gli
-        ultimi con nome ed email. Ogni scheda in `list_freelancers` e `get_freelancer`
+        ultimi con nome ed email. Ogni scheda letta da `get_talento` e da `get_freelancer`
         porta anche `accessi` e `ultimo_accesso`."""
         return _run(lambda s: LoginService(s).stats())
 

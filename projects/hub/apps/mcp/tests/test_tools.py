@@ -45,18 +45,19 @@ def _seed(factory: sessionmaker[Session], addresses: list[str]) -> None:
         session.close()
 
 
-async def test_the_list_is_newest_first_and_the_total_counts_everything(
+async def test_the_talent_list_is_newest_first_and_the_total_counts_everything(
     factory: sessionmaker[Session],
 ) -> None:
     _seed(factory, ["uno@studio.it", "due@studio.it"])
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        result = await client.call_tool("list_signups", {"limit": 1})
+        result = await client.call_tool("list_talenti", {"limit": 1})
     body = _payload(result)
     assert body["totale"] == 2
-    assert [item["email"] for item in body["iscrizioni"]] == ["due@studio.it"]
-    item = body["iscrizioni"][0]
+    assert [item["email"] for item in body["items"]] == ["due@studio.it"]
+    item = body["items"][0]
     assert (item["nome"], item["cognome"]) == ("Ada", "Lovelace")
     assert item["linkedin_url"] == "https://www.linkedin.com/in/ada"
+    assert item["stato"] == "lead"
 
 
 async def test_no_tool_subscribes_or_applies_on_somebody_elses_behalf(
@@ -117,10 +118,10 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
         session.close()
 
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        listed = _payload(await client.call_tool("list_freelancers", {}))
+        listed = _payload(await client.call_tool("list_talenti", {}))
         assert listed["totale"] == 1
+        assert listed["items"][0]["email"] == "ada@studio.it"
         assert "cv_bytes" not in listed["items"][0]
-        assert listed["items"][0]["cv_filename"] == "cv.pdf"
 
         moved = _payload(
             await client.call_tool(
@@ -141,16 +142,15 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
 
         names = {tool.name for tool in (await client.list_tools()).tools}
         assert names == {
-            "list_signups",
             "create_freelancer_from_signup",
-            "list_freelancers",
             "list_talenti",
+            "get_talento",
             "get_freelancer",
             "read_freelancer_cv",
             "list_pigro_spaces",
             "set_freelancer_status",
             "add_freelancer_comment",
-            "list_companies",
+            "list_aziende",
             "get_company",
             "set_company_status",
             "add_company_comment",
@@ -247,8 +247,8 @@ async def test_a_comment_from_the_mcp_is_signed_mcp_by_default_and_get_returns_t
         assert [c["id"] for c in detail["commenti"]] == [second["id"], first["id"]]
         # The note is untouched, and the list does not carry the thread.
         assert detail["note"] is None
-        listed = _payload(await client.call_tool("list_freelancers", {}))
-        assert listed["items"][0]["commenti"] == []
+        listed = _payload(await client.call_tool("list_talenti", {}))
+        assert "commenti" not in listed["items"][0]
     _wipe(factory)
 
 
@@ -296,7 +296,8 @@ async def test_a_card_is_written_from_a_signup_with_its_sources_in_the_thread(
 ) -> None:
     _seed(factory, ["ada@studio.it"])
     async with Client(build_server(factory, lambda: IVAN)) as client:
-        signup_id = _payload(await client.call_tool("list_signups", {}))["iscrizioni"][0]["id"]
+        lead_rows = _payload(await client.call_tool("list_talenti", {"stato": "lead"}))
+        signup_id = lead_rows["items"][0]["id"]
         created = _payload(
             await client.call_tool(
                 "create_freelancer_from_signup",
@@ -314,8 +315,12 @@ async def test_a_card_is_written_from_a_signup_with_its_sources_in_the_thread(
         assert created["cv_filename"] is None and created["tariffa_giornaliera"] is None
         assert created["commenti"][0]["autore"] == "Ivan"
         assert "https://www.linkedin.com/in/ada" in created["commenti"][0]["testo"]
-        listed = _payload(await client.call_tool("list_signups", {}))["iscrizioni"][0]
-        assert listed["freelancer_id"] == created["id"]
+        # The card replaces the lead in the merged list, and the lead's own id now
+        # answers the card: what «Talenti» shows for that person.
+        listed = _payload(await client.call_tool("list_talenti", {}))
+        assert [item["id"] for item in listed["items"]] == [created["id"]]
+        answered = _payload(await client.call_tool("get_talento", {"talento_id": signup_id}))
+        assert answered["id"] == created["id"] and answered["email"] == "ada@studio.it"
 
         refused = await client.call_tool(
             "create_freelancer_from_signup",
@@ -395,6 +400,39 @@ async def test_the_cv_is_read_as_text_and_a_card_without_one_answers_a_sentence(
         assert refused.is_error
         assert "cv" in refused.content[0].text.lower()
 
-        listed = _payload(await client.call_tool("list_freelancers", {}))
+        listed = _payload(await client.call_tool("list_talenti", {}))
         assert all("testo" not in item and "cv_bytes" not in item for item in listed["items"])
+    _wipe(factory)
+
+
+async def test_get_talento_answers_a_card_with_the_detail_and_a_lead_with_the_row(
+    factory: sessionmaker[Session],
+) -> None:
+    """`get_talento` is the detail screen one id away: a card gets the full
+    `FreelancerDetail` the admin page reads (REB-284), a bare sign-up gets its
+    `list_talenti` row back, and an id in neither table is a sentence."""
+    freelancer_id = _seed_freelancer(factory)
+    _seed(factory, ["grace@studio.it"])
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        lead_id = _payload(await client.call_tool("list_talenti", {"stato": "lead"}))["items"][0][
+            "id"
+        ]
+
+        card = _payload(await client.call_tool("get_talento", {"talento_id": freelancer_id}))
+        assert card["id"] == freelancer_id
+        assert card["email"] == "ada@studio.it"
+        # The detail's own fields, the ones the list row does not carry. Without a
+        # `settings`/`http` on this server the Pigro lookup is off, not an error.
+        assert "commenti" in card and "iscrizione_utm" in card and "ultimi_accessi" in card
+        assert card["pigro_slug"] is None
+
+        lead = _payload(await client.call_tool("get_talento", {"talento_id": lead_id}))
+        assert (lead["id"], lead["stato"], lead["origine"]) == (lead_id, "lead", "form")
+        assert lead["email"] == "grace@studio.it"
+
+        missing = await client.call_tool(
+            "get_talento", {"talento_id": "01a00000-0000-7000-8000-0000000000fe"}
+        )
+        assert missing.is_error
+        assert "talento" in missing.content[0].text and "non trovato" in missing.content[0].text
     _wipe(factory)

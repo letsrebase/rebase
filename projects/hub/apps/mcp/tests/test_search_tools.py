@@ -1,4 +1,4 @@
-"""`list_talenti` and `list_companies` take the same search, filters and cursor the
+"""`list_talenti` and `list_aziende` take the same search, filters and cursor the
 admin screens send (REB-288): the tools pass them to the same core services and hand
 the page's `next_cursor` back so an agent can walk the list."""
 
@@ -152,19 +152,19 @@ async def test_companies_search_filter_and_walk_the_same_page(clean: Any) -> Non
     _company(clean, "Rossi Lab", "paperone@rossilab.it", "Una pipeline dati.", "700")
     _company(clean, "Beta Spa", "cq@beta.it", "Un CRM interno.", "650")
     async with _server(clean) as client:
-        found = _payload(await client.call_tool("list_companies", {"q": "pipeline"}))
+        found = _payload(await client.call_tool("list_aziende", {"q": "pipeline"}))
         assert [item["email"] for item in found["items"]] == ["paperone@rossilab.it"]
 
-        rich = _payload(await client.call_tool("list_companies", {"budget_min": "600"}))
+        rich = _payload(await client.call_tool("list_aziende", {"budget_min": "600"}))
         assert sorted(item["email"] for item in rich["items"]) == [
             "cq@beta.it",
             "paperone@rossilab.it",
         ]
 
-        first = _payload(await client.call_tool("list_companies", {"limit": 2}))
+        first = _payload(await client.call_tool("list_aziende", {"limit": 2}))
         assert len(first["items"]) == 2 and first["next_cursor"] is not None
         second = _payload(
-            await client.call_tool("list_companies", {"limit": 2, "cursor": first["next_cursor"]})
+            await client.call_tool("list_aziende", {"limit": 2, "cursor": first["next_cursor"]})
         )
     assert len(second["items"]) == 1 and second["next_cursor"] is None
     ids = [item["id"] for item in first["items"] + second["items"]]
@@ -176,7 +176,7 @@ async def test_a_garbage_decimal_or_date_answers_an_italian_sentence(clean: Any)
         bad_number = await client.call_tool("list_talenti", {"tariffa_min": "tanto"})
         assert bad_number.is_error and "tariffa_min" in bad_number.content[0].text
 
-        bad_date = await client.call_tool("list_companies", {"periodo_da": "ieri"})
+        bad_date = await client.call_tool("list_aziende", {"periodo_da": "ieri"})
         assert bad_date.is_error and "periodo_da" in bad_date.content[0].text
 
 
@@ -184,9 +184,9 @@ async def test_a_cursor_minted_while_browsing_is_refused_once_searching(clean: A
     _company(clean, "ACME Srl", "wile@acme.it", "Un backend developer.", "500")
     _company(clean, "Rossi Lab", "paperone@rossilab.it", "Una pipeline dati.", "700")
     async with _server(clean) as client:
-        page = _payload(await client.call_tool("list_companies", {"limit": 1}))
+        page = _payload(await client.call_tool("list_aziende", {"limit": 1}))
         replay = await client.call_tool(
-            "list_companies", {"limit": 1, "q": "pipeline", "cursor": page["next_cursor"]}
+            "list_aziende", {"limit": 1, "q": "pipeline", "cursor": page["next_cursor"]}
         )
     assert replay.is_error
     assert "ordinamento" in replay.content[0].text
@@ -200,5 +200,7 @@ async def test_the_tool_descriptions_stay_italian(clean: Any) -> None:
     for name, description in listed.items():
         assert not ENGLISH.findall(description), name
         assert len(ITALIAN.findall(description)) >= 3, name
-    # The new surface is the one the card is about: it says what the cursor is for.
-    assert "cursore" in listed["list_talenti"] and "cursore" in listed["list_companies"]
+    # The new surface is the one the card is about: it says what the cursor is for,
+    # and the removal pass left `list_companies` behind for `list_aziende`.
+    assert "cursore" in listed["list_talenti"] and "cursore" in listed["list_aziende"]
+    assert "list_companies" not in listed and "get_talento" in listed

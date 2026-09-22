@@ -137,6 +137,28 @@ one that resolves. An unknown, revoked or deactivated-owner token is one uniform
 The claude.ai and Claude Desktop connectors want OAuth and are not supported, as in the
 CRM.
 
+The tools, as they answer after REB-288's removal pass: `list_talenti` replaced
+`list_signups` and `list_freelancers` (the lead is a row of the talent list),
+`list_aziende` is the renamed `list_companies`, and `get_talento` reads one row by
+id, the admin's full detail where a card exists:
+
+| Tool | What it answers |
+|---|---|
+| `list_talenti` | the «Talenti» screen: cards and bare sign-ups as one list, with search, filters, cursor |
+| `get_talento` | one talent by id: the card's detail (state, thread, UTM, logins, downloads, Pigro space) or the bare lead row |
+| `create_freelancer_from_signup` | a card drafted from public sources, with its sources in the thread |
+| `get_freelancer` | a card by id, `FreelancerRead` with its comments |
+| `read_freelancer_cv` | the CV's text, not its bytes |
+| `set_freelancer_status` | move a candidacy (nuovo / contattato / attivo / scartato) |
+| `add_freelancer_comment` | a dated note on a card's thread |
+| `list_aziende` | the «Aziende» screen, with search, filters, cursor |
+| `get_company` | a company request by id, with its comments |
+| `set_company_status` | move a request (nuovo / contattato / in_corso / chiuso) |
+| `add_company_comment` | a dated note on a request's thread |
+| `list_pigro_spaces` | «Istanze Pigro»: the CRM's spaces, read through its API |
+| `guide_stats` | the guide's downloads, totals and latest |
+| `login_stats` | who entered the member area and when |
+
 Telling the people with a card that their area is open (ORB-157), once, by hand:
 
 ```

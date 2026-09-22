@@ -131,9 +131,10 @@ skill has the general method; these are the project's rules on top of it:
   per person» is not «where they left»; take the first in-order occurrence of each step
   (a `FunnelsQuery` does) or `max(passo)` per session with the completion joined.
 - **Ground truth is the product's own database.** Before quoting a signup count, read
-  `mcp__rebase-hub__list_freelancers` / `list_signups` (or the warehouse tables below)
-  and say how many the events missed. Those rows are other people's data: counts and
-  patterns travel, names and addresses do not.
+  `mcp__rebase-hub__list_talenti` (`stato="lead"` for the bare sign-ups, REB-288's
+  removal pass folded the old `list_signups` and `list_freelancers` into it; the
+  warehouse tables below work too) and say how many the events missed. Those rows are
+  other people's data: counts and patterns travel, names and addresses do not.
 - Live checks from Playwright: PostHog drops events when `navigator.webdriver` is true,
   so `posthog.set_config({ opt_out_useragent_filter: true })` after load; ingestion is
   visible after about a minute. Dashboards 952104 (site), 952105 (activation), 952106
