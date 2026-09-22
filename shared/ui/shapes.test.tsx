@@ -39,9 +39,10 @@ describe('Table', () => {
     expect(head.className).toContain('text-muted-foreground')
     expect(head.className).toContain('tracking-wide')
     expect(head.className).not.toContain('text-foreground')
-    // "a 2px rule under the header" (the application-variant record of 2026-09-18).
+    // "a 2px rule under the header" (the application-variant record of 2026-09-18),
+    // read from the width token rather than typed as a number.
     const header = container.querySelector('[data-slot="table-header"]')!
-    expect(header.className).toContain('[&_tr]:border-b-2')
+    expect(header.className).toContain('[&_tr]:border-b-(length:--line-strong)')
   })
 
   it('gives every row 48px, the ink separator, a column rule and a Paper hover', () => {

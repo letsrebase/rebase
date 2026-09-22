@@ -23,10 +23,10 @@ function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
       data-slot="table-header"
       /* The header row is shorter than the data rows it labels (40px against 48px),
          and closes on the record's 2px rule ("a 2px rule under the header", the
-         application-variant record of 2026-09-18). A descendant selector, so it beats
-         TableRow's own `h-12` on specificity without TableRow having to know it is in
-         a header. */
-      className={cn("[&_tr]:h-10 [&_tr]:border-b-2", className)}
+         application-variant record of 2026-09-18) -- the width token, not a typed
+         number. A descendant selector, so it beats TableRow's own `h-12` on
+         specificity without TableRow having to know it is in a header. */
+      className={cn('[&_tr]:h-10 [&_tr]:border-b-(length:--line-strong)', className)}
       {...props}
     />
   )
