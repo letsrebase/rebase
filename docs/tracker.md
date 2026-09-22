@@ -13,7 +13,7 @@ are not part of this repo's flow.
 | Workspace | `letsrebase`, the Linear slug since the workspace itself was renamed on 2026-09-15, the same day as the GitHub org |
 | Team | **rebase**, issue prefix `REB-`. The team was `Orbiters` with prefix `ORB-` until 2026-09-15; the rename kept every issue's number, so an `ORB-193` you find in older text or history is `REB-193` today. One team, and that does not change |
 | Initiative | a product, permanent: `Website`, `Hub`, `PigroCRM`, `Monorepo` |
-| Project | a release, or a body of work with an end. It closes when it ships, which is what lets its issues archive. Named for the outcome alone (`A space has a team`): the initiative field says which product, so the name never repeats it and carries no version number |
+| Project | a release, or a body of work with an end. It closes when it ships, which is what lets its issues archive. Named with a verb and the work it does (`Give every space its own team`): no initiative prefix, no version number, no state word |
 | Milestone | the outcome a person can see or do once it closes, inside a project's release. Not an issue; costs nothing, shows progress on its own |
 | Issue | one agent run, one PR, one worktree |
 | Priority | Linear's own field: Urgent, High, Medium, Low. Never a label |
@@ -43,28 +43,29 @@ does it adds or updates the row here, in the PR that ships the release or in one
 
 | Initiative | Project | Lead | State on 2026-09-22 |
 |---|---|---|---|
-| `PigroCRM` | `Ships from CI, with gates that fail on real defects` | Ivan | In Progress |
-| `PigroCRM` | `A space is born ready` | Ivan | In Progress, opened 2026-09-12 |
-| `Hub` | `A hub of its own` | Ivan | In Progress |
-| `Hub` | `The wizards look like the site` | Lorenzo | In Progress |
+| `PigroCRM` | `Ship from CI, with gates that catch real defects` | Ivan | In Progress |
+| `PigroCRM` | `Make a new space ready on day one` | Ivan | In Progress, opened 2026-09-12 |
+| `Hub` | `Build a home for signups and the company flow` | Ivan | In Progress |
+| `Hub` | `Align the wizard UI with the site` | Lorenzo | In Progress |
 | `Website` | `Website v1 - the public site, live and correct on a phone` | Lorenzo | Completed, 2026-09-16 |
-| `Website` | `The landing holds up everywhere` | Lorenzo | In Progress |
-| `Monorepo` | `Preview you can open` | Lorenzo | In Progress |
-| `Monorepo` | `Search sees the site` | Lorenzo | In Progress |
+| `Website` | `Make the landing hold up everywhere` | Lorenzo | In Progress |
+| `Monorepo` | `Open a preview of every change` | Lorenzo | In Progress |
+| `Monorepo` | `Make the site visible to search` | Lorenzo | In Progress |
 | `Monorepo` | `Monorepo hygiene v1 - CI cost, licence and the English rule` | Lorenzo | Completed, 2026-09-10 |
 | `Monorepo` | `Rebrand v2 - orbiters leaves the code` | Lorenzo | Completed, 2026-09-16 (opened 2026-09-15) |
-| `Monorepo` | `The trunk has no known defects left` | Lorenzo | In Progress, opened 2026-09-16 |
+| `Monorepo` | `Clear the known defects from the trunk` | Lorenzo | In Progress, opened 2026-09-16 |
 | `Hub` | `Hub v2 - one hub, and an admin is a member with one more section` | Lorenzo | Completed, 2026-09-22 (opened 2026-09-17) |
-| `PigroCRM` | `A space has a team` | Lorenzo | Planned, opened 2026-09-17 |
+| `PigroCRM` | `Give every space its own team` | Lorenzo | Planned, opened 2026-09-17 |
 | `Monorepo` | `Shared UI v1 - the hub and the CRM look like the site` | Lorenzo | Completed, 2026-09-22 (opened 2026-09-17) |
 | `Website` | `Website v3 - routes in English` | Lorenzo | Completed, 2026-09-21 (opened and shipped the same day) |
 | `Hub` | `Hub v3 - routes in English` | Lorenzo | Completed, 2026-09-21 (opened and shipped the same day) |
 | `PigroCRM` | `PigroCRM v4 - routes in English` | Ivan | Completed, 2026-09-21 (opened and shipped the same day) |
-| `Monorepo` | `The mark earns its place` | Lorenzo | Planned, opened 2026-09-22 |
-| `Monorepo` | `The backlog reads at a glance` | Lorenzo | In Progress, opened 2026-09-22 |
+| `Monorepo` | `Choose the wordmark that carries the meaning` | Lorenzo | Planned, opened 2026-09-22 |
+| `Monorepo` | `Make the backlog readable at a glance` | Lorenzo | In Progress, opened 2026-09-22 |
 
-The open projects were renamed on 2026-09-22 to the outcome clause alone (§ Naming);
-the completed rows keep the name each shipped under, since a record is not rewritten.
+The open projects were renamed on 2026-09-22 to a verb and the work it does
+(§ Naming); the completed rows keep the name each shipped under, since a record
+is not rewritten.
 
 `Monorepo hygiene v1` was where repository-wide work that belongs to no product went
 (CI cost, the licence, this page). It is closed, and nothing has replaced it: a
@@ -265,15 +266,15 @@ studied. Every field has a budget, and the budget is the rule.
 
 Applies to every project, milestone and issue title, and to the labels.
 
-- **A project is named for what you get when it ships**, in words a person who
-  never read the spec recognises: `A space has a team`, `The wizards look like the
-  site`. The initiative field already says which product it belongs to, so the name
-  never repeats the initiative and carries no version number: `PigroCRM v3 - ...`
-  said `PigroCRM` twice and `v3` meant nothing you could check. It never names a
-  state of the work (`deployed`, `done`, `closed`, `complete`, `shipped`): the
-  project's own status already says that, and a name that repeats it goes stale the
-  moment the status moves. It never names a mechanism review nobody reads either:
-  the reports are documents on the project, the name says what the work is for.
+- **A project is named with a verb and the work it does**: `Give every space its
+  own team`, `Align the wizard UI with the site`. A name that only states the
+  outcome (`A space has a team`) reads as a riddle to anyone who did not write it.
+  The initiative field already says which product it belongs to, so the name never
+  repeats the initiative and carries no version number: `PigroCRM v3 - ...` said
+  `PigroCRM` twice and `v3` meant nothing you could check. It never names a state
+  of the work (`deployed`, `done`, `closed`, `complete`, `shipped`): the project's
+  own status already says that, and a name that repeats it goes stale the moment
+  the status moves.
 - **A milestone is the thing that becomes true when it closes**, in a few words a
   non-specialist recognises: `Three screens instead of eight`, `You invite a
   colleague by email`, `Every button reads as a button`. Its description is one

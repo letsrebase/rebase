@@ -130,7 +130,7 @@ wrong.
 | Field | Value |
 |---|---|
 | `team` | `"rebase"` |
-| `project` | **the project id**, from `list_projects`, or omitted when the issue is repository-wide and fits no open project (`docs/tracker.md` § Where things are). Project names are the outcome clause alone and the clause changes; a lookup by the old name fails with "Could not find project". |
+| `project` | **the project id**, from `list_projects`, or omitted when the issue is repository-wide and fits no open project (`docs/tracker.md` § Where things are). Project names are a verb and the work it does, and they do get renamed: a lookup by the old name fails with "Could not find project". |
 | `milestone` | the milestone id from `list_milestones(project)`. It is accepted and not echoed back: trust `list_milestones` progress, not the response. |
 | `title` | one clause (or two when the second names what makes the first visible), under 80 characters, per the `linear-content` skill: the observed problem or the outcome, not the fix and not the body. |
 | `description` | per the `linear-content` skill. Real newlines, never `\n` escapes. |
