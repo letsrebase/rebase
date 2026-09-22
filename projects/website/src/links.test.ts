@@ -220,3 +220,13 @@ describe('checkHref, edge cases none of the four pages exercise today', () => {
     expect(checkHref('index.html', 'javascript:void(0)')).toBeUndefined()
   })
 })
+
+describe('index.html: a way back for a freelancer who already applied (REB-99)', () => {
+  it('carries a sentence linking to the hub login, not only the header Accedi', () => {
+    const page = html['index.html']
+    expect(page).toMatch(
+      /Sei già dentro\? <a class="quiet-link" href="\/hub\/login">Entra nella tua area<\/a>\./,
+    )
+    expect(checkHref('index.html', '/hub/login')).toBeUndefined()
+  })
+})
