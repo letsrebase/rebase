@@ -203,9 +203,9 @@ that restates the issue list.
 
 ## Milestones
 
-The name is the outcome a person can see or do once it closes (`You invite a
-colleague by email`), never a status word. The description is one sentence starting
-`Closes when`, with the observable check.
+The name is a verb and the work it lands, like a project and an issue (`Cut both
+wizards to three screens`, `Invite a colleague by email`), never a status word. The
+description is one sentence starting `Closes when`, with the observable check.
 
 `save_milestone` wants `project` on **every** call, an update included: sending only
 `id` and `description` fails on `project: is required`, which reads like the milestone
