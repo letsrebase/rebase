@@ -129,3 +129,4 @@ class UserRead(BaseModel):
     tariffa_oraria_default: Decimal | None
     costo_orario_default: Decimal | None
     created_at: datetime
+    last_login_at: datetime | None

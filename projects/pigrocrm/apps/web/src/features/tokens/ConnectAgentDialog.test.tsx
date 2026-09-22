@@ -102,6 +102,7 @@ beforeEach(() => {
       tariffa_oraria_default: null,
       costo_orario_default: null,
       created_at: '2026-09-12T10:00:00Z',
+      last_login_at: null,
       digest_settimanale: true,
     },
     isLoading: false,

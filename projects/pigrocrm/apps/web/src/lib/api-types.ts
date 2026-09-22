@@ -6851,6 +6851,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Last Login At */
+            last_login_at: string | null;
         };
         /** UserUpdate */
         UserUpdate: {
