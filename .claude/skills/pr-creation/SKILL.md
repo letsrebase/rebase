@@ -299,22 +299,22 @@ gh pr create --body-file pr-body.md \
    Each finding is either **fixed**, in a commit that names it, or **answered**, with a
    reply on its thread (`gh api repos/letsrebase/rebase/pulls/<n>/comments/<id>/replies
    -f body=...`) saying why the code stays as it is. An answered finding still counts
-   against the score until Greptile reads the thread as closed: resolve it
-   (`gh api graphql -f query='mutation { resolveReviewThread(input:{threadId:"<id>"})
-   { thread { isResolved } } }'`, the id from the PR's `reviewThreads`) and comment
-   `@greptileai`; on #269 that took the score from 4/5 to 5/5 in ninety seconds with no
-   push. After a fix, push, wait for the run on the new sha, read again. The loop ends when the run on the sha that will merge raised
-   nothing new, every earlier thread is fixed or answered, and the score reads 5/5. A
-   review with a body and no inline comment is Greptile not reviewing (#259 and #260,
-   `Your trial has ended`; its reviews here have an empty body): say so on the card and
-   tell the person before you merge. A finding raised again after an answer is not
-   closed by repeating the answer: it is a disagreement for the card, as a `**Decision
-   for the lead**` line. Ten minutes with no run on the head sha (`$run` and `$rid` both
-   empty): `gh pr comment <n> --body '@greptileai'` once, which re-triggers it, and run
-   the wait again; still nothing, say so on the card and go on without the comments
-   command. A later push may get no run on its own: three of #268's five commits got
-   none in ten minutes and one within thirty seconds of the comment, the other two were
-   reviewed unprompted (2026-09-22).
+   against the score until Greptile reads the thread as closed: resolve it (`gh api
+   graphql -f query='mutation { resolveReviewThread(input:{threadId:"<id>"}) { thread {
+   isResolved } } }'`, the id from the PR's `reviewThreads`) and comment `@greptileai`;
+   on #269 that took the score from 4/5 to 5/5 in ninety seconds with no push. After a
+   fix, push, wait for the run on the new sha, read again. The loop ends when the run on
+   the sha that will merge raised nothing new, every earlier thread is fixed or
+   answered, and the score reads 5/5. A review with a body and no inline comment is
+   Greptile not reviewing (#259 and #260, `Your trial has ended`; its reviews here have
+   an empty body): say so on the card and tell the person before you merge. A finding
+   raised again after an answer is not closed by repeating the answer: it is a
+   disagreement for the card, as a `**Decision for the lead**` line. Ten minutes with no
+   run on the head sha (`$run` and `$rid` both empty): `gh pr comment <n> --body
+   '@greptileai'` once, which re-triggers it, and run the wait again; still nothing, say
+   so on the card and go on without the comments command. A later push may get no run on
+   its own: three of #268's five commits got none in ten minutes and one within thirty
+   seconds of the comment, the other two were reviewed unprompted (2026-09-22).
    What the loop did goes on the card in the same `**Review applied:**` comment as the
    independent review (the `linear-content` shape): how many findings, which changed
    the code (sha), which were answered and why, and the final score.
