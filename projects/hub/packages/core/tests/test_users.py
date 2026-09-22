@@ -139,6 +139,40 @@ def test_a_link_is_written_only_for_an_address_that_exists(
     assert row.token_hash != _token_from(mail.text) and len(row.token_hash) == 64
 
 
+def test_a_second_request_inside_sixty_seconds_sends_nothing_new(
+    users: UserService, hub_session: Session
+) -> None:
+    _apply(hub_session)
+    first = users.request_link("ada@studio.it")
+    assert first is not None
+
+    second = users.request_link("ada@studio.it")
+    assert second is None
+    tokens = hub_session.scalars(select(MagicLinkToken)).all()
+    assert len(tokens) == 1
+
+
+def test_a_request_a_minute_later_gets_a_link_of_its_own(
+    users: UserService, hub_session: Session
+) -> None:
+    _apply(hub_session)
+    first = users.request_link("ada@studio.it")
+    assert first is not None
+    original = hub_session.scalar(select(MagicLinkToken))
+    assert original is not None
+    original_id = original.id
+    original_hash = original.token_hash
+    original.created_at = datetime.now(UTC) - timedelta(seconds=61)
+    hub_session.commit()
+
+    second = users.request_link("ada@studio.it")
+    assert second is not None
+    tokens = hub_session.scalars(select(MagicLinkToken)).all()
+    assert len(tokens) == 2
+    fresh = next(row for row in tokens if row.id != original_id)
+    assert fresh.token_hash != original_hash
+
+
 def test_a_link_opens_a_session_once_and_never_twice_for_a_card_or_a_bare_admin(
     users: UserService, hub_session: Session
 ) -> None:
