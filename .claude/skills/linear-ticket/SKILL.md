@@ -132,7 +132,7 @@ wrong.
 | `team` | `"rebase"` |
 | `project` | **the project id**, from `list_projects`, or omitted when the issue is repository-wide and fits no open project (`docs/tracker.md` § Where things are). Project names are a verb and the work it does, and they do get renamed: a lookup by the old name fails with "Could not find project". |
 | `milestone` | the milestone id from `list_milestones(project)`. It is accepted and not echoed back: trust `list_milestones` progress, not the response. |
-| `title` | one clause (or two when the second names what makes the first visible), under 80 characters, per the `linear-content` skill: the observed problem or the outcome, not the fix and not the body. |
+| `title` | starts with a verb and names the work, one clause (or two when the second names what makes the first visible), under 80 characters, per the `linear-content` skill. Not the body restated. |
 | `description` | per the `linear-content` skill. Real newlines, never `\n` escapes. |
 | `addLabels` | exactly two: one from the `type` group (`fix`, `feature`, `refactor`, `chore`, `docs`, `test`, `ci`, `design`, `security`, `spike`) and one from `Area` (`area:web`, `area:api`, `area:core`, `area:mcp`, `area:hub`, `area:infra`, `area:ci`, `area:website`, `area:brand`, `area:repo`). Both are groups: a second label from the same group is silently dropped. Use `addLabels`, never `labels`: `labels` replaces the whole set. |
 | `priority` | 1 Urgent, 2 High, 3 Medium, 4 Low. A field, never a label. |
@@ -203,9 +203,9 @@ that restates the issue list.
 
 ## Milestones
 
-The name is the outcome a person can see or do once it closes (`You invite a
-colleague by email`), never a status word. The description is one sentence starting
-`Closes when`, with the observable check.
+The name is a verb and the work it lands, like a project and an issue (`Cut both
+wizards to three screens`, `Invite a colleague by email`), never a status word. The
+description is one sentence starting `Closes when`, with the observable check.
 
 `save_milestone` wants `project` on **every** call, an update included: sending only
 `id` and `description` fails on `project: is required`, which reads like the milestone
