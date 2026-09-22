@@ -155,7 +155,10 @@ not learn it from here. What that section leaves to the caller:
   they are. On a card you found rather than filed, the **Adjacent** paragraph and the
   relations go in that same call; the paragraph as
   `patch: [{ "op": "append", "text": "\n\n**Adjacent.** ..." }]`, because `description`
-  on an update replaces the whole body.
+  on an update replaces the whole body. `save_issue` rejects `description` and `patch`
+  together (`patch cannot be combined with description`), so a full rewrite that also
+  needs to append is one `description` string with the addition already folded in, never
+  both fields in the same call.
 - When the PR opens, comment the PR URL. Since 2026-09-16 the team's automation moves
   the state on PR events: the PR opening puts the card in `In Progress` (an `In Review`
   set before that fires is overwritten: REB-247, PR #161) and the merge sets `Done`.

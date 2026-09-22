@@ -59,6 +59,11 @@ neighbour found late, a file that had to move too, a piece left for its own card
 when you are waiting on something outside your hands. Not one per commit, and none that
 says "working on it".
 
+The loop is concurrent, not serial (DECISIONS.md, 2026-09-22): start `preflight` in the
+background as soon as the code is committed, and capture the pair and the video while it
+runs. The fixture the screenshots need is arranged while you build the change, not after.
+The gates, the capture and the body draft overlap; none waits on another.
+
 ## Commits
 
 As the root `AGENTS.md` Conventions say (Conventional Commits, English, first person,
@@ -158,17 +163,19 @@ line saying why there is no video; a change a person drives (a button that does
 something, a wizard step, a dialog, a state that follows an action) is not shown until
 the video is there.
 
-Never committed: attach both with `gh pr edit <n> --attach ./pair-1.png --attach
-./demo-1.mp4` (the flag exists from `gh` 2.99.0; check `gh --version`), then the second
-edit that turns the video's link into the bare URL GitHub plays (the README has the
-`sed`; a video that shows as a link skipped it), and verify the body holds as many
-`user-attachments` as pairs plus videos. The procedure, per app and port, is
-`docs/pr-screenshots/README.md`. When nothing visible changed, or a pair or the video
-cannot be captured, the section says so and why. Deleting it reads as forgetting.
+Never committed: `gh pr create` takes them with `--attach` (§ Before `gh pr create`),
+which uploads every pair and the video in the one command that opens the PR, rewriting
+each body reference to its `user-attachments` URL. The video's reference must be the
+embed form, `![](./demo.mp4)`, alone in its paragraph: that is what `gh` (2.99.0 or
+newer, `gh --version`) rewrites into the bare URL GitHub plays; a plain link degrades to
+a link, which is what the old second `sed` edit patched and why it is gone. Verify the
+body holds as many `user-attachments` as pairs plus videos. The procedure, per app and
+port, is `docs/pr-screenshots/README.md`. When nothing visible changed, or a pair or the
+video cannot be captured, the section says so and why. Deleting it reads as forgetting.
 
 The last line of the body: `Linear: REB-N.`
 
-## Before `gh pr create`: the card is on the PR
+## Before `gh pr create`: the card, the review, the attachments
 
 The PR is not opened until its body ends with `Linear: REB-N.`, where `REB-N` is an id
 you read from the board in this session (`get_issue`, or the card's page), on a card that
@@ -185,33 +192,42 @@ each a PR opened without its card, which is what PR #111 did (REB-201 was filed 
 by hand, REB-202 is this rule). When the card cannot be read or filed at all, the PR
 waits and the person hears why; a PR without its card is not the smaller harm.
 
+**The independent review happens here, before the PR opens**, not after: dispatch a
+fresh, read-only reviewer (an `Agent` of type `general-purpose`, told the worktree path,
+the diff command, the files that give it context, and to rank findings by severity with
+a concrete fix each). Do not review your own diff and call it a review. Apply what you
+accept in the work commit (amend, or a fixup squashed into it before the push), so CI
+runs once, on the sha that will merge: a review commit pushed after the PR opens pays
+for a second full cycle. Record the review on the PR as a comment right after it opens:
+each finding, what you did with it, and what you left as is and why, plus one line on
+the card (`**Review applied:** ...`, the `linear-content` shape). The card is where the
+other agent reads that the PR is not only what its author wrote.
+
+Open it in one command, with the pairs and the video attached (§ Screenshots and video):
+
+```bash
+gh pr create --body-file pr-body.md \
+  --attach ./pair-1-invoice-detail.png --attach ./demo-1-issue-proforma.mp4
+```
+
 ## After `gh pr create`
 
 1. Comment the PR URL on the issue. The PR links itself within seconds, and since
    2026-09-16 the team's automation moves the state as well: `In Progress` while the PR
    is open, `Done` when it merges (REB-247, PR #161). The state is not yours from here;
    the comments are.
-2. **Independent review.** Dispatch a fresh, read-only reviewer (an `Agent` of type
-   `general-purpose`, told the worktree path, the diff command, the files that give it
-   context, and to rank findings by severity with a concrete fix each). Do not review your
-   own diff and call it a review.
-3. **Apply the findings in a second commit**, push, and record the review on the PR as
-   a comment: each finding, what you did with it, and what you left as is and why. Then
-   one line on the card (`**Review applied:** ...`, the `linear-content` shape): the
-   count, the sha, what stayed as it was. The card is where the other agent reads that
-   the PR is no longer what it was when it opened.
-4. **Wait for CI**: `gh pr checks <n> --watch`. The `ci` job is the only status that
-   matters; the others may skip by path filter. A red run gets a line on the card too
-   (`**CI red:** run ..., <job>, <cause>`) when you see it, and the sha of the fix on
-   the same comment when you push it.
-5. **Merge with a merge commit**, the repository's shape:
-   `gh pr merge <n> --merge --delete-branch`. Never squash a two-commit PR whose second
-   commit is the review: the history is the record. Then, right away, the
+2. **Wait for CI in the background**: `gh pr checks <n> --watch` as a background job,
+   never a foreground poll; there is nothing else to wait for, so do not sit on it. The
+   `ci` job is the only status that matters; the others may skip by path filter. A red
+   run gets a line on the card (`**CI red:** run ..., <job>, <cause>`) when you see it,
+   and the sha of the fix on the same comment when you push it.
+3. **Merge with a merge commit**, the repository's shape:
+   `gh pr merge <n> --merge --delete-branch`. Then, right away, the
    `**Merged:**` comment on the card with the run ids, the commit sha, the test counts
    and what you opened and saw: the automation sets `Done` at the merge without waiting
    for it, and a card that closes with nothing under it was closed by a robot.
-6. **Clean up**: `git worktree remove ../<repo>-orb<N>`, `git worktree prune`.
-7. **Production is a separate step.** Preview deploys on the green trunk run;
+4. **Clean up**: `git worktree remove ../<repo>-orb<N>`, `git worktree prune`.
+5. **Production is a separate step.** Preview deploys on the green trunk run;
    **production moves only on a tag** (`docs/design/DECISIONS.md`, 2026-09-09) and only
    when asked, and when it does, the card gets its `**In production:**` comment with the
    tag and what answered.

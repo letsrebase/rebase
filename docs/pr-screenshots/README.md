@@ -192,11 +192,16 @@ feature.
 `user-attachments` image or video: the only kind a PR body on a private repository
 renders. Files committed to the repository, raw links and signed URLs all render broken.
 
-Write the reference in the body first, then attach; `gh` rewrites the reference to the
-uploaded URL and keeps your alt text. Without a reference the file is appended at the
-end, which is not where a numbered pair belongs. A video has no alt text (GitHub renders
-it as a player), so its reference is written with an empty one, **in a paragraph of its
-own**: a blank line above and below.
+**Attach in the command that opens the PR**, not in an edit after it. Write the
+reference in the body first; `gh` rewrites the reference to the uploaded URL and keeps
+your alt text. Without a reference the file is appended at the end, which is not where a
+numbered pair belongs. A video has no alt text (GitHub renders it as a player), so its
+reference is written as an embed with an empty one, `![](./demo.mp4)`, **in a paragraph
+of its own**: a blank line above and below. The embed form is the contract: `gh`
+rewrites an embedded video reference into the bare URL GitHub plays (measured on gh
+2.100.0, 2026-09-22; the same rewrite is in the 2.99.0 source), while a plain link
+`[demo.mp4](./demo.mp4)` degrades to a link. The older note here asked for a second
+`sed` edit to turn that link into a bare URL; with the embed form the step is gone.
 
 ```bash
 # body.md holds, in the Screenshots and video section:
@@ -206,28 +211,13 @@ own**: a blank line above and below.
 #   **Video: issuing the proforma, from the list to the invoice**
 #
 #   ![](./demo-1-issue-proforma.mp4)
-gh pr edit <n> --body-file body.md \
+gh pr create --body-file body.md \
   --attach ./pair-1-invoice-detail.png --attach ./demo-1-issue-proforma.mp4
 ```
 
 `--attach` repeats for several files and works on `gh pr create`, `gh pr edit` and
 `gh pr comment`. On a partial failure the files that uploaded stay attached, the URL is
 still printed and the exit code is non-zero: read the exit code, not the URL.
-
-**The video needs a second edit.** `gh` 2.99.0 rewrites an image reference into an
-image, but a video reference into a plain link, `[demo-1.mp4](https://github.com/...)`,
-which renders as a link and not as a player (PR #127, measured). GitHub shows the player
-only for the bare asset URL standing alone in its own paragraph. So, after the attach,
-read the body back, strip the link around every video URL, and write it again:
-
-```bash
-gh pr view <n> --json body --jq .body > body-live.md
-sed -E -i '' 's#^\[[^]]*\.(mp4|mov|webm)\]\((https://github\.com/user-attachments/assets/[^)]+)\)$#\2#' body-live.md
-gh pr edit <n> --body-file body-live.md
-```
-
-(`sed -i ''` is macOS's; on Linux it is `sed -i`.) A second `--attach` is not needed:
-the asset is already uploaded, only the line around its URL changes.
 
 ## Verify before calling it done
 
@@ -240,9 +230,9 @@ else
   echo "OK: no local path remains."
 fi
 ```
-
 Then open the PR in a browser and look: a broken attachment still passes a text check,
-and the video is a player with a first frame, not a link (a link means the second edit
-above was skipped). The images and the video live **in the PR body**. A Linear comment
+and the video is a player with a first frame, not a link (a link means the body wrote
+it as one, `[demo.mp4](./demo.mp4)` instead of the embed `![](./demo.mp4)` above). The
+images and the video live **in the PR body**. A Linear comment
 may carry them too, and a list of local paths handed to the reviewer is never the
 substitute.
