@@ -532,10 +532,18 @@ def _logged_in_as(app: FastAPI, session: Session, *, email: str, ruolo: str) -> 
 @pytest.fixture(scope="module")
 def matrix(api_engine: Engine) -> Iterator[Matrix]:
     app = create_app()
-    # Own session on the shared container, *without* the per-test savepoint rollback:
-    # this fixture is module-scoped and seeds once. The container is session-scoped and
-    # dies with the test session, so nothing leaks past the file.
-    session = session_factory(api_engine)()
+    # The same isolation `api_session` gives every single test, lifted to module
+    # scope: one connection, one external transaction the whole fixture lives
+    # inside, rolled back at the end. The collaboratore half of the sweep PASSES the
+    # role gate, so its rows really write (the activity it POSTs is created and
+    # committed), and the container is session-scoped and shared with every other
+    # file in the directory: without the outer rollback, `test_calendario_api` finds
+    # `matrice-attivita` in a list it asserts empty. `create_savepoint` makes the
+    # sweep's own commits nest instead of ending the transaction (see api_session's
+    # comment, same trap, established in Task 2).
+    connection = api_engine.connect()
+    transaction = connection.begin()
+    session = session_factory(api_engine)(bind=connection, join_transaction_mode="create_savepoint")
     storage_dir = Path(tempfile.mkdtemp(prefix="role-matrix-"))
     app.dependency_overrides[get_session] = lambda: session
     app.dependency_overrides[get_storage] = lambda: LocalFileStorage(storage_dir)
@@ -571,6 +579,8 @@ def matrix(api_engine: Engine) -> Iterator[Matrix]:
         yield Matrix(app, {"admin": admin, **users}, ids)
     finally:
         session.close()
+        transaction.rollback()
+        connection.close()
 
 
 def _assert_role_refused(response: Any, *, action_required_roles: list[str], role: str) -> None:
