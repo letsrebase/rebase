@@ -13,8 +13,8 @@ are not part of this repo's flow.
 | Workspace | `letsrebase`, the Linear slug since the workspace itself was renamed on 2026-09-15, the same day as the GitHub org |
 | Team | **rebase**, issue prefix `REB-`. The team was `Orbiters` with prefix `ORB-` until 2026-09-15; the rename kept every issue's number, so an `ORB-193` you find in older text or history is `REB-193` today. One team, and that does not change |
 | Initiative | a product, permanent: `Website`, `Hub`, `PigroCRM`, `Monorepo` |
-| Project | a release, or a body of work with an end. It closes when it ships, which is what lets its issues archive |
-| Milestone | a coherent outcome inside a project's release, not an issue. Costs nothing, shows progress on its own |
+| Project | a release, or a body of work with an end. It closes when it ships, which is what lets its issues archive. Named `Scope vN - <outcome>`, never with a state word |
+| Milestone | the outcome a person can see or do once it closes, inside a project's release. Not an issue; costs nothing, shows progress on its own |
 | Issue | one agent run, one PR, one worktree |
 | Priority | Linear's own field: Urgent, High, Medium, Low. Never a label |
 | Effort | Linear's own estimate field. Never a label |
@@ -43,24 +43,25 @@ does it adds or updates the row here, in the PR that ships the release or in one
 
 | Initiative | Project | Lead | State on 2026-09-22 |
 |---|---|---|---|
-| `PigroCRM` | `PigroCRM v1 - first deploy from CI, with green gates` | Ivan | In Progress |
-| `PigroCRM` | `PigroCRM v2 - a space is born ready, and you enter with your email` | Ivan | In Progress, opened 2026-09-12 |
-| `Hub` | `Hub v0 - signups and the company flow, deployed` | Ivan | In Progress |
+| `PigroCRM` | `PigroCRM v1 - ships from CI, with gates that fail on real defects` | Ivan | In Progress |
+| `PigroCRM` | `PigroCRM v2 - a space is born ready` | Ivan | In Progress, opened 2026-09-12 |
+| `Hub` | `Hub v0 - a hub of its own` | Ivan | In Progress |
 | `Hub` | `Hub v1 - the wizards look like the site` | Lorenzo | In Progress |
 | `Website` | `Website v1 - the public site, live and correct on a phone` | Lorenzo | Completed, 2026-09-16 |
-| `Website` | `Website v2 - the new landing takes the front door` | Lorenzo | In Progress |
-| `Monorepo` | `Deploy and access hygiene v1` | Lorenzo | In Progress |
-| `Monorepo` | `Indexing and SEO v1 - what a crawler sees` | Lorenzo | In Progress |
+| `Website` | `Website v2 - the landing holds up everywhere` | Lorenzo | In Progress |
+| `Monorepo` | `Deploy and access hygiene v1 - preview you can open` | Lorenzo | In Progress |
+| `Monorepo` | `Indexing and SEO v1 - search sees the site` | Lorenzo | In Progress |
 | `Monorepo` | `Monorepo hygiene v1 - CI cost, licence and the English rule` | Lorenzo | Completed, 2026-09-10 |
 | `Monorepo` | `Rebrand v2 - orbiters leaves the code` | Lorenzo | Completed, 2026-09-16 (opened 2026-09-15) |
-| `Monorepo` | `Code audit v1 - what five read-only reviewers found on the trunk` | Lorenzo | In Progress, opened 2026-09-16 |
+| `Monorepo` | `Code audit v1 - what the five reviewers found` | Lorenzo | In Progress, opened 2026-09-16 |
 | `Hub` | `Hub v2 - one hub, and an admin is a member with one more section` | Lorenzo | Completed, 2026-09-22 (opened 2026-09-17) |
 | `PigroCRM` | `PigroCRM v3 - a space has a team` | Lorenzo | Planned, opened 2026-09-17 |
 | `Monorepo` | `Shared UI v1 - the hub and the CRM look like the site` | Lorenzo | Completed, 2026-09-22 (opened 2026-09-17) |
 | `Website` | `Website v3 - routes in English` | Lorenzo | Completed, 2026-09-21 (opened and shipped the same day) |
 | `Hub` | `Hub v3 - routes in English` | Lorenzo | Completed, 2026-09-21 (opened and shipped the same day) |
 | `PigroCRM` | `PigroCRM v4 - routes in English` | Ivan | Completed, 2026-09-21 (opened and shipped the same day) |
-| `Monorepo` | `Brand v2 - the echo device earns its place` | Lorenzo | Planned, opened 2026-09-22 |
+| `Monorepo` | `Brand v2 - the mark earns its place` | Lorenzo | Planned, opened 2026-09-22 |
+| `Monorepo` | `Board clarity v1 - the backlog reads at a glance` | Lorenzo | In Progress, opened 2026-09-22 |
 
 `Monorepo hygiene v1` was where repository-wide work that belongs to no product went
 (CI cost, the licence, this page). It is closed, and nothing has replaced it: a
@@ -222,26 +223,64 @@ a card closed on nothing.
 from the issue list: a milestone slipped, a health change (`onTrack`, `atRisk`,
 `offTrack`), a decision taken, a release shipped. `save_status_update` requires
 `type: "project"` along with the project, so a call without it fails validation. An
-update that only restates the board is noise, but skipping one when the board alone
-would mislead a reader is worse.
+update is three sentences at most: what moved, the health and why, the next visible
+thing. An update that only restates the board is noise, but skipping one when the
+board alone would mislead a reader is worse.
 
 ## What an issue carries
 
-- A **title that states the observed problem**, not the intended fix: "the backend gate
-  installs neither pandoc nor typst" rather than "add pandoc to CI". The fix is often
-  not the one you first thought of, and a title written as a fix ages into a lie.
+The board is read by two people scanning for "who is doing what, how far", not
+studied. Every field has a budget, and the budget is the rule.
+
+- A **title under 80 characters**: one sentence, one clause, a verb. It states the
+  outcome the card makes true, or the observed defect, never the intended fix and
+  never a restatement of the body. Two clauses joined by a colon means the second
+  one belongs in the body. "the backend gate installs neither pandoc nor typst"
+  rather than "add pandoc to CI". The fix is often not the one you first thought
+  of, and a title written as a fix ages into a lie.
+- A **body that fits one screen**: at most three or four bold lead words
+  (`**Observed.**`, `**Needed.**`, and only when they have something to say
+  `**Not here.**`, `**Adjacent.**`), each two or three sentences. Point at the
+  file and line, the spec section, the run id; do not paste them. The measurement,
+  the reproduction, the design options and the full neighbour scan belong in the
+  commit, the PR or the project's document; the card indexes them in one line.
+  A body an agent had to write at midnight is a body its reader will not write
+  back at noon.
 - **Project**, when one fits (a repository-wide issue may have none, § Where things
-  are), its **milestone** (unless the issue genuinely belongs to no body of work), one
-  **area:\*** label, one **type** label, a **priority**, an **estimate**, and an
-  **assignee**. `save_issue` takes all of this in the same call, so an issue that is
-  missing one of them is a mistake, not the accident of a skipped second call. The
-  assignee is yourself when you will do the work, the person who asked for it when they
-  will, and never empty: an unowned card is one the other agent will take.
-- A body with the evidence: what was observed, where (path and line, or the run URL),
-  what it blocks, and what it needs. Point at a spec rather than copying it, since the
-  copy will drift.
-- What you deliberately did **not** do, when there is such a thing. An issue that hides
-  a decision costs a whole round trip later.
+  are), its **milestone**, one **area:\*** label, one **type** label, a **priority**,
+  an **estimate**, and an **assignee**. `save_issue` takes all of this in the same
+  call, so an issue that is missing one of them is a mistake, not the accident of a
+  skipped second call. The assignee is yourself when you will do the work, the
+  person who asked for it when they will, and never empty: an unowned card is one
+  the other agent will take.
+- What you deliberately did **not** do, in one sentence, when there is such a
+  thing. An issue that hides a decision costs a whole round trip later.
+
+## Naming, on the board
+
+Applies to every project, milestone and issue title, and to the labels.
+
+- **A project is `Scope vN - <what you get when it ships>`.** The clause names the
+  outcome, in words a person who never read the spec recognises: `PigroCRM v3 - a
+  space has a team`, `Hub v1 - the wizards look like the site`. It never names a
+  state of the work (`deployed`, `done`, `closed`, `complete`, `shipped`): the
+  project's own status already says that, and a name that repeats it goes stale the
+  moment the status moves. It never names a mechanism review nobody reads
+  (`what five read-only reviewers found on the trunk`); the reports are documents
+  on the project, the name says what the work is for.
+- **A milestone is the thing that becomes true when it closes**, in a few words a
+  non-specialist recognises: `Three screens instead of eight`, `You invite a
+  colleague by email`, `Every button reads as a button`. Its description is one
+  sentence starting `Closes when`, with the observable check: the page, the command,
+  the assertion. Nothing else: not the history, not the alternatives, not the file
+  list.
+- **A `**Done when.**` line is legal in an issue body and nothing else is longer.**
+  If the check is not one line, it is not a done-when, it is the work.
+- **No emoji, no status words, no version of the same idea twice.** A title says
+  each thing once: `The CRM reports to PostHog and the funnel is visible` is
+  allowed to name the mechanism because the mechanism *is* the visible outcome;
+  `Rewrite X, which means the funnel is now readable in Y` is two sentences in one
+  title.
 
 ## Rules
 

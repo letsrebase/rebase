@@ -5,9 +5,10 @@ description: Use when writing anything that lands on Linear for this repository:
 
 # Writing on Linear
 
-Everything on the board is written for a reader who opens it in a month with no memory
-of the session: a person, or the next agent. That reader needs to know what was
-observed, what was decided, where the evidence is, and what was left undone on purpose.
+The board's job is that two people can see at a glance who is on what and how far.
+Write for a reader skimming the list, not for one studying a card: what was decided
+and what was left undone on purpose, in as few lines as carry them. The full record
+is the commit, the PR and the project's docs; the card indexes them.
 
 ## Language
 
@@ -19,50 +20,47 @@ the person you work for said. Real newlines, never `\n` escapes. Markdown headin
 
 ## The title
 
-States the **observed problem**, as a sentence with a verb, under 100 characters. Never
-the intended fix, because the fix changes and a title written as a fix ages into a lie.
+One sentence with a verb, **under 80 characters**, one clause. It states the
+observed problem or the outcome the card makes true, never the intended fix, and
+never repeats the body. A colon inside a title means the second half belongs in the
+body. The fix changes, and a title written as a fix ages into a lie.
 
-- Good: `A draft invoice cannot be deleted from the application, though the API allows it`
-- Good: `The invoice page shows the numbers but never the document: the PDF is a download only`
-- Bad: `Add delete button to invoice page`
-- Bad: `PDF preview`
+- Good: `An issued invoice gets a due date nobody agreed on`
+- Good: `Drop the dead confermata -> bozza transition`
+- Bad: `Add delete button to invoice page` (the fix, and it may not be this fix)
+- Bad: a two-hundred-character sentence that is the whole body, in the title
 
 ## The issue body
 
-Five lead words, each a short paragraph or a few bullets. Skip one only when it has
-nothing to say, never because it is inconvenient.
+**It fits one screen.** Three or four bold lead words, each two or three sentences.
+Skip one only when it has nothing to say, never because it is inconvenient. Point at
+the file and line, the spec section, the run id; never paste them. The full
+measurement, the design options and the long scan belong to the commit, the PR or a
+document; one line on the card indexes them.
 
 ```markdown
-**Observed.** What happens today, where (`path/to/file.py:123`, a URL, a run id), for
-whom, and what it costs. A quote from the person who asked, in «guillemets», with the
-date, when the ask is theirs.
+**Observed.** What happens today, where (`path/to/file.py:123`, a run id), for whom.
+A quote from the person who asked, in «guillemets», with the date, when the ask is theirs.
 
-**What exists.** The pieces already in place that the fix will use or must respect:
-the service, the route, the spec paragraph (`docs/.../spec.md §4`), the test that
-already pins the rule. Point at them; do not copy them.
+**Needed.** The outcome, as behaviour a reader can check, not a list of files to
+edit. Where a design choice is already taken, say so and where it is recorded.
 
-**What is needed.** The outcome, as behaviour a reader can check, not a list of files
-to edit. Where a design choice is already taken, say so and where it is recorded.
+**Not here.** One sentence, when a reader might expect something and will not find
+it, so nobody reopens a closed question.
 
-**Deliberately not done.** What a reader might expect and will not find, with the
-reason, so the next person does not reopen a closed question.
-
-**Adjacent.** The open cards next to this one, found as the `linear-ticket` skill
-says, and what was done about each: linked, narrowed around, waited for. Or that there
-were none: which area calls answered empty, and the Done cards `query` ranked first for
-the surface, so a reader can tell the board was read.
+**Adjacent.** The open cards the scan found and what was done about each (linked,
+narrowed around, waited for), or that the area calls answered empty.
 ```
 
 **Adjacent** is skipped only on a card filed for later, and added when the card is
-picked up (`patch` with `op: "append"`, in the call that moves it). Optional, when they
-apply: **Evidence** (the reproduction, the measurement, the log line), **Blocks** /
-**Blocked by** (issue ids you have read), **Decision for the lead** (the project's lead
-per `docs/tracker.md`: one question, the options, your recommendation first).
+picked up (`patch` with `op: "append"`, in the call that moves it). When they apply,
+in one line each: **Blocks** / **Blocked by** (issue ids you have read), **Decision
+for the lead** (one question, the options, your recommendation first).
 
 ## Comments
 
-One comment per event that changes the issue. Each opens with a bold lead that says
-which kind it is, so a reader can skim the thread.
+One comment per event that changes the issue, two or three sentences each. Each
+opens with a bold lead that says which kind it is, so a reader can skim the thread.
 
 - **Progress.** `**Step 4 done and live:** ...` What landed, where to see it, the commit.
   Never "working on it".
@@ -88,21 +86,27 @@ which kind it is, so a reader can skim the thread.
   names that went green, test counts, the request you made and what came back, what you
   opened in a browser and saw. Then `Left open on purpose:` if anything is.
 
-## Project description
+## Project naming and description
 
-For `save_project`: what the project is in one sentence, where it lives in the
-repository (`projects/<name>/`), what it is made of (one bullet per package or app, with
-the port or URL where it answers), the design record and the orientation file
-(`docs/superpowers/specs/...`, `AGENTS.md`), how it deploys (workflow, compose project,
-tag pattern). `links` to the code and to the live surface. `summary` under 255 chars,
-stating the outcome the project ends with.
+The name is `Scope vN - <what you get when it ships>`, in words a person who never
+read the spec recognises (`PigroCRM v3 - a space has a team`). It carries the
+version suffix and no state word: `deployed`, `done`, `complete` repeat the status,
+which already says it, and go stale the day the status moves.
+
+For `save_project`: `summary` is one sentence stating the outcome (under 255
+chars). The description is at most a short paragraph: what the project is, where it
+lives (`projects/<name>/`), how it deploys (the tag pattern), and what is open now.
+The architecture it builds, the package list and the design record live in the
+project's own `AGENTS.md` and `docs/`; the description points at them in one line.
+`links` to the code and the live surface.
 
 ## Status updates
 
-`save_status_update` with `type: "project"`. One paragraph a reader who sees only the
-update understands: what shipped or slipped, the health word and why, the next
-visible thing. Post one when the board alone would mislead; skip it when it would only
-restate the issue list.
+`save_status_update` with `type: "project"`. **Three sentences, no more**: what
+shipped or slipped, the health word and why, the next visible thing. A reader who
+sees only the update understands where the release stands; nobody reads a second
+copy of the issue list. Post one when the board alone would mislead; skip it when
+it would only restate it.
 
 ## References
 
@@ -115,8 +119,9 @@ restate the issue list.
 ## What never goes on the board
 
 Secrets, tokens, passwords or where to find them beyond "on the server, root-only".
-Personal data of a customer or a signup (a name, an email, a CV). Screenshots with real
-customer data. A claim a test did not make. A restated board. A decision that belongs
-in `docs/design/DECISIONS.md` and is not also recorded there. An issue filed after the
-work only to have a `Done` card: the commit is the record of finished work that needed
-no decision.
+Personal data of a customer or a signup (a name, an email, a CV). Screenshots with
+real customer data. A claim a test did not make. A restated board. A decision that
+belongs in `docs/design/DECISIONS.md` and is not also recorded there. A full
+neighbour scan, measurement or design exploration in an issue body (one line points
+at it, wherever it properly lives). An issue filed after the work only to have a
+`Done` card: the commit is the record of finished work that needed no decision.
