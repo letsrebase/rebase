@@ -7,9 +7,9 @@ import {
   createRoute,
   createRouter,
 } from '@tanstack/react-router'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AdminGuard } from './admin/AdminGuard'
 import { Area } from './member/Area'
 import { SignedInLayout } from './SignedInLayout'
@@ -85,6 +85,25 @@ function mount(path = '/admin/talent') {
   )
   return client
 }
+
+/** The hub's `SignedInLayout` reads the viewport through `useMediaQuery` since REB-316,
+ *  and jsdom answers `matchMedia` with nothing. The same stub the CRM's `AppShell.test`
+ *  carries: desktop by default (the shape most assertions here are about), with the
+ *  mobile tests below setting it themselves. */
+function setViewport(desktop: boolean) {
+  window.matchMedia = ((query: string) => ({
+    matches: desktop && query.includes('min-width'),
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
+}
+
+beforeEach(() => setViewport(true))
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -199,5 +218,76 @@ describe('/admin/* access rule (REB-279, closes REB-106)', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
     mount('/admin/talent')
     expect(await screen.findByRole('heading', { name: 'Dentro' })).toBeInTheDocument()
+  })
+})
+
+describe('the mobile shell (REB-316)', () => {
+  it('replaces the sidebar column with a menu trigger below the breakpoint', async () => {
+    setViewport(false)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
+    mount()
+    await screen.findByRole('heading', { name: 'Dentro' })
+    // The fixed `w-56` aside starved every field below ~600px (the card's bug): on a
+    // phone there is no aside at all, and the nav lives behind the trigger.
+    expect(screen.queryByRole('complementary')).toBeNull()
+    expect(screen.queryByText('Amministrazione')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Apri il menu' })).toBeInTheDocument()
+  })
+
+  it('renders the admin nav in the drawer once opened, at its 44px targets', async () => {
+    setViewport(false)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
+    const user = userEvent.setup()
+    mount()
+    await screen.findByRole('heading', { name: 'Dentro' })
+    // Grab the trigger before opening: Radix hides the control behind an open dialog,
+    // so the role query only sees it while the drawer is closed.
+    const trigger = screen.getByRole('button', { name: 'Apri il menu' })
+    await user.click(trigger)
+
+    const drawer = await screen.findByRole('dialog', { name: 'Menu di navigazione' })
+    expect(within(drawer).getByRole('link', { name: /Talenti/ })).toBeInTheDocument()
+    expect(within(drawer).getByText('Amministrazione')).toBeInTheDocument()
+    expect(within(drawer).getByRole('button', { name: /Esci/ })).toBeInTheDocument()
+    // Every row carries the 44px floor the card names, not the desktop 32/36px sizes.
+    const link = within(drawer).getByRole('link', { name: /Talenti/ })
+    expect(link.className).toMatch(/(^| )min-h-11( |$)/)
+    expect(trigger.className).toMatch(/(^| )size-11( |$)/)
+  })
+
+  it('closes the drawer on Escape', async () => {
+    setViewport(false)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
+    const user = userEvent.setup()
+    mount()
+    await screen.findByRole('heading', { name: 'Dentro' })
+    await user.click(screen.getByRole('button', { name: 'Apri il menu' }))
+    await screen.findByRole('dialog', { name: 'Menu di navigazione' })
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Menu di navigazione' })).toBeNull(),
+    )
+  })
+
+  it('closes the drawer and navigates when a destination is tapped', async () => {
+    setViewport(false)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
+    const user = userEvent.setup()
+    mount('/admin/talent')
+    await screen.findByRole('heading', { name: 'Dentro' })
+    await user.click(screen.getByRole('button', { name: 'Apri il menu' }))
+    const drawer = await screen.findByRole('dialog', { name: 'Menu di navigazione' })
+    await user.click(within(drawer).getByRole('link', { name: /La tua area/ }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Menu di navigazione' })).toBeNull(),
+    )
+  })
+
+  it('shows no trigger and keeps the aside on a desktop viewport', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
+    mount()
+    await screen.findByRole('heading', { name: 'Dentro' })
+    expect(screen.queryByRole('button', { name: 'Apri il menu' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'rebase' }).closest('aside')).toBeInTheDocument()
   })
 })
