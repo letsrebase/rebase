@@ -287,9 +287,9 @@ gh pr create --body-file pr-body.md \
    disagreement for the card, as a `**Decision for the lead**` line. Ten minutes with
    no review on the head sha (`$rid` empty): `gh pr comment <n> --body '@greptileai'`
    once, which re-triggers it, and run the wait again; still nothing, say so on the
-   card and go on without the comments command. Expect the nudge on a second push:
-   #268's fix commit got no review in ten minutes and one two minutes after the
-   comment (2026-09-22). What the loop did goes on the card in
+   card and go on without the comments command. A later push may get no review on
+   its own: #268's second commit got none in ten minutes and one two minutes after
+   the comment, while its third was reviewed unprompted (2026-09-22). What the loop did goes on the card in
    the same `**Review applied:**` comment as the independent review (the
    `linear-content` shape): how many findings, which changed the code (sha), which were
    answered and why, and the final score when there is one.
