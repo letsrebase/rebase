@@ -82,9 +82,7 @@ def test_create_writes_the_row_and_answers_a_token(db_session: Session) -> None:
 
 def test_a_collaboratore_cannot_invite(db_session: Session) -> None:
     UserService(db_session).create(
-        UserCreate(
-            email="help@x.it", password="lunghissima1", nome="Bruno", ruolo="collaboratore"
-        ),
+        UserCreate(email="help@x.it", password="lunghissima1", nome="Bruno", ruolo="collaboratore"),
         Actor.system(),
     )
     helper = UserRepository(db_session).get_by_email("help@x.it")

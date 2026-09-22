@@ -61,8 +61,10 @@ def _hash(raw: str) -> str:
 
 
 class InvitationUnknown(DomainError):
-    """No row carries this token's hash. 401 like a bad magic link: the request
-    presented a credential that is not one."""
+    """No row carries this token's hash. 404 (`invitation_unknown` in
+    `pigrocrm_api/errors.STATUS_BY_CODE`): the request presented a credential that is
+    not one, and no row ever was. Unlike the other three dead states this one is not
+    an invitation that ended -- there is nothing to tell apart from a wrong token."""
 
     code = "invitation_unknown"
 
@@ -171,6 +173,7 @@ class InvitationService:
     def list(self, actor: Actor) -> list[InvitationRead]:
         """«Inviti in attesa»: open *and* not yet expired (an expired one is dead; a
         resend or a fresh invite revives it), newest first."""
+        actor.require_admin("list_invites")
         rows = self.session.scalars(
             select(Invitation)
             .where(PENDING, Invitation.expires_at > datetime.now(UTC))

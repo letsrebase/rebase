@@ -28,6 +28,7 @@ from pigrocrm.core.mail import (
     digest_subject,
     euro,
     giorno_breve,
+    invitation_mail,
     magic_link_mail,
     sender_from_settings,
     urllib_call,
@@ -138,6 +139,29 @@ def test_the_welcome_mail_enters_with_a_link_and_says_what_to_do_first() -> None
         "x@x.it", 'https://pigro.test/x/app/verify?t="><script>', login, membro=True
     )
     assert hostile.html is not None and "<script>" not in hostile.html
+
+
+def test_the_invitation_mail_names_the_inviter_and_the_window() -> None:
+    """Spec 2026-09-17 §5: who invited, the space, a click and no password, seven
+    days and one use, and the ignore-it reassurance. The greeting carries the
+    person's name only when the admin typed one."""
+    url = "https://pigro.test/studio-ada/app/invite?t=abc"
+    mail = invitation_mail("luca@x.it", "studio-ada", "Ada", url, nome="Luca", giorni=7)
+    assert mail.to == "luca@x.it"
+    assert mail.subject == "Sei stato invitato in studio-ada su PigroCRM"
+    assert mail.text.startswith("Ciao Luca,")
+    assert "Ada ti ha invitato" in mail.text and "senza scegliere una password" in mail.text
+    assert url in mail.text and "Il link vale 7 giorni e funziona una volta sola." in mail.text
+    assert "Se non te lo aspettavi, ignora questa mail" in mail.text
+    assert mail.html is not None and "Entra nello spazio" in mail.html
+    # No name on the invitation: the greeting stays anonymous, like `welcome_mail`'s.
+    quiet = invitation_mail("x@x.it", "s", "Ada", url, nome=None, giorni=7)
+    assert quiet.text.startswith("Ciao,\n")
+    # A space or an inviter that tried to close the tag is escaped in the HTML.
+    hostile = invitation_mail("x@x.it", 's"><script>', 'A"><i>', url, nome=None, giorni=7)
+    assert (
+        hostile.html is not None and "<script>" not in hostile.html and '"><i>' not in hostile.html
+    )
 
 
 # ---- the weekly digest, as a mail ---------------------------------------------------
