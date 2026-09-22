@@ -8,6 +8,16 @@ from sqlalchemy import Subquery, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from rebase_core.audit import (
+    TIMELINE_LIMIT_DEFAULT,
+    AdminActionRead,
+    AdminActionService,
+    coerce_stored_value,
+    field_changes,
+    reject_cleared_columns,
+    supplied_changes,
+    utcnow,
+)
 from rebase_core.comments import CommentService
 from rebase_core.config import Settings
 from rebase_core.cv_text import CvText, extract_text
@@ -31,6 +41,7 @@ from rebase_core.schemas import (
     FreelancerDetail,
     FreelancerDraft,
     FreelancerList,
+    FreelancerOverride,
     FreelancerRead,
     SignupListItem,
     SignupUtm,
@@ -45,6 +56,10 @@ LEAD_STATE = "lead"
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
 PDF_MAGIC = b"%PDF-"
+# The three fields a freelancer card shares with its `users` row (REB-281): an override
+# of one of these lands on the identity, never on the card, the same split
+# `rebase_core.members`' own `_IDENTITY_FIELDS` keeps for a self-edit.
+_ADMIN_IDENTITY_FIELDS = ("nome", "cognome", "linkedin_url")
 # The sentence `apply` asks for in the magic-link mail sent instead of overwriting an
 # address already on file (REB-272): one more line in `magic_link_mail`'s voice, not a
 # mail of its own.
@@ -113,6 +128,7 @@ def freelancer_read(row: Freelancer, user: User) -> FreelancerRead:
         utm_id=row.utm_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        deleted_at=row.deleted_at,
     )
 
 
@@ -320,8 +336,9 @@ class FreelancerService:
             .join(User, User.id == Freelancer.user_id)
             .outerjoin(logins, logins.c.user_id == Freelancer.user_id)
             .outerjoin(signed, signed.c.email == func.lower(User.email))
+            .where(Freelancer.deleted_at.is_(None))
         )
-        count = select(func.count()).select_from(Freelancer)
+        count = select(func.count()).select_from(Freelancer).where(Freelancer.deleted_at.is_(None))
         if stato is not None:
             stmt = stmt.where(Freelancer.stato == stato)
             count = count.where(Freelancer.stato == stato)
@@ -420,9 +437,127 @@ class FreelancerService:
         assert user is not None
         return freelancer_read(row, user)
 
-    def _require(self, freelancer_id: UUID) -> Freelancer:
+    def override(
+        self, freelancer_id: UUID, data: FreelancerOverride, admin_id: UUID
+    ) -> FreelancerRead:
+        """Sets or clears any field `FreelancerOverride` names, on the card or on the
+        linked `users` row for the three identity fields (`_ADMIN_IDENTITY_FIELDS`),
+        and records the real delta -- never the patch, resending the value already
+        there is not a change (`rebase_core.audit.field_changes`) -- as one
+        `AdminAction` (REB-347). Identity lives on one `users` row across every role a
+        person has here; overriding a name moves it everywhere that row is read, the
+        same as a self-edit through `MemberService.update` already does."""
+        row = self._require(freelancer_id)
+        user = self.session.get(User, row.user_id)
+        assert user is not None
+        changes = supplied_changes(data)
+        if not changes:
+            return freelancer_read(row, user)
+        identity_changes = {k: v for k, v in changes.items() if k in _ADMIN_IDENTITY_FIELDS}
+        row_changes = {k: v for k, v in changes.items() if k not in _ADMIN_IDENTITY_FIELDS}
+        reject_cleared_columns(ENTITY, User, identity_changes)
+        reject_cleared_columns(ENTITY, Freelancer, row_changes)
+        before = {
+            **{field: getattr(user, field) for field in identity_changes},
+            **{field: getattr(row, field) for field in row_changes},
+        }
+        for field, value in identity_changes.items():
+            setattr(user, field, value)
+        for field, value in row_changes.items():
+            setattr(row, field, value)
+        self.session.commit()
+        after = {
+            **{field: getattr(user, field) for field in identity_changes},
+            **{field: getattr(row, field) for field in row_changes},
+        }
+        delta = field_changes(before, after)
+        if delta:
+            AdminActionService(self.session).record(ENTITY, row.id, "overridden", admin_id, delta)
+        return freelancer_read(row, user)
+
+    def clear_cv(self, freelancer_id: UUID, admin_id: UUID) -> FreelancerRead:
+        """Drops the stored CV. The bytes are never part of the audit entry -- a CV is
+        personal data with a retention to honour (`Freelancer`'s own docstring), and a
+        payload that carried them would duplicate exactly what this call removes. The
+        three metadata columns are recorded, so an admin can see a CV was there, by whom
+        it was cleared and when, without the file itself; there is no `revert` for this
+        one kind, on purpose (`rebase_core.audit`'s own module docstring)."""
+        row = self._require(freelancer_id)
+        user = self.session.get(User, row.user_id)
+        assert user is not None
+        if row.cv_bytes is None:
+            return freelancer_read(row, user)
+        before = {"cv_filename": row.cv_filename, "cv_mime": row.cv_mime, "cv_size": row.cv_size}
+        row.cv_bytes, row.cv_filename, row.cv_mime, row.cv_size = None, None, None, None
+        self.session.commit()
+        AdminActionService(self.session).record(
+            ENTITY,
+            row.id,
+            "cleared",
+            admin_id,
+            {"changed": ["cv"], "before": before, "after": dict.fromkeys(before, None)},
+        )
+        return freelancer_read(row, user)
+
+    def soft_delete(self, freelancer_id: UUID, admin_id: UUID) -> FreelancerRead:
+        """Sets `deleted_at`. No hard delete anywhere in this path: an admin's own
+        mistake, or a delete aimed at the wrong row, must be reversible (Lorenzo,
+        2026-09-22: «tutto deve essere tracciabile e reversibile da un admin»)."""
+        row = self._require(freelancer_id)
+        row.deleted_at = utcnow()
+        self.session.commit()
+        AdminActionService(self.session).record(ENTITY, row.id, "deleted", admin_id, {})
+        user = self.session.get(User, row.user_id)
+        assert user is not None
+        return freelancer_read(row, user)
+
+    def restore(self, freelancer_id: UUID, admin_id: UUID) -> FreelancerRead:
+        """A no-op, not an error, on a card that is not deleted -- an idempotent call
+        must never write a timeline entry claiming a recovery that never happened."""
+        row = self._require(freelancer_id, include_deleted=True)
+        user = self.session.get(User, row.user_id)
+        assert user is not None
+        if row.deleted_at is not None:
+            row.deleted_at = None
+            self.session.commit()
+            AdminActionService(self.session).record(ENTITY, row.id, "restored", admin_id, {})
+        return freelancer_read(row, user)
+
+    def audit_timeline(
+        self, freelancer_id: UUID, limit: int = TIMELINE_LIMIT_DEFAULT
+    ) -> list[AdminActionRead]:
+        """Who overrode, cleared, deleted or restored this card, and when. Works on a
+        deleted card too -- otherwise the one entry that says so would be unreadable
+        exactly when it matters most."""
+        self._require(freelancer_id, include_deleted=True)
+        return AdminActionService(self.session).timeline(ENTITY, freelancer_id, limit)
+
+    def revert(self, freelancer_id: UUID, action_id: UUID, admin_id: UUID) -> FreelancerRead:
+        """Restores a field an earlier `overridden` action changed to the value that
+        entry's own `payload["before"]` names -- the reversibility REB-347 asks for,
+        read from the trail rather than guessed at. Only an `overridden` entry reverts
+        this way: `deleted` reverses through `restore`, and a cleared CV has no bytes
+        left to put back (`clear_cv`'s own docstring)."""
+        row = self._require(freelancer_id)
+        action = AdminActionService(self.session).require(action_id)
+        if action.entity_type != ENTITY or action.entity_id != row.id:
+            raise NotFound(ENTITY, action_id)
+        if action.kind != "overridden":
+            raise ValidationFailed(
+                ENTITY, "action_id", "si può ripristinare solo una modifica di campo"
+            )
+        before = action.payload.get("before", {})
+        restored = {
+            field: coerce_stored_value(
+                User if field in _ADMIN_IDENTITY_FIELDS else Freelancer, field, value
+            )
+            for field, value in before.items()
+        }
+        return self.override(freelancer_id, FreelancerOverride(**restored), admin_id)
+
+    def _require(self, freelancer_id: UUID, *, include_deleted: bool = False) -> Freelancer:
         row = self.session.get(Freelancer, freelancer_id)
-        if row is None:
+        if row is None or (row.deleted_at is not None and not include_deleted):
             raise NotFound(ENTITY, freelancer_id)
         return row
 

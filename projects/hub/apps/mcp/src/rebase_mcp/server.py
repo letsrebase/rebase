@@ -37,7 +37,14 @@ from rebase_core.logins import LoginService
 from rebase_core.models import Freelancer, Signup, User
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
-from rebase_core.schemas import FreelancerDraft, FreelancerRead, StatusChange, TalentoRead
+from rebase_core.schemas import (
+    CompanyOverride,
+    FreelancerDraft,
+    FreelancerOverride,
+    FreelancerRead,
+    StatusChange,
+    TalentoRead,
+)
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import LIST_LIMIT_DEFAULT
 from rebase_core.talenti import TalentiService
@@ -97,6 +104,16 @@ def _search_term(value: str | None) -> str | None:
     if value is not None and len(value) > SEARCH_MAX_LENGTH:
         raise ToolError(f"la ricerca deve stare in {SEARCH_MAX_LENGTH} caratteri")
     return value
+
+
+def _supplied_text(raw: str) -> str | None:
+    """A tool parameter's own contract for `override_freelancer`/`override_company`:
+    the caller already checked `is not None` before calling this, so an empty string
+    is the one thing left it can mean -- clear the field, the same convention
+    `set_freelancer_status`'s own `note` gives a status change. A nullable column
+    accepts it; `rebase_core.audit.reject_cleared_columns` refuses it on one that
+    is not, naming the field rather than leaving it silently ignored."""
+    return raw or None
 
 
 def build_server(
@@ -308,6 +325,96 @@ def build_server(
         )
 
     @mcp.tool()
+    def override_freelancer(
+        freelancer_id: str,
+        nome: str | None = None,
+        cognome: str | None = None,
+        linkedin_url: str | None = None,
+        tariffa_giornaliera: str | None = None,
+        posizione: str | None = None,
+        remoto: str | None = None,
+        links: list[str] | None = None,
+        stato: str | None = None,
+        note: str | None = None,
+        compilata_da: str | None = None,
+    ) -> dict[str, Any]:
+        """Scrive o svuota qualsiasi campo del profilo oltre a stato e note: nome,
+        cognome e profilo LinkedIn (sull'identità condivisa in `users`), tariffa,
+        posizione, modalità di lavoro, link, stato, note e chi ha compilato per ultimo
+        (persona/admin). Ogni parametro omesso resta com'era; una stringa vuota svuota
+        il campo dove è ammesso (tariffa, posizione, LinkedIn, note, modalità di
+        lavoro), altrove è rifiutata perché il campo non può restare senza un valore.
+        `links` sostituisce l'intera lista, `[]` la svuota. Ogni modifica reale finisce
+        nel registro di `get_freelancer_audit`, con il valore prima e dopo; per
+        annullarla c'è `revert_freelancer_action`."""
+        kwargs: dict[str, Any] = {}
+        if nome is not None:
+            kwargs["nome"] = _supplied_text(nome)
+        if cognome is not None:
+            kwargs["cognome"] = _supplied_text(cognome)
+        if linkedin_url is not None:
+            kwargs["linkedin_url"] = _supplied_text(linkedin_url)
+        if tariffa_giornaliera is not None:
+            kwargs["tariffa_giornaliera"] = (
+                None
+                if tariffa_giornaliera == ""
+                else _number(tariffa_giornaliera, "tariffa_giornaliera")
+            )
+        if posizione is not None:
+            kwargs["posizione"] = _supplied_text(posizione)
+        if remoto is not None:
+            kwargs["remoto"] = _supplied_text(remoto)
+        if links is not None:
+            kwargs["links"] = links
+        if stato is not None:
+            kwargs["stato"] = _supplied_text(stato)
+        if note is not None:
+            kwargs["note"] = _supplied_text(note)
+        if compilata_da is not None:
+            kwargs["compilata_da"] = _supplied_text(compilata_da)
+        override = FreelancerOverride(**kwargs)
+        return _run(
+            lambda s: FreelancerService(s).override(UUID(freelancer_id), override, admin().id)
+        )
+
+    @mcp.tool()
+    def delete_freelancer(freelancer_id: str) -> dict[str, Any]:
+        """Cancella la scheda: esce da Talenti e dall'elenco freelance. Reversibile,
+        mai una cancellazione vera: `restore_freelancer` la fa tornare com'era."""
+        return _run(lambda s: FreelancerService(s).soft_delete(UUID(freelancer_id), admin().id))
+
+    @mcp.tool()
+    def restore_freelancer(freelancer_id: str) -> dict[str, Any]:
+        """Ripristina una scheda cancellata: torna in Talenti e nell'elenco freelance.
+        Su una scheda già attiva non cambia nulla."""
+        return _run(lambda s: FreelancerService(s).restore(UUID(freelancer_id), admin().id))
+
+    @mcp.tool()
+    def clear_freelancer_cv(freelancer_id: str) -> dict[str, Any]:
+        """Rimuove il CV caricato: il file non entra nel registro delle modifiche, solo
+        nome, tipo e dimensione di quello che c'era. Non reversibile da qui: per
+        rimetterlo serve che la persona lo carichi di nuovo dalla sua area."""
+        return _run(lambda s: FreelancerService(s).clear_cv(UUID(freelancer_id), admin().id))
+
+    @mcp.tool()
+    def get_freelancer_audit(freelancer_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Chi ha modificato, svuotato, cancellato o ripristinato questa scheda, e
+        quando: ogni voce con l'amministratore, il tipo di azione e, per una modifica di
+        campo, il valore prima e dopo. Funziona anche su una scheda cancellata. Dalla più
+        recente. Solo lettura; per annullare una modifica di campo usa
+        `revert_freelancer_action` con l'id della voce."""
+        return _run_list(lambda s: FreelancerService(s).audit_timeline(UUID(freelancer_id), limit))
+
+    @mcp.tool()
+    def revert_freelancer_action(freelancer_id: str, action_id: str) -> dict[str, Any]:
+        """Riporta un campo al valore che aveva prima di una modifica passata, letta
+        dalla voce del registro `action_id` (da `get_freelancer_audit`). Solo su una
+        voce che è una modifica di campo, non su una cancellazione o un ripristino."""
+        return _run(
+            lambda s: FreelancerService(s).revert(UUID(freelancer_id), UUID(action_id), admin().id)
+        )
+
+    @mcp.tool()
     def list_aziende(
         limit: int = LIST_LIMIT_DEFAULT,
         stato: str | None = None,
@@ -385,6 +492,86 @@ def build_server(
         )
 
     @mcp.tool()
+    def override_company(
+        company_id: str,
+        nome: str | None = None,
+        cognome: str | None = None,
+        linkedin_url: str | None = None,
+        nome_azienda: str | None = None,
+        progetto: str | None = None,
+        periodo_da: str | None = None,
+        durata: str | None = None,
+        budget_giornaliero: str | None = None,
+        stato: str | None = None,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        """Scrive o svuota qualsiasi campo della richiesta oltre a stato e note: nome e
+        cognome del referente e il suo profilo LinkedIn (sull'identità condivisa in
+        `users`), nome dell'azienda, progetto, data di inizio, durata, budget a
+        giornata, stato e note. Ogni parametro omesso resta com'era; una stringa vuota
+        svuota solo dove è ammesso (LinkedIn, note), altrove è rifiutata perché il
+        campo non può restare senza un valore. Ogni modifica reale finisce nel
+        registro di `get_company_audit`, con il valore prima e dopo; per annullarla
+        c'è `revert_company_action`."""
+        kwargs: dict[str, Any] = {}
+        if nome is not None:
+            kwargs["nome"] = _supplied_text(nome)
+        if cognome is not None:
+            kwargs["cognome"] = _supplied_text(cognome)
+        if linkedin_url is not None:
+            kwargs["linkedin_url"] = _supplied_text(linkedin_url)
+        if nome_azienda is not None:
+            kwargs["nome_azienda"] = _supplied_text(nome_azienda)
+        if progetto is not None:
+            kwargs["progetto"] = _supplied_text(progetto)
+        if periodo_da is not None:
+            kwargs["periodo_da"] = None if periodo_da == "" else _day(periodo_da, "periodo_da")
+        if durata is not None:
+            kwargs["durata"] = _supplied_text(durata)
+        if budget_giornaliero is not None:
+            kwargs["budget_giornaliero"] = (
+                None
+                if budget_giornaliero == ""
+                else _number(budget_giornaliero, "budget_giornaliero")
+            )
+        if stato is not None:
+            kwargs["stato"] = _supplied_text(stato)
+        if note is not None:
+            kwargs["note"] = _supplied_text(note)
+        override = CompanyOverride(**kwargs)
+        return _run(lambda s: CompanyService(s).override(UUID(company_id), override, admin().id))
+
+    @mcp.tool()
+    def delete_company(company_id: str) -> dict[str, Any]:
+        """Cancella la richiesta: esce dall'elenco aziende. Reversibile, mai una
+        cancellazione vera: `restore_company` la fa tornare com'era."""
+        return _run(lambda s: CompanyService(s).soft_delete(UUID(company_id), admin().id))
+
+    @mcp.tool()
+    def restore_company(company_id: str) -> dict[str, Any]:
+        """Ripristina una richiesta cancellata: torna nell'elenco aziende. Su una
+        richiesta già attiva non cambia nulla."""
+        return _run(lambda s: CompanyService(s).restore(UUID(company_id), admin().id))
+
+    @mcp.tool()
+    def get_company_audit(company_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        """Chi ha modificato, cancellato o ripristinato questa richiesta, e quando:
+        ogni voce con l'amministratore, il tipo di azione e, per una modifica di campo,
+        il valore prima e dopo. Funziona anche su una richiesta cancellata. Dalla più
+        recente. Solo lettura; per annullare una modifica di campo usa
+        `revert_company_action` con l'id della voce."""
+        return _run_list(lambda s: CompanyService(s).audit_timeline(UUID(company_id), limit))
+
+    @mcp.tool()
+    def revert_company_action(company_id: str, action_id: str) -> dict[str, Any]:
+        """Riporta un campo al valore che aveva prima di una modifica passata, letta
+        dalla voce del registro `action_id` (da `get_company_audit`). Solo su una voce
+        che è una modifica di campo, non su una cancellazione o un ripristino."""
+        return _run(
+            lambda s: CompanyService(s).revert(UUID(company_id), UUID(action_id), admin().id)
+        )
+
+    @mcp.tool()
     def list_pigro_spaces() -> dict[str, Any]:
         """Gli spazi di PigroCRM come li mostra «Istanze Pigro» nell'area admin: slug,
         email di chi lo ha aperto, quando, l'indirizzo dello spazio e il membro dell'hub
@@ -424,6 +611,17 @@ def build_server(
         session = factory()
         try:
             return call(session).model_dump(mode="json")
+        except DomainError as exc:
+            raise ToolError(exc.message) from exc
+        finally:
+            session.close()
+
+    def _run_list(call: Callable[[Session], Sequence[BaseModel]]) -> list[dict[str, Any]]:
+        """`_run`'s own shape for a tool that answers several rows, like
+        `get_freelancer_audit`."""
+        session = factory()
+        try:
+            return [item.model_dump(mode="json") for item in call(session)]
         except DomainError as exc:
             raise ToolError(exc.message) from exc
         finally:

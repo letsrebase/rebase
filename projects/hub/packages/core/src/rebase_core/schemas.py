@@ -652,6 +652,8 @@ class FreelancerRead(BaseModel):
     utm_id: str | None = None
     created_at: datetime
     updated_at: datetime
+    # `None` while the card is live; a moment once an admin soft-deletes it (REB-347).
+    deleted_at: datetime | None = None
     commenti: list[CommentRead] = Field(default_factory=list)
 
     @computed_field  # type: ignore[prop-decorator]
@@ -735,6 +737,8 @@ class CompanyRead(BaseModel):
     utm_id: str | None = None
     created_at: datetime
     updated_at: datetime
+    # Same soft-delete as `FreelancerRead.deleted_at`.
+    deleted_at: datetime | None = None
     # The thread, newest first; filled by `get` only, as on `FreelancerRead`.
     commenti: list[CommentRead] = Field(default_factory=list)
 
@@ -756,6 +760,100 @@ class StatusChange(BaseModel):
 
     stato: str = Field(min_length=1, max_length=20)
     note: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
+
+
+class FreelancerOverride(BaseModel):
+    """What an admin may set or clear on a `Freelancer` beyond `stato`/`note`
+    (REB-347): every field a person could have written through the wizard or the
+    member area, plus the three identity fields (`nome`/`cognome`/`linkedin_url`)
+    that live on the linked `users` row since REB-281, and `compilata_da`, which
+    nothing else lets an admin touch by hand.
+
+    Every field is optional, since one call changes only the ones it names --
+    `rebase_core.audit.supplied_changes` reads which ones that is from
+    `model_fields_set`, never from whether the value is `None`: an explicit `null`
+    clears a nullable column and is refused on a `NOT NULL` one by
+    `rebase_core.audit.reject_cleared_columns`. The CV has its own route
+    (`FreelancerService.clear_cv`, clear-only): its bytes are personal data an audit
+    payload must never carry, so it is not part of this schema at all."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    cognome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    linkedin_url: SafeStr | None = Field(default=None, max_length=LINKEDIN_INPUT_MAX_LENGTH)
+    tariffa_giornaliera: Decimal | None = Field(
+        default=None, max_digits=7, decimal_places=2, ge=TARIFFA_MIN, le=TARIFFA_MAX
+    )
+    posizione: SafeStr | None = Field(default=None, max_length=POSIZIONE_MAX_LENGTH)
+    remoto: Remoto | None = None
+    links: list[SafeStr] | None = Field(default=None, max_length=LINKS_MAX)
+    stato: FreelancerStato | None = None
+    note: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
+    compilata_da: Literal["persona", "admin"] | None = None
+
+    @field_validator("nome", "cognome", "posizione", mode="after")
+    @classmethod
+    def _trimmed(cls, value: str | None) -> str | None:
+        return _clean_text(value, what="un valore") if value is not None else None
+
+    @field_validator("linkedin_url", mode="after")
+    @classmethod
+    def _linkedin(cls, value: str | None) -> str | None:
+        return normalise_linkedin(value)
+
+    @field_validator("links", mode="after")
+    @classmethod
+    def _links(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        cleaned = [_https_url(link) for link in value if link.strip()]
+        if any(len(link) > LINK_MAX_LENGTH for link in cleaned):
+            raise ValueError(f"un link può avere al massimo {LINK_MAX_LENGTH} caratteri")
+        return cleaned
+
+
+class CompanyOverride(BaseModel):
+    """What an admin may set or clear on a `Company` request beyond `stato`/`note`
+    (REB-347): the four project answers a referente could have written
+    (`CompanyFields`), the company's own name, and the referente's identity fields on
+    the linked `users` row -- both admin-only even for a self-edit, as
+    `MemberService.update_company`'s own docstring says. Same optional-and-`null`
+    contract as `FreelancerOverride`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    nome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    cognome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
+    linkedin_url: SafeStr | None = Field(default=None, max_length=LINKEDIN_INPUT_MAX_LENGTH)
+    nome_azienda: SafeStr | None = Field(default=None, max_length=AZIENDA_MAX_LENGTH)
+    progetto: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
+    periodo_da: date | None = None
+    durata: SafeStr | None = Field(default=None, max_length=DURATA_MAX_LENGTH)
+    budget_giornaliero: Decimal | None = Field(
+        default=None, max_digits=7, decimal_places=2, ge=TARIFFA_MIN, le=TARIFFA_MAX
+    )
+    stato: CompanyStato | None = None
+    note: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
+
+    @field_validator("nome", "cognome", "nome_azienda", "durata", mode="after")
+    @classmethod
+    def _trimmed(cls, value: str | None) -> str | None:
+        return _clean_text(value, what="un valore") if value is not None else None
+
+    @field_validator("linkedin_url", mode="after")
+    @classmethod
+    def _linkedin(cls, value: str | None) -> str | None:
+        return normalise_linkedin(value)
+
+    @field_validator("progetto", mode="after")
+    @classmethod
+    def _progetto(cls, value: str | None) -> str | None:
+        return (
+            clean_multiline(value, what="una descrizione del progetto")
+            if value is not None
+            else None
+        )
 
 
 class GuideDownloadRead(BaseModel):

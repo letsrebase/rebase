@@ -81,7 +81,12 @@ class MemberService:
     # ---- the identity behind a card ---------------------------------------------------
 
     def card_for_user(self, user_id: UUID) -> Freelancer | None:
-        return self.session.scalar(select(Freelancer).where(Freelancer.user_id == user_id))
+        """`None` for a card an admin has soft-deleted (REB-347), the same as for one
+        that never existed: a person's own area must not go on serving a record the
+        admin took down."""
+        return self.session.scalar(
+            select(Freelancer).where(Freelancer.user_id == user_id, Freelancer.deleted_at.is_(None))
+        )
 
     def require_card(self, user_id: UUID) -> Freelancer:
         """The freelancer card for a signed-in person, or a 404 named "scheda": an
@@ -95,10 +100,12 @@ class MemberService:
     # ---- the identity behind a company request -----------------------------------------
 
     def company_for_user(self, user_id: UUID) -> Company | None:
-        """The signed-in person's most recent request (REB-314 decision): a company
-        contact may have filed several over time, and self-edit reaches only the
-        newest, the same one the admin's list shows first."""
-        return self.session.scalar(
+        """The signed-in person's actual most recent request (REB-314 decision), or
+        `None` when there is none or an admin has soft-deleted it (REB-347) -- never an
+        older request instead: self-edit reaches only the newest one ever filed, the
+        same one the admin's list shows first, and a delete of it must not quietly
+        make an older, admin-editable-only request self-editable again."""
+        newest = self.session.scalar(
             select(Company)
             .where(Company.user_id == user_id)
             # `id` (UUIDv7, time-ordered) breaks a tie on `created_at`, the same
@@ -107,6 +114,9 @@ class MemberService:
             .order_by(Company.created_at.desc(), Company.id.desc())
             .limit(1)
         )
+        if newest is None or newest.deleted_at is not None:
+            return None
+        return newest
 
     def require_company(self, user_id: UUID) -> Company:
         """The signed-in person's most recent request, or a 404 named "azienda": a
@@ -273,5 +283,5 @@ class MemberService:
         return self.session.execute(
             select(Freelancer, User)
             .join(User, User.id == Freelancer.user_id)
-            .where(func.lower(User.email) == email)
+            .where(func.lower(User.email) == email, Freelancer.deleted_at.is_(None))
         ).first()  # type: ignore[return-value]
