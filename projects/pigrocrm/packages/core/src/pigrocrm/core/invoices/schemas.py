@@ -50,7 +50,7 @@ ALLOWED_STATI: dict[str, frozenset[str]] = {
 # which buttons exist. `emessa`, `annullata` and `consumata` are terminal.
 STATO_TRANSITIONS: dict[str, frozenset[str]] = {
     "bozza": frozenset({"emessa", "confermata"}),
-    "confermata": frozenset({"consumata", "bozza"}),
+    "confermata": frozenset({"consumata"}),
     "emessa": frozenset({"annullata"}),
     "annullata": frozenset(),
     "consumata": frozenset(),
