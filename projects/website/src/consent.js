@@ -11,12 +11,9 @@
  * Consequences worth knowing:
  *   - with JavaScript off, nothing here runs, so there is no notice and no tracker,
  *     which is the correct pair;
- *   - a refusal is remembered and the notice does not come back;
- *   - `community.js` calls `window.oaiq` and `window.posthog` if they are there. Both
- *     stubs below are defined only once consent is granted, so a signup made under a
- *     refusal measures nothing.
+ *   - a refusal is remembered and the notice does not come back.
  *
- * The three pages that carry this are the three an ad can land on. privacy.html and
+ * The two pages that carry this are the two an ad can land on. privacy.html and
  * terms.html have no tracker and therefore nothing to ask about.
  *
  * The PostHog key and hosts are the ones in `shared/analytics/posthog.ts`, copied here
@@ -170,9 +167,8 @@
     return box
   }
 
-  /* The notice is fixed over the bottom of the viewport, and on a phone the whole
-     community page fits in one screen, so nothing scrolls out from under it: whatever it
-     covers stays covered until the visitor answers (ORB-18). So while it is up the page
+  /* The notice is fixed over the bottom of the viewport, and on a phone a short page
+     can fit in one screen, so nothing scrolls out from under it: whatever it
      is given the same room under its content. `--consent-room` on the root element is
      the distance from the notice's top edge to the bottom of the viewport, measured
      rather than guessed because the sentence wraps to one, two or three lines depending

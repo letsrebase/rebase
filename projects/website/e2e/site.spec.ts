@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 
-const PAGES = ['/', '/pigrocrm', '/privacy', '/terms', '/community', '/pitch'] as const
+const PAGES = ['/', '/pigrocrm', '/privacy', '/terms', '/pitch'] as const
 const BUDGET_BYTES = 40 * 1024
 // The hosts these pages may ever talk to besides their own: the ChatGPT Ads measurement
 // SDK and PostHog. "May ever" is the whole subtlety -- `consent.js` injects both only
@@ -11,9 +11,9 @@ const PIXEL_HOST = 'bzrcdn.openai.com'
 const POSTHOG_HOSTS = ['eu.i.posthog.com', 'eu-assets.i.posthog.com']
 const TRACKER_HOSTS = [PIXEL_HOST, ...POSTHOG_HOSTS]
 const CONSENT_KEY = 'orbiters.consent'
-// The three pages that carry the notice, and therefore the three that can end up with
+// The two pages that carry the notice, and therefore the two that can end up with
 // a tracker. `src/pixel.test.ts` owns which pages declare it.
-const MEASURED_PATHS = ['/', '/pigrocrm', '/community'] as const
+const MEASURED_PATHS = ['/', '/pigrocrm'] as const
 const towards = (hosts: readonly string[]) => (url: string) => hosts.includes(new URL(url).host)
 
 test.describe('every page of the site', () => {
@@ -147,92 +147,9 @@ test.describe('every page of the site', () => {
     expect(fonts[0]).toContain('outfit-variable-latin')
   })
 
-  // The community page on a phone (ORB-18): the box on the grid, equal gaps either side
-  // of it once the shadow is counted, whole tiles at both edges, and no sideways scroll.
-  // Three widths rather than one, because the slack a viewport leaves over the cell is
-  // different at each and the arithmetic has to hold for all of them.
-  for (const width of [360, 390, 430]) {
-    test.describe(`the community page at ${width} wide`, () => {
-      test.use({ viewport: { width, height: 844 }, deviceScaleFactor: 1 })
-
-      test('sits on its grid', async ({ page }) => {
-        await page.goto('/community', { waitUntil: 'networkidle' })
-        const m = await page.evaluate(() => {
-          const cell = parseFloat(
-            getComputedStyle(document.documentElement).getPropertyValue('--orb-cell'),
-          )
-          const origin = parseFloat(getComputedStyle(document.body).backgroundPositionX)
-          const box = document.querySelector('.box') as HTMLElement
-          const rect = box.getBoundingClientRect()
-          const step = parseFloat(getComputedStyle(box).boxShadow.match(/(-?[\d.]+)px/)?.[1] ?? '')
-          const h1 = document.querySelector('h1') as HTMLElement
-          const range = document.createRange()
-          range.selectNodeContents(h1)
-          // One rect per inline box, not per line, since the title is spans and a
-          // <br>: group them by their top, and skip the 1px screen-reader span.
-          const lines = [
-            ...new Set(
-              [...range.getClientRects()]
-                .filter((box) => box.width > 1)
-                .map((box) => Math.round(box.top)),
-            ),
-          ]
-          // Which CSS-pixel columns of the canvas carry any paint at all.
-          const canvas = document.getElementById('field') as HTMLCanvasElement
-          const ctx = canvas.getContext('2d') as CanvasRenderingContext2D
-          const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height)
-          const painted: number[] = []
-          for (let x = 0; x < canvas.width; x += 1) {
-            for (let y = 0; y < canvas.height; y += 1) {
-              if ((data[(y * canvas.width + x) * 4 + 3] ?? 0) > 0) {
-                painted.push(x)
-                break
-              }
-            }
-          }
-          return {
-            innerWidth: window.innerWidth,
-            scrollWidth: document.documentElement.scrollWidth,
-            cell,
-            origin,
-            step,
-            left: rect.left,
-            right: rect.right,
-            lines,
-            firstPainted: Math.min(...painted),
-            lastPainted: Math.max(...painted) + 1,
-          }
-        })
-        expect(m.scrollWidth).toBe(m.innerWidth)
-        expect(m.cell).toBe(14)
-        // The grid is centred: what the cell does not divide is split between the edges.
-        expect(m.origin).toBe(Math.floor((m.innerWidth % m.cell) / 2))
-        // Both borders of the box on grid lines, one whole column in from the left.
-        expect(m.left).toBe(m.origin + m.cell)
-        expect((m.right - m.origin) % m.cell).toBe(0)
-        // The shadow is one cell, and what is left on the right after it is what is on
-        // the left, give or take the odd pixel of slack.
-        expect(m.step).toBe(m.cell)
-        const gapRight = m.innerWidth - m.right - m.step
-        expect(Math.abs(gapRight - m.left)).toBeLessThanOrEqual(1)
-        // Tiles: painted inside the first grid line and never past the last whole cell.
-        // A tile is inset one pixel in its cell, so the first paint is origin + 1 and
-        // the last is one short of a grid line.
-        expect(m.firstPainted).toBe(m.origin + 1)
-        expect(m.lastPainted).toBeLessThanOrEqual(m.innerWidth)
-        expect((m.lastPainted + 1 - m.origin) % m.cell).toBe(0)
-        // The title is two lines, the role and the claim, and neither wraps. The old
-        // balance check went with the old one-line-of-text title: the first line is
-        // "CTO," for part of the cycle and its length is not the point any more.
-        expect(m.lines).toHaveLength(2)
-      })
-    })
-  }
-
   // The cookie notice on a phone (ORB-18, point 3). It is fixed over the bottom of the
-  // viewport, and the community page fits in one screen there, so what it covered stayed
-  // covered until the visitor answered: the box's bottom border and shadow at 390 wide,
-  // more at 360 where the sentence wraps to a third line. While it is up the page now
+  // viewport, and a short page fits in one screen there, so what it covered stayed
+  // covered until the visitor answered. While it is up the page now
   // has the same room under its content, and the room goes when the notice does. 430 is
   // 932 tall here, the height of the phone that width belongs to.
   for (const [width, height] of [
@@ -252,9 +169,7 @@ test.describe('every page of the site', () => {
         const main = document.querySelector('main') as HTMLElement
         const box = document.querySelector('.box') as HTMLElement | null
         const spacer = getComputedStyle(body, '::after')
-        // What ends the page in flow: on the community page the box and its shadow,
-        // plus the footer while there still is one (ORB-19 removes it); on the landing
-        // the footer inside main.
+        // What ends the page in flow: the footer inside main.
         const step = box ? parseFloat(getComputedStyle(box).boxShadow.match(/(-?[\d.]+)px/)?.[1] ?? '0') : 0
         const footer = document.querySelector('body > footer, main > footer')
         const ends = [
@@ -271,47 +186,13 @@ test.describe('every page of the site', () => {
           contentBottom: Math.max(...ends),
           boxTop: box ? box.getBoundingClientRect().top : null,
           boxBottom: box ? box.getBoundingClientRect().bottom : null,
-          // On the community page the box is centred in the body grid's first row; the
-          // row ends where the footer starts, or where the spacer does.
+          // The row ends where the footer starts, or where the spacer does.
           rowEnd: footer
             ? footer.getBoundingClientRect().top
             : window.innerHeight - parseFloat(getComputedStyle(body).paddingBottom) - parseFloat(spacer.height),
           padTop: parseFloat(getComputedStyle(body).paddingTop),
         }
       }
-
-      test('sits under the box on the community page, and the box stays centred above it', async ({
-        page,
-      }) => {
-        await page.goto('/community', { waitUntil: 'networkidle' })
-        const shown = await page.evaluate(geometry)
-        expect(shown.noticeTop).not.toBeNull()
-        // The room is what the notice covers, its height plus its distance from the edge,
-        // and the page spends exactly that much at its end.
-        expect(shown.room).toBe(`${Math.ceil(shown.innerHeight - shown.noticeTop!)}px`)
-        expect(shown.spacer).toBe(parseFloat(shown.room))
-        expect(shown.spacer).toBeGreaterThan(shown.noticeHeight!)
-        // Scrolled to the bottom, the box's shadow ends above the notice.
-        expect(shown.contentBottom).toBeLessThanOrEqual(shown.noticeTop!)
-        // The box is not pushed under: when the page fits it is centred in what is left
-        // above the notice, and when it does not it starts at the top, readable.
-        if (shown.scrollHeight === shown.innerHeight) {
-          const above = shown.boxTop! - shown.padTop
-          const below = shown.rowEnd - shown.boxBottom!
-          expect(Math.abs(above - below)).toBeLessThanOrEqual(1)
-        } else {
-          await page.evaluate(() => window.scrollTo(0, 0))
-          const top = await page.evaluate(() => document.querySelector('.box')!.getBoundingClientRect().top)
-          expect(top).toBeGreaterThanOrEqual(shown.padTop)
-        }
-
-        await page.locator('.consent').getByRole('button', { name: 'Va bene' }).click()
-        await expect(page.locator('.consent')).toHaveCount(0)
-        const after = await page.evaluate(geometry)
-        expect(after.room).toBe('')
-        expect(after.spacer).toBe(0)
-        expect(after.scrollHeight).toBeLessThanOrEqual(shown.scrollHeight)
-      })
 
       test('sits under the footer on the landing, and the room goes with a no', async ({ page }) => {
         await page.goto('/', { waitUntil: 'networkidle' })
@@ -337,7 +218,7 @@ test.describe('every page of the site', () => {
   // while it does. The layout half is checked for every word at every width without
   // waiting for the cycle to reach it; the motion half once per page.
   const ROLES = ['Developer', 'AI engineer', 'CTO', 'Fractional CTO', 'Tech lead', 'Freelance']
-  const TITLED = ['/', '/community'] as const
+  const TITLED = ['/'] as const
 
   /** The tops that must not move, and the title's height, with `word` in the role. */
   function titledLayout(word: string | null) {
@@ -347,7 +228,7 @@ test.describe('every page of the site', () => {
     return {
       h1: (document.querySelector('h1') as HTMLElement).getBoundingClientRect().height,
       lead: top('.lead'),
-      // The form on the community page, the two doors on the landing.
+      // The two doors on the landing.
       form: top('form, .actions'),
       scrollWidth: document.documentElement.scrollWidth,
       innerWidth: window.innerWidth,
@@ -484,27 +365,6 @@ test.describe('a visitor from a campaign', () => {
     })
   }
 
-  // REB-247: community.html has a door into the hub too (`/hub/aziende`, "Raccontacelo"),
-  // but community.js never called carryUtm, so a campaign landing on `/community`
-  // reached that click with nothing. One door rather than the several the loop above
-  // checks, and no guide door to look for, so its own test rather than a third path in
-  // that loop.
-  test('/community carries the UTM keys onto its one door into the hub too', async ({ page }) => {
-    await page.goto('/community?utm_source=linkedin&utm_campaign=orbita&utm_id=42&gclid=nope', { waitUntil: 'networkidle' })
-    const doors = await page.locator('a[href^="/hub/"]').evaluateAll((links) => links.map((a) => a.getAttribute('href')))
-    expect(doors.length).toBeGreaterThan(0)
-    for (const href of doors) {
-      const url = new URL(href!, 'https://letsrebase.com')
-      expect(url.searchParams.get('utm_source'), href!).toBe('linkedin')
-      expect(url.searchParams.get('utm_campaign'), href!).toBe('orbita')
-      expect(url.searchParams.get('utm_id'), href!).toBe('42')
-      expect(url.searchParams.has('gclid'), href!).toBe(false)
-      expect(url.searchParams.get('da'), href!).toBe('community')
-    }
-    expect(await page.evaluate(() => sessionStorage.getItem('orbiters.da'))).toBe('community')
-    expect(await page.evaluate(() => sessionStorage.getItem('orbiters.utm'))).toBe('utm_source=linkedin&utm_campaign=orbita&utm_id=42')
-  })
-
   test('/ without a campaign carries no UTM, only the page', async ({ page }) => {
     await page.goto('/', { waitUntil: 'networkidle' })
     const doors = await page.locator('a[href^="/hub/"]').evaluateAll((links) => links.map((a) => a.getAttribute('href')))
@@ -519,17 +379,17 @@ test.describe('the path map, as production serves it', () => {
   const source = (name: string) =>
     readFileSync(new URL(`../src/${name}`, import.meta.url), 'utf-8').match(/<title>([^<]+)<\/title>/)?.[1]
 
-  test('/ is the landing and /community is the community page (ORB-145)', async ({ page }) => {
+  test('/ is the landing (ORB-145)', async ({ page }) => {
     await page.goto('/')
     await expect(page).toHaveTitle(source('index.html')!)
-    await page.goto('/community')
-    await expect(page).toHaveTitle(source('community.html')!)
   })
 
-  test('/orbiters redirects to /community, its name before REB-212', async ({ request }) => {
-    const response = await request.get('/orbiters', { maxRedirects: 0 })
-    expect(response.status()).toBe(301)
-    expect(response.headers()['location']).toBe('/community')
+  test('/orbiters and /community both redirect to /, the community page gone since REB-72', async ({ request }) => {
+    for (const path of ['/orbiters', '/community']) {
+      const response = await request.get(path, { maxRedirects: 0 })
+      expect(response.status(), path).toBe(301)
+      expect(response.headers()['location'], path).toBe('/')
+    }
   })
 
   test('/termini redirects to /terms, its name before REB-318', async ({ request }) => {
@@ -581,7 +441,7 @@ test.describe('the path map, as production serves it', () => {
     expect(response.status()).toBe(200)
     expect(response.headers()['content-type']).toBe('text/xml; charset=utf-8')
     const built = readFileSync(new URL('../dist/sitemap.xml', import.meta.url), 'utf-8')
-    for (const path of ['/', '/pigrocrm', '/community', '/privacy', '/terms']) {
+    for (const path of ['/', '/pigrocrm', '/privacy', '/terms']) {
       expect(built).toContain(`<loc>https://letsrebase.com${path}</loc>`)
     }
     // /pitch is noindex and stays out of the sitemap, the point of REB-110.

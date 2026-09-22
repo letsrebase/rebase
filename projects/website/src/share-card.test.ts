@@ -2,7 +2,7 @@
  * What a link to this site shares with (ORB-112).
  *
  * Every page of the site, not the four `landing-pages.test.ts` covers: a link to the
- * pitch or to the community page is shared as readily as a link to the front door, and
+ * pitch is shared as readily as a link to the front door, and
  * the head that forgets these tags is the one nobody looks at. Until this existed the
  * pages named a title and a description and no image, so a client fell back to the
  * first large picture in the markup, which on the landing is one of the four faces in
@@ -17,7 +17,6 @@ import { SITE_HOST } from './path-map-plugin'
 const PAGES = [
   'index.html',
   'pigrocrm.html',
-  'community.html',
   'pitch.html',
   'privacy.html',
   'terms.html',

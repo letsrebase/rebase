@@ -290,8 +290,8 @@ describe('once somebody refuses', () => {
 })
 
 describe('while the notice is up, the page has room under it (ORB-18)', () => {
-  // The notice is fixed over the bottom of the viewport. On a phone the community page
-  // fits in one screen, so whatever the notice covered stayed covered until the visitor
+  // The notice is fixed over the bottom of the viewport. On a phone a short page fits
+  // in one screen, so whatever the notice covered stayed covered until the visitor
   // answered: the box's bottom edge at 390 wide, the last line of the note at 360. The
   // script measures the notice and hands the page the same room; system.css spends it.
   const ROOM = '--consent-room'
@@ -360,9 +360,8 @@ describe('while the notice is up, the page has room under it (ORB-18)', () => {
   })
 
   it('is spent by the shared stylesheet at the end of the body, and only there', () => {
-    // The other half of the mechanism. A spacer, not body padding: on the community page
-    // the body is a grid with the box centred in its first row, and a spacer in the last
-    // row keeps the box centred in what is left above the notice.
+    // The other half of the mechanism. A spacer, not body padding: on a page whose
+    // body is a grid with a box centred in its first row, a spacer in the last
     const css = readFileSync(join(__dirname, 'system.css'), 'utf-8')
     expect(css).toMatch(/body::after\s*\{[^}]*height:\s*var\(--consent-room, 0px\)/)
     expect(js).toMatch(/var ROOM = '--consent-room'/)
@@ -449,9 +448,9 @@ describe('the notice clears the 44px touch-target floor without shouting (ORB-87
   })
 
   it('keeps every consent control a real `a`/`button`, so the shared focus-visible rule already covers it', () => {
-    // landing.css and community.css each carry one `::where(a, button…):focus-visible`
-    // rule with no scope narrower than the whole page (landing-style.test.ts and
-    // community.test.ts hold those). This notice earns a visible focus ring for free
+    // landing.css carries one `::where(a, button…):focus-visible`
+    // rule with no scope narrower than the whole page (landing-style.test.ts holds
+    // that). This notice earns a visible focus ring for free
     // as long as consent.js keeps building real anchors and buttons rather than a
     // `div` with a click handler -- checked here on the DOM the same file already
     // builds, not by grepping the source for the word `createElement`.

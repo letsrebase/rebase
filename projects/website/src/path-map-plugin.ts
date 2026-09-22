@@ -6,9 +6,9 @@ import type { Plugin } from 'vite'
 /**
  * The path map, as the dev and preview servers serve it.
  *
- * Production is `deploy/nginx.conf`, inside the website's own image: four exact
- * extensionless paths, one redirect, the hashed assets, and a 404 for everything else.
- * Vite's servers know none of that on their own. Left alone they fall back to
+ * Production is `deploy/nginx.conf`, inside the website's own image: exact
+ * extensionless paths, two redirects, the hashed assets, and a 404 for everything
+ * else. Vite's servers know none of that on their own. Left alone they fall back to
  * `index.html` with a 200 for any path that resolves to no file, so a link nobody
  * serves passes the suite locally and 404s in production (ORB-21); and until
  * 2026-09-11 `/` was the community page, not `index.html`, so they served the wrong
@@ -28,17 +28,18 @@ export const SITE_HOST = 'https://letsrebase.com'
 export const PAGES: Readonly<Record<string, string>> = {
   '/': '/index.html',
   '/pigrocrm': '/pigrocrm.html',
-  '/community': '/community.html',
   '/pitch': '/pitch.html',
   '/privacy': '/privacy.html',
   '/terms': '/terms.html',
 }
 
 /** `location = <path> { return 301 <to>; }`. nginx's `return` drops the query string
- *  and so does this. `/orbiters` is the community page's name before REB-212 moved it
- *  to `/community`, and `/termini` is the terms page's name before REB-318 moved it to
- *  `/terms`; both kept so a bookmark or an inbound link still lands. */
-export const REDIRECTS: Readonly<Record<string, string>> = { '/orbiters': '/community', '/termini': '/terms' }
+ *  and so does this. The community page (`/community`, `/orbiters` before REB-212) is
+ *  gone (REB-72), a week after the landing took the front door for good: both its
+ *  names now land there instead, and `/termini` is the terms page's name before
+ *  REB-318 moved it to `/terms`; all three kept so a bookmark, an ad or a newsletter
+ *  link still lands. */
+export const REDIRECTS: Readonly<Record<string, string>> = { '/orbiters': '/', '/community': '/', '/termini': '/terms' }
 
 /** Paths nginx serves via `try_files`, exactly like `PAGES`, whose file this plugin
  *  writes at build time instead of Vite building it from an HTML input named in
@@ -152,7 +153,7 @@ function handle(req: IncomingMessage, res: ServerResponse, next: () => void): vo
     case 'redirect':
       res.statusCode = 301
       // With the query string, as nginx does with `$is_args$args`: the links that still
-      // say /orbiters are ads and newsletters, and they carry the utm_* the form reads.
+      // say /orbiters or /community are ads and newsletters.
       res.setHeader('Location', `${decision.to}${query ? `?${query}` : ''}`)
       res.end()
       return

@@ -16,9 +16,9 @@ export default defineConfig({
   // application's bundle behind it.
   //
   // `pathMapPlugin` is the dev and preview servers' copy of deploy/nginx.conf: `/` is
-  // the landing, `/pigrocrm` the CRM's page, `/community` the community page, `/orbiters`
-  // its old name as a 301 (REB-212), and anything else a 404. Its unit test reads
-  // nginx.conf, so the two cannot drift quietly.
+  // the landing, `/pigrocrm` the CRM's page, `/community` and `/orbiters` both 301 to
+  // it since the community page was retired (REB-72), and anything else a 404. Its
+  // unit test reads nginx.conf, so the two cannot drift quietly.
   plugins: [palettePlugin(), pathMapPlugin()],
   // 'mpa' turns off Vite's fallback to index.html for a path that resolves to no file.
   // With it on, an unknown path answered 200 with PigroCRM's page here and 404 in
@@ -28,7 +28,7 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, 'dist'),
     emptyOutDir: true,
-    // field.js is shared by the landing page and the community page; inlining it would put a copy
+    // field.js is shared by every page landing.js mounts it on; inlining it would put a copy
     // inside two HTML files instead of one cacheable asset.
     assetsInlineLimit: 0,
     rollupOptions: {
@@ -37,14 +37,14 @@ export default defineConfig({
         pigrocrm: path.resolve(__dirname, 'src/pigrocrm.html'),
         privacy: path.resolve(__dirname, 'src/privacy.html'),
         terms: path.resolve(__dirname, 'src/terms.html'),
-        community: path.resolve(__dirname, 'src/community.html'),
         pitch: path.resolve(__dirname, 'src/pitch.html'),
       },
     },
   },
-  // The community form posts to /api/community/signups on the same origin, exactly as
-  // nginx serves it in production. Dev and preview proxy that one prefix to a running
-  // API so the form can be exercised locally; WEBSITE_API_URL points it elsewhere.
+  // `/api/community/signups` is the hub's own endpoint, reached on the same origin.
+  // Nothing in this project calls it any more since the community page's signup form
+  // was retired (REB-72), but dev and preview still proxy `/api` so it can be
+  // exercised directly; WEBSITE_API_URL points it elsewhere.
   server: { proxy: { '/api': { target: apiUrl, changeOrigin: true } } },
   preview: { port: 4173, strictPort: true, proxy: { '/api': { target: apiUrl, changeOrigin: true } } },
   // The suite reads the built and unbuilt files off disk and asserts on their text:

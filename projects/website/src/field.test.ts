@@ -54,7 +54,7 @@ describe('field.js', () => {
 
   describe('the columns (ORB-18)', () => {
     // The three phone widths the issue asks to be rendered, and the two cells the
-    // pages use. The origin is what community.css computes: half the slack, floored.
+    // pages use. The origin is what landing.css computes: half the slack, floored.
     const origin = (width: number, cell: number) => Math.floor((width % cell) / 2)
 
     it.each([

@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest'
 import { BRAND_TILES, BRAND_TILE_VARS } from '@rebase/brand/mark'
 
 const css = readFileSync(join(__dirname, 'landing.css'), 'utf-8')
-const community = readFileSync(join(__dirname, 'community.css'), 'utf-8')
 const system = readFileSync(join(__dirname, 'system.css'), 'utf-8')
 const appTokens = readFileSync(fileURLToPath(import.meta.resolve('@rebase/brand/palette.css')), 'utf-8')
 
@@ -26,12 +25,9 @@ describe('the landing shares the product system', () => {
     // Both sheets point at the shared line and tile rather than restating them.
     expect(css).toMatch(/--landing-grid:\s*var\(--system-grid\)/)
     expect(css).toMatch(/--landing-cell:\s*var\(--system-cell\)/)
-    expect(community).toMatch(/--orb-grid:\s*var\(--system-grid\)/)
-    expect(community).toMatch(/--orb-cell:\s*var\(--system-cell\)/)
     expect(system).toMatch(/--system-grid:\s*color-mix\(in oklab, var\(--color-prussian-blue\) 7%, transparent\)/)
     expect(system).toMatch(/--system-cell:\s*16px/)
     expect(css).not.toMatch(/color-mix\([^)]*7%/)
-    expect(community).not.toMatch(/color-mix\([^)]*7%/)
   })
 
   it('draws the grid on these two surfaces only: the app stopped', () => {
@@ -73,7 +69,6 @@ describe('the landing shares the product system', () => {
 
   it('signs itself with the four tiles of the brand mark, in reading order', () => {
     expect(css).not.toMatch(/\.glyph/)
-    expect(community).not.toMatch(/\.glyph/)
     const glyph = rule('.glyph', system)
     // One element and three shadows: the tile itself is the first of the four.
     const drawn = [
@@ -109,7 +104,7 @@ describe('the landing shares the product system', () => {
     const index = readFileSync(join(__dirname, 'index.html'), 'utf-8')
     expect(index).toMatch(/<script>\s*document\.documentElement\.classList\.add\('js'\)/)
     expect(index).toMatch(/classList\.add\('reveal-all'\)\s*\}, 3000\)/)
-    for (const name of ['privacy.html', 'terms.html', 'community.html']) {
+    for (const name of ['privacy.html', 'terms.html']) {
       expect(readFileSync(join(__dirname, name), 'utf-8')).not.toMatch(/data-reveal|class="deck"/)
     }
   })
@@ -131,10 +126,9 @@ describe('the landing shares the product system', () => {
       )
     })
 
-    it('leaves the sr-only text out of the layout, once, for both pages', () => {
+    it('leaves the sr-only text out of the layout, once', () => {
       expect(rule('.sr-only', system)).toMatch(/position:\s*absolute/)
       expect(rule('.sr-only', system)).toMatch(/clip-path:\s*inset\(50%\)/)
-      expect(community).not.toMatch(/\n\.sr-only\s*\{/)
       expect(css).not.toMatch(/\n\.sr-only\s*\{/)
     })
 
@@ -165,7 +159,6 @@ describe('the landing shares the product system', () => {
     expect(block).toMatch(/body\s*\{\s*background-image:\s*none/)
     expect(block).toMatch(/canvas\s*\{\s*display:\s*none/)
     expect(css).not.toMatch(/prefers-contrast/)
-    expect(community).not.toMatch(/prefers-contrast/)
   })
 
   it('keeps the kicker inline, so a sentence with a <time> in it still flows', () => {
@@ -173,15 +166,11 @@ describe('the landing shares the product system', () => {
     expect(rule('.kicker::before')).toMatch(/display:\s*inline-block/)
   })
 
-  it('paints the same field as the community page: fixed, behind everything, inert', () => {
-    // Ivan, 2026-09-09: `/pigrocrm` shares its background with `/`. The rule is the
-    // twin of `#field` in community.css, declaration for declaration.
-    for (const sheet of [css, community]) {
-      expect(rule('#field', sheet)).toMatch(/position:\s*fixed/)
-      expect(rule('#field', sheet)).toMatch(/inset:\s*0/)
-      expect(rule('#field', sheet)).toMatch(/z-index:\s*-1/)
-      expect(rule('#field', sheet)).toMatch(/pointer-events:\s*none/)
-    }
+  it('paints the field: fixed, behind everything, inert', () => {
+    expect(rule('#field')).toMatch(/position:\s*fixed/)
+    expect(rule('#field')).toMatch(/inset:\s*0/)
+    expect(rule('#field')).toMatch(/z-index:\s*-1/)
+    expect(rule('#field')).toMatch(/pointer-events:\s*none/)
     expect(css).not.toMatch(/hero-field|isolation/)
   })
 

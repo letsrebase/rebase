@@ -11,18 +11,13 @@
  * is the honest fallback.
  *
  * Campaign or not, every door also says which page it is on (ORB-167): `da=home` from
- * `/`, `da=pigrocrm` from `/pigrocrm`, `da=community` from `/community`, so the hub can
- * tell who came through which page. Remembered for the tab as `orbiters.da`.
+ * `/`, `da=pigrocrm` from `/pigrocrm`, so the hub can tell who came through which
+ * page. Remembered for the tab as `orbiters.da`.
  *
- * An IIFE publishing `window.__utm`, like `field.js` and `typewriter.js`: the two page
- * scripts that call it (`landing.js`, `community.js`) stay self-contained and their
- * tests can load them with `new Function`, and this one only has to run first --
- * module scripts execute in document order, which is enough. Until REB-247 this lived
- * inside `landing.js` alone, so a door opened from `/community` (`community.html`,
- * loaded by `community.js`, never `landing.js`) lost the campaign on the one click that
- * turns it into a company's card. Pulling it out here, rather than loading the whole of
- * `landing.js` on the community page, keeps that page from mounting its own field and
- * its own typewriter a second time: `community.js` already does both.
+ * An IIFE publishing `window.__utm`, like `field.js` and `typewriter.js`: `landing.js`,
+ * the page script that calls it, stays self-contained and its tests can load it with
+ * `new Function`, and this one only has to run first -- module scripts execute in
+ * document order, which is enough.
  */
 ;(function () {
   var UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'utm_id']
