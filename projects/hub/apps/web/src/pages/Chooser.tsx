@@ -18,7 +18,7 @@ export function Chooser() {
           className="group flex flex-col gap-3 border-[length:var(--landing-border-width)] bg-card p-6 shadow-sm transition-colors hover:bg-muted focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-(color:--landing-focus)"
         >
           <UserRound className="size-6" aria-hidden="true" />
-          <span className="text-lg font-semibold">Sono un developer o un CTO</span>
+          <span className="text-lg font-semibold">Sono un talento</span>
           <span className="text-sm text-muted-foreground">
             Lavoro in proprio: voglio progetti da aziende vere, e gente con cui parlarne.
           </span>
