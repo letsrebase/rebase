@@ -22,6 +22,13 @@ uv sync --frozen            # every Python package, one virtualenv
 pnpm install --frozen-lockfile
 ```
 
+On Nix, `nix develop` (or `direnv allow`, the `.envrc` is committed) gives a shell
+with all of that except Docker, which stays the host's: Python 3.13 and Node 22 as
+the repository declares them, and Pandoc and Typst at the exact versions
+`projects/pigrocrm/Dockerfile.api` pins, since the document renderer is verified
+against those and no other. Playwright's browsers are not in the shell, so the two
+e2e checks in `preflight.json` need the host's own browsers or a `nix-ld` setup.
+
 Then follow the project you want to work on: for PigroCRM, its
 [README](projects/pigrocrm/README.md) covers running it and deploying it.
 
@@ -39,6 +46,42 @@ that two projects cannot resolve the same library at two versions.
 [`docs/architecture.md`](docs/architecture.md) explains the layout and the tradeoffs
 it makes; [`docs/adding-a-project.md`](docs/adding-a-project.md) is the runbook for
 adding the next one.
+
+## Self-hosting on NixOS
+
+`flake.nix` also builds every deployable as a package from the same two locks
+(`pigrocrm-api`, `pigrocrm-web`, `hub-api`, `hub-web`, `website`) and ships one NixOS
+module per product: `services.pigrocrm`, `services.rebase-hub`,
+`services.rebase-website`. Each restates its compose file and its `deploy/` nginx
+configuration in NixOS terms: a local PostgreSQL reached over the socket, the
+migration (and, for the CRM, `pigrocrm ensure-space-defaults`) before the API starts,
+the MCP server as a second unit behind its `/mcp` locations, nginx serving the SPA and
+proxying the API with the security headers the production vhost carries. Secrets never
+go in the store: `services.pigrocrm.environmentFile` is a file of `PIGROCRM_*=value`
+lines and must define `PIGROCRM_JWT_SECRET`.
+
+```nix
+{
+  inputs.rebase.url = "github:letsrebase/rebase";
+  # ...
+  imports = [ rebase.nixosModules.pigrocrm ];
+  services.pigrocrm = {
+    enable = true;
+    domain = "crm.example.com";
+    environmentFile = "/run/secrets/pigrocrm.env";
+    settings.timezone = "Europe/Rome";
+  };
+}
+```
+
+Each module is booted in a VM by `nix flake check` and probed through nginx, which is
+the evidence the copy has not drifted from the compose stack. The flake declares
+`x86_64-linux` and `aarch64-linux` (the renderer binaries are the upstream Linux
+release tarballs), and only the former is exercised by the VM tests; from a Mac with
+a Linux builder in `nix.conf`, name the system
+(`nix build .#packages.x86_64-linux.pigrocrm-api`). These modules are how a third
+party runs the software; rebase's own environments are deployed by CI from the
+compose files and never from here (`docs/design/DECISIONS.md`, 2026-09-09).
 
 ## Contributing
 

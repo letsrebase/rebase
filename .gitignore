@@ -2,6 +2,11 @@
 .claude/worktrees/
 .reference-*/
 .superpowers/
+# direnv's per-checkout cache of the flake's shell, and `nix build`'s result links,
+# anchored: a source file named `result` is not a build output
+.direnv/
+/result
+/result-*
 
 # Python
 .venv/

@@ -314,6 +314,51 @@
       "why": "The one project whose images were verified on no tier before the trunk: ci.yml builds them on push only, so a broken Dockerfile here reached main before anything said so. `-p rebase` because that is the project name the deploy passes (docs/adding-a-project.md section 7) and the name decides the image tags. Serial for the same reason as the other two: a docker build saturates the box."
     },
     {
+      "id": "nix-packages",
+      "run": "nix build --no-link .#packages.x86_64-linux.pigrocrm-api .#packages.x86_64-linux.pigrocrm-web .#packages.x86_64-linux.hub-api .#packages.x86_64-linux.hub-web .#packages.x86_64-linux.website",
+      "when": [
+        "flake.nix",
+        "flake.lock",
+        "uv.lock",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "package.json",
+        ".python-version",
+        "projects/*/package.json",
+        "projects/*/apps/*/package.json",
+        "projects/*/packages/*/package.json",
+        "shared/*/package.json",
+        "tooling/*/package.json",
+        "pyproject.toml",
+        "projects/*/apps/*/pyproject.toml",
+        "projects/*/packages/*/pyproject.toml",
+        "projects/*/Dockerfile*",
+        "projects/*/packages/core/alembic.ini",
+        "projects/*/packages/core/migrations/**"
+      ],
+      "why": "The five deployables as Nix packages, built from the same two locks the images install from. This is the only tier that builds them (decision of 2026-09-22: no hosted CI for Nix), so a lock change that moves the pnpm store hash in flake.nix, or a wheel uv2nix cannot patch, is caught here or not at all. The system is named because the flake declares x86_64-linux only and the devbox may be a Mac with a Linux builder in nix.conf. Selected by what the flake reads and nothing wider: a source change is proved by the builds and suites above, and a Nix rebuild of five packages over every edit under apps/ would be the ORB-141 cost again."
+    },
+    {
+      "id": "nix-modules",
+      "run": "nix build --no-link .#checks.x86_64-linux.pigrocrm .#checks.x86_64-linux.hub .#checks.x86_64-linux.website",
+      "when": [
+        "flake.nix",
+        "flake.lock",
+        "projects/*/docker-compose.yml",
+        "projects/*/Dockerfile*",
+        "projects/*/deploy/**",
+        "projects/*/packages/core/alembic.ini",
+        "projects/*/packages/core/migrations/**",
+        "projects/*/packages/core/src/*/config.py",
+        "projects/*/packages/core/src/*/core/config.py",
+        "projects/*/apps/api/src/*/main.py",
+        "projects/*/apps/mcp/src/*/http.py",
+        "projects/website/src/path-map-plugin.ts"
+      ],
+      "serial": true,
+      "why": "The three NixOS modules, each booted in a VM and probed through nginx: the SPA on a deep link, the API behind its prefix, the MCP server refusing a call with no token, the migration against a local Postgres, the pinned renderer under the unit's sandbox. Serial because each is a QEMU guest with KVM and three at once contend with everything else on the box; needs `kvm` among the builder's features when built through a remote builder. The `when` names the files a module restates (compose, Dockerfile CMD, deploy/nginx, migrations, the Settings class whose fields are the variables, the entrypoints the units run, the site's path map) so a change to one of them runs the test that would notice the copy drifting."
+    },
+    {
       "id": "check-unindexable",
       "run": "sh projects/website/deploy/check-unindexable.sh",
       "when": [

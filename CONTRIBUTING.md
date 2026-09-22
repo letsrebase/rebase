@@ -12,7 +12,8 @@ pnpm install --frozen-lockfile
 
 Python 3.13, Node 22 and Docker. PigroCRM's document rendering also needs Pandoc and
 Typst on `PATH`; without them about thirty tests fail with
-`strumento di composizione non installato`.
+`strumento di composizione non installato`. On Nix, `nix develop` provides everything
+but Docker (see the README).
 
 ## The loop
 
