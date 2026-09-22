@@ -1,6 +1,6 @@
 from typing import Any
 
-from sqlalchemy import Index, String, Text, text
+from sqlalchemy import Boolean, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -98,4 +98,15 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     sito_web: Mapped[str | None] = mapped_column(String(255), default=None)
     stato: Mapped[str | None] = mapped_column(String(40), default=None)
     note: Mapped[str | None] = mapped_column(Text, default=None)
+    # The payment terms agreed with this customer (REB-326): days after the invoice
+    # date, and whether the due date then slides to the end of its month («30 giorni
+    # data fattura fine mese»). `giorni_pagamento` null means the fiscal profile's
+    # `giorni_scadenza` applies; the switch is never null, since "unknown" and "no" would
+    # print the same date. Read by `InvoiceService.issue` and by nothing else: an issued
+    # invoice carries the date it was born with, and a term changed later does not move
+    # it.
+    giorni_pagamento: Mapped[int | None] = mapped_column(Integer, default=None)
+    pagamento_fine_mese: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     custom_fields: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)

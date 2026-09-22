@@ -31,6 +31,10 @@ const NATIVE_FIELDS: FieldDefinition[] = [
   { key: 'telefono', label: 'Telefono', type: 'text', required: false, options: [] },
   { key: 'sito_web', label: 'Sito web', type: 'url', required: false, options: [] },
   { key: 'stato', label: 'Stato', type: 'text', required: false, options: [] },
+  // The payment terms (REB-326): what `InvoiceService.issue` computes every due date
+  // to this customer from. Days empty means the fiscal profile's apply.
+  { key: 'giorni_pagamento', label: 'Giorni di pagamento', type: 'number', required: false, options: [] },
+  { key: 'pagamento_fine_mese', label: 'Scadenza a fine mese', type: 'checkbox', required: false, options: [] },
   { key: 'note', label: 'Note', type: 'textarea', required: false, options: [] },
 ]
 
@@ -172,7 +176,11 @@ export function CustomerForm({
     const native: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(values.native)) {
       if (!isBlank(value)) {
-        native[key] = value
+        // A number control hands back its text (`DynamicFieldRenderer` reads
+        // `event.target.value`); the column is an integer and `CustomerUpdate` is typed
+        // `int | None`, so the digits are sent as the number they are.
+        const type = NATIVE_FIELDS.find((field) => field.key === key)?.type
+        native[key] = type === 'number' && typeof value === 'string' ? Number(value) : value
       } else if (!isBlank(initial?.native[key])) {
         // The user cleared a native column that used to hold a value -- say so
         // explicitly instead of dropping the key, or the old value survives

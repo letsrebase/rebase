@@ -229,6 +229,11 @@ class InvoiceUpdate(BaseModel):
     causale: SafeStr | None = Field(default=None, max_length=CAUSALE_MAX_LENGTH)
     note_interne: SafeStr | None = None
     data_emissione: date | None = None
+    # The due date, written by hand on a document that is still editable (REB-326).
+    # Set, it is what `issue` prints and what the fattura born from a proforma carries;
+    # cleared (an explicit null), `issue` derives it again from the customer's terms.
+    # Frozen with the rest of the header afterwards, like the three dates above.
+    data_scadenza: date | None = None
     competenza_da: date | None = None
     competenza_a: date | None = None
     custom_fields: dict[str, Any] | None = None
@@ -455,6 +460,13 @@ class InvoiceRead(BaseModel):
     motivo_annullamento: str | None
     note_interne: str | None
     snapshot_versione: int | None
+    # On a document that can still change: the due date «Emetti» would print if pressed
+    # today, either the one written on the row or the one the customer's terms give
+    # (REB-326). `None` once issued, when `data_scadenza` is the fact and there is
+    # nothing to forecast. Filled by `InvoiceService.get` alone: it needs the customer's
+    # terms and the profile, two more statements a list page (which prints no forecast)
+    # must not pay per page.
+    scadenza_prevista: date | None = None
     # The customer's `ragione_sociale`, denormalised onto the read shape exactly as
     # `DealRead.customer_ragione_sociale` is (ORB-98): the name lives on `customers` and
     # renaming a customer must not need a second write here. `InvoiceService._read`

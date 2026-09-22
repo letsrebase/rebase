@@ -8,7 +8,7 @@ to `issue`, `annul` and the artefact methods added by the following tasks.
 import hashlib
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -54,6 +54,7 @@ from pigrocrm.core.invoices.naming import (
     sdi_filename,
 )
 from pigrocrm.core.invoices.repository import InvoiceRepository
+from pigrocrm.core.invoices.scadenza import scadenza_da_termini
 from pigrocrm.core.invoices.schemas import (
     ANNO_MAX,
     ANNO_MIN,
@@ -707,6 +708,17 @@ class InvoiceService:
             fiscale=profile,
         )
 
+    def _scadenza_dai_termini(
+        self, data_emissione: date, customer_id: UUID, giorni_profilo: int
+    ) -> date:
+        """The due date the customer's terms give from `data_emissione` (REB-326). The
+        customer's days when it has them, the profile's otherwise; the end-of-month slide
+        is the customer's alone. One arithmetic, `scadenza_da_termini`, for every caller."""
+        giorni, fine_mese = self.repo.payment_terms({customer_id}).get(customer_id, (None, False))
+        return scadenza_da_termini(
+            data_emissione, giorni_profilo if giorni is None else giorni, fine_mese=fine_mese
+        )
+
     def _check_issue_date(self, data_emissione: date, anno_corrente: int) -> None:
         """Two limits, both from spec 6.2.
 
@@ -979,7 +991,13 @@ class InvoiceService:
         target.anno = anno
         target.numero = numero
         target.data_emissione = data_emissione
-        target.data_scadenza = data_emissione + timedelta(days=profile.giorni_scadenza)
+        # A date written on the draft (or on the proforma this fattura is born from) is
+        # what the person meant; otherwise the customer's own terms, the profile's days
+        # as the fallback (REB-326). Read here, at emission, and never again: a term
+        # changed next month does not move an invoice already in the register.
+        target.data_scadenza = source.data_scadenza or self._scadenza_dai_termini(
+            data_emissione, source.customer_id, profile.giorni_scadenza
+        )
         target.imponibile = imponibile
         target.imposta = imposta
         target.totale = totale
@@ -1171,8 +1189,12 @@ class InvoiceService:
                 anno=data.anno,
                 numero=data.numero,
                 data_emissione=data.data_emissione,
+                # The original's date when declared; otherwise the same terms a native
+                # emission would apply (REB-326), never a second arithmetic.
                 data_scadenza=data.data_scadenza
-                or data.data_emissione + timedelta(days=profile.giorni_scadenza),
+                or self._scadenza_dai_termini(
+                    data.data_emissione, data.customer_id, profile.giorni_scadenza
+                ),
                 tipo_documento=TIPO_DOCUMENTO,
                 divisa=DIVISA,
                 causale=data.causale,
@@ -2153,7 +2175,14 @@ class InvoiceService:
     # ---- reads ---------------------------------------------------------------
 
     def get(self, invoice_id: UUID, actor: Actor) -> InvoiceRead:
-        return self._read(self._require(invoice_id))
+        """One row, with its forecast: `scadenza_prevista` is filled here and not in
+        `_reads`, because only the detail page shows it and a list page's query budget
+        (two statements, `test_the_customer_name_costs_one_query_for_the_whole_page`) is
+        not spent on a date nothing on that page prints."""
+        invoice = self._require(invoice_id)
+        return self._read(invoice).model_copy(
+            update={"scadenza_prevista": self._scadenza_prevista(invoice)}
+        )
 
     def _read(self, invoice: Invoice) -> InvoiceRead:
         """The one place an `Invoice` becomes an `InvoiceRead`, so every path -- a
@@ -2179,6 +2208,29 @@ class InvoiceService:
             )
             for invoice in invoices
         ]
+
+    def _scadenza_prevista(self, invoice: Invoice) -> date | None:
+        """`scadenza_prevista` of an editable document (REB-326): the date `issue` would
+        print if pressed today, so the person sees a wrong term before the XML carries
+        it. The row's own `data_scadenza` when written by hand, the customer's terms
+        otherwise. An issued or consumed row gets nothing: its date is a fact, not a
+        forecast. A space with no fiscal profile yet has no default days, and only a
+        customer with days of its own gets a forecast there -- the profile's absence is
+        reported by `issue`, not here.
+        """
+        if not self._is_editable(invoice):
+            return None
+        if invoice.data_scadenza is not None:
+            return invoice.data_scadenza
+        giorni, fine_mese = self.repo.payment_terms({invoice.customer_id}).get(
+            invoice.customer_id, (None, False)
+        )
+        if giorni is None:
+            try:
+                giorni = self.fiscal.snapshot().giorni_scadenza
+            except NotFound:
+                return None
+        return scadenza_da_termini(oggi_in_italia(), giorni, fine_mese=fine_mese)
 
     def lines(self, invoice_id: UUID, actor: Actor) -> list[InvoiceLineRead]:
         self._require(invoice_id)

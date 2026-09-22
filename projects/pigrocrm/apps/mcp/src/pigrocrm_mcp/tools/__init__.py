@@ -207,9 +207,16 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         email: str | None = None,
         telefono: str | None = None,
         note: str | None = None,
+        giorni_pagamento: int | None = None,
+        pagamento_fine_mese: bool = False,
         custom_fields: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Crea un cliente. Chiama prima `describe_schema` per i campi personalizzati."""
+        """Crea un cliente. Chiama prima `describe_schema` per i campi personalizzati.
+
+        `giorni_pagamento` e `pagamento_fine_mese` sono i termini di pagamento concordati
+        («30 giorni data fattura fine mese» e' `30` con `True`): da qui `issue_invoice`
+        calcola la scadenza di ogni fattura al cliente. Senza giorni valgono quelli del
+        profilo fiscale."""
         return customers.create(
             context,
             {
@@ -225,6 +232,8 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 "email": email,
                 "telefono": telefono,
                 "note": note,
+                "giorni_pagamento": giorni_pagamento,
+                "pagamento_fine_mese": pagamento_fine_mese,
                 "custom_fields": custom_fields or {},
             },
         )
@@ -913,19 +922,24 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         invoice_id: str,
         causale: str | None = None,
         data_emissione: IsoDateStr = None,
+        data_scadenza: IsoDateStr = None,
         competenza_da: IsoDateStr = None,
         competenza_a: IsoDateStr = None,
     ) -> dict[str, Any]:
         """Corregge l'intestazione di una proforma ancora modificabile: la causale, la
-        data del documento e il periodo di competenza. Si cambia solo cio' che si passa;
-        un campo omesso resta com'e', e da qui non si svuota niente. Rifiuta una fattura,
-        anche in bozza, e una proforma gia' consumata da un'emissione: cio' che e' entrato
-        nel registro non si ritocca. Le righe si cambiano con `replace_proforma_lines`."""
+        data del documento, la scadenza e il periodo di competenza. Si cambia solo cio'
+        che si passa; un campo omesso resta com'e', e da qui non si svuota niente.
+        `data_scadenza` e' la scadenza che la fattura emessa da questa proforma portera';
+        non passata, all'emissione la calcolano i termini di pagamento del cliente
+        (`scadenza_prevista` su `get_invoice` dice quale). Rifiuta una fattura, anche in
+        bozza, e una proforma gia' consumata da un'emissione: cio' che e' entrato nel
+        registro non si ritocca. Le righe si cambiano con `replace_proforma_lines`."""
         return invoices.update_proforma(
             context,
             invoice_id,
             causale=causale,
             data_emissione=_iso_date(data_emissione),
+            data_scadenza=_iso_date(data_scadenza),
             competenza_da=_iso_date(competenza_da),
             competenza_a=_iso_date(competenza_a),
         )
