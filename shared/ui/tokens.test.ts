@@ -206,6 +206,7 @@ describe('the palette every slot resolves through', () => {
   })
 
   it.each([
+    ['11%', 11],
     ['15%', 15],
     ['20%', 20],
   ])('puts the destructive text below AA on its own %s tint over Paper, which is why 10% is the ceiling', (_step, percent) => {

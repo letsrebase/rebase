@@ -68,11 +68,13 @@ describe('Badge', () => {
     // REB-309: the hover used to deepen the fill to 20%, which put the chip's own
     // text below AA over Paper. The class list is the contract (jsdom loads no
     // Tailwind), so the ceiling and the hover treatment are both asserted here;
-    // `[a]:hover:` is what the variant applies when the badge is an anchor.
+    // `[a]:hover:` is what the variant applies when the badge is an anchor. Any
+    // hover fill is rejected, not just the deep ones: the decision was that the
+    // hover stops touching the fill at all.
     render(<Badge variant="destructive">Elimina</Badge>)
     const badge = screen.getByText('Elimina')
     expect(badge.className).toContain('bg-destructive/10')
     expect(badge.className).toContain('[a]:hover:underline')
-    expect(badge.className).not.toMatch(/hover:bg-destructive\/(?:1[1-9]|[2-9]\d*)/)
+    expect(badge.className).not.toMatch(/hover:bg-destructive/)
   })
 })

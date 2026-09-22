@@ -94,6 +94,17 @@ describe('Button', () => {
     expect(container.querySelector('[data-slot="button"]')!.className).toContain('bg-primary')
   })
 
+  it('keeps the destructive button on the 10% ceiling and marks its hover with a border', () => {
+    // REB-309: the hover used to deepen the fill to 20%, below AA for the chip's own
+    // text. The class list is the contract, same pin as the badge's; the hover border
+    // is the full slot because /40 over Paper is 2.07:1, under the 3:1 non-text bar.
+    const { container } = render(<Button variant="destructive">Elimina</Button>)
+    const button = container.querySelector('[data-slot="button"]')!
+    expect(button.className).toContain('bg-destructive/10')
+    expect(button.className).toContain('hover:border-destructive')
+    expect(button.className).not.toMatch(/hover:bg-destructive/)
+  })
+
   it('draws the secondary button as the ink line on the card', () => {
     const { container } = render(<Button variant="outline">Esporta</Button>)
     const button = container.querySelector('[data-slot="button"]')!
