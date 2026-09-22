@@ -201,6 +201,14 @@ status update` while the id is right there in the payload. Post one when the boa
 would mislead a reader: a release shipped, a milestone slipped, a decision taken. Not one
 that restates the issue list.
 
+## Milestones
+
+`save_milestone` wants `project` on **every** call, an update included: sending only
+`id` and `description` fails on `project: is required`, which reads like the milestone
+was not found. `sortOrder` is accepted on create and the response echoes a different
+number than the one you sent, so order the milestones in the UI rather than by guessing
+at it.
+
 ## References in code and commits
 
 `REB-N` in a commit body or a comment is a pointer to an issue you have read. Never
