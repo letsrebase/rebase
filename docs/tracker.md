@@ -363,7 +363,10 @@ row for it is still to be written by whoever turned it on.
 - `save_comment` takes `issueId`, not `issue`.
 - `save_issue` accepts `state`, but `get_issue` echoes it back under `status`.
 - `milestone` is accepted on write and not echoed: verify through `list_milestones` and
-  its `progress`.
+  its `progress`. The read field is `projectMilestone`, and passing *that* name on write
+  is silently ignored like `labelIds`: the call answers `success`, the card keeps no
+  milestone, and only `list_milestones` progress shows it (measured on REB-338,
+  2026-09-22, where it cost two wasted calls).
 - Label names are case-insensitive across the whole workspace, and retiring a label
   does not free its name. Creating a lowercase label that collides with an old
   capitalised one (`Bug` versus `bug`, say) silently resolves onto the old, retired
