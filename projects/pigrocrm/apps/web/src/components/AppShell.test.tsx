@@ -122,11 +122,11 @@ describe('AppShell', () => {
   it('shows the top-level entries and the group headers in Italian', () => {
     renderShell()
     const nav = sidebar()
-    for (const label of ['Home', 'Get started', 'Token']) {
+    for (const label of ['Home', 'Primi passi', 'Token']) {
       expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
     }
-    // «Get started» right under Home (ORB-180), before the groups.
-    expect(nav.getAllByRole('link').slice(0, 2).map((l) => l.textContent)).toEqual(['Home', 'Get started'])
+    // «Primi passi» right under Home (ORB-180), before the groups.
+    expect(nav.getAllByRole('link').slice(0, 2).map((l) => l.textContent)).toEqual(['Home', 'Primi passi'])
     for (const label of ['Vendite', 'Amministrazione', 'Impostazioni']) {
       expect(nav.getByRole('button', { name: label })).toBeInTheDocument()
     }
@@ -299,7 +299,7 @@ describe('AppShell', () => {
       mockAuth.ruolo = ruolo
       renderShell()
       const nav = sidebar()
-      for (const label of ['Home', 'Get started', 'Calendario', 'Token']) {
+      for (const label of ['Home', 'Primi passi', 'Calendario', 'Token']) {
         expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
       }
       for (const label of ['Vendite', 'Amministrazione']) {
@@ -327,10 +327,10 @@ describe('AppShell', () => {
     const nav = sidebar()
     expect(nav.queryByRole('button', { name: 'Vendite' })).not.toBeInTheDocument()
     // The sub-items of the collapsible groups become icon links in the rail...
-    for (const label of ['Home', 'Get started', 'Clienti', 'Deal', 'Fatture', 'Ore', 'Token']) {
+    for (const label of ['Home', 'Primi passi', 'Clienti', 'Deal', 'Fatture', 'Ore', 'Token']) {
       expect(nav.getByRole('link', { name: label })).toBeInTheDocument()
     }
-    expect(nav.getAllByRole('link', { name: 'Get started' })).toHaveLength(1)
+    expect(nav.getAllByRole('link', { name: 'Primi passi' })).toHaveLength(1)
     // ...except the settings tabs, which are tabs of one page and collapse to one link.
     expect(nav.getByRole('link', { name: 'Impostazioni' })).toBeInTheDocument()
     expect(nav.queryByRole('link', { name: 'Campi' })).not.toBeInTheDocument()
