@@ -29,6 +29,51 @@ FACTOR_DECIMAL_PLACES = 6
 NOME_MAX_LENGTH = 200
 
 
+class InvitationCreate(BaseModel):
+    """The body of `POST /api/users/invites` (spec 2026-09-17 §3). `nome` is optional:
+    the acceptance page asks for one when the invitation carried none, so an address
+    the admin knows only as an address is invitable. `email` is an `EmailStr` and not
+    a `SafeStr` here: like `UserCreate`'s, email-validator refuses a NUL byte (and
+    anything over RFC 5321's limit) before it can reach a column, and it is compared
+    only against `users.email` and `invitations.email` through this same lowercased
+    form."""
+
+    email: EmailStr
+    nome: SafeStr | None = Field(default=None, max_length=NOME_MAX_LENGTH)
+    ruolo: Role = "collaboratore"
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalise_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+
+class InvitationRead(BaseModel):
+    """What «Inviti in attesa» lists. Never `token_hash`: an open invitation's hash
+    is, for every practical purpose, the credential (the same line `PatService` draws
+    for its own timeline payloads)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    email: str
+    nome: str | None
+    ruolo: Role
+    invited_by: UUID
+    expires_at: datetime
+    created_at: datetime
+
+
+class InvitationPeek(BaseModel):
+    """The acceptance page's read before the spend (spec §1): who to thank, which
+    space, and whether a name is still missing. Deliberately not a `InvitationRead`:
+    the invitee has no business seeing the row's ids or expiry arithmetic."""
+
+    spazio: str
+    invitato_da: str
+    nome: str | None
+
+
 class UserCreate(BaseModel):
     email: EmailStr
     # `None` only for a space's first admin, created by the signup wizard (spec

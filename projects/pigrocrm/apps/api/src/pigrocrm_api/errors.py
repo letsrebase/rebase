@@ -24,6 +24,16 @@ STATUS_BY_CODE: dict[str, int] = {
     # `code` carries the distinction machine-readably.
     "agent_forbidden": 403,
     "immutable_field": 409,
+    # The four dead states of an invitation (spec 2026-09-17 §1), mapped by REB-290.
+    # `invitation_unknown` is a 404: no row carries the hash, the same answer the
+    # admin surface gives for an id that is not this space's. The other three are
+    # 410 Gone: the credential existed and has ended, which is exactly the
+    # distinction the acceptance page renders as three different sentences --
+    # `code` in the problem document names which.
+    "invitation_unknown": 404,
+    "invitation_expired": 410,
+    "invitation_revoked": 410,
+    "invitation_used": 410,
     "domain_error": 400,
 }
 
@@ -34,6 +44,12 @@ TITLE_BY_CODE: dict[str, str] = {
     "permission_denied": "Permesso negato",
     "agent_forbidden": "Operazione riservata a una persona",
     "immutable_field": "Campo non modificabile",
+    # The dead invitation's `detail` is the Italian sentence the acceptance page
+    # shows; the title is only the category.
+    "invitation_unknown": "Invito non trovato",
+    "invitation_expired": "Invito scaduto",
+    "invitation_revoked": "Invito revocato",
+    "invitation_used": "Invito già usato",
     "domain_error": "Errore di dominio",
 }
 
@@ -179,6 +195,17 @@ PROBLEM_RESPONSES: dict[int | str, dict[str, Any]] = {
         "attesa e non hanno mai raggiunto l'endpoint (application/json)."
     ),
 }
+
+
+# The two problem shapes only the public invitation routes can answer (the peek and
+# the accept in `routers/auth.py`), attached per route rather than through
+# `PROBLEM_RESPONSES`: the blanket dict rides on every router in `main.py`, and a 410
+# there would claim that any endpoint in the API can report a dead invitation.
+INVITE_GONE_RESPONSE = _problem_response(
+    "L'invito esiste ma è finito: scaduto, revocato o già usato. `code` distingue i "
+    "tre casi (`invitation_expired`, `invitation_revoked`, `invitation_used`)."
+)
+INVITE_NOT_FOUND_RESPONSE = _problem_response("Nessun invito porta questo link.")
 
 
 def ensure_validation_error_schemas_are_declared(schema: dict[str, Any]) -> dict[str, Any]:

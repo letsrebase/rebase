@@ -34,6 +34,13 @@ DISPONIBILE_REQUESTS_PER_MINUTE = 30
 # tries at recovering their own password before the wait, still nowhere near enough
 # attempts a minute to make guessing worthwhile (REB-270).
 LOGIN_REQUESTS_PER_MINUTE = 10
+# `GET /api/auth/invite` (REB-290) reads an invitation without spending it, and the
+# acceptance page calls it on mount: a reload, the browser's own retry, or the
+# person clicking the link twice must not lock them out of seeing who invited them.
+# The `disponibile` reasoning -- a generous ceiling on a read that sends no mail and
+# provisions nothing -- applies unchanged; separate scope so it cannot starve the
+# signup typeahead's budget either.
+INVITE_PEEK_REQUESTS_PER_MINUTE = DISPONIBILE_REQUESTS_PER_MINUTE
 RETRY_AFTER_SECONDS = 60
 # Bounds the table: an attacker who varies `X-Forwarded-For` on every request must not
 # be able to grow it without limit. Full buckets (clients that have gone quiet) are

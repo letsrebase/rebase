@@ -86,6 +86,12 @@ HAND_MAINTAINED_INDEXES = {
     # with the fifth search branch. Same partial-GIN-over-an-operator-class shape as the
     # nine of 0021, and picked up automatically by `TRGM_INDEX_NAMES` below.
     "ix_invoices_causale_trgm",
+    # REB-290, migration 0036. Functional (over `lower(email)`) and partial at once --
+    # the two shapes autogenerate omits, stacked: a functional index it drops silently
+    # re-opens the case-insensitive duplicate, a partial predicate it drops silently
+    # makes an accepted or revoked invitation block the address forever. Its declared
+    # shape is asserted on `indexdef` text below.
+    "uq_invitations_email_lower_open",
 }
 
 TRGM_INDEX_NAMES = frozenset(n for n in HAND_MAINTAINED_INDEXES if n.endswith("_trgm"))
@@ -117,6 +123,7 @@ def test_migrations_produce_exactly_the_models_schema() -> None:
 def test_every_table_the_slice_needs_exists() -> None:
     expected = {
         "users",
+        "invitations",
         "personal_access_tokens",
         "refresh_tokens",
         "field_definitions",
@@ -197,6 +204,18 @@ def test_hand_maintained_indexes_survive_the_migration() -> None:
         f"{cost_categories_nome_def}"
     )
 
+    invitations_email_open_def = indexes["uq_invitations_email_lower_open"]
+    assert "UNIQUE" in invitations_email_open_def, (
+        "uq_invitations_email_lower_open must be a unique index"
+    )
+    assert "lower(" in invitations_email_open_def and "email" in invitations_email_open_def, (
+        f"uq_invitations_email_lower_open is not a functional index over lower(email): "
+        f"{invitations_email_open_def}"
+    )
+    assert "accepted_at IS NULL" in invitations_email_open_def, (
+        "uq_invitations_email_lower_open lost its pending predicate, so an accepted or "
+        f"revoked invitation would block the address forever: {invitations_email_open_def}"
+    )
     anno_numero_def = indexes["uq_invoices_anno_numero"]
     assert "UNIQUE" in anno_numero_def, "uq_invoices_anno_numero must be a unique index"
     assert "WHERE" in anno_numero_def and "numero IS NOT NULL" in anno_numero_def, (

@@ -1,14 +1,15 @@
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from pigrocrm.core.auth.invitations import InvitationService
 from pigrocrm.core.auth.magic_link import MagicLinkService
 from pigrocrm.core.auth.refresh_service import RefreshTokenService
 from pigrocrm.core.auth.repository import UserRepository
-from pigrocrm.core.auth.schemas import MeUpdate, UserRead
+from pigrocrm.core.auth.schemas import InvitationPeek, MeUpdate, UserRead
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.auth.tokens import decode_token, issue_access_token
 from pigrocrm.core.config import Settings
@@ -23,11 +24,21 @@ from pigrocrm.core.tenants.database import (
 )
 from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import ACCESS_COOKIE, REFRESH_COOKIE, ActorDep, SessionDep, SettingsDep
-from pigrocrm_api.errors import PROBLEM_RESPONSES
-from pigrocrm_api.ratelimit import LOGIN_REQUESTS_PER_MINUTE, TOO_MANY_REQUESTS_RESPONSE, spend_one
+from pigrocrm_api.errors import (
+    INVITE_GONE_RESPONSE,
+    INVITE_NOT_FOUND_RESPONSE,
+    PROBLEM_RESPONSES,
+)
+from pigrocrm_api.ratelimit import (
+    INVITE_PEEK_REQUESTS_PER_MINUTE,
+    LOGIN_REQUESTS_PER_MINUTE,
+    TOO_MANY_REQUESTS_RESPONSE,
+    spend_one,
+)
 from pigrocrm_api.sessions import (  # noqa: F401 - get_sender is the override seam
     SenderDep,
     get_sender,
+    mail_origin,
     set_session_cookie,
 )
 from pigrocrm_api.tenancy import cookie_path, cookie_paths_to_clear, first_cookie, tenant_slug
@@ -190,10 +201,6 @@ def login(
 NO_SENDER = (
     "L'accesso via email non è ancora attivo su questa installazione. Entra con la password."
 )
-NO_PUBLIC_URL = (
-    "L'installazione non ha un indirizzo pubblico configurato (PIGROCRM_PUBLIC_URL), quindi "
-    "non può mandare link. Entra con la password."
-)
 INVALID_LINK = "Questo link non è valido o è scaduto. Chiedine un altro."
 
 
@@ -208,17 +215,6 @@ class LinkToken(BaseModel):
 
 class Ack(BaseModel):
     ok: bool = True
-
-
-def _origin(settings: Settings) -> str:
-    """Where a link by mail points: the configured public origin, and nothing else. The
-    request's own `Host` is whatever the caller sent, and a link built from it would
-    hand a live token to that host; without `PIGROCRM_PUBLIC_URL` this installation
-    mails no link (503 with a sentence, like the missing key)."""
-    origin = settings.public_url.strip().rstrip("/")
-    if not origin:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_PUBLIC_URL)
-    return origin
 
 
 def _entra_url(origin: str, prefix: str, raw: str) -> str:
@@ -280,7 +276,7 @@ def request_link(
     spend_one(request)
     if sender is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_SENDER)
-    origin = _origin(settings)
+    origin = mail_origin(settings)
     email = payload.email.strip().lower()
     links: list[tuple[str, str]] = []
     slug = tenant_slug(request)
@@ -318,6 +314,97 @@ def enter_with_link(
     user = MagicLinkService(session, settings).enter(payload.t)
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, INVALID_LINK)
+    _clear_other_jars(response, request, settings)
+    _set_cookie(
+        response,
+        ACCESS_COOKIE,
+        issue_access_token(user.id, user.ruolo, settings),
+        settings.access_token_minutes * 60,
+        secure=settings.cookie_secure,
+        path=cookie_path(request),
+    )
+    _set_cookie(
+        response,
+        REFRESH_COOKIE,
+        RefreshTokenService(session).issue(user.id, settings),
+        settings.refresh_token_days * 86400,
+        secure=settings.cookie_secure,
+        path=cookie_path(request),
+    )
+    return user
+
+
+# ---- an invitation, accepted (spec 2026-09-17, REB-290) -------------------------------
+#
+# The public half of the invitation flow, beside the link-by-mail routes it shares a
+# shape with: unauthenticated, space-scoped by `TenantPrefixMiddleware` so neither
+# route knows it is under a prefix. Unlike `INVALID_LINK`'s single sentence -- which
+# folds the magic link's failure states together because guessing a password or an
+# email is the oracle there -- an invitation names its three dead states apart (410
+# with `code` = `invitation_expired` / `_revoked` / `_used`): the token is 32 random
+# bytes, nobody can guess their way from one outcome to another's.
+
+
+class InviteAccept(BaseModel):
+    """The token, plus `nome` when the peek answered none. Whether a name is needed
+    is the service's knowledge (it reads the row), so that is where it is enforced --
+    a schema constraint here could only duplicate the check or get it wrong."""
+
+    t: SafeStr = Field(max_length=128)
+    nome: SafeStr | None = Field(default=None, max_length=200)
+
+
+@router.get(
+    "/invite",
+    response_model=InvitationPeek,
+    responses={
+        404: INVITE_NOT_FOUND_RESPONSE,
+        410: INVITE_GONE_RESPONSE,
+        429: TOO_MANY_REQUESTS_RESPONSE,
+    },
+)
+def peek_invite(
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+    t: Annotated[SafeStr, Query(max_length=128)],
+) -> InvitationPeek:
+    """Reads an invitation without spending it: the space, the inviter, the name the
+    admin carried (or none). Its own generous bucket -- the page calls it on mount,
+    and a reload must not lock a person out of their own invitation. Reading is not
+    spending: `accepted_at` is untouched here, and only the POST below can end an
+    invitation."""
+    spend_one(request, scope="invite_peek", per_minute=INVITE_PEEK_REQUESTS_PER_MINUTE)
+    # The space as the page shows it: the prefix it is served under, the way
+    # `space_settings` reads `spazio`, with the root's own name where the router knows
+    # it (the same fallback `request_link` labels its root link with).
+    spazio = tenant_slug(request) or settings.root_slug or "PigroCRM"
+    return InvitationService(session).peek(t, spazio=spazio)
+
+
+@router.post(
+    "/invite",
+    response_model=UserRead,
+    responses={
+        404: INVITE_NOT_FOUND_RESPONSE,
+        410: INVITE_GONE_RESPONSE,
+        429: TOO_MANY_REQUESTS_RESPONSE,
+    },
+)
+def accept_invite(
+    payload: InviteAccept,
+    request: Request,
+    response: Response,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> UserRead:
+    """Spends the invitation, creates the person, opens the session with the cookies
+    `login` sets -- the `enter_with_link` shape, answered with `UserRead` so the SPA
+    lands through the same `homeAfterEntry()` the verify page uses. Its own scope at
+    the default five a minute: the same posture as `/api/auth/link`, kept in a bucket
+    apart so neither credential can starve the other's."""
+    spend_one(request, scope="invite_accept")
+    user = InvitationService(session).accept(payload.t, payload.nome)
     _clear_other_jars(response, request, settings)
     _set_cookie(
         response,

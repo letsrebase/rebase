@@ -5,6 +5,7 @@ Each task that adds a model appends its import here.
 
 from pigrocrm.core.activities.models import Activity  # noqa: F401
 from pigrocrm.core.attivita.models import Attivita  # noqa: F401
+from pigrocrm.core.auth.invitation_models import Invitation  # noqa: F401
 from pigrocrm.core.auth.magic_models import MagicLinkToken  # noqa: F401
 from pigrocrm.core.auth.models import User  # noqa: F401
 from pigrocrm.core.auth.pat_models import PersonalAccessToken  # noqa: F401

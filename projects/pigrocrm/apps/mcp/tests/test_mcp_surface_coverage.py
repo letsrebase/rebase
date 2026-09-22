@@ -357,6 +357,27 @@ _CREDENZIALI: dict[Method, str] = {
     ("RefreshTokenService", "revoke_all"): "sessione del browser, non superficie agentica",
     ("MagicLinkService", "request"): "e' il passo di login via mail, non un'operazione",
     ("MagicLinkService", "enter"): "e' il passo di login via mail, non un'operazione",
+    # REB-290 (spec 2026-09-17 §6): ogni metodo di `InvitationService` e' dichiarato,
+    # non esposto. Invitare persone e' amministrazione dello spazio, la stessa ragione
+    # che gia' tiene `UserService` fuori dai tool; in piu' qui c'e' il token grezzo,
+    # che `create` e `resend` rispondono solo perche' il chiamante e' la rotaia che
+    # lo imbuca in una mail, e un canale agentico lo leggerebbe nel contesto.
+    ("InvitationService", "create"): (
+        "invitare una persona e' amministrazione dello spazio (come `UserService."
+        "create`), e il token grezzo della risposta esiste solo per finire in una "
+        "mail: un tool lo porterebbe nel contesto dell'agente"
+    ),
+    ("InvitationService", "list"): "gli inviti in attesa sono materiale amministrativo",
+    ("InvitationService", "resend"): (
+        "stessa ragione di `create`: rigenera una credenziale durevole e la manda "
+        "via mail, e chi la manda e' una persona"
+    ),
+    ("InvitationService", "revoke"): "revocare un invito e' amministrare lo spazio",
+    (
+        "InvitationService",
+        "peek",
+    ): "e' la pagina d'accettazione che legge l'invito, non un'operazione",
+    ("InvitationService", "accept"): "e' il passo d'ingresso dell'invitato, non un'operazione",
     ("UserService", "create"): "creare utenti e' amministrazione dell'account",
     ("UserService", "update"): "cambiare ruoli e' amministrazione dell'account",
     ("UserService", "update_own_digest"): (
