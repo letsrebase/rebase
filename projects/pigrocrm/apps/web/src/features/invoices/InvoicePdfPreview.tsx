@@ -32,9 +32,11 @@ export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
       aria-label="Anteprima PDF"
       aria-busy={!empty && pdf.isPending}
       // Sticky in its grid column from `xl`, as tall as the viewport minus the page
-      // header (PageHeader, its tabs and the panel's own top margin: 11rem today).
-      // `self-start` is what keeps a sticky item from being stretched to the row.
-      className="bg-muted/40 flex min-h-[32rem] flex-col overflow-hidden border xl:sticky xl:top-6 xl:h-[calc(100vh-11rem)] xl:self-start"
+      // header (PageHeader, its tabs: 10.25rem today). The panel's own 12px top margin
+      // went with REB-328, and the scrollport is the whole window now, so the offset
+      // drops by that margin and the pane still ends where it did. `self-start` is what
+      // keeps a sticky item from being stretched to the row.
+      className="bg-muted/40 flex min-h-[32rem] flex-col overflow-hidden border xl:sticky xl:top-6 xl:h-[calc(100vh-10.25rem)] xl:self-start"
     >
       {empty ? (
         <Empty invoice={invoice} />

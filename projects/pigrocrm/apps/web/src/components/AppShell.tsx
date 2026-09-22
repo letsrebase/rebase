@@ -44,16 +44,16 @@ import { roleLabel } from '@/lib/roles'
 import { cn } from '@rebase/ui/cn'
 
 /**
- * The shell of the app: a dark sidebar on the left, everything else in a white panel
- * inset on the Paper background (spec 2026-09-08 §4).
+ * The shell of the app: a dark sidebar on the left, everything else the page, full
+ * width from the sidebar to the edge of the window (REB-328).
  *
  * Three things moved in this revision. The global search is a field at the top of the
  * sidebar rather than a control in a top bar -- there is no top bar any more, so a page's
- * own `PageHeader` is the first thing inside the panel and owns the title and the primary
+ * own `PageHeader` is the first thing on the page and owns the title and the primary
  * action. The navigation is grouped instead of flat: nine entries in one column had no
  * reading order left to give, while «Vendite» / «Amministrazione» say what the sections
- * are for. And the content is a panel with its own scroll, so the sidebar and the page
- * header never scroll away.
+ * are for. And the page scrolls on its own, so the sidebar never scrolls away with
+ * it.
  *
  * Home is the dashboard, `/app`, and it is where the economic reading of the books now
  * lives: the «Analisi» entry that stood between it and «Token» is gone with the section
@@ -543,17 +543,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      {/* The content panel: Paper outside, white inside, its own scroll. Below `lg` the
-          inset and the radius drop to nothing and the panel simply is the page -- a 12px
-          frame around a phone screen is 12px of nothing. */}
-      <div className="flex min-w-0 flex-1 flex-col p-0 lg:p-3">
-        {/* No radius: the panel is square like everything else since the
-            application-variant record (2026-09-18). It used to carry a literal 16px,
-            the one corner the spec drew larger than the derived card radius. */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-0 border-border bg-card lg:border">
-          <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
-        </div>
-      </div>
+      {/* The page: white from the sidebar's edge to the window's, no inset frame and no
+          border of its own. The 12px grid-ground margin and the `lg:border` were copied
+          from the hub's panel and read as a card scrolling on its own inside the page
+          (REB-328, Lorenzo 2026-09-22: «full width dalla sidebar fino alla fine della
+          pagina e senza margini»). `<main>` is the one scroller of the application,
+          which the root's `overflow-hidden` guarantees; the pages carry their own
+          padding (`PageHeader`'s `px-8`). Below `lg` nothing changes: the inset was
+          already zero there. */}
+      <main className="min-w-0 flex-1 overflow-y-auto bg-card">{children}</main>
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </div>

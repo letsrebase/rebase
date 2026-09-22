@@ -383,19 +383,25 @@ describe('AppShell', () => {
     expect(sidebar().getByRole('link', { name: 'Impostazioni' })).toBeInTheDocument()
   })
 
-  it('renders its children inside the content panel', () => {
+  it('renders its children in the page area', () => {
     renderShell(<p>contenuto</p>)
     expect(within(screen.getByRole('main')).getByText('contenuto')).toBeInTheDocument()
   })
 
-  it('draws the content panel square, with its line and no radius', () => {
-    // It carried a literal 16px corner at the lg breakpoint until 2026-09-18, the one
-    // corner the old spec drew larger than the derived card radius. The application is
-    // squared now and the panel reads the shared tokens like everything else.
-    renderShell(<p>contenuto</p>)
-    const panel = screen.getByRole('main').parentElement!.className
-    expect(panel).toContain('lg:border')
-    expect(panel).not.toMatch(/rounded/)
+  it('makes the page itself the one scroller, with no inset frame around it', () => {
+    // REB-328: the hub's panel (a `lg:p-3` grid-ground inset, a `lg:border`, and a
+    // wrapper carrying the scroll between the sidebar and `<main>`) read as a card
+    // scrolling on its own inside the page. `<main>` is now a direct child of the shell
+    // root and is what scrolls, full width from the sidebar to the edge of the window.
+    const { container } = renderShell(<p>contenuto</p>)
+    const main = screen.getByRole('main')
+    expect(main.className).toContain('overflow-y-auto')
+    expect(main.className).toContain('min-w-0')
+    expect(main.className).toContain('bg-card')
+    expect(main.className).not.toMatch(/rounded|lg:border|lg:p-/)
+    // Identity, not class names: the parent IS the shell root, so no wrapper -- inert
+    // or otherwise -- can sit between the sidebar and the page again.
+    expect(main.parentElement).toBe(container.firstElementChild)
   })
 
   it('says the role in Italian under the name, not the stored enum', () => {
