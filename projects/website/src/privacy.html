@@ -262,5 +262,10 @@
         })
       })
     </script>
+    <!-- session.js loads last, after the whole page, so pixel.test.ts's own "no
+      pixel script here" check -- reading the page for a script tag with the ads
+      SDK's name anywhere after it -- has nothing preceding it to trip over: this
+      script names neither, it only asks the hub whether the visitor is signed in. -->
+    <script type="module" src="./session.js"></script>
   </body>
 </html>

@@ -16,6 +16,16 @@ const CONSENT_KEY = 'orbiters.consent'
 const MEASURED_PATHS = ['/', '/pigrocrm'] as const
 const towards = (hosts: readonly string[]) => (url: string) => hosts.includes(new URL(url).host)
 
+// REB-349: session.js now asks GET /api/hub/me on every page load. Nothing in this
+// suite runs the hub API, so left unmocked every navigation here would hit Vite's
+// dev/preview proxy and fail to connect on every single test. A default "signed out"
+// answer keeps the rest of the suite isolated from this new network dependency, the
+// same way it already is from the hub itself; the describe block below overrides it
+// per test to exercise the signed-in cases.
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/hub/me', (route) => route.fulfill({ status: 401, body: '' }))
+})
+
 test.describe('every page of the site', () => {
   for (const path of PAGES) {
     test(`${path} asks nothing of any host it has not declared`, async ({ page }) => {
@@ -472,4 +482,59 @@ test.describe('the policy pages on a phone', () => {
       })
     }
   }
+})
+
+// REB-349: a visitor who already has a hub session should not have to go through
+// /hub/login a second time. session.js asks the hub's own GET /api/hub/me and, only
+// on a real answer, points the login link at the person's own area. The hub itself is
+// not reachable from this suite, so the answer is mocked at the proxy boundary
+// (`/api/hub/me`, the same path the dev and preview servers proxy in production) and
+// what is checked is what the visitor's browser does with each answer.
+test.describe('Accedi finds a session already there', () => {
+  test('/ and /pigrocrm, signed out (a 401): both login links stay put', async ({ page }) => {
+    await page.route('**/api/hub/me', (route) => route.fulfill({ status: 401, body: '' }))
+    for (const path of ['/', '/pigrocrm'] as const) {
+      await page.goto(path, { waitUntil: 'networkidle' })
+      const links = await page.locator('a[href^="/hub/login"]').all()
+      expect(links.length).toBeGreaterThan(0)
+      for (const link of links) {
+        expect(await link.getAttribute('href')).toMatch(/^\/hub\/login(\?|$)/)
+      }
+    }
+  })
+
+  test('/privacy and /terms, signed in as a member: Accedi still finds it, with no notice to answer first', async ({
+    page,
+  }) => {
+    await page.route('**/api/hub/me', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ role: 'member' }) }),
+    )
+    for (const path of ['/privacy', '/terms'] as const) {
+      await page.goto(path, { waitUntil: 'networkidle' })
+      await expect(page.locator('a[href="/hub/me"]')).toHaveText('Accedi')
+    }
+  })
+
+  test('/ signed in as a member: both Accedi and "Entra nella tua area" point at /hub/me', async ({ page }) => {
+    await page.route('**/api/hub/me', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ role: 'member' }) }),
+    )
+    await page.goto('/', { waitUntil: 'networkidle' })
+    expect(await page.locator('a[href^="/hub/login"]').count()).toBe(0)
+    // utm.js has already tagged the link with `?da=home` by the time session.js's
+    // answer lands, so the path is what is asserted, not the whole href.
+    await expect(page.getByRole('link', { name: 'Accedi' })).toHaveAttribute('href', /^\/hub\/me(\?|$)/)
+    await expect(page.getByRole('link', { name: 'Entra nella tua area' })).toHaveAttribute(
+      'href',
+      /^\/hub\/me(\?|$)/,
+    )
+  })
+
+  test('/pigrocrm signed in as an admin: Accedi points at /hub/admin', async ({ page }) => {
+    await page.route('**/api/hub/me', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ role: 'admin' }) }),
+    )
+    await page.goto('/pigrocrm', { waitUntil: 'networkidle' })
+    await expect(page.getByRole('link', { name: 'Accedi' })).toHaveAttribute('href', /^\/hub\/admin(\?|$)/)
+  })
 })
