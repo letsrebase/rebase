@@ -224,7 +224,7 @@ export function Wizard<T>({
               Rileggi le risposte: puoi tornare indietro su qualsiasi punto.
             </p>
           </div>
-          <dl className="divide-y rounded-2xl border bg-card">
+          <dl className="divide-y border bg-card">
             {fields.map((field) => (
               <div
                 key={field.id}

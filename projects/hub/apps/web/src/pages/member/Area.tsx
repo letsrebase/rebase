@@ -41,9 +41,9 @@ export function Area() {
   )
 
   return (
-    <div className="mx-auto max-w-2xl space-y-10">
+    <div className="mx-auto max-w-2xl space-y-10 p-6">
       {negato && (
-        <p role="status" className="rounded-2xl border-2 border-[var(--color-royal-gold)] bg-card p-4 text-sm">
+        <p role="status" className="border-(length:--line-strong) border-accent bg-card p-4 text-sm">
           Quella sezione è riservata a chi amministra l’hub: eccoti nella tua area.
         </p>
       )}
@@ -76,7 +76,7 @@ export function Area() {
             // only in the dashes below. Two ways to get here: a card an admin wrote from a
             // signup (ORB-155), and a person who skipped the CV in the wizard, where it is
             // optional. For the second the CV is the only thing that can be missing.
-            <div role="status" className="rounded-2xl border-2 border-[var(--color-royal-gold)] bg-card p-5 text-sm">
+            <div role="status" className="border-(length:--line-strong) border-accent bg-card p-5 text-sm">
               <p>
                 La tua scheda è incompleta. Aggiungi CV, tariffa, posizione e modalità di lavoro
                 perché le aziende possano trovarti.
@@ -88,7 +88,7 @@ export function Area() {
           )}
 
           <section aria-label="Quello che ci hai mandato">
-            <dl className="divide-y rounded-2xl border bg-card">
+            <dl className="divide-y border bg-card">
               {fields.map((field) => (
                 <div key={field.id} className="flex items-start gap-4 px-4 py-3 text-sm">
                   <dt className="w-40 shrink-0 text-muted-foreground">{field.label}</dt>
@@ -125,7 +125,7 @@ export function Area() {
               </Link>
             </Button>
           </div>
-          <dl className="divide-y rounded-2xl border bg-card">
+          <dl className="divide-y border bg-card">
             {companyFields.map((field) => (
               <div key={field.id} className="flex items-start gap-4 px-4 py-3 text-sm">
                 <dt className="w-40 shrink-0 text-muted-foreground">{field.label}</dt>
@@ -140,7 +140,7 @@ export function Area() {
 
       {!value && !companyValue && (
         <section aria-label="Chi sei">
-          <dl className="divide-y rounded-2xl border bg-card">
+          <dl className="divide-y border bg-card">
             <div className="flex items-start gap-4 px-4 py-3 text-sm">
               <dt className="w-40 shrink-0 text-muted-foreground">Ruolo</dt>
               <dd className="min-w-0 flex-1 font-medium">{ROLE_LABELS[profile.role] ?? profile.role}</dd>
@@ -150,7 +150,7 @@ export function Area() {
       )}
 
       <section aria-label="I tuoi vantaggi" className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-3 rounded-2xl border-2 border-foreground bg-card p-6">
+        <div className="flex flex-col gap-3 border-(length:--line-strong) border-foreground bg-card p-6">
           <div className="flex-1 space-y-3">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Per chi è dentro</p>
             <h2 className="text-lg font-semibold">PigroCRM è tuo, gratis</h2>
@@ -168,7 +168,7 @@ export function Area() {
             &nbsp;
           </p>
         </div>
-        <div className="flex flex-col gap-3 rounded-2xl border-2 border-foreground bg-card p-6">
+        <div className="flex flex-col gap-3 border-(length:--line-strong) border-foreground bg-card p-6">
           <div className="flex-1 space-y-3">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Per chi è dentro</p>
             <h2 className="text-lg font-semibold">I primi passi da freelance</h2>

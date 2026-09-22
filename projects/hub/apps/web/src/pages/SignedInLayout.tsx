@@ -19,8 +19,13 @@ const ADMIN_NAV = [
   { to: '/admin/agents', label: 'Agenti', icon: Plug },
 ] as const
 
+/* The record of 2026-09-18, as #228 drew it in the CRM's AppShell: the active item is
+   marked by a Watermelon Strong tile at the row's left edge (the `before:` square, painted
+   only when active so the label never shifts), over the lighter translucent fill the dark
+   sidebar already had. TanStack's default `activeClass` is `active`, which is what the
+   `[&.active]` selectors read. */
 const NAV_LINK =
-  'flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-[var(--color-paper)]/80 hover:bg-white/10 [&.active]:bg-white/10 [&.active]:text-[var(--color-paper)]'
+  'relative flex items-center gap-2 px-2 py-1.5 text-sm transition-colors before:absolute before:left-0 before:top-1/2 before:size-1.5 before:-translate-y-1/2 before:bg-transparent before:content-[""] text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground [&.active]:bg-sidebar-accent [&.active]:font-medium [&.active]:text-sidebar-accent-foreground [&.active]:before:bg-sidebar-primary'
 
 /**
  * The one guard and the one frame every signed-in route passes through (REB-279):
@@ -47,8 +52,12 @@ export function SignedInLayout() {
   const isAdmin = me.data.role === 'admin'
 
   return (
-    <div className="flex h-full">
-      <aside className="flex h-full w-56 shrink-0 flex-col gap-6 overflow-y-auto bg-[var(--color-prussian-blue)] p-4 text-[var(--color-paper)]">
+    <div className="flex h-full overflow-hidden">
+      {/* The sidebar reads the sidebar slots, not the raw palette: `--sidebar` is the
+         same Prussian Blue and `--sidebar-foreground` the same Paper, and the record's
+         Sidebar paragraph is what points them. The CRM's shell (#228) draws the same
+         pair from the same tokens. */}
+      <aside className="flex h-full w-56 shrink-0 flex-col gap-6 overflow-y-auto bg-sidebar p-4 text-sidebar-foreground">
         <Link to="/me" className="inline-flex items-center gap-2.5 px-2 font-semibold">
           <BrandMark className="size-3.5 [&>span:nth-child(1)]:bg-[var(--color-paper)] [&>span:nth-child(4)]:bg-[var(--color-paper)]" />
           rebase
@@ -60,10 +69,10 @@ export function SignedInLayout() {
           </Link>
           {isAdmin && (
             <>
-              <p className="mt-2 px-2 text-xs font-medium tracking-wide text-[var(--color-paper)]/70 uppercase">
+              <p className="mt-2 px-2 text-xs font-medium tracking-wide text-sidebar-foreground/70 uppercase">
                 Amministrazione
               </p>
-              <div role="separator" className="my-2 border-t border-white/10" />
+              <div role="separator" className="my-2 border-t border-sidebar-border" />
               {ADMIN_NAV.map(({ to, label, icon: Icon }) => (
                 <Link key={to} to={to} className={NAV_LINK}>
                   <Icon className="size-4" aria-hidden="true" />
@@ -73,12 +82,12 @@ export function SignedInLayout() {
             </>
           )}
         </nav>
-        <div className="mt-auto space-y-2 px-2 text-xs text-[var(--color-paper)]/70">
+        <div className="mt-auto space-y-2 px-2 text-xs text-sidebar-foreground/70">
           <p className="truncate">{me.data.email}</p>
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start text-[var(--color-paper)] hover:bg-white/10 hover:text-[var(--color-paper)]"
+            className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground"
             onClick={() => logout.mutate()}
           >
             <LogOut className="mr-2 size-4" />
@@ -86,9 +95,21 @@ export function SignedInLayout() {
           </Button>
         </div>
       </aside>
-      <main className="flex-1 overflow-y-auto bg-card p-6">
-        <Outlet />
-      </main>
+      {/* The content panel of the record, as #228 rebuilt the CRM's: the shell stops
+         painting `bg-background` over the body's own 16px grid, and the white panel sits
+         inset inside a 1px ink line from `lg` up. Below `lg` the inset and the line drop
+         to nothing and the panel simply is the page. */}
+      <div className="flex min-w-0 flex-1 flex-col p-0 lg:p-3">
+        {/* No padding on `main`, as in the CRM's shell: each page insets itself, the
+           admin pages with their own `px-6` rows and the member pages with a `p-6` on
+           their root. The panel's border is then the page's edge, not a frame around a
+           frame. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden border-0 border-border bg-card lg:border">
+          <main className="min-h-0 flex-1 overflow-y-auto">
+            <Outlet />
+          </main>
+        </div>
+      </div>
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { useInfiniteQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import { Empty, Figure, Header } from './lists'
@@ -86,29 +87,33 @@ export function AdminAccessi() {
             <Empty>{debouncedQuery ? 'Nessun risultato per questa ricerca.' : 'Nessun accesso ancora.'}</Empty>
           ) : (
             <>
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs text-muted-foreground">
-                  <tr className="border-b">
-                    <th className="px-6 py-2 font-medium">Chi</th>
-                    <th className="px-6 py-2 text-right font-medium">Quando</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recenti.map((login) => (
-                    <tr key={login.id} className="border-b last:border-0 hover:bg-muted">
-                      <td className="px-6 py-2.5">
-                        <p className="font-medium">
-                          {login.nome} {login.cognome}
-                        </p>
-                        <p className="text-xs text-muted-foreground">{login.email}</p>
-                      </td>
-                      <td className="px-6 py-2.5 text-right text-muted-foreground">
-                        {formatDateTime(login.logged_at)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="px-6 pb-6">
+                <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Chi</TableHead>
+                        <TableHead className="text-right">Quando</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {recenti.map((login) => (
+                        <TableRow key={login.id}>
+                          <TableCell>
+                            <p className="font-medium">
+                              {login.nome} {login.cognome}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{login.email}</p>
+                          </TableCell>
+                          <TableCell className="text-right text-muted-foreground">
+                            {formatDateTime(login.logged_at)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
               <div ref={sentinelRef} />
               {stats.hasNextPage && (
                 <div className="flex flex-col items-center gap-2 px-6 py-5">

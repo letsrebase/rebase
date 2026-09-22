@@ -4,6 +4,7 @@ import { ExternalLink } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { ApiError, admin } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { Empty, Header } from './lists'
@@ -81,49 +82,53 @@ export function AdminPigro() {
         <Empty>{debouncedQuery ? 'Nessun risultato per questa ricerca.' : 'Nessuna istanza ancora.'}</Empty>
       ) : (
         <>
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted-foreground">
-              <tr className="border-b">
-                <th className="px-6 py-2 font-medium">Spazio</th>
-                <th className="px-3 py-2 font-medium">Di chi è</th>
-                <th className="px-6 py-2 text-right font-medium">Creato</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((space) => (
-                <tr key={space.slug} className="border-b last:border-0 hover:bg-muted">
-                  <td className="px-6 py-2.5">
-                    <a
-                      href={space.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1.5 font-medium hover:underline"
-                    >
-                      {space.slug}
-                      <ExternalLink className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                    </a>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    {space.membro ? (
-                      <>
-                        <Link
-                          to="/admin/freelance/$id"
-                          params={{ id: space.membro.id }}
-                          className="font-medium hover:underline"
+          <div className="px-6 pb-6">
+            <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Spazio</TableHead>
+                    <TableHead>Di chi è</TableHead>
+                    <TableHead className="text-right">Creato</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((space) => (
+                    <TableRow key={space.slug}>
+                      <TableCell>
+                        <a
+                          href={space.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 font-medium hover:underline"
                         >
-                          {space.membro.nome} {space.membro.cognome}
-                        </Link>
-                        <p className="text-xs text-muted-foreground">{space.owner_email}</p>
-                      </>
-                    ) : (
-                      <p>{space.owner_email}</p>
-                    )}
-                  </td>
-                  <td className="px-6 py-2.5 text-right text-muted-foreground">{formatDate(space.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                          {space.slug}
+                          <ExternalLink className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                        </a>
+                      </TableCell>
+                      <TableCell>
+                        {space.membro ? (
+                          <>
+                            <Link
+                              to="/admin/freelance/$id"
+                              params={{ id: space.membro.id }}
+                              className="font-medium hover:underline"
+                            >
+                              {space.membro.nome} {space.membro.cognome}
+                            </Link>
+                            <p className="text-xs text-muted-foreground">{space.owner_email}</p>
+                          </>
+                        ) : (
+                          <p>{space.owner_email}</p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">{formatDate(space.created_at)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
           <div ref={sentinelRef} />
           {hasNextPage && (
             <div className="flex flex-col items-center gap-2 px-6 py-5">

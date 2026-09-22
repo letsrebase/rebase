@@ -5,6 +5,7 @@ import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { ApiError, admin, type Admin } from '@/lib/api'
 import { formatDate } from '@/lib/format'
 import { Empty, Header } from './lists'
@@ -198,48 +199,52 @@ export function AdminAdmins() {
         <Empty>{debouncedQuery ? 'Nessun risultato per questa ricerca.' : 'Nessun amministratore ancora.'}</Empty>
       ) : (
         <>
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted-foreground">
-              <tr className="border-b">
-                <th className="px-6 py-2 font-medium">Chi</th>
-                <th className="px-3 py-2 font-medium">Stato</th>
-                <th className="px-3 py-2 text-right font-medium">Da quando</th>
-                <th className="px-6 py-2">
-                  <span className="sr-only">Azioni</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((row: Admin) => (
-                <tr key={row.id} className="border-b last:border-0 hover:bg-muted">
-                  <td className="px-6 py-2.5">
-                    <p className="font-medium">{row.nome}</p>
-                    <p className="text-xs text-muted-foreground">{row.email}</p>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <Badge variant="pill">{row.attivo ? 'Attivo' : 'Disattivato'}</Badge>
-                  </td>
-                  <td className="px-3 py-2.5 text-right text-muted-foreground">{formatDate(row.created_at)}</td>
-                  <td className="px-6 py-1.5 text-right">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={demote.isPending}
-                      onClick={() => demote.mutate(row.id)}
-                    >
-                      <ShieldOff className="mr-2 size-4" />
-                      Rimuovi
-                      <span className="sr-only">
-                        {' '}
-                        {row.nome} ({row.email}) da amministratore
-                      </span>
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="px-6 pb-6">
+            <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Chi</TableHead>
+                    <TableHead>Stato</TableHead>
+                    <TableHead className="text-right">Da quando</TableHead>
+                    <TableHead>
+                      <span className="sr-only">Azioni</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((row: Admin) => (
+                    <TableRow key={row.id}>
+                      <TableCell>
+                        <p className="font-medium">{row.nome}</p>
+                        <p className="text-xs text-muted-foreground">{row.email}</p>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="pill">{row.attivo ? 'Attivo' : 'Disattivato'}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">{formatDate(row.created_at)}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={demote.isPending}
+                          onClick={() => demote.mutate(row.id)}
+                        >
+                          <ShieldOff className="mr-2 size-4" />
+                          Rimuovi
+                          <span className="sr-only">
+                            {' '}
+                            {row.nome} ({row.email}) da amministratore
+                          </span>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
           <div ref={sentinelRef} />
           {list.hasNextPage && (
             <div className="flex flex-col items-center gap-2 px-6 py-5">

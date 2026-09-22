@@ -6,6 +6,7 @@ import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { ApiError, admin, type AdminToken, type CreatedToken } from '@/lib/api'
 import { TOKEN_PLACEHOLDER, claudeCodeCommand, mcpEndpoint, mcpServersJson } from '@/lib/connect'
 import { formatDate } from '@/lib/format'
@@ -192,50 +193,52 @@ export function AdminAgenti() {
             <Empty>{debouncedQuery ? 'Nessun risultato per questa ricerca.' : 'Nessun token ancora.'}</Empty>
           ) : (
             <>
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs text-muted-foreground">
-                  <tr className="border-b">
-                    <th className="py-2 font-medium">Token</th>
-                    <th className="px-3 py-2 font-medium">Stato</th>
-                    <th className="px-3 py-2 text-right font-medium">Creato</th>
-                    <th className="px-3 py-2 text-right font-medium">Ultimo uso</th>
-                    <th className="py-2">
-                      <span className="sr-only">Azioni</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((row: AdminToken) => (
-                    <tr key={row.id} className="border-b last:border-0">
-                      <td className="py-2.5">
-                        <p className="font-medium">{row.nome}</p>
-                        <p className="font-mono text-xs text-muted-foreground">{row.prefix}…</p>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <Badge variant="pill">{row.revoked_at ? 'Revocato' : 'Attivo'}</Badge>
-                      </td>
-                      <td className="px-3 py-2.5 text-right text-muted-foreground">{formatDate(row.created_at)}</td>
-                      <td className="px-3 py-2.5 text-right text-muted-foreground">
-                        {row.last_used_at ? formatDate(row.last_used_at) : 'Mai'}
-                      </td>
-                      <td className="py-1.5 text-right">
-                        {!row.revoked_at && (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={revoke.isPending}
-                            onClick={() => revoke.mutate(row.id)}
-                          >
-                            Revoca
-                            <span className="sr-only"> {row.nome}</span>
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Token</TableHead>
+                      <TableHead>Stato</TableHead>
+                      <TableHead className="text-right">Creato</TableHead>
+                      <TableHead className="text-right">Ultimo uso</TableHead>
+                      <TableHead>
+                        <span className="sr-only">Azioni</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {items.map((row: AdminToken) => (
+                      <TableRow key={row.id}>
+                        <TableCell>
+                          <p className="font-medium">{row.nome}</p>
+                          <p className="font-mono text-xs text-muted-foreground">{row.prefix}…</p>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="pill">{row.revoked_at ? 'Revocato' : 'Attivo'}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">{formatDate(row.created_at)}</TableCell>
+                        <TableCell className="text-right text-muted-foreground">
+                          {row.last_used_at ? formatDate(row.last_used_at) : 'Mai'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {!row.revoked_at && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={revoke.isPending}
+                              onClick={() => revoke.mutate(row.id)}
+                            >
+                              Revoca
+                              <span className="sr-only"> {row.nome}</span>
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
               <div ref={sentinelRef} />
               {list.hasNextPage && (
                 <div className="flex flex-col items-center gap-2 py-5">

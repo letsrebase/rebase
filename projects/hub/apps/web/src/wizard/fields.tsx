@@ -98,7 +98,7 @@ export function ChoiceField<V extends string>({
             aria-checked={selected}
             onClick={() => onChange(option.value)}
             className={cn(
-              'flex flex-col items-start gap-1 rounded-2xl border-(length:--landing-border-width) bg-card p-4 text-left transition-colors hover:bg-muted focus-visible:outline-3 focus-visible:outline-(--landing-focus) focus-visible:outline-offset-3',
+              'flex flex-col items-start gap-1 border-(length:--landing-border-width) bg-card p-4 text-left transition-colors hover:bg-muted focus-visible:outline-3 focus-visible:outline-(--landing-focus) focus-visible:outline-offset-3',
               selected && 'bg-(--landing-ink) text-(--landing-cta-ink) hover:bg-(--landing-ink)',
             )}
           >
@@ -171,7 +171,7 @@ export function FileField({
   const inputRef = useRef<HTMLInputElement>(null)
   return (
     <div
-      className="flex flex-col items-center gap-3 rounded-2xl border border-dashed bg-card p-8 text-center"
+      className="flex flex-col items-center gap-3 border border-dashed bg-card p-8 text-center"
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault()

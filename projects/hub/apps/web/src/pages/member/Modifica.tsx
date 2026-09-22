@@ -84,7 +84,7 @@ export function Modifica() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8">
+    <div className="mx-auto max-w-2xl space-y-8 p-6">
       <div>
         <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">La tua area</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">Correggi quello che ci hai mandato</h1>

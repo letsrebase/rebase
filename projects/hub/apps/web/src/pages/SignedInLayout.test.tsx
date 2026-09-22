@@ -166,7 +166,7 @@ describe('the sidebar, gated on role', () => {
 })
 
 describe('the frame keeps a fixed viewport height (REB-311)', () => {
-  it('pins the sidebar to the viewport height, scrolls it and main on their own axes, and drops the boxed wrapper around the page', async () => {
+  it('pins the sidebar to the viewport height, scrolls it and main on their own axes, and lets the grid ground show behind the panel', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
     mount()
     await screen.findByRole('heading', { name: 'Dentro' })
@@ -175,9 +175,13 @@ describe('the frame keeps a fixed viewport height (REB-311)', () => {
     expect(aside).toHaveClass('h-full', 'overflow-y-auto')
     expect(aside?.parentElement).toHaveClass('h-full')
 
+    // REB-302: the white moved from `main` to the panel that wraps it, which is what
+    // leaves the body's grid ground visible around the panel at `lg` (#228's shape).
     const main = screen.getByRole('heading', { name: 'Dentro' }).closest('main')
-    expect(main).toHaveClass('overflow-y-auto', 'bg-card')
-    expect(main?.querySelector('.rounded-2xl.border.bg-card')).toBeNull()
+    expect(main).toHaveClass('overflow-y-auto')
+    const panel = main?.parentElement
+    expect(panel).toHaveClass('bg-card')
+    expect(panel?.className).not.toMatch(/rounded/)
   })
 })
 

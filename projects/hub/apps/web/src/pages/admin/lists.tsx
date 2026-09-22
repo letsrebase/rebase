@@ -8,6 +8,7 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import {
   admin,
   ApiError,
@@ -395,21 +396,29 @@ export function AdminTalenti() {
         <Empty>{activeFilters ? 'Nessun risultato per questi filtri.' : 'Nessun profilo qui.'}</Empty>
       ) : (
         <>
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted-foreground">
-              <tr className="border-b">
-                <th className="px-6 py-2 font-medium">Chi</th>
-                <th className="px-3 py-2 font-medium">Stato</th>
-                <th className="px-3 py-2 font-medium">Provenienza</th>
-                <th className="px-6 py-2 text-right font-medium">Quando</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <TalentoRow key={item.id} item={item} />
-              ))}
-            </tbody>
-          </table>
+          {/* The record's ruled table, the shape #228 gave the CRM's lists: a white
+             container closed by a 1px ink line, 48px rows, a 2px rule under the header
+             and a 1px separator between the cells, all from `@rebase/ui/table`. The
+             padding the raw `th`/`td` used to type is the primitive's own. */}
+          <div className="px-6 pb-6">
+            <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Chi</TableHead>
+                    <TableHead>Stato</TableHead>
+                    <TableHead>Provenienza</TableHead>
+                    <TableHead className="text-right">Quando</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => (
+                    <TalentoRow key={item.id} item={item} />
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
           {list.hasNextPage && (
             <LoadMore
               label={`Mostrati ${items.length} talenti, ce ne sono altri.`}
@@ -422,24 +431,23 @@ export function AdminTalenti() {
     </>
   )
 }
-
 function TalentoRow({ item }: { item: Talento }) {
   const name = [item.nome, item.cognome].filter(Boolean).join(' ')
   const to = item.stato === 'lead' ? '/admin/talent/$id' : '/admin/freelance/$id'
   return (
-    <tr className="border-b last:border-0 hover:bg-muted">
-      <td className="px-6 py-2.5">
+    <TableRow>
+      <TableCell>
         <Link to={to} params={{ id: item.id }} className="font-medium hover:underline">
           {name || '—'}
         </Link>
         <p className="text-xs text-muted-foreground">{item.email}</p>
-      </td>
-      <td className="px-3 py-2.5">
+      </TableCell>
+      <TableCell>
         <StatePill stato={item.stato} />
-      </td>
-      <td className="px-3 py-2.5 text-muted-foreground">{item.origine}</td>
-      <td className="px-6 py-2.5 text-right text-muted-foreground">{formatDate(item.created_at)}</td>
-    </tr>
+      </TableCell>
+      <TableCell className="text-muted-foreground">{item.origine}</TableCell>
+      <TableCell className="text-right text-muted-foreground">{formatDate(item.created_at)}</TableCell>
+    </TableRow>
   )
 }
 
@@ -553,7 +561,7 @@ export function AdminTalentoLead() {
             {lead.utm_source ? ` · da ${lead.utm_source}` : ''}
           </Row>
         </dl>
-        <form onSubmit={submit} className="space-y-3 rounded-2xl border bg-muted/40 p-4">
+        <form onSubmit={submit} className="space-y-3 border p-4">
           <p className="text-sm font-medium">Scrivi la scheda</p>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
@@ -614,7 +622,7 @@ export function AdminTalentoLead() {
                 id="lead-remoto"
                 value={draft.remoto}
                 onChange={(event) => field('remoto')(event.target.value)}
-                className="h-9 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="h-9 w-full border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               >
                 <option value="">—</option>
                 {(Object.keys(REMOTO_LABELS) as Remoto[]).map((value) => (
@@ -683,7 +691,7 @@ function StatusEditor({
   const [draftState, setDraftState] = useState(stato)
   const [draftNote, setDraftNote] = useState(note ?? '')
   return (
-    <div className="space-y-3 rounded-2xl border bg-muted/40 p-4">
+    <div className="space-y-3 border p-4">
       <p className="text-sm font-medium">Stato e note</p>
       <StateFilter states={states} value={draftState} onChange={(value) => value && setDraftState(value)} />
       <Textarea
@@ -879,7 +887,7 @@ export function AdminFreelancerDetail() {
       {f.pigro_slug && (
         <section className="space-y-2 px-6 pb-6">
           <h2 className="text-sm font-medium">Spazio PigroCRM</h2>
-          <p className="text-sm"><code className="rounded bg-muted px-1.5 py-0.5">{f.pigro_slug}</code></p>
+          <p className="text-sm"><code className="border bg-muted px-1.5 py-0.5">{f.pigro_slug}</code></p>
         </section>
       )}
       <Comments kind="freelancers" id={f.id} comments={f.commenti} onAdded={onCommentAdded} />
@@ -1020,35 +1028,39 @@ export function AdminCompanies() {
         <Empty>{activeFilters ? 'Nessun risultato per questi filtri.' : 'Nessuna richiesta qui.'}</Empty>
       ) : (
         <>
-          <table className="w-full text-sm">
-            <thead className="text-left text-xs text-muted-foreground">
-              <tr className="border-b">
-                <th className="px-6 py-2 font-medium">Azienda</th>
-                <th className="px-3 py-2 font-medium">Progetto</th>
-                <th className="px-3 py-2 font-medium">Periodo</th>
-                <th className="px-3 py-2 text-right font-medium">Budget</th>
-                <th className="px-3 py-2 font-medium">Stato</th>
-                <th className="px-6 py-2 text-right font-medium">Quando</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id} className="border-b last:border-0 hover:bg-muted">
-                  <td className="px-6 py-2.5">
-                    <Link to="/admin/companies/$id" params={{ id: item.id }} className="font-medium hover:underline">
-                      {item.nome_azienda}
-                    </Link>
-                    <p className="text-xs text-muted-foreground">{item.referente} · {item.email}</p>
-                  </td>
-                  <td className="max-w-xs truncate px-3 py-2.5">{item.progetto}</td>
-                  <td className="px-3 py-2.5">dal {formatDate(item.periodo_da)}, {item.durata}</td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{formatEuro(item.budget_giornaliero)}</td>
-                  <td className="px-3 py-2.5"><StatePill stato={item.stato} /></td>
-                  <td className="px-6 py-2.5 text-right text-muted-foreground">{formatDate(item.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="px-6 pb-6">
+            <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Azienda</TableHead>
+                    <TableHead>Progetto</TableHead>
+                    <TableHead>Periodo</TableHead>
+                    <TableHead className="text-right">Budget</TableHead>
+                    <TableHead>Stato</TableHead>
+                    <TableHead className="text-right">Quando</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {items.map((item) => (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <Link to="/admin/companies/$id" params={{ id: item.id }} className="font-medium hover:underline">
+                          {item.nome_azienda}
+                        </Link>
+                        <p className="text-xs text-muted-foreground">{item.referente} · {item.email}</p>
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate">{item.progetto}</TableCell>
+                      <TableCell>dal {formatDate(item.periodo_da)}, {item.durata}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatEuro(item.budget_giornaliero)}</TableCell>
+                      <TableCell><StatePill stato={item.stato} /></TableCell>
+                      <TableCell className="text-right text-muted-foreground">{formatDate(item.created_at)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
           {list.hasNextPage && (
             <LoadMore
               label={`Mostrate ${items.length} aziende, ce ne sono altre.`}

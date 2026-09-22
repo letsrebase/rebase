@@ -46,7 +46,7 @@ export function Comments({
       {comments.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nessun commento, per ora.</p>
       ) : (
-        <ol className="divide-y rounded-2xl border text-sm">
+        <ol className="divide-y border text-sm">
           {comments.map((comment) => (
             <li key={comment.id} className="space-y-1 px-4 py-3">
               <p className="flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
