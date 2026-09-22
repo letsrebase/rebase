@@ -144,6 +144,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "list_signups",
             "create_freelancer_from_signup",
             "list_freelancers",
+            "list_talenti",
             "get_freelancer",
             "read_freelancer_cv",
             "list_pigro_spaces",

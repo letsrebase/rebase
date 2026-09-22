@@ -14,7 +14,8 @@ measured as zero rows written under concurrency.
 """
 
 from collections.abc import Callable, Sequence
-from decimal import Decimal
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
 
@@ -35,7 +36,9 @@ from rebase_core.logins import LoginService
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
 from rebase_core.schemas import FreelancerDraft, FreelancerRead, StatusChange
+from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import LIST_LIMIT_DEFAULT, SignupService
+from rebase_core.talenti import TalentiService
 
 SessionFactory = sessionmaker[Session]
 # Who is calling: resolved by the transport, read by the tools that sign something.
@@ -52,6 +55,46 @@ INSTRUCTIONS = (
 )
 
 PIGRO_NOT_CONFIGURED = "Il registro di Pigro non è configurato: manca REBASE_PIGRO_REGISTRY_TOKEN."
+
+
+def _number(value: str | None, field: str) -> Decimal | None:
+    """A decimal passed as a string, the way `create_freelancer_from_signup` already
+    takes it: JSON numbers lose the two-decimal exactness a tariffa or a budget needs."""
+    if value is None or not value.strip():
+        return None
+    try:
+        return Decimal(value.strip())
+    except InvalidOperation:
+        raise ToolError(f"{field}: «{value}» non è un numero") from None
+
+
+def _day(value: str | None, field: str) -> date | None:
+    """An ISO 8601 calendar date (`AAAA-MM-GG`), parsed here so the refusal is an
+    Italian sentence and not a traceback from the service."""
+    if value is None or not value.strip():
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        raise ToolError(f"{field}: «{value}» non è una data ISO 8601 (AAAA-MM-GG)") from None
+
+
+def _moment(value: str | None, field: str) -> datetime | None:
+    """An ISO 8601 timestamp (a plain date is accepted too, at midnight)."""
+    if value is None or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value.strip())
+    except ValueError:
+        raise ToolError(f"{field}: «{value}» non è una data e ora ISO 8601") from None
+
+
+def _search_term(value: str | None) -> str | None:
+    """`q` bounded the way the API's `SearchQ` bounds it: an unbounded term reaching
+    `ILIKE` and `similarity()` on every row is a denial of service with extra steps."""
+    if value is not None and len(value) > SEARCH_MAX_LENGTH:
+        raise ToolError(f"la ricerca deve stare in {SEARCH_MAX_LENGTH} caratteri")
+    return value
 
 
 def build_server(
@@ -137,6 +180,65 @@ def build_server(
         return _run(lambda s: FreelancerService(s).list_recent(limit=limit, stato=stato))
 
     @mcp.tool()
+    def list_talenti(
+        limit: int = LIST_LIMIT_DEFAULT,
+        stato: str | None = None,
+        q: str | None = None,
+        cursor: str | None = None,
+        posizione: str | None = None,
+        remoto: str | None = None,
+        tariffa_min: str | None = None,
+        tariffa_max: str | None = None,
+        origine: str | None = None,
+        utm_source: str | None = None,
+        has_cv: bool | None = None,
+        con_accessi: bool | None = None,
+        creato_da: str | None = None,
+        creato_a: str | None = None,
+    ) -> dict[str, Any]:
+        """I talenti come li vede la schermata «Talenti» dell'area admin: le schede
+        freelance e le iscrizioni senza scheda in un'unica lista, `stato` `lead` per
+        le seconde, ognuna con id, nome, cognome, email, LinkedIn, stato, origine e
+        data. Dal più recente, o dal più pertinente quando `q` restringe. L'`id` di
+        una scheda va a `get_freelancer`, quello di un lead a
+        `create_freelancer_from_signup`.
+        `q` cerca nome, cognome, email e posizione; `posizione` filtra per ruolo,
+        `remoto` per disponibilità (remoto/ibrido/in_sede), `tariffa_min` e
+        `tariffa_max` per tariffa a giornata (stringa decimale col punto, «500» o
+        «450.50»); `origine` per canale della riga (form/wizard/admin), `utm_source` per
+        campagna, `has_cv` per le schede con o senza CV, `con_accessi` per chi è
+        entrato almeno una volta nella sua area, `creato_da` e `creato_a` per data di
+        creazione (ISO 8601, anche solo `AAAA-MM-GG`). I filtri che una riga nuda non
+        ha (posizione, remoto, tariffa, origine, `has_cv=true`) escludono i lead.
+        `per_stato` conta con ogni filtro tranne `stato`, `totale` con tutti.
+        `next_cursor` è il cursore opaco della pagina successiva, `None` all'ultima:
+        ripassalo in `cursor` insieme agli stessi parametri, un cursore nato con
+        un'altra `q` è rifiutato. Solo lettura."""
+        term = _search_term(q)
+        created_from = _moment(creato_da, "creato_da")
+        created_to = _moment(creato_a, "creato_a")
+        rate_from = _number(tariffa_min, "tariffa_min")
+        rate_to = _number(tariffa_max, "tariffa_max")
+        return _run(
+            lambda s: TalentiService(s).list_recent(
+                limit=limit,
+                stato=stato,
+                q=term,
+                cursor=cursor,
+                posizione=posizione,
+                remoto=remoto,
+                tariffa_min=rate_from,
+                tariffa_max=rate_to,
+                origine=origine,
+                utm_source=utm_source,
+                has_cv=has_cv,
+                con_accessi=con_accessi,
+                creato_da=created_from,
+                creato_a=created_to,
+            )
+        )
+
+    @mcp.tool()
     def get_freelancer(freelancer_id: str) -> dict[str, Any]:
         """Un freelance, per id, con `commenti`: il thread di chi lo ha seguito, dal più
         recente, ognuno con autore e data."""
@@ -183,11 +285,51 @@ def build_server(
         )
 
     @mcp.tool()
-    def list_companies(limit: int = LIST_LIMIT_DEFAULT, stato: str | None = None) -> dict[str, Any]:
-        """Le aziende che hanno descritto un progetto sull'hub, dal più recente: azienda,
-        referente, email, progetto, da quando e per quanto, budget a giornata, stato
-        (nuovo, contattato, in_corso, chiuso) e note."""
-        return _run(lambda s: CompanyService(s).list_recent(limit=limit, stato=stato))
+    def list_companies(
+        limit: int = LIST_LIMIT_DEFAULT,
+        stato: str | None = None,
+        q: str | None = None,
+        cursor: str | None = None,
+        budget_min: str | None = None,
+        budget_max: str | None = None,
+        periodo_da: str | None = None,
+        origine: str | None = None,
+        creato_da: str | None = None,
+        creato_a: str | None = None,
+    ) -> dict[str, Any]:
+        """Le aziende che hanno descritto un progetto sull'hub, come la schermata
+        «Aziende»: ogni riga porta azienda, referente, email, progetto, da quando e
+        per quanto, budget a giornata, stato e note. Dal più recente, o dal più
+        pertinente quando `q` restringe.
+        `q` cerca nome azienda, referente, email e progetto; `stato` filtra (nuovo,
+        contattato, in_corso, chiuso) e `per_stato` conta con ogni filtro tranne
+        `stato`; `budget_min` e `budget_max` sul budget a giornata (stringa decimale
+        col punto, «500» o «450.50»), `periodo_da` sull'inizio del progetto (ISO
+        8601), `origine` sulla pagina da cui è arrivata la richiesta, `creato_da` e
+        `creato_a` sulla data di creazione (ISO 8601, anche solo `AAAA-MM-GG`).
+        `next_cursor` è il cursore opaco della pagina successiva, `None` all'ultima:
+        ripassalo in `cursor` insieme agli stessi parametri, un cursore nato con
+        un'altra `q` è rifiutato. Solo lettura."""
+        term = _search_term(q)
+        budget_from = _number(budget_min, "budget_min")
+        budget_to = _number(budget_max, "budget_max")
+        period_from = _day(periodo_da, "periodo_da")
+        created_from = _moment(creato_da, "creato_da")
+        created_to = _moment(creato_a, "creato_a")
+        return _run(
+            lambda s: CompanyService(s).list_recent(
+                limit=limit,
+                stato=stato,
+                q=term,
+                cursor=cursor,
+                budget_min=budget_from,
+                budget_max=budget_to,
+                periodo_da=period_from,
+                origine=origine,
+                creato_da=created_from,
+                creato_a=created_to,
+            )
+        )
 
     @mcp.tool()
     def get_company(company_id: str) -> dict[str, Any]:
