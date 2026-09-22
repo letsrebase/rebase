@@ -24,6 +24,7 @@ from pigrocrm.core.dashboard.schemas import (
     EconomicDashboard,
     OperationalDashboard,
     PeriodoQuery,
+    ReceivablesDashboard,
 )
 from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm_api.deps import ActorDep, SnapshotSessionDep
@@ -72,3 +73,11 @@ def operativa(session: SnapshotSessionDep, actor: ActorDep) -> OperationalDashbo
     week rather than with a period nobody can supply.
     """
     return DashboardService(session).get_operational_dashboard(actor)
+
+
+@router.get("/receivables", response_model=ReceivablesDashboard)
+def scadenziario(session: SnapshotSessionDep, actor: ActorDep) -> ReceivablesDashboard:
+    """Slice 8 part A (REB-329). No period parameter, for `operativa`'s reason: what is
+    owed is owed today, and a `da`/`a` the service ignored would be a parameter the API
+    advertises and does not honour."""
+    return DashboardService(session).get_receivables_dashboard(actor)

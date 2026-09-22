@@ -57,6 +57,17 @@ ECONOMIC_KEYS = {"periodo", "calcolato_alle", "pnl", "da_incassare", "scaduto", 
 
 OPERATIONAL_KEYS = {"calcolato_alle", "settimana", "arretrato", "segnali", "attivita_recenti"}
 
+RECEIVABLES_KEYS = {
+    "calcolato_alle",
+    "oggi",
+    "totale",
+    "fasce",
+    "per_mese",
+    "per_cliente",
+    "scadute",
+    "scadute_totale",
+}
+
 # Every drill-through this slice ships, as the pair criterion 2 actually cares about: the
 # link a card carries, and the REST list it has to resolve to. A signal whose link named a
 # filter the API does not declare is a card whose list can never equal it -- criterion 2's
@@ -515,7 +526,42 @@ def test_money_is_serialised_as_a_string_on_both_new_dashboards(
     assert isinstance(operational["settimana"]["ore_totali"], str)
 
 
-@pytest.mark.parametrize("path", ["sales", "economic", "operational"])
+def test_the_receivables_dashboard_takes_no_period_and_adds_up(
+    logged_in: TestClient, dashboard_corpus: Engine
+) -> None:
+    """Slice 8 part A (REB-329). No period, like `operational`, asserted on the published
+    schema; and the six buckets, as strings, whose sum is the economic dashboard's own
+    `da_incassare` -- the corpus has one overdue and one current invoice, so the two dated
+    buckets are distinguishable from each other and from an empty register."""
+    schema = logged_in.get("/openapi.json").json()
+    params = schema["paths"]["/api/dashboard/receivables"]["get"].get("parameters", [])
+    assert [p["name"] for p in params] == []
+
+    response = logged_in.get("/api/dashboard/receivables")
+    assert response.status_code == 200, response.text
+    page = response.json()
+    assert set(page) == RECEIVABLES_KEYS
+    assert [f["codice"] for f in page["fasce"]] == [
+        "scaduto",
+        "entro_30",
+        "da_31_a_60",
+        "da_61_a_90",
+        "oltre_90",
+        "senza_scadenza",
+    ]
+    assert all(isinstance(f["importo"], str) for f in page["fasce"])
+    assert isinstance(page["totale"], str)
+    by_code = {f["codice"]: f for f in page["fasce"]}
+    assert by_code["scaduto"]["importo"] == "1000.00"
+    assert by_code["scaduto"]["collegamento"] == "/app/invoices?scadute=true"
+    assert by_code["entro_30"]["importo"] == "500.00"
+    assert page["totale"] == logged_in.get("/api/dashboard/economic").json()["da_incassare"]
+    assert page["scadute_totale"] == 1
+    assert page["scadute"][0]["solleciti_inviati"] == 0
+    assert page["per_cliente"][0]["scaduto"] == "1000.00"
+
+
+@pytest.mark.parametrize("path", ["sales", "economic", "operational", "receivables"])
 def test_authentication_does_not_poison_the_snapshot_on_any_dashboard(
     logged_in: TestClient, dashboard_corpus: Engine, path: str
 ) -> None:

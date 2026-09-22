@@ -77,8 +77,20 @@ const EMPTY_ESTIMATE = {
 /** One mock for every endpoint the tabs read: which tab is mounted decides which are
  *  called. The economic one reads two -- the overview behind its cards and the estimate
  *  behind the «Stima fiscale» card under them. */
+const EMPTY_RECEIVABLES = {
+  calcolato_alle: '2026-03-15T10:00:00Z',
+  oggi: '2026-03-15',
+  totale: '0.00',
+  fasce: [],
+  per_mese: [],
+  per_cliente: [],
+  scadute: [],
+  scadute_totale: 0,
+}
+
 const BY_PATH: Record<string, unknown> = {
   '/api/dashboard/sales': EMPTY_DASHBOARD,
+  '/api/dashboard/receivables': EMPTY_RECEIVABLES,
   '/api/analytics/overview': EMPTY_OVERVIEW,
   '/api/analytics/fiscal': EMPTY_ESTIMATE,
 }
@@ -217,16 +229,26 @@ describe('DashboardPage, the page intestazione', () => {
   })
 })
 
-describe('DashboardPage, two tabs', () => {
-  it('offers exactly the commercial and economic tabs, and marks the current one', () => {
+describe('DashboardPage, three tabs', () => {
+  it('offers the economic, commercial and scadenziario tabs, and marks the current one', () => {
     renderPage({ ...SEARCH, tab: 'economica' })
     const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent)
-    expect(tabs).toEqual(['Economica', 'Commerciale'])
+    expect(tabs).toEqual(['Economica', 'Commerciale', 'Scadenziario'])
     expect(screen.getByRole('tab', { name: 'Economica' })).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('shows the period picker on both tabs', () => {
+  it('shows the period picker on the two tabs that have a period', () => {
     renderPage({ ...SEARCH, tab: 'economica' })
     expect(screen.getByLabelText('Dal')).toBeInTheDocument()
+  })
+
+  /** REB-329: the scadenziario has no period, so the picker would change nothing on
+   *  screen; it is not drawn, and the tab reads its own endpoint and no other. */
+  it('mounts the scadenziario without a period picker, reading its own endpoint', async () => {
+    renderPage({ ...SEARCH, tab: 'scadenziario' })
+    expect(await screen.findByText(/scadenziario per fascia/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Dal')).not.toBeInTheDocument()
+    expect(api.GET).toHaveBeenCalledWith('/api/dashboard/receivables')
+    expect(api.GET).not.toHaveBeenCalledWith('/api/dashboard/sales', expect.anything())
   })
 })

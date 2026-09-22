@@ -13,6 +13,7 @@ so that a composition layer provably cannot invent a figure.
 
 from datetime import date, datetime
 from decimal import Decimal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -269,3 +270,83 @@ class OperationalDashboard(BaseModel):
     arretrato: UnbilledBacklog
     segnali: list[Signal]
     attivita_recenti: list[ActivityRead]
+
+
+class FasciaScadenza(BaseModel):
+    """One of the six ageing buckets of slice 8 §2.1, as `InvoiceRepository.ageing_receivables`
+    returns it: the sum and the count of the receivables whose due date falls in the
+    bucket. `da`/`a` are the bucket's own bounds, both `None` for «senza scadenza» and
+    `a` `None` for «oltre 90»; `quota` is the share of the largest bucket, in [0, 1],
+    computed there so the page scales a bar without coercing an amount.
+
+    `collegamento` is the drill-through, on the one bucket a list can answer today: the
+    overdue one, which is `?scadute=true` on the invoice list and the same
+    `_overdue_predicate` (criterion 2). The others carry `None` until the list takes a
+    due-date window."""
+
+    codice: str
+    etichetta: str
+    da: date | None
+    a: date | None
+    importo: Decimal = Field(max_digits=12, decimal_places=2)
+    numero: int
+    quota: float
+    collegamento: str | None
+
+
+class CassaAttesaMese(BaseModel):
+    """What is owed in one month of `data_scadenza`. `mese` is the month's first day."""
+
+    mese: date
+    importo: Decimal = Field(max_digits=12, decimal_places=2)
+    numero: int
+    quota: float
+
+
+class EsposizioneCliente(BaseModel):
+    """One customer's unpaid total, and how much of it is already past due."""
+
+    customer_id: UUID
+    ragione_sociale: str
+    importo: Decimal = Field(max_digits=12, decimal_places=2)
+    numero: int
+    scaduto: Decimal = Field(max_digits=12, decimal_places=2)
+    quota: float
+
+
+class FatturaScaduta(BaseModel):
+    """One overdue receivable, with the reminders that actually left for it. Sent, not
+    prepared: `PaymentReminder.sent_at` is what counts, so a draft still sitting in the
+    mailbox does not read as a letter the customer ignored."""
+
+    invoice_id: UUID
+    numero: str
+    customer_id: UUID
+    cliente: str
+    data_scadenza: date
+    giorni_di_ritardo: int
+    importo: Decimal = Field(max_digits=12, decimal_places=2)
+    solleciti_inviati: int
+    ultimo_sollecito_il: date | None
+
+
+class ReceivablesDashboard(BaseModel):
+    """Slice 8 part A (REB-329): when the money already invoiced arrives.
+
+    **No period**, like the operational dashboard: a receivable is owed today whatever
+    window the reader is looking at, and `oggi` is the one date every bucket is measured
+    from. **No new data**: every figure is a `SUM` or a `COUNT` over `_receivable_filter`
+    in `InvoiceRepository`, and the six buckets add up to `totale`, which is
+    `sum_da_incassare` -- the same figure the economic dashboard prints, read the same
+    way, which is what `test_dashboard_receivables.py` pins to the cent (§2.2).
+    """
+
+    calcolato_alle: datetime
+    oggi: date
+    totale: Decimal = Field(max_digits=12, decimal_places=2)
+    fasce: list[FasciaScadenza]
+    per_mese: list[CassaAttesaMese]
+    per_cliente: list[EsposizioneCliente]
+    scadute: list[FatturaScaduta]
+    # How many overdue rows exist, against the `len(scadute)` actually listed.
+    scadute_totale: int

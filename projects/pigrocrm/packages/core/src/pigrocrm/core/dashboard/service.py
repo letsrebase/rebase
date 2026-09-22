@@ -42,13 +42,18 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.schemas import PeriodPnlQuery
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.dashboard.schemas import (
+    CassaAttesaMese,
     CommercialDashboard,
     EconomicDashboard,
+    EsposizioneCliente,
+    FasciaScadenza,
+    FatturaScaduta,
     OperationalDashboard,
     PeriodoQuery,
+    ReceivablesDashboard,
     Signal,
 )
-from pigrocrm.core.db import current_week, window_from
+from pigrocrm.core.db import current_week, today_local, window_from
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.invoices.repository import InvoiceRepository
@@ -63,6 +68,21 @@ _EXPECTED_CLOSURE_WINDOW_DAYS = 30
 # §6.1: fifty rows, not paginated. A complete history is the entity's own timeline, which
 # already exists; a paginated global feed would be a second way to browse the same rows.
 _RECENT_ACTIVITIES = 50
+# Slice 8 §2.1's six buckets, labelled once here: the code is the contract, the label is
+# copy, and the page prints the label it is sent rather than keeping a second table.
+_FASCE_ETICHETTE: dict[str, str] = {
+    "scaduto": "Scaduto",
+    "entro_30": "Entro 30 giorni",
+    "da_31_a_60": "Da 31 a 60 giorni",
+    "da_61_a_90": "Da 61 a 90 giorni",
+    "oltre_90": "Oltre 90 giorni",
+    "senza_scadenza": "Senza scadenza",
+}
+# The overdue bucket's drill-through: `?scadute=true` on the invoice list is
+# `_overdue_predicate`, the predicate the bucket is summed with (criterion 2).
+_SCADUTO_LINK = "/app/invoices?scadute=true"
+_CLIENTI_SHOWN = 10
+_SCADUTE_SHOWN = 50
 
 
 class DashboardService:
@@ -249,4 +269,46 @@ class DashboardService:
                 ActivityRead.model_validate(row)
                 for row in self.activities.recent(_RECENT_ACTIVITIES)
             ],
+        )
+
+    def get_receivables_dashboard(self, actor: Actor) -> ReceivablesDashboard:
+        """Slice 8 part A. **No period**, for the operational dashboard's reason: a
+        receivable is owed today whatever window is on screen. Composition only: every sum,
+        count and share below was produced by `InvoiceRepository`, and the labels and the
+        one link are literals. `oggi` is read once, after the snapshot, and handed to every
+        reading, so the four of them measure from the same day even across midnight.
+        """
+        calcolato_alle = self._open_snapshot()
+        oggi = today_local()
+        fasce = [
+            FasciaScadenza(
+                codice=row.codice,
+                etichetta=_FASCE_ETICHETTE[row.codice],
+                da=row.da,
+                a=row.a,
+                importo=row.importo,
+                numero=row.numero,
+                quota=row.quota,
+                collegamento=_SCADUTO_LINK if row.codice == "scaduto" else None,
+            )
+            for row in self.invoices.ageing_receivables(oggi)
+        ]
+        scadute = [
+            FatturaScaduta(**row._asdict())
+            for row in self.invoices.overdue_with_reminders(oggi, _SCADUTE_SHOWN)
+        ]
+        return ReceivablesDashboard(
+            calcolato_alle=calcolato_alle,
+            oggi=oggi,
+            totale=self.invoices.sum_da_incassare(),
+            fasce=fasce,
+            per_mese=[
+                CassaAttesaMese(**row._asdict()) for row in self.invoices.receivables_by_due_month()
+            ],
+            per_cliente=[
+                EsposizioneCliente(**row._asdict())
+                for row in self.invoices.receivables_by_customer(oggi, _CLIENTI_SHOWN)
+            ],
+            scadute=scadute,
+            scadute_totale=self.invoices.count_scadute_non_incassate(),
         )

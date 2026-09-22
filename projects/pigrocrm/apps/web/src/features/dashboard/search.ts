@@ -18,6 +18,9 @@ import { currentMonth } from './periodo'
 export const DASHBOARD_TABS = [
   { id: 'economica', label: 'Economica' },
   { id: 'commerciale', label: 'Commerciale' },
+  // Slice 8 part A (REB-329): when the money already invoiced arrives. The one tab with
+  // no period, so the picker is hidden on it -- see `DashboardPage`.
+  { id: 'scadenziario', label: 'Scadenziario' },
 ] as const
 
 export type TabId = (typeof DASHBOARD_TABS)[number]['id']

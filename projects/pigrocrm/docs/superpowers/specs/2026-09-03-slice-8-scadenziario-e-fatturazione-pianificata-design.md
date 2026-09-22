@@ -1,7 +1,7 @@
 # PigroCRM — Slice 8: Scadenziario incassi e fatturazione pianificata
 
 **Data:** 2026-09-03
-**Stato:** da approvare
+**Stato:** parte A approvata da Ivan e realizzata il 2026-09-22 (REB-329, vedi §2.4); parte B da approvare
 **Prerequisiti:** slice 3 (Fatturazione), slice 4 (Time tracking e P&L), slice 6 (Dashboard) in
 `main`. Lo slice 7 (Attività e promemoria) **non** è un prerequisito, ma §6 lo usa se c'è.
 
@@ -77,6 +77,21 @@ finiscono per disaccordarsi.
 Una tab «Scadenziario» accanto a «Economica» in `/app/analisi`, e la cifra della fascia scaduta è
 cliccabile verso la lista fatture già filtrata — la pagina solleciti dello slice 5B è a un click da lì,
 perché è ciò che si fa con una fattura scaduta.
+
+### 2.4 Com'è stata realizzata (2026-09-22, REB-329)
+
+Una tab «Scadenziario» nella Home accanto a Economica e Commerciale, senza periodo. Oltre alle sei
+fasce del §2.1, con la stessa lettura e lo stesso predicato importato, la tab mostra tre cose che i
+dati permettevano già e nessuna schermata diceva: l'atteso per mese di `data_scadenza`,
+l'esposizione per cliente con la quota scaduta, e le fatture scadute dalla più vecchia con quanti
+solleciti sono partiti (`payment_reminders.sent_at`, non le bozze) e quando l'ultimo. Le quattro
+letture stanno in `InvoiceRepository` (`ageing_receivables`, `receivables_by_due_month`,
+`receivables_by_customer`, `overdue_with_reminders`), la composizione in
+`DashboardService.get_receivables_dashboard`, la REST è `GET /api/dashboard/receivables` e il tool
+MCP `get_receivables_dashboard`. Solo la fascia «scaduto» ha una drill-through (`?scadute=true`
+sulla lista fatture, che è lo stesso `_overdue_predicate`); le altre l'avranno quando la lista
+prenderà un intervallo di scadenza. Il criterio 10 (orologio a mezzanotte e mezza) non ha un test
+suo: `oggi` è `today_local()`, letto una volta e passato a tutte le letture.
 
 ---
 

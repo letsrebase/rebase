@@ -4,6 +4,7 @@ import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { CommercialTab } from './CommercialTab'
 import { EconomicTab } from './EconomicTab'
 import { PeriodPicker } from './PeriodPicker'
+import { ReceivablesTab } from './ReceivablesTab'
 import { DASHBOARD_TABS, type DashboardSearch } from './search'
 
 /**
@@ -37,7 +38,13 @@ export function DashboardPage({
       <PageHeader
         icon={LayoutDashboard}
         title="Home"
-        actions={<PeriodPicker periodo={{ da, a }} onChange={(next) => onSearchChange(next)} />}
+        // No picker on the scadenziario: it has no period (what is owed is owed today), and a
+        // control that changed nothing on screen would be a promise the page does not keep.
+        actions={
+          tab === 'scadenziario' ? undefined : (
+            <PeriodPicker periodo={{ da, a }} onChange={(next) => onSearchChange(next)} />
+          )
+        }
         tabs={
           <TabsList variant="line">
             {DASHBOARD_TABS.map((candidate) => (
@@ -56,6 +63,7 @@ export function DashboardPage({
             stood here until 6C landed are gone: both dashboards exist now, so a paragraph
             explaining their absence would be the untrue thing on the page. */}
         {tab === 'commerciale' && <CommercialTab periodo={{ da, a }} />}
+        {tab === 'scadenziario' && <ReceivablesTab />}
         {tab === 'economica' && (
           <EconomicTab
             periodo={{ da, a }}

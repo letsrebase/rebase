@@ -636,6 +636,19 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
+    def get_receivables_dashboard() -> dict[str, Any]:
+        """Lo scadenziario incassi: quando arrivano i soldi già fatturati. Le fatture emesse
+        e non incassate in sei fasce per scadenza (scaduto, entro 30 giorni, 31-60, 61-90,
+        oltre 90, senza scadenza) con importo e numero, la cui somma è `totale`, lo stesso
+        `da_incassare` del quadro economico; l'atteso per mese di scadenza; l'esposizione
+        per cliente con la quota già scaduta; le fatture scadute dalla più vecchia, con
+        quanti solleciti sono partiti e quando l'ultimo. Nessun periodo: è ciò che è dovuto
+        oggi. Non invia niente: per un sollecito c'è `list_payment_reminder_candidates`.
+        """
+        return dashboard_tools.get_receivables_dashboard(context)
+
+    @mcp.tool()
+    @guard
     def get_operational_dashboard() -> dict[str, Any]:
         """Che cosa c'è da fare adesso: le ore registrate giorno per giorno nella settimana
         corrente (compresi i giorni senza ore, che è il punto), l'arretrato da fatturare in

@@ -13,6 +13,8 @@ export type CashMonth = components['schemas']['CashMonth']
 export type FiscalEstimate = components['schemas']['FiscalEstimate']
 export type PipelineStageSummary = components['schemas']['PipelineStageSummary']
 export type PendingOffer = components['schemas']['PendingOffer']
+export type ReceivablesDashboard = components['schemas']['ReceivablesDashboard']
+export type FasciaScadenza = components['schemas']['FasciaScadenza']
 export type AutomationsDescription = components['schemas']['AutomationsDescription']
 export type AutomationConfigUpdate = components['schemas']['AutomationConfigUpdate']
 
@@ -35,6 +37,16 @@ export function useEconomicDashboard(periodo: Periodo) {
   return useQuery({
     queryKey: queryKeys.dashboard('economica', periodo),
     queryFn: () => unwrap(api.GET('/api/dashboard/economic', { params: { query: periodo } })),
+    staleTime: DASHBOARD_STALE_MS,
+  })
+}
+
+/** Slice 8 part A (REB-329): no period, so the key carries none. What is owed is owed
+ *  today, and the response's `oggi` says which day the buckets were measured from. */
+export function useReceivablesDashboard() {
+  return useQuery({
+    queryKey: queryKeys.dashboard('scadenziario', {}),
+    queryFn: () => unwrap(api.GET('/api/dashboard/receivables')),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
