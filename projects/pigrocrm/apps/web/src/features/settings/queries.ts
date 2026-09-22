@@ -140,7 +140,7 @@ export function useSeedStages() {
 // -- Users ------------------------------------------------------------------
 
 export type UserRecord = components['schemas']['UserRead']
-type UserCreateBody = components['schemas']['UserCreate']
+type InvitationCreateBody = components['schemas']['InvitationCreate']
 type UserUpdateBody = components['schemas']['UserUpdate']
 
 export function useUsers() {
@@ -150,12 +150,70 @@ export function useUsers() {
   })
 }
 
-export function useCreateUser() {
+// -- Invitations (spec 2026-09-17, REB-290's routes; the panel's REB-291 callers) ----
+
+export type InvitationRecord = components['schemas']['InvitationRead']
+
+/** `POST /api/users` with a typed password is dead here: the mail's link, not a
+ *  hallway handoff, is how a space gains a person now (spec §0). The API route itself
+ *  stays until the spec's removal is scheduled (REB-290 left it deliberately); this
+ *  panel simply no longer calls it. */
+export function useInviteUser() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/users', { body: body as unknown as UserCreateBody })),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.users }),
+    mutationFn: (body: { email: string; nome: string | null; ruolo: string }) =>
+      unwrap(
+        api.POST('/api/users/invites', {
+          body: body as unknown as InvitationCreateBody,
+        }),
+      ),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.invites }),
+  })
+}
+
+/** «Inviti in attesa»: open and not yet expired only (the server's predicate, spec §3),
+ *  newest first. A dead invitation is not shown as waiting; a resend or a fresh invite
+ *  revives an expired one. */
+export function usePendingInvites() {
+  return useQuery({
+    queryKey: queryKeys.invites,
+    queryFn: () => unwrap(api.GET('/api/users/invites')),
+  })
+}
+
+/** A fresh token on the same row, a week measured from now, the old link dead at once
+ *  (spec §1). Invalidates the list so the row's new `expires_at` is what shows. */
+export function useResendInvite() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (invitationId: string) =>
+      unwrap(
+        api.POST('/api/users/invites/{invitation_id}/resend', {
+          params: { path: { invitation_id: invitationId } },
+        }),
+      ),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.invites }),
+  })
+}
+
+/** 204 on success, and the row is gone from the pending list (the server keeps it with
+ *  `revoked_at` set; the list's predicate does not show it). 404 for a row that already
+ *  ended, which the toast's own sentence names. */
+export function useRevokeInvite() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (invitationId: string) =>
+      unwrap(
+        api.DELETE('/api/users/invites/{invitation_id}', {
+          params: { path: { invitation_id: invitationId } },
+        }),
+      ),
+    // The 204 carries no body, so the row to drop is the mutation's own argument.
+    onSuccess: (_void, invitationId) => {
+      queryClient.setQueryData<InvitationRecord[]>(queryKeys.invites, (previous) =>
+        previous?.filter((invite) => invite.id !== invitationId),
+      )
+    },
   })
 }
 

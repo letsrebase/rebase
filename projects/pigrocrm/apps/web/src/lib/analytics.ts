@@ -32,6 +32,10 @@ import { tenantPrefix } from './tenant'
 const EVENTS: ReadonlyArray<readonly [string, string]> = [
   ['POST /api/tenants', 'spazio_creato'],
   ['POST /api/auth/verify', 'entrato_con_link'],
+  ['POST /api/auth/invite', 'entrato_con_invito'],
+  ['POST /api/users/invites', 'invito_inviato'],
+  ['POST /api/users/invites/{invitation_id}/resend', 'invito_inviato'],
+  ['DELETE /api/users/invites/{invitation_id}', 'invito_revocato'],
   ['POST /api/customers', 'cliente_creato'],
   ['POST /api/deals', 'deal_creato'],
   ['POST /api/documents', 'documento_creato'],

@@ -34,6 +34,24 @@ describe('stripEntraToken', () => {
     expect(takeEntraToken()).toBeNull()
   })
 
+  // REB-291: the invitation page spends the same `?t=` shape, so the same brace covers
+  // it. This is what keeps the token out of PostHog's first pageview on /app/invite:
+  // `main.tsx` calls this before `initAnalytics`, and `shared/analytics`'s own
+  // `scrubTrackingToken` (asserted in its own test file) is the third brace behind it.
+  it('takes the token out of the URL on the invitation page', () => {
+    setLocation('/app/invite?t=inv123')
+    stripEntraToken()
+    expect(window.location.search).toBe('')
+    expect(takeEntraToken()).toBe('inv123')
+  })
+
+  it('takes the token out of the invitation URL under a space prefix', () => {
+    setLocation('/acme/app/invite?t=inv456')
+    stripEntraToken()
+    expect(window.location.search).toBe('')
+    expect(takeEntraToken()).toBe('inv456')
+  })
+
   it('does nothing off the entra path, token left in the URL', () => {
     setLocation('/app/customers?t=abc123')
     stripEntraToken()

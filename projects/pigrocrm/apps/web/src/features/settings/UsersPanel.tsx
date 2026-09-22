@@ -1,5 +1,5 @@
 import type { ColumnDef } from '@tanstack/react-table'
-import { Plus } from 'lucide-react'
+import { MailPlus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { RowActions } from '@/components/RowActions'
@@ -25,7 +25,17 @@ import {
 } from '@rebase/ui/select'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
-import { useCreateUser, useUpdateUser, useUsers, type UserRecord } from './queries'
+import { roleLabel } from '@/lib/roles'
+import {
+  useInviteUser,
+  usePendingInvites,
+  useResendInvite,
+  useRevokeInvite,
+  useUpdateUser,
+  useUsers,
+  type InvitationRecord,
+  type UserRecord,
+} from './queries'
 
 const ROLES: { value: UserRecord['ruolo']; label: string }[] = [
   { value: 'admin', label: 'Amministratore' },
@@ -33,7 +43,11 @@ const ROLES: { value: UserRecord['ruolo']; label: string }[] = [
   { value: 'readonly', label: 'Sola lettura' },
 ]
 
-const KNOWN_FIELDS = ['email', 'password', 'nome', 'ruolo']
+const KNOWN_FIELDS = ['email', 'nome', 'ruolo']
+
+/** «Scade il…»: the row's own `expires_at` as date and short time, the reader being
+ *  when the link stops working (spec §2's seven-day window made visible). */
+const expiry = new Intl.DateTimeFormat('it-IT', { dateStyle: 'short', timeStyle: 'short' })
 
 function unattributed(problem: ProblemDetail | null): string | null {
   if (!problem) return null
@@ -47,12 +61,14 @@ export function UsersPanel() {
   const [open, setOpen] = useState(false)
   const [email, setEmail] = useState('')
   const [nome, setNome] = useState('')
-  const [password, setPassword] = useState('')
   const [ruolo, setRuolo] = useState<UserRecord['ruolo']>('collaboratore')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
   const users = useUsers()
-  const create = useCreateUser()
+  const invites = usePendingInvites()
+  const invite = useInviteUser()
+  const resend = useResendInvite()
+  const revoke = useRevokeInvite()
   const update = useUpdateUser()
 
   const fieldError = problem ? fieldErrorFrom(problem) : null
@@ -62,18 +78,20 @@ export function UsersPanel() {
     setProblem(null)
     setEmail('')
     setNome('')
-    setPassword('')
     setRuolo('collaboratore')
     setOpen(true)
   }
 
   function submit() {
     setProblem(null)
-    create.mutate(
-      { email, nome, password, ruolo },
+    invite.mutate(
+      // The empty optional name is sent as null, the shape the API's own schema
+      // answers `InvitationCreate.nome` with: the acceptance page asks for one when
+      // the invitation carried none (spec §1), so "blank" here means "not known yet".
+      { email, nome: nome.trim() === '' ? null : nome.trim(), ruolo },
       {
         onSuccess: () => {
-          toast.success('Utente creato')
+          toast.success('Invito inviato')
           setOpen(false)
         },
         onError: (error) => setProblem(toProblem(error)),
@@ -174,19 +192,76 @@ export function UsersPanel() {
     },
   ]
 
+  const inviteColumns: ColumnDef<DataTableFeatures, InvitationRecord>[] = [
+    {
+      header: 'Persona',
+      id: 'persona',
+      // The name the admin carried, when they knew one; the acceptance page asks for
+      // the rest (spec §1), so an address alone is a normal row here.
+      cell: (info) => info.row.original.nome ?? info.row.original.email,
+    },
+    { header: 'Email', accessorKey: 'email' },
+    {
+      header: 'Ruolo',
+      accessorKey: 'ruolo',
+      cell: (info) => roleLabel(info.row.original.ruolo),
+    },
+    {
+      header: 'Scadenza',
+      id: 'scadenza',
+      cell: (info) => expiry.format(new Date(info.row.original.expires_at)),
+    },
+    {
+      header: '',
+      id: 'actions',
+      meta: { align: 'right' },
+      cell: (info) => {
+        const row = info.row.original
+        const label = row.nome ?? row.email
+        return (
+          <RowActions
+            label={`Azioni per ${label}`}
+            items={[
+              {
+                label: 'Reinvia il link',
+                disabled: resend.isPending,
+                onSelect: () =>
+                  resend.mutate(row.id, {
+                    onSuccess: () => toast.success('Invito reinviato'),
+                    onError: (error) => toast.error(toProblem(error).detail),
+                  }),
+              },
+              {
+                label: 'Revoca',
+                destructive: true,
+                disabled: revoke.isPending,
+                onSelect: () =>
+                  revoke.mutate(row.id, {
+                    onSuccess: () => toast.success('Invito revocato'),
+                    onError: (error) => toast.error(toProblem(error).detail),
+                  }),
+              },
+            ]}
+          />
+        )
+      },
+    },
+  ]
+
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="font-semibold">Utenti</h2>
           <p className="text-sm text-muted-foreground">
-            Non esiste registrazione pubblica: gli utenti li crei tu. Il cambio password non è
-            disponibile in questa versione — disattiva e ricrea l&apos;utente se serve.
+            Non esiste registrazione pubblica: le persone entrano con un invito che mandi tu.
+            L&apos;invito vale 7 giorni e funziona una volta sola. Il cambio password non è
+            disponibile in questa versione — disattiva e invita di nuovo se serve.
           </p>
         </div>
         <Button onClick={openDialog}>
-          <Plus className="mr-2 size-4" />
-          Nuovo utente
+          <MailPlus className="mr-2 size-4" />
+          Invita
         </Button>
       </div>
 
@@ -199,13 +274,26 @@ export function UsersPanel() {
         emptyMessage="Nessun utente."
       />
 
+      <div>
+        <h3 className="mb-2 font-semibold">Inviti in attesa</h3>
+        <DataTable
+          columns={inviteColumns}
+          data={invites.data ?? []}
+          isLoading={invites.isLoading}
+          isError={invites.isError}
+          error={invites.error}
+          emptyMessage="Nessun invito in attesa."
+        />
+      </div>
+
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Nuovo utente</DialogTitle>
+            <DialogTitle>Invita</DialogTitle>
             <DialogDescription>
-              La password deve avere almeno 10 caratteri. Comunicala tu all&apos;utente: il sistema
-              non invia email in questa versione.
+              Riceverà una mail con un link che vale 7 giorni e funziona una volta sola: niente
+              password da comunicare tu. Il nome è opzionale, la pagina dell&apos;invito glielo
+              chiede se non lo inserisci.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -218,21 +306,9 @@ export function UsersPanel() {
               </p>
             )}
             <div className="space-y-2">
-              <Label htmlFor="user-nome">Nome</Label>
+              <Label htmlFor="invite-email">Email</Label>
               <Input
-                id="user-nome"
-                aria-invalid={fieldError?.field === 'nome'}
-                value={nome}
-                onChange={(event) => setNome(event.target.value)}
-              />
-              {fieldError?.field === 'nome' && (
-                <p className="text-sm text-destructive">{fieldError.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="user-email">Email</Label>
-              <Input
-                id="user-email"
+                id="invite-email"
                 type="email"
                 aria-invalid={fieldError?.field === 'email'}
                 value={email}
@@ -243,22 +319,21 @@ export function UsersPanel() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="user-password">Password</Label>
+              <Label htmlFor="invite-nome">Nome (opzionale)</Label>
               <Input
-                id="user-password"
-                type="password"
-                aria-invalid={fieldError?.field === 'password'}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                id="invite-nome"
+                aria-invalid={fieldError?.field === 'nome'}
+                value={nome}
+                onChange={(event) => setNome(event.target.value)}
               />
-              {fieldError?.field === 'password' && (
+              {fieldError?.field === 'nome' && (
                 <p className="text-sm text-destructive">{fieldError.message}</p>
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="user-ruolo">Ruolo</Label>
+              <Label htmlFor="invite-ruolo">Ruolo</Label>
               <Select value={ruolo} onValueChange={(value) => setRuolo(value as typeof ruolo)}>
-                <SelectTrigger id="user-ruolo" className="w-full">
+                <SelectTrigger id="invite-ruolo" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -275,8 +350,8 @@ export function UsersPanel() {
             <Button variant="ghost" onClick={() => setOpen(false)}>
               Annulla
             </Button>
-            <Button onClick={submit} disabled={create.isPending}>
-              {create.isPending ? 'Creazione…' : 'Crea'}
+            <Button onClick={submit} disabled={invite.isPending}>
+              {invite.isPending ? 'Invio…' : 'Invia invito'}
             </Button>
           </DialogFooter>
         </DialogContent>

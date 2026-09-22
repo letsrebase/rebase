@@ -75,11 +75,17 @@ export function spaceLoginUrl(slug: string): string {
   return `/${slug}/app/login`
 }
 
-/** The three pages a visitor reaches under `/app` without a session (routes/app.tsx's
+/** The four pages a visitor reaches under `/app` without a session (routes/app.tsx's
  *  guard never bounces them): the login, the signup that makes a space (spec
- *  2026-09-08) and the page that spends a link by mail (spec 2026-09-12 §6.2). Shared
- *  with the guard so the two checks below cannot drift apart. */
-export const PUBLIC_APP_ROUTES = new Set(['/app/login', '/app/register', '/app/verify'])
+ *  2026-09-08), the page that spends a link by mail (spec 2026-09-12 §6.2) and the page
+ *  that spends an invitation (spec 2026-09-17, REB-291). Shared with the guard so the
+ *  two checks below cannot drift apart. */
+export const PUBLIC_APP_ROUTES = new Set([
+  '/app/login',
+  '/app/register',
+  '/app/verify',
+  '/app/invite',
+])
 
 /**
  * Whether a `redirect` search value captured by `/app`'s guard is safe to send a

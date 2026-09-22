@@ -14,6 +14,9 @@ interface AuthValue {
   login: (email: string, password: string) => Promise<void>
   /** Spends a link-by-mail token (`/app/verify?t=...`) and publishes the session. */
   enterWithLink: (t: string) => Promise<void>
+  /** Spends an invitation (`/app/invite?t=...`, REB-291), creating the account and
+   *  publishing the session; `nome` is sent only when the peek asked for one. */
+  enterWithInvite: (t: string, nome?: string) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -51,6 +54,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const enterMutation = useMutation({
     mutationFn: (body: { t: string }) => unwrap(api.POST('/api/auth/verify', { body })),
+    onSuccess: (user) => queryClient.setQueryData(queryKeys.me, user),
+  })
+
+  // `nome: null` explicit on the no-name path: the server reads the invitation's own
+  // stored name when the field is absent or null, so sending it is the only thing the
+  // accept needs beyond the token when the peek carried none.
+  const inviteMutation = useMutation({
+    mutationFn: (body: { t: string; nome: string | null }) =>
+      unwrap(api.POST('/api/auth/invite', { body })),
     onSuccess: (user) => queryClient.setQueryData(queryKeys.me, user),
   })
 
@@ -93,6 +105,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     enterWithLink: async (t) => {
       await enterMutation.mutateAsync({ t })
+    },
+    enterWithInvite: async (t, nome) => {
+      await inviteMutation.mutateAsync({ t, nome: nome ?? null })
     },
     /**
      * Ends the session and then leaves the page, whatever the server answered.

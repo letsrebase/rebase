@@ -30,6 +30,10 @@ export const queryKeys = {
   schema: (entityType: string) => ['schema', entityType] as const,
   stages: ['pipeline-stages'] as const,
   users: ['users'] as const,
+  // The pending invitations «Inviti in attesa» lists (REB-291). Same reasoning as
+  // `users` above: one installation, one space per page load (the router's basepath
+  // is fixed at boot), so no id needs to scope it.
+  invites: ['invites'] as const,
   // Scoped by user id, not a bare `['tokens']`: `GET /api/tokens` already
   // scopes the *response* to the caller (`PatService.list` filters on
   // `actor.id`), and `logout()`'s `queryClient.clear()` already wipes this

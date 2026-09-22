@@ -18,8 +18,8 @@ function sessionAs(user: { id: string; ruolo: string } | null) {
   return { user, isLoading: false, login: vi.fn(), logout: vi.fn() } as never
 }
 
-function ok(data: unknown) {
-  return { data, response: new Response(null, { status: 200 }) } as never
+function ok(data: unknown, status = 200) {
+  return { data, response: new Response(null, { status }) } as never
 }
 
 function failed(error: unknown, status: number) {
@@ -53,6 +53,26 @@ const OTHER_ACTIVE_USER = {
   created_at: '2026-08-01T10:00:00Z',
 }
 
+const PENDING_INVITE = {
+  id: 'i1',
+  email: 'luca@pigro.it',
+  nome: 'Luca',
+  ruolo: 'collaboratore' as const,
+  invited_by: 'u1',
+  expires_at: '2026-09-29T10:00:00Z',
+  created_at: '2026-09-22T10:00:00Z',
+}
+
+/** GET routed by path: the panel reads the members list and «Inviti in attesa» at
+ *  once, and a single `mockResolvedValue` would answer both with the same document. */
+function respond(routes: Record<string, () => unknown>) {
+  vi.mocked(api.GET).mockImplementation((path: string) => {
+    const route = routes[path]
+    if (!route) throw new Error(`unexpected GET ${path}`)
+    return Promise.resolve(route() as never)
+  })
+}
+
 function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -62,10 +82,16 @@ function renderPanel() {
   )
 }
 
+const lists = {
+  '/api/users': () => ok([]),
+  '/api/users/invites': () => ok([]),
+}
+
 beforeEach(() => {
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.POST).mockReset()
   vi.mocked(api.PATCH).mockReset()
+  vi.mocked(api.DELETE).mockReset()
   vi.mocked(toast.error).mockReset()
   vi.mocked(toast.success).mockReset()
   // Not one of the users any fixture below represents -- tests that care who
@@ -86,7 +112,7 @@ async function openRowMenu(nome: string) {
 
 describe('UsersPanel', () => {
   it('lists users with their role and status', async () => {
-    vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([ADMIN, DISABLED_USER])))
+    respond({ ...lists, '/api/users': () => ok([ADMIN, DISABLED_USER]) })
     renderPanel()
 
     expect(await screen.findByText('Ada Admin')).toBeInTheDocument()
@@ -98,7 +124,7 @@ describe('UsersPanel', () => {
   })
 
   it('reports the status as a pill, on the one component every state in the product uses', async () => {
-    vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([ADMIN, DISABLED_USER])))
+    respond({ ...lists, '/api/users': () => ok([ADMIN, DISABLED_USER]) })
     renderPanel()
 
     // `data-tone` rather than a class: it is what `StatusPill` puts on the element for
@@ -108,16 +134,24 @@ describe('UsersPanel', () => {
   })
 
   it('shows a failed list as a distinct alert, not an empty-looking table', async () => {
-    vi.mocked(api.GET).mockReturnValue(
-      Promise.resolve(failed({ code: 'http_error', detail: 'Il server non risponde.' }, 503)),
-    )
+    // Both lists fail: the panel renders one table per list, and a healthy empty
+    // invites table would still carry the `table` role -- the assertion is that
+    // *no* table renders when neither has anything real to show.
+    respond({
+      '/api/users': () => failed({ code: 'http_error', detail: 'Il server non risponde.' }, 503),
+      '/api/users/invites': () =>
+        failed({ code: 'http_error', detail: 'Inviti non disponibili.' }, 503),
+    })
     renderPanel()
-    expect(await screen.findByRole('alert')).toHaveTextContent('Il server non risponde.')
+    const alerts = await screen.findAllByRole('alert')
+    expect(alerts.map((el) => el.textContent)).toEqual(
+      expect.arrayContaining(['Il server non risponde.', 'Inviti non disponibili.']),
+    )
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 
   it('toggles a user back on through the real endpoint', async () => {
-    vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([DISABLED_USER])))
+    respond({ ...lists, '/api/users': () => ok([DISABLED_USER]) })
     vi.mocked(api.PATCH).mockReturnValueOnce(Promise.resolve(ok({ ...DISABLED_USER, attivo: true })))
     renderPanel()
 
@@ -136,67 +170,142 @@ describe('UsersPanel', () => {
   })
 
   /**
-   * `UserCreate.password` requires >= 10 characters server-side
-   * (`MIN_PASSWORD_LENGTH`, auth/schemas.py), and the brief's own sample gated
-   * "Crea" on that exact number client-side. This project's own convention (see
-   * `CustomerForm`/`DealForm`/`PersonForm`: Save is disabled only while the
-   * mutation is in flight, never on field content) says the backend's message is
-   * what the user sees, attached to the field -- not a client-side rule
-   * duplicating it. This proves both halves: the button is never gated, and a
-   * too-short password's rejection lands on the password field.
+   * The dialog is the invitation, not the account: REB-290's spec removes the typed
+   * password as the way a space gains a person, and this is the assertion the card
+   * names -- there is no password field to type one into. The email conflict the old
+   * flow rejected client-side (a duplicate user) is the server's 409 on the invite
+   * now, and it lands as a banner because it names no single field.
    */
-  it('never disables "Crea" on password length, and shows the server’s own rejection on the password field', async () => {
-    vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([])))
-    vi.mocked(api.POST).mockReturnValueOnce(
-      Promise.resolve(
-        failed(
-          {
-            code: 'validation_failed',
-            detail: 'deve avere almeno 10 caratteri',
-            field: 'password',
-            reason: 'deve avere almeno 10 caratteri',
-            expected: '>= 10 caratteri',
-          },
-          422,
-        ),
-      ),
-    )
+  it('opens the Invita dialog with no password field', async () => {
+    respond(lists)
     renderPanel()
 
-    await userEvent.click(await screen.findByRole('button', { name: /nuovo utente/i }))
-    const createButton = screen.getByRole('button', { name: 'Crea' })
-    expect(createButton).not.toBeDisabled()
+    await userEvent.click(await screen.findByRole('button', { name: /^invita$/i }))
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Email')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Nome/)).toBeInTheDocument()
+  })
 
-    await userEvent.type(screen.getByLabelText('Nome'), 'Nuovo Utente')
-    await userEvent.type(screen.getByLabelText('Email'), 'nuovo@pigro.it')
-    await userEvent.type(screen.getByLabelText('Password'), 'corta')
-    await userEvent.click(createButton)
+  it('invites through POST /api/users/invites, sending the blank name as null', async () => {
+    respond(lists)
+    vi.mocked(api.POST).mockReturnValueOnce(Promise.resolve(ok(PENDING_INVITE, 201)))
+    renderPanel()
 
-    // Not `/almeno 10 caratteri/` alone -- the dialog's own static help text
-    // ("La password deve avere almeno 10 caratteri.") already contains that
-    // exact phrase, so asserting on it would pass even if the server's message
-    // never rendered at all. "(atteso: ...)" only appears in `fieldErrorFrom`'s
-    // own formatting of a validation error that carries `expected`, so it can
-    // only come from the field-level message this test exists to prove.
-    expect(await screen.findByText(/atteso: >= 10 caratteri/)).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: /^invita$/i }))
+    await userEvent.type(screen.getByLabelText('Email'), 'giulia@pigro.it')
+    await userEvent.click(screen.getByRole('button', { name: 'Invia invito' }))
+
+    await waitFor(() =>
+      expect(api.POST).toHaveBeenCalledWith(
+        '/api/users/invites',
+        expect.objectContaining({
+          body: { email: 'giulia@pigro.it', nome: null, ruolo: 'collaboratore' },
+        }),
+      ),
+    )
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Invito inviato'))
   })
 
   it('shows a duplicate-email conflict as a banner, since it names no single field', async () => {
-    vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([])))
+    respond(lists)
     vi.mocked(api.POST).mockReturnValueOnce(
       Promise.resolve(
         failed(
-          { code: 'conflict', detail: 'esiste già un utente con questa email', email: 'a@b.it' },
+          { code: 'conflict', detail: 'esiste già un invito in attesa per questa email', email: 'a@b.it' },
           409,
         ),
       ),
     )
     renderPanel()
 
-    await userEvent.click(await screen.findByRole('button', { name: /nuovo utente/i }))
-    await userEvent.click(screen.getByRole('button', { name: 'Crea' }))
+    await userEvent.click(await screen.findByRole('button', { name: /^invita$/i }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia invito' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('esiste già un utente con questa email')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'esiste già un invito in attesa per questa email',
+    )
+  })
+
+  describe('Inviti in attesa', () => {
+    it('lists the pending invitations with their expiry', async () => {
+      respond({ ...lists, '/api/users/invites': () => ok([PENDING_INVITE]) })
+      renderPanel()
+
+      expect(await screen.findByText('Inviti in attesa')).toBeInTheDocument()
+      expect(await screen.findByText('Luca')).toBeInTheDocument()
+      // The row's expiry renders as a date; the exact string depends on the runner's
+      // timezone, so the assertion names the shape (gg/mm/aaaa, hh:mm) and not the hour.
+      expect(screen.getByText(/\d{2}\/\d{2}\/\d{2,4}, \d{2}:\d{2}/)).toBeInTheDocument()
+    })
+
+    it('says so when nothing is waiting', async () => {
+      respond(lists)
+      renderPanel()
+      expect(await screen.findByText('Nessun invito in attesa.')).toBeInTheDocument()
+    })
+
+    it('resends through the right route and refreshes the list', async () => {
+      respond({ ...lists, '/api/users/invites': () => ok([PENDING_INVITE]) })
+      vi.mocked(api.POST).mockReturnValueOnce(Promise.resolve(ok(PENDING_INVITE)))
+      renderPanel()
+
+      await openRowMenu('Luca')
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Reinvia il link' }))
+
+      await waitFor(() =>
+        expect(api.POST).toHaveBeenCalledWith(
+          '/api/users/invites/{invitation_id}/resend',
+          expect.objectContaining({ params: { path: { invitation_id: 'i1' } } }),
+        ),
+      )
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Invito reinviato'))
+      // The list refetches: the row's new expiry is the server's, not this cache's.
+      await waitFor(() =>
+        expect(
+          vi
+            .mocked(api.GET)
+            .mock.calls.filter((call: [string]) => call[0] === '/api/users/invites'),
+        ).toHaveLength(2),
+      )
+    })
+
+    it('revokes through the right route and drops the row from the list', async () => {
+      respond({ ...lists, '/api/users/invites': () => ok([PENDING_INVITE]) })
+      vi.mocked(api.DELETE).mockReturnValueOnce(
+        Promise.resolve({ data: undefined, response: new Response(null, { status: 204 }) } as never),
+      )
+      renderPanel()
+
+      await openRowMenu('Luca')
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Revoca' }))
+
+      await waitFor(() =>
+        expect(api.DELETE).toHaveBeenCalledWith(
+          '/api/users/invites/{invitation_id}',
+          expect.objectContaining({ params: { path: { invitation_id: 'i1' } } }),
+        ),
+      )
+      expect(await screen.findByText('Nessun invito in attesa.')).toBeInTheDocument()
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Invito revocato'))
+    })
+
+    it('surfaces a terminal row’s 404 as the server’s sentence', async () => {
+      respond({ ...lists, '/api/users/invites': () => ok([PENDING_INVITE]) })
+      vi.mocked(api.DELETE).mockReturnValueOnce(
+        Promise.resolve(
+          failed({ code: 'not_found', detail: 'Invitation i1 non trovato', entity: 'invitation' }, 404),
+        ),
+      )
+      renderPanel()
+
+      await openRowMenu('Luca')
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Revoca' }))
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith('Invitation i1 non trovato'),
+      )
+    })
   })
 
   /**
@@ -212,7 +321,10 @@ describe('UsersPanel', () => {
    * proves that, not merely that the row happens to show the right text.
    */
   it('updates the row from the mutation’s own response, with no second request that could independently fail', async () => {
-    vi.mocked(api.GET).mockReturnValueOnce(Promise.resolve(ok([OTHER_ACTIVE_USER])))
+    respond({
+      ...lists,
+      '/api/users': () => ok([OTHER_ACTIVE_USER]),
+    })
     vi.mocked(api.PATCH).mockReturnValueOnce(
       Promise.resolve(ok({ ...OTHER_ACTIVE_USER, attivo: false })),
     )
@@ -223,11 +335,11 @@ describe('UsersPanel', () => {
 
     expect(await screen.findByText('Disattivato')).toBeInTheDocument()
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Utente disattivato'))
-    expect(api.GET).toHaveBeenCalledTimes(1)
+    expect(api.GET).toHaveBeenCalledTimes(2)
   })
 
   it('changes another user’s role through the real endpoint', async () => {
-    vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([OTHER_ACTIVE_USER])))
+    respond({ ...lists, '/api/users': () => ok([OTHER_ACTIVE_USER]) })
     vi.mocked(api.PATCH).mockReturnValueOnce(
       Promise.resolve(ok({ ...OTHER_ACTIVE_USER, ruolo: 'admin' })),
     )
@@ -256,7 +368,7 @@ describe('UsersPanel', () => {
   describe('acting on your own account', () => {
     it('disables "Disattiva" for your own row', async () => {
       vi.mocked(useAuth).mockReturnValue(sessionAs({ id: ADMIN.id, ruolo: 'admin' }))
-      vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([ADMIN])))
+      respond({ ...lists, '/api/users': () => ok([ADMIN]) })
       renderPanel()
 
       await openRowMenu('Ada Admin')
@@ -273,7 +385,7 @@ describe('UsersPanel', () => {
 
     it('still allows deactivating someone else', async () => {
       vi.mocked(useAuth).mockReturnValue(sessionAs({ id: ADMIN.id, ruolo: 'admin' }))
-      vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([ADMIN, OTHER_ACTIVE_USER])))
+      respond({ ...lists, '/api/users': () => ok([ADMIN, OTHER_ACTIVE_USER]) })
       renderPanel()
 
       await openRowMenu('Altro Utente')
@@ -285,7 +397,7 @@ describe('UsersPanel', () => {
 
     it('disables the role selector for your own row too, so you cannot demote yourself out of this screen', async () => {
       vi.mocked(useAuth).mockReturnValue(sessionAs({ id: ADMIN.id, ruolo: 'admin' }))
-      vi.mocked(api.GET).mockReturnValue(Promise.resolve(ok([ADMIN])))
+      respond({ ...lists, '/api/users': () => ok([ADMIN]) })
       renderPanel()
 
       expect(await screen.findByRole('combobox', { name: /ruolo di ada admin/i })).toBeDisabled()

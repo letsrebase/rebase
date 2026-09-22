@@ -108,6 +108,7 @@ beforeEach(() => {
     login: vi.fn(),
     logout: vi.fn(),
     enterWithLink: vi.fn(),
+    enterWithInvite: vi.fn(),
   })
   Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } })
   vi.spyOn(window, 'confirm').mockReturnValue(true)

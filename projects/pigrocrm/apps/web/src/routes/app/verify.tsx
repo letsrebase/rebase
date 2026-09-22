@@ -3,18 +3,11 @@ import { useEffect, useRef, useState } from 'react'
 import { BrandMark } from '@/components/BrandMark'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rebase/ui/card'
-import { api, toProblem } from '@/lib/api'
+import { toProblem } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { homeAfterEntry } from '@/lib/entry-home'
 import { takeEntraToken } from '@/lib/entra-token'
 import { tenantPrefix } from '@/lib/tenant'
-
-/** Where a fresh session goes: the space's home, or the root's under its own name (the
- *  same rule as `login.tsx`). Asks `/api/tenants/root` only on the bare page. */
-async function homeAfterEntry(): Promise<string> {
-  if (tenantPrefix !== '') return `${tenantPrefix}/app/`
-  const { data } = await api.GET('/api/tenants/root')
-  return data?.slug ? `/${data.slug}/app/` : '/app/'
-}
 
 /**
  * The page a link by mail lands on (spec 2026-09-12 §6.2). It spends the token once,
