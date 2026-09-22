@@ -126,7 +126,7 @@ export function DealsList({
         </FilterRow>
       </PageHeader>
 
-      <div className="px-8 pb-8">
+      <div className="px-8 pt-6 pb-8">
         {/* The chip says which filter is on; this says what it is hiding. A filter
             applied without also being stated is what this slice calls a partial
             result. */}

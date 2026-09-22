@@ -141,7 +141,7 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
         </FilterRow>
       </PageHeader>
 
-      <div className="px-8 pb-8">
+      <div className="px-8 pt-6 pb-8">
         {scadute === true && (
           <p
             role="status"
