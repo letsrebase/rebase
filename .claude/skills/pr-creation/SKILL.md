@@ -254,45 +254,51 @@ gh pr create --body-file pr-body.md \
    #267): inline findings, each with a `P0`, `P1` or `P2` badge, and, when its summary
    comment is turned on in app.greptile.com, a confidence score out of 5 at the top of
    that comment. The PR does not merge over a finding. On a milestone's draft PR the
-   loop runs after `gh pr ready`, on the sha that will merge. Wait for its review of
-   the head sha as a background job, next to the CI watch, then read what that review
-   raised:
+   loop runs after `gh pr ready`, on the sha that will merge. A run shows on the commit
+   as the `Greptile Review` check run, whose summary counts the findings (`3 files
+   reviewed, 2 comments added.`), and, when there are findings, as a review by the bot
+   with an empty body. A clean run leaves only the check run (#268's fourth commit) and
+   a run can leave only the review (#268's third), so wait for either, as a background
+   job next to the CI watch, then read what that run raised:
 
    ```bash
    sha=$(git rev-parse HEAD)
    for i in $(seq 20); do   # ten minutes, then the @greptileai nudge below
+     run=$(gh api "repos/letsrebase/rebase/commits/$sha/check-runs" \
+         --jq '.check_runs[] | select(.name == "Greptile Review" and .status == "completed") | .output.summary')
      rid=$(gh api repos/letsrebase/rebase/pulls/<n>/reviews \
          --jq ".[] | select(.user.login == \"greptile-apps[bot]\" and .commit_id == \"$sha\") | .id" | tail -n 1)
-     [ -n "$rid" ] && break; sleep 30
+     [ -n "$run$rid" ] && break; sleep 30
    done
+   echo "$run"
    [ -n "$rid" ] && gh api repos/letsrebase/rebase/pulls/<n>/comments \
        --jq ".[] | select(.pull_request_review_id == $rid and .in_reply_to_id == null) | \"\(.id) \(.path):\(.line // .original_line) \(.body)\""
-   [ -n "$rid" ] && gh api repos/letsrebase/rebase/issues/<n>/comments \
+   gh api repos/letsrebase/rebase/issues/<n>/comments \
        --jq '.[] | select(.user.login == "greptile-apps[bot]") | .body' | grep -oiE 'confidence score[^0-9]*[0-9]/5' | tail -n 1
    ```
 
-   The third command reads the score: the summary is a conversation comment on the PR,
+   The last command reads the score: the summary is a conversation comment on the PR,
    not a review, and it exists only where the setting is on (nothing printed means no
    summary, not a score of zero).
 
    Each finding is either **fixed**, in a commit that names it, or **answered**, with a
    reply on its thread (`gh api repos/letsrebase/rebase/pulls/<n>/comments/<id>/replies
-   -f body=...`) saying why the code stays as it is. Push, wait for the re-review of the
-   new sha, read again. The loop ends when the review of the sha that will merge raised
+   -f body=...`) saying why the code stays as it is. Push, wait for the run on the new
+   sha, read again. The loop ends when the run on the sha that will merge raised
    nothing new, every earlier thread is fixed or answered, and, where the summary is
    on, the score reads 5/5. A review with a body and no inline comment is Greptile not
    reviewing (#259 and #260, `Your trial has ended`; the free plan's reviews here have
    an empty body): say so on the card and tell the person before you merge. A finding
    raised again after an answer is not closed by repeating the answer: it is a
    disagreement for the card, as a `**Decision for the lead**` line. Ten minutes with
-   no review on the head sha (`$rid` empty): `gh pr comment <n> --body '@greptileai'`
-   once, which re-triggers it, and run the wait again; still nothing, say so on the
-   card and go on without the comments command. A later push may get no review on
-   its own: #268's second commit got none in ten minutes and one two minutes after
-   the comment, while its third was reviewed unprompted (2026-09-22). What the loop did goes on the card in
-   the same `**Review applied:**` comment as the independent review (the
-   `linear-content` shape): how many findings, which changed the code (sha), which were
-   answered and why, and the final score when there is one.
+   no run on the head sha (`$run` and `$rid` both empty): `gh pr comment <n> --body
+   '@greptileai'` once, which re-triggers it, and run the wait again; still nothing,
+   say so on the card and go on without the comments command. A later push may get no
+   run on its own: two of #268's four commits got none in ten minutes and one within
+   thirty seconds of the comment, the other two were reviewed unprompted (2026-09-22).
+   What the loop did goes on the card in the same `**Review applied:**` comment as the
+   independent review (the `linear-content` shape): how many findings, which changed
+   the code (sha), which were answered and why, and the final score when there is one.
 4. **Merge with a merge commit**, the repository's shape:
    `gh pr merge <n> --merge --delete-branch`. Then, right away, the
    `**Merged:**` comment on the card with the run ids, the commit sha, the test counts
