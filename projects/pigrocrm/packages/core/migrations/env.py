@@ -24,7 +24,17 @@ if not _configured_url or _configured_url == _PLACEHOLDER_URL:
     config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # `disable_existing_loggers` defaults to True, which is right for `alembic upgrade`
+    # from a shell and wrong everywhere else: `migrate_to_head` runs this file inside
+    # the API process (a signup provisions in-process, and the boot's
+    # `ensure-space-defaults` reaches every space the same way), and the first run
+    # after boot disabled every logger the ini does not name -- access lines and
+    # application warnings stopped. The ini's own formatters and levels still apply;
+    # only the blanket disable is dropped. REB-190, caught by CI the day the route
+    # matrix shifted the xdist distribution and test_mail.py landed on the worker
+    # that had just migrated. Pinned by
+    # `test_a_migration_leaves_the_host_process_loggers_emitting`.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

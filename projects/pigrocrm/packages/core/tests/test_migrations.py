@@ -380,6 +380,43 @@ def test_env_falls_back_to_settings_when_config_has_no_url(monkeypatch: pytest.M
     assert revision == expected_head
 
 
+def test_a_migration_leaves_the_host_process_loggers_emitting() -> None:
+    """REB-190: `env.py` calls Alembic's `fileConfig`, whose default
+    `disable_existing_loggers=True` is right for `alembic upgrade` from a shell and
+    wrong inside the API process, where `migrate_to_head` runs on every signup and at
+    every boot: it disabled every logger the ini does not name (root, sqlalchemy,
+    alembic) -- uvicorn's and `pigrocrm.core.mail`'s among them. CI showed it the day
+    the route matrix shifted the xdist distribution and `test_mail.py` landed on the
+    worker that had just migrated: `caplog` stayed empty. A handler of our own on a
+    pre-existing logger, not `caplog`: `fileConfig` rebuilds the ROOT handler list
+    too, so a root-attached capture would go blind for the fix-independent reason.
+    """
+    import logging
+
+    grabbed: list[str] = []
+
+    class Grab(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            grabbed.append(record.getMessage())
+
+    witness = logging.getLogger("pigrocrm.witness-for-reb-190")
+    handler = Grab()
+    witness.addHandler(handler)
+    witness.setLevel(logging.WARNING)
+    try:
+        with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+            upgrade(_alembic_config(container.get_connection_url()), "head")
+            witness.warning("ancora viva")
+    finally:
+        witness.removeHandler(handler)
+        witness.setLevel(logging.NOTSET)
+
+    assert "ancora viva" in grabbed, (
+        "a migration disabled an existing logger: the first signup in the API process "
+        "would silence uvicorn's and the application's own log lines"
+    )
+
+
 def test_stato_dal_is_backfilled_from_the_timeline_and_chiuso_il_is_not() -> None:
     """The asymmetry of spec §4.1, asserted rather than described.
 
