@@ -29,7 +29,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
-from pigrocrm.core.actor import Actor
+from pigrocrm.core.actor import Actor, Role
 from pigrocrm.core.auth.invitation_models import Invitation
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.repository import UserRepository
@@ -250,8 +250,13 @@ class InvitationService:
             raise ValidationFailed(
                 "invitation", "nome", "obbligatorio quando l'invito non porta un nome"
             )
+        # `ruolo` is a plain `Mapped[str]` on the row (the column's type), and the same
+        # shape on `User`; the `Role` literal is what `create` stores into it, so the
+        # read-back narrows by construction, not by check. pat_service.py:148 carries the
+        # same ignore for the same reason.
+        ruolo: Role = row.ruolo  # type: ignore[assignment]
         user = UserService(self.session).create(
-            UserCreate(email=row.email, password=None, nome=chosen, ruolo=row.ruolo),
+            UserCreate(email=row.email, password=None, nome=chosen, ruolo=ruolo),
             Actor.system(),
         )
         now = datetime.now(UTC)
