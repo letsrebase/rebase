@@ -44,8 +44,13 @@
   --landing-grid-on-ink: color-mix(in oklab, var(--color-paper) 8%, transparent);
   --landing-quiet-on-ink: color-mix(in oklab, var(--color-paper) 78%, transparent);
   --landing-rule-on-ink: color-mix(in oklab, var(--color-paper) 22%, transparent);
-  /* The paper at four fifths: what a light band lays over the field. */
-  --landing-veil: color-mix(in oklab, var(--color-paper) 80%, transparent);
+  /* The paper at 92%, not four fifths (REB-323): the field's darkest tile, Prussian
+     Blue, can drift fully under a light band's veil, and at 80% the kicker/accent
+     pair read 3.54:1 there, under the 4.5:1 floor. 92% is the minimum whole percent
+     that holds 4.5:1 against that tile, derived with the same sRGB blend
+     `landing-tokens.test.ts` uses for every other pair; what a light band lays over
+     the field. */
+  --landing-veil: color-mix(in oklab, var(--color-paper) 92%, transparent);
 }
 
 /* Same woff2 as the app, same origin, one file in the repository. Never a CDN: a

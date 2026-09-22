@@ -432,6 +432,35 @@ describe('landing.css text pairs', () => {
   })
 })
 
+// REB-323: the field's tiles drift under a light band, and its darkest one --
+// Prussian Blue, the ink itself -- can end up the whole ground under the veil. The
+// veil composites to plain Paper only when the body shows through underneath it
+// (REB-276's own comment above says so); a tile is a darker backdrop, blended the
+// same sRGB way `resolveValue` blends every other `color-mix()` pair in this file.
+// At the old 80% the kicker/accent pair read 3.54:1 there, under the 4.5:1 floor.
+// `--landing-veil` now mixes Paper at the minimum whole percent that holds the
+// floor against that tile, so this drifts back into view unseen or not at all.
+describe('landing.css veil over the darkest tile', () => {
+  const paper = shared['--color-paper']
+  const prussianBlue = shared['--color-prussian-blue']
+  if (!paper || !prussianBlue) throw new Error('paper/Prussian Blue missing from the shared palette')
+  const accent = resolveColour('--landing-accent', landingCss)
+  const mix = COLOR_MIX.exec(landingVarsRaw(landingCss)['--landing-veil'] ?? '')
+
+  it('reaches 4.5:1 between the accent and the veil composited over Prussian Blue', () => {
+    if (!mix) throw new Error('--landing-veil is not a color-mix(in <space>, var(--color-…) N%, transparent)')
+    const mixColour = shared[mix[1] ?? '']
+    if (!mixColour) throw new Error(`--landing-veil mixes ${mix[1]}, which tokens.css does not define`)
+    const veilOnTile = blendSrgb(mixColour, prussianBlue, Number(mix[2]))
+    expect(contrastRatio(accent, veilOnTile)).toBeGreaterThanOrEqual(AA_TEXT)
+  })
+
+  it('would have caught REB-323: the old 80% veil failing against that tile', () => {
+    const preFixVeilOnTile = blendSrgb(paper, prussianBlue, 80)
+    expect(contrastRatio(accent, preFixVeilOnTile)).toBeLessThan(AA_TEXT)
+  })
+})
+
 // pitch.css joined TOKEN_CONSUMERS in REB-248: it used to restate the six colours and
 // its own @font-face, a latent fork of shared/brand that a palette change would have
 // left the deck on. These hold the same two guarantees landing.css already had.
