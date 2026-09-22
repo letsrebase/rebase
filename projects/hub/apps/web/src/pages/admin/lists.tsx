@@ -400,7 +400,7 @@ export function AdminTalenti() {
              container closed by a 1px ink line, 48px rows, a 2px rule under the header
              and a 1px separator between the cells, all from `@rebase/ui/table`. The
              padding the raw `th`/`td` used to type is the primitive's own. */}
-          <div className="px-6 pb-6">
+          <div className="px-6 pt-6 pb-6">
             <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
               <Table>
                 <TableHeader>
@@ -1028,7 +1028,7 @@ export function AdminCompanies() {
         <Empty>{activeFilters ? 'Nessun risultato per questi filtri.' : 'Nessuna richiesta qui.'}</Empty>
       ) : (
         <>
-          <div className="px-6 pb-6">
+          <div className="px-6 pt-6 pb-6">
             <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
               <Table>
                 <TableHeader>

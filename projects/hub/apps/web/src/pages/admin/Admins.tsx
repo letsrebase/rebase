@@ -199,7 +199,7 @@ export function AdminAdmins() {
         <Empty>{debouncedQuery ? 'Nessun risultato per questa ricerca.' : 'Nessun amministratore ancora.'}</Empty>
       ) : (
         <>
-          <div className="px-6 pb-6">
+          <div className="px-6 pt-6 pb-6">
             <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
               <Table>
                 <TableHeader>
