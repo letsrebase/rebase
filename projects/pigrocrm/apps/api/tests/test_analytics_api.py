@@ -335,6 +335,87 @@ def test_an_unestimated_deal_is_excluded_from_the_budget_aggregates(
     assert page["next_cursor"] is None
 
 
+# --- ceiling headroom and the "would this fit?" simulator (REB-373) -----------------
+
+
+def test_the_ceiling_headroom_route_serialises_decimals_as_strings(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    response = logged_in.get("/api/analytics/ceilings", params={"anno": ANNO})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["anno"] == ANNO
+    assert body["pack_id"] == "it-flat-rate"
+    ricavi_soglia = next(s for s in body["soglie"] if s["id"] == "soglia_ricavi")
+    assert ricavi_soglia["soglia"] == "85000.00"
+    assert isinstance(ricavi_soglia["ricavi"], str)
+    assert isinstance(ricavi_soglia["residuo"], str)
+
+
+def test_the_ceiling_headroom_route_is_readable_by_a_readonly_actor(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    readonly = _second_actor(logged_in, "readonly")
+    assert readonly.get("/api/analytics/ceilings", params={"anno": ANNO}).status_code == 200
+
+
+def test_the_ceiling_headroom_route_is_a_404_without_a_fiscal_profile(
+    logged_in: TestClient,
+) -> None:
+    response = logged_in.get("/api/analytics/ceilings", params={"anno": ANNO})
+    assert response.status_code == 404, response.text
+    assert response.json()["code"] == "not_found"
+
+
+def test_the_ceiling_headroom_route_requires_an_anno(logged_in: TestClient) -> None:
+    assert logged_in.get("/api/analytics/ceilings").status_code == 422
+
+
+def test_the_simulator_adds_the_typed_value_and_answers_would_this_fit(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    response = logged_in.get(
+        "/api/analytics/ceilings/simulate",
+        params={"anno": ANNO, "valore_preventivato": "20000.00"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["aggiunta_sintetica"] == "20000.00"
+    ricavi_soglia = next(s for s in body["soglie"] if s["id"] == "soglia_ricavi")
+    assert ricavi_soglia["ricavi_simulati"] == "20000.00"
+    assert ricavi_soglia["rientra"] is True
+
+
+def test_the_simulator_derives_the_addition_from_hours_and_rate(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    response = logged_in.get(
+        "/api/analytics/ceilings/simulate",
+        params={"anno": ANNO, "ore_preventivate": "100.00", "tariffa_oraria": "250.000000"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["aggiunta_sintetica"] == "25000.00"
+
+
+def test_the_simulator_without_any_estimate_is_a_422_naming_the_field(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    response = logged_in.get("/api/analytics/ceilings/simulate", params={"anno": ANNO})
+    assert response.status_code == 422, response.text
+    assert response.json()["field"] == "valore_preventivato"
+
+
+def test_the_simulator_is_readable_by_a_readonly_actor(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    readonly = _second_actor(logged_in, "readonly")
+    response = readonly.get(
+        "/api/analytics/ceilings/simulate",
+        params={"anno": ANNO, "valore_preventivato": "1000.00"},
+    )
+    assert response.status_code == 200, response.text
+
+
 # --- the fiscal estimate ------------------------------------------------------------
 
 
@@ -488,6 +569,8 @@ def test_the_openapi_document_describes_every_analytics_route(logged_in: TestCli
         "/api/analytics/budget",
         "/api/analytics/backlog",
         "/api/analytics/fiscal",
+        "/api/analytics/ceilings",
+        "/api/analytics/ceilings/simulate",
     ):
         assert path in paths, path
     names = {param["name"] for param in paths["/api/analytics/pnl"]["get"]["parameters"]}

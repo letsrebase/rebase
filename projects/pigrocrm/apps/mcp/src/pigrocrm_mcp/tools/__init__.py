@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from datetime import date
+from decimal import Decimal
 from typing import Annotated, Any, cast
 from uuid import UUID
 
@@ -7,7 +8,7 @@ from mcp.server import MCPServer
 from pydantic import WithJsonSchema
 
 from pigrocrm.core.activities.service import ActivityService
-from pigrocrm.core.analytics.schemas import BudgetQuery, PeriodPnlQuery
+from pigrocrm.core.analytics.schemas import BudgetQuery, CeilingSimulationQuery, PeriodPnlQuery
 from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import ContractListQuery, ContractProjectionQuery
 from pigrocrm.core.customers.schemas import CustomerListQuery, CustomerUpdate
@@ -210,6 +211,13 @@ OptionalAnno = Annotated[
             "default": None,
         }
     ),
+]
+# The required counterpart of `OptionalAnno` above (REB-373's ceiling headroom and
+# its simulator): unlike `list_period_locks`'s optional year, a ceiling is always
+# evaluated for one specific calendar year, so there is no "every year" reading to
+# fall back to.
+Anno = Annotated[
+    int | str, WithJsonSchema({"type": "integer", "minimum": ANNO_MIN, "maximum": ANNO_MAX})
 ]
 VersionNumber = Annotated[int | str, WithJsonSchema({"type": "integer", "minimum": 1})]
 
@@ -1709,6 +1717,45 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 customer_id=UUID(customer_id) if customer_id else None,
                 limit=cast(int, limit),
                 cursor=UUID(cursor) if cursor else None,
+            ),
+        )
+
+    @mcp.tool()
+    @guard
+    def get_ceiling_headroom(anno: Anno) -> dict[str, Any]:
+        """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
+        configurato, sui ricavi incassati e reali dell'anno (REB-352 §1.4): `residuo`
+        è soglia meno ricavi, la cifra che l'audit di mastro segnalava come "calcolata
+        da nessuna parte" finché REB-361 non ha aggiunto `evaluate_ceiling`. Nessun
+        `admin` richiesto: è un ricavo, non la stima fiscale che protegge solo
+        `get_fiscal_estimate`."""
+        return timetracking.get_ceiling_headroom(context, anno)
+
+    @mcp.tool()
+    @guard
+    def simulate_ceiling(
+        anno: Anno,
+        ore_preventivate: OptionalFactor = None,
+        valore_preventivato: OptionalFactor = None,
+        tariffa_oraria: OptionalFactor = None,
+    ) -> dict[str, Any]:
+        """Il simulatore "ci sta?" (REB-352 §1.4): aggiunge la stima di un deal non
+        ancora vinto ai ricavi reali dell'anno e rivaluta ogni soglia attiva, senza
+        salvare nulla. Serve `valore_preventivato`, oppure `ore_preventivate` insieme
+        a `tariffa_oraria` -- le stesse tre colonne che legge `get_budget_vs_actual`."""
+        return timetracking.simulate_ceiling(
+            context,
+            anno,
+            CeilingSimulationQuery(
+                ore_preventivate=cast(Decimal, ore_preventivate)
+                if ore_preventivate is not None
+                else None,
+                valore_preventivato=cast(Decimal, valore_preventivato)
+                if valore_preventivato is not None
+                else None,
+                tariffa_oraria=cast(Decimal, tariffa_oraria)
+                if tariffa_oraria is not None
+                else None,
             ),
         )
 
