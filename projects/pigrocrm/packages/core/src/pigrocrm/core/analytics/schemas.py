@@ -145,12 +145,17 @@ class UnbilledBacklog(BaseModel):
     """
 
     ore_fatturabili_non_fatturate: Decimal = Field(max_digits=8, decimal_places=2)
-    # `Σ ROUND(ore × tariffa_applicata, 2)` -- slice 4 §7.3's formula, computed here
-    # because §3 forbids `core/dashboard/` any multiplication at all. It is **not**
-    # revenue and enters no margin: the revenue is the invoice.
+    # `Σ ROUND(ore × tariffa_applicata, 2)` over `time_entries` -- slice 4 §7.3's
+    # formula, computed here because §3 forbids `core/dashboard/` any multiplication at
+    # all -- plus REB-372's own contribution from approved-or-later `work_units`, priced
+    # against their own contract's rate card. It is **not** revenue and enters no
+    # margin: the revenue is the invoice.
     valore_maturato: Decimal = Field(max_digits=12, decimal_places=2)
-    # A rate of zero and no rate are different facts (slice 4 §5.1). These rows are in
-    # `ore_fatturabili_non_fatturate` and contribute nothing to `valore_maturato`.
+    # A rate of zero and no rate are different facts (slice 4 §5.1); the same holds for
+    # a `work_unit` day whose date has no rate card in force (REB-372). Every row here
+    # contributes nothing to `valore_maturato`; only the `time_entries` half also
+    # contributes to `ore_fatturabili_non_fatturate` -- a `work_unit`'s own quantity is
+    # priced in whatever unit its rate card names, not always an hour.
     voci_senza_tariffa: int
     voci: int
 

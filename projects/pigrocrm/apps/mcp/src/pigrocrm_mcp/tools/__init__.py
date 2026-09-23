@@ -1627,6 +1627,12 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         e tariffa zero sono cose diverse. Le ore già legate a una **bozza** di fattura
         contano ancora: una bozza non è un ricavo. Il valore maturato **non è un ricavo** e
         non entra in nessun margine: il ricavo è la fattura.
+
+        Il valore maturato e le voci includono anche le giornate di un contratto
+        (`work_units`) non ancora fatturate, ma solo quelle in uno stato approvato o
+        successivo: una giornata solo proposta, o lavorata senza l'approvazione richiesta
+        dal contratto, non conta ancora (REB-372). Le ore fatturabili restano solo quelle
+        di `time_entries`: una giornata di contratto non si misura in ore.
         """
         return timetracking.get_unbilled_backlog(context)
 
