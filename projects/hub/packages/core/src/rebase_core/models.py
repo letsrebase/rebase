@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import (
@@ -224,6 +225,10 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     stato: Mapped[str] = mapped_column(String(20), nullable=False, default="nuovo")
     note: Mapped[str | None] = mapped_column(Text, default=None)
     compilata_da: Mapped[str] = mapped_column(String(10), nullable=False, default="persona")
+    # `None` while the card is live; a moment once an admin soft-deletes it (REB-347).
+    # Never a hard delete -- see `AdminAction`, whose "deleted"/"restored" entries are
+    # what makes flipping this back to `None` a real undo rather than a fresh guess.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     __table_args__ = (
         Index("ix_freelancers_created_at", "created_at"),
@@ -262,6 +267,9 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     budget_giornaliero: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     stato: Mapped[str] = mapped_column(String(20), nullable=False, default="nuovo")
     note: Mapped[str | None] = mapped_column(Text, default=None)
+    # Same soft-delete as `Freelancer.deleted_at`, same reason: several requests per
+    # company, and a wrongly-deleted one is a click away from being live again.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     __table_args__ = (
         Index("ix_companies_created_at", "created_at"),
@@ -312,6 +320,44 @@ class Comment(Base, PrimaryKeyMixin):
     )
 
     __table_args__ = (Index("ix_comments_entity", "entity_type", "entity_id", "created_at"),)
+
+
+# ---- what an admin overrode, cleared, deleted or restored, and when --------------------
+
+ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company")
+# `overridden` covers both "set" and "clear" -- clearing is setting a field to its empty
+# value, and `rebase_core.audit.field_changes` records the same `changed`/`before`/`after`
+# shape either way. `cleared` is only for the one thing that shape must never carry: the
+# freelancer's CV, whose bytes are personal data that must not be duplicated into an audit
+# row (`FreelancerService.clear_cv`). `deleted`/`restored` are the whole story on their own,
+# with an empty payload.
+ADMIN_ACTION_KINDS = ("overridden", "cleared", "deleted", "restored")
+
+
+class AdminAction(Base, PrimaryKeyMixin):
+    """One row per admin-driven change to a `Freelancer`/`Company` record beyond
+    `stato`/`note` (REB-347, `Comment`'s own append-only discipline): who, when, and for
+    an `overridden`/`cleared` entry, the field's value before and after
+    (`rebase_core.audit.field_changes`). Append-only like `Comment` -- an admin reverses
+    an action by writing a new one from this row's own `payload`, never by editing it.
+
+    `entity_type` plus `entity_id` rather than a foreign key per entity, the same
+    reasoning `Comment` gives: the service checks the row exists before writing, and one
+    table with one index is what a third entity's own trail would reuse without a
+    migration here."""
+
+    __tablename__ = "admin_actions"
+
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    entity_id: Mapped[UUID] = mapped_column(nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    admin_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_admin_actions_entity", "entity_type", "entity_id", "created_at"),)
 
 
 # ---- an admin's own tokens, for agents --------------------------------------------------

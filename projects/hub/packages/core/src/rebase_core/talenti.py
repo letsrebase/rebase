@@ -117,6 +117,7 @@ def _card_stmt(
     statement backs both the listing and `_counts`' per-state `GROUP BY`, and the
     counts must see every state at once."""
     stmt = select(Freelancer, User).join(User, User.id == Freelancer.user_id)
+    stmt = stmt.where(Freelancer.deleted_at.is_(None))
     if q:
         search_cols = (User.nome, User.cognome, User.email, Freelancer.posizione)
         stmt = stmt.where(matches_any(search_cols, q))

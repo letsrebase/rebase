@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from rebase_api.deps import AdminDep, HttpCallDep, SenderDep, SessionDep, SettingsDep
 from rebase_api.downloads import cv_response
 from rebase_core.admin_tokens import AdminList, AdminRead
+from rebase_core.audit import AdminActionRead
 from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
 from rebase_core.freelancers import FreelancerService
@@ -37,10 +38,12 @@ from rebase_core.schemas import (
     CommentCreate,
     CommentRead,
     CompanyList,
+    CompanyOverride,
     CompanyRead,
     FreelancerDetail,
     FreelancerDraft,
     FreelancerList,
+    FreelancerOverride,
     FreelancerRead,
     GuideStats,
     LoginStats,
@@ -176,6 +179,54 @@ def move_freelancer(
     return FreelancerService(session).set_status(freelancer_id, change)
 
 
+@router.patch("/freelancers/{freelancer_id}/override", response_model=FreelancerRead)
+def override_freelancer(
+    admin: AdminDep, session: SessionDep, freelancer_id: UUID, change: FreelancerOverride
+) -> FreelancerRead:
+    """Sets or clears any profile field beyond `stato`/`note` (REB-347): a name, a
+    rate, a position, the identity on the linked `users` row. Recorded on
+    `GET .../audit`; reversible with `POST .../audit/{action_id}/revert`."""
+    return FreelancerService(session).override(freelancer_id, change, admin.id)
+
+
+@router.delete("/freelancers/{freelancer_id}", response_model=FreelancerRead)
+def delete_freelancer(admin: AdminDep, session: SessionDep, freelancer_id: UUID) -> FreelancerRead:
+    """Soft-deletes the card: it drops off `GET /freelancers` and `GET /talent`, and
+    `POST .../restore` reverses it. Never a hard delete (REB-347)."""
+    return FreelancerService(session).soft_delete(freelancer_id, admin.id)
+
+
+@router.post("/freelancers/{freelancer_id}/restore", response_model=FreelancerRead)
+def restore_freelancer(admin: AdminDep, session: SessionDep, freelancer_id: UUID) -> FreelancerRead:
+    return FreelancerService(session).restore(freelancer_id, admin.id)
+
+
+@router.delete("/freelancers/{freelancer_id}/cv", response_model=FreelancerRead)
+def clear_freelancer_cv(
+    admin: AdminDep, session: SessionDep, freelancer_id: UUID
+) -> FreelancerRead:
+    """Drops the stored CV; the file itself never enters the audit trail
+    (`FreelancerService.clear_cv`)."""
+    return FreelancerService(session).clear_cv(freelancer_id, admin.id)
+
+
+@router.get("/freelancers/{freelancer_id}/audit", response_model=list[AdminActionRead])
+def freelancer_audit(
+    _: AdminDep, session: SessionDep, freelancer_id: UUID, limit: int = 50
+) -> list[AdminActionRead]:
+    """Who overrode, cleared, deleted or restored this card, and when."""
+    return FreelancerService(session).audit_timeline(freelancer_id, limit)
+
+
+@router.post("/freelancers/{freelancer_id}/audit/{action_id}/revert", response_model=FreelancerRead)
+def revert_freelancer_action(
+    admin: AdminDep, session: SessionDep, freelancer_id: UUID, action_id: UUID
+) -> FreelancerRead:
+    """Puts a field back to the value a past `overridden` entry names in its own
+    `before`, itself recorded as a fresh override."""
+    return FreelancerService(session).revert(freelancer_id, action_id, admin.id)
+
+
 @router.get("/companies", response_model=CompanyList)
 def list_companies(
     _: AdminDep,
@@ -217,6 +268,46 @@ def move_company(
     _: AdminDep, session: SessionDep, company_id: UUID, change: StatusChange
 ) -> CompanyRead:
     return CompanyService(session).set_status(company_id, change)
+
+
+@router.patch("/companies/{company_id}/override", response_model=CompanyRead)
+def override_company(
+    admin: AdminDep, session: SessionDep, company_id: UUID, change: CompanyOverride
+) -> CompanyRead:
+    """Sets or clears any request field beyond `stato`/`note` (REB-347): the project
+    answers, the company's own name, the referente's identity on the linked `users`
+    row. Recorded on `GET .../audit`; reversible with
+    `POST .../audit/{action_id}/revert`."""
+    return CompanyService(session).override(company_id, change, admin.id)
+
+
+@router.delete("/companies/{company_id}", response_model=CompanyRead)
+def delete_company(admin: AdminDep, session: SessionDep, company_id: UUID) -> CompanyRead:
+    """Soft-deletes the request: it drops off `GET /companies`, and
+    `POST .../restore` reverses it. Never a hard delete (REB-347)."""
+    return CompanyService(session).soft_delete(company_id, admin.id)
+
+
+@router.post("/companies/{company_id}/restore", response_model=CompanyRead)
+def restore_company(admin: AdminDep, session: SessionDep, company_id: UUID) -> CompanyRead:
+    return CompanyService(session).restore(company_id, admin.id)
+
+
+@router.get("/companies/{company_id}/audit", response_model=list[AdminActionRead])
+def company_audit(
+    _: AdminDep, session: SessionDep, company_id: UUID, limit: int = 50
+) -> list[AdminActionRead]:
+    """Who overrode, deleted or restored this request, and when."""
+    return CompanyService(session).audit_timeline(company_id, limit)
+
+
+@router.post("/companies/{company_id}/audit/{action_id}/revert", response_model=CompanyRead)
+def revert_company_action(
+    admin: AdminDep, session: SessionDep, company_id: UUID, action_id: UUID
+) -> CompanyRead:
+    """Puts a field back to the value a past `overridden` entry names in its own
+    `before`, itself recorded as a fresh override."""
+    return CompanyService(session).revert(company_id, action_id, admin.id)
 
 
 @router.get("/logins", response_model=LoginStats)
