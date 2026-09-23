@@ -118,6 +118,10 @@ FORBIDDEN = (
     # to it, gated the same way even though it writes nothing itself -- it exposes the
     # same incoming-supplier and register-conflict facts as the two writes above.
     "review_invoice_import",
+    # REB-366: converges onto `import_issued`'s own write for the fatture that
+    # classify `"ready"` -- the actual register write the review step above only
+    # reports, gated the same way as `import_issued_invoice` itself.
+    "confirm_invoice_import",
     # None of these three fiscal: reading
     # the titolare's Google Drive (slice 9 §4.2). Like `discover_gmail_correspondents`
     # they spend the titolare's quota under the titolare's OAuth consent, and unlike
@@ -215,6 +219,7 @@ FORBIDDEN_SERVICE_CALLS = (
     "import_issued",
     "declare_gaps",
     "review_import",
+    "confirm_import",
     # `DriveReader`'s three reads and the two calls the Drive tools make around them
     # (slice 9 §4.2). Not a `*Service` receiver, which is why they are here as bare
     # names and why `test_mcp_surface_coverage.py` cannot carry them in `_VIETATE`

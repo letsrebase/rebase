@@ -98,6 +98,14 @@ _VIETATE: dict[Method, str] = {
         "affianca perche' espone gli stessi fatti (fattura di un fornitore, conflitto "
         "col registro) prima che una persona confermi"
     ),
+    (
+        "InvoiceService",
+        "confirm_import",
+    ): (
+        "REB-366: converge sulla scrittura esatta di `import_issued` per ogni fattura "
+        "che la revisione classifica pronta -- la scrittura vera che il passo di "
+        "revisione sopra si limita a riportare"
+    ),
     ("TimeEntryService", "recalculate_rates"): "riscrive il passato (slice 4 §11)",
     ("TimeEntryService", "update_user_rates"): "configurazione tariffaria (slice 4 §11)",
     ("TimeEntryService", "update_deal_rate"): "configurazione tariffaria (slice 4 §11)",

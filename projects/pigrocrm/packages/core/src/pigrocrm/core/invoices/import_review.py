@@ -87,14 +87,14 @@ class InvoiceReviewResult(BaseModel):
     righe: list[ReviewedInvoiceRead]
 
 
-def _detect_adapter(content: bytes) -> InvoiceFormatAdapter | None:
+def detect_adapter(content: bytes) -> InvoiceFormatAdapter | None:
     for adapter in REGISTERED_ADAPTERS:
         if adapter.detect(content):
             return adapter
     return None
 
 
-def _natural_key(invoice: ParsedInvoice) -> tuple[int, int] | None:
+def natural_key(invoice: ParsedInvoice) -> tuple[int, int] | None:
     """The `(anno, numero)` PigroCRM's own register would hold this invoice under,
     derived from the document's own declared `numero` -- never from a caller's
     choice, since there is no confirm step here to ask one of. `numero` is free
@@ -125,10 +125,10 @@ def _natural_key(invoice: ParsedInvoice) -> tuple[int, int] | None:
         return None
 
 
-def _existing_for(session: Session, invoice: ParsedInvoice) -> Invoice | None:
+def existing_for(session: Session, invoice: ParsedInvoice) -> Invoice | None:
     """What `classify_parsed_invoice` should compare this invoice's bytes against:
     the register row at its own natural key, or -- when that key cannot be derived
-    at all (`_natural_key` above) -- a synthetic hashless row. `check_invoice_
+    at all (`natural_key` above) -- a synthetic hashless row. `check_invoice_
     duplicate`'s own NULL-hash rule then answers `"conflict"` for that row: there is
     nothing to compare against, so nothing can be proven new, the same conservative
     default `import_dedup` already applies to a `NULL`-hash register row.
@@ -142,14 +142,14 @@ def _existing_for(session: Session, invoice: ParsedInvoice) -> Invoice | None:
     single-row lookup by the register's own unique `(anno, numero)` index) not to
     be worth restructuring into a lazy call just to avoid it.
     """
-    key = _natural_key(invoice)
+    key = natural_key(invoice)
     if key is None:
         return Invoice(xml_hash_sha256=None)
     anno, numero = key
     return InvoiceRepository(session).existing_by_number(anno, numero)
 
 
-def _match_customer(session: Session, cliente: ParsedInvoiceParty) -> UUID | None:
+def match_customer(session: Session, cliente: ParsedInvoiceParty) -> UUID | None:
     piva = normalise_fiscal_id(cliente.partita_iva)
     cf = normalise_fiscal_id(cliente.codice_fiscale)
     customer = CustomerRepository(session).match_by_fiscal_id(partita_iva=piva, codice_fiscale=cf)
@@ -167,18 +167,18 @@ def review_content(
     `"ready"` one -- the customer match this issue adds on top of REB-364. Reads
     through `session`; writes nothing.
     """
-    adapter = _detect_adapter(content)
+    adapter = detect_adapter(content)
     if adapter is None:
         return [ReviewedInvoiceRead(document_id=document_id, outcome="unclaimed")]
 
     rows: list[ReviewedInvoiceRead] = []
     for invoice in adapter.parse(content):
         outcome: InvoiceReviewOutcome = classify_parsed_invoice(
-            invoice, emitter, existing=_existing_for(session, invoice), content=content
+            invoice, emitter, existing=existing_for(session, invoice), content=content
         )
         matched_customer_id: UUID | None = None
         if outcome == "ready":
-            matched_customer_id = _match_customer(session, invoice.cliente)
+            matched_customer_id = match_customer(session, invoice.cliente)
             if matched_customer_id is None:
                 outcome = "needs_customer_confirmation"
         rows.append(
