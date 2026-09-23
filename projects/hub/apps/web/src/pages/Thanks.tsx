@@ -30,15 +30,18 @@ export function Thanks() {
         </a>
         .
       </p>
-      {!azienda && (
-        <p className="text-sm text-muted-foreground">
-          Vuoi rileggere, cambiare o completare quello che ci hai mandato, CV compreso?{' '}
-          <Link to="/login" className="underline underline-offset-2">
-            Entra nella tua area
-          </Link>
-          .
-        </p>
-      )}
+      {/* REB-380: shown to a company too now, not only a freelancer -- a company
+          contact could always self-edit its request (REB-314), this line just never
+          said so. */}
+      <p className="text-sm text-muted-foreground">
+        {azienda
+          ? 'Vuoi rileggere o cambiare quello che ci hai mandato?'
+          : 'Vuoi rileggere, cambiare o completare quello che ci hai mandato, CV compreso?'}{' '}
+        <Link to="/login" className="underline underline-offset-2">
+          Entra nella tua area
+        </Link>
+        .
+      </p>
       <Link to="/" className="text-sm underline underline-offset-2">
         Torna all’inizio
       </Link>

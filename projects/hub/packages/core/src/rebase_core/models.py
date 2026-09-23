@@ -5,6 +5,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -25,6 +26,11 @@ UTM_MAX_LENGTH = 200
 UTM_COLUMNS = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "utm_id")
 NAME_MAX_LENGTH = 120
 LINKEDIN_URL_MAX_LENGTH = 300
+# A phone number for a company's own referente (REB-380): companies only ask for it
+# today, so it stays optional at this level and required only by `CompanyCreate`'s own
+# validation -- the same split `Freelancer`'s signup-born columns already keep between
+# what the database allows and what a wizard demands.
+TELEFONO_MAX_LENGTH = 40
 
 # Every column added after the production table already existed, with the width each
 # one needs. Migration 0001 adopts that table as it stands and adds these with
@@ -120,6 +126,7 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     nome: Mapped[str] = mapped_column(String(NAME_MAX_LENGTH), nullable=False)
     cognome: Mapped[str] = mapped_column(String(NAME_MAX_LENGTH), nullable=False)
     linkedin_url: Mapped[str | None] = mapped_column(String(LINKEDIN_URL_MAX_LENGTH), default=None)
+    telefono: Mapped[str | None] = mapped_column(String(TELEFONO_MAX_LENGTH), default=None)
     role: Mapped[str] = mapped_column(String(10), nullable=False, default="member")
     attivo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
@@ -158,6 +165,10 @@ FREELANCER_STATES = ("nuovo", "contattato", "attivo", "scartato")
 COMPILATA_DA = ("persona", "admin")
 COMPANY_STATES = ("nuovo", "contattato", "in_corso", "chiuso")
 REMOTE_OPTIONS = ("remoto", "ibrido", "in_sede")
+# The floor and ceiling of `Company.giorni_presenza` (REB-380): a work week, never "the
+# whole week" -- five days in the office is `in_sede`, not `ibrido`.
+GIORNI_PRESENZA_MIN = 1
+GIORNI_PRESENZA_MAX = 4
 POSIZIONE_MAX_LENGTH = 160
 AZIENDA_MAX_LENGTH = 200
 DURATA_MAX_LENGTH = 120
@@ -255,16 +266,30 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     `referente`/`email`, which duplicated the linked `users` row only for the A-to-B
     window: the referente's name and address are read off `users` now, one place for
     every request the same person ever filed, not a free-text copy each request could
-    drift from."""
+    drift from.
+
+    REB-380 adds four more answers, all `NOT NULL` -- a company request has no
+    `Freelancer`-style "born from a signup, completed later" case, so nothing here is
+    optional at the database the way the freelancer card's own columns are: `remoto`
+    (`REMOTE_OPTIONS`, mirroring `Freelancer.remoto`'s shape), `giorni_presenza`
+    (nullable, `NULL` unless `remoto` is `'ibrido'`, tied to it by
+    `ck_companies_giorni_presenza_together` the same "together or neither" shape
+    `pigrocrm`'s own `giorni_pagamento`/`pagamento_fine_mese` pair uses), `numero_risorse`
+    (how many people the request needs) and `figura_richiesta` (the role, free text
+    like `Freelancer.posizione`, with the same trigram index for the admin's search)."""
 
     __tablename__ = "companies"
 
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     nome_azienda: Mapped[str] = mapped_column(String(AZIENDA_MAX_LENGTH), nullable=False)
+    figura_richiesta: Mapped[str] = mapped_column(String(POSIZIONE_MAX_LENGTH), nullable=False)
     progetto: Mapped[str] = mapped_column(Text, nullable=False)
     periodo_da: Mapped[date] = mapped_column(Date, nullable=False)
     durata: Mapped[str] = mapped_column(String(DURATA_MAX_LENGTH), nullable=False)
     budget_giornaliero: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    remoto: Mapped[str] = mapped_column(String(10), nullable=False)
+    giorni_presenza: Mapped[int | None] = mapped_column(Integer, default=None)
+    numero_risorse: Mapped[int] = mapped_column(Integer, nullable=False)
     stato: Mapped[str] = mapped_column(String(20), nullable=False, default="nuovo")
     note: Mapped[str | None] = mapped_column(Text, default=None)
     # Same soft-delete as `Freelancer.deleted_at`, same reason: several requests per
@@ -274,8 +299,8 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     __table_args__ = (
         Index("ix_companies_created_at", "created_at"),
         # Trigram search (REB-285): `nome`/`referente`/`email` are the linked `users`
-        # row's own (indexed there); `nome_azienda` and `progetto` are this table's.
-        # Migration 0013 creates the GIN indexes.
+        # row's own (indexed there); `nome_azienda`, `progetto` and `figura_richiesta`
+        # (REB-380) are this table's. Migration 0013/0016 create the GIN indexes.
         Index(
             "ix_companies_nome_azienda_trgm",
             "nome_azienda",
@@ -288,6 +313,23 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
             postgresql_using="gin",
             postgresql_ops={"progetto": "gin_trgm_ops"},
         ),
+        Index(
+            "ix_companies_figura_richiesta_trgm",
+            "figura_richiesta",
+            postgresql_using="gin",
+            postgresql_ops={"figura_richiesta": "gin_trgm_ops"},
+        ),
+        CheckConstraint(
+            "giorni_presenza IS NULL OR "
+            f"(giorni_presenza >= {GIORNI_PRESENZA_MIN} "
+            f"AND giorni_presenza <= {GIORNI_PRESENZA_MAX})",
+            name="ck_companies_giorni_presenza_range",
+        ),
+        CheckConstraint(
+            "(remoto = 'ibrido') = (giorni_presenza IS NOT NULL)",
+            name="ck_companies_giorni_presenza_together",
+        ),
+        CheckConstraint("numero_risorse >= 1", name="ck_companies_numero_risorse_positive"),
     )
 
 

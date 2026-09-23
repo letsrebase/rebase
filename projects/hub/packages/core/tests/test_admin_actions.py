@@ -50,10 +50,14 @@ def _company_request(email: str = "wile@acme.it", **extra: object) -> CompanyCre
         "referente_nome": "Wile",
         "referente_cognome": "E.",
         "email": email,
+        "telefono": "+39 345 1234567",
+        "figura_richiesta": "Backend developer",
         "progetto": "Serve un backend developer per tre mesi.",
         "periodo_da": date(2026, 10, 1),
         "durata": "3 mesi",
         "budget_giornaliero": Decimal("500"),
+        "remoto": "remoto",
+        "numero_risorse": 1,
     }
     payload.update(extra)
     return CompanyCreate(**payload)  # type: ignore[arg-type]
@@ -322,7 +326,7 @@ def test_revert_refuses_an_action_that_belongs_to_a_different_entity(clean: Sess
 
 def test_company_override_touches_the_row_and_the_referente_identity(clean: Session) -> None:
     service = CompanyService(clean)
-    row = service.request(_company_request())
+    row, _ = service.request(_company_request())
     admin_id = _an_admin(clean)
 
     overridden = service.override(
@@ -333,9 +337,38 @@ def test_company_override_touches_the_row_and_the_referente_identity(clean: Sess
     assert len(service.audit_timeline(row.id)) == 1
 
 
+def test_company_override_refuses_a_giorni_presenza_remoto_mismatch(clean: Session) -> None:
+    """REB-380: a partial override that would leave `remoto`/`giorni_presenza`
+    disagreeing is refused with a clean `ValidationFailed`, not left for the
+    database's own `ck_companies_giorni_presenza_together` to raise a raw
+    `IntegrityError` at commit -- on either side of the pair, and whichever field
+    the row already carried before this call."""
+    service = CompanyService(clean)
+    admin_id = _an_admin(clean)
+
+    remote_row, _ = service.request(_company_request(email="remote@acme.it"))
+    with pytest.raises(ValidationFailed) as refused:
+        service.override(remote_row.id, CompanyOverride(remoto="ibrido"), admin_id)
+    assert refused.value.details["field"] == "giorni_presenza"
+
+    hybrid_row, _ = service.request(
+        _company_request(email="hybrid@acme.it", remoto="ibrido", giorni_presenza=3)
+    )
+    with pytest.raises(ValidationFailed):
+        service.override(hybrid_row.id, CompanyOverride(giorni_presenza=None), admin_id)
+    with pytest.raises(ValidationFailed):
+        service.override(hybrid_row.id, CompanyOverride(remoto="remoto"), admin_id)
+
+    # The same shape, fully supplied together, is accepted.
+    settled = service.override(
+        remote_row.id, CompanyOverride(remoto="ibrido", giorni_presenza=2), admin_id
+    )
+    assert settled.remoto == "ibrido" and settled.giorni_presenza == 2
+
+
 def test_company_delete_restore_and_revert(clean: Session) -> None:
     service = CompanyService(clean)
-    row = service.request(_company_request())
+    row, _ = service.request(_company_request())
     admin_id = _an_admin(clean)
 
     service.override(row.id, CompanyOverride(progetto="Un progetto nuovo"), admin_id)
@@ -377,7 +410,7 @@ def test_a_deleted_company_request_is_invisible_to_its_own_member_area(clean: Se
     from rebase_core.members import MemberService
 
     service = CompanyService(clean)
-    row = service.request(_company_request())
+    row, _ = service.request(_company_request())
     admin_id = _an_admin(clean)
     user_id = clean.get(Company, row.id).user_id
 
@@ -399,8 +432,8 @@ def test_deleting_the_newest_company_request_never_exposes_an_older_one_to_self_
     from rebase_core.members import MemberService
 
     service = CompanyService(clean)
-    older = service.request(_company_request())
-    newest = service.request(_company_request())
+    older, _ = service.request(_company_request())
+    newest, _ = service.request(_company_request())
     admin_id = _an_admin(clean)
     user_id = clean.get(Company, older.id).user_id
 

@@ -225,10 +225,14 @@ export function FreelancerOverrideDialog({
 
 interface CompanyOverrideDraft {
   nomeAzienda: string
+  figuraRichiesta: string
   progetto: string
   periodoDa: string
   durata: string
   budgetGiornaliero: string
+  remoto: Remoto
+  giorniPresenza: string
+  numeroRisorse: string
   referenteNome: string
   referenteCognome: string
   referenteLinkedin: string
@@ -238,10 +242,14 @@ interface CompanyOverrideDraft {
 function draftFromCompany(c: Company): CompanyOverrideDraft {
   return {
     nomeAzienda: c.nome_azienda,
+    figuraRichiesta: c.figura_richiesta,
     progetto: c.progetto,
     periodoDa: c.periodo_da,
     durata: c.durata,
     budgetGiornaliero: c.budget_giornaliero,
+    remoto: c.remoto,
+    giorniPresenza: c.giorni_presenza !== null ? String(c.giorni_presenza) : '',
+    numeroRisorse: String(c.numero_risorse),
     // `CompanyRead` carries the referente as one combined `referente` string, never the
     // separate `nome`/`cognome`/`linkedin_url` `CompanyOverride` takes (those live on
     // the linked `users` row, REB-281) -- so there is no current value to pre-fill,
@@ -254,11 +262,15 @@ function draftFromCompany(c: Company): CompanyOverrideDraft {
 }
 
 /**
- * Same contract as `FreelancerOverrideDialog`, for a `Company` request: the four
- * project answers and the company's own name are always known and always sent: the
- * referente's identity is admin-only and not part of `CompanyRead` at all, so those
- * three fields start blank and are only sent when the admin actually fills one in, or
- * ticks «Rimuovi il profilo LinkedIn» to clear it explicitly.
+ * Same contract as `FreelancerOverrideDialog`, for a `Company` request: the seven
+ * project answers (REB-314; REB-380 adds `remoto`/`giorni_presenza`/
+ * `numero_risorse`/`figura_richiesta`) and the company's own name are always known
+ * and always sent -- `giorni_presenza` clears itself to `null` the moment `remoto`
+ * leaves `ibrido`, matching the wizard's own conditional field and the database's
+ * own together-`CHECK`. The referente's identity is admin-only and not part of
+ * `CompanyRead` at all, so those three fields start blank and are only sent when
+ * the admin actually fills one in, or ticks «Rimuovi il profilo LinkedIn» to clear
+ * it explicitly.
  */
 export function CompanyOverrideDialog({
   company,
@@ -286,10 +298,14 @@ export function CompanyOverrideDialog({
     event.preventDefault()
     const payload: CompanyOverride = {
       nome_azienda: draft.nomeAzienda.trim(),
+      figura_richiesta: draft.figuraRichiesta.trim(),
       progetto: draft.progetto.trim(),
       periodo_da: draft.periodoDa,
       durata: draft.durata.trim(),
       budget_giornaliero: draft.budgetGiornaliero.trim(),
+      remoto: draft.remoto,
+      giorni_presenza: draft.remoto === 'ibrido' ? Number(draft.giorniPresenza) : null,
+      numero_risorse: Number(draft.numeroRisorse),
     }
     if (draft.referenteNome.trim()) payload.nome = draft.referenteNome.trim()
     if (draft.referenteCognome.trim()) payload.cognome = draft.referenteCognome.trim()
@@ -300,10 +316,13 @@ export function CompanyOverrideDialog({
 
   const valid =
     draft.nomeAzienda.trim() !== '' &&
+    draft.figuraRichiesta.trim() !== '' &&
     draft.progetto.trim() !== '' &&
     draft.periodoDa !== '' &&
     draft.durata.trim() !== '' &&
-    draft.budgetGiornaliero.trim() !== ''
+    draft.budgetGiornaliero.trim() !== '' &&
+    draft.numeroRisorse.trim() !== '' &&
+    (draft.remoto !== 'ibrido' || draft.giorniPresenza.trim() !== '')
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -322,6 +341,15 @@ export function CompanyOverrideDialog({
               id="override-company-nome-azienda"
               value={draft.nomeAzienda}
               onChange={(event) => setDraft({ ...draft, nomeAzienda: event.target.value })}
+              required
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="override-company-figura-richiesta">Figura richiesta</Label>
+            <Input
+              id="override-company-figura-richiesta"
+              value={draft.figuraRichiesta}
+              onChange={(event) => setDraft({ ...draft, figuraRichiesta: event.target.value })}
               required
             />
           </div>
@@ -369,6 +397,57 @@ export function CompanyOverrideDialog({
               required
             />
           </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="override-company-numero-risorse">Numero di persone</Label>
+            <Input
+              id="override-company-numero-risorse"
+              type="number"
+              min="1"
+              step="1"
+              value={draft.numeroRisorse}
+              onChange={(event) => setDraft({ ...draft, numeroRisorse: event.target.value })}
+              required
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="override-company-remoto">Modalità</Label>
+            <Select
+              value={draft.remoto}
+              onValueChange={(value) =>
+                setDraft({
+                  ...draft,
+                  remoto: value as Remoto,
+                  giorniPresenza: value === 'ibrido' ? draft.giorniPresenza : '',
+                })
+              }
+            >
+              <SelectTrigger id="override-company-remoto">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(REMOTO_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {draft.remoto === 'ibrido' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="override-company-giorni-presenza">Giorni in sede a settimana</Label>
+              <Input
+                id="override-company-giorni-presenza"
+                type="number"
+                min="1"
+                max="4"
+                step="1"
+                value={draft.giorniPresenza}
+                onChange={(event) => setDraft({ ...draft, giorniPresenza: event.target.value })}
+                required
+              />
+            </div>
+          )}
           <fieldset className="space-y-3 border p-3">
             <legend className="px-1 text-sm font-medium">Referente</legend>
             <p className="text-sm text-muted-foreground">

@@ -80,35 +80,60 @@ def test_get_or_create_makes_one_row_per_address_and_returns_it_after(
     assert len(matching) == 1
 
 
+def test_get_or_create_backfills_telefono_but_never_overwrites_it(
+    users: UserService, hub_session: Session
+) -> None:
+    """`telefono` (REB-380) is the one field here that is not simply "left as found":
+    a `users` row can predate it entirely (a freelancer application never asks for
+    one), so a still-blank phone number is filled in by whichever call first supplies
+    one, on a fresh row or a pre-existing one alike -- but a real answer already on
+    file is never replaced by a later, different one."""
+    row = users.get_or_create("ada@studio.it", "Ada", "Lovelace")
+    assert row.telefono is None
+
+    backfilled = users.get_or_create("ada@studio.it", "Ada", "Lovelace", telefono="+39 345 1234567")
+    assert backfilled.id == row.id and backfilled.telefono == "+39 345 1234567"
+
+    again = users.get_or_create("ada@studio.it", "Ada", "Lovelace", telefono="+39 345 9999999")
+    assert again.id == row.id and again.telefono == "+39 345 1234567"  # unchanged, not overwritten
+
+
 def test_two_company_requests_from_the_same_address_share_one_user(
     users: UserService, hub_session: Session
 ) -> None:
     """The path `CompanyService.request` and `FreelancerService.apply` both take: no
-    row invented twice for one address, even without `_find`'s own short-circuit."""
+    row invented twice for one address, even without `_find`'s own short-circuit.
+    `telefono` (REB-380) follows the same rule as `nome`/`cognome`: the first
+    request's, never overwritten by a later one's own answer."""
     from rebase_core.companies import CompanyService
     from rebase_core.schemas import CompanyCreate
 
-    def _company(nome: str, cognome: str) -> None:
+    def _company(nome: str, cognome: str, telefono: str) -> None:
         CompanyService(hub_session).request(
             CompanyCreate(
                 nome_azienda="ACME",
                 referente_nome=nome,
                 referente_cognome=cognome,
                 email="acme@example.it",
+                telefono=telefono,
+                figura_richiesta="Backend developer",
                 progetto="Un progetto",
                 periodo_da="2026-10-01",
                 durata="3 mesi",
                 budget_giornaliero="500",
+                remoto="remoto",
+                numero_risorse=1,
             )
         )
 
-    _company("Wile", "Coyote")
-    _company("Road", "Runner")
+    _company("Wile", "Coyote", "+39 345 1111111")
+    _company("Road", "Runner", "+39 345 2222222")
     rows = hub_session.scalars(select(User).where(User.email == "acme@example.it")).all()
     assert len(rows) == 1
-    assert (rows[0].nome, rows[0].cognome) == (
+    assert (rows[0].nome, rows[0].cognome, rows[0].telefono) == (
         "Wile",
         "Coyote",
+        "+39 345 1111111",
     )  # the first request's, not overwritten
 
 

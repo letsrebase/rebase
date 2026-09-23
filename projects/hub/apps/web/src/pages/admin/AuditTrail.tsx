@@ -21,10 +21,13 @@ const FIELD_LABELS: Record<string, string> = {
   links: 'Link',
   compilata_da: 'Compilata da',
   nome_azienda: 'Azienda',
+  figura_richiesta: 'Figura richiesta',
   progetto: 'Progetto',
   periodo_da: 'Periodo',
   durata: 'Durata',
   budget_giornaliero: 'Budget a giornata',
+  giorni_presenza: 'Giorni in sede',
+  numero_risorse: 'Persone richieste',
   cv: 'CV',
 }
 

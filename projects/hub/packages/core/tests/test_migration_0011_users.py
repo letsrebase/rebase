@@ -187,7 +187,17 @@ def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies(
             )
             assert linked_companies and all(linked_companies)
 
-            # The migrated token still resolves, through the new, users-backed path.
+            # The migrated token still resolves, through the new, users-backed path --
+            # `AdminTokenService.resolve` reads through the `User` ORM model, which
+            # always reflects the package's current head (REB-380 added a column after
+            # 0011): brought the rest of the way there first, since this assertion is
+            # about the `user_id` link migration 0011 wrote, not about any migration
+            # after it. `connection`'s own still-open read transaction is committed
+            # first: an `ALTER TABLE` later in the chain takes an exclusive lock that
+            # would otherwise block forever on the `ACCESS SHARE` the open reads above
+            # are still holding.
+            connection.commit()
+            _upgrade(url, "head")
             factory = session_factory(
                 create_engine_from_settings(Settings(database_url=url, _env_file=None))  # type: ignore[call-arg]
             )

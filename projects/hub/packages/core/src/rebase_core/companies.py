@@ -35,7 +35,14 @@ from rebase_core.users import UserService
 ENTITY = "company"
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
-_SEARCH_COLUMNS = (Company.nome_azienda, User.nome, User.cognome, User.email, Company.progetto)
+_SEARCH_COLUMNS = (
+    Company.nome_azienda,
+    User.nome,
+    User.cognome,
+    User.email,
+    Company.progetto,
+    Company.figura_richiesta,
+)
 # The three fields a request's referente shares with its `users` row (REB-281): an
 # override of one of these lands on the identity, never on the row, the same split
 # `rebase_core.freelancers`' own `_ADMIN_IDENTITY_FIELDS` keeps for a freelancer card.
@@ -51,10 +58,15 @@ def _to_read(row: Company, user: User) -> CompanyRead:
         nome_azienda=row.nome_azienda,
         referente=f"{user.nome} {user.cognome}".strip(),
         email=user.email,
+        telefono=user.telefono,
+        figura_richiesta=row.figura_richiesta,
         progetto=row.progetto,
         periodo_da=row.periodo_da,
         durata=row.durata,
         budget_giornaliero=row.budget_giornaliero,
+        remoto=row.remoto,
+        giorni_presenza=row.giorni_presenza,
+        numero_risorse=row.numero_risorse,
         stato=row.stato,
         note=row.note,
         origine=row.origine,
@@ -106,30 +118,44 @@ class CompanyService:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def request(self, data: CompanyCreate) -> CompanyRead:
+    def request(self, data: CompanyCreate) -> tuple[CompanyRead, bool]:
         """Every request is a row: a company has several projects, and two requests a
         week apart are two things to answer, not one to merge. The referente's `users`
         row is get-or-created by lowercased email (REB-278), from the two fields the
-        wizard collects (REB-279, decision (f)), and left as it was found on a repeat
-        request: the answer's `referente`/`email` read off that one row (REB-281),
-        whether or not it matches what this particular request said."""
+        wizard collects (REB-279, decision (f)) plus, since REB-380, a phone number,
+        and left as it was found on a repeat request: the answer's `referente`/`email`
+        (and now `telefono`) read off that one row (REB-281), whether or not it
+        matches what this particular request said.
+
+        The second element is whether this `user_id` already had at least one other
+        request before this one, checked before the new row is added (REB-380): a
+        returning referente the thank-you page can point at the member area they may
+        not know exists, mirroring `FreelancerService.apply`'s own `created` boolean."""
         utm = data.utm.model_dump() if data.utm is not None and not data.utm.is_empty() else {}
         email = data.email.strip().lower()
         user = UserService(self.session).get_or_create(
-            email, data.referente_nome, data.referente_cognome
+            email, data.referente_nome, data.referente_cognome, telefono=data.telefono
+        )
+        richiedente_esistente = (
+            self.session.scalar(select(Company.id).where(Company.user_id == user.id).limit(1))
+            is not None
         )
         row = Company(
             user_id=user.id,
             nome_azienda=data.nome_azienda,
+            figura_richiesta=data.figura_richiesta,
             progetto=data.progetto,
             periodo_da=data.periodo_da,
             durata=data.durata,
             budget_giornaliero=data.budget_giornaliero,
+            remoto=data.remoto,
+            giorni_presenza=data.giorni_presenza,
+            numero_risorse=data.numero_risorse,
             **utm,
         )
         self.session.add(row)
         self.session.commit()
-        return _to_read(row, user)
+        return _to_read(row, user), richiedente_esistente
 
     def list_recent(
         self,
@@ -229,6 +255,17 @@ class CompanyService:
         row_changes = {k: v for k, v in changes.items() if k not in _ADMIN_IDENTITY_FIELDS}
         reject_cleared_columns(ENTITY, User, identity_changes)
         reject_cleared_columns(ENTITY, Company, row_changes)
+        # A partial override may touch only one side of the together-rule
+        # (`ck_companies_giorni_presenza_together`): computed and refused here, on the
+        # prospective values and before anything is mutated, rather than left for the
+        # commit below to hit the database's own `CHECK` and surface as a raw
+        # `IntegrityError`.
+        final_remoto = row_changes.get("remoto", row.remoto)
+        final_giorni_presenza = row_changes.get("giorni_presenza", row.giorni_presenza)
+        if (final_remoto == "ibrido") != (final_giorni_presenza is not None):
+            raise ValidationFailed(
+                ENTITY, "giorni_presenza", "va indicato solo, e sempre, per il lavoro ibrido"
+            )
         before = {
             **{field: getattr(user, field) for field in identity_changes},
             **{field: getattr(row, field) for field in row_changes},

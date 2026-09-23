@@ -74,10 +74,14 @@ def _request_company(client: TestClient, email: str = "wile@acme.it", **extra: o
         "referente_nome": "Wile",
         "referente_cognome": "E.",
         "email": email,
+        "telefono": "+39 345 1234567",
+        "figura_richiesta": "Backend developer",
         "progetto": "Serve un backend developer per tre mesi, da ottobre.",
         "periodo_da": "2026-10-01",
         "durata": "3 mesi",
         "budget_giornaliero": "500",
+        "remoto": "remoto",
+        "numero_risorse": 1,
     }
     payload.update(extra)
     response = client.post("/api/hub/companies", json=payload)
@@ -400,6 +404,9 @@ def test_a_company_contact_edits_their_most_recent_request(
             "periodo_da": "2026-10-01",
             "durata": "4 mesi",
             "budget_giornaliero": "600",
+            "remoto": "remoto",
+            "numero_risorse": 1,
+            "figura_richiesta": "Backend developer",
             "stato": "chiuso",
         },
     )
@@ -413,6 +420,9 @@ def test_a_company_contact_edits_their_most_recent_request(
             "periodo_da": "2026-10-01",
             "durata": "4 mesi",
             "budget_giornaliero": "600",
+            "remoto": "remoto",
+            "numero_risorse": 1,
+            "figura_richiesta": "Backend developer",
         },
     )
     assert changed.status_code == 200, changed.text
@@ -454,6 +464,9 @@ def test_a_member_with_no_company_gets_ha_azienda_false_and_a_404_on_edit(
             "periodo_da": "2026-10-01",
             "durata": "3 mesi",
             "budget_giornaliero": "500",
+            "remoto": "remoto",
+            "numero_risorse": 1,
+            "figura_richiesta": "Backend developer",
         },
     )
     assert refused.status_code == 404

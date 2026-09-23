@@ -77,6 +77,17 @@ def _number(value: str | None, field: str) -> Decimal | None:
         raise ToolError(f"{field}: «{value}» non è un numero") from None
 
 
+def _integer(value: str | None, field: str) -> int | None:
+    """A whole number passed as a string, the same convention `_number` gives a
+    decimal one: `numero_risorse` and `giorni_presenza` (REB-380)."""
+    if value is None or not value.strip():
+        return None
+    try:
+        return int(value.strip())
+    except ValueError:
+        raise ToolError(f"{field}: «{value}» non è un numero intero") from None
+
+
 def _day(value: str | None, field: str) -> date | None:
     """An ISO 8601 calendar date (`AAAA-MM-GG`), parsed here so the refusal is an
     Italian sentence and not a traceback from the service."""
@@ -498,21 +509,28 @@ def build_server(
         cognome: str | None = None,
         linkedin_url: str | None = None,
         nome_azienda: str | None = None,
+        figura_richiesta: str | None = None,
         progetto: str | None = None,
         periodo_da: str | None = None,
         durata: str | None = None,
         budget_giornaliero: str | None = None,
+        remoto: str | None = None,
+        giorni_presenza: str | None = None,
+        numero_risorse: str | None = None,
         stato: str | None = None,
         note: str | None = None,
     ) -> dict[str, Any]:
         """Scrive o svuota qualsiasi campo della richiesta oltre a stato e note: nome e
         cognome del referente e il suo profilo LinkedIn (sull'identità condivisa in
-        `users`), nome dell'azienda, progetto, data di inizio, durata, budget a
-        giornata, stato e note. Ogni parametro omesso resta com'era; una stringa vuota
-        svuota solo dove è ammesso (LinkedIn, note), altrove è rifiutata perché il
-        campo non può restare senza un valore. Ogni modifica reale finisce nel
-        registro di `get_company_audit`, con il valore prima e dopo; per annullarla
-        c'è `revert_company_action`."""
+        `users`), nome dell'azienda, figura richiesta, progetto, data di inizio, durata,
+        budget a giornata, modalità di lavoro, giorni in sede a settimana, numero di
+        persone richieste, stato e note. Ogni parametro omesso resta com'era; una
+        stringa vuota svuota solo dove è ammesso (LinkedIn, note, giorni in sede),
+        altrove è rifiutata perché il campo non può restare senza un valore.
+        `giorni_presenza` va indicato solo, e sempre, quando `remoto` è `ibrido` --
+        rifiutato altrimenti, dallo stesso `CHECK` del database. Ogni modifica reale
+        finisce nel registro di `get_company_audit`, con il valore prima e dopo; per
+        annullarla c'è `revert_company_action`."""
         kwargs: dict[str, Any] = {}
         if nome is not None:
             kwargs["nome"] = _supplied_text(nome)
@@ -522,6 +540,8 @@ def build_server(
             kwargs["linkedin_url"] = _supplied_text(linkedin_url)
         if nome_azienda is not None:
             kwargs["nome_azienda"] = _supplied_text(nome_azienda)
+        if figura_richiesta is not None:
+            kwargs["figura_richiesta"] = _supplied_text(figura_richiesta)
         if progetto is not None:
             kwargs["progetto"] = _supplied_text(progetto)
         if periodo_da is not None:
@@ -534,6 +554,12 @@ def build_server(
                 if budget_giornaliero == ""
                 else _number(budget_giornaliero, "budget_giornaliero")
             )
+        if remoto is not None:
+            kwargs["remoto"] = _supplied_text(remoto)
+        if giorni_presenza is not None:
+            kwargs["giorni_presenza"] = _integer(giorni_presenza, "giorni_presenza")
+        if numero_risorse is not None:
+            kwargs["numero_risorse"] = _integer(numero_risorse, "numero_risorse")
         if stato is not None:
             kwargs["stato"] = _supplied_text(stato)
         if note is not None:

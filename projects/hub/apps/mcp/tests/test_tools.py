@@ -214,16 +214,20 @@ def _seed_company(factory: sessionmaker[Session]) -> str:
 
     session = factory()
     try:
-        row = CompanyService(session).request(
+        row, _ = CompanyService(session).request(
             CompanyCreate(
                 nome_azienda="ACME Srl",
                 referente_nome="Wile",
                 referente_cognome="E.",
                 email="wile@acme.it",
+                telefono="+39 345 1234567",
+                figura_richiesta="Backend developer",
                 progetto="Un backend developer per tre mesi.",
                 periodo_da=date(2026, 10, 1),
                 durata="3 mesi",
                 budget_giornaliero=Decimal("500"),
+                remoto="remoto",
+                numero_risorse=1,
             )
         )
         return str(row.id)
