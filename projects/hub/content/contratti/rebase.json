@@ -6,5 +6,6 @@
   "rebase-codice-destinatario": null,
   "rebase-pec": null,
   "rebase-rappresentante": null,
-  "termine-pagamento": "30 giorni data fattura fine mese"
+  "giorni-pagamento": 30,
+  "fine-mese": true
 }

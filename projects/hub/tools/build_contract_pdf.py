@@ -21,8 +21,11 @@ Typst pandoc writes, after pandoc has escaped everything else:
 - `[[text]]` is a proposal still to be decided, highlighted in the draft. A document
   whose front matter no longer says `status: draft` may not carry one.
 
-The fee is the one number a letter must not get wrong, so the build refuses one that is
-not a JSON number, is not above zero, or has more decimals than the page prints.
+The fee and the payment term are the numbers a letter must not get wrong. The build
+refuses a fee that is not a JSON number, is not above zero, or has more decimals than the
+page prints, and it writes the payment term itself from `giorni-pagamento` and
+`fine-mese`, refusing one that could fall past the 60 days of law 81/2017 (article 7.1
+of the framework agreement).
 
 The toolchain, the palette and the typeface are the guide's, imported from
 `build_guide_pdf.py` rather than copied: two documents from one brand must not drift
@@ -60,6 +63,10 @@ PROPOSAL_CLOSE = r"\]\]"
 
 FEE = "compenso"
 CENT = Decimal("0.01")
+TERM, DAYS, MONTH_END = "termine-pagamento", "giorni-pagamento", "fine-mese"
+# Article 3 of law 81/2017: no term past 60 days from the invoice. Counted from the end
+# of the month, a term can add up to 30 days to the invoice's date, so it may be 30 at most.
+DAYS_LIMIT, DAYS_LIMIT_MONTH_END = 60, 30
 
 Value = str | int | float | bool | None
 
@@ -113,11 +120,28 @@ def amount(data: dict[str, Value], key: str) -> Decimal | None:
 
 
 def checked(data: dict[str, Value]) -> dict[str, Value]:
-    """The data, once the fee is a number the page can print as it was given."""
+    """The data, with the fee checked and the payment term written from its two parts."""
     fee = amount(data, FEE)
     if fee is not None and fee <= 0:
         raise Failed(f"{FEE} is {fee}: a fee above zero")
-    return data
+    if data.get(TERM) is not None:
+        raise Failed(f"{TERM} is written from {DAYS} and {MONTH_END}; give those two instead")
+    days, month_end = data.get(DAYS), data.get(MONTH_END, False)
+    if days is None:
+        return data
+    if isinstance(days, bool) or not isinstance(days, int):
+        raise Failed(f"{DAYS} must be a whole number of days, not {days!r}")
+    if not isinstance(month_end, bool):
+        raise Failed(f"{MONTH_END} must be true or false, not {month_end!r}")
+    limit = DAYS_LIMIT_MONTH_END if month_end else DAYS_LIMIT
+    if not 0 < days <= limit:
+        raise Failed(
+            f"{DAYS} is {days}: from 1 to {limit}"
+            + (" when counted from the end of the month," if month_end else ",")
+            + " or the letter breaks the 60 days of law 81/2017"
+        )
+    term = f"{days} giorni data fattura" + (" fine mese" if month_end else "")
+    return {**data, TERM: term}
 
 
 def italian(number: Decimal, places: int) -> str:

@@ -73,7 +73,9 @@ invoice's month); its `null`s wait for the SRL (roadmap #284). Until then the da
 whoever signs for rebase goes in `contratti/rebase.local.json`, which git ignores and the
 build reads over `rebase.json` when it is there: this repository is public. `compenso` is
 a JSON number, and the build refuses one given as text, not above zero, or with more than
-two decimals.
+two decimals. The payment term is written by the build from `giorni-pagamento` and
+`fine-mese`, at most 30 days from the end of the month or 60 from the invoice, so no letter
+can print a term that article 7.1 and law 81/2017 forbid.
 `incarico.esempio.json` is fiction and names every field the letter asks for, which
 `packages/core/tests/test_contract_pdf.py` checks. Real data names a real person and a
 real client: keep it outside the repository or in a `*.local.json`, which git ignores.

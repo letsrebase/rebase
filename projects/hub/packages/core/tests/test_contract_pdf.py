@@ -54,6 +54,32 @@ def test_a_fee_the_page_could_not_print_as_given_stops_the_build(
         checked({"compenso": fee})
 
 
+def test_the_payment_term_is_written_from_the_days_and_the_month_end() -> None:
+    assert checked({"giorni-pagamento": 30, "fine-mese": True})["termine-pagamento"] == (
+        "30 giorni data fattura fine mese"
+    )
+    assert checked({"giorni-pagamento": 60})["termine-pagamento"] == "60 giorni data fattura"
+
+
+@pytest.mark.parametrize(
+    ("data", "complaint"),
+    [
+        # Counted from the end of the month, 45 days can reach 75 from the invoice.
+        ({"giorni-pagamento": 45, "fine-mese": True}, "from 1 to 30"),
+        ({"giorni-pagamento": 90}, "from 1 to 60"),
+        ({"giorni-pagamento": "30"}, "whole number"),
+        ({"giorni-pagamento": 30, "fine-mese": "sì"}, "true or false"),
+        # Typed by hand it would skip the check above.
+        ({"termine-pagamento": "90 giorni"}, "written from"),
+    ],
+)
+def test_a_payment_term_past_the_law_stops_the_build(
+    data: dict[str, Value], complaint: str
+) -> None:
+    with pytest.raises(Failed, match=complaint):
+        checked(data)
+
+
 @pytest.mark.parametrize("raw", ["Infinity", "-Infinity", "NaN", "1e400"])
 def test_a_data_file_with_no_printable_number_is_refused(tmp_path: Path, raw: str) -> None:
     data = tmp_path / "job.json"
@@ -120,7 +146,8 @@ def test_the_example_names_every_field_the_letter_asks_for() -> None:
     asked = set(FIELD.findall(letter))
     company = json.loads(COMPANY.read_text(encoding="utf-8"))
     example = json.loads(EXAMPLE.read_text(encoding="utf-8"))
-    known = set(company) | set(example)
+    # `termine-pagamento` is in no data file on purpose: the build writes it.
+    known = set(checked({**company, **example}))
     assert asked - known - SIGNATURES == set()
 
 
