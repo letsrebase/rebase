@@ -14,9 +14,12 @@ SLUG_MIN = 3
 SLUG_MAX = 32
 
 # Already paths of the site (deploy/nginx/spa.conf, the landing, the SPA), so a space
-# with one of these names would shadow them or be shadowed by them.
+# with one of these names would shadow them or be shadowed by them. `root` is not a path:
+# it is what `pigrocrm digest` calls the root installation, in its log and in `--slug`
+# (REB-263), so a space by that name would read as the root in both.
 RESERVED_SLUGS = frozenset(
     {
+        "root",
         "app",
         "api",
         "health",

@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime
 from typing import cast
 
 from sqlalchemy import Engine
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import Session
 
 from pigrocrm.core import telemetry
@@ -33,6 +34,11 @@ from pigrocrm.core.mail import sender_from_settings
 # that is the seam the tests patch on *this* module (`monkeypatch.setattr(cli,
 # "tracker_from_settings", ...)`), which only works on a name this module owns.
 from pigrocrm.core.telemetry import tracker_from_settings
+
+# What `pigrocrm digest` prints in front of the root installation's line (REB-263). Not
+# the root slug: the log names the installation apart from its spaces, and the runbook,
+# which can never carry a real company's name, documents this line as it is.
+ROOT_LABEL = "root"
 
 
 def createadmin(email: str | None, nome: str | None) -> int:
@@ -297,7 +303,8 @@ def rebuild_identity_index() -> int:
 
 
 def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -> int:
-    """`pigrocrm digest`: the weekly report of every space in the registry, for cron.
+    """`pigrocrm digest`: the weekly report of the root installation and of every space in
+    the registry, for cron.
 
     Spec 2026-09-16 §3.4. One run a week, Monday morning (the runbook is
     `docs/superpowers/notes/2026-09-09-gmail-cron-runbook.md`), one line per space, and
@@ -305,6 +312,18 @@ def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -
     the exit status -- and with it the operator's attention -- away from the ones that
     worked. What decides anything about a space's week is `DigestRun`, not this function;
     here there is a registry to walk, a session to open per space and a line to print.
+
+    **The root installation is one more space, and the first line** (REB-263). It is not
+    in the registry, so the walk alone never reached it -- and it is the one installation
+    with a titolare's real data in it. Its database is `settings.database_url`, its
+    titolare the first active admin (`DigestRun` resolves it, from `owner_email=None`),
+    and its links carry `PIGROCRM_ROOT_SLUG` the way a space's carry its own slug:
+    `/<root_slug>/app` *is* the root. Its line reads `root: ...` whatever the slug, so the
+    log tells the installation from its spaces, and `--slug root` visits it alone without
+    opening the registry. Only that name: `root` is reserved against signups, so it can
+    never be a space, while `PIGROCRM_ROOT_SLUG` could still name a registry row created
+    before the root took it, and `--slug` with it goes on meaning that row. An unreachable
+    registry no longer ends the run either: it is one line, and the root is still sent.
 
     **This command migrates nothing.** `ensure-space-defaults` at boot is the only
     migrator (ORB-189), and that separation is the point: a cron job that ran Alembic on
@@ -336,28 +355,44 @@ def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -
     from pigrocrm.core.tenants.database import tenant_database_url
 
     settings = get_settings()
-    try:
-        registry = ensure_tenants_database(settings)
+    root_only = slug == ROOT_LABEL
+    # (the line's label, the database, the registry's owner or `None` for the root, the
+    # base of every link in the mail)
+    spaces: list[tuple[str, str | URL, str | None, str]] = []
+    if slug is None or root_only:
+        # `rstrip`: with no root slug this is `public_url` untouched, and a trailing slash
+        # on it would put `//app` in every link.
+        root_url = space_base_settings(settings, settings.root_slug or None).public_url
+        spaces.append((ROOT_LABEL, settings.database_url, None, root_url.rstrip("/")))
+    registry_read = False
+    if not root_only:
         try:
-            with session_factory(registry)() as session:
-                spaces = [
-                    (row.slug, row.db_name, row.owner_email)
-                    for row in session.scalars(select(Tenant).order_by(Tenant.created_at)).all()
-                    if slug is None or row.slug == slug
-                ]
-        finally:
-            registry.dispose()
-    except Exception as exc:  # noqa: BLE001 - a cron line, never a traceback
-        # The type and never the text: a psycopg error can carry the URL, password
-        # included, and this line is appended to a file on the host.
-        print(f"registro degli spazi non raggiungibile ({type(exc).__name__})", file=sys.stderr)
-        return 0
-    if slug is not None and not spaces:
-        # A typo in a cron line. Said once, on stderr, and not as a week that went out.
-        print(f"{slug}: non nel registro", file=sys.stderr)
-        return 0
+            registry = ensure_tenants_database(settings)
+            try:
+                with session_factory(registry)() as session:
+                    spaces.extend(
+                        (
+                            row.slug,
+                            tenant_database_url(settings, row.db_name),
+                            row.owner_email,
+                            space_base_settings(settings, row.slug).public_url,
+                        )
+                        for row in session.scalars(select(Tenant).order_by(Tenant.created_at)).all()
+                        if slug is None or row.slug == slug
+                    )
+                registry_read = True
+            finally:
+                registry.dispose()
+        except Exception as exc:  # noqa: BLE001 - a cron line, never a traceback
+            # The type and never the text: a psycopg error can carry the URL, password
+            # included, and this line is appended to a file on the host. Not a `return`:
+            # the root is not in the registry, and it goes on being sent.
+            print(f"registro degli spazi non raggiungibile ({type(exc).__name__})", file=sys.stderr)
     if not spaces:
-        print("nessuno spazio nel registro")
+        # A typo in a cron line, said only when the registry was really read: an
+        # unreachable one has had its own line already. Never as a week that went out.
+        if slug is not None and registry_read:
+            print(f"{slug}: non nel registro", file=sys.stderr)
         return 0
 
     settimana = week_containing(data) if data is not None else previous_week(settings)
@@ -374,8 +409,8 @@ def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -
         except Exception as exc:  # noqa: BLE001 - a cron line, never a traceback
             print(f"invio non configurabile ({type(exc).__name__})", file=sys.stderr)
             return 0
-        for space_slug, db_name, owner_email in spaces:
-            engine = create_engine(tenant_database_url(settings, db_name), future=True)
+        for space_slug, database_url, owner_email, public_url in spaces:
+            engine = create_engine(database_url, future=True)
             try:
                 # A session of its own per space, with no transaction open: `DigestRun`
                 # opens the dashboard's snapshot itself and hands the session back clean
@@ -386,7 +421,7 @@ def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -
                         settings,
                         sender=sender,
                         tracker=tracker,
-                        public_url=space_base_settings(settings, space_slug).public_url,
+                        public_url=public_url,
                     ).send_for_space(
                         space_slug, owner_email, settimana, forza=forza, dry_run=dry_run
                     )
