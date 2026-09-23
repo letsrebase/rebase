@@ -9,9 +9,9 @@ diverge on what an imported invoice's row looks like.
 **Depends on:** REB-344 (mastro's ledger spike) landing before day/rate-card
 reconciliation of an imported invoice's lines is possible — §6 below is the only piece
 this document leaves unimplementable until then.
-**Gate:** this project's own description states "no implementation issue is filed until
-Lorenzo signs off on each spike's entity mapping." §7 below is therefore a proposed
-implementation order written *inside this document*, not a set of filed Linear issues.
+**Gate:** signed off by Lorenzo, 2026-09-23. Implementation issues REB-363 through
+REB-369 are filed under the milestone "Import a FatturaPA invoice into PigroCRM's own
+register" — §7 below is the order they follow.
 
 ---
 

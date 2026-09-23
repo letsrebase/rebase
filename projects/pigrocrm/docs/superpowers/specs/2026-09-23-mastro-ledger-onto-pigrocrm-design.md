@@ -1,9 +1,10 @@
 # Mapping mastro's day-approval ledger onto PigroCRM's own entities
 
-Date: 2026-09-23. Status: proposed, awaiting Lorenzo's sign-off on the entity mapping
-below — the project this spike belongs to ("Bring mastro's ledger, invoice import and
-forecasting into PigroCRM") states its own gate plainly: "no implementation issue is
-filed until Lorenzo signs off on each spike's entity mapping." Tracker: REB-344. In
+Date: 2026-09-23. Status: **signed off by Lorenzo, 2026-09-23.** Implementation
+issues REB-358 through REB-362 are filed under the milestone "Run a contract's
+day-approval ledger in PigroCRM" — the project's own gate ("no implementation issue
+is filed until Lorenzo signs off on each spike's entity mapping") is satisfied.
+Tracker: REB-344. In
 English, per the repository rule; the two specs this document matches the shape of
 (`2026-09-08-spazi-un-database-per-tenant-design.md`,
 `2026-09-17-inviti-e-ruoli-di-uno-spazio-design.md`) are Italian only because they
