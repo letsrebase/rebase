@@ -5,12 +5,13 @@
  * Google's own `error` is never forwarded: it is English and occasionally embeds the
  * client id. Nor is a `Conflict` from the token exchange -- an RFC 9457 document in the
  * address bar strands the user outside the SPA at the end of a consent flow. So the
- * callback ends on this page with one of three codes, and this table is the only place
- * they become words.
+ * callback ends on a page of the SPA with one of three codes, and this table is the only
+ * place they become words. Two pages read it: Impostazioni → Gmail, and the Home while
+ * the space is empty, whose Gmail door is where the flow started (REB-222).
  *
  * A lookup in a fixed table rather than rendering the parameter: `?esito=` arrives from
  * the address bar, and echoing it would let anybody who can get a link clicked put a
- * sentence of their choosing on a settings page. An unknown code renders nothing at all.
+ * sentence of their choosing on the page. An unknown code renders nothing at all.
  *
  * A plain module, not a component file: a component module that also exported this
  * table would trip `react-refresh/only-export-components`, and the route file that

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
+import { tenantPrefix } from '@/lib/tenant'
 
 export type GmailHealth = components['schemas']['GmailHealth']
 export type GoogleAccountRead = components['schemas']['GoogleAccountRead']
@@ -13,6 +14,17 @@ export type GmailEntityType = 'customer' | 'person' | 'deal'
  *  component, because both the settings panel and the sync notice have to agree on
  *  what "the sync will run" means. */
 export const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly'
+
+/**
+ * Where a consent flow starts: a plain navigation, never a fetch, because it leaves for
+ * Google. Named here because two screens offer it, the settings panel and the start
+ * page's Gmail door (REB-222).
+ *
+ * Under a space, and under the root's own name, the API answers at `/<slug>/api/...` and
+ * the session cookie is scoped to that prefix: a plain anchor to `/api/...` reaches the
+ * root API with no cookie and answers «Autenticazione richiesta» (live, 2026-09-09).
+ */
+export const GMAIL_OAUTH_START = `${tenantPrefix}/api/gmail/oauth/start`
 
 /**
  * Keyed locally rather than in `lib/query.ts`'s central `queryKeys`, which is where

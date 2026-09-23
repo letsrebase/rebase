@@ -377,23 +377,45 @@ def test_the_read_schema_carries_the_message_and_no_account_column(db_session: S
 
 def test_running_the_sync_twice_produces_the_same_rows(db_session: Session) -> None:
     """Spec 13, criterion 2. The `(google_account_id, gmail_message_id)` unique
-    constraint is what makes the watermark's deliberate 24-hour overlap free."""
+    constraint is what makes the watermark's deliberate 24-hour overlap free.
+
+    The message is half the overlap old, not `_message`'s default day (REB-262). A day
+    old is the overlap's own edge: the second cycle asks `after:` the first cycle's start
+    minus 24 hours, in whole seconds, so a message built one day before *now* was listed
+    again only when no second ticked over between building it and that start. On a busy
+    CI worker one did, now and then, and the second cycle found nothing to skip
+    (`messages_skipped` 0, run 35865494773). Half the overlap puts it inside the window
+    by twelve hours whatever the clock does.
+    """
     account = connected_account(db_session)
     _customer(db_session, "info@acme.it")
+    half_the_overlap_days = gmail_settings().gmail_watermark_overlap_hours / 2 / 24
 
     fake = FakeGmail()
-    fake.messages["m1"] = _message(1, frm="info@acme.it", to=MAILBOX, thread="t1")
+    fake.messages["m1"] = _message(
+        1, frm="info@acme.it", to=MAILBOX, thread="t1", days_ago=half_the_overlap_days
+    )
     service = sync_service(db_session, fake)
     service.sync(actor_for(account))
     db_session.commit()
-    first = db_session.execute(select(func.count()).select_from(GmailMessage)).scalar_one()
+    first = _rows_of(db_session, account.id)
     assert first == 1
 
     second = service.sync(actor_for(account))
     db_session.commit()
-    assert db_session.execute(select(func.count()).select_from(GmailMessage)).scalar_one() == first
+    assert _rows_of(db_session, account.id) == first
     assert second.messages_skipped == 1
     assert second.messages_stored == 0
+
+
+def _rows_of(session: Session, account_id: UUID) -> int:
+    """This test's mailbox only, not the whole table: a row another test committed on this
+    worker's database is not a row this sync wrote."""
+    return session.execute(
+        select(func.count())
+        .select_from(GmailMessage)
+        .where(GmailMessage.google_account_id == account_id)
+    ).scalar_one()
 
 
 def test_the_watermark_moves_forward_but_overlaps_by_a_day(db_session: Session) -> None:

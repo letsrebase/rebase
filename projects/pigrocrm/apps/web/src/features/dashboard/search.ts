@@ -89,6 +89,20 @@ export function defaultDashboardSearch(): DashboardSearch {
   return { tab: 'economica', da, a, base: 'competenza' }
 }
 
+/**
+ * The Home's search: the dashboard's, plus the Gmail consent flow's `esito`, which the
+ * callback appends when it brings an empty space back to its start page (REB-222). A
+ * string or nothing, looked up in a fixed table where it is shown (`messaggioEsito`),
+ * exactly as on Impostazioni → Gmail. Optional, so a link into the dashboard never has
+ * to name it.
+ */
+export type HomeSearch = DashboardSearch & { esito?: string }
+
+export function validateHomeSearch(search: Record<string, unknown>): HomeSearch {
+  const dashboard = validateDashboardSearch(search)
+  return typeof search.esito === 'string' ? { ...dashboard, esito: search.esito } : dashboard
+}
+
 export function validateDashboardSearch(search: Record<string, unknown>): DashboardSearch {
   const fallback = currentMonth()
   const tab = DASHBOARD_TABS.find((candidate) => candidate.id === search.tab)?.id ?? 'economica'

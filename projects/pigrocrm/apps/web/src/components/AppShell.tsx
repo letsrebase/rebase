@@ -72,8 +72,9 @@ import { cn } from '@rebase/ui/cn'
 // would mean a collaborator could never connect an agent to their own account.
 const TOP_LEVEL = [
   { to: '/app', label: 'Home', icon: LayoutDashboard, exact: true },
-  // Where the first login lands, and where the assistant and the first steps live
-  // (ORB-180): its own entry, right under Home, for every role.
+  // The start page (ORB-180, REB-222): the Gmail door, the assistant and the first steps.
+  // The Home is this same page while the space is empty; this entry, right under Home and
+  // for every role, keeps it one click away once the Home has become the dashboard.
   { to: '/app/get-started', label: 'Primi passi', icon: Rocket, exact: false },
   // Under Home, at Ivan's request (2026-09-09), and top-level rather than inside a
   // group for the same reason Home is: a month of one's own days and deadlines is a
