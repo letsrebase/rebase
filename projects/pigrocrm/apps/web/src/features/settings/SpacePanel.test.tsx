@@ -28,6 +28,7 @@ const SETTINGS: components['schemas']['SpaceSettingsRead'] = {
   google_token_key_impostata: false,
   google_app_unverified: false,
   gmail_configurato: false,
+  google_client_condiviso: false,
   redirect_uri_gmail: 'https://pigro.example/studio/api/gmail/oauth/callback',
   redirect_uri_drive: 'https://pigro.example/studio/api/drive/oauth/callback',
   storage_backend: 'local',
@@ -80,6 +81,28 @@ describe('the space panel', () => {
     expect(screen.getByText('https://pigro.example/studio/api/gmail/oauth/callback')).toBeInTheDocument()
     expect(screen.getAllByText("dall'ambiente").length).toBeGreaterThan(0)
     expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
+  })
+
+  it('says the platform lends its client and keeps the space\'s own redirects for a client of its own', async () => {
+    GET.mockResolvedValue({
+      data: {
+        ...SETTINGS,
+        google_client_id: 'platform.apps',
+        google_client_secret_impostato: true,
+        google_token_key_impostata: true,
+        gmail_configurato: true,
+        google_client_condiviso: true,
+      },
+    })
+    renderPanel()
+    await waitFor(() =>
+      expect(screen.getByText(/usa il client Google della piattaforma/)).toBeInTheDocument(),
+    )
+    // The space's own addresses stay, for whoever wants a client of their own.
+    expect(screen.getByText('Solo per un client tuo: i redirect URI da registrare su Google')).toBeInTheDocument()
+    expect(screen.getByText('https://pigro.example/studio/api/gmail/oauth/callback')).toBeInTheDocument()
+    // Whether the platform's client is verified is the platform's to say.
+    expect(screen.queryByLabelText(/ancora in "Testing"/)).not.toBeInTheDocument()
   })
 
   it('saves the changed keys and adopts the answer', async () => {

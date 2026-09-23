@@ -40,6 +40,8 @@ x-api-environment: &api-environment
   PIGROCRM_GOOGLE_TOKEN_KEY: ${PIGROCRM_GOOGLE_TOKEN_KEY:-}
   PIGROCRM_PUBLIC_URL: ${PIGROCRM_PUBLIC_URL:-}
   PIGROCRM_GOOGLE_APP_UNVERIFIED: ${PIGROCRM_GOOGLE_APP_UNVERIFIED:-false}
+  # The root lends its Google client to every space without one (REB-394).
+  PIGROCRM_GOOGLE_SHARED_CLIENT: ${PIGROCRM_GOOGLE_SHARED_CLIENT:-false}
   PIGROCRM_ROOT_SLUG: ${PIGROCRM_ROOT_SLUG:-}
   # Lets the Orbiters hub read the list of spaces (ORB-142). Empty: no such route.
   PIGROCRM_REGISTRY_TOKEN: ${PIGROCRM_REGISTRY_TOKEN:-}

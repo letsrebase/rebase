@@ -54,6 +54,7 @@ from pigrocrm.core.errors import Conflict
 from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.gmail.errors import CredentialRevoked, GmailUnavailable
 from pigrocrm.core.gmail.models import GoogleOAuthState
+from pigrocrm.core.gmail.oauth import callback_url, jti_of, published_state
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.tokens import GOOGLE_AUTH_URL, GoogleTokenClient, TokenGrant
 
@@ -87,7 +88,7 @@ class GoogleDriveOAuthService:
 
     @property
     def redirect_uri(self) -> str:
-        return f"{self.settings.public_url.rstrip('/')}/api/drive/oauth/callback"
+        return callback_url(self.settings, "/api/drive/oauth/callback")
 
     def start(self, actor: Actor) -> str:
         require_gmail_configured(self.settings)
@@ -125,7 +126,7 @@ class GoogleDriveOAuthService:
                 "include_granted_scopes": "false",
                 "code_challenge": challenge,
                 "code_challenge_method": "S256",
-                "state": jti,
+                "state": published_state(self.settings, jti),
             }
         )
 
@@ -136,7 +137,8 @@ class GoogleDriveOAuthService:
         if actor.id is None:
             raise self._invalid_authorisation()
 
-        row = self.gmail.consume_state(state, now, purpose="drive")
+        jti = jti_of(self.settings, state)
+        row = self.gmail.consume_state(jti, now, purpose="drive") if jti is not None else None
         if row is None:
             raise self._invalid_authorisation()
         # The redemption stands whatever happens next -- see the module docstring.

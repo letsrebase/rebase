@@ -1,5 +1,7 @@
 """Settings a database decides for itself, laid over the environment's."""
 
+import base64
+
 import pytest
 from sqlalchemy.orm import Session
 
@@ -7,6 +9,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.errors import PermissionDenied
 from pigrocrm.core.space_settings import SpaceSettingsService, SpaceSettingsUpdate, apply_overrides
+from pigrocrm.core.tenants import space_base_settings
 
 ADMIN = Actor(id=None, type="mcp", role="admin")
 BASE = Settings(
@@ -94,3 +97,49 @@ def test_only_an_admin_reads_or_writes(db_session: Session) -> None:
             Actor(id=None, type="mcp", role="collaboratore"),
             spazio=None,
         )
+
+
+def _borrowing() -> Settings:
+    """A space called `studio` while the root lends its Google client (REB-394)."""
+    root = Settings(
+        _env_file=None,  # type: ignore[call-arg]
+        public_url="https://pigro.example",
+        google_client_id="root.apps",
+        google_client_secret="root-secret",
+        google_token_key=base64.b64encode(b"r" * 32).decode(),
+        google_shared_client=True,
+    )
+    return space_base_settings(root, "studio")
+
+
+def test_a_borrowing_space_reads_that_it_borrows_and_nothing_to_set(
+    db_session: Session,
+) -> None:
+    read = SpaceSettingsService(db_session, _borrowing()).read(ADMIN, spazio="studio")
+    assert read.gmail_configurato is True
+    assert read.google_client_condiviso is True
+    # The space's own addresses, for a client of its own: the borrowed one needs none.
+    assert read.redirect_uri_gmail == "https://pigro.example/studio/api/gmail/oauth/callback"
+    assert read.public_url == "https://pigro.example/studio"
+    assert read.sovrascritte == []
+    assert "root-secret" not in read.model_dump_json()
+
+
+def test_a_borrowing_space_that_sets_its_own_client_gets_its_own_key_and_callback(
+    db_session: Session,
+) -> None:
+    """The derived key belongs to the root's client. A client of the space's own gets a
+    key made the way it always was, and its own callback back."""
+    base = _borrowing()
+    service = SpaceSettingsService(db_session, base)
+    read = service.update(
+        SpaceSettingsUpdate(google_client_id="own.apps", google_client_secret="own"),
+        ADMIN,
+        spazio="studio",
+    )
+    assert read.google_client_condiviso is False
+    assert read.gmail_configurato is True
+    assert read.redirect_uri_gmail == "https://pigro.example/studio/api/gmail/oauth/callback"
+    own_key = service.overrides()["google_token_key"]
+    assert own_key != base.google_token_key
+    assert service.effective().google_token_key == own_key

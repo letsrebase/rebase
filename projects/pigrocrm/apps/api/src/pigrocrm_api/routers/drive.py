@@ -26,8 +26,9 @@ from pigrocrm.core.drive.account import GoogleDriveAccountService
 from pigrocrm.core.drive.oauth import GoogleDriveOAuthService
 from pigrocrm.core.drive.schemas import DriveHealth, DriveRootsUpdate, GoogleDriveAccountRead
 from pigrocrm.core.errors import Conflict
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.oauth_relay import relay_to_space
 from pigrocrm_api.routers.gmail import token_client
 from pigrocrm_api.tenancy import cookie_path
 
@@ -42,6 +43,8 @@ _ESITO_NEGATO = "negato"
 _ESITO_ERRORE = "errore"
 
 _ACCOUNT_PATH = "/account"
+_CALLBACK_ROUTE = "/oauth/callback"
+_CALLBACK_PATH = f"{router.prefix}{_CALLBACK_ROUTE}"
 
 # `token_client` is imported, not redefined: it is `routers/gmail.py`'s per-process
 # `GoogleTokenClient` cache, and one Google OAuth client authenticates both credentials,
@@ -72,16 +75,20 @@ def start_oauth(session: SessionDep, actor: ActorDep, settings: SettingsDep) -> 
     return RedirectResponse(_oauth(session, settings).start(actor), status_code=307)
 
 
-@router.get("/oauth/callback")
+@router.get(_CALLBACK_ROUTE)
 def finish_oauth(
     request: Request,
     session: SessionDep,
-    actor: ActorDep,
     settings: SettingsDep,
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
+    # Before the actor, for the same reason as Gmail's callback (`oauth_relay.py`).
+    relayed = relay_to_space(request, settings, _CALLBACK_PATH, code=code, state=state, error=error)
+    if relayed is not None:
+        return relayed
+    actor = get_actor(request, session, settings)
     if error is not None or code is None or state is None:
         return _back_to_settings(request, _ESITO_NEGATO)
     try:
