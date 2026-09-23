@@ -1388,7 +1388,10 @@ export interface paths {
          * Review Import
          * @description REB-365: read-only, admin only, enforced by the service. Reviews one or more
          *     already-archived documents and reports one row per invoice they parse into --
-         *     never writes a row.
+         *     never writes a row. A `"ready"` row whose customer resolves to exactly one
+         *     contract with a day-rate card in force on the invoice's own `data_emissione`
+         *     also carries `mappature_giorni` (REB-369): a proposed link, per line, to that
+         *     contract's recorded, unbilled `work_units`.
          */
         post: operations["review_import_api_invoices_import_review_post"];
         delete?: never;
@@ -7586,6 +7589,8 @@ export interface components {
             invoice?: components["schemas"]["ParsedInvoice"] | null;
             /** Matched Customer Id */
             matched_customer_id?: string | null;
+            /** Mappature Giorni */
+            mappature_giorni?: (components["schemas"]["WorkUnitDayMappingProposal"] | null)[] | null;
         };
         /**
          * RootSpace
@@ -8366,6 +8371,37 @@ export interface components {
             giorni_senza_ore: string[];
             /** Ore Totali */
             ore_totali: string;
+        };
+        /**
+         * WorkUnitDayMappingProposal
+         * @description Mastro's `DayMappingProposal` (`day-mapping.ts:26-41`): which days a line
+         *     billed, the period they span, and whether their rate-card price actually
+         *     reconciles with what the line itself states -- the three facts the issue's own
+         *     acceptance names ("the period the picked days span, how many there are, and the
+         *     amount they price to next to what the document itself states"), never hidden
+         *     inside a single accept/reject boolean.
+         */
+        WorkUnitDayMappingProposal: {
+            /** Work Unit Ids */
+            work_unit_ids: string[];
+            /**
+             * Periodo Da
+             * Format: date
+             */
+            periodo_da: string;
+            /**
+             * Periodo A
+             * Format: date
+             */
+            periodo_a: string;
+            /** Numero Giorni */
+            numero_giorni: number;
+            /** Importo Proposto */
+            importo_proposto: string;
+            /** Importo Riga */
+            importo_riga: string;
+            /** Importi Coincidono */
+            importi_coincidono: boolean;
         };
         /** ValidationError */
         ValidationError: {

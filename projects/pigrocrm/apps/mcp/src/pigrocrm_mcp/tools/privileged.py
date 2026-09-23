@@ -192,6 +192,12 @@ def register(
         cambia mai lo stato del database e restituisce sempre lo stesso verdetto: quello
         che scrive nel registro e' `confirm_invoice_import`, non ancora su questa
         superficie.
+
+        Quando una riga e' `ready` e il cliente combacia con un solo contratto la cui
+        rate card in vigore alla data di emissione e' a giornata, la riga porta anche
+        `mappature_giorni`: la proposta -- una per riga -- di quali `work_units` gia'
+        registrate e non ancora fatturate su quel contratto la riga ha coperto, o
+        `null` finche' nessuna combinazione esatta si trova.
         """
         service = InvoiceService(context.session, context.storage)
         righe = service.review_import([UUID(d) for d in document_ids], context.actor)
