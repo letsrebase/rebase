@@ -222,7 +222,9 @@ def register(
 
     @mcp.tool()
     @guard
-    def confirm_invoice_import(document_id: str, customer_id: str | None = None) -> dict[str, Any]:
+    def confirm_invoice_import(
+        document_id: str, customer_id: str | None = None, create_customer: bool = False
+    ) -> dict[str, Any]:
         """Conferma sul registro un documento gia' rivisto con `review_invoice_import`.
 
         **Non si fida della revisione precedente**: rilegge e riparsa da capo i byte
@@ -238,11 +240,16 @@ def register(
         o un documento che nessun formato riconosce (`unclaimed`) non scrivono niente,
         con lo stesso significato di `review_invoice_import`.
 
-        `customer_id` e' la sola decisione umana che questo strumento aggiunge:
+        `customer_id` e' la prima decisione umana che questo strumento aggiunge:
         a quale cliente attaccare la fattura. Omesso, si usa la corrispondenza
         automatica per P.IVA/codice fiscale ricalcolata ora; se non ne trova una,
-        la riga risulta `needs_customer_confirmation` e non scrive nulla -- creare
-        il cliente contestualmente e' un passo successivo, non ancora costruito.
+        la riga risulta `needs_customer_confirmation` e non scrive nulla, a meno
+        che `create_customer` sia `true`: in quel caso la controparte cosi' come
+        il documento la dichiara diventa un nuovo `Customer`, creato dentro la
+        stessa transazione della fattura -- mai un cliente confermato da solo un
+        istante prima che il registro si rifiuti. Un documento `lotto` con piu'
+        fatture della stessa nuova controparte le attacca tutte allo stesso
+        cliente appena creato, non uno per fattura.
 
         Per un documento che contiene **una sola fattura**, la riga scritta porta
         anche `xml_document_id`/`xml_hash_sha256`, puntati allo stesso `document_id`
@@ -255,6 +262,7 @@ def register(
             UUID(document_id),
             context.actor,
             customer_id=UUID(customer_id) if customer_id is not None else None,
+            create_customer=create_customer,
         )
         return {"righe": [riga.model_dump(mode="json") for riga in righe]}
 

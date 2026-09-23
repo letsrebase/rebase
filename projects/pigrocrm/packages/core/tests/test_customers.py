@@ -24,6 +24,28 @@ def test_create_requires_only_the_company_name(db_session: Session) -> None:
     assert customer.custom_fields == {}
 
 
+def test_insert_flushes_but_does_not_commit_leaving_a_rollback_with_no_customer(
+    db_session: Session,
+) -> None:
+    """REB-367 (design record §7 item 5): `_insert` is the write half of `create`
+    without the commit, so a caller sharing this session inside a larger
+    transaction -- `InvoiceService.confirm_import`, creating the matched customer
+    alongside the invoice it belongs to -- can still roll back and leave neither
+    behind. `_insert` alone, followed by a rollback, must leave no row; `create`
+    itself (which calls `_insert` and then commits) must be unaffected."""
+    service = CustomerService(db_session)
+    customer = service._insert(CustomerCreate(ragione_sociale="Rolled Back Srl"), ADMIN)
+    assert customer.id is not None, "flushed, so the id is already assigned"
+
+    db_session.rollback()
+
+    assert service.repo.get(customer.id) is None
+
+    created = service.create(CustomerCreate(ragione_sociale="Committed Srl"), ADMIN)
+    db_session.expire_all()
+    assert service.repo.get(created.id) is not None
+
+
 def test_fiscal_fields_are_first_class_columns(db_session: Session) -> None:
     """The previous system guessed among vat_number / vat / piva because these were external
     attributes. Here they are columns, so slice 3 can build FatturaPA on them."""
