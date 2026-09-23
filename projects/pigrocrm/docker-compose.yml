@@ -2,8 +2,11 @@
 # __main__.py) it is launched as a subprocess by an MCP client that owns its
 # stdin/stdout for one session -- there is no service for that here, and an operator
 # who wants it runs it on demand inside the api image, with a personal access token
-# from Impostazioni -> Token in the UI:
-#   docker compose run --rm -e PIGROCRM_TOKEN=<token> api uv run --no-sync python -m pigrocrm_mcp
+# from Impostazioni -> Token in the UI, exported in the shell and passed by name only:
+#   docker compose run --rm -e PIGROCRM_TOKEN api uv run --no-sync python -m pigrocrm_mcp
+# Never as `-e PIGROCRM_TOKEN=<token>`: the value would be in `ps` and the shell
+# history. On the production host the token comes from a root-only file, see AGENTS.md
+# § Deploying (REB-127).
 # Over Streamable HTTP (`pigrocrm_mcp.http`, ORB-170) it is the `mcp` service below:
 # the same image as `api`, the same environment and the same documents volume,
 # reached only through the `web` container's nginx at /<slug>/mcp and /mcp, with the
