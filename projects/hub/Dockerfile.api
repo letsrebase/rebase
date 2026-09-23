@@ -1,7 +1,24 @@
 FROM python:3.13-slim-bookworm
 
-RUN apt-get update && apt-get install -y --no-install-recommends libpq5 ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# The contracts a freelancer signs are typeset at request time since REB-387
+# (`rebase_core.contracts`), with the pair PigroCRM's renderer was verified against:
+# Pandoc 3.8.2.1 and Typst 0.14.2, downloaded as projects/pigrocrm/Dockerfile.api does.
+# `packages/core/tests/test_api_image.py` fails when the two files name different pins.
+ARG TYPST_VERSION=0.14.2
+ARG PANDOC_VERSION=3.8.2.1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libpq5 ca-certificates curl xz-utils \
+    && curl -fL "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" \
+       | tar -xz -C /tmp \
+    && mv /tmp/pandoc-${PANDOC_VERSION}/bin/pandoc /usr/local/bin/pandoc \
+    && chmod +x /usr/local/bin/pandoc \
+    && curl -fL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
+       | tar -xJ -C /tmp \
+    && mv /tmp/typst-x86_64-unknown-linux-musl/typst /usr/local/bin/typst \
+    && chmod +x /usr/local/bin/typst \
+    && apt-get purge -y curl xz-utils && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* /tmp/pandoc-${PANDOC_VERSION} /tmp/typst-x86_64-unknown-linux-musl
 
 COPY --from=ghcr.io/astral-sh/uv:0.9.24 /uv /usr/local/bin/uv
 
@@ -20,6 +37,10 @@ COPY projects/hub/apps/mcp/pyproject.toml projects/hub/apps/mcp/
 RUN uv sync --frozen --no-dev --no-install-workspace --package rebase-api --package rebase-mcp
 
 COPY projects/hub/packages ./projects/hub/packages
+# The palette and the typeface a contract is typeset in, at the paths
+# `rebase_core.contracts.brand` reads them from: the image mirrors the repository.
+COPY shared/brand/palette.css shared/brand/palette.css
+COPY shared/brand/fonts/outfit-variable-latin.woff2 shared/brand/fonts/outfit-variable-latin.woff2
 COPY projects/hub/apps/api ./projects/hub/apps/api
 COPY projects/hub/apps/mcp ./projects/hub/apps/mcp
 RUN uv sync --frozen --no-dev --package rebase-api --package rebase-mcp

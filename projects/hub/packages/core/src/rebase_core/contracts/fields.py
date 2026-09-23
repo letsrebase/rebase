@@ -251,3 +251,31 @@ def is_draft(markdown: str, name: str) -> bool:
     if status is None:
         raise ContractFailed(f"{name}: the front matter says no `status`")
     return status == "draft"
+
+
+# The fields of the two contracts that describe rebase itself. `REBASE_SIGNER_JSON` may
+# fill these and nothing else: a freelancer's or a client's data never come from a
+# server setting.
+SIGNER_FIELDS = (
+    "rebase-ragione-sociale",
+    "rebase-sede",
+    "rebase-cf",
+    "rebase-piva",
+    "rebase-codice-destinatario",
+    "rebase-pec",
+    "rebase-rappresentante",
+)
+
+
+def signer_data(raw: str) -> dict[str, Value]:
+    """`REBASE_SIGNER_JSON` as a layer over `rebase.json`: `{}` when unset, which prints
+    those fields as blank lines (a preview can live with it, sending in phase 3 cannot)."""
+    if not raw.strip():
+        return {}
+    layer = read_layer(raw, "REBASE_SIGNER_JSON")
+    foreign = sorted(set(layer) - set(SIGNER_FIELDS))
+    if foreign:
+        raise ContractFailed(
+            f"REBASE_SIGNER_JSON may fill only the rebase-* fields, not {', '.join(foreign)}"
+        )
+    return layer

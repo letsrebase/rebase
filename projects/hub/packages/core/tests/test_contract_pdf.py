@@ -30,6 +30,7 @@ from rebase_core.contracts.fields import (
     italian_date,
     mark_proposals,
     rendered,
+    signer_data,
     survived,
 )
 from rebase_core.contracts.render import COMPANY_DEFAULTS, DOCUMENTS, TEXTS
@@ -183,3 +184,15 @@ def test_the_contracts_read_the_brand_exactly_as_the_guide_does() -> None:
     assert brand.PALETTE == build_guide_pdf.PALETTE
     assert brand.FONT == build_guide_pdf.FONT
     assert brand.palette() == build_guide_pdf.palette()
+
+
+def test_the_signer_setting_fills_only_rebases_own_fields() -> None:
+    assert signer_data("") == {}
+    assert signer_data("  ") == {}
+    assert signer_data('{"rebase-rappresentante": "Nome Cognome"}') == {
+        "rebase-rappresentante": "Nome Cognome"
+    }
+    with pytest.raises(ContractFailed, match="only the rebase-"):
+        signer_data('{"professionista-nome": "Qualcuno"}')
+    with pytest.raises(ContractFailed, match="cannot read REBASE_SIGNER_JSON"):
+        signer_data("{non json")

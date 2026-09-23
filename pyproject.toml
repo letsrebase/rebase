@@ -56,7 +56,9 @@ dev = [
   # binaries PigroCRM's renderer uses, and neither reads the woff2 the brand ships or
   # a variable weight axis. fontTools decompresses that one file and pins the two
   # weights the site's stylesheet uses. `[woff]` is what brings brotli, without which
-  # a woff2 cannot be opened at all. Dev only: nothing imports it at runtime.
+  # a woff2 cannot be opened at all. Also a runtime dependency of `rebase-core` since
+  # REB-387, which typesets the contracts in the API; listed here too for the guide's
+  # script.
   "fonttools[woff]==4.62.0",
 ]
 

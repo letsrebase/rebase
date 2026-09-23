@@ -79,6 +79,18 @@ and the `guide-pdf` preflight check rebuilds the bytes. Comparing bytes is meani
 only because the build is reproducible on purpose: `--creation-timestamp 0` for Typst,
 `recalcTimestamp=False` for the font instances.
 
+## The contracts are typeset at request time
+
+Since REB-387 the API writes the framework agreement and the letter of engagement itself,
+with `rebase_core.contracts`: pandoc and Typst over the Markdown in
+`packages/core/src/rebase_core/contracts/texts/`, the template beside it, and the palette
+and the typeface read from `shared/brand/` at the paths the image mirrors. So
+`Dockerfile.api` carries PigroCRM's pandoc and Typst (`test_api_image.py` holds the two
+images to one pair) and fontTools is a dependency of `rebase_core`. `rebase
+contracts-check` typesets both texts from fiction and says whether a machine can; the
+`hub-image` preflight check and CI's image job run it inside the built image. Who signs
+for rebase comes from `REBASE_SIGNER_JSON` in the host `.env`, never from the repository.
+
 ## Running it
 
 From the repository root:

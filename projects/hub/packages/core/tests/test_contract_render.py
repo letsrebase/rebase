@@ -9,6 +9,9 @@ test hands `FakeRenderer` instead.
 
 from pathlib import Path
 
+import pytest
+
+from rebase_core.cli import main
 from rebase_core.contracts.fields import Value, read_layer
 from rebase_core.contracts.render import (
     A4_HEIGHT_PT,
@@ -91,3 +94,13 @@ def test_a_value_full_of_typst_syntax_prints_as_text() -> None:
     rendered = render("lettera-di-incarico", data)
     assert rendered.pdf.startswith(b"%PDF-")
     assert set(rendered.blank) == LETTER_BLANKS
+
+
+def test_the_contracts_check_command_typesets_both_texts(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["contracts-check"]) == 0
+    out = capsys.readouterr().out
+    for document in DOCUMENTS:
+        assert f"{document}: " in out
+    assert out.count("spazi da firmare") == len(DOCUMENTS)

@@ -637,6 +637,10 @@ jobs:
           POSTGRES_PASSWORD: build-only-never-used
           REBASE_DATA_DIR: ./build-only-never-mounted
         run: docker compose -p rebase build
+      - name: Typeset both contracts inside the image
+        # REB-387: the API renders contracts at request time, so an image that builds
+        # but lacks pandoc, Typst, fontTools or the brand files is a broken deploy.
+        run: docker run --rm rebase-api uv run --no-sync rebase contracts-check
 
   ci:
     name: ci

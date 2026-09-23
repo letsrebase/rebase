@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import DEFAULT_NAME, AdminTokenService
 from rebase_core.config import Settings, get_settings
+from rebase_core.contracts.fields import ContractFailed, Value, merge_data
+from rebase_core.contracts.render import DOCUMENTS, company_defaults, render, signature_blanks
 from rebase_core.conversions import pixel_from_settings
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.errors import DomainError
@@ -111,6 +113,37 @@ def conversions_check() -> int:
         file=sys.stderr,
     )
     return 1
+
+
+# Fiction only, as the public example is: no signer data and no person, so the check
+# can run anywhere and prints nothing anybody would mind reading.
+_CHECK_DATA: dict[str, Value] = {
+    "numero": "2026-000",
+    "professionista-nome": "Nome Cognome",
+    "cliente-ragione-sociale": "Azienda Esempio S.r.l.",
+    "compenso": 450,
+}
+
+
+def contracts_check() -> int:
+    """`rebase contracts-check`: can this machine typeset a contract?
+
+    Renders both texts from fiction with this machine's pandoc, Typst, palette and
+    typeface, and asks Typst where the signing blanks landed. Writes no file and no row.
+    The `hub-image` preflight check and CI's image job run it inside the built image."""
+    try:
+        for document in DOCUMENTS:
+            data = merge_data(company_defaults(), _CHECK_DATA)
+            result = render(document, data)
+            blanks = signature_blanks(document, data)
+            print(
+                f"{document}: {len(result.pdf)} byte, versione {result.version}, "
+                f"{len(blanks)} spazi da firmare"
+            )
+    except ContractFailed as exc:
+        print(exc.message, file=sys.stderr)
+        return 1
+    return 0
 
 
 def send_welcome(
@@ -215,6 +248,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "conversions-check",
         help="Verifica la chiave della Conversions API senza registrare una conversione",
     )
+    sub.add_parser(
+        "contracts-check",
+        help="Compone i due contratti con pandoc e Typst: questa macchina li sa generare?",
+    )
     token = sub.add_parser(
         "createtoken", help="Crea un token personale di un amministratore, per un agente"
     )
@@ -236,6 +273,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "conversions-check":
         return conversions_check()
+    if args.command == "contracts-check":
+        return contracts_check()
     if args.command == "createtoken":
         return createtoken(args.email, args.nome)
     if args.command == "setrole":
