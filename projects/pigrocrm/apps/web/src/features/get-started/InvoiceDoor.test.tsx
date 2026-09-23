@@ -106,6 +106,7 @@ function drop(...files: File[]) {
 beforeEach(() => {
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.POST).mockReset()
+  vi.mocked(api.DELETE).mockReset()
   gets()
   posts()
   uploads.mockReset()
@@ -122,35 +123,55 @@ afterEach(() => {
 })
 
 describe('the invoice door, first the customer', () => {
-  it('on an empty space asks for the new customer by name and creates it as Clienti does', async () => {
+  async function create() {
+    const button = screen.getByRole('button', { name: 'Crea il cliente e vai avanti' })
+    await waitFor(() => expect(button).toBeEnabled())
+    await userEvent.click(button)
+  }
+
+  it('on an empty space creates the new customer by name, as Clienti does', async () => {
     renderDoor()
     const door = within(screen.getByRole('region', { name: 'Carica l’ultima fattura che hai emesso' }))
     expect(await door.findByText('A chi l’hai emessa?')).toBeInTheDocument()
-    expect(door.queryByRole('combobox')).toBeNull()
-    const avanti = door.getByRole('button', { name: 'Avanti' })
-    expect(avanti).toBeDisabled()
+    expect(door.getByRole('button', { name: 'Crea il cliente e vai avanti' })).toBeDisabled()
     await userEvent.type(door.getByLabelText('Ragione sociale del cliente'), '  Officina Verdi S.r.l. ')
-    await userEvent.click(avanti)
+    await create()
     expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { ragione_sociale: 'Officina Verdi S.r.l.' } })
     expect(await door.findByText('Officina Verdi S.r.l.')).toBeInTheDocument()
     expect(door.getByTestId('upload-dropzone')).toBeInTheDocument()
   })
 
-  it('offers the customers already on file, and filing under one creates nothing', async () => {
-    gets({ '/api/customers': { data: { items: [{ id: 'c-old', ragione_sociale: 'ACME Srl' }], next_cursor: null } } })
+  it('finds a customer already on file by searching, in a space of any size, and creates nothing', async () => {
+    gets({
+      '/api/customers': {
+        data: { items: [{ id: 'c-old', ragione_sociale: 'ACME Srl', partita_iva: '01234567890' }], next_cursor: null },
+      },
+    })
     renderDoor()
-    await userEvent.click(await screen.findByRole('combobox'))
-    await userEvent.click(await screen.findByRole('option', { name: 'ACME Srl' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'acm')
+    await userEvent.click(await screen.findByRole('button', { name: 'ACME Srl · P.IVA 01234567890' }))
     expect(await screen.findByText('ACME Srl')).toBeInTheDocument()
+    expect(api.GET).toHaveBeenCalledWith('/api/customers', { params: { query: { search: 'acm', limit: 8 } } })
     expect(api.POST).not.toHaveBeenCalledWith('/api/customers', expect.anything())
   })
 
-  it('still takes a new name when the customers on file cannot be read', async () => {
+  it('uses the customer on file when the typed name is exactly theirs, instead of a duplicate', async () => {
+    gets({ '/api/customers': { data: { items: [{ id: 'c-old', ragione_sociale: 'ACME Srl' }], next_cursor: null } } })
+    renderDoor()
+    await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'acme srl')
+    const use = await screen.findByRole('button', { name: 'Usa ACME Srl' })
+    await waitFor(() => expect(use).toBeEnabled())
+    await userEvent.click(use)
+    expect(await screen.findByTestId('upload-dropzone')).toBeInTheDocument()
+    expect(api.POST).not.toHaveBeenCalledWith('/api/customers', expect.anything())
+  })
+
+  it('still takes a new name when the customers on file cannot be searched', async () => {
     gets({ '/api/customers': { status: 500 } })
     renderDoor()
-    expect(await screen.findByText(/Non riesco a leggere i clienti/)).toBeInTheDocument()
-    await userEvent.type(screen.getByLabelText('Ragione sociale del cliente'), 'Officina{Enter}')
+    await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'Officina')
+    expect(await screen.findByText(/Non riesco a cercare tra i clienti/)).toBeInTheDocument()
+    await create()
     expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { ragione_sociale: 'Officina' } })
   })
 
@@ -158,7 +179,7 @@ describe('the invoice door, first the customer', () => {
     posts({ '/api/customers': { status: 422, detail: 'ragione_sociale: già usata' } })
     renderDoor()
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'Officina')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await create()
     expect(await screen.findByRole('alert')).toHaveTextContent('già usata')
     expect(screen.queryByTestId('upload-dropzone')).toBeNull()
   })
@@ -168,7 +189,9 @@ describe('the invoice door, then the PDF', () => {
   async function toUpload() {
     renderDoor({ assistantConnected: false })
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'Officina Verdi S.r.l.')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    const button = screen.getByRole('button', { name: 'Crea il cliente e vai avanti' })
+    await waitFor(() => expect(button).toBeEnabled())
+    await userEvent.click(button)
     await screen.findByTestId('upload-dropzone')
   }
 
@@ -223,12 +246,33 @@ describe('the invoice door, then the PDF', () => {
     expect(uploads).toHaveBeenCalledTimes(1)
   })
 
-  it('retries a failed upload onto the same document instead of filing a second one', async () => {
+  it('removes the empty document when its file fails to upload, and the next drop files a fresh one', async () => {
     await toUpload()
+    vi.mocked(api.DELETE).mockResolvedValue({ data: undefined, response: new Response(null, { status: 204 }) } as never)
     uploads.mockImplementationOnce(() => new Response(JSON.stringify({ detail: 'disco pieno' }), { status: 500 }))
     drop(pdf())
     expect(await screen.findByRole('alert')).toHaveTextContent('disco pieno')
-    // The customer can no longer be changed: the document is already filed under it.
+    await waitFor(() =>
+      expect(api.DELETE).toHaveBeenCalledWith('/api/documents/{document_id}', { params: { path: { document_id: 'doc-1' } } }),
+    )
+    // Nothing is filed any more, so the customer can be changed again.
+    expect(await screen.findByRole('button', { name: 'Cambia cliente' })).toBeInTheDocument()
+    drop(pdf())
+    expect(await screen.findByText(invoicePrompt(HANDOFF))).toBeInTheDocument()
+    expect(vi.mocked(api.POST).mock.calls.filter((call) => (call as unknown[])[0] === '/api/documents')).toHaveLength(2)
+  })
+
+  it('retries onto the same document when even its removal fails', async () => {
+    await toUpload()
+    vi.mocked(api.DELETE).mockResolvedValue({
+      error: { detail: 'boom' },
+      response: new Response(null, { status: 503 }),
+    } as never)
+    uploads.mockImplementationOnce(() => new Response(JSON.stringify({ detail: 'disco pieno' }), { status: 500 }))
+    drop(pdf())
+    expect(await screen.findByRole('alert')).toHaveTextContent('disco pieno')
+    await waitFor(() => expect(api.DELETE).toHaveBeenCalled())
+    // The document is still filed under this customer: it cannot be changed now.
     expect(screen.queryByRole('button', { name: 'Cambia cliente' })).toBeNull()
     drop(pdf())
     expect(await screen.findByText(invoicePrompt(HANDOFF))).toBeInTheDocument()
@@ -288,6 +332,12 @@ describe('the invoice door, the handoff', () => {
     expect(within(note).getByRole('link', { name: 'Impostazioni → Spazio' })).toHaveAttribute('href', '/app/settings/space')
   })
 
+  it('shows the switch note when the settings cannot be read, rather than assume it is on', async () => {
+    gets({ '/api/settings/space': { status: 500 } })
+    renderDoor()
+    expect(await screen.findByRole('note')).toHaveTextContent('accesso completo per i token dell’agente')
+  })
+
   it('says nothing about the switch once it is on', async () => {
     renderDoor()
     await screen.findByText(invoicePrompt(HANDOFF))
@@ -320,7 +370,10 @@ describe('the invoice door, the handoff', () => {
     posts({ '/api/documents': { data: { ...DOCUMENT, id: 'doc-2' } } })
     await userEvent.click(screen.getByRole('button', { name: 'Carica un’altra fattura' }))
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'Officina Verdi S.r.l.')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    const button = screen.getByRole('button', { name: 'Crea il cliente e vai avanti' })
+    await waitFor(() => expect(button).toBeEnabled())
+    await userEvent.click(button)
+    await screen.findByTestId('upload-dropzone')
     drop(pdf())
     const second = { ...HANDOFF, documentId: 'doc-2' }
     expect(await screen.findByText(invoicePrompt(second))).toBeInTheDocument()

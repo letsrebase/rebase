@@ -6,8 +6,9 @@
  *
  * 1. **The customer.** A document belongs to exactly one customer, deal or contract
  *    (REB-358, a database check), and an empty space has none, so the door first asks
- *    whom the invoice was issued to: one already on file, or a new name, which is
- *    `POST /api/customers` exactly as «Nuovo cliente» on Clienti sends it.
+ *    whom the invoice was issued to: one already on file, found by name as it is typed,
+ *    or a new name, which is `POST /api/customers` exactly as «Nuovo cliente» on
+ *    Clienti sends it.
  * 2. **The PDF.** One file, a PDF, filed as a `fattura` document of that customer
  *    (`POST /api/documents`, then its first version), because that is the one shape
  *    `import_issued_invoice` accepts as the original (`pdf_sorgente.document_id`).
@@ -26,15 +27,14 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { FileText } from 'lucide-react'
-import { useId, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { api, toProblem, unwrap } from '@/lib/api'
 import { useAuth, useCan } from '@/lib/auth'
 import { queryKeys } from '@/lib/query'
-import { useCreateCustomer, useCustomers } from '@/features/customers/queries'
+import { useCreateCustomer } from '@/features/customers/queries'
 import { useDocument, useUploadVersion } from '@/features/documents/queries'
 import { UploadDropzone } from '@/features/documents/UploadDropzone'
 import { SPACE_SETTINGS_KEY } from '@/features/settings/SpacePanel'
@@ -106,90 +106,96 @@ function Upload({ onUploaded }: { onUploaded: (handoff: InvoiceHandoff) => void 
   )
 }
 
+/** The typed name, once it has stopped changing for a quarter of a second. */
+function useSettled(value: string, delay = 250): string {
+  const [settled, setSettled] = useState(value)
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(value), delay)
+    return () => window.clearTimeout(timer)
+  }, [value, delay])
+  return settled
+}
+
+/**
+ * One field: the customer's name. As it is typed, the customers already on file whose
+ * name or VAT number matches are offered (`GET /api/customers?search=`, the Clienti
+ * page's own search), so a space of any size finds its customer, and a name that is
+ * already on file is used rather than created twice. Only a name with no exact match
+ * creates a customer, and not while the search for it is still on its way.
+ */
 function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name: string }) => void }) {
-  const customers = useCustomers({ limit: 200 })
+  const [nome, setNome] = useState('')
+  const typed = nome.trim()
+  const query = useSettled(typed)
+  const searchable = query.length >= 2
+  const matches = useQuery({
+    queryKey: queryKeys.customers({ search: query, limit: 8, scope: 'invoice-door' }),
+    queryFn: () => unwrap(api.GET('/api/customers', { params: { query: { search: query, limit: 8 } } })),
+    enabled: searchable,
+  })
   const create = useCreateCustomer()
-  const [existing, setExisting] = useState('')
-  const [nuovo, setNuovo] = useState('')
   const ids = useId()
-  const items = customers.data?.items ?? []
-  const nome = nuovo.trim()
+  const items = searchable ? (matches.data?.items ?? []) : []
+  const exact = items.find((item) => item.ragione_sociale.trim().toLowerCase() === typed.toLowerCase())
+  // Until the search has answered for exactly what is in the field, «create» could make
+  // a second copy of a customer the search was about to show.
+  const searching = typed.length >= 2 && (query !== typed || matches.isFetching)
 
   function next(event: FormEvent) {
     event.preventDefault()
-    if (create.isPending) return
-    if (nome) {
-      create.mutate(
-        { ragione_sociale: nome },
-        { onSuccess: (created) => onChosen({ id: created.id, name: created.ragione_sociale }) },
-      )
+    if (!typed || create.isPending || searching) return
+    if (exact) {
+      onChosen({ id: exact.id, name: exact.ragione_sociale })
       return
     }
-    const chosen = items.find((item) => item.id === existing)
-    if (chosen) onChosen({ id: chosen.id, name: chosen.ragione_sociale })
+    create.mutate(
+      { ragione_sociale: typed },
+      { onSuccess: (created) => onChosen({ id: created.id, name: created.ragione_sociale }) },
+    )
   }
-
-  // While the list loads, offering only «un cliente nuovo» would invite a duplicate of
-  // one that is on file: the step waits for the answer, or says it could not get one.
-  if (customers.isPending) return <p className="text-muted-foreground text-sm">Caricamento…</p>
 
   return (
     <form onSubmit={next} className="space-y-3 text-sm">
-      <fieldset className="space-y-3">
+      <fieldset className="space-y-2">
         <legend className="font-medium">A chi l’hai emessa?</legend>
-        {customers.isError ? (
+        <Label htmlFor={`${ids}-nome`}>Ragione sociale del cliente</Label>
+        <Input
+          id={`${ids}-nome`}
+          value={nome}
+          maxLength={255}
+          autoComplete="off"
+          onChange={(event) => setNome(event.target.value)}
+        />
+        <p className="text-muted-foreground">Se è già tra i tuoi clienti, lo trovi qui sotto.</p>
+        {items.length > 0 && (
+          <ul aria-label="Già tra i tuoi clienti" className="flex flex-wrap gap-2">
+            {items.map((item) => (
+              <li key={item.id}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onChosen({ id: item.id, name: item.ragione_sociale })}
+                >
+                  {item.partita_iva ? `${item.ragione_sociale} · P.IVA ${item.partita_iva}` : item.ragione_sociale}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {searchable && matches.isError ? (
           <p className="text-muted-foreground">
-            Non riesco a leggere i clienti che hai già: puoi scriverne il nome qui sotto.
+            Non riesco a cercare tra i clienti che hai già: se è nuovo, crealo qui sotto.
           </p>
         ) : null}
-        {items.length > 0 && (
-          <>
-            <div className="space-y-2">
-              <Label htmlFor={`${ids}-esistente`}>Un cliente che hai già</Label>
-              <Select
-                value={existing}
-                onValueChange={(value) => {
-                  setExisting(value)
-                  setNuovo('')
-                }}
-              >
-                <SelectTrigger id={`${ids}-esistente`} className="w-full">
-                  <SelectValue placeholder="Scegli il cliente…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {items.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.ragione_sociale}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <p className="text-muted-foreground">oppure</p>
-          </>
-        )}
-        <div className="space-y-2">
-          <Label htmlFor={`${ids}-nuovo`}>
-            {items.length > 0 ? 'Un cliente nuovo: ragione sociale' : 'Ragione sociale del cliente'}
-          </Label>
-          <Input
-            id={`${ids}-nuovo`}
-            value={nuovo}
-            maxLength={255}
-            onChange={(event) => {
-              setNuovo(event.target.value)
-              if (event.target.value.trim()) setExisting('')
-            }}
-          />
-        </div>
       </fieldset>
       {create.error ? (
         <p role="alert" className="text-destructive">
           {toProblem(create.error).detail}
         </p>
       ) : null}
-      <Button type="submit" disabled={create.isPending || (!nome && !existing)}>
-        Avanti
+      <Button type="submit" disabled={!typed || create.isPending || searching}>
+        {exact ? `Usa ${exact.ragione_sociale}` : 'Crea il cliente e vai avanti'}
       </Button>
     </form>
   )
@@ -204,8 +210,8 @@ function UploadPdf({
   onChangeCustomer: () => void
   onUploaded: (handoff: InvoiceHandoff) => void
 }) {
-  // The document is created once: a failed upload of its file is retried onto the same
-  // row rather than leaving a second, empty `fattura` behind for every attempt.
+  // The document is created once per attempt: a failed upload of its file removes it
+  // (below), and only a removal that fails too leaves it here to be retried onto.
   const [documentId, setDocumentId] = useState<string | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -253,6 +259,25 @@ function UploadPdf({
       onUploaded({ documentId: id, customerId: customer.id, customerName: customer.name })
     } catch (error) {
       setProblem(toProblem(error).detail)
+      // A document whose file never arrived is removed rather than left behind as an
+      // empty `fattura` on the customer, whether or not the person tries again: the next
+      // drop files a fresh one. Kept for a retry only if even the removal fails.
+      const orphan = filed.current
+      if (orphan !== null) {
+        let removed = false
+        try {
+          const result = await api.DELETE('/api/documents/{document_id}', {
+            params: { path: { document_id: orphan } },
+          })
+          removed = result.error === undefined
+        } catch {
+          removed = false
+        }
+        if (removed) {
+          filed.current = null
+          setDocumentId(null)
+        }
+      }
     } finally {
       inFlight.current = false
       setBusy(false)
@@ -365,7 +390,9 @@ function Handoff({
     )
   }
 
-  const fullAccessOff = settings.data?.mcp_full_access === false
+  // Shown unless the switch is known to be on: it is off by default, and a read that
+  // failed must not hide the one prerequisite the prompt cannot work without.
+  const fullAccessOff = settings.isError || settings.data?.mcp_full_access === false
   return (
     <div className="space-y-3 text-sm">
       <p>
