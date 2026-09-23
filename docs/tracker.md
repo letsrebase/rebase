@@ -62,6 +62,7 @@ does it adds or updates the row here, in the PR that ships the release or in one
 | `PigroCRM` | `PigroCRM v4 - routes in English` | Ivan | Completed, 2026-09-21 (opened and shipped the same day) |
 | `Monorepo` | `Choose the wordmark that carries the meaning` | Lorenzo | Planned, opened 2026-09-22 |
 | `Monorepo` | `Make the backlog readable at a glance` | Lorenzo | In Progress, opened 2026-09-22 |
+| `PigroCRM` | `Bring mastro's ledger, invoice import and forecasting into PigroCRM` | Lorenzo | Planned, opened 2026-09-22 |
 
 The open projects were renamed on 2026-09-22 to a verb and the work it does
 (§ Naming); the completed rows keep the name each shipped under, since a record
