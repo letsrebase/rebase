@@ -285,6 +285,27 @@ class CashOverview(BaseModel):
     mesi: list[CashMonth]
 
 
+class RevenueByCustomer(BaseModel):
+    """One customer's share of the year's invoiced revenue -- the concentration figure
+    REB-352's own mapping calls for (§1.5, §5 item 1 of
+    `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`):
+    `Σ Invoice.imponibile` for this customer over the calendar year, divided by that
+    same year's `annual_revenue`.
+
+    Not `EsposizioneCliente` (`dashboard/schemas.py`), whose `quota` is a share of the
+    *largest* customer's outstanding receivable and answers "who currently owes the
+    most". This answers a different question -- "what share of total invoiced income
+    comes from this one client" -- against the whole year's revenue, and the two do not
+    become the same figure by relabelling either one.
+    """
+
+    customer_id: UUID
+    ragione_sociale: str
+    ricavi: Decimal = Field(max_digits=12, decimal_places=2)
+    fatture: int
+    quota: float
+
+
 class EconomicOverview(BaseModel):
     """Impostazioni economiche della dashboard: la cassa dell'anno e, per un admin con
     un profilo fiscale configurato, la stima fiscale calcolata due volte -- sui ricavi
@@ -295,7 +316,10 @@ class EconomicOverview(BaseModel):
     cassa: CashOverview
     fiscale: FiscalEstimate | None
     fiscale_proiettato: FiscalEstimate | None
-    # lordo less what is owed, on the two bases; None whenever the estimate is.
+    # Whole-practice, calendar-year concentration (§1.5): not blocked on the ledger
+    # milestone the way a contract-anchored cap is, and distinct from `per_cliente`'s
+    # receivables exposure on the dashboard's own page (`dashboard/schemas.py`).
+    concentrazione_clienti: list[RevenueByCustomer]
     netto_effettivo: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
     netto_proiettato: Decimal | None = Field(default=None, max_digits=12, decimal_places=2)
 

@@ -105,6 +105,23 @@ const FISCALE = {
   totale_dovuto: '4114.08',
 }
 
+const CONCENTRAZIONE = [
+  {
+    customer_id: 'c-grande',
+    ragione_sociale: 'Grande S.r.l.',
+    ricavi: '6000.00',
+    fatture: 2,
+    quota: 2 / 3,
+  },
+  {
+    customer_id: 'c-piccolo',
+    ragione_sociale: 'Piccolo S.r.l.',
+    ricavi: '3000.00',
+    fatture: 1,
+    quota: 1 / 3,
+  },
+]
+
 const RESPONSE = {
   calcolato_alle: '2026-09-08T10:00:00Z',
   cassa: {
@@ -121,6 +138,7 @@ const RESPONSE = {
   },
   fiscale: FISCALE,
   fiscale_proiettato: { ...FISCALE, ricavi: '30082.65', imponibile: '20155.38', totale_dovuto: '5999.55' },
+  concentrazione_clienti: CONCENTRAZIONE,
   netto_effettivo: '16217.04',
   netto_proiettato: '23785.60',
 }
@@ -346,6 +364,37 @@ describe('EconomicTab', () => {
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
     renderTab()
     expect(await screen.findByText(/Aggiornato/)).toBeInTheDocument()
+  })
+
+  it('ranks each customer by its own share of the year\'s whole revenue, distinct from the exposure table on the receivables page', async () => {
+    vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
+    renderTab()
+
+    const heading = await screen.findByRole('heading', { name: 'Concentrazione clienti' })
+    const table = heading.closest('section')?.querySelector('table')
+    expect(table).not.toBeNull()
+    const rows = within(table as HTMLTableElement).getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(2)
+    // Ranked, largest first -- the server's own order, never re-sorted here.
+    expect(rows[0]).toHaveTextContent('Grande S.r.l.')
+    expect(rows[0]).toHaveTextContent('6.000,00 €')
+    expect(rows[0]).toHaveTextContent('66,7%')
+    expect(rows[1]).toHaveTextContent('Piccolo S.r.l.')
+    expect(rows[1]).toHaveTextContent('33,3%')
+    // A different figure from `per_cliente`'s receivables exposure, in words as well as
+    // in data: this table answers a different question and says so.
+    expect(screen.getByText(/non l'esposizione residua di «Da incassare»/)).toBeInTheDocument()
+  })
+
+  it('says so, rather than rendering an empty table, when nobody was invoiced this year', async () => {
+    vi.mocked(api.GET).mockImplementation(
+      byPath({ ...RESPONSE, concentrazione_clienti: [] }) as never,
+    )
+    renderTab()
+    await screen.findByRole('group', { name: 'Ricavi incassati' })
+    const heading = screen.getByRole('heading', { name: 'Concentrazione clienti' })
+    expect(screen.getByText('Nessuna fattura emessa nell\'anno.')).toBeInTheDocument()
+    expect(heading.closest('section')?.querySelector('table')).toBeNull()
   })
 
   it('renders an error banner and no figures when the request fails', async () => {

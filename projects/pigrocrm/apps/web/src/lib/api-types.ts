@@ -4423,6 +4423,8 @@ export interface components {
             cassa: components["schemas"]["CashOverview"];
             fiscale: components["schemas"]["FiscalEstimate"] | null;
             fiscale_proiettato: components["schemas"]["FiscalEstimate"] | null;
+            /** Concentrazione Clienti */
+            concentrazione_clienti: components["schemas"]["RevenueByCustomer"][];
             /** Netto Effettivo */
             netto_effettivo?: string | null;
             /** Netto Proiettato */
@@ -6394,6 +6396,35 @@ export interface components {
         RegisterGapsDeclare: {
             /** Buchi */
             buchi: components["schemas"]["RegisterGapIn"][];
+        };
+        /**
+         * RevenueByCustomer
+         * @description One customer's share of the year's invoiced revenue -- the concentration figure
+         *     REB-352's own mapping calls for (§1.5, §5 item 1 of
+         *     `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`):
+         *     `Σ Invoice.imponibile` for this customer over the calendar year, divided by that
+         *     same year's `annual_revenue`.
+         *
+         *     Not `EsposizioneCliente` (`dashboard/schemas.py`), whose `quota` is a share of the
+         *     *largest* customer's outstanding receivable and answers "who currently owes the
+         *     most". This answers a different question -- "what share of total invoiced income
+         *     comes from this one client" -- against the whole year's revenue, and the two do not
+         *     become the same figure by relabelling either one.
+         */
+        RevenueByCustomer: {
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /** Ragione Sociale */
+            ragione_sociale: string;
+            /** Ricavi */
+            ricavi: string;
+            /** Fatture */
+            fatture: number;
+            /** Quota */
+            quota: number;
         };
         /**
          * RootSpace
