@@ -29,6 +29,7 @@ _INTS = {
     "solleciti_max_reminders",
     "gmail_backfill_days",
 }
+_FLOATS = {"concentrazione_soglia_preferita"}
 
 
 def _coerce(key: str, raw: str) -> Any:
@@ -36,6 +37,8 @@ def _coerce(key: str, raw: str) -> Any:
         return raw.strip().lower() in {"1", "true", "yes", "si", "sì"}
     if key in _INTS:
         return int(raw)
+    if key in _FLOATS:
+        return float(raw)
     return raw
 
 
@@ -145,6 +148,7 @@ class SpaceSettingsService:
             solleciti_min_interval_days=settings.solleciti_min_interval_days,
             solleciti_max_reminders=settings.solleciti_max_reminders,
             gmail_backfill_days=settings.gmail_backfill_days,
+            concentrazione_soglia_preferita=settings.concentrazione_soglia_preferita,
             sovrascritte=sorted(key for key in overrides if key not in SECRET_KEYS)
             + sorted(key for key in overrides if key in SECRET_KEYS),
         )

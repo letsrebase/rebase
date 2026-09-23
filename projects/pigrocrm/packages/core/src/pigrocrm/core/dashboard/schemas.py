@@ -260,9 +260,13 @@ class OperationalDashboard(BaseModel):
     **No new economic total.** The only money here is `arretrato.valore_maturato`, which
     belongs to `AnalyticsService` and is labelled accrued value, never revenue.
 
-    Three signals, not four: "offerta accettata, deal non vinto" is on the *commercial*
-    dashboard, because it needs no invoices and therefore shipped in the same sub-plan as
-    the automation it cross-checks (§17).
+    Four signals now: REB-371 adds `concentrazione_sopra_soglia` beside the original
+    three, once `AnalyticsRepository.revenue_by_customer` (REB-370) existed and a
+    preferred-share threshold could be configured for it
+    (`Settings.concentrazione_soglia_preferita`). §6.2's own *fourth* signal is a
+    different thing entirely and still not among these: "offerta accettata, deal non
+    vinto" is on the *commercial* dashboard, because it needs no invoices and therefore
+    shipped in the same sub-plan as the automation it cross-checks (§17).
     """
 
     calcolato_alle: datetime

@@ -65,6 +65,11 @@ NOT_FORWARDED: dict[str, str] = {
     "solleciti_grace_days": "quando un sollecito e' legittimo: non una scelta di deploy",
     "solleciti_min_interval_days": "come sopra",
     "solleciti_max_reminders": "come sopra, e il tetto e' il numero di registri del template",
+    # The preferred-share concentration threshold (REB-371): a practitioner's own
+    # preference about their client mix, not a deployment choice, exactly the same
+    # reasoning as the three `solleciti_*` thresholds just above -- and, like them,
+    # reachable per space through `space_settings` instead.
+    "concentrazione_soglia_preferita": "quota preferita di un cliente: scelta del praticante",
 }
 
 

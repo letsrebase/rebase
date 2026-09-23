@@ -158,7 +158,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
                 tipo="fattura",
                 stato="emessa",
                 stato_pagamento="incassato" if data_incasso is not None else "da_incassare",
-                anno=2026,
+                anno=oggi.year,
                 numero=numero,
                 imponibile=importo,
                 imposta=Decimal("0.00"),
@@ -296,7 +296,7 @@ def _fattura_in_piu(
             tipo="fattura",
             stato="emessa",
             stato_pagamento="da_incassare",
-            anno=2026,
+            anno=today_local(SETTINGS).year,
             numero=numero,
             imponibile=importo,
             imposta=Decimal("0.00"),
@@ -408,6 +408,11 @@ def test_the_backlog_and_the_signals_come_from_the_operational_dashboard(
     `vinti_da_fatturare` is asserted twice, at zero and at one: a field checked only
     against zero is a field a `return 0` would satisfy, and this one is a count of the
     deals somebody is supposed to invoice this week.
+
+    `concentrazione_sopra_soglia` (REB-371) is in the list too: the corpus's one
+    customer holds the whole register, past the default 0.30 threshold, which is what
+    makes this also a test of the `conteggio > 0` filter carrying that fourth signal
+    exactly the way it already carries the first two.
     """
     digest = _build(corpus.engine, (corpus.da, corpus.a))
     assert digest.ore_non_fatturate == Decimal("6.00")
@@ -418,6 +423,7 @@ def test_the_backlog_and_the_signals_come_from_the_operational_dashboard(
     assert [s.codice for s in digest.segnali] == [
         "fatturato_non_vinto",
         "scaduto_non_incassato",
+        "concentrazione_sopra_soglia",
     ]
     assert all(s.conteggio > 0 for s in digest.segnali)
     assert all(s.collegamento for s in digest.segnali)
