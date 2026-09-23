@@ -20,6 +20,8 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.timetracking.schemas import TimeEntryCreate
 from pigrocrm.core.timetracking.service import TimeEntryService
 
@@ -142,3 +144,67 @@ async def test_get_period_pnl_offers_the_accrual_reading_and_refuses_an_unknown_
     assert accrual.structured_content["base"] == "competenza"
     assert unknown.is_error
     assert "errors.pydantic.dev" not in unknown.content[0].text
+
+
+# --- ceiling headroom and the "would this fit?" simulator (REB-373) -----------------
+
+
+def _configure_profile(session: Session) -> None:
+    FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
+
+
+async def test_get_ceiling_headroom_reports_the_configured_packs_thresholds(
+    server, mcp_session: Session
+) -> None:
+    _configure_profile(mcp_session)
+    async with Client(server) as client:
+        result = await client.call_tool("get_ceiling_headroom", {"anno": OGGI.year})
+    body = result.structured_content
+    assert body["pack_id"] == "it-flat-rate"
+    ricavi_soglia = next(s for s in body["soglie"] if s["id"] == "soglia_ricavi")
+    assert ricavi_soglia["soglia"] == "85000.00"
+    assert ricavi_soglia["residuo"] == "85000.00"
+
+
+async def test_get_ceiling_headroom_without_a_fiscal_profile_is_guidance_not_a_dump(
+    server,
+) -> None:
+    """The same `NotFound` `get_fiscal_estimate` would raise, rendered as guidance."""
+    async with Client(server) as client:
+        result = await client.call_tool("get_ceiling_headroom", {"anno": OGGI.year})
+    assert result.is_error
+    assert "errors.pydantic.dev" not in result.content[0].text
+
+
+async def test_simulate_ceiling_adds_the_typed_value(server, mcp_session: Session) -> None:
+    _configure_profile(mcp_session)
+    async with Client(server) as client:
+        result = await client.call_tool(
+            "simulate_ceiling", {"anno": OGGI.year, "valore_preventivato": "20000.00"}
+        )
+    body = result.structured_content
+    assert body["aggiunta_sintetica"] == "20000.00"
+    ricavi_soglia = next(s for s in body["soglie"] if s["id"] == "soglia_ricavi")
+    assert ricavi_soglia["rientra"] is True
+
+
+async def test_simulate_ceiling_derives_the_addition_from_hours_and_rate(
+    server, mcp_session: Session
+) -> None:
+    _configure_profile(mcp_session)
+    async with Client(server) as client:
+        result = await client.call_tool(
+            "simulate_ceiling",
+            {"anno": OGGI.year, "ore_preventivate": "100.00", "tariffa_oraria": "250.000000"},
+        )
+    assert result.structured_content["aggiunta_sintetica"] == "25000.00"
+
+
+async def test_simulate_ceiling_without_any_estimate_is_guidance_not_a_dump(
+    server, mcp_session: Session
+) -> None:
+    _configure_profile(mcp_session)
+    async with Client(server) as client:
+        result = await client.call_tool("simulate_ceiling", {"anno": OGGI.year})
+    assert result.is_error
+    assert "errors.pydantic.dev" not in result.content[0].text

@@ -2076,6 +2076,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/ceilings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ceiling Headroom
+         * @description Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
+         *     configurato (REB-352 §1.4), sui ricavi incassati e reali dell'anno. Aperto a ogni
+         *     ruolo, a differenza di `/fiscal`: è un ricavo, non la stima fiscale che protegge
+         *     solo `get_fiscal_estimate`.
+         */
+        get: operations["ceiling_headroom_api_analytics_ceilings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/ceilings/simulate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Simulate Ceiling
+         * @description Il simulatore "ci sta?" (REB-352 §1.4): la stima di un deal non ancora vinto,
+         *     aggiunta ai ricavi reali e rivalutata su ogni soglia attiva, senza salvare
+         *     nulla. Serve `valore_preventivato`, oppure `ore_preventivate` insieme a
+         *     `tariffa_oraria`.
+         */
+        get: operations["simulate_ceiling_api_analytics_ceilings_simulate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/gmail/account": {
         parameters: {
             query?: never;
@@ -3634,6 +3680,95 @@ export interface components {
             numero: number;
             /** Quota */
             quota: number;
+        };
+        /**
+         * CeilingHeadroom
+         * @description Every active ceiling of the fiscal profile's own pack, for one calendar
+         *     year -- `evaluate_pack`'s own list, unmodified.
+         */
+        CeilingHeadroom: {
+            /** Anno */
+            anno: number;
+            /** Pack Id */
+            pack_id: string;
+            /** Pack Version */
+            pack_version: string;
+            /** Soglie */
+            soglie: components["schemas"]["CeilingStatusRead"][];
+        };
+        /** CeilingSimulation */
+        CeilingSimulation: {
+            /** Anno */
+            anno: number;
+            /** Pack Id */
+            pack_id: string;
+            /** Pack Version */
+            pack_version: string;
+            /** Aggiunta Sintetica */
+            aggiunta_sintetica: string;
+            /** Soglie */
+            soglie: components["schemas"]["CeilingSimulationResult"][];
+        };
+        /**
+         * CeilingSimulationResult
+         * @description One ceiling, before and after the synthetic addition -- `rientra` is
+         *     "would this fit?" itself: the addition does not push this ceiling's own
+         *     revenue to or past its threshold.
+         */
+        CeilingSimulationResult: {
+            /** Id */
+            id: string;
+            /** Etichetta */
+            etichetta: string;
+            /** Soglia */
+            soglia: string;
+            /**
+             * Conseguenza
+             * @enum {string}
+             */
+            conseguenza: "esce_dall_anno_successivo" | "esce_immediatamente";
+            /** Ricavi Attuali */
+            ricavi_attuali: string;
+            /** Residuo Attuale */
+            residuo_attuale: string;
+            /** Ricavi Simulati */
+            ricavi_simulati: string;
+            /** Residuo Simulato */
+            residuo_simulato: string;
+            /** Rientra */
+            rientra: boolean;
+            /** Livello Allerta Simulato */
+            livello_allerta_simulato: string | null;
+        };
+        /**
+         * CeilingStatusRead
+         * @description One ceiling of the configured jurisdiction pack, evaluated against `anno`'s
+         *     real paid revenue -- REB-352 §1.4's headroom figure, the reader-facing shape of
+         *     `fiscal.ceiling.evaluate_ceiling`'s own output. `residuo` (`soglia - ricavi`) is
+         *     the "one number a ceiling exists to produce" mastro's own audit named as
+         *     computed nowhere until REB-361 added `evaluate_ceiling`; this class only
+         *     exposes it, and adds no arithmetic of its own.
+         */
+        CeilingStatusRead: {
+            /** Id */
+            id: string;
+            /** Etichetta */
+            etichetta: string;
+            /** Soglia */
+            soglia: string;
+            /**
+             * Conseguenza
+             * @enum {string}
+             */
+            conseguenza: "esce_dall_anno_successivo" | "esce_immediatamente";
+            /** Ricavi */
+            ricavi: string;
+            /** Residuo */
+            residuo: string;
+            /** Superata */
+            superata: boolean;
+            /** Livello Allerta */
+            livello_allerta: string | null;
         };
         /** ClosedInPeriod */
         ClosedInPeriod: {
@@ -25468,6 +25603,247 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UnbilledBacklog"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ceiling_headroom_api_analytics_ceilings_get: {
+        parameters: {
+            query: {
+                anno: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CeilingHeadroom"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    simulate_ceiling_api_analytics_ceilings_simulate_get: {
+        parameters: {
+            query: {
+                anno: number;
+                ore_preventivate?: number | string | null;
+                valore_preventivato?: number | string | null;
+                tariffa_oraria?: number | string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CeilingSimulation"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

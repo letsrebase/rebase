@@ -18,6 +18,11 @@ from pigrocrm.core.analytics.schemas import (
     CashBase,
     CashMonth,
     CashOverview,
+    CeilingHeadroom,
+    CeilingSimulation,
+    CeilingSimulationQuery,
+    CeilingSimulationResult,
+    CeilingStatusRead,
     ContractDateMarker,
     DealPnl,
     EconomicOverview,
@@ -34,7 +39,12 @@ from pigrocrm.core.contracts.repository import ContractRepository
 from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
-from pigrocrm.core.fiscal.ceiling import taxable_ricavi
+from pigrocrm.core.fiscal.ceiling import (
+    CeilingStatus,
+    evaluate_ceiling,
+    evaluate_pack,
+    taxable_ricavi,
+)
 from pigrocrm.core.fiscal.pack import resolve_pack
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
@@ -119,6 +129,38 @@ def _group_order(key: tuple[Decimal, tuple[int, int] | None]) -> tuple[int, int,
     tariffa, mese = key
     anno, numero_mese = mese if mese is not None else (0, 0)
     return (anno, numero_mese, tariffa)
+
+
+def _ceiling_status_read(status: CeilingStatus) -> CeilingStatusRead:
+    return CeilingStatusRead(
+        id=status.ceiling.id,
+        etichetta=status.ceiling.etichetta,
+        soglia=status.ceiling.soglia,
+        conseguenza=status.ceiling.conseguenza,
+        ricavi=status.ricavi,
+        residuo=status.residuo,
+        superata=status.superata,
+        livello_allerta=status.livello_allerta,
+    )
+
+
+def _synthetic_addition(query: CeilingSimulationQuery) -> Decimal:
+    """The one euro figure REB-352 §1.4's simulator adds to `ricavi` before
+    re-evaluating each ceiling -- the deal's own value estimate when one was typed
+    directly, or hours times rate when only those two were, mirroring
+    `budget_vs_actual`'s own reading of the first two columns and extending it by
+    the third (`Deal.tariffa_oraria`) for the deal that has not priced a value yet.
+    """
+    if query.valore_preventivato is not None:
+        return query.valore_preventivato
+    if query.ore_preventivate is not None and query.tariffa_oraria is not None:
+        return round_money(query.ore_preventivate * query.tariffa_oraria)
+    raise ValidationFailed(
+        ENTITY,
+        "valore_preventivato",
+        "serve una stima per simulare l'aggiunta",
+        expected="valore_preventivato, oppure ore_preventivate insieme a tariffa_oraria",
+    )
 
 
 class AnalyticsService:
@@ -403,6 +445,69 @@ class AnalyticsService:
             totale_ricavi=sum_money([row.ricavi for row in budgeted]),
             deal_preventivati=len(budgeted),
             deal_non_preventivati=len(rows) - len(budgeted),
+        )
+
+    def ceiling_headroom(self, anno: int, actor: Actor) -> CeilingHeadroom:
+        """REB-352 §1.4: every active ceiling of the configured jurisdiction pack,
+        evaluated against `anno`'s real paid revenue -- `evaluate_pack`'s own output,
+        read rather than recomputed (no new revenue query, per REB-352 §1.4's own
+        reasoning). Raises `NotFound("fiscal_profile", ...)` when nobody has
+        configured one yet, the same signal `get_fiscal_estimate` gives: there is no
+        pack to resolve without a profile to point at one.
+
+        Not admin-only, unlike `get_fiscal_estimate`: this is a revenue-versus-
+        threshold figure over the same `Invoice` rows `cash_overview` and
+        `budget_vs_actual` already open to every role, not the taxable-income
+        computation that method alone gates.
+        """
+        profile = FiscalProfileService(self.session).get(actor)
+        pack = resolve_pack(profile.pack_id, profile.pack_version)
+        return CeilingHeadroom(
+            anno=anno,
+            pack_id=pack.id,
+            pack_version=pack.version,
+            soglie=[
+                _ceiling_status_read(status) for status in evaluate_pack(pack, self.session, anno)
+            ],
+        )
+
+    def simulate_ceiling(
+        self, anno: int, query: CeilingSimulationQuery, actor: Actor
+    ) -> CeilingSimulation:
+        """REB-352 §1.4's "would this fit?" simulator: the same active ceilings,
+        each re-evaluated with a synthetic addition on top of the real, already-
+        summed `ricavi` -- `evaluate_ceiling`'s own pure half, exactly so this needs
+        no second revenue query (`fiscal/ceiling.py::evaluate_ceiling`'s own
+        docstring names this simulator by name). The addition is a not-yet-won
+        deal's own estimate, read raw off its own three columns rather than by
+        `deal_id`, so nothing has to be saved to ask the question.
+        """
+        profile = FiscalProfileService(self.session).get(actor)
+        pack = resolve_pack(profile.pack_id, profile.pack_version)
+        aggiunta = _synthetic_addition(query)
+        risultati: list[CeilingSimulationResult] = []
+        for prima in evaluate_pack(pack, self.session, anno):
+            dopo = evaluate_ceiling(prima.ceiling, prima.ricavi + aggiunta)
+            risultati.append(
+                CeilingSimulationResult(
+                    id=prima.ceiling.id,
+                    etichetta=prima.ceiling.etichetta,
+                    soglia=prima.ceiling.soglia,
+                    conseguenza=prima.ceiling.conseguenza,
+                    ricavi_attuali=prima.ricavi,
+                    residuo_attuale=prima.residuo,
+                    ricavi_simulati=dopo.ricavi,
+                    residuo_simulato=dopo.residuo,
+                    rientra=not dopo.superata,
+                    livello_allerta_simulato=dopo.livello_allerta,
+                )
+            )
+        return CeilingSimulation(
+            anno=anno,
+            pack_id=pack.id,
+            pack_version=pack.version,
+            aggiunta_sintetica=aggiunta,
+            soglie=risultati,
         )
 
     def _contract_date_markers(self, anno: int) -> list[ContractDateMarker]:

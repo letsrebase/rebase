@@ -24,7 +24,7 @@ from uuid import UUID
 
 from pydantic import Field, TypeAdapter
 
-from pigrocrm.core.analytics.schemas import BudgetQuery, PeriodPnlQuery
+from pigrocrm.core.analytics.schemas import BudgetQuery, CeilingSimulationQuery, PeriodPnlQuery
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.timetracking.categories import CostCategoryService
 from pigrocrm.core.timetracking.costs import CostService
@@ -204,13 +204,17 @@ def list_cost_categories(context: McpContext, include_archived: bool) -> dict[st
 
 
 # ---- analytics ------------------------------------------------------------------
-# Four reads, and only four -- the fourth added by slice 6 §6.3, which is the reason the
-# comment says "four" rather than "three": a count that is never updated is worse than no
-# count. `bind_time_to_invoice` and `get_fiscal_estimate` are absent by decision, not by
-# omission -- see `tools/__init__.py`'s own block comment for the two (different) reasons,
-# and `apps/mcp/tests/test_mcp_invoice_ban.py`, which scans every file in this package and
-# fails the build if either method is ever called from one of them, whatever the tool that
-# reaches it is called.
+# Six reads, and only six -- REB-373 added the fifth and sixth (ceiling headroom and
+# its simulator), the reason the comment now says "six" rather than "four": a count
+# that is never updated is worse than no count. `bind_time_to_invoice` and
+# `get_fiscal_estimate` are absent by decision, not by omission -- see
+# `tools/__init__.py`'s own block comment for the two (different) reasons, and
+# `apps/mcp/tests/test_mcp_invoice_ban.py`, which scans every file in this package
+# and fails the build if either method is ever called from one of them, whatever
+# the tool that reaches it is called. Ceiling headroom and its simulator are absent
+# from that ban on purpose: they are a revenue-versus-threshold figure, the same
+# kind `get_period_pnl`/`get_budget_vs_actual` already expose, not the owner's tax
+# position.
 
 
 def get_deal_pnl(context: McpContext, deal_id: str) -> dict[str, Any]:
@@ -237,3 +241,25 @@ def get_budget_vs_actual(context: McpContext, query: BudgetQuery) -> dict[str, A
 
 def get_unbilled_backlog(context: McpContext) -> dict[str, Any]:
     return AnalyticsService(context.session).unbilled_backlog(context.actor).model_dump(mode="json")
+
+
+def get_ceiling_headroom(context: McpContext, anno: int | str) -> dict[str, Any]:
+    """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
+    configurato (REB-352 §1.4), sui ricavi incassati e reali dell'anno."""
+    return (
+        AnalyticsService(context.session)
+        .ceiling_headroom(_ANNO.validate_python(anno), context.actor)
+        .model_dump(mode="json")
+    )
+
+
+def simulate_ceiling(
+    context: McpContext, anno: int | str, query: CeilingSimulationQuery
+) -> dict[str, Any]:
+    """Il simulatore "ci sta?" (REB-352 §1.4): la stessa aggiunta sintetica letta da
+    `query`, rivalutata su ogni soglia attiva senza salvare nulla."""
+    return (
+        AnalyticsService(context.session)
+        .simulate_ceiling(_ANNO.validate_python(anno), query, context.actor)
+        .model_dump(mode="json")
+    )
