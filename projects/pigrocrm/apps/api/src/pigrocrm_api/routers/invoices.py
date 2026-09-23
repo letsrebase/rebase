@@ -152,7 +152,10 @@ def review_import(
 ) -> InvoiceReviewResult:
     """REB-365: read-only, admin only, enforced by the service. Reviews one or more
     already-archived documents and reports one row per invoice they parse into --
-    never writes a row."""
+    never writes a row. A `"ready"` row whose customer resolves to exactly one
+    contract with a day-rate card in force on the invoice's own `data_emissione`
+    also carries `mappature_giorni` (REB-369): a proposed link, per line, to that
+    contract's recorded, unbilled `work_units`."""
     righe = _service(session, storage, settings).review_import(data.document_ids, actor)
     return InvoiceReviewResult(righe=righe)
 

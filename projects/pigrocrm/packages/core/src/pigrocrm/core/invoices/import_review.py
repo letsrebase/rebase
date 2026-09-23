@@ -15,12 +15,15 @@ returns the same verdict, because nothing it touches changes between the two cal
 -- exactly the "Done when" the issue names.
 """
 
+from datetime import date
 from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.contracts.repository import ContractRepository, RateCardRepository
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.emitter.models import EmitterProfile
 from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id
@@ -31,6 +34,12 @@ from pigrocrm.core.invoices.import_schemas import ParsedInvoice, ParsedInvoicePa
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.naming import NUMERO_COMPLETO_RE
 from pigrocrm.core.invoices.repository import InvoiceRepository
+from pigrocrm.core.work_units.day_mapping import (
+    WorkUnitDayMappingProposal,
+    propose_day_mapping,
+    resolve_rate_card,
+)
+from pigrocrm.core.work_units.repository import WorkUnitRepository
 
 # Every adapter `review_content` tries `detect` with, in order -- the first (and,
 # today, only) member of what mastro calls a format registry (`registry.ts:11-23`).
@@ -68,6 +77,13 @@ class ReviewedInvoiceRead(BaseModel):
     outcome: InvoiceReviewOutcome
     invoice: ParsedInvoice | None = None
     matched_customer_id: UUID | None = None
+    # REB-369: one entry per `invoice.righe`, positionally aligned -- never merged
+    # into `ParsedInvoiceLine` itself, which stays "exactly as the document states
+    # it" (its own docstring) and carries no computed field. `None` for the whole
+    # invoice when there is no matched customer to resolve a contract from at all
+    # (every non-`"ready"` outcome); once matched, `None` per line where no complete
+    # day-rate match was found for that line specifically.
+    mappature_giorni: list[WorkUnitDayMappingProposal | None] | None = None
 
 
 class InvoiceReviewRequest(BaseModel):
@@ -156,6 +172,61 @@ def match_customer(session: Session, cliente: ParsedInvoiceParty) -> UUID | None
     return customer.id if customer is not None else None
 
 
+def _day_rate_contract_for_customer(
+    session: Session, customer_id: UUID, data_emissione: date
+) -> Contract | None:
+    """The one contract, among `customer_id`'s, whose own rate card is a day-rate
+    one on the invoice's own `data_emissione` -- mastro's `resolveActiveContractId`
+    (`analyze/+server.ts:37-46`), translated onto a schema with no contract
+    lifecycle to read yet: `Contract.stato` carries no meaning today
+    (`ContractRepository.list_active`'s own docstring -- "every row today is
+    `bozza`", no transition endpoint exists), so "the one contract this invoice's
+    days could belong to" is read off pricing instead of a status nothing can set.
+    Zero or several candidates propose nothing, mirroring mastro's own reasoning
+    exactly: the tax id already proved whose invoice this is, but nothing on the
+    document says which of several concurrent engagements its days belong to.
+
+    Reads `list_active()`, not the paginated, caller-facing `list()`: this is an
+    internal "read everything this owner has" computation, the same shape
+    `WorkUnitRepository.unbilled_for_contract` and `list_active()` itself already
+    are, and `list()`'s own default page (50 rows, independent reviewer's own
+    finding) would silently drop a candidate past the first page instead of
+    genuinely seeing every contract this customer has.
+    """
+    rate_card_repo = RateCardRepository(session)
+    candidates = []
+    for contract in ContractRepository(session).list_active():
+        if contract.customer_id != customer_id:
+            continue
+        card = resolve_rate_card(rate_card_repo.list_for_contract(contract.id), data_emissione)
+        if card is not None and card.tipo == "giornaliero":
+            candidates.append(contract)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _propose_day_mappings(
+    session: Session, invoice: ParsedInvoice, customer_id: UUID
+) -> list[WorkUnitDayMappingProposal | None]:
+    """REB-369: one entry per `invoice.righe`, `None` where the customer resolves
+    to no single day-rate contract, that contract has no recorded, unbilled days,
+    or `propose_day_mapping` itself found no complete match for that particular
+    line."""
+    none_per_line: list[WorkUnitDayMappingProposal | None] = [None] * len(invoice.righe)
+    contract = _day_rate_contract_for_customer(session, customer_id, invoice.data_emissione)
+    if contract is None:
+        return none_per_line
+    eligible_days = WorkUnitRepository(session).unbilled_for_contract(contract.id)
+    if not eligible_days:
+        return none_per_line
+    rate_cards = RateCardRepository(session).list_for_contract(contract.id)
+    return [
+        propose_day_mapping(
+            riga.quantita, riga.prezzo_totale, invoice.data_emissione, eligible_days, rate_cards
+        )
+        for riga in invoice.righe
+    ]
+
+
 def review_content(
     session: Session,
     content: bytes,
@@ -177,16 +248,20 @@ def review_content(
             invoice, emitter, existing=existing_for(session, invoice), content=content
         )
         matched_customer_id: UUID | None = None
+        mappature_giorni: list[WorkUnitDayMappingProposal | None] | None = None
         if outcome == "ready":
             matched_customer_id = match_customer(session, invoice.cliente)
             if matched_customer_id is None:
                 outcome = "needs_customer_confirmation"
+            else:
+                mappature_giorni = _propose_day_mappings(session, invoice, matched_customer_id)
         rows.append(
             ReviewedInvoiceRead(
                 document_id=document_id,
                 outcome=outcome,
                 invoice=invoice,
                 matched_customer_id=matched_customer_id,
+                mappature_giorni=mappature_giorni,
             )
         )
     return rows
