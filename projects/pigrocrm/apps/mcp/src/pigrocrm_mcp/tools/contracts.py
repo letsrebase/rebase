@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -18,6 +19,16 @@ def get(context: McpContext, contract_id: str) -> dict[str, Any]:
     return (
         ContractService(context.session)
         .get(UUID(contract_id), context.actor)
+        .model_dump(mode="json")
+    )
+
+
+def concentration_cap(
+    context: McpContext, contract_id: str, as_of: date | None, soglia: float | None
+) -> dict[str, Any]:
+    return (
+        ContractService(context.session)
+        .concentration_cap(UUID(contract_id), context.actor, as_of, soglia)
         .model_dump(mode="json")
     )
 

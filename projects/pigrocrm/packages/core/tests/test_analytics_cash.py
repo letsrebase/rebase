@@ -1,16 +1,20 @@
 """The year as cash (`AnalyticsService.cash_overview`) and the economic overview that
 lays the fiscal estimate over it."""
 
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
 
 import pytest
+from orologio import OGGI_IN_ITALIA, congela
 from periodo_fiscale import OGGI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.invoices.schemas import PaymentState
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.storage.local import LocalFileStorage
@@ -392,3 +396,134 @@ def test_the_estimate_stays_on_the_money_whatever_the_charts_read_by(
     assert by_accrual.fiscale_proiettato is not None and by_cash.fiscale_proiettato is not None
     assert by_accrual.fiscale_proiettato.ricavi == by_cash.fiscale_proiettato.ricavi
     assert by_accrual.netto_proiettato == by_cash.netto_proiettato
+
+
+# --- REB-352 §1.6: contract-date markers on the cash calendar -----------------------
+
+
+def _customer(db_session: Session) -> Customer:
+    customer = Customer(ragione_sociale="ACME S.r.l.")
+    db_session.add(customer)
+    db_session.flush()
+    return customer
+
+
+def _contract(db_session: Session, customer: Customer, **overrides: object) -> Contract:
+    payload: dict[str, object] = {
+        "customer_id": customer.id,
+        "titolo": "Consulenza CTO",
+        "inizio": date(2025, 6, 1),
+        "tipo_rinnovo": "nessuno",
+        "preavviso_disdetta_giorni": 30,
+        "cadenza_fatturazione": "mensile",
+        "politica_spese": {"tipo": "non_rimborsabile"},
+    }
+    payload.update(overrides)
+    contract = Contract(**payload)  # type: ignore[arg-type]
+    db_session.add(contract)
+    db_session.flush()
+    return contract
+
+
+def test_cash_overview_carries_an_irrevocability_marker_for_an_open_ended_contract(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Serving notice "today" (frozen at `OGGI_IN_ITALIA`) still runs the contract's
+    own 30-day notice period, so the window closes 30 days out -- regardless of
+    which `anno` is on screen, since the notice period is measured from today."""
+    congela(monkeypatch)
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer, preavviso_disdetta_giorni=30, fine=None)
+
+    overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
+
+    markers = [m for m in overview.scadenze_contrattuali if m.contract_id == contract.id]
+    assert len(markers) == 1
+    assert markers[0].tipo == "fine_irrevocabilita"
+    assert markers[0].data == date(2026, 1, 31)
+    assert markers[0].customer_id == customer.id
+    assert markers[0].titolo == "Consulenza CTO"
+
+
+def test_cash_overview_clips_the_irrevocability_marker_to_the_contracts_own_end(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    congela(monkeypatch)
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer, preavviso_disdetta_giorni=90, fine=date(2026, 1, 10))
+
+    overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
+
+    markers = [m for m in overview.scadenze_contrattuali if m.contract_id == contract.id]
+    assert [m.data for m in markers if m.tipo == "fine_irrevocabilita"] == [date(2026, 1, 10)]
+
+
+def test_cash_overview_carries_a_renewal_deadline_marker(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    congela(monkeypatch)
+    customer = _customer(db_session)
+    contract = _contract(
+        db_session,
+        customer,
+        tipo_rinnovo="tacito",
+        preavviso_rinnovo_giorni=60,
+        fine=date(2026, 6, 1),
+    )
+
+    overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
+
+    markers = [
+        m
+        for m in overview.scadenze_contrattuali
+        if m.contract_id == contract.id and m.tipo == "scadenza_rinnovo"
+    ]
+    assert [m.data for m in markers] == [date(2026, 4, 2)]
+
+
+def test_cash_overview_has_no_renewal_marker_for_a_contract_with_no_renewal_clause(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    congela(monkeypatch)
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer, tipo_rinnovo="nessuno", fine=date(2026, 6, 1))
+
+    overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
+
+    assert not [
+        m
+        for m in overview.scadenze_contrattuali
+        if m.contract_id == contract.id and m.tipo == "scadenza_rinnovo"
+    ]
+
+
+def test_cash_overview_excludes_a_marker_falling_outside_the_queried_year(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`preavviso_disdetta_giorni=400` pushes the window past `OGGI_IN_ITALIA`'s own
+    year: absent from that year's calendar, present the moment the calendar reaches
+    the year the window actually falls in."""
+    congela(monkeypatch)
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer, preavviso_disdetta_giorni=400, fine=None)
+
+    this_year = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
+    next_year = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year + 1, COLLABORATORE)
+
+    assert not [m for m in this_year.scadenze_contrattuali if m.contract_id == contract.id]
+    markers = [m for m in next_year.scadenze_contrattuali if m.contract_id == contract.id]
+    assert [m.data for m in markers] == [date(2027, 2, 5)]
+
+
+def test_cash_overview_excludes_a_marker_for_a_soft_deleted_contract(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    congela(monkeypatch)
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer, preavviso_disdetta_giorni=1, fine=None)
+    contract.deleted_at = datetime.now(UTC)
+    db_session.flush()
+
+    overview = AnalyticsService(db_session).cash_overview(OGGI_IN_ITALIA.year, COLLABORATORE)
+
+    assert not [m for m in overview.scadenze_contrattuali if m.contract_id == contract.id]

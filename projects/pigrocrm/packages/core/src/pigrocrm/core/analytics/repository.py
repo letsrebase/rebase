@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any, NamedTuple, TypeVar
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, SQLColumnExpression, func, select
+from sqlalchemy import ColumnElement, Select, SQLColumnExpression, case, func, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from pigrocrm.core.analytics.schemas import CashBase, RevenueBase
@@ -474,6 +474,26 @@ class AnalyticsRepository:
         if customer_id is not None:
             stmt = stmt.where(Deal.customer_id == customer_id)
         return list(self.session.execute(stmt.order_by(Deal.nome, Deal.id)).scalars())
+
+    def revenue_for_customer_in_window(
+        self, customer_id: UUID, da: date, a: date, base: RevenueBase = "emissione"
+    ) -> tuple[Decimal, Decimal]:
+        """`(ricavi del cliente, ricavi totali)` over `[da, a]` -- the two figures a
+        concentration cap divides (REB-352 §1.5), summed in one statement so the two
+        sides of the ratio can never read a different snapshot. Same revenue
+        definition `annual_revenue` uses (`_revenue_filter`), windowed by `da`/`a`
+        rather than by `Invoice.anno`: a contract's own anniversary year rarely lines
+        up with the calendar one `anno` names.
+        """
+        when = _revenue_date(base)
+        cliente = func.coalesce(
+            func.sum(case((Invoice.customer_id == customer_id, Invoice.imponibile), else_=0)), 0
+        )
+        totale = func.coalesce(func.sum(Invoice.imponibile), 0)
+        row = self.session.execute(
+            select(cliente, totale).where(when >= da, when <= a, *_revenue_filter())
+        ).one()
+        return round_money(Decimal(row[0])), round_money(Decimal(row[1]))
 
 
 __all__ = ["AnalyticsRepository"]

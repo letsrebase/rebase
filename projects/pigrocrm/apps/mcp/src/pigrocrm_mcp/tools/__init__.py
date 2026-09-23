@@ -131,6 +131,18 @@ OptionalMoney = Annotated[
     float | str | None,
     WithJsonSchema({"anyOf": [{"type": "number"}, {"type": "null"}], "default": None}),
 ]
+# REB-352 §1.5's concentration-cap threshold: a share in [0, 1], never persisted --
+# a caller states it fresh on every call, the same runtime-permissive /
+# schema-only-strict split as every other numeric alias here.
+OptionalShare = Annotated[
+    float | str | None,
+    WithJsonSchema(
+        {
+            "anyOf": [{"type": "number", "minimum": 0, "maximum": 1}, {"type": "null"}],
+            "default": None,
+        }
+    ),
+]
 
 # Same runtime-permissive / schema-only-strict split as `BoundedLimit` above: the
 # parameter stays a plain `str` so a wrong value is rejected by `set_offer_state`'s
@@ -642,6 +654,22 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         """Elenca le schede tariffarie di un contratto, dalla più vecchia alla più
         recente."""
         return {"items": contracts.list_rate_cards(context, contract_id)}
+
+    @mcp.tool()
+    @guard
+    def get_contract_concentration(
+        contract_id: str, as_of: IsoDateStr = None, soglia: OptionalShare = None
+    ) -> dict[str, Any]:
+        """La quota dei ricavi fatturati di un cliente sull'anno di anniversario di
+        un contratto (REB-352 §1.5): il periodo si resetta sulla data di inizio del
+        contratto, non sull'anno solare. `soglia` (0..1) è facoltativa e non viene
+        mai salvata: se presente, `superata` dice se la quota la supera."""
+        return contracts.concentration_cap(
+            context,
+            contract_id,
+            _iso_date(as_of),
+            cast(float, soglia) if soglia is not None else None,
+        )
 
     # ---- shared ------------------------------------------------------------
 
