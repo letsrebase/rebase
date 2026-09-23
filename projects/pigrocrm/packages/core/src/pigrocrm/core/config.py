@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     # again and anyone who leaves it for six months does (spec 9 §5.6). The access token
     # stays at fifteen minutes: that is the revocation window, not the session length.
     refresh_token_days: int = 180
+    # The cross-space identity cookie's own lifetime (design 2026-09-23 §2, REB-376):
+    # deliberately the same 180 days as refresh_token_days, because it is meant to
+    # outlive any single space's own session -- the one artifact in that design built
+    # to survive a switch between spaces without asking for a fresh proof each time.
+    # Revocable through `IdentitySession.jti`, the same shape `refresh_token_days`
+    # already has through `RefreshToken.jti`.
+    identity_token_days: int = 180
     # Must stay True in production: it is what stops the auth cookies from ever being
     # sent over plain HTTP. It exists as a *setting* rather than a hardcoded True only
     # because of one browser: Chrome and Firefox treat "localhost" as a secure context

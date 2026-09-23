@@ -15,6 +15,7 @@ from pigrocrm.core.auth.tokens import decode_token, issue_access_token
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db.session import session_factory
 from pigrocrm.core.errors import DomainError, NotFound, ValidationFailed
+from pigrocrm.core.identity.service import IdentityService
 from pigrocrm.core.mail import magic_link_mail
 from pigrocrm.core.tenants import TenantService
 from pigrocrm.core.tenants.database import (
@@ -23,7 +24,14 @@ from pigrocrm.core.tenants.database import (
     tenants_database_url,
 )
 from pigrocrm.core.validation import SafeStr
-from pigrocrm_api.deps import ACCESS_COOKIE, REFRESH_COOKIE, ActorDep, SessionDep, SettingsDep
+from pigrocrm_api.deps import (
+    ACCESS_COOKIE,
+    IDENTITY_COOKIE,
+    REFRESH_COOKIE,
+    ActorDep,
+    SessionDep,
+    SettingsDep,
+)
 from pigrocrm_api.errors import (
     INVITE_GONE_RESPONSE,
     INVITE_NOT_FOUND_RESPONSE,
@@ -192,6 +200,7 @@ def login(
         secure=settings.cookie_secure,
         path=cookie_path(request),
     )
+    _issue_identity_cookie(response, settings, user.email)
     return user
 
 
@@ -250,6 +259,35 @@ def _space_link(settings: Settings, slug: str, email: str) -> str | None:
         return None
     finally:
         engine.dispose()
+
+
+def _issue_identity_cookie(response: Response, settings: Settings, email: str) -> None:
+    """The side effect `login`, `enter_with_link` and `accept_invite` each ride on
+    (design 2026-09-23 §2, REB-376): records that this address has proven itself,
+    somewhere, and mints a fresh `pigrocrm_identity` cookie either way, at `path=/`.
+    Never a fourth call site of its own, and never `signup` (§2's own reasoning: an
+    address nobody has proven anything about must not get a durable, cross-space
+    cookie). Follows `_space_link`'s own discipline exactly -- an ephemeral engine
+    against the registry, `SQLAlchemyError` caught rather than raised -- so a
+    registry that is briefly unreachable costs the identity cookie for this one
+    request, never the space session the caller already has."""
+    engine = create_engine(tenants_database_url(settings), future=True)
+    try:
+        with session_factory(engine)() as registry:
+            token = IdentityService(registry, settings).upsert_and_issue(email)
+    except SQLAlchemyError:
+        token = None
+    finally:
+        engine.dispose()
+    if token:
+        _set_cookie(
+            response,
+            IDENTITY_COOKIE,
+            token,
+            settings.identity_token_days * 86400,
+            secure=settings.cookie_secure,
+            path="/",
+        )
 
 
 @router.post(
@@ -331,6 +369,7 @@ def enter_with_link(
         secure=settings.cookie_secure,
         path=cookie_path(request),
     )
+    _issue_identity_cookie(response, settings, user.email)
     return user
 
 
@@ -422,6 +461,7 @@ def accept_invite(
         secure=settings.cookie_secure,
         path=cookie_path(request),
     )
+    _issue_identity_cookie(response, settings, user.email)
     return user
 
 

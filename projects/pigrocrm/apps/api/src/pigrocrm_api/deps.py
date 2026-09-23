@@ -19,6 +19,11 @@ from pigrocrm_api.tenancy import first_cookie, tenant_slug
 
 ACCESS_COOKIE = "pigrocrm_access"
 REFRESH_COOKIE = "pigrocrm_refresh"
+# Root-scoped, at path=/, unconditionally (design 2026-09-23 §2, REB-376) -- the one
+# cookie in this codebase that deliberately breaks `tenancy.cookie_path`'s
+# "cookies live under a space's prefix" rule, because the entire point of this
+# cookie is to survive moving between slugs.
+IDENTITY_COOKIE = "pigrocrm_identity"
 
 # One registry per process (spec 2026-09-08, lifted to core in ORB-170): the root's
 # engine, every space's engine and the tenants registry, all built on first use from the

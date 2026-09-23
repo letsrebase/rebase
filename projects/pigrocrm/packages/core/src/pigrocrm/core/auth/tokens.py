@@ -9,7 +9,11 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.errors import ValidationFailed
 
 ALGORITHM = "HS256"
-TokenType = Literal["access", "refresh"]
+# "identity" (design 2026-09-23, REB-376): a fourth kind of claim, signed with this
+# same secret, that decode_token already refuses to accept in place of an "access" or
+# "refresh" token and vice versa -- the closed Literal is what makes that refusal
+# structural rather than a convention a caller could forget.
+TokenType = Literal["access", "refresh", "identity"]
 
 
 class TokenPayload(BaseModel):
@@ -88,6 +92,29 @@ def issue_refresh_token(
         None,
         "refresh",
         timedelta(days=settings.refresh_token_days),
+        settings,
+        jti=jti if jti is not None else uuid4(),
+        issued_at=issued_at,
+    )
+
+
+def issue_identity_token(
+    identity_id: UUID,
+    settings: Settings,
+    *,
+    jti: UUID | None = None,
+    issued_at: datetime | None = None,
+) -> str:
+    """Carries no role: an identity is never a role holder, only a proven address
+    (design 2026-09-23 §1) -- `_issue`'s `role` claim is always `None` here, unlike
+    the two token kinds above. `jti` points at the `IdentitySession` row that makes
+    this token revocable (§2); a fresh one is minted when the caller does not supply
+    one, the same discipline `issue_refresh_token` uses and for the same reason."""
+    return _issue(
+        identity_id,
+        None,
+        "identity",
+        timedelta(days=settings.identity_token_days),
         settings,
         jti=jti if jti is not None else uuid4(),
         issued_at=issued_at,
