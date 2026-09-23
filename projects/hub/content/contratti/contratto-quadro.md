@@ -6,8 +6,9 @@ date: 23 settembre 2026
 status: draft
 ---
 
-Tra **{{rebase-ragione-sociale}}**, con sede legale in {{rebase-sede}}, partita IVA
-{{rebase-piva}}, PEC {{rebase-pec}}, in persona del legale rappresentante
+Tra **{{rebase-ragione-sociale}}**, con sede in {{rebase-sede}}, codice fiscale
+{{rebase-cf}}, partita IVA {{rebase-piva}}, codice destinatario per la fatturazione
+elettronica {{rebase-codice-destinatario}}, PEC {{rebase-pec}}, in persona di
 {{rebase-rappresentante}} («**rebase**»)
 
 e **{{professionista-nome}}**, codice fiscale {{professionista-cf}}, partita IVA
@@ -30,8 +31,8 @@ C. Le Parti vogliono fissare una volta sola le regole che valgono per ogni lavor
 Professionista svolgerà tramite rebase. Ogni lavoro sarà descritto in una lettera di
 incarico, con il cliente, le attività, i tempi e i numeri.
 
-D. rebase si impegna a essere trasparente con il Professionista: ogni lettera di
-incarico dice quanto paga il cliente e quale percentuale trattiene rebase.
+D. Il compenso di ogni lavoro è concordato con il Professionista a partire dalla
+tariffa giornaliera che lui stesso chiede.
 
 Tutto ciò premesso, le Parti convengono quanto segue.
 
@@ -51,12 +52,8 @@ significato.
   rebase.
 - **Lettera di incarico**: il documento che descrive un Incarico e ne fissa le
   condizioni particolari.
-- **Tariffa cliente**: quanto il Cliente paga a rebase per il lavoro del Professionista,
-  a giornata, a ora o a corpo, IVA esclusa.
-- **Quota rebase**: la percentuale della Tariffa cliente che rebase trattiene per il
-  proprio lavoro.
-- **Compenso**: quanto rebase paga al Professionista, cioè la Tariffa cliente ridotta
-  della Quota rebase.
+- **Compenso**: quanto rebase paga al Professionista per un Incarico, a giornata, a ora
+  o a corpo, come indicato nella Lettera di incarico.
 - **Area riservata**: la sezione di letsrebase.com/hub a cui il Professionista accede
   con il proprio account.
 - **Rendiconto**: il riepilogo mensile delle giornate o delle ore lavorate su un
@@ -88,8 +85,7 @@ di incarico, solo per quell'Incarico e solo sul punto che deroga espressamente.
 ## 3. Come nasce un Incarico
 
 3.1 rebase propone l'Incarico al Professionista per iscritto, per email o nell'Area
-riservata, indicando almeno il Cliente, le attività, i tempi previsti, la Tariffa
-cliente e la Quota rebase.
+riservata, indicando almeno il Cliente, le attività, i tempi previsti e il Compenso.
 
 3.2 L'Incarico nasce quando entrambe le Parti hanno firmato la Lettera di incarico.
 Prima di quel momento nessuna delle due è obbligata, anche se il Professionista ha già
@@ -100,7 +96,7 @@ giorni se ha lavorato con quell'azienda, in qualunque forma, nei 24 mesi precede
 l'Incarico nasce, la dichiarazione è riportata nella Lettera di incarico. Serve
 all'articolo 12.
 
-3.4 Una modifica a un Incarico in corso (attività, durata, impegno, Tariffa cliente)
+3.4 Una modifica a un Incarico in corso (attività, durata, impegno, Compenso)
 vale solo se entrambe le Parti la accettano per iscritto, anche per email. Se il
 Cliente chiede al Professionista attività diverse o ulteriori, il Professionista le
 segnala a rebase prima di svolgerle, perché vanno concordate con il Cliente e pagate.
@@ -129,18 +125,17 @@ Professionista risponde di chi ha coinvolto come di sé stesso.
 4.5 Il Professionista non rappresenta rebase né il Cliente e non può prendere impegni
 in loro nome.
 
-## 5. Compenso e Quota rebase
+## 5. Compenso
 
-5.1 Per ogni Incarico la Lettera di incarico indica la Tariffa cliente, la Quota rebase
-e il Compenso. Il Compenso è la Tariffa cliente ridotta della Quota rebase: con una Tariffa
-cliente di 500 euro a giornata e una Quota rebase del 15%, per esempio, il Compenso è di
-425 euro a giornata.
+5.1 Il Professionista indica a rebase la tariffa giornaliera che chiede, nell'Area
+riservata o quando riceve una proposta. Il Compenso di ogni Incarico è concordato con lui
+a partire da quella tariffa ed è indicato nella Lettera di incarico.
 
-5.2 La Quota rebase di ciascun Incarico non supera il [[15%]] della Tariffa cliente.
+5.2 Il Compenso non cambia per tutta la durata dell'Incarico, salvo un accordo scritto
+secondo l'articolo 3.4.
 
-5.3 La Quota rebase non cambia per tutta la durata di un Incarico. Se rebase ottiene dal
-Cliente una Tariffa cliente più alta, il Compenso aumenta nella stessa proporzione, dal
-mese in cui cambia la Tariffa cliente.
+5.3 Le condizioni economiche che rebase concorda con il Cliente sono un accordo separato
+tra rebase e il Cliente, e non modificano il Compenso.
 
 5.4 Il Compenso è a giornata, a ora o a corpo, come dice la Lettera di incarico. Una
 giornata vale otto ore; le frazioni di giornata si pagano in proporzione, fino a una
@@ -169,8 +164,8 @@ contestazione motivata, il Rendiconto si considera approvato. Se il Cliente cont
 parte del Rendiconto, rebase lo dice subito al Professionista, con i motivi, e la parte
 non contestata si fattura comunque.
 
-6.3 Approvato il Rendiconto, il Professionista emette a rebase fattura elettronica per
-il Compenso del mese. Per gli Incarichi a corpo fattura alle scadenze indicate nella
+6.3 Approvato il Rendiconto, il Professionista emette a rebase fattura elettronica, con i
+dati e il codice destinatario indicati in apertura, per il Compenso del mese. Per gli Incarichi a corpo fattura alle scadenze indicate nella
 Lettera di incarico, dopo che il Cliente ha accettato i risultati o, se non arriva una
 contestazione motivata, [[dieci]] giorni lavorativi dopo la consegna.
 
@@ -179,8 +174,9 @@ indica nell'Area riservata il proprio regime fiscale e lo tiene aggiornato.
 
 ## 7. Pagamento
 
-7.1 rebase paga ogni fattura con bonifico entro [[30]] giorni dal ricevimento, e in ogni
-caso entro 60 giorni, come prevede l'articolo 3 della legge 81/2017.
+7.1 rebase paga ogni fattura con bonifico a 30 giorni data fattura fine mese, salvo che
+la Lettera di incarico indichi un altro termine, e in ogni caso entro 60 giorni dal
+ricevimento della fattura, come prevede l'articolo 3 della legge 81/2017.
 
 7.2 [[Il pagamento al Professionista non dipende dal pagamento del Cliente: se il
 Cliente paga in ritardo o non paga, il rischio è di rebase.]]
@@ -283,20 +279,18 @@ quell'azienda senza passare da rebase, né direttamente né tramite altri: una p
 società, un'altra piattaforma, un altro intermediario.
 
 12.2 Se il Professionista vuole lavorare direttamente con un'Azienda presentata prima
-della scadenza, lo dice a rebase e può farlo riconoscendole, fino alla scadenza, la
-Quota rebase sugli importi che fattura a quell'azienda, come se il lavoro passasse
-ancora da rebase. In alternativa rebase può liberarlo per iscritto. La Quota rebase è
-quella dell'ultimo Incarico o dell'ultima proposta per quell'azienda o, se manca, quella
-massima dell'articolo 5.2.
+della scadenza, lo dice a rebase e può farlo riconoscendole, fino alla scadenza, il
+[[15%]] degli importi che fattura a quell'azienda, IVA esclusa. In alternativa rebase può
+liberarlo per iscritto.
 
 12.3 Il limite non vale per un'Azienda presentata con cui il Professionista aveva già
 lavorato nei 24 mesi precedenti alla presentazione, se lo ha dichiarato come previsto
 dall'articolo 3.3.
 
 12.4 Se il Professionista lavora con un'Azienda presentata senza passare da rebase e
-senza averlo detto, deve a rebase la Quota rebase su tutti gli importi fatturati a
-quell'azienda nel periodo dell'articolo 12.1, più una penale di [[2.000]] euro, salvo il
-maggior danno.
+senza averlo detto, deve a rebase la percentuale dell'articolo 12.2 su tutti gli importi
+fatturati a quell'azienda nel periodo dell'articolo 12.1, più una penale di [[2.000]]
+euro, salvo il maggior danno.
 
 12.5 A sua volta rebase, per tutta la durata del Contratto e nei 12 mesi successivi, non
 presenta ad altri membri i clienti che il Professionista le ha fatto conoscere, senza il
@@ -453,7 +447,7 @@ specificamente queste clausole:
 - 10.4, esclusione di ogni altra somma, compreso il mancato guadagno, alla chiusura di un
   Incarico;
 - 11.1, risoluzione di diritto per le violazioni elencate;
-- 12.1, 12.2 e 12.4, limiti al lavoro diretto con le Aziende presentate, Quota rebase
+- 12.1, 12.2 e 12.4, limiti al lavoro diretto con le Aziende presentate, percentuale
   dovuta e penale;
 - 15.3, obbligo di tenere indenne rebase;
 - 18.3, foro competente esclusivo;

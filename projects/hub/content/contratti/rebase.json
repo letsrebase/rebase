@@ -1,7 +1,10 @@
 {
   "rebase-ragione-sociale": "rebase S.r.l.",
   "rebase-sede": null,
+  "rebase-cf": null,
   "rebase-piva": null,
+  "rebase-codice-destinatario": null,
   "rebase-pec": null,
-  "rebase-rappresentante": null
+  "rebase-rappresentante": null,
+  "termine-pagamento": "30 giorni data fattura fine mese"
 }

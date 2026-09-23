@@ -5,10 +5,13 @@
 
 With no argument it builds every Markdown file in `content/contratti/` as a blank form;
 naming one or more (by file stem) builds only those. `--data` fills the fields from a
-JSON object, on top of `content/contratti/rebase.json`, which holds rebase's own company
-data. The PDFs land in `content/contratti/dist/`, which git ignores: unlike the guide,
-nothing serves these files, so nothing here is committed or locked. The text a member
-signs in the hub (REB-339) is the Markdown itself.
+JSON object, read over `content/contratti/rebase.json` (rebase's company data and the
+defaults every letter starts from) and over `rebase.local.json` beside it when that file
+exists: git ignores it, and it holds the real data of whoever signs for rebase today,
+which a public repository does not print; `--public` leaves it out, for a PDF that is
+going somewhere public, and writes to `dist/public/`. The PDFs land in `content/contratti/dist/`,
+which git ignores too: unlike the guide, nothing serves these files, so nothing here is
+committed or locked. The text a member signs in the hub (REB-339) is the Markdown itself.
 
 Two markers are the reason this is not a plain pandoc call, and both are replaced in the
 Typst pandoc writes, after pandoc has escaped everything else:
@@ -18,11 +21,8 @@ Typst pandoc writes, after pandoc has escaped everything else:
 - `[[text]]` is a proposal still to be decided, highlighted in the draft. A document
   whose front matter no longer says `status: draft` may not carry one.
 
-rebase keeps a percentage of what the client pays, and the letter prints the client's
-rate, that percentage and the fee side by side. The build works the fee out itself and
-refuses anything that would let the three disagree on paper: a rate or a share that is
-not a number, more precision than the page prints, or a fee typed in by hand that is not
-the rate less the share.
+The fee is the one number a letter must not get wrong, so the build refuses one that is
+not a JSON number, is not above zero, or has more decimals than the page prints.
 
 The toolchain, the palette and the typeface are the guide's, imported from
 `build_guide_pdf.py` rather than copied: two documents from one brand must not drift
@@ -39,7 +39,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from build_guide_pdf import REPO, Failed, palette, static_fonts, tool_version
@@ -48,6 +48,7 @@ HUB = Path(__file__).resolve().parent.parent
 CONTRACTS = HUB / "content" / "contratti"
 TEMPLATE = Path(__file__).resolve().parent / "contract.typ.template"
 COMPANY = CONTRACTS / "rebase.json"
+COMPANY_LOCAL = CONTRACTS / "rebase.local.json"
 OUTPUT = CONTRACTS / "dist"
 
 # A field key is lowercase words joined by single hyphens. Pandoc's Typst writer escapes
@@ -57,19 +58,19 @@ FIELD = re.compile(r"\{\{([a-z0-9]+(?:-[a-z0-9]+)*)\}\}")
 PROPOSAL_OPEN = r"\[\["
 PROPOSAL_CLOSE = r"\]\]"
 
-RATE, SHARE, FEE = "tariffa-cliente", "quota-rebase", "compenso"
-# Article 3 of law 81/2017 voids a payment term past 60 days from the invoice, and the
-# framework agreement's 7.1 promises it.
-PAYMENT_DAYS, PAYMENT_DAYS_LIMIT = "giorni-pagamento", 60
+FEE = "compenso"
 CENT = Decimal("0.01")
 
 Value = str | int | float | bool | None
 
 
-def load_data(path: Path | None) -> dict[str, Value]:
-    """rebase's company data, with the caller's file on top. `null` means not known yet."""
+def load_data(path: Path | None, local: bool = True) -> dict[str, Value]:
+    """rebase's company data and defaults, then the local file, then the caller's.
+
+    `null` means not known yet, and a later file's `null` blanks an earlier value."""
     data: dict[str, Value] = {}
-    for source in (COMPANY, path):
+    signer = COMPANY_LOCAL if local and COMPANY_LOCAL.is_file() else None
+    for source in (COMPANY, signer, path):
         if source is None:
             continue
         try:
@@ -111,27 +112,12 @@ def amount(data: dict[str, Value], key: str) -> Decimal | None:
     return exact
 
 
-def with_fee(data: dict[str, Value]) -> dict[str, Value]:
-    """Work out the freelancer's fee from the client's rate and rebase's share."""
-    rate, share, fee = amount(data, RATE), amount(data, SHARE), amount(data, FEE)
-    days = amount(data, PAYMENT_DAYS)
-    if days is not None and not 0 < days <= PAYMENT_DAYS_LIMIT:
-        raise Failed(f"{PAYMENT_DAYS} is {days}: law 81/2017 allows 1 to 60 days")
-    if rate is None or share is None:
-        if fee is not None:
-            raise Failed(f"{FEE} comes from {RATE} and {SHARE}; give those two instead")
-        return data
-    if rate <= 0:
-        raise Failed(f"{RATE} is {rate}: a rate above zero")
-    if not 0 <= share < 100:
-        raise Failed(f"{SHARE} is {share}: a percentage from 0 to under 100")
-    computed = (rate * (100 - share) / 100).quantize(CENT, ROUND_HALF_UP)
-    if fee is not None and fee != computed:
-        raise Failed(
-            f"{FEE} is {fee}, but a {RATE} of {rate} less a {SHARE} of {share}% is"
-            f" {computed}. Drop {FEE} from the data and the build works it out."
-        )
-    return {**data, FEE: float(computed)}
+def checked(data: dict[str, Value]) -> dict[str, Value]:
+    """The data, once the fee is a number the page can print as it was given."""
+    fee = amount(data, FEE)
+    if fee is not None and fee <= 0:
+        raise Failed(f"{FEE} is {fee}: a fee above zero")
+    return data
 
 
 def italian(number: Decimal, places: int) -> str:
@@ -141,18 +127,13 @@ def italian(number: Decimal, places: int) -> str:
 
 
 def rendered(key: str, value: Value) -> str:
-    """What the page prints for a value. Only money and percentages are reformatted:
-    a letter number or a VAT number is an identifier, printed as it was given."""
+    """What the page prints for a value. Only the fee is reformatted: a letter number or
+    a VAT number is an identifier, printed as it was given."""
     if isinstance(value, bool):
         return "sì" if value else "no"
     if isinstance(value, (int, float)):
-        exact = Decimal(str(value))
-        if key in (RATE, FEE):
-            return f"{italian(exact, 2)} €"
-        if key == SHARE:
-            exponent = exact.normalize().as_tuple().exponent
-            places = max(0, -exponent) if isinstance(exponent, int) else 0
-            return f"{italian(exact, places)}%"
+        if key == FEE:
+            return f"{italian(Decimal(str(value)), 2)} €"
         return str(value)
     # Pandoc's `smart` curls the apostrophes of the Markdown around this value; a value
     # typed with a straight one would sit beside them looking like a typo.
@@ -294,25 +275,30 @@ def main() -> int:
     parser.add_argument("documents", nargs="*", help="stems in content/contratti; all if none")
     parser.add_argument("--data", type=Path, help="JSON object of field: value to fill in")
     parser.add_argument(
+        "--public",
+        action="store_true",
+        help=f"leave out {COMPANY_LOCAL.name}, and write to dist/public unless --out says",
+    )
+    parser.add_argument(
         "--out",
         type=Path,
-        default=OUTPUT,
         help=f"directory for the PDFs (default {OUTPUT.relative_to(REPO)})",
     )
     args = parser.parse_args()
+    out: Path = args.out or (OUTPUT / "public" if args.public else OUTPUT)
 
     workdir = Path(tempfile.mkdtemp(prefix="rebase-contract-"))
     try:
         tool_version("pandoc", "--version")
         tool_version("typst", "--version")
-        data = with_fee(load_data(args.data))
+        data = checked(load_data(args.data, local=not args.public))
         fonts = workdir / "fonts"
         static_fonts(fonts)
-        args.out.mkdir(parents=True, exist_ok=True)
+        out.mkdir(parents=True, exist_ok=True)
         for source in documents(args.documents):
             pdf, blank = build(source, data, fonts, workdir)
             suffix = f"-{args.data.stem}" if args.data else ""
-            target = args.out / f"{source.stem}{suffix}.pdf"
+            target = out / f"{source.stem}{suffix}.pdf"
             target.write_bytes(pdf)
             print(f"{target}: {len(pdf)} bytes")
             if args.data and blank:

@@ -49,18 +49,15 @@ quadro). Il coordinamento qui sopra è stabilito di comune accordo ed è il solo
 | Voce                          | Condizione                                                       |
 |-------------------------------|------------------------------------------------------------------|
 | Modalità                      | {{modalita}}                                                     |
-| Tariffa cliente, IVA esclusa  | {{tariffa-cliente}} {{unita}}                                    |
-| Quota rebase                  | {{quota-rebase}} della Tariffa cliente                           |
-| Compenso del Professionista   | {{compenso}} {{unita}}                                           |
+| Compenso, IVA esclusa         | {{compenso}} {{unita}}                                           |
 | Lavoro festivo o fuori fascia | {{lavoro-extra}}                                                 |
 | Spese                         | {{spese}}                                                        |
-| Pagamento                     | entro {{giorni-pagamento}} giorni dal ricevimento della fattura  |
+| Pagamento                     | {{termine-pagamento}}                                            |
 | Fatture, solo a corpo         | {{scadenze-fatturazione}}                                        |
 
-Il Compenso è la Tariffa cliente ridotta della Quota rebase (articolo 5 del Contratto
-quadro).
-Il Professionista invia il Rendiconto e fattura a rebase come dice l'articolo 6 del
-Contratto quadro.
+Il Compenso è concordato a partire dalla tariffa giornaliera che il Professionista ha
+chiesto (articolo 5 del Contratto quadro). Il Professionista invia il Rendiconto e
+fattura a rebase come dice l'articolo 6 del Contratto quadro.
 
 ## 6. Preavviso
 
