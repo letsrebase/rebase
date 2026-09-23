@@ -22,6 +22,7 @@ from build_contract_pdf import (
     fill,
     is_draft,
     italian,
+    load_data,
     mark_proposals,
     rendered,
     survived,
@@ -57,6 +58,8 @@ def test_the_fee_is_the_client_rate_less_rebase_share() -> None:
         ({"tariffa-cliente": 500, "quota-rebase": 100}, "under 100"),
         # Article 3 of law 81/2017.
         ({"giorni-pagamento": 90}, "1 to 60"),
+        # Past what Decimal holds at its default precision.
+        ({"tariffa-cliente": 1e30, "quota-rebase": 15}, "not a number a contract can print"),
     ],
 )
 def test_numbers_that_would_let_the_letter_disagree_with_itself_stop_the_build(
@@ -64,6 +67,14 @@ def test_numbers_that_would_let_the_letter_disagree_with_itself_stop_the_build(
 ) -> None:
     with pytest.raises(Failed, match=complaint):
         with_fee(data)
+
+
+@pytest.mark.parametrize("raw", ["Infinity", "-Infinity", "NaN", "1e400"])
+def test_a_data_file_with_no_printable_number_is_refused(tmp_path: Path, raw: str) -> None:
+    data = tmp_path / "job.json"
+    data.write_text('{"tariffa-cliente": ' + raw + "}", encoding="utf-8")
+    with pytest.raises(Failed, match="not a number a contract can print"):
+        load_data(data)
 
 
 def test_amounts_are_written_the_italian_way_and_identifiers_as_given() -> None:

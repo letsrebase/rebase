@@ -33,12 +33,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 
 from build_guide_pdf import REPO, Failed, palette, static_fonts, tool_version
@@ -72,7 +73,7 @@ def load_data(path: Path | None) -> dict[str, Value]:
         if source is None:
             continue
         try:
-            loaded = json.loads(source.read_text(encoding="utf-8"))
+            loaded = json.loads(source.read_text(encoding="utf-8"), parse_constant=not_a_number)
         except (OSError, json.JSONDecodeError) as exc:
             raise Failed(f"cannot read {source}: {exc}") from exc
         if not isinstance(loaded, dict):
@@ -82,8 +83,15 @@ def load_data(path: Path | None) -> dict[str, Value]:
                 raise Failed(f"{source}: {key!r} is not a field name (lowercase-with-hyphens)")
             if not isinstance(value, (str, int, float, bool)) and value is not None:
                 raise Failed(f"{source}: {key} must be text, a number or null")
+            if isinstance(value, float) and not math.isfinite(value):
+                raise Failed(f"{source}: {key} is {value}, not a number a contract can print")
             data[key] = value
     return data
+
+
+def not_a_number(constant: str) -> float:
+    """Python's JSON reader accepts `NaN` and `Infinity`, which JSON itself does not."""
+    raise Failed(f"{constant} is not a number a contract can print")
 
 
 def amount(data: dict[str, Value], key: str) -> Decimal | None:
@@ -94,7 +102,11 @@ def amount(data: dict[str, Value], key: str) -> Decimal | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise Failed(f"{key} must be a JSON number, not {value!r}")
     exact = Decimal(str(value))
-    if exact != exact.quantize(CENT):
+    try:
+        cents = exact.quantize(CENT)
+    except InvalidOperation as exc:
+        raise Failed(f"{key} is {value}, not a number a contract can print") from exc
+    if exact != cents:
         raise Failed(f"{key} is {exact}: at most two decimals, which is what the page prints")
     return exact
 
