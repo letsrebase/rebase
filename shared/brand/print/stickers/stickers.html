@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <title>rebase stickers and the temporary tattoo</title>
+    <!--
+      Three stickers and a temporary tattoo (REB-334) in the rebase picture system
+      (shared/brand, the carousel skill): full ground, the field of tiles in a corner,
+      Outfit, the brand colours, no rounded corner. Every length is in mm. Each
+      `.sticker` carries its trim size in data-trim="WxH"; the element is that plus 3 mm
+      of bleed on each side, and nothing that matters sits closer than 3 mm to the trim.
+      render.mjs writes the PNGs at 300 dpi and one PDF per sticker.
+    -->
+    <link rel="stylesheet" href="../../font.css" />
+    <style>
+      /* shared/brand/palette.css, spelled out, because an HTML file opened from disk
+         cannot read a Tailwind @theme block: ink, quiet, gold, melon. */
+      :root { --ink: #011936; --quiet: #465362; --gold: #f9dc5c; --melon: #ed254e; --bleed: 3mm; --safe: 3mm; }
+      * { box-sizing: border-box; margin: 0; }
+      html, body { background: #ffffff; }
+      body { font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; color: var(--ink); font-weight: 300; -webkit-font-smoothing: antialiased; }
+      .sticker { position: relative; overflow: hidden; background: #ffffff; }
+      @media screen { .sticker { margin: 8mm auto; } }
+      .sticker canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+      .sticker.dark { background: var(--ink); color: #fff; }
+      .sticker.dark canvas { opacity: 0.55; }
+      .trim { position: absolute; inset: var(--bleed); pointer-events: none; }
+      .safe { position: absolute; inset: calc(var(--bleed) + var(--safe)); pointer-events: none; display: none; outline: 0.1mm dashed var(--melon); }
+      .guides .trim { outline: 0.1mm dashed var(--quiet); }
+      .guides .safe { display: block; }
+      /* One sticker per PDF: ?only=<name> hides the others and sets the page. */
+      body[data-only] .sticker { display: none; }
+      body[data-only] .sticker.only { display: block; }
+
+      .sticker.gold { background: var(--gold); color: var(--ink); }
+      .sticker.gold canvas { opacity: 0.9; }
+      /* The hero: stacked words, 700, tight, a few degrees off square like a slapped-on sticker. */
+      .hero { position: absolute; transform-origin: left top; }
+      .hero p { font-weight: 700; line-height: 0.92; letter-spacing: -0.04em; }
+      .hero .w2 { font-weight: 600; letter-spacing: -0.02em; }
+      .hero .tag { display: inline-block; background: var(--ink); color: var(--gold); padding: 1.6mm 2.4mm 1.4mm; line-height: 1; }
+      .hero .tag.inv { background: var(--gold); color: var(--ink); }
+      .site.ink { color: var(--ink); }
+      .mark { position: absolute; width: 30mm; height: 30mm; display: grid; grid-template-columns: 1fr 1fr; }
+      .mark i { display: block; }
+      .mark .ink { background: var(--ink); } .mark .gold { background: var(--gold); } .mark .melon { background: var(--melon); }
+      .site { font-weight: 600; color: var(--melon); letter-spacing: -0.01em; }
+      .dark .site { color: var(--gold); }
+      .qr { position: absolute; background: #fff; padding: 2.2mm; }
+      .qr img { display: block; width: 100%; height: auto; }
+    </style>
+  </head>
+  <body>
+
+    <!-- 1 · «Ancora che fai il dipendente?»: gold ground, 50×50 mm, the last word on an ink tag. -->
+    <section class="sticker gold" data-name="employee" data-trim="50x50" data-seed="21" data-band="topright" style="width: 56mm; height: 56mm;">
+      <canvas></canvas>
+      <div class="hero" style="left: 6mm; top: 9mm; width: 44mm; transform: rotate(-4deg);">
+        <p class="w1" style="font-size: 31pt;">Ancora</p>
+        <p class="w2" style="font-size: 15pt; margin-top: 0.4mm;">che fai il</p>
+        <p class="tag" style="font-size: 18pt; margin-top: 1.6mm; padding: 1.2mm 1.8mm 1mm;">dipendente?</p>
+      </div>
+      <div class="qr" style="right: 6mm; bottom: 6mm; width: 12.5mm; padding: 1.4mm;"><img src="../qr-letsrebase.svg" alt="QR: letsrebase.com" /></div>
+      <p class="site ink" style="position: absolute; left: 6mm; bottom: 6.3mm; font-size: 7pt;">letsrebase.com</p>
+      <div class="trim"></div><div class="safe"></div>
+    </section>
+
+    <!-- 2 · «Hai dovuto prendere ferie per essere qua?»: ink ground, 50×50 mm, «ferie» on a gold tag. -->
+    <section class="sticker dark" data-name="day-off" data-trim="50x50" data-seed="5" data-band="topright" style="width: 56mm; height: 56mm;">
+      <canvas></canvas>
+      <div class="hero" style="left: 6mm; top: 8mm; width: 44mm; transform: rotate(-4deg);">
+        <p class="w2" style="font-size: 15pt;">Hai dovuto</p>
+        <p class="w2" style="font-size: 15pt;">prendere</p>
+        <p class="tag inv" style="font-size: 31pt; margin-top: 1.4mm; padding: 0.7mm 2.2mm 1.2mm;">ferie</p>
+        <p class="w2" style="font-size: 15pt; margin-top: 1.8mm;">per essere qua?</p>
+      </div>
+      <div class="qr" style="right: 6mm; bottom: 6mm; width: 12.5mm; padding: 1.4mm;"><img src="../qr-letsrebase.svg" alt="QR: letsrebase.com" /></div>
+      <p class="site" style="position: absolute; left: 6mm; bottom: 6.3mm; font-size: 7pt;">letsrebase.com</p>
+      <div class="trim"></div><div class="safe"></div>
+    </section>
+
+    <!-- 3 · The echo logo: gold ground, A8 landscape (74×52 mm), the echo in ink
+         (shared/brand/echo/echo-ink.png), tilted, centred, no QR. Chosen on 2026-09-22
+         over three other grounds (white, watermelon, ink with a keyline), REB-334. -->
+    <section class="sticker gold" data-name="echo" data-trim="74x52" data-seed="9" data-band="none" style="width: 80mm; height: 58mm;">
+      <canvas></canvas>
+      <img src="../../echo/echo-ink.png" alt="rebase" style="position: absolute; left: 50%; top: 50%; width: 70mm; height: auto; transform: translate(-50%, -52%) rotate(-3deg);" />
+      <div class="trim"></div><div class="safe"></div>
+    </section>
+
+    <!-- 4 · The mark alone, for a temporary tattoo: the four tiles (ink, gold, melon, ink,
+         the order of BRAND_TILES in shared/brand/mark.ts) at 30 mm on a 40×40 mm sheet.
+         White is clear on transfer paper. Mirrored, because transfer paper prints the
+         design reversed and the skin shows it the right way round. -->
+    <section class="sticker" data-name="tattoo-mirrored" data-trim="40x40" data-seed="0" data-band="none" style="width: 46mm; height: 46mm;">
+      <canvas></canvas>
+      <div class="mark" style="left: 8mm; top: 8mm; transform: scaleX(-1);"><i class="ink"></i><i class="gold"></i><i class="melon"></i><i class="ink"></i></div>
+      <div class="trim"></div><div class="safe"></div>
+    </section>
+
+    <script>
+      var q = new URLSearchParams(location.search)
+      if (q.get('guides') === '1') document.body.classList.add('guides')
+      if (q.get('only')) { document.body.dataset.only = q.get('only'); var s = document.querySelector('.sticker[data-name="' + q.get('only') + '"]'); if (s) s.classList.add('only') }
+      /* The field of tiles, from the carousel template, on a 1.5 mm grid. */
+      function hash(x, y) { var n = (x * 374761393 + y * 668265263) | 0; n = ((n ^ (n >>> 13)) * 1274126177) | 0; return ((n ^ (n >>> 16)) >>> 0) / 4294967296 }
+      function lerp(a, b, t) { return a + (b - a) * t }
+      function noise(x, y) { var x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0; fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+        return lerp(lerp(hash(x0, y0), hash(x0 + 1, y0), fx), lerp(hash(x0, y0 + 1), hash(x0 + 1, y0 + 1), fx), fy) }
+      var bands = {
+        topright: function (u, v) { return (u - 0.55) * 2.2 - v * 1.9 + 0.3 },
+        none: function () { return 0 },
+      }
+      var colours = ['#011936', '#f9dc5c', '#465362', '#ed254e']
+      var MM = 96 / 25.4, cell = 1.5 * MM
+      Array.prototype.slice.call(document.querySelectorAll('.sticker')).forEach(function (el) {
+        var canvas = el.querySelector('canvas'), ctx = canvas.getContext('2d')
+        var W = el.offsetWidth, H = el.offsetHeight, dpr = 4
+        canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); ctx.scale(dpr, dpr)
+        var seed = +el.dataset.seed || 0, band = bands[el.dataset.band] || bands.none
+        var dark = el.classList.contains('dark'), gold = el.classList.contains('gold')
+        var cols = Math.ceil(W / cell), rows = Math.ceil(H / cell)
+        for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+          var density = band(x / cols, y / rows)
+          if (density <= 0) continue
+          var coarse = noise(x * 0.07 + seed, y * 0.07 + seed * 0.3), fine = noise(x * 0.45 - seed, y * 0.45)
+          var v = (coarse * 0.6 + fine * 0.4) * density * 1.4
+          if (v < 0.36) continue
+          if (fine > 0.8 && v < 0.55) continue
+          var pick = v < 0.52 ? 0 : v < 0.6 ? 2 : v < 0.76 ? (fine > 0.55 ? 1 : 0) : 1
+          if (v > 0.5 && hash(x + seed, y) > 0.985) pick = 3
+          if (dark && pick === 0) continue
+          if (gold && pick === 1) continue
+          ctx.fillStyle = colours[pick]
+          var gap = 0.15 * MM
+          ctx.fillRect(x * cell + gap, y * cell + gap, cell - 2 * gap, cell - 2 * gap)
+        }
+      })
+    </script>
+  </body>
+</html>

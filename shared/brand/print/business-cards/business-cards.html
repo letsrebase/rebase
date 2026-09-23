@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <title>rebase business cards, front and back (55×84 mm)</title>
+    <!--
+      The business card (REB-332), in the picture system of the carousels
+      (.claude/skills/social-content/carousel-template.html) made lighter for paper:
+      a full ground, the field of tiles drawn from a seed in a corner, Outfit, the
+      brand colours and nothing else, no box, no shadow, no rounded corner. Two `.card`
+      sections, front and back. Every length is in mm: the trim is 55×84 mm, the page
+      is 61×90 mm (3 mm of bleed on each side), and nothing that matters sits closer
+      than 3 mm to the trim. render.mjs writes the PNGs at 300 dpi and the two-page PDF.
+
+      The two phone numbers on the back are not in this file, because this repository
+      is public: they come from contacts.local.js beside it, which git ignores (copy
+      contacts.example.js). Without it, or with ?placeholders=1, the back shows
+      placeholders; render.mjs refuses to write a print file with placeholders and
+      writes a preview only into out/preview/.
+    -->
+    <link rel="stylesheet" href="../../font.css" />
+    <style>
+      /* shared/brand/palette.css, spelled out, because an HTML file opened from disk
+         cannot read a Tailwind @theme block: ink, quiet, gold, melon. */
+      :root { --ink: #011936; --quiet: #465362; --gold: #f9dc5c; --melon: #ed254e; --bleed: 3mm; --safe: 3mm; }
+      @page { size: 61mm 90mm; margin: 0; }
+      * { box-sizing: border-box; margin: 0; }
+      html, body { background: #ffffff; }
+      body { font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif; color: var(--ink); font-weight: 300; -webkit-font-smoothing: antialiased; }
+      .card { position: relative; width: 61mm; height: 90mm; overflow: hidden; background-color: #ffffff; page-break-after: always; break-after: page; }
+      @media screen { .card { margin: 8mm auto; } }
+      .card canvas { position: absolute; inset: 0; width: 61mm; height: 90mm; }
+      .card.dark { background-color: var(--ink); color: #fff; }
+      .card.dark canvas { opacity: 0.55; }
+      /* The trim and the safe area, as elements: render.mjs screenshots `.trim` for the
+         preview without bleed; `.safe` is only a guide, shown with ?guides=1. */
+      .trim { position: absolute; inset: var(--bleed); pointer-events: none; }
+      .safe { position: absolute; inset: calc(var(--bleed) + var(--safe)); pointer-events: none; display: none; outline: 0.1mm dashed var(--melon); }
+      .guides .trim { outline: 0.1mm dashed var(--quiet); }
+      .guides .safe { display: block; }
+
+      h1 { font-size: 21pt; font-weight: 600; line-height: 0.98; letter-spacing: -0.035em; }
+      .lead { font-size: 8pt; line-height: 1.35; color: var(--quiet); font-weight: 400; }
+      .site { font-size: 11pt; font-weight: 600; color: var(--melon); letter-spacing: -0.01em; }
+      .dark .site { color: var(--gold); }
+      .lockup { display: block; height: auto; }
+
+      /* Back: the QR on its own white tile, then the addresses and the two numbers. */
+      .qr { position: absolute; background: #fff; padding: 2.2mm; }
+      .qr img { display: block; width: 100%; height: auto; }
+      .contacts { position: absolute; display: flex; flex-direction: column; }
+      .mail { font-size: 9.5pt; font-weight: 500; color: #fff; letter-spacing: -0.01em; }
+      .person { display: flex; align-items: baseline; gap: 1.8mm; }
+      .person .sq { flex: none; width: 2mm; height: 2mm; background: var(--gold); position: relative; top: -0.1mm; }
+      .person .sq.melon { background: var(--melon); }
+      .person .who { font-size: 9.5pt; font-weight: 600; color: #fff; }
+      .tel { font-size: 9.5pt; font-weight: 400; color: rgba(255,255,255,0.82); font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+  <body>
+
+    <!-- Front: white ground, the field in a corner, the lockup, the claim, the site.
+         No box and no shadow: on 55 mm of paper the card itself is the box. -->
+    <section class="card" data-name="front" data-seed="5" data-band="corners">
+      <canvas></canvas>
+      <img class="lockup" src="../../lockup.svg" alt="rebase" style="position: absolute; left: 7mm; top: 8mm; width: 30mm;" />
+      <div style="position: absolute; left: 7mm; right: 7mm; top: 27mm;">
+        <h1 style="font-size: 15.5pt;">Freelance,<br />ma non da soli.</h1>
+        <p class="lead" style="margin-top: 2.6mm;">La community di chi fa<br />software in proprio.</p>
+        <p class="site" style="margin-top: 5mm;">letsrebase.com</p>
+      </div>
+      <div class="trim"></div><div class="safe"></div>
+    </section>
+
+    <!-- Back: ink ground, the QR on plain white, the site, the mail, the two numbers. -->
+    <section class="card dark" data-name="back" data-seed="21" data-band="corner">
+      <canvas></canvas>
+      <img class="lockup" src="../../lockup-paper.svg" alt="rebase" style="position: absolute; left: 7mm; top: 7.5mm; width: 20mm;" />
+      <div class="qr" style="left: 7mm; top: 14.5mm; width: 32mm;"><img src="../qr-letsrebase.svg" alt="QR: letsrebase.com" /></div>
+      <div class="contacts" style="left: 7mm; right: 7mm; bottom: 8mm; gap: 1mm;">
+        <p class="site" style="margin-bottom: 0.4mm;">letsrebase.com</p>
+        <p class="mail" style="margin-bottom: 2.4mm;">ciao@letsrebase.com</p>
+        <div class="person"><span class="sq"></span><span class="who">Ivan Sala</span></div>
+        <p class="tel" data-contact="ivan" style="margin: -0.5mm 0 1.6mm 3.8mm;">+39 ··· ·· ·· ···</p>
+        <div class="person"><span class="sq melon"></span><span class="who">Lorenzo Fiore</span></div>
+        <p class="tel" data-contact="lorenzo" style="margin: -0.5mm 0 0 3.8mm;">+39 ··· ·· ·· ···</p>
+      </div>
+      <div class="trim"></div><div class="safe"></div>
+    </section>
+
+    <!-- Sets window.PRINT_CONTACTS; absent in a fresh checkout, which is the point. -->
+    <script src="./contacts.local.js"></script>
+    <script>
+      if (location.search.indexOf('guides=1') !== -1) document.body.classList.add('guides')
+      /* The numbers, from contacts.local.js. One that is missing or does not look like
+         a phone number keeps its placeholder and marks the page, so render.mjs can
+         refuse to print it. ?placeholders=1 ignores the file: a preview that can be
+         shared in public never carries the real numbers. */
+      var contacts = location.search.indexOf('placeholders=1') !== -1 ? {} : window.PRINT_CONTACTS || {}
+      Array.prototype.slice.call(document.querySelectorAll('[data-contact]')).forEach(function (el) {
+        var number = String(contacts[el.dataset.contact] || '').trim()
+        if (/^\+\d[\d ]{6,}$/.test(number)) el.textContent = number
+        else document.body.dataset.missingContacts = 'true'
+      })
+      /* The field of tiles, from carousel-template.html, on a grid of 1.5 mm. */
+      function hash(x, y) { var n = (x * 374761393 + y * 668265263) | 0; n = ((n ^ (n >>> 13)) * 1274126177) | 0; return ((n ^ (n >>> 16)) >>> 0) / 4294967296 }
+      function lerp(a, b, t) { return a + (b - a) * t }
+      function noise(x, y) { var x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0; fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+        return lerp(lerp(hash(x0, y0), hash(x0 + 1, y0), fx), lerp(hash(x0, y0 + 1), hash(x0 + 1, y0 + 1), fx), fy) }
+      var bands = {
+        /* The back: a corner beside the QR, stronger than the carousels' `topright`
+           because a portrait card has fewer columns than a square slide. */
+        corner: function (u, v) { return (u - 0.5) * 2.2 - v * 1.6 + 0.35 },
+        /* The front: two corners, top right and bottom left, off the lockup and the copy. */
+        corners: function (u, v) { return Math.max((u - 0.55) * 2.2 - v * 1.9 + 0.3, (0.45 - u) * 2.2 - (1 - v) * 1.9 + 0.3) },
+        none: function () { return 0 },
+      }
+      var colours = ['#011936', '#f9dc5c', '#465362', '#ed254e']
+      var MM = 96 / 25.4, cellMm = 1.5, cell = cellMm * MM
+      Array.prototype.slice.call(document.querySelectorAll('.card')).forEach(function (card) {
+        var canvas = card.querySelector('canvas'), ctx = canvas.getContext('2d')
+        var W = 61 * MM, H = 90 * MM, dpr = 4
+        canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr); ctx.scale(dpr, dpr)
+        var seed = +card.dataset.seed || 0, band = bands[card.dataset.band] || bands.none
+        var dark = card.classList.contains('dark')
+        var cols = Math.ceil(W / cell), rows = Math.ceil(H / cell)
+        for (var y = 0; y < rows; y++) for (var x = 0; x < cols; x++) {
+          var density = band(x / cols, y / rows)
+          if (density <= 0) continue
+          var coarse = noise(x * 0.07 + seed, y * 0.07 + seed * 0.3), fine = noise(x * 0.45 - seed, y * 0.45)
+          var v = (coarse * 0.6 + fine * 0.4) * density * 1.4
+          if (v < 0.36) continue
+          if (fine > 0.8 && v < 0.55) continue
+          var pick = v < 0.52 ? 0 : v < 0.6 ? 2 : v < 0.76 ? (fine > 0.55 ? 1 : 0) : 1
+          if (v > 0.5 && hash(x + seed, y) > 0.985) pick = 3
+          if (dark && pick === 0) continue
+          ctx.fillStyle = colours[pick]
+          var gap = 0.15 * MM
+          ctx.fillRect(x * cell + gap, y * cell + gap, cell - 2 * gap, cell - 2 * gap)
+        }
+      })
+    </script>
+  </body>
+</html>

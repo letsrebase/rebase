@@ -50,3 +50,7 @@ var/
 .claude/
 docs/
 projects/*/docs/
+
+# The print pieces (shared/brand/print/README.md): no image reads them, and a machine
+# that renders them holds the business card's phone numbers in contacts.local.js.
+shared/brand/print/
