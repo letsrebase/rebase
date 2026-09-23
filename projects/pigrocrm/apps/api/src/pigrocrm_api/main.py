@@ -24,6 +24,7 @@ from pigrocrm_api.routers import (
     fields,
     fiscal_profile,
     gmail,
+    identity,
     invoices,
     payment_reminders,
     people,
@@ -95,6 +96,8 @@ def create_app() -> FastAPI:
         automations,
         # Spaces (2026-09-08). Public signup, on the registry database: routers/tenants.py.
         tenants,
+        # Cross-space identity (2026-09-23, REB-376): also root-scoped, on the registry.
+        identity,
         # Settings → Space: the settings a database decides for itself.
         space_settings,
         # Slice 10 (2026-09-09): the commitments, and the month that reads them beside

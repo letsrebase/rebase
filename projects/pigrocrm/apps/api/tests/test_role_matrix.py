@@ -467,6 +467,13 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
         "client; it reaches the hub over the network and answers even when the hub is "
         "down (ORB-173)."
     ),
+    ("POST", "/api/identity/logout"): (
+        "Root-scoped and deliberately ungated (design 2026-09-23 §2/§3, REB-376): the "
+        "cookie it reads is not a space actor, so there is no role to gate on, and it "
+        "is idempotent for the same reason /api/auth/logout is. Calling it from the "
+        "sweep would end an identity session none of the three role clients hold in a "
+        "form worth revoking."
+    ),
 }
 
 _SAFE_METHODS = {"get", "head", "options", "trace"}

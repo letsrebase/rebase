@@ -21,6 +21,10 @@ x-api-environment: &api-environment
   # genuine per-installation choice and `.env.example` already documents it as one,
   # so it belongs here rather than in NOT_FORWARDED (REB-257).
   PIGROCRM_REFRESH_TOKEN_DAYS: ${PIGROCRM_REFRESH_TOKEN_DAYS:-180}
+  # Same 180 days as above, on purpose (design 2026-09-23 §2, REB-376): the identity
+  # cookie is meant to outlive any single space's own session, so it is exactly as
+  # much a per-installation choice as PIGROCRM_REFRESH_TOKEN_DAYS.
+  PIGROCRM_IDENTITY_TOKEN_DAYS: ${PIGROCRM_IDENTITY_TOKEN_DAYS:-180}
   PIGROCRM_MCP_FULL_ACCESS: ${PIGROCRM_MCP_FULL_ACCESS:-false}
   PIGROCRM_STORAGE_BACKEND: ${PIGROCRM_STORAGE_BACKEND:-local}
   PIGROCRM_GDRIVE_SERVICE_ACCOUNT_JSON: ${PIGROCRM_GDRIVE_SERVICE_ACCOUNT_JSON:-}
