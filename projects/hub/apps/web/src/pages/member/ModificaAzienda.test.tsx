@@ -26,6 +26,7 @@ const PROFILE = {
   cognome: 'E.',
   email: 'wile@acme.it',
   linkedin_url: null,
+  telefono: '+39 345 1234567',
   role: 'member',
   created_at: '2026-09-10T10:00:00Z',
   updated_at: '2026-09-10T10:00:00Z',
@@ -42,6 +43,10 @@ const PROFILE = {
   periodo_da: '2026-10-01',
   durata: '3 mesi',
   budget_giornaliero: '500.00',
+  azienda_remoto: 'remoto',
+  azienda_giorni_presenza: null,
+  azienda_numero_risorse: 2,
+  azienda_figura_richiesta: 'Backend developer',
 }
 
 function mount() {
@@ -68,18 +73,30 @@ afterEach(() => vi.restoreAllMocks())
 describe('the edit fields', () => {
   const base: CompanyRequest = {
     nome_azienda: '',
+    figura_richiesta: 'Backend developer',
     referente_nome: '',
     referente_cognome: '',
     email: '',
+    telefono: '',
     progetto: 'Serve un backend developer per tre mesi, da ottobre.',
     periodo_da: '2026-10-01',
     durata: '3 mesi',
     budget_giornaliero: '500',
+    remoto: 'remoto',
+    giorni_presenza: '',
+    numero_risorse: '2',
   }
 
-  it('reaches only the four project answers, never the company’s own identity', () => {
+  it('reaches the seven project answers, never the company’s own identity (REB-380)', () => {
     const fields = editCompanyFields()
-    expect(fields.map((field) => field.id)).toEqual(['progetto', 'periodo_da', 'budget_giornaliero'])
+    expect(fields.map((field) => field.id)).toEqual([
+      'figura_richiesta',
+      'progetto',
+      'periodo_da',
+      'budget_giornaliero',
+      'remoto',
+      'numero_risorse',
+    ])
   })
 
   it('keeps the wizard’s own rules', () => {
@@ -90,7 +107,7 @@ describe('the edit fields', () => {
 })
 
 describe('/me/edit-company', () => {
-  it('starts from the most recent request and saves the four answers with PATCH', async () => {
+  it('starts from the most recent request and saves every answer with PATCH', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
       .mockImplementation(async (_url, init) =>
@@ -116,6 +133,10 @@ describe('/me/edit-company', () => {
       periodo_da: PROFILE.periodo_da,
       durata: '4 mesi',
       budget_giornaliero: '600',
+      remoto: PROFILE.azienda_remoto,
+      giorni_presenza: PROFILE.azienda_giorni_presenza,
+      numero_risorse: PROFILE.azienda_numero_risorse,
+      figura_richiesta: PROFILE.azienda_figura_richiesta,
     })
   })
 

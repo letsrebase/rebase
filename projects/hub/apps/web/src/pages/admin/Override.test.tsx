@@ -36,10 +36,15 @@ const COMPANY: Company = {
   nome_azienda: 'Rossi Studio',
   referente: 'Mario Rossi',
   email: 'mario@rossi.it',
+  telefono: '+39 345 1234567',
+  figura_richiesta: 'Backend developer',
   progetto: 'Piattaforma di prenotazione',
   periodo_da: '2026-10-01',
   durata: '3 mesi',
   budget_giornaliero: '450.00',
+  remoto: 'remoto',
+  giorni_presenza: null,
+  numero_risorse: 2,
   stato: 'nuovo',
   note: null,
   origine: null,
@@ -78,15 +83,17 @@ function mountCompany({
   onOpenChange = vi.fn(),
   saving = false,
   error = null,
+  company = COMPANY,
 }: {
   onSave?: (data: CompanyOverride) => void
   onOpenChange?: (open: boolean) => void
   saving?: boolean
   error?: string | null
+  company?: Company
 } = {}) {
   render(
     <CompanyOverrideDialog
-      company={COMPANY}
+      company={company}
       open
       onOpenChange={onOpenChange}
       onSave={onSave}
@@ -185,16 +192,25 @@ describe('FreelancerOverrideDialog', () => {
 })
 
 describe('CompanyOverrideDialog', () => {
-  it('pre-fills the four project fields; the referente fields start blank', () => {
+  it('pre-fills the seven project fields; the referente fields start blank', () => {
     mountCompany()
     expect(screen.getByLabelText('Azienda')).toHaveValue('Rossi Studio')
+    expect(screen.getByLabelText('Figura richiesta')).toHaveValue('Backend developer')
     expect(screen.getByLabelText('Progetto')).toHaveValue('Piattaforma di prenotazione')
     expect(screen.getByLabelText('Da quando')).toHaveValue('2026-10-01')
     expect(screen.getByLabelText('Durata')).toHaveValue('3 mesi')
     expect(screen.getByLabelText('Budget a giornata (€)')).toHaveValue(450)
+    expect(screen.getByLabelText('Numero di persone')).toHaveValue(2)
+    expect(screen.getByRole('combobox', { name: 'Modalità' })).toHaveTextContent('Da remoto')
+    expect(screen.queryByLabelText('Giorni in sede a settimana')).toBeNull()
     expect(screen.getByLabelText('Nome')).toHaveValue('')
     expect(screen.getByLabelText('Cognome')).toHaveValue('')
     expect(screen.getByLabelText('LinkedIn')).toHaveValue('')
+  })
+
+  it('shows and requires giorni in sede only for ibrido, pre-filled from the current row', () => {
+    mountCompany({ company: { ...COMPANY, remoto: 'ibrido', giorni_presenza: 3 } })
+    expect(screen.getByLabelText('Giorni in sede a settimana')).toHaveValue(3)
   })
 
   it('omits the referente identity keys entirely when left blank', async () => {
@@ -204,11 +220,35 @@ describe('CompanyOverrideDialog', () => {
     const sent = onSave.mock.calls[0]![0]
     expect(sent).toEqual({
       nome_azienda: 'Rossi Studio',
+      figura_richiesta: 'Backend developer',
       progetto: 'Piattaforma di prenotazione',
       periodo_da: '2026-10-01',
       durata: '3 mesi',
       budget_giornaliero: '450.00',
+      remoto: 'remoto',
+      giorni_presenza: null,
+      numero_risorse: 2,
     })
+  })
+
+  it('clears giorni_presenza to null the moment remoto leaves ibrido', async () => {
+    const onSave = vi.fn<(data: CompanyOverride) => void>()
+    mountCompany({ onSave, company: { ...COMPANY, remoto: 'ibrido', giorni_presenza: 3 } })
+    await userEvent.click(screen.getByRole('combobox', { name: 'Modalità' }))
+    await userEvent.click(screen.getByRole('option', { name: 'In sede' }))
+    expect(screen.queryByLabelText('Giorni in sede a settimana')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ remoto: 'in_sede', giorni_presenza: null })
+  })
+
+  it('sends giorni_presenza as a number when remoto is ibrido', async () => {
+    const onSave = vi.fn<(data: CompanyOverride) => void>()
+    mountCompany({ onSave })
+    await userEvent.click(screen.getByRole('combobox', { name: 'Modalità' }))
+    await userEvent.click(screen.getByRole('option', { name: 'Ibrido' }))
+    await userEvent.type(screen.getByLabelText('Giorni in sede a settimana'), '2')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[0]![0]).toMatchObject({ remoto: 'ibrido', giorni_presenza: 2 })
   })
 
   it('sends the referente nome/cognome only once filled in', async () => {
@@ -234,6 +274,13 @@ describe('CompanyOverrideDialog', () => {
   it('disables Save when a required project field is blank', async () => {
     mountCompany()
     await userEvent.clear(screen.getByLabelText('Durata'))
+    expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
+  })
+
+  it('disables Save when ibrido has no giorni in sede yet', async () => {
+    mountCompany()
+    await userEvent.click(screen.getByRole('combobox', { name: 'Modalità' }))
+    await userEvent.click(screen.getByRole('option', { name: 'Ibrido' }))
     expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
   })
 })

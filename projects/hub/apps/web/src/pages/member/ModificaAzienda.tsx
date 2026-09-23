@@ -7,15 +7,23 @@ import { COMPANY_FIELDS } from '@/pages/CompanyWizard'
 import type { Field } from '@/wizard/Wizard'
 
 /**
- * The four project answers self-edit reaches (REB-314 decision): the same
- * `COMPANY_FIELDS` entries `CompanyWizard` renders, filtered to the ones a company
- * contact may change once signed in. `nome_azienda` and `referente` are left out on
- * purpose -- self-edit reaches only the signed-in person's most recent request's
- * project answers, never the company's own identity or who its referente is.
+ * The seven project answers self-edit reaches (REB-314 decision; REB-380 widens it
+ * from three to seven): the same `COMPANY_FIELDS` entries `CompanyWizard` renders,
+ * filtered to the ones a company contact may change once signed in. `nome_azienda`,
+ * `referente_*`/`email` and `telefono` are left out on purpose -- self-edit reaches
+ * only the signed-in person's most recent request's project answers, never the
+ * company's own identity or who its referente is. `giorni_presenza` has no field of
+ * its own; it travels with `remoto`, whose render already carries it.
  */
 export function editCompanyFields(): Field<CompanyRequest>[] {
   return COMPANY_FIELDS.filter(
-    (field) => field.id === 'progetto' || field.id === 'periodo_da' || field.id === 'budget_giornaliero',
+    (field) =>
+      field.id === 'progetto' ||
+      field.id === 'periodo_da' ||
+      field.id === 'budget_giornaliero' ||
+      field.id === 'remoto' ||
+      field.id === 'numero_risorse' ||
+      field.id === 'figura_richiesta',
   )
 }
 
@@ -53,9 +61,13 @@ export function ModificaAzienda() {
       void navigate({ to: '/me' })
     } catch (error) {
       const refusal = error instanceof ApiError ? error : null
-      // `durata` shares a field with `periodo_da` (CompanyWizard.tsx's own comment):
-      // the server names the model column, the form has one input for both.
-      const mapped = refusal?.fields.map((field) => (field === 'durata' ? 'periodo_da' : field)) ?? []
+      // `durata` shares a field with `periodo_da`, `giorni_presenza` with `remoto`
+      // (CompanyWizard.tsx's own comment): the server names the model column, the
+      // form has one input -- or one step -- for both.
+      const mapped =
+        refusal?.fields.map((field) =>
+          field === 'durata' ? 'periodo_da' : field === 'giorni_presenza' ? 'remoto' : field,
+        ) ?? []
       const known = mapped.filter((field) => fields.some((candidate) => candidate.id === field))
       if (known.length) {
         setErrors(Object.fromEntries(known.map((field) => [field, refusal!.message])))

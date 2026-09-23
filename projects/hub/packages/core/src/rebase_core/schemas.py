@@ -5,16 +5,27 @@ from typing import Literal
 from urllib.parse import unquote, urlsplit, urlunsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from rebase_core.models import (
     AZIENDA_MAX_LENGTH,
     COMMENT_MAX_LENGTH,
     DURATA_MAX_LENGTH,
+    GIORNI_PRESENZA_MAX,
+    GIORNI_PRESENZA_MIN,
     LINKEDIN_URL_MAX_LENGTH,
     NAME_MAX_LENGTH,
     ORIGINE_MAX_LENGTH,
     POSIZIONE_MAX_LENGTH,
+    TELEFONO_MAX_LENGTH,
     UTM_MAX_LENGTH,
 )
 from rebase_core.validation import SafeStr
@@ -408,10 +419,12 @@ class FreelancerDraft(BaseModel):
 
 
 class CompanyFields(BaseModel):
-    """The four answers about a request that its referente may write and later
+    """The eight answers about a request that its referente may write and later
     change: what `CompanyCreate` collects together with the company's own identity,
     and what `CompanyUpdate` alone accepts once signed in, mirroring
-    `FreelancerFields`' split for the freelancer side (REB-314)."""
+    `FreelancerFields`' split for the freelancer side (REB-314). REB-380 widens the
+    original four (`progetto`/`periodo_da`/`durata`/`budget_giornaliero`) with the
+    work arrangement, the headcount and a scannable role label."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -421,8 +434,14 @@ class CompanyFields(BaseModel):
     budget_giornaliero: Decimal = Field(
         max_digits=7, decimal_places=2, ge=TARIFFA_MIN, le=TARIFFA_MAX
     )
+    remoto: Remoto
+    giorni_presenza: int | None = Field(
+        default=None, ge=GIORNI_PRESENZA_MIN, le=GIORNI_PRESENZA_MAX
+    )
+    numero_risorse: int = Field(ge=1)
+    figura_richiesta: SafeStr = Field(min_length=1, max_length=POSIZIONE_MAX_LENGTH)
 
-    @field_validator("durata", mode="after")
+    @field_validator("durata", "figura_richiesta", mode="after")
     @classmethod
     def _trimmed(cls, value: str) -> str:
         return _clean_text(value, what="un valore")
@@ -433,19 +452,31 @@ class CompanyFields(BaseModel):
         """Multi-line is the point of a project description, so newlines stay."""
         return clean_multiline(value, what="una descrizione del progetto")
 
+    @model_validator(mode="after")
+    def _giorni_presenza_matches_remoto(self) -> "CompanyFields":
+        """The database's own `ck_companies_giorni_presenza_together`, enforced here
+        too so the wizard and the member area refuse the same request the database
+        would, with a sentence rather than an `IntegrityError`."""
+        if (self.remoto == "ibrido") != (self.giorni_presenza is not None):
+            raise ValueError("giorni_presenza va indicato solo, e sempre, per il lavoro ibrido")
+        return self
+
 
 class CompanyCreate(CompanyFields):
-    """What the wizard collects: the four `CompanyFields` answers plus the company's
+    """What the wizard collects: the eight `CompanyFields` answers plus the company's
     own identity and its referente's, get-or-created by email."""
 
     nome_azienda: SafeStr = Field(min_length=1, max_length=AZIENDA_MAX_LENGTH)
     referente_nome: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
     referente_cognome: SafeStr = Field(min_length=1, max_length=NAME_MAX_LENGTH)
+    telefono: SafeStr = Field(min_length=6, max_length=TELEFONO_MAX_LENGTH)
     email: EmailStr
     utm: SignupUtm | None = None
     distinct_id: SafeStr | None = Field(default=None, max_length=DISTINCT_ID_MAX_LENGTH)
 
-    @field_validator("nome_azienda", "referente_nome", "referente_cognome", mode="after")
+    @field_validator(
+        "nome_azienda", "referente_nome", "referente_cognome", "telefono", mode="after"
+    )
     @classmethod
     def _trimmed_identity(cls, value: str) -> str:
         return _clean_text(value, what="un valore")
@@ -453,9 +484,9 @@ class CompanyCreate(CompanyFields):
 
 class CompanyUpdate(CompanyFields):
     """What a company contact changes about their most recent request (REB-314): the
-    four project answers, never `stato`, `note`, `nome_azienda` or the referente's
-    identity -- the same field-isolation `MemberUpdate` keeps for the freelancer
-    card."""
+    eight project answers, never `stato`, `note`, `nome_azienda`, `telefono` or the
+    referente's identity -- the same field-isolation `MemberUpdate` keeps for the
+    freelancer card."""
 
 
 class Ack(BaseModel):
@@ -536,12 +567,19 @@ class MeRead(BaseModel):
     on `GET /me` (REB-278): a `users` row is not necessarily an applicant with a card
     any more, so `ha_scheda` says whether one exists, and the seven card fields answer
     blank -- `None`, `False`, `[]` -- when it does not, the shape a signed-in admin
-    with no card now gets. `role` is `member` or `admin` (`USER_ROLES`).
+    with no card now gets. `role` is `member` or `admin` (`USER_ROLES`). `telefono`
+    (REB-380) is a top-level identity field like `nome`/`cognome`/`linkedin_url`,
+    never blanked by `ha_scheda`/`ha_azienda`: it lives on `users` regardless of
+    which of the two a person carries.
 
-    `ha_azienda` and the four request fields mirror `ha_scheda`'s own shape for the
-    company side (REB-314): populated from the signed-in person's most recent
-    `Company` row when one exists, blank otherwise. A person can carry both, or
-    neither, or just one -- the two pairs are independent."""
+    `ha_azienda` and the eight request fields mirror `ha_scheda`'s own shape for the
+    company side (REB-314; REB-380 widens the original four): populated from the
+    signed-in person's most recent `Company` row when one exists, blank otherwise. A
+    person can carry both, or neither, or just one -- the two pairs are independent.
+    The four REB-380 additions carry an `azienda_` prefix here, and only here: `Company`
+    and `Freelancer` both have a `remoto`, and this is the one shape that flattens
+    both onto one row, so the company's own copy needs a name of its own to avoid
+    silently colliding with the card's."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -550,6 +588,7 @@ class MeRead(BaseModel):
     cognome: str
     email: str
     linkedin_url: str | None
+    telefono: str | None
     role: str
     created_at: datetime
     updated_at: datetime
@@ -565,6 +604,10 @@ class MeRead(BaseModel):
     periodo_da: date | None = None
     durata: str | None = None
     budget_giornaliero: Decimal | None = None
+    azienda_remoto: str | None = None
+    azienda_giorni_presenza: int | None = None
+    azienda_numero_risorse: int | None = None
+    azienda_figura_richiesta: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -722,10 +765,15 @@ class CompanyRead(BaseModel):
     nome_azienda: str
     referente: str
     email: str
+    telefono: str | None
+    figura_richiesta: str
     progetto: str
     periodo_da: date
     durata: str
     budget_giornaliero: Decimal
+    remoto: str
+    giorni_presenza: int | None
+    numero_risorse: int
     stato: str
     note: str | None
     origine: str | None = None
@@ -815,11 +863,14 @@ class FreelancerOverride(BaseModel):
 
 class CompanyOverride(BaseModel):
     """What an admin may set or clear on a `Company` request beyond `stato`/`note`
-    (REB-347): the four project answers a referente could have written
+    (REB-347): the eight project answers a referente could have written
     (`CompanyFields`), the company's own name, and the referente's identity fields on
     the linked `users` row -- both admin-only even for a self-edit, as
     `MemberService.update_company`'s own docstring says. Same optional-and-`null`
-    contract as `FreelancerOverride`."""
+    contract as `FreelancerOverride`. `remoto`/`numero_risorse`/`figura_richiesta`
+    are `NOT NULL` columns (REB-380), so `rebase_core.audit.reject_cleared_columns`
+    refuses an override that tries to null them, the same as any other `NOT NULL`
+    field here; `giorni_presenza` stays nullable, like on `Freelancer`."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -827,16 +878,22 @@ class CompanyOverride(BaseModel):
     cognome: SafeStr | None = Field(default=None, max_length=NAME_MAX_LENGTH)
     linkedin_url: SafeStr | None = Field(default=None, max_length=LINKEDIN_INPUT_MAX_LENGTH)
     nome_azienda: SafeStr | None = Field(default=None, max_length=AZIENDA_MAX_LENGTH)
+    figura_richiesta: SafeStr | None = Field(default=None, max_length=POSIZIONE_MAX_LENGTH)
     progetto: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
     periodo_da: date | None = None
     durata: SafeStr | None = Field(default=None, max_length=DURATA_MAX_LENGTH)
     budget_giornaliero: Decimal | None = Field(
         default=None, max_digits=7, decimal_places=2, ge=TARIFFA_MIN, le=TARIFFA_MAX
     )
+    remoto: Remoto | None = None
+    giorni_presenza: int | None = Field(
+        default=None, ge=GIORNI_PRESENZA_MIN, le=GIORNI_PRESENZA_MAX
+    )
+    numero_risorse: int | None = Field(default=None, ge=1)
     stato: CompanyStato | None = None
     note: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
 
-    @field_validator("nome", "cognome", "nome_azienda", "durata", mode="after")
+    @field_validator("nome", "cognome", "nome_azienda", "durata", "figura_richiesta", mode="after")
     @classmethod
     def _trimmed(cls, value: str | None) -> str | None:
         return _clean_text(value, what="un valore") if value is not None else None

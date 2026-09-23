@@ -36,8 +36,17 @@ export function Area() {
   const value = profile.ha_scheda ? toApplication(profile) : null
   const fields = FREELANCER_FIELDS.filter((field) => field.id !== 'email' && field.id !== 'cv')
   const companyValue = profile.ha_azienda ? toCompanyApplication(profile) : null
+  // Same six fields `ModificaAzienda.tsx`'s `editCompanyFields()` reaches (REB-314;
+  // REB-380 adds the last three): `nome_azienda`, the referente and `telefono` stay
+  // off the read-only view too, the identity this section never shows.
   const companyFields = COMPANY_FIELDS.filter(
-    (field) => field.id === 'progetto' || field.id === 'periodo_da' || field.id === 'budget_giornaliero',
+    (field) =>
+      field.id === 'progetto' ||
+      field.id === 'periodo_da' ||
+      field.id === 'budget_giornaliero' ||
+      field.id === 'remoto' ||
+      field.id === 'numero_risorse' ||
+      field.id === 'figura_richiesta',
   )
 
   return (

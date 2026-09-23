@@ -71,10 +71,14 @@ def _request_company(client: TestClient) -> str:
             "referente_nome": "Wile",
             "referente_cognome": "E.",
             "email": "wile@acme.it",
+            "telefono": "+39 345 1234567",
+            "figura_richiesta": "Backend developer",
             "progetto": "Un backend developer per tre mesi.",
             "periodo_da": "2026-10-01",
             "durata": "3 mesi",
             "budget_giornaliero": "500",
+            "remoto": "remoto",
+            "numero_risorse": 1,
         },
     )
     assert response.status_code == 201, response.text

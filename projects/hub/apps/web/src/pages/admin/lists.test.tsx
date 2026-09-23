@@ -115,10 +115,15 @@ const COMPANY_A = {
   nome_azienda: 'Rossi Studio',
   referente: 'Mario Rossi',
   email: 'mario@rossi.it',
+  telefono: '+39 345 1234567',
+  figura_richiesta: 'Backend developer',
   progetto: 'Piattaforma di prenotazione',
   periodo_da: '2026-10-01',
   durata: '3 mesi',
   budget_giornaliero: '450.00',
+  remoto: 'ibrido',
+  giorni_presenza: 3,
+  numero_risorse: 2,
   stato: 'nuovo',
   note: null,
   origine: 'home',
@@ -526,7 +531,7 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
 })
 
 describe('the company detail', () => {
-  it('shows the request, its referente and its state', async () => {
+  it('shows the request, its referente, its state and the REB-380 fields', async () => {
     routeFetch({
       'GET /api/hub/companies/c1': COMPANY_A,
       'GET /api/hub/companies/c1/audit': [],
@@ -535,6 +540,10 @@ describe('the company detail', () => {
     await screen.findByRole('heading', { name: 'Rossi Studio' })
     expect(screen.getByText(/Mario Rossi/)).toBeInTheDocument()
     expect(screen.getByText('Piattaforma di prenotazione')).toBeInTheDocument()
+    expect(screen.getByText('Backend developer')).toBeInTheDocument()
+    expect(screen.getByText('Ibrido · 3 giorni a settimana in sede')).toBeInTheDocument()
+    expect(screen.getByText(/\+39 345 1234567/)).toBeInTheDocument()
+    expect(screen.getByText('2')).toBeInTheDocument()
   })
 
   it('overrides a field through "Modifica richiesta" and shows the new value', async () => {

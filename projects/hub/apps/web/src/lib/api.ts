@@ -104,13 +104,18 @@ export function applyAsFreelancer(
 
 export interface CompanyRequest {
   nome_azienda: string
+  figura_richiesta: string
   referente_nome: string
   referente_cognome: string
   email: string
+  telefono: string
   progetto: string
   periodo_da: string
   durata: string
   budget_giornaliero: string
+  remoto: Remoto | ''
+  giorni_presenza: string
+  numero_risorse: string
 }
 
 export function requestPeople(
@@ -122,6 +127,9 @@ export function requestPeople(
     '/api/hub/companies',
     json({
       ...data,
+      // `''` means "not ibrido, never asked": the API's own `giorni_presenza` is
+      // `int | None`, which a blank string does not coerce to.
+      giorni_presenza: data.giorni_presenza ? Number(data.giorni_presenza) : null,
       utm: Object.keys(utm).length ? utm : null,
       ...(distinctId ? { distinct_id: distinctId } : {}),
     }),
@@ -199,10 +207,15 @@ export interface Company {
   nome_azienda: string
   referente: string
   email: string
+  telefono: string | null
+  figura_richiesta: string
   progetto: string
   periodo_da: string
   durata: string
   budget_giornaliero: string
+  remoto: Remoto
+  giorni_presenza: number | null
+  numero_risorse: number
   stato: 'nuovo' | 'contattato' | 'in_corso' | 'chiuso'
   note: string | null
   /** The page of the site the person started from, `home` or `pigrocrm` (ORB-167). */
@@ -272,17 +285,24 @@ export interface FreelancerOverride {
 }
 
 /** Same contract as `FreelancerOverride`, for a `Company` request's own fields beyond
- *  `stato`/`note`: the four project answers, the company's own name, and the
- *  referente's identity on the linked `users` row -- admin-only even for a self-edit. */
+ *  `stato`/`note`: the eight project answers (REB-314; REB-380 adds the last four),
+ *  the company's own name, and the referente's identity on the linked `users` row --
+ *  admin-only even for a self-edit. `giorni_presenza` is the one nullable addition,
+ *  the same as `FreelancerOverride.remoto`; `remoto`/`numero_risorse`/
+ *  `figura_richiesta` are never cleared, like `nome_azienda`. */
 export interface CompanyOverride {
   nome?: string
   cognome?: string
   linkedin_url?: string | null
   nome_azienda?: string
+  figura_richiesta?: string
   progetto?: string
   periodo_da?: string
   durata?: string
   budget_giornaliero?: string
+  remoto?: Remoto
+  giorni_presenza?: number | null
+  numero_risorse?: number
 }
 
 /** The guide's numbers for the admin area (ORB-156), as `GET /api/hub/perks/guide` answers. */
@@ -575,15 +595,19 @@ export const admin = {
  *  `MemberProfile`): a `users` row is not necessarily an applicant with a card any
  *  more, so `ha_scheda` says whether one exists, and the seven card fields answer
  *  blank -- `null`, `false`, `[]` -- when it does not, the shape a signed-in admin
- *  with no card gets. `ha_azienda` and the four request fields mirror `ha_scheda`'s
- *  own shape for a company contact's most recent request (REB-314): a person can
- *  carry both, one, or neither. */
+ *  with no card gets. `ha_azienda` and the eight request fields mirror `ha_scheda`'s
+ *  own shape for a company contact's most recent request (REB-314; REB-380 adds the
+ *  last four, `azienda_`-prefixed since `Company` and `Freelancer` both have a
+ *  `remoto` and this shape flattens both onto one row): a person can carry both,
+ *  one, or neither. `telefono` (REB-380) is a top-level identity field, never blank
+ *  because of `ha_scheda`/`ha_azienda`. */
 export interface Me {
   id: string
   nome: string
   cognome: string
   email: string
   linkedin_url: string | null
+  telefono: string | null
   role: Role
   created_at: string
   updated_at: string
@@ -599,6 +623,10 @@ export interface Me {
   periodo_da: string | null
   durata: string | null
   budget_giornaliero: string | null
+  azienda_remoto: Remoto | null
+  azienda_giorni_presenza: number | null
+  azienda_numero_risorse: number | null
+  azienda_figura_richiesta: string | null
   /** CV, rate, position and remote preference all present. Always `false` without a
    *  card (`ha_scheda`). */
   completa: boolean
@@ -615,13 +643,18 @@ export interface MemberUpdate {
   links: string[]
 }
 
-/** The four answers a company contact may change about their most recent request
- *  (REB-314): never `stato`, `note` or the company's own identity. */
+/** The eight answers a company contact may change about their most recent request
+ *  (REB-314; REB-380 adds the last four): never `stato`, `note`, `telefono` or the
+ *  company's own identity. */
 export interface CompanyUpdate {
   progetto: string
   periodo_da: string
   durata: string
   budget_giornaliero: string
+  remoto: Remoto
+  giorni_presenza: number | null
+  numero_risorse: number
+  figura_richiesta: string
 }
 
 export const member = {

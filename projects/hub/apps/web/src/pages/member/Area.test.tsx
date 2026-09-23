@@ -30,6 +30,7 @@ const PROFILE = {
   cognome: 'Lovelace',
   email: 'ada@studio.it',
   linkedin_url: 'https://www.linkedin.com/in/ada',
+  telefono: null,
   role: 'member',
   created_at: '2026-09-10T10:00:00Z',
   updated_at: '2026-09-10T10:00:00Z',
@@ -46,6 +47,10 @@ const PROFILE = {
   periodo_da: null,
   durata: null,
   budget_giornaliero: null,
+  azienda_remoto: null,
+  azienda_giorni_presenza: null,
+  azienda_numero_risorse: null,
+  azienda_figura_richiesta: null,
 }
 
 /** The card an admin wrote from Ada's signup (ORB-155): the person has yet to add the
@@ -81,8 +86,8 @@ const CARDLESS_ADMIN = {
 }
 
 /** A company contact with no freelancer card, and the referente's most recent
- *  request (REB-314): `ha_scheda` false, `ha_azienda` true, the project's own four
- *  fields answered. */
+ *  request (REB-314; REB-380 adds the last four fields): `ha_scheda` false,
+ *  `ha_azienda` true, the project's own seven answers filled in. */
 const COMPANY_ONLY = {
   ...PROFILE,
   id: 'c1',
@@ -90,6 +95,7 @@ const COMPANY_ONLY = {
   cognome: 'E.',
   email: 'wile@acme.it',
   linkedin_url: null,
+  telefono: '+39 345 1234567',
   ha_scheda: false,
   cv_filename: null,
   cv_size: null,
@@ -103,6 +109,10 @@ const COMPANY_ONLY = {
   periodo_da: '2026-10-01',
   durata: '3 mesi',
   budget_giornaliero: '500.00',
+  azienda_remoto: 'ibrido',
+  azienda_giorni_presenza: 3,
+  azienda_numero_risorse: 2,
+  azienda_figura_richiesta: 'Backend developer',
 }
 
 /** The same request, on a person who also has a freelancer card (REB-314): both
@@ -114,6 +124,10 @@ const BOTH = {
   periodo_da: COMPANY_ONLY.periodo_da,
   durata: COMPANY_ONLY.durata,
   budget_giornaliero: COMPANY_ONLY.budget_giornaliero,
+  azienda_remoto: COMPANY_ONLY.azienda_remoto,
+  azienda_giorni_presenza: COMPANY_ONLY.azienda_giorni_presenza,
+  azienda_numero_risorse: COMPANY_ONLY.azienda_numero_risorse,
+  azienda_figura_richiesta: COMPANY_ONLY.azienda_figura_richiesta,
 }
 
 function mount(path = '/me') {
@@ -256,6 +270,9 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
     ).toBeInTheDocument()
     expect(screen.getByText('dal 2026-10-01, 3 mesi')).toBeInTheDocument()
     expect(screen.getByText('500.00 € / giorno')).toBeInTheDocument()
+    expect(screen.getByText('Backend developer')).toBeInTheDocument()
+    expect(screen.getByText('Ibrido · 3 giorni in sede')).toBeInTheDocument()
+    expect(screen.getByText('2 persone')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Modifica richiesta/ })).toHaveAttribute(
       'href',
       '/me/edit-company',

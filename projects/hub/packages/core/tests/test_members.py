@@ -49,10 +49,13 @@ GOOD_COMPANY = {
     "periodo_da": date(2026, 10, 1),
     "durata": "3 mesi",
     "budget_giornaliero": Decimal("500"),
+    "remoto": "remoto",
+    "numero_risorse": 1,
+    "figura_richiesta": "Backend developer",
 }
 
 
-def test_company_update_accepts_only_the_four_project_answers() -> None:
+def test_company_update_accepts_only_the_eight_project_answers() -> None:
     update = CompanyUpdate(**GOOD_COMPANY)
     assert update.budget_giornaliero == Decimal("500") and update.durata == "3 mesi"
     with pytest.raises(ValidationError):
@@ -127,10 +130,12 @@ def _request_company(session: Session, email: str = "wile@acme.it", **extra: obj
         "referente_nome": "Wile",
         "referente_cognome": "E.",
         "email": email,
+        "telefono": "+39 345 1234567",
         **GOOD_COMPANY,
     }
     payload.update(extra)
-    return CompanyService(session).request(CompanyCreate(**payload)).id  # type: ignore[arg-type]
+    row, _ = CompanyService(session).request(CompanyCreate(**payload))  # type: ignore[arg-type]
+    return row.id
 
 
 def test_an_update_changes_the_row_and_leaves_one_comment_naming_what_moved(
@@ -247,13 +252,23 @@ def test_me_read_answers_the_identity_and_the_most_recent_company_together(
     members: MemberService, hub_session: Session
 ) -> None:
     """REB-314 decision: self-edit, and `me_read`, reach only the newest of a
-    company's several requests."""
+    company's several requests. REB-380: `telefono` and the four `azienda_`
+    fields come along too, off that same newest row."""
     _request_company(hub_session, durata="1 mese")
-    newest_id = _request_company(hub_session, durata="3 mesi")
+    newest_id = _request_company(
+        hub_session, durata="3 mesi", remoto="ibrido", giorni_presenza=3, numero_risorse=2
+    )
     user = UserService(hub_session).by_email("wile@acme.it")
     assert user is not None
     me = members.me_read(user.id)
     assert me.ha_azienda is True and me.durata == "3 mesi"
+    assert me.telefono == "+39 345 1234567"
+    assert (me.azienda_remoto, me.azienda_giorni_presenza, me.azienda_numero_risorse) == (
+        "ibrido",
+        3,
+        2,
+    )
+    assert me.azienda_figura_richiesta == "Backend developer"
     assert members.require_company(user.id).id == newest_id
 
     bare = UserService(hub_session).get_or_create("ivan@rebase.it", "Ivan", "Fiore")
@@ -264,7 +279,11 @@ def test_me_read_answers_the_identity_and_the_most_recent_company_together(
         bare_read.periodo_da,
         bare_read.durata,
         bare_read.budget_giornaliero,
-    ) == (None, None, None, None)
+        bare_read.azienda_remoto,
+        bare_read.azienda_giorni_presenza,
+        bare_read.azienda_numero_risorse,
+        bare_read.azienda_figura_richiesta,
+    ) == (None, None, None, None, None, None, None, None)
 
 
 def test_a_company_update_changes_the_most_recent_row_and_leaves_one_comment(

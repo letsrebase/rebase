@@ -119,32 +119,43 @@ export function toUpdate(value: FreelancerApplication): MemberUpdate {
   }
 }
 
-/** The most recent request in the wizard's own shape, so `COMPANY_FIELDS`' `progetto`/
- *  `periodo_da`/`budget_giornaliero` entries can render and validate it exactly as
- *  they do in `CompanyWizard`. The company's own identity (`nome_azienda`, the
- *  referente) is never part of self-edit (REB-314) and is left blank here -- those
- *  three fields never read it. Only meaningful when `ha_azienda` is true; the caller
- *  checks that first (`Area.tsx`, `ModificaAzienda.tsx`). */
+/** The most recent request in the wizard's own shape, so `COMPANY_FIELDS`' seven
+ *  editable entries can render and validate it exactly as they do in
+ *  `CompanyWizard` (REB-314; REB-380 adds `remoto`/`giorni_presenza`/
+ *  `numero_risorse`/`figura_richiesta`). The company's own identity (`nome_azienda`,
+ *  the referente, `telefono`) is never part of self-edit and is left blank here --
+ *  those fields never read it. Only meaningful when `ha_azienda` is true; the
+ *  caller checks that first (`Area.tsx`, `ModificaAzienda.tsx`). */
 export function toCompanyApplication(me: Me): CompanyRequest {
   return {
     nome_azienda: '',
+    figura_richiesta: me.azienda_figura_richiesta ?? '',
     referente_nome: '',
     referente_cognome: '',
     email: '',
+    telefono: '',
     progetto: me.progetto ?? '',
     periodo_da: me.periodo_da ?? '',
     durata: me.durata ?? '',
     budget_giornaliero: me.budget_giornaliero ?? '',
+    remoto: me.azienda_remoto ?? '',
+    giorni_presenza: me.azienda_giorni_presenza != null ? String(me.azienda_giorni_presenza) : '',
+    numero_risorse: me.azienda_numero_risorse != null ? String(me.azienda_numero_risorse) : '',
   }
 }
 
-/** What `PATCH /me/company` takes: the four project answers, trimmed the way the
- *  wizard trims before posting. */
+/** What `PATCH /me/company` takes: the eight project answers, trimmed the way the
+ *  wizard trims before posting; `giorni_presenza` blank means "not ibrido", the same
+ *  null-when-empty conversion `requestPeople` makes on the public wizard's side. */
 export function toCompanyUpdate(value: CompanyRequest): CompanyUpdate {
   return {
     progetto: value.progetto.trim(),
     periodo_da: value.periodo_da,
     durata: value.durata.trim(),
     budget_giornaliero: value.budget_giornaliero.replace(',', '.').trim(),
+    remoto: value.remoto as CompanyUpdate['remoto'],
+    giorni_presenza: value.giorni_presenza ? Number(value.giorni_presenza) : null,
+    numero_risorse: Number(value.numero_risorse),
+    figura_richiesta: value.figura_richiesta.trim(),
   }
 }

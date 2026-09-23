@@ -23,13 +23,18 @@ describe('the api client', () => {
     const failure = await requestPeople(
       {
         nome_azienda: 'ACME',
+        figura_richiesta: 'Backend developer',
         referente_nome: 'Wile',
         referente_cognome: 'E.',
         email: 'w@acme.it',
+        telefono: '+39 345 1234567',
         progetto: 'x',
         periodo_da: '2026-10-01',
         durata: '3 mesi',
         budget_giornaliero: '500',
+        remoto: 'remoto',
+        giorni_presenza: '',
+        numero_risorse: '1',
       },
       {},
     ).catch((error: unknown) => error)

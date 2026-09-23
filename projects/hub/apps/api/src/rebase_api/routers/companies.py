@@ -22,6 +22,11 @@ def request_people(
     tracker: TrackerDep,
 ) -> Ack:
     spend_one(request)
+    # `richiedente_esistente` (whether this address already had a request) is
+    # computed by the service and used internally (REB-355's audit trail could read
+    # it later), but never answered to this public, unauthenticated caller: doing so
+    # would let anyone probe an arbitrary email to learn whether it has submitted a
+    # request before (Greptile, PR #312).
     CompanyService(session).request(data)
     if tracker is not None:
         background.add_task(tracker.application, "azienda", data.distinct_id, utm=data.utm)

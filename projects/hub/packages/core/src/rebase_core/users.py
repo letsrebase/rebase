@@ -54,16 +54,39 @@ class UserService:
         return self.session.scalar(select(User).where(func.lower(User.email) == lowered))
 
     def get_or_create(
-        self, email: str, nome: str = "", cognome: str = "", linkedin_url: str | None = None
+        self,
+        email: str,
+        nome: str = "",
+        cognome: str = "",
+        linkedin_url: str | None = None,
+        telefono: str | None = None,
     ) -> User:
         """The `users` row for this address, made on the spot when none exists yet: one
         row per lowercased email, never two for a repeat application or request racing
-        itself, the same guard `Freelancer.apply` already keeps for its own table."""
+        itself, the same guard `Freelancer.apply` already keeps for its own table.
+        `nome`/`cognome`/`linkedin_url` are left exactly as they were found on a
+        repeat call, never overwritten by a later request's own answer. `telefono`
+        (REB-380) is different: a `users` row can predate it entirely (a freelancer
+        application never asked for one, and it did not exist before migration 0016),
+        so a still-`None` phone number is backfilled from whichever call first
+        supplies one -- "leave as found" here means "never overwrite a real answer,"
+        not "never touch a blank one." Left uncommitted on purpose: every caller of
+        this method commits its own row right after (`CompanyService.request`, the
+        only caller that ever passes a real `telefono`), so the backfill lands in the
+        same transaction as whatever the caller was doing, atomically -- committing it
+        here would persist the phone number even if the caller's own insert then
+        failed."""
         row = self.by_email(email)
         if row is not None:
+            if telefono is not None and row.telefono is None:
+                row.telefono = telefono
             return row
         row = User(
-            email=email.strip().lower(), nome=nome, cognome=cognome, linkedin_url=linkedin_url
+            email=email.strip().lower(),
+            nome=nome,
+            cognome=cognome,
+            linkedin_url=linkedin_url,
+            telefono=telefono,
         )
         self.session.add(row)
         try:

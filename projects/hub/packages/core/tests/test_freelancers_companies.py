@@ -188,16 +188,21 @@ def test_a_company_request_is_a_row_every_time(clean: Session) -> None:
         referente_nome="Wile",
         referente_cognome="E.",
         email="Wile@ACME.it",
+        telefono="+39 345 1234567",
+        figura_richiesta="Backend developer",
         progetto="Serve un backend developer\nper tre mesi, da settembre.",
         periodo_da=date(2026, 10, 1),
         durata="3 mesi",
         budget_giornaliero=Decimal("500"),
+        remoto="remoto",
+        numero_risorse=1,
     )
-    first = service.request(data)
-    second = service.request(data)
+    first, first_existed = service.request(data)
+    second, second_existed = service.request(data)
     assert first.id != second.id
     assert first.email == "wile@acme.it"
     assert "\n" in first.progetto
+    assert first_existed is False and second_existed is True
     assert service.list_recent().totale == 2
     moved = service.set_status(first.id, StatusChange(stato="in_corso", note="  "))
     assert (moved.stato, moved.note) == ("in_corso", None)
@@ -212,6 +217,10 @@ def test_a_company_request_is_a_row_every_time(clean: Session) -> None:
         {"progetto": "ok\x00"},
         {"budget_giornaliero": Decimal("-1")},
         {"nome_azienda": ""},
+        {"numero_risorse": 0},
+        {"figura_richiesta": ""},
+        {"remoto": "ibrido", "giorni_presenza": None},
+        {"remoto": "remoto", "giorni_presenza": 2},
     ],
 )
 def test_a_company_request_outside_the_form_is_refused(bad: dict[str, object]) -> None:
@@ -220,10 +229,14 @@ def test_a_company_request_outside_the_form_is_refused(bad: dict[str, object]) -
         "referente_nome": "Wile",
         "referente_cognome": "E.",
         "email": "wile@acme.it",
+        "telefono": "+39 345 1234567",
+        "figura_richiesta": "Backend developer",
         "progetto": "Un progetto",
         "periodo_da": date(2026, 10, 1),
         "durata": "3 mesi",
         "budget_giornaliero": Decimal("500"),
+        "remoto": "remoto",
+        "numero_risorse": 1,
     }
     payload.update(bad)
     with pytest.raises(ValidationError):

@@ -33,10 +33,14 @@ def _request(
         "referente_nome": "Wile",
         "referente_cognome": "Coyote",
         "email": email,
+        "telefono": "+39 345 1234567",
+        "figura_richiesta": "Backend developer",
         "progetto": "Serve un backend developer per tre mesi.",
         "periodo_da": date(2026, 10, 1),
         "durata": "3 mesi",
         "budget_giornaliero": Decimal("500"),
+        "remoto": "remoto",
+        "numero_risorse": 1,
     }
     payload.update(extra)
     return CompanyCreate(**payload)  # type: ignore[arg-type]
@@ -52,6 +56,18 @@ def test_search_hits_a_partial_surname_and_an_email_domain(clean: Session) -> No
 
     by_domain = service.list_recent(q="rossilab.it")
     assert [item.email for item in by_domain.items] == ["wile@rossilab.it"]
+
+
+def test_search_hits_the_role_the_request_names(clean: Session) -> None:
+    """REB-380: `figura_richiesta` is a searchable field on the row, like `progetto`,
+    not only a display column -- the model's own docstring says so, and the trigram
+    index migration 0016 creates would otherwise back nothing."""
+    service = CompanyService(clean)
+    service.request(_request("A Srl", "a@studio.it", figura_richiesta="Fractional CTO"))
+    service.request(_request("B Srl", "b@studio.it", figura_richiesta="Backend developer"))
+
+    by_role = service.list_recent(q="Fractional CTO")
+    assert [item.email for item in by_role.items] == ["a@studio.it"]
 
 
 def test_the_cursor_walks_every_row_once_with_no_dupes_or_gaps(clean: Session) -> None:

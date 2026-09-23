@@ -45,12 +45,17 @@ _IDENTITY_FIELDS = ("nome", "cognome", "linkedin_url")
 
 COMPANY_ENTITY = "company"
 # What the comment calls each field, in the admin's language, in the wizard's order
-# (REB-314): the four a company contact may change about their most recent request.
+# (REB-314; REB-380 adds the last four): the eight a company contact may change about
+# their most recent request.
 COMPANY_FIELD_LABELS: dict[str, str] = {
     "progetto": "progetto",
     "periodo_da": "data di inizio",
     "durata": "durata",
     "budget_giornaliero": "budget giornaliero",
+    "remoto": "modalità di lavoro",
+    "giorni_presenza": "giorni in sede",
+    "numero_risorse": "numero di persone richieste",
+    "figura_richiesta": "figura richiesta",
 }
 
 
@@ -143,6 +148,7 @@ class MemberService:
             cognome=user.cognome,
             email=user.email,
             linkedin_url=user.linkedin_url,
+            telefono=user.telefono,
             role=user.role,
             created_at=user.created_at,
             updated_at=user.updated_at,
@@ -158,6 +164,10 @@ class MemberService:
             periodo_da=company.periodo_da if company else None,
             durata=company.durata if company else None,
             budget_giornaliero=company.budget_giornaliero if company else None,
+            azienda_remoto=company.remoto if company else None,
+            azienda_giorni_presenza=company.giorni_presenza if company else None,
+            azienda_numero_risorse=company.numero_risorse if company else None,
+            azienda_figura_richiesta=company.figura_richiesta if company else None,
         )
 
     # ---- what another product may ask ------------------------------------------------
@@ -212,11 +222,12 @@ class MemberService:
         return _to_profile(row, user)
 
     def update_company(self, user_id: UUID, data: CompanyUpdate) -> MeRead:
-        """Applies the four project answers to the signed-in person's most recent
-        request (REB-314 decision: self-edit reaches only the newest) and leaves a
-        comment naming what moved, the same discipline `update` keeps for the
-        freelancer card. `stato`, `note`, `nome_azienda` and the referente's identity
-        are never touched here."""
+        """Applies the eight project answers (REB-314; REB-380 adds the last four) to
+        the signed-in person's most recent request (REB-314 decision: self-edit
+        reaches only the newest) and leaves a comment naming what moved, the same
+        discipline `update` keeps for the freelancer card. `stato`, `note`,
+        `nome_azienda`, `telefono` and the referente's identity are never touched
+        here."""
         row = self.require_company(user_id)
         user = self.session.get(User, user_id)
         assert user is not None

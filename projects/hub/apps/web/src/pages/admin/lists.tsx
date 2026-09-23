@@ -1245,10 +1245,19 @@ export function AdminCompanyDetail() {
       </Header>
       <div className="grid gap-6 p-6 lg:grid-cols-3">
         <dl className="space-y-3 text-sm lg:col-span-2">
-          <Row label="Referente">{c.referente} · <a className="underline underline-offset-2" href={`mailto:${c.email}`}>{c.email}</a></Row>
+          <Row label="Referente">
+            {c.referente} · <a className="underline underline-offset-2" href={`mailto:${c.email}`}>{c.email}</a>
+            {c.telefono ? ` · ${c.telefono}` : ''}
+          </Row>
+          <Row label="Figura richiesta">{c.figura_richiesta}</Row>
           <Row label="Progetto"><p className="whitespace-pre-wrap">{c.progetto}</p></Row>
           <Row label="Periodo">dal {formatDate(c.periodo_da)}, {c.durata}</Row>
           <Row label="Budget a giornata">{formatEuro(c.budget_giornaliero)}</Row>
+          <Row label="Modalità">
+            {REMOTO_LABELS[c.remoto]}
+            {c.giorni_presenza ? ` · ${c.giorni_presenza} giorni a settimana in sede` : ''}
+          </Row>
+          <Row label="Persone richieste">{c.numero_risorse}</Row>
           <Row label="Arrivata">{formatDate(c.created_at)}{c.utm_source ? ` · da ${c.utm_source}` : ''}{c.origine ? ` · pagina ${c.origine}` : ''}</Row>
         </dl>
         {c.deleted_at === null && (

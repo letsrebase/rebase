@@ -36,9 +36,12 @@ describe('the thank-you page', () => {
     )
   })
 
-  it('does not tell a company', async () => {
+  it('tells a company the area exists too (REB-380)', async () => {
     mount('azienda')
     await screen.findByRole('heading', { name: 'Grazie, ci siamo.' })
-    expect(screen.queryByRole('link', { name: /Entra nella tua area/ })).toBeNull()
+    expect(await screen.findByRole('link', { name: /Entra nella tua area/ })).toHaveAttribute(
+      'href',
+      '/login',
+    )
   })
 })

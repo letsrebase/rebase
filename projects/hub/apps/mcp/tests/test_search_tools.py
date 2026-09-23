@@ -87,16 +87,20 @@ def _company(
 ) -> str:
     session = factory()
     try:
-        row = CompanyService(session).request(
+        row, _ = CompanyService(session).request(
             CompanyCreate(
                 nome_azienda=azienda,
                 referente_nome="Wile",
                 referente_cognome="E.",
                 email=email,
+                telefono="+39 345 1234567",
+                figura_richiesta="Backend developer",
                 progetto=progetto,
                 periodo_da=date(2026, 10, 1),
                 durata="3 mesi",
                 budget_giornaliero=Decimal(budget),
+                remoto="remoto",
+                numero_risorse=1,
             )
         )
         return str(row.id)
