@@ -15,7 +15,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 
 import { api } from '@/lib/api'
 import { SpacePanel } from './SpacePanel'
-import { changesBetween } from './spaceChanges'
+import { changesBetween, draftFrom } from './spaceChanges'
 
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
 const PUT = api.PUT as unknown as ReturnType<typeof vi.fn>
@@ -74,6 +74,32 @@ describe('changesBetween', () => {
   })
 })
 
+describe('changesBetween, while the space borrows the platform client', () => {
+  const BORROWING = {
+    ...SETTINGS,
+    google_client_id: 'platform.apps',
+    google_client_secret_impostato: true,
+    google_app_unverified: true,
+    gmail_configurato: true,
+    google_client_condiviso: true,
+  }
+
+  it('declares Testing in the same save that brings a client of the space’s own', () => {
+    const draft = { ...draftFrom(BORROWING), google_client_id: 'own.apps', google_client_secret: 's' }
+    expect(draft.google_app_unverified).toBe(true)
+    expect(changesBetween(BORROWING, draft)).toEqual({
+      google_client_id: 'own.apps',
+      google_client_secret: 's',
+      google_app_unverified: true,
+    })
+  })
+
+  it('sends no Testing row for the borrowed client itself', () => {
+    const draft = { ...draftFrom(BORROWING), mcp_full_access: true }
+    expect(changesBetween(BORROWING, draft)).toEqual({ mcp_full_access: true })
+  })
+})
+
 describe('the space panel', () => {
   it('names the space, shows the redirect URIs and where each value comes from', async () => {
     renderPanel()
@@ -101,8 +127,14 @@ describe('the space panel', () => {
     // The space's own addresses stay, for whoever wants a client of their own.
     expect(screen.getByText('Solo per un client tuo: i redirect URI da registrare su Google')).toBeInTheDocument()
     expect(screen.getByText('https://pigro.example/studio/api/gmail/oauth/callback')).toBeInTheDocument()
-    // Whether the platform's client is verified is the platform's to say.
+    // Whether the platform's client is verified is the platform's to say, until the
+    // person brings a client of their own.
     expect(screen.queryByLabelText(/ancora in "Testing"/)).not.toBeInTheDocument()
+    const user = userEvent.setup()
+    const clientId = screen.getByLabelText('Client ID')
+    await user.clear(clientId)
+    await user.type(clientId, 'own.apps')
+    expect(screen.getByLabelText(/ancora in "Testing"/)).toBeChecked()
   })
 
   it('saves the changed keys and adopts the answer', async () => {

@@ -8,7 +8,13 @@ import { Checkbox } from '@rebase/ui/checkbox'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { api, toProblem, unwrap } from '@/lib/api'
-import { changesBetween, draftFrom, type Draft, type SpaceSettingsUpdate } from './spaceChanges'
+import {
+  changesBetween,
+  draftFrom,
+  switchingFromShared,
+  type Draft,
+  type SpaceSettingsUpdate,
+} from './spaceChanges'
 
 export const SPACE_SETTINGS_KEY = ['settings', 'space'] as const
 
@@ -124,9 +130,11 @@ export function SpacePanel() {
               onChange={(event) => set('google_client_secret', event.target.value)}
             />
           </div>
-          {/* The platform's client is the platform's to declare: a row here would be
-              ignored while the space borrows it (`apply_overrides`). */}
-          {!settings.google_client_condiviso && (
+          {/* The platform's client is the platform's to declare, and a row here would be
+              ignored while the space borrows it (`apply_overrides`). Typing a client id
+              of the space's own brings the switch back, so the new client is declared in
+              the same save that brings it. */}
+          {(!settings.google_client_condiviso || switchingFromShared(settings, draft)) && (
             <div className="flex items-center gap-2">
               <Checkbox
                 id="google_app_unverified"
