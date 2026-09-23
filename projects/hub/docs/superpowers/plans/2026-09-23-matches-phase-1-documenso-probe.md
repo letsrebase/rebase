@@ -253,14 +253,14 @@ Expected: page, x, y in points for each signature blank. Convert to Documenso pe
 ### Task 5: Write the note and open the milestone's draft PR
 
 **Files:**
-- Create: `projects/hub/docs/superpowers/specs/2026-09-24-documenso-probe.md`
+- Create: `projects/hub/docs/superpowers/specs/2026-09-23-documenso-probe.md`
 
 - [ ] **Step 1: Write the note.** Sections: the pinned tag; the environment variables that were required (names only); account, team and token creation (and any licence prompt); each API call that worked (method, path, request shape, the response fields the hub will read), for create, distribute, status, download, cancel; the webhook (events offered, header, payload keys, retries observed); the signer's journey; the sealed PDF (`pdfsig` output summary, audit page); the per-team isolation; the Typst position query and the conversion; and a closing list **What phase 3 and 4 must do differently from the spec**, empty if nothing. No secret, no token, no signing URL token.
 
 - [ ] **Step 2: Commit on the milestone branch.**
 
 ```bash
-git add projects/hub/docs/superpowers/specs/2026-09-24-documenso-probe.md
+git add projects/hub/docs/superpowers/specs/2026-09-23-documenso-probe.md
 git commit -m "docs(hub): what a self-hosted Documenso answered to the probe" -m "<why, what was confirmed, what differs from the spec>" -m "REB-N."
 git log -1 --format=%B | grep -ci co-authored   # must print 0
 git push origin HEAD:<milestone branch>
