@@ -125,6 +125,11 @@ _VIETATE: dict[Method, str] = {
         "del titolare, come `sync` e `backfill`; a differenza loro l'installazione puo' "
         "aprirla con `mcp_full_access`"
     ),
+    ("GmailSyncService", "suggest_customers"): (
+        "propone come clienti i domini della posta inviata dal titolare (REB-223): "
+        "interroga Gmail a carico della sua quota e del suo consenso come `discover`, e "
+        "come lei l'installazione puo' aprirla con `mcp_full_access`"
+    ),
     ("GmailAttachmentService", "attachment_text"): (
         "scarica da Gmail l'allegato che la sincronizzazione non salva mai, a carico "
         "della quota e del consenso del titolare, e ne restituisce il testo senza "
@@ -552,6 +557,12 @@ _BYTE: dict[Method, str] = {
 #    survive being asked why, and the only way to keep that true is to delete the ones
 #    that do not the moment the tool is written.
 _COPERTE_O_UMANE: dict[Method, str] = {
+    ("CustomerService", "create_from_suggestions"): (
+        "crea insieme, in una transazione, i clienti spuntati nella lista delle proposte "
+        "Gmail della Home e di Clienti (REB-223): un agente crea gli stessi clienti e le "
+        "stesse persone con `create_customer` e `create_person`, e il confine della "
+        "transazione e' quello della lista di caselle, che un agente non ha"
+    ),
     ("DigestService", "build"): (
         "compone il resoconto settimanale che `pigrocrm digest` manda per mail il lunedi' "
         "(REB-221): ogni numero che contiene e' gia' un tool o una resource (i tre "

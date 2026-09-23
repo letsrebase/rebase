@@ -183,6 +183,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/customers/from-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create From Suggestions */
+        post: operations["create_from_suggestions_api_customers_from_suggestions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/customers/{customer_id}": {
         parameters: {
             query?: never;
@@ -2246,6 +2263,23 @@ export interface paths {
         put?: never;
         /** Run Backfill */
         post: operations["run_backfill_api_gmail_backfill_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/gmail/customer-suggestions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Suggest Customers */
+        get: operations["suggest_customers_api_gmail_customer_suggestions_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4451,6 +4485,19 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * CustomerFromSuggestion
+         * @description One ticked proposal: the domain it was proposed for, the company name as the
+         *     person corrected it, and the people to create under it.
+         */
+        CustomerFromSuggestion: {
+            /** Dominio */
+            dominio: string;
+            /** Ragione Sociale */
+            ragione_sociale: string;
+            /** Persone */
+            persone?: components["schemas"]["PersonFromSuggestion"][];
+        };
         /** CustomerPage */
         CustomerPage: {
             /** Items */
@@ -4554,6 +4601,15 @@ export interface components {
             custom_fields?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /**
+         * CustomersFromSuggestions
+         * @description What `POST /api/customers/from-suggestions` takes: the proposals a person ticked,
+         *     created together or not at all.
+         */
+        CustomersFromSuggestions: {
+            /** Clienti */
+            clienti: components["schemas"]["CustomerFromSuggestion"][];
         };
         /**
          * DayDealHours
@@ -6994,6 +7050,19 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * PersonFromSuggestion
+         * @description Somebody a customer proposal named, ticked for import (REB-223).
+         */
+        PersonFromSuggestion: {
+            /** Indirizzo */
+            indirizzo: string;
+            /**
+             * Nome
+             * @default
+             */
+            nome: string;
+        };
         /** PersonPage */
         PersonPage: {
             /** Items */
@@ -7811,6 +7880,37 @@ export interface components {
             gmail_backfill_days?: number | null;
             /** Concentrazione Soglia Preferita */
             concentrazione_soglia_preferita?: number | null;
+        };
+        /**
+         * SuggestedCustomer
+         * @description One domain the connected mailbox has corresponded with, proposed as a customer
+         *     (spec 2026-09-16 §5, REB-223). A proposal, not a record: nothing is written until a
+         *     person ticks it and `POST /api/customers/from-suggestions` creates it.
+         */
+        SuggestedCustomer: {
+            /** Dominio */
+            dominio: string;
+            /** Nome */
+            nome: string;
+            /** Conversazioni */
+            conversazioni: number;
+            /** Ultimo Messaggio */
+            ultimo_messaggio: string | null;
+            /** Persone */
+            persone: components["schemas"]["SuggestedPerson"][];
+        };
+        /**
+         * SuggestedPerson
+         * @description Somebody at a proposed customer's domain who took part in a conversation with
+         *     the connected mailbox.
+         */
+        SuggestedPerson: {
+            /** Indirizzo */
+            indirizzo: string;
+            /** Nome */
+            nome: string;
+            /** Gia In Anagrafica */
+            gia_in_anagrafica: boolean;
         };
         /**
          * SyncReport
@@ -9820,6 +9920,127 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CustomerRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_from_suggestions_api_customers_from_suggestions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomersFromSuggestions"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerRead"][];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -26938,6 +27159,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SyncReport"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_customers_api_gmail_customer_suggestions_get: {
+        parameters: {
+            query?: {
+                mesi?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SuggestedCustomer"][];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

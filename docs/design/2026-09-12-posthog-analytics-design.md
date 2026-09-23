@@ -105,6 +105,7 @@ never mentions analytics and an action counts only when the API said yes.
 | `POST /api/tenants/` | `spazio_creato` |
 | `POST /api/auth/entra` | `entrato_con_link` |
 | `POST /api/customers` | `cliente_creato` |
+| `POST /api/customers/from-suggestions` (the Gmail proposals ticked, REB-223) | `clienti_importati` |
 | `POST /api/deals` | `deal_creato` |
 | `POST /api/documents` | `documento_creato` |
 | `POST /api/documents/from-template` | `documento_creato` |
@@ -117,7 +118,9 @@ The exact path of the last row is read from `api-types.ts` when the card is
 implemented; the table is the contract. «Primo cliente» and «attivato entro sette
 giorni» (spec `projects/pigrocrm/docs/superpowers/specs/2026-09-12-onboarding-product-led-design.md`
 §4) are funnels PostHog computes from these events and the `spazio_creato` timestamp;
-the code does not decide what «first» means.
+the code does not decide what «first» means. Since REB-223 a space's first customers can
+arrive in one batch from the Gmail proposals, which earns one `clienti_importati` and no
+`cliente_creato`: a «primo cliente» funnel counts either event.
 
 ## The hub (ORB-185)
 

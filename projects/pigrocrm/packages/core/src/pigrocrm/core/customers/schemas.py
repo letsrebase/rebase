@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
@@ -183,3 +183,41 @@ class CustomerListQuery(BaseModel):
 class CustomerPage(BaseModel):
     items: list[CustomerRead]
     next_cursor: str | None
+
+
+class PersonFromSuggestion(BaseModel):
+    """Somebody a customer proposal named, ticked for import (REB-223)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    indirizzo: SafeStr = Field(max_length=EMAIL_MAX_LENGTH)
+    # The display name the mail headers gave, or "" when they gave none.
+    nome: SafeStr = Field(default="", max_length=RAGIONE_SOCIALE_MAX_LENGTH)
+
+
+class CustomerFromSuggestion(BaseModel):
+    """One ticked proposal: the domain it was proposed for, the company name as the
+    person corrected it, and the people to create under it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dominio: SafeStr = Field(max_length=SITO_WEB_MAX_LENGTH)
+    ragione_sociale: SafeStr = Field(max_length=RAGIONE_SOCIALE_MAX_LENGTH)
+    persone: list[PersonFromSuggestion] = Field(default_factory=list, max_length=50)
+
+    @field_validator("ragione_sociale")
+    @classmethod
+    def _named(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("serve il nome dell'azienda")
+        return stripped
+
+
+class CustomersFromSuggestions(BaseModel):
+    """What `POST /api/customers/from-suggestions` takes: the proposals a person ticked,
+    created together or not at all."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    clienti: list[CustomerFromSuggestion] = Field(min_length=1, max_length=50)

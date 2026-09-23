@@ -1,15 +1,18 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Building2, Plus, Search } from 'lucide-react'
+import { Building2, Mail, Plus, Search } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { DataTable } from '@/components/DataTable'
 import { FilterRow } from '@/components/FilterRow'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@rebase/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@rebase/ui/dialog'
 import { Input } from '@rebase/ui/input'
 import { CustomerForm } from '@/features/customers/CustomerForm'
 import { buildCustomerColumns } from '@/features/customers/columns'
 import { useCreateCustomer, useCustomers } from '@/features/customers/queries'
+import { useGmailHealth } from '@/features/gmail/queries'
+import { SuggestedCustomers } from '@/features/gmail/SuggestedCustomers'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCanWrite } from '@/lib/auth'
 import { useEntitySchema } from '@/lib/schema'
@@ -24,6 +27,9 @@ export function CustomersPage({ initialSearch }: { initialSearch: string }) {
   const [search, setSearch] = useState(initialSearch)
   const [open, setOpen] = useState(false)
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
+  const [proposing, setProposing] = useState(false)
+  // A connected mailbox whose consent still holds: the only one that can propose.
+  const mailbox = useGmailHealth().data?.account?.status === 'active'
 
   const schema = useEntitySchema('customer')
   const customers = useCustomers({ search: search || undefined })
@@ -42,15 +48,23 @@ export function CustomersPage({ initialSearch }: { initialSearch: string }) {
         title="Clienti"
         actions={
           canWrite && (
-            <Button
-              onClick={() => {
-                setProblem(null)
-                setOpen(true)
-              }}
-            >
-              <Plus className="mr-2 size-4" />
-              Nuovo cliente
-            </Button>
+            <>
+              {mailbox ? (
+                <Button variant="outline" onClick={() => setProposing(true)}>
+                  <Mail className="mr-2 size-4" />
+                  Proponi dalla casella
+                </Button>
+              ) : null}
+              <Button
+                onClick={() => {
+                  setProblem(null)
+                  setOpen(true)
+                }}
+              >
+                <Plus className="mr-2 size-4" />
+                Nuovo cliente
+              </Button>
+            </>
           )
         }
       >
@@ -83,6 +97,18 @@ export function CustomersPage({ initialSearch }: { initialSearch: string }) {
           emptyMessage="Nessun cliente. Creane uno per iniziare."
         />
       </div>
+
+      {/* The Gmail proposals (REB-223), for whoever connects the mailbox after the space
+          already has work in it and so never sees the Home's door. Mounted only while
+          open: each read asks Gmail about a year of sent mail. */}
+      <Dialog open={proposing} onOpenChange={setProposing}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Proponi dalla casella</DialogTitle>
+          </DialogHeader>
+          {proposing ? <SuggestedCustomers onImported={() => setProposing(false)} /> : null}
+        </DialogContent>
+      </Dialog>
 
       <CustomerForm
         title="Nuovo cliente"

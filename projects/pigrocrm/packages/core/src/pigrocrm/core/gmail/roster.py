@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.gmail.query import customer_domain, is_provider_domain
 from pigrocrm.core.people.models import Person
 
 
@@ -53,6 +54,40 @@ class AddressRoster:
         # a row saved with "" instead of NULL is not an address, and an empty clause in
         # the Gmail `q` would match on nothing while still costing length budget.
         return tuple(sorted(address for address in rows if address))
+
+    def customer_domains(self) -> frozenset[str]:
+        """The domains the CRM already files under a customer: each live customer's own
+        (its website's and its non-webmail email's) and the address domain
+        of each live person attached to a live customer. What a customer proposal
+        (REB-223) must not offer again, and what an import of one refuses to duplicate.
+        Webmail domains never appear: they name nobody in particular."""
+        customers = self.session.execute(
+            select(Customer.sito_web, Customer.email).where(Customer.deleted_at.is_(None))
+        ).all()
+        # Both of them: a customer whose website is acme.com and whose email is at
+        # acme.it is at both, and proposing the other one would make a second Acme.
+        domains: set[str] = set()
+        for sito_web, email in customers:
+            for domain in (
+                customer_domain(sito_web=sito_web, email=None),
+                customer_domain(sito_web=None, email=email),
+            ):
+                if domain is not None:
+                    domains.add(domain)
+        people = self.session.execute(
+            select(Person.email)
+            .join(Customer, Customer.id == Person.customer_id)
+            .where(
+                Person.email.is_not(None),
+                Person.deleted_at.is_(None),
+                Customer.deleted_at.is_(None),
+            )
+        ).scalars()
+        for email in people:
+            domain = (email or "").strip().lower().rpartition("@")[2]
+            if domain and not is_provider_domain(domain):
+                domains.add(domain)
+        return frozenset(domains)
 
     def resolve(self, address: str) -> tuple[EntityRef, ...]:
         """Every entity one address touches: the person, that person's customer, the

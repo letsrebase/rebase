@@ -83,6 +83,9 @@ AGENT_FORBIDDEN_ACTIONS: frozenset[str] = frozenset(
         # owner's quota under the owner's consent, exactly as a backfill does, and the
         # same switch says whether this installation wants its agent able to do that.
         "discover_gmail_correspondents",
+        # The customers the connected mailbox proposes (REB-223): the same question as
+        # discovery asked of a year of sent mail, so the same quota and the same switch.
+        "suggest_customers_from_gmail",
         # Leggere il testo di un allegato di una mail archiviata. La sincronizzazione
         # non salva mai i byte di un allegato (spec 5.4), quindi questa operazione va a
         # prenderli da Google al momento: spende la quota del titolare sotto il suo

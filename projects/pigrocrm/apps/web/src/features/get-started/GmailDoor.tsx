@@ -15,8 +15,8 @@
  *   while the space is empty (`routers/gmail.py::_back`).
  * - **Connected, consent lapsed** (`expired`, `revoked`): the server's own sentence and
  *   the same anchor to give it again.
- * - **Connected**: «Casella collegata: i tuoi clienti arrivano tra poco», the line the
- *   spec keeps until REB-223's proposals replace it.
+ * - **Connected**: the mailbox, and under it the customers it proposes, to tick and
+ *   import (`SuggestedCustomers`, REB-223).
  *
  * Connecting is `require_write` in the service, and a mailbox is its owner's own
  * (`account_for_user`), so a readonly person reads why there is no button rather than
@@ -29,6 +29,7 @@ import { Button } from '@rebase/ui/button'
 import { useAuth, useCanWrite } from '@/lib/auth'
 import { messaggioEsito } from '@/features/gmail/esito'
 import { GMAIL_OAUTH_START, useGmailHealth } from '@/features/gmail/queries'
+import { SuggestedCustomers } from '@/features/gmail/SuggestedCustomers'
 
 export function GmailDoor({ esito }: { esito?: string }) {
   const messaggio = messaggioEsito(esito)
@@ -93,9 +94,12 @@ function DoorState() {
   const account = data.account
   if (account && account.status === 'active') {
     return (
-      <div className="space-y-1 text-sm">
-        <p className="font-medium">Casella collegata: i tuoi clienti arrivano tra poco</p>
-        <p className="text-muted-foreground">{account.email_address}</p>
+      <div className="space-y-3">
+        <div className="space-y-1 text-sm">
+          <p className="font-medium">Casella collegata</p>
+          <p className="text-muted-foreground">{account.email_address}</p>
+        </div>
+        {canWrite ? <SuggestedCustomers /> : null}
       </div>
     )
   }

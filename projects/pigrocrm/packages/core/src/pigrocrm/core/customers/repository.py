@@ -1,16 +1,32 @@
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import CUSTOMER_SORTS, CustomerListQuery
 from pigrocrm.core.db import Base, decode_cursor, escape_like, keyset_predicate, order_by
 
+# `pg_advisory_xact_lock(int, int)`: a namespace of this project's own, as
+# `gmail/repository.py` does for the sync, and one key per serialized operation.
+CUSTOMERS_LOCK_NAMESPACE = 0x7092
+_IMPORT_LOCK_KEY = 1
+
 
 class CustomerRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def lock_imports(self) -> None:
+        """Holds, until this transaction ends, the one lock every import of Gmail
+        proposals takes (`CustomerService.create_from_suggestions`, REB-223). Two
+        imports of the same proposal at once, a double click or two tabs, then run one
+        after the other, and the second reads the customers the first committed and
+        refuses the domain instead of creating it twice."""
+        self.session.execute(
+            text("SELECT pg_advisory_xact_lock(:ns, :key)"),
+            {"ns": CUSTOMERS_LOCK_NAMESPACE, "key": _IMPORT_LOCK_KEY},
+        )
 
     def get(self, customer_id: UUID, *, include_deleted: bool = False) -> Customer | None:
         customer = self.session.get(Customer, customer_id)
