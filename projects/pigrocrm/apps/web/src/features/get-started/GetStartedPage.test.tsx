@@ -172,12 +172,18 @@ describe('the Gmail door', () => {
     )
   })
 
-  it('shows a connected mailbox with the line that stands until REB-223', async () => {
-    answers({ '/api/gmail/account': { ...GMAIL_READY, account: ACCOUNT } })
+  it('shows a connected mailbox with the customers it proposes under it (REB-223)', async () => {
+    answers({
+      '/api/gmail/account': { ...GMAIL_READY, account: ACCOUNT },
+      '/api/gmail/customer-suggestions': [
+        { dominio: 'acme.it', nome: 'Acme', conversazioni: 3, ultimo_messaggio: null, persone: [] },
+      ],
+    })
     renderPage()
     const door = within(await screen.findByRole('region', { name: 'Collega Gmail' }))
-    expect(await door.findByText('Casella collegata: i tuoi clienti arrivano tra poco')).toBeInTheDocument()
+    expect(await door.findByText('Casella collegata')).toBeInTheDocument()
     expect(door.getByText('ada@studio.it')).toBeInTheDocument()
+    expect(await door.findByRole('list', { name: 'Clienti proposti dalla casella' })).toBeInTheDocument()
     expect(door.queryByRole('link', { name: /Collega Gmail/ })).toBeNull()
   })
 

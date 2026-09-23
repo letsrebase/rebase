@@ -367,3 +367,51 @@ async def test_a_filename_that_is_not_there_is_guidance_not_a_dump(
     message = result.content[0].text
     assert ALLEGATO in message
     assert "errors.pydantic.dev" not in message
+
+
+# --- the customer proposals, the same door (REB-223) -------------------------------------
+
+SUGGEST = "suggest_customers_from_gmail"
+
+
+@pytest.mark.parametrize(
+    ("full_access", "gmail", "present"),
+    [(False, False, False), (True, False, False), (False, True, False), (True, True, True)],
+)
+async def test_the_proposals_exist_only_behind_both_switches(
+    mcp_session: Session, tmp_path: Path, full_access: bool, gmail: bool, present: bool
+) -> None:
+    server = build_server(
+        lambda: mcp_session,
+        lambda: Actor(id=None, type="mcp", role="admin", full_access=full_access),
+        LocalFileStorage(tmp_path),
+        settings=_settings(full_access=full_access, gmail=gmail),
+    )
+    names = {tool.name for tool in await server.list_tools()}
+    assert (SUGGEST in names) is present
+
+
+async def test_the_proposals_take_a_period_and_no_free_text(open_server: Any) -> None:
+    async with Client(open_server) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+    properties = (tools[SUGGEST].input_schema or {}).get("properties", {})
+    assert set(properties) == {"mesi"}
+
+
+async def test_the_proposals_answer_the_domains_the_owner_wrote_to_and_store_nothing(
+    open_server: Any, mcp_session: Session, connected_account: GoogleAccount, fake_gmail: FakeGmail
+) -> None:
+    fake_gmail.messages["m1"] = _mail(
+        1, frm=MAILBOX, to="Marco Bianchi <marco@acme.it>", thread="t1"
+    )
+    fake_gmail.messages["m2"] = _mail(2, frm="news@newsletter.com", to=MAILBOX, thread="t2")
+
+    async with Client(open_server) as client:
+        result = await client.call_tool(SUGGEST, {})
+
+    payload = _payload(result)
+    proposals = payload["result"] if isinstance(payload, dict) else payload
+    assert [proposal["dominio"] for proposal in proposals] == ["acme.it"]
+    assert proposals[0]["persone"][0]["nome"] == "Marco Bianchi"
+    assert mcp_session.execute(select(func.count()).select_from(GmailMessage)).scalar_one() == 0
+    assert mcp_session.execute(select(func.count()).select_from(Customer)).scalar_one() == 0

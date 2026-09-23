@@ -10,6 +10,7 @@ from pigrocrm.core.customers.schemas import (
     CustomerListQuery,
     CustomerPage,
     CustomerRead,
+    CustomersFromSuggestions,
     CustomerUpdate,
 )
 from pigrocrm.core.customers.service import CustomerService
@@ -25,6 +26,18 @@ router = APIRouter(prefix="/api/customers", tags=["customers"], responses=PROBLE
 @router.post("", response_model=CustomerRead, status_code=status.HTTP_201_CREATED)
 def create(data: CustomerCreate, session: SessionDep, actor: ActorDep) -> CustomerRead:
     return CustomerService(session).create(data, actor)
+
+
+# The customers a person ticked among the Gmail proposals (REB-223), created with their
+# people in one transaction. Its own path rather than a list body on `POST ""`: the
+# analytics table counts it as `clienti_importati`, not as one `cliente_creato`.
+@router.post(
+    "/from-suggestions", response_model=list[CustomerRead], status_code=status.HTTP_201_CREATED
+)
+def create_from_suggestions(
+    data: CustomersFromSuggestions, session: SessionDep, actor: ActorDep
+) -> list[CustomerRead]:
+    return CustomerService(session).create_from_suggestions(data, actor)
 
 
 @router.get("", response_model=CustomerPage)

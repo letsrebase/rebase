@@ -159,7 +159,11 @@ class PersonService:
             for person in people
         ]
 
-    def create(self, data: PersonCreate, actor: Actor) -> PersonRead:
+    def _insert(self, data: PersonCreate, actor: Actor) -> Person:
+        """The write half of `create`, without the commit: the row flushed and its
+        "created" activity recorded on `self.session`, the commit left to a caller that
+        writes more in the same transaction (`CustomerService.create_from_suggestions`,
+        REB-223), the shape `CustomerService._insert` already has."""
         actor.require_write("create_person")
         payload = data.model_dump()
         _check_email(payload)
@@ -168,6 +172,10 @@ class PersonService:
 
         person = self.repo.add(Person(**payload))
         self.activities.record(ENTITY, person.id, "created", actor, {"nome": person.nome})
+        return person
+
+    def create(self, data: PersonCreate, actor: Actor) -> PersonRead:
+        person = self._insert(data, actor)
         self.session.commit()
         return self._read(person)
 

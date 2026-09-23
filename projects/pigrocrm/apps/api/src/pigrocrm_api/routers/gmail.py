@@ -50,9 +50,10 @@ from pigrocrm.core.gmail.schemas import (
     GmailMessageRead,
     GmailSettingsUpdate,
     GoogleAccountRead,
+    SuggestedCustomer,
     SyncReport,
 )
-from pigrocrm.core.gmail.sync import GmailSyncService
+from pigrocrm.core.gmail.sync import SUGGEST_MAX_MONTHS, GmailSyncService
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
@@ -107,6 +108,7 @@ _token_clients_lock = threading.Lock()
 # rather than spelled here in a way that evades the scan.
 _MESSAGES_PATH = "/messages"
 _ACCOUNT_PATH = "/account"
+_SUGGESTIONS_PATH = "/customer-suggestions"
 _CALLBACK_ROUTE = "/oauth/callback"
 _CALLBACK_PATH = f"{router.prefix}{_CALLBACK_ROUTE}"
 
@@ -255,6 +257,19 @@ def run_backfill(
     return _sync(session, settings).backfill(
         payload.entity_type, payload.entity_id, full=payload.full, actor=actor
     )
+
+
+# The customers the connected mailbox proposes (spec 2026-09-16 §5, REB-223). It asks
+# Gmail, so it answers 409 without a Google client or a mailbox, like `/sync`. No search
+# string: the only parameter is how many months back, bounded by the service.
+@router.get(_SUGGESTIONS_PATH, response_model=list[SuggestedCustomer])
+def suggest_customers(
+    session: SessionDep,
+    actor: ActorDep,
+    settings: SettingsDep,
+    mesi: Annotated[int, Query(ge=1, le=SUGGEST_MAX_MONTHS)] = 12,
+) -> list[SuggestedCustomer]:
+    return _sync(session, settings).suggest_customers(actor=actor, mesi=mesi)
 
 
 @router.get(_MESSAGES_PATH, response_model=list[GmailMessageRead])

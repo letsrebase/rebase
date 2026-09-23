@@ -143,6 +143,36 @@ WEBMAIL_DOMAINS: frozenset[str] = frozenset(
 )
 
 
+# Where the mail of certified email (PEC) providers comes from. A PEC address names its
+# provider, not the company that holds it, so it proposes nobody (REB-223).
+PEC_PROVIDER_DOMAINS: frozenset[str] = frozenset(
+    {
+        "pec.it",
+        "legalmail.it",
+        "arubapec.it",
+        "pec.aruba.it",
+        "postecert.it",
+        "cert.legalmail.it",
+        "pec.libero.it",
+        "sicurezzapostale.it",
+        "casellapec.com",
+    }
+)
+
+
+def is_provider_domain(domain: str) -> bool:
+    """A domain that names a mail provider rather than an organisation: the webmails
+    above, the PEC providers, and any `pec.` subdomain, which is how a company's own
+    certified mailbox is usually hosted. An address there says nothing about which
+    customer the person works for."""
+    normalised = domain.strip().lower()
+    return (
+        normalised in WEBMAIL_DOMAINS
+        or normalised in PEC_PROVIDER_DOMAINS
+        or normalised.startswith("pec.")
+    )
+
+
 def _checked_domain(domain: str) -> str:
     normalised = domain.strip().lower()
     if not _SAFE_DOMAIN.fullmatch(normalised):
@@ -295,9 +325,50 @@ def attachment_get_url(message_id: str, attachment_id: str) -> str:
 GMAIL_SEND_URL = f"{GMAIL_API_ROOT}/messages/send"
 
 
+def sent_since_query(mailbox: str, *, after_epoch: int) -> str:
+    """The mail the connected mailbox itself sent since `after_epoch`: what the customer
+    proposals read (spec 2026-09-16 §5, REB-223).
+
+    The one listing besides discovery that is not built from the roster, and it keeps
+    the rule this module exists for: its only address clause names an address, the
+    mailbox's own, so `messages_list_url` accepts it like any other. Sent mail and not
+    the whole mailbox on purpose: somebody the owner has written to is a relationship,
+    while what merely arrives (newsletters, receipts, cold outreach) is the noise spec 4
+    keeps out. The threads found this way are read as headers only
+    (`thread_metadata_url`) and stored nowhere.
+    """
+    if after_epoch < 1:
+        raise ValidationFailed(
+            "gmail_query", "after_epoch", "le proposte leggono un periodo, non tutta la casella"
+        )
+    # `-in:draft`: a draft is from the mailbox too, and nobody has been written to yet.
+    return f"from:{_checked(mailbox)} -in:draft after:{after_epoch}"
+
+
+# The headers a proposal needs: who wrote and who was written to.
+METADATA_HEADERS: tuple[str, ...] = ("From", "To", "Cc")
+# What of each message comes back at all. `format=metadata` alone still carries the
+# thread's and each message's `snippet`, the first lines of the body, and the labels:
+# the partial response keeps the id, the date and the headers asked for, and nothing of
+# what anybody wrote leaves Google for a proposal.
+METADATA_FIELDS = "messages(id,internalDate,payload/headers)"
+
+
+def thread_metadata_url(thread_id: str) -> str:
+    """A thread as its headers only: the participants and the dates, for the customer
+    proposals. `thread_get_url` is the whole thread, for the sync that stores it."""
+    params = [
+        ("format", "metadata"),
+        *(("metadataHeaders", name) for name in METADATA_HEADERS),
+        ("fields", METADATA_FIELDS),
+    ]
+    return f"{GMAIL_API_ROOT}/threads/{_checked_id(thread_id)}?{urlencode(params)}"
+
+
 def rfc822msgid_query(message_id_header: str) -> str:
-    """Finds one exact message by the `Message-ID` we generated ourselves. This is the
-    one query in the slice that is not built from the address roster, and it is allowed
+    """Finds one exact message by the `Message-ID` we generated ourselves. One of the
+    few queries not built from the address roster (with discovery's domain clause and
+    the proposals' own mailbox, `sent_since_query`), and it is allowed
     because it is *more* specific, not less: it names a single message, and one we
     created. Used only by the send reconciliation of spec 6.3."""
     stripped = message_id_header.strip().strip("<>")

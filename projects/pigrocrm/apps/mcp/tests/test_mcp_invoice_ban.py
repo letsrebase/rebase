@@ -103,6 +103,9 @@ FORBIDDEN = (
     # this list rather than on `FORBIDDEN_GMAIL` because, unlike those two, the
     # installation *can* opt in: the same switch that hands an agent the fiscal acts.
     "discover_gmail_correspondents",
+    # The customers the connected mailbox proposes (REB-223): discovery's question over a
+    # year of sent mail, so the same quota, the same consent and the same switch.
+    "suggest_customers_from_gmail",
     # Nemmeno questa e' fiscale: il testo di un allegato di una mail archiviata. Di un
     # allegato il CRM conserva nome, tipo e peso e mai i byte (spec 5.4), quindi lo
     # strumento va a prenderlo da Google al momento -- quota e consenso del titolare,
@@ -181,6 +184,7 @@ REST_ONLY_FORBIDDEN = frozenset(
 FORBIDDEN_NEEDING_GMAIL = frozenset(
     {
         "discover_gmail_correspondents",
+        "suggest_customers_from_gmail",
         "read_gmail_attachment",
         "list_drive_files",
         "read_drive_file",
@@ -209,6 +213,9 @@ FORBIDDEN_SERVICE_CALLS = (
     "bind_time_to_invoice",
     "get_fiscal_estimate",
     "discover",
+    # `GmailSyncService.suggest_customers`, behind `suggest_customers_from_gmail`
+    # (REB-223): the same family as `discover`.
+    "suggest_customers",
     # `GmailAttachmentService.attachment_text`: scarica da Gmail, al momento, il file che
     # la sincronizzazione non ha mai salvato (spec 5.4 conserva nome, tipo e peso e
     # nient'altro). Stessa famiglia di `discover` -- quota e consenso del titolare, byte

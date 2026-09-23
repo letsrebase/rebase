@@ -12,16 +12,22 @@ from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.customers.schemas import (
     CUSTOMER_SORTS,
     CustomerCreate,
+    CustomerFromSuggestion,
     CustomerListQuery,
     CustomerPage,
     CustomerRead,
+    CustomersFromSuggestions,
     CustomerUpdate,
 )
 from pigrocrm.core.db import encode_cursor
-from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
+from pigrocrm.core.gmail.query import customer_domain
+from pigrocrm.core.gmail.roster import AddressRoster
+from pigrocrm.core.people.schemas import COGNOME_MAX_LENGTH, NOME_MAX_LENGTH, PersonCreate
+from pigrocrm.core.people.service import PersonService
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
 # Typed as the fields module's own EntityType (not a bare `str`) so that passing it
@@ -77,6 +83,22 @@ def _check_fiscal(data: dict[str, Any], nazione: str) -> None:
         raise ValidationFailed(
             ENTITY, "codice_sdi", "deve essere di 7 caratteri", expected="7 caratteri"
         )
+
+
+def _person_name(display: str, address: str) -> tuple[str, str | None]:
+    """First name and surname from a mail header's display name, or from the address
+    when the headers gave none: «Marco Bianchi» and «Bianchi, Marco» are both Marco
+    Bianchi, and `marco.bianchi@` is too. A single word is a first name alone."""
+    name = display.strip().strip('"').strip()
+    if "," in name:
+        surname, _, first = name.partition(",")
+        name = f"{first.strip()} {surname.strip()}".strip()
+    if not name or "@" in name:
+        local = address.partition("@")[0]
+        name = " ".join(word.capitalize() for word in re.split(r"[._\-]+", local) if word)
+    first, _, rest = (name or address).partition(" ")
+    # Clipped to what a Person holds: a header can carry a name longer than the column.
+    return first[:NOME_MAX_LENGTH], rest.strip()[:COGNOME_MAX_LENGTH] or None
 
 
 class CustomerService:
@@ -184,6 +206,84 @@ class CustomerService:
         customer = self._insert(data, actor)
         self.session.commit()
         return CustomerRead.model_validate(customer)
+
+    def create_from_suggestions(
+        self, data: CustomersFromSuggestions, actor: Actor
+    ) -> list[CustomerRead]:
+        """The customers a person ticked among the proposals of the connected mailbox
+        (`GmailSyncService.suggest_customers`, spec 2026-09-16 §5, REB-223), with their
+        people, in one transaction: all of them or none.
+
+        Each customer is created as «Nuovo cliente» creates one (`_insert`, its own
+        "created" activity), with the proposal's domain as its website, which is what
+        discovery and the backfill read a customer's domain from. Each person is created
+        as the Persone page creates one, attached to it. A domain the CRM already files
+        under a customer is refused rather than duplicated, so a second click on the same
+        proposal cannot make a second Acme; a person whose address is already in the
+        address book is left where it is. Only addresses at the proposal's own domain are
+        accepted. The batch is not checked against a fresh proposal read, which would
+        spend the owner's quota again; it grants nothing «Nuovo cliente» and the Persone
+        page do not already grant the same person.
+        """
+        actor.require_write("create_customer")
+        # Before anything is read: a concurrent import of the same proposal waits here
+        # and then sees what this one committed (`lock_imports`).
+        self.repo.lock_imports()
+        roster = AddressRoster(self.session)
+        taken = set(roster.customer_domains())
+        known = set(roster.known_addresses())
+        # Everything is checked before anything is written, so a refusal names the
+        # first thing wrong and leaves the session as it found it.
+        plan: list[tuple[str, CustomerFromSuggestion, list[tuple[str, str]]]] = []
+        for choice in data.clienti:
+            domain = customer_domain(sito_web=choice.dominio, email=None)
+            if domain is None or domain != choice.dominio.strip().lower():
+                raise ValidationFailed(
+                    ENTITY,
+                    "dominio",
+                    f"{choice.dominio} non è il dominio di un'azienda",
+                    expected="dominio.tld, non una webmail",
+                )
+            if domain in taken:
+                raise Conflict(ENTITY, f"{domain} è già un cliente", dominio=domain)
+            taken.add(domain)
+            people: list[tuple[str, str]] = []
+            for person in choice.persone:
+                address = person.indirizzo.strip().lower()
+                if not address.endswith(f"@{domain}"):
+                    raise ValidationFailed(
+                        ENTITY,
+                        "persone",
+                        f"{address} non è un indirizzo di {domain}",
+                        expected=f"nome@{domain}",
+                    )
+                if address not in known:
+                    known.add(address)
+                    people.append((address, person.nome))
+            plan.append((domain, choice, people))
+
+        persons = PersonService(self.session)
+        created: list[Customer] = []
+        try:
+            for domain, choice, people in plan:
+                customer = self._insert(
+                    CustomerCreate(ragione_sociale=choice.ragione_sociale, sito_web=domain), actor
+                )
+                for address, display in people:
+                    nome, cognome = _person_name(display, address)
+                    persons._insert(
+                        PersonCreate(
+                            nome=nome, cognome=cognome, email=address, customer_id=customer.id
+                        ),
+                        actor,
+                    )
+                created.append(customer)
+        except DomainError:
+            # A custom field the space made required, say: nothing of this import stays.
+            self.session.rollback()
+            raise
+        self.session.commit()
+        return [CustomerRead.model_validate(customer) for customer in created]
 
     def update(self, customer_id: UUID, data: CustomerUpdate, actor: Actor) -> CustomerRead:
         actor.require_write("update_customer")

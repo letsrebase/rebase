@@ -8,10 +8,13 @@ made slice 2's PDF render synchronous.
 
 Three properties this module exists to hold:
 
-* **Every listing carries an address filter.** Not by convention: the queries come from
-  `build_list_queries`, which is fed the roster and nothing else, and the URL can only
-  be built by `messages_list_url`, which refuses a `q` without an address clause. An
-  empty roster therefore issues no request at all -- not one unfiltered request.
+* **Every listing carries an address filter.** Not by convention: the cycle's queries
+  come from `build_list_queries`, which is fed the roster and nothing else, and the URL
+  can only be built by `messages_list_url`, which refuses a `q` without an address
+  clause. An empty roster therefore issues no request at all -- not one unfiltered
+  request. Discovery (a customer's domain) and the customer proposals (the mailbox's
+  own sent mail, `sent_since_query`) are the two listings built from something else,
+  and both still name an address.
 * **A conversation is stored whole.** The listing finds *which* threads are relevant;
   the thread endpoint then supplies all of their messages, including the ones from
   people the CRM has never heard of. A thread read halfway is worse than one not read:
@@ -28,8 +31,12 @@ Nothing here logs, and no message body, subject or address is put into an except
 failure carries the counters and Google's own status, which is all a caller can act on.
 """
 
-from dataclasses import dataclass
+import re
+import time
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -42,15 +49,18 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.account import GoogleAccountService
 from pigrocrm.core.gmail.crypto import unseal
-from pigrocrm.core.gmail.errors import CredentialRevoked
+from pigrocrm.core.gmail.errors import CredentialRevoked, GmailUnavailable, GoogleCallFailed
 from pigrocrm.core.gmail.models import GmailMessage, GoogleAccount
 from pigrocrm.core.gmail.parse import ParsedMessage, parse_message
 from pigrocrm.core.gmail.query import (
     build_list_queries,
     customer_domain,
     discovery_query,
+    is_provider_domain,
     messages_list_url,
+    sent_since_query,
     thread_get_url,
+    thread_metadata_url,
 )
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.roster import AddressRoster, EntityRef
@@ -58,6 +68,8 @@ from pigrocrm.core.gmail.schemas import (
     SCOPE_READONLY,
     DiscoveredCorrespondent,
     DiscoveryReport,
+    SuggestedCustomer,
+    SuggestedPerson,
     SyncReport,
 )
 from pigrocrm.core.gmail.send import reconcile_only
@@ -77,6 +89,35 @@ _DISCOVER_ACTION = "discover_gmail_correspondents"
 _WHAT_LIST = "elenco dei messaggi"
 _WHAT_THREAD = "lettura di una conversazione"
 
+# The customer proposals (spec 2026-09-16 §5, REB-223). The action is also the name
+# `AGENT_FORBIDDEN_ACTIONS` lists, for the reason `discover` is there: it spends the
+# owner's Gmail quota under the owner's consent.
+_SUGGEST_ACTION = "suggest_customers_from_gmail"
+SUGGEST_MAX_MONTHS = 24
+# How many of the most recent conversations one proposal reads, each one Gmail call for
+# its headers. A year of a freelancer's sent mail is a few hundred threads, and the
+# proposals are read while somebody waits on the Home, so the most recent ones stand
+# for the period; a customer who wrote once, long ago, is not the one to import first.
+SUGGEST_MAX_THREADS = 200
+# Header reads in flight at once. This bounds concurrency, not rate: Gmail allows a user
+# 250 quota units a second and a `threads.get` costs 10, and two reads of about a tenth
+# of a second each stay near 200. `GmailTransport` retries a 429 with backoff anyway.
+_SUGGEST_FETCH_WORKERS = 2
+# How long the header reads may take before the proposals answer with what they have.
+# Under the 60 seconds nginx gives an `/api` request, with the listing's own time and
+# the answer on top: a slow Gmail gives a shorter list, not a 504 while the reads go on.
+SUGGEST_READ_BUDGET_SECONDS = 35.0
+# Gmail's own ceiling for one page of `messages.list`: fewer pages for a long year.
+_SUGGEST_PAGE_SIZE = 500
+SUGGEST_MAX_CUSTOMERS = 50
+# Addresses that answer for a system, not a person: nobody to put on a customer.
+_ROBOT_LOCAL_PART = re.compile(
+    r"^(?:no-?reply|do-?not-?reply|mailer-daemon|postmaster|bounces?|notifications?)(?:[+.\-].*)?$"
+)
+# Second-level labels that come before the organisation's own in a country domain
+# (`acme.co.uk`), so the proposed name is the organisation's and not "Co".
+_SECOND_LEVEL_LABELS = frozenset({"co", "com", "org", "net", "gov", "ac", "edu"})
+
 
 @dataclass
 class _Correspondent:
@@ -85,6 +126,36 @@ class _Correspondent:
     count: int = 0
     last: datetime | None = None
     name: str = ""
+
+
+@dataclass
+class _ProposedDomain:
+    """A running tally for one domain while the proposals read threads."""
+
+    threads: set[str] = field(default_factory=set)
+    last: datetime | None = None
+    people: dict[str, str] = field(default_factory=dict)
+
+
+def participants(parsed: ParsedMessage) -> list[str]:
+    """Everybody a message names, each once, in header order: the sender, then To and
+    Cc. What both discovery and the proposals tally, so the two cannot disagree on who
+    took part in a conversation."""
+    return list(dict.fromkeys([parsed.from_address, *parsed.to_addresses, *parsed.cc_addresses]))
+
+
+def company_name_from_domain(domain: str) -> str:
+    """A first guess at the company behind a domain, for a person to correct:
+    `studio-rossi.it` is «Studio Rossi», `acme.co.uk` is «Acme»."""
+    labels = [label for label in domain.lower().split(".") if label]
+    if len(labels) >= 3 and labels[-2] in _SECOND_LEVEL_LABELS:
+        core = labels[-3]
+    elif len(labels) >= 2:
+        core = labels[-2]
+    else:
+        core = labels[0] if labels else domain
+    words = [word for word in re.split(r"[-_]+", core) if word]
+    return " ".join(word[:1].upper() + word[1:] for word in words) or domain
 
 
 class GmailSyncService:
@@ -353,8 +424,7 @@ class GmailSyncService:
                 # what discovery is for.
                 parsed = parse_message(raw, body_max_bytes=0, store_bodies=False)
                 report.messages_seen += 1
-                participants = [parsed.from_address, *parsed.to_addresses, *parsed.cc_addresses]
-                for address in dict.fromkeys(participants):
+                for address in participants(parsed):
                     if not address.endswith(suffix) or address == mailbox:
                         continue
                     entry = tally.setdefault(address, _Correspondent())
@@ -376,7 +446,170 @@ class GmailSyncService:
         ]
         return report
 
+    def suggest_customers(self, *, actor: Actor, mesi: int = 12) -> list[SuggestedCustomer]:
+        """The organisations the connected mailbox has corresponded with over the last
+        `mesi` months, proposed as customers (spec 2026-09-16 §5, REB-223).
+
+        Read from the mail the owner sent (`sent_since_query`): each conversation the
+        owner wrote in, as its headers only, and every address it names grouped by
+        domain, with the number of conversations, the last message and the people seen.
+        Left out: the mailbox's own domain, mail providers and PEC domains
+        (`is_provider_domain`), addresses that answer for a system, and domains the CRM
+        already files under a customer (`AddressRoster.customer_domains`). The busiest
+        come first, at most `SUGGEST_MAX_CUSTOMERS`.
+
+        Stores nothing and moves no watermark, like `discover`: a proposal becomes a
+        customer only through `CustomerService.create_from_suggestions`, and the mirror
+        widens only when those people are in the address book.
+        """
+        require_gmail_configured(self.settings)
+        actor.require_write(_SUGGEST_ACTION)
+        if not 1 <= mesi <= SUGGEST_MAX_MONTHS:
+            raise ValidationFailed(
+                "gmail_suggestions",
+                "mesi",
+                f"le proposte leggono da 1 a {SUGGEST_MAX_MONTHS} mesi di posta",
+                expected=f"1-{SUGGEST_MAX_MONTHS}",
+            )
+        account = self._account(actor)
+        self.accounts.usable(actor, scope=SCOPE_READONLY, feature="i clienti proposti")
+        mailbox = account.email_address.strip().lower()
+        own_domain = mailbox.rpartition("@")[2]
+        since = datetime.now(UTC) - timedelta(days=round(mesi * 365 / 12))
+        token = self._access_token(account)
+
+        try:
+            thread_ids = self._sent_threads(mailbox, since, token)
+            payloads = self._read_headers(thread_ids, token)
+        except GoogleCallFailed as failed:
+            # Gmail failing after every retry is the person's to retry, not a server
+            # error: the same `GmailUnavailable` a failed token refresh answers.
+            raise GmailUnavailable(
+                "la lettura della posta inviata", failed.failure.status
+            ) from failed
+
+        skip = self.roster.customer_domains() | {own_domain}
+        tally: dict[str, _ProposedDomain] = {}
+        for thread_id, payload in payloads:
+            for raw in payload.get("messages") or []:
+                if not isinstance(raw, dict):
+                    continue
+                parsed = parse_message(raw, body_max_bytes=0, store_bodies=False)
+                for address in participants(parsed):
+                    local, _, domain = address.rpartition("@")
+                    if (
+                        not local
+                        or address == mailbox
+                        or domain in skip
+                        or is_provider_domain(domain)
+                        or _ROBOT_LOCAL_PART.match(local)
+                    ):
+                        continue
+                    entry = tally.setdefault(domain, _ProposedDomain())
+                    entry.threads.add(thread_id)
+                    if entry.last is None or parsed.internal_date > entry.last:
+                        entry.last = parsed.internal_date
+                    name = parsed.display_names.get(address, "")
+                    if not entry.people.get(address):
+                        entry.people[address] = name
+
+        known = set(self.roster.known_addresses())
+        proposals = [
+            SuggestedCustomer(
+                dominio=domain,
+                nome=company_name_from_domain(domain),
+                conversazioni=len(entry.threads),
+                ultimo_messaggio=entry.last,
+                persone=[
+                    SuggestedPerson(
+                        indirizzo=address, nome=name, gia_in_anagrafica=address in known
+                    )
+                    for address, name in sorted(entry.people.items())
+                ],
+            )
+            for domain, entry in tally.items()
+        ]
+        proposals.sort(
+            key=lambda proposal: (
+                -proposal.conversazioni,
+                -(proposal.ultimo_messaggio.timestamp() if proposal.ultimo_messaggio else 0),
+                proposal.dominio,
+            )
+        )
+        return proposals[:SUGGEST_MAX_CUSTOMERS]
+
     # ---- internals ---------------------------------------------------------------
+
+    def _sent_threads(self, mailbox: str, since: datetime, token: str) -> list[str]:
+        """The conversations the mailbox wrote in since `since`, newest first as Gmail
+        lists them, each once, at most `SUGGEST_MAX_THREADS`: the listing stops paging
+        as soon as that many are known."""
+        query = sent_since_query(mailbox, after_epoch=max(1, int(since.timestamp())))
+        thread_ids: list[str] = []
+        seen: set[str] = set()
+        page_token: str | None = None
+        while True:
+            payload = self.transport.json(
+                "GET",
+                messages_list_url(query, page_token=page_token, max_results=_SUGGEST_PAGE_SIZE),
+                token=token,
+                what=_WHAT_LIST,
+            )
+            for entry in payload.get("messages") or []:
+                thread_id = str(entry.get("threadId") or "") if isinstance(entry, dict) else ""
+                if thread_id and thread_id not in seen:
+                    seen.add(thread_id)
+                    thread_ids.append(thread_id)
+                    if len(thread_ids) >= SUGGEST_MAX_THREADS:
+                        return thread_ids
+            next_token = payload.get("nextPageToken")
+            # The same guard as `_list_all`: only a *new* page token advances the loop.
+            page_token = str(next_token) if next_token and str(next_token) != page_token else None
+            if page_token is None:
+                return thread_ids
+
+    def _read_headers(self, thread_ids: list[str], token: str) -> list[tuple[str, dict[str, Any]]]:
+        """Each conversation's headers, in the listing's order, two reads at a time.
+
+        Every read that finished within `SUGGEST_READ_BUDGET_SECONDS` is used, whatever
+        its place in the listing; the reads still queued at the budget are cancelled. A
+        conversation deleted between the listing and its read (404) is skipped; any
+        other failure cancels what is queued and is raised. A read already on the wire
+        cannot be recalled, so at most `_SUGGEST_FETCH_WORKERS` of them finish after the
+        answer, each within the transport's own timeout. The worker threads touch the
+        transport only, never the session."""
+        deadline = time.monotonic() + SUGGEST_READ_BUDGET_SECONDS
+        pool = ThreadPoolExecutor(max_workers=_SUGGEST_FETCH_WORKERS)
+        futures = [
+            (thread_id, pool.submit(self._thread_headers, thread_id, token))
+            for thread_id in thread_ids
+        ]
+        pending = {future for _, future in futures}
+        try:
+            while pending:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                done, pending = wait(pending, timeout=remaining, return_when=FIRST_EXCEPTION)
+                for future in done:
+                    failure = future.exception()
+                    if failure is None:
+                        continue
+                    if isinstance(failure, GoogleCallFailed) and failure.failure.status == 404:
+                        continue
+                    raise failure
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+        return [
+            (thread_id, future.result())
+            for thread_id, future in futures
+            if future.done() and not future.cancelled() and future.exception() is None
+        ]
+
+    def _thread_headers(self, thread_id: str, token: str) -> dict[str, Any]:
+        return self.transport.json(
+            "GET", thread_metadata_url(thread_id), token=token, what=_WHAT_THREAD
+        )
 
     def _backfill_epoch(self, *, full: bool) -> int:
         """`after:` for a backfill. `0` is the beginning of the mailbox, which
