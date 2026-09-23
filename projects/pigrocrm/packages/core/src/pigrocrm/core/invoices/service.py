@@ -45,6 +45,7 @@ from pigrocrm.core.invoices.fatturapa import (
     check_recipient_routing,
     normalise_fiscal_id,
 )
+from pigrocrm.core.invoices.import_review import ReviewedInvoiceRead, review_content
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine, InvoiceRegisterGap
 from pigrocrm.core.invoices.naming import (
     invoice_storage_prefix,
@@ -98,6 +99,7 @@ ENTITY: EntityType = "invoice"
 ZERO = Decimal("0.00")
 IMPORT_ACTION = "import_issued_invoice"
 GAPS_ACTION = "declare_invoice_register_gaps"
+REVIEW_ACTION = "review_invoice_import"
 # How many undeclared numbers `issue`'s refusal spells out. The whole list always stays
 # in `details["numeri"]`, machine-readable; the *sentence* is read by a person, and a
 # register whose lowest imported number is high can leave hundreds of them.
@@ -1055,6 +1057,32 @@ class InvoiceService:
         # snapshot, so a crash between the two leaves an invoice that is fiscally
         # complete and merely unprinted.
         return self._read(target)
+
+    def review_import(
+        self, document_ids: Sequence[UUID], actor: Actor
+    ) -> list[ReviewedInvoiceRead]:
+        """Read-only review of one or more already-archived documents (REB-365,
+        design record §4, §7 item 3): for each `document_id`, reads the document's
+        own stored bytes back -- never a caller-supplied copy -- and reports one
+        row per invoice they parse into, tagged `ready`, `needs_customer_
+        confirmation`, `already_present`, `conflict`, `incoming_skipped`, or
+        `unclaimed`. **No database write of any kind**: `review_content` only
+        reads, and this method never calls `self.session.commit()`.
+
+        Reviewing the same document twice runs the same reads against the same
+        rows and returns the same verdict every time (the issue's own "Done
+        when"): nothing here is a lock, a counter or a flush, so there is nothing
+        for a second call to have changed.
+        """
+        actor.require_admin(REVIEW_ACTION)
+        emitter = self.emitter.repo.get()
+        if emitter is None:
+            raise NotFound("emitter_profile", "singleton")
+        rows: list[ReviewedInvoiceRead] = []
+        for document_id in document_ids:
+            content, _content_type, _filename = self.documents.download(document_id, None, actor)
+            rows.extend(review_content(self.session, content, emitter, document_id))
+        return rows
 
     def import_issued(self, data: InvoiceImport, actor: Actor) -> InvoiceRead:
         """Register a fattura that another system issued (slice 9 §3).

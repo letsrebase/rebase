@@ -96,6 +96,11 @@ AGENT_FORBIDDEN_ACTIONS: frozenset[str] = frozenset(
         # says about the past, which is the property every other entry here protects.
         "import_issued_invoice",
         "declare_invoice_register_gaps",
+        # REB-365: reads a structured document's own stored bytes back, parsed and
+        # unwritten -- no register write of its own, but it exposes exactly the same
+        # incoming-supplier and register-conflict facts the two writes above guard,
+        # ahead of a human's own confirm step, so it is gated the same way.
+        "review_invoice_import",
         # Slice 9 §4.2: reading the titolare's Google Drive, and copying a file from it
         # into the CRM. Not irreversible -- nothing on Drive changes, and an imported
         # document can be deleted -- but on this list for the reason

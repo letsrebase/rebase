@@ -174,6 +174,31 @@ def register(
 
     @mcp.tool()
     @guard
+    def review_invoice_import(document_ids: list[str]) -> dict[str, Any]:
+        """Legge uno o piu' documenti gia' archiviati -- **mai i byte**, solo il loro
+        `document_id`, come ogni altro strumento di questa superficie -- e per ciascuno
+        prova ogni formato riconosciuto (oggi solo FatturaPA FPR12): se nessuno lo
+        riconosce la riga e' `unclaimed`. Altrimenti classifica ogni fattura che il
+        documento contiene confrontando il fornitore con il profilo emittente di questo
+        spazio e il numero/anno dichiarati con il registro: `incoming_skipped` (una
+        fattura di un fornitore: PigroCRM non ha ancora un posto dove scriverla),
+        `already_present` (stesso numero, stesso hash: e' quella che c'e' gia'),
+        `conflict` (stesso numero ma un hash diverso, o nessun hash registrato con cui
+        confrontare), oppure -- se e' un'uscita nuova -- `ready` quando il cliente
+        combacia per P.IVA o codice fiscale con uno gia' schedato, altrimenti `needs_
+        customer_confirmation`.
+
+        **Nessuna scrittura, di nessun tipo.** Rivedere lo stesso file due volte non
+        cambia mai lo stato del database e restituisce sempre lo stesso verdetto: quello
+        che scrive nel registro e' `confirm_invoice_import`, non ancora su questa
+        superficie.
+        """
+        service = InvoiceService(context.session, context.storage)
+        righe = service.review_import([UUID(d) for d in document_ids], context.actor)
+        return {"righe": [riga.model_dump(mode="json") for riga in righe]}
+
+    @mcp.tool()
+    @guard
     def import_issued_invoice(dati: dict[str, Any]) -> dict[str, Any]:
         """Registra una fattura **gia' emessa da un sistema esterno** -- il gestionale
         precedente -- con il suo numero e la sua data: il contatore dell'anno sale fino a
