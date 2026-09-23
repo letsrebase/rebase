@@ -173,7 +173,10 @@ def test_confirming_a_fresh_invoice_produces_exactly_what_import_issued_would_by
     assert fattura.imposta == Decimal("0.00")
     assert fattura.bollo == Decimal("2.00")
     assert fattura.totale == Decimal("1000.00")
-    assert fattura.importata_da == "esterno"
+    # REB-368: `confirm_import` passes `importata_da="fatturapa"` to `import_issued`
+    # as its own keyword-only override -- never through `InvoiceImport` itself, which
+    # stays fixed to `"esterno"` so a hand-declare caller can never claim otherwise.
+    assert fattura.importata_da == "fatturapa"
     assert fattura.stato_pagamento == "da_incassare"
     lines = service.repo.lines(fattura.id)
     assert [

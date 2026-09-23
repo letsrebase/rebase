@@ -1250,6 +1250,7 @@ class InvoiceService:
                     actor,
                     xml_document_id=document_id if single_invoice_document else None,
                     xml_hash_sha256=digest if single_invoice_document else None,
+                    importata_da="fatturapa",
                 )
             except (Conflict, ValidationFailed):
                 # `import_issued` itself already rolled back on the paths that flushed
@@ -1283,6 +1284,7 @@ class InvoiceService:
         *,
         xml_document_id: UUID | None = None,
         xml_hash_sha256: str | None = None,
+        importata_da: str | None = None,
     ) -> InvoiceRead:
         """Register a fattura that another system issued (slice 9 §3).
 
@@ -1326,9 +1328,24 @@ class InvoiceService:
         hand, already stored under `xml_document_id`, so pointing the row at that
         same `document_id` instead of archiving a second copy is additive, never
         a change to what a hand-declared import (`xml_document_id` staying
-        `None`) already guarantees. No `CHECK` constraint ties either column to
-        `importata_da` (confirmed by reading `models.py`), so this is safe to set
-        alongside `importata_da == "esterno"`, unchanged.
+        `None`) already guarantees.
+
+        **`importata_da`, also gated by the caller, and for the same reason
+        (design §5 item 4/§7 item 6).** `None` (the default) means "use `data`'s
+        own declared value" -- `InvoiceImport.importata_da` is fixed to
+        `Literal["esterno"]`, so a hand-declared import always writes exactly
+        that. `InvoiceService.confirm_import` is the one caller that ever
+        passes `"fatturapa"` here, deliberately *not* through `data` itself:
+        `InvoiceImport` is also the schema `POST /api/invoices/import` and
+        `import_issued_invoice` deserialise straight from caller-supplied
+        JSON, and letting a caller declare `"fatturapa"` there would be an
+        unbacked claim -- nothing on that door ever supplies or checks an
+        `xml_document_id`. Keeping `importata_da` a keyword-only override here,
+        exactly like `xml_document_id`/`xml_hash_sha256`, is what makes
+        `"fatturapa"` reachable only from a caller that has actually parsed a
+        document. No `CHECK` constraint ties any of the three to each other
+        (confirmed by reading `models.py`), so this is additive, never a change
+        to what a hand-declared import already guarantees.
         """
         actor.require_admin(IMPORT_ACTION)
         self._check_owner(data.customer_id, data.deal_id)
@@ -1447,7 +1464,7 @@ class InvoiceService:
                 data_incasso=data.data_incasso,
                 trasmessa_esternamente_il=data.trasmessa_esternamente_il,
                 note_interne=data.note_interne,
-                importata_da=data.importata_da,
+                importata_da=importata_da if importata_da is not None else data.importata_da,
                 xml_document_id=xml_document_id,
                 xml_hash_sha256=xml_hash_sha256,
                 snapshot=snapshot.model_dump(mode="json"),
@@ -2261,6 +2278,17 @@ class InvoiceService:
         export compares and does not rewrite. Until then the column is `NULL` and the
         export is freely repeatable, which is exactly what makes the out-of-transaction
         render of spec 3 harmless.
+
+        A `"fatturapa"` row with a stored `xml_document_id` (design 2026-09-23 §5 item
+        4/§7 item 6: a single-invoice source, never a `lotto` batch -- design §5 item 3)
+        has the original transmitted file already on record, so this hands that file
+        back instead of refusing: `_serve_stored_xml` re-hashes the stored bytes
+        against `invoice.xml_hash_sha256` and only ever returns an artefact pointing at
+        the existing document/version, never a reconstruction `FatturaPAExporter` would
+        produce. Every other imported row -- an `"esterno"` row, always, and a
+        `"fatturapa"` batch row, which never gets an `xml_document_id` (design §5 item
+        3) -- keeps refusing exactly as before: there is no original file on record for
+        either to serve.
         """
         actor.require_write("export_invoice_xml")
         invoice = self._require(invoice_id)
@@ -2278,6 +2306,8 @@ class InvoiceService:
                 stato=invoice.stato,
             )
         if invoice.importata_da is not None:
+            if invoice.importata_da == "fatturapa" and invoice.xml_document_id is not None:
+                return self._serve_stored_xml(invoice)
             raise Conflict(
                 ENTITY,
                 "fattura importata: l'XML e' quello gia' trasmesso allo SdI dal sistema "
@@ -2311,6 +2341,59 @@ class InvoiceService:
             invoice.xml_hash_sha256 = artifact.hash_sha256
         self.session.commit()
         return artifact
+
+    def _serve_stored_xml(self, invoice: Invoice) -> InvoiceArtifact:
+        """The original FatturaPA file a `"fatturapa"` single-invoice import already
+        stored, served back rather than regenerated (design 2026-09-23 §5 item 4/§7
+        item 6): the CRM never produced this XML, so there is no `FatturaPAExporter`
+        call and no `expected_hash`-divergence-means-repair branch to offer, unlike
+        `_store_artifact` -- either the stored bytes still hash to what the register
+        recorded when the row was confirmed, or this refuses rather than handing back
+        a file it cannot vouch for.
+        """
+        document_id = invoice.xml_document_id
+        if document_id is None:  # pragma: no cover - `export_xml` only calls this when set
+            raise NotFound("invoice_artifact", f"{invoice.id}#xml")
+        document = self.documents.repo.get(document_id)
+        version = (
+            self.documents.repo.version(document.id, document.versione_corrente)
+            if document is not None and document.versione_corrente
+            else None
+        )
+        if document is None or version is None:
+            raise NotFound("invoice_artifact", f"{invoice.id}#xml")
+        # `confirm_import` always pairs `xml_document_id` with `xml_hash_sha256` --
+        # both set for a single-invoice source, both `NULL` for a batch one -- so a
+        # `"fatturapa"` row reaching here with one but not the other is a state no
+        # caller in this codebase produces. Refusing rather than serving unverified
+        # bytes keeps "hash-verified" true regardless of a future caller's mistake,
+        # instead of resting on that pairing as an unenforced convention.
+        if invoice.xml_hash_sha256 is None:
+            raise Conflict(
+                ENTITY,
+                "manca l'hash registrato all'importazione: non si serve un file che "
+                "non si puo' verificare",
+                anno=invoice.anno,
+                numero=invoice.numero,
+            )
+        digest = hashlib.sha256(self.storage.get(version.storage_key)).hexdigest()
+        if digest != invoice.xml_hash_sha256:
+            raise Conflict(
+                ENTITY,
+                "il file XML archiviato non coincide piu' con l'hash registrato "
+                "all'importazione: una divergenza da segnalare, non un file da servire",
+                atteso=invoice.xml_hash_sha256,
+                ottenuto=digest,
+                campo="xml_hash_sha256",
+            )
+        return InvoiceArtifact(
+            kind="xml",
+            document_id=document.id,
+            version_numero=version.numero,
+            filename=self._xml_filename(self._for_export(invoice)),
+            content_type=version.content_type,
+            hash_sha256=digest,
+        )
 
     def produce_artifacts(self, invoice_id: UUID, actor: Actor) -> list[InvoiceArtifact]:
         """Render the PDF, and for an issued invoice the XML too.

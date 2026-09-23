@@ -391,7 +391,14 @@ class InvoiceImport(BaseModel):
     # `"esterno"` and not the name of the tool the invoice came out of: the CRM's whole
     # interest in the field is "this document was issued somewhere else, so there is no
     # XML and no PDF of ours" -- and the value is read back by the API and printed by the
-    # web client, which makes a product name here product copy.
+    # web client, which makes a product name here product copy. Fixed to this one value,
+    # on purpose (design 2026-09-23 §5 item 4): this schema is what a *caller* declares
+    # through the hand-declare door (`POST /api/invoices/import`, `import_issued_invoice`),
+    # and a caller-supplied `"fatturapa"` here would be an unbacked claim -- nothing on
+    # this door ever supplies or checks an `xml_document_id`. `InvoiceService.import_issued`
+    # takes `importata_da` as its own keyword-only parameter, alongside `xml_document_id`/
+    # `xml_hash_sha256`, precisely so `"fatturapa"` can only ever reach a row through
+    # `InvoiceService.confirm_import` -- the one caller that has actually parsed a document.
     importata_da: Literal["esterno"] = "esterno"
 
 

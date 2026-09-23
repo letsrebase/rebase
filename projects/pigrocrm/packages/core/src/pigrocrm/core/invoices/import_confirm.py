@@ -23,13 +23,20 @@ guarantee against divergence between the hand-declared and the newly-parsed
 path, since both run the same register rules at the same call, and against a
 customer committed with no invoice, since both writes share one commit.
 
-**`importata_da` stays `"esterno"`, on purpose.** Widening the column's
-`Literal` to a second value is design §5 item 4/§7 item 6, a later, unsigned-off
-follow-up -- not this issue's. Nothing in the schema ties `importata_da` to the
-nullness of `xml_document_id`/`xml_hash_sha256` (design §5 item 3, confirmed by
-reading `models.py`), so a `"esterno"` row carrying a hash-verified
-`xml_document_id` is additive, not a migration of the existing path's own
-guarantees.
+**`importata_da` is `"fatturapa"`, never `"esterno"`, and never through
+`InvoiceImport` itself.** This issue's own follow-up to REB-366 (design §5
+item 4/§7 item 6) needed a way to write `"fatturapa"` without also letting a
+*caller* of the hand-declare door (`POST /api/invoices/import`,
+`import_issued_invoice`) claim it: `InvoiceImport.importata_da` stays fixed to
+`Literal["esterno"]`, and `InvoiceService.import_issued` instead takes
+`importata_da` as its own keyword-only parameter -- exactly the shape
+`xml_document_id`/`xml_hash_sha256` already use, and for the identical reason.
+`InvoiceService.confirm_import` is the one caller that ever passes
+`importata_da="fatturapa"`, because it is the one caller that has actually
+parsed a document: a document this CRM parsed itself is a materially
+different kind of provenance from one a human re-typed by hand, and the
+invoice list's own badge (`InvoiceStateBadge.tsx`) needs the distinction to
+say so honestly without a hand-declared row ever being able to fake it.
 """
 
 from decimal import Decimal
@@ -143,13 +150,18 @@ def map_parsed_invoice_to_import(
     what actually enforces the register's invariant, not a second copy of it
     here.
 
-    `importata_da` is left at `InvoiceImport`'s own default, `"esterno"` (module
-    docstring above). `data_scadenza`, `causale`, `competenza_da`/`competenza_a`,
-    `pdf_sorgente`, `note_interne` and `trasmessa_esternamente_il` all stay
-    unset too: none of them has a source on `ParsedInvoice` today, so `import_
-    issued`'s own defaults (the regime's `giorni_scadenza` for the due date,
-    chief among them) apply exactly as they would for a hand-typed import that
-    left the same fields out.
+    `importata_da` is left at `InvoiceImport`'s own fixed `"esterno"` -- this
+    return value is never written as-is (module docstring above): the caller,
+    `InvoiceService.confirm_import`, passes `importata_da="fatturapa"` to
+    `import_issued` itself as a separate keyword argument, the same way it
+    already passes `xml_document_id`/`xml_hash_sha256`, so a value only this
+    module's own caller can ever set never round-trips through a schema a
+    hand-declare caller could also populate. `data_scadenza`, `causale`,
+    `competenza_da`/`competenza_a`, `pdf_sorgente`, `note_interne` and
+    `trasmessa_esternamente_il` all stay unset too: none of them has a source
+    on `ParsedInvoice` today, so `import_issued`'s own defaults (the regime's
+    `giorni_scadenza` for the due date, chief among them) apply exactly as
+    they would for a hand-typed import that left the same fields out.
     """
     riferimento_by_pair: dict[tuple[Decimal, str | None], str | None] = {}
     for riepilogo in invoice.riepiloghi:
