@@ -8,10 +8,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@reba
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { api, toProblem, unwrap } from '@/lib/api'
+import type { components } from '@/lib/api-types'
 import { useAuth } from '@/lib/auth'
+import { roleLabel } from '@/lib/roles'
 import { safeAppRedirect, tenantPrefix } from '@/lib/tenant'
 
-export function LoginPage() {
+type IdentitySpace = components['schemas']['IdentitySpace']
+
+export function LoginPage({
+  go = (url) => window.location.assign(url),
+}: { go?: (url: string) => void } = {}) {
   const { user, login } = useAuth()
   const navigate = useNavigate()
   const { redirect } = useSearch({ from: '/app/login' })
@@ -35,6 +41,20 @@ export function LoginPage() {
   // The root's own name, when it has one: where a login on the bare page sends the
   // person afterwards. `null` until the API has answered, `''` when there is none.
   const [rootSlug, setRootSlug] = useState<string | null>(null)
+  // REB-377 (design §3): the chooser this page shows instead of the form once the
+  // identity cookie resolves to at least one space. A 401 (no cookie) or a 200 with
+  // none leaves this empty, which is exactly the fallback to the form below -- no
+  // separate error branch needed for either.
+  const [spaces, setSpaces] = useState<IdentitySpace[]>([])
+  const [enteringSlug, setEnteringSlug] = useState<string | null>(null)
+  useEffect(() => {
+    void api
+      .GET('/api/identity/spaces')
+      .then(({ data }) => {
+        if (Array.isArray(data) && data.length > 0) setSpaces(data)
+      })
+      .catch(() => {})
+  }, [])
   useEffect(() => {
     void api.GET('/api/tenants/root').then(({ data }) => {
       const slug = data?.slug ?? ''
@@ -142,6 +162,21 @@ export function LoginPage() {
     }
   }
 
+  /** Opens the chosen space with no second proof (design §3): the identity cookie
+   *  already is one. A different basepath is a different application instance, so
+   *  landing there is a full navigation, the same shape every other cross-space move
+   *  on this page already uses. */
+  async function onEnter(slug: string) {
+    setEnteringSlug(slug)
+    try {
+      await unwrap(api.POST('/api/identity/enter/{slug}', { params: { path: { slug } } }))
+      go(`/${slug}/app/`)
+    } catch (error) {
+      toast.error(toProblem(error).detail)
+      setEnteringSlug(null)
+    }
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-sm">
@@ -153,109 +188,132 @@ export function LoginPage() {
           <CardDescription>Il CRM che lavora al posto tuo.</CardDescription>
         </CardHeader>
         <CardContent>
-          {mode === 'link' && sent ? (
-            <div className="space-y-4">
-              <p className="text-sm" role="status">
-                Controlla la posta: il link per entrare vale 15 minuti. Se non arriva, guarda
-                nello spam.
+          {spaces.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-muted-foreground text-sm">
+                Questa email apre già questi spazi.
               </p>
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full"
-                onClick={() => {
-                  setSent(false)
-                  setEmail('')
-                }}
-              >
-                Usa un&apos;altra email
-              </Button>
+              {spaces.map((space) => (
+                <Button
+                  key={space.slug}
+                  type="button"
+                  variant="outline"
+                  className="w-full justify-between"
+                  disabled={enteringSlug !== null}
+                  onClick={() => void onEnter(space.slug)}
+                >
+                  <span>{space.slug}</span>
+                  <span className="text-muted-foreground text-xs">{roleLabel(space.ruolo)}</span>
+                </Button>
+              ))}
             </div>
           ) : (
-            <form
-              onSubmit={mode === 'link' ? onSendLink : onSubmit}
-              className="space-y-4"
-              noValidate={mode === 'link'}
-            >
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  required
-                  autoComplete="username"
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              </div>
-              {mode === 'password' && (
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-                    id="password"
-                    type="password"
-                    required
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
+            <>
+              {mode === 'link' && sent ? (
+                <div className="space-y-4">
+                  <p className="text-sm" role="status">
+                    Controlla la posta: il link per entrare vale 15 minuti. Se non arriva, guarda
+                    nello spam.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full"
+                    onClick={() => {
+                      setSent(false)
+                      setEmail('')
+                    }}
+                  >
+                    Usa un&apos;altra email
+                  </Button>
                 </div>
-              )}
-              {linkError && (
-                <p className="text-destructive text-sm" role="alert">
-                  {linkError}
-                </p>
-              )}
-              {mode === 'link' ? (
-                <Button type="submit" className="w-full" disabled={busy || email === ''}>
-                  {busy ? 'Invio in corso…' : 'Mandami il link'}
-                </Button>
               ) : (
-                <Button type="submit" className="w-full" disabled={busy}>
-                  {busy ? 'Accesso in corso…' : 'Accedi'}
-                </Button>
+                <form
+                  onSubmit={mode === 'link' ? onSendLink : onSubmit}
+                  className="space-y-4"
+                  noValidate={mode === 'link'}
+                >
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      required
+                      autoComplete="username"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                    />
+                  </div>
+                  {mode === 'password' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="password">Password</Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        required
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                      />
+                    </div>
+                  )}
+                  {linkError && (
+                    <p className="text-destructive text-sm" role="alert">
+                      {linkError}
+                    </p>
+                  )}
+                  {mode === 'link' ? (
+                    <Button type="submit" className="w-full" disabled={busy || email === ''}>
+                      {busy ? 'Invio in corso…' : 'Mandami il link'}
+                    </Button>
+                  ) : (
+                    <Button type="submit" className="w-full" disabled={busy}>
+                      {busy ? 'Accesso in corso…' : 'Accedi'}
+                    </Button>
+                  )}
+                  {mode === 'link' ? (
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="w-full"
+                      onClick={() => {
+                        setMode('password')
+                        setLinkError(null)
+                      }}
+                    >
+                      Hai una password? Accedi con la password
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="link"
+                      className="w-full"
+                      onClick={() => setMode('link')}
+                    >
+                      Torna al link via email
+                    </Button>
+                  )}
+                </form>
               )}
-              {mode === 'link' ? (
+              {/* Only the root offers to create a space: a space creating spaces is not a
+                  thing this product means (spec 2026-09-08 §6). */}
+              {isRoot && (
                 <Button
                   type="button"
-                  variant="link"
-                  className="w-full"
-                  onClick={() => {
-                    setMode('password')
-                    setLinkError(null)
-                  }}
+                  variant="outline"
+                  className="mt-4 w-full"
+                  onClick={() =>
+                    tenantPrefix === ''
+                      ? void navigate({ to: '/app/register' })
+                      : // The signup page lives at the unprefixed root: a different basepath
+                        // is a different application instance, so this is a navigation.
+                        window.location.assign('/app/register')
+                  }
                 >
-                  Hai una password? Accedi con la password
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant="link"
-                  className="w-full"
-                  onClick={() => setMode('link')}
-                >
-                  Torna al link via email
+                  Crea il tuo spazio
                 </Button>
               )}
-            </form>
-          )}
-          {/* Only the root offers to create a space: a space creating spaces is not a
-              thing this product means (spec 2026-09-08 §6). */}
-          {isRoot && (
-            <Button
-              type="button"
-              variant="outline"
-              className="mt-4 w-full"
-              onClick={() =>
-                tenantPrefix === ''
-                  ? void navigate({ to: '/app/register' })
-                  : // The signup page lives at the unprefixed root: a different basepath
-                    // is a different application instance, so this is a navigation.
-                    window.location.assign('/app/register')
-              }
-            >
-              Crea il tuo spazio
-            </Button>
+            </>
           )}
         </CardContent>
       </Card>
