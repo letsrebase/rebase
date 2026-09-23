@@ -32,9 +32,10 @@ envelope from a PDF (`POST /envelope/create`, multipart) with the recipient and 
 `SIGNATURE` fields placed as percentages of the page, distribute it with
 `distributionMethod: NONE` so it sends no mail and returns each recipient's `signingUrl`
 (`POST /envelope/distribute`), and call a webhook with `DOCUMENT_COMPLETED` once every
-recipient has signed, authenticated by the `X-Documenso-Secret` header. The download of
-the sealed PDF on a self-hosted instance is the one capability phase 1 must prove before
-anything is built on it.
+recipient has signed, authenticated by the `X-Documenso-Secret` header. Phase 1 proved all
+of it on a self-hosted `documenso/documenso:v2.18.0`, the sealed PDF's download included
+(`GET /api/v2/envelope/item/{itemId}/download?version=signed`); what it found is in
+`2026-09-23-documenso-probe.md` beside this file, and § 6 and § 7 below follow it.
 
 **(b) The hub orchestrates; Documenso only signs.** The hub generates the PDFs, sends
 its own mails through Resend with the rebase look, receives the webhook, stores the
@@ -124,7 +125,7 @@ documents sent, a document cancelled, a mail resent and a notice recorded, entit
 `DropdownMenu` from `@rebase/ui`, on card rows only (`stato !== 'lead'`), with two
 entries: «Crea match» and «Match e contratti». The name keeps linking to the card.
 
-**«Crea match»** is a page, `/admin/freelance/$id/match/nuovo`, in five steps:
+**«Crea match»** is a page, `/admin/freelance/$id/match/new`, in five steps:
 
 1. **Azienda.** Pick one of the company requests (`Company`), searchable by company name
    and contact. A request that is `chiuso` is shown but greyed.
@@ -142,7 +143,7 @@ entries: «Crea match» and «Match e contratti». The name keeps linking to the
    when the freelancer has none active. Two buttons: «Salva come bozza» and «Invia per
    la firma». The second says which document leaves now and which waits (1e).
 
-**«Match e contratti»** is a page, `/admin/freelance/$id/contratti`, linked from the row
+**«Match e contratti»** is a page, `/admin/freelance/$id/contracts`, linked from the row
 menu and from the card's header. At the top, the framework agreement: state, signed on,
 next renewal and last day for a notice, text version (and «nuova versione disponibile»
 when there is one), the original and the signed PDF, and actions «Reinvia email»,
@@ -202,14 +203,22 @@ refuses or times out, nothing is marked as sent and the admin reads why; if only
 fails, the document is `inviato` and «Reinvia email» sends it again.
 
 **Completion** (`POST /api/hub/documenso/webhook`, no cookie, `X-Documenso-Secret`
-compared in constant time with the setting): on `DOCUMENT_COMPLETED` the hub finds the
+compared in constant time with the setting; an empty or missing header is refused, since
+a Documenso webhook saved without a secret sends the header empty): on
+`DOCUMENT_COMPLETED` the hub finds the
 document by `documenso_id`, downloads the sealed PDF, stores it in `signed_pdf`, sets
 `firmato` and `signed_at`, and mails the signed PDF as an attachment to the freelancer
 and to the contracts address (`ciao@letsrebase.com`). Then: a signed framework agreement
 releases the letters waiting for it (generated now, with its signature date, and sent);
 a signed letter turns its match `attivo`. `DOCUMENT_REJECTED` and `DOCUMENT_CANCELLED`
 turn the document `annullato` and are shown on the page. An event for a document already
-`firmato` is acknowledged and ignored, so a retried webhook does nothing twice.
+`firmato` is acknowledged and ignored, so a retried webhook does nothing twice. Documenso
+retries a failed delivery three times within about 160 ms and never again, and sends a
+second event while a slow first one is still being handled, so the transition takes a
+row lock (`SELECT ... FOR UPDATE` on the document) and answers fast: the download and
+the mails run after the commit, and a delivery the hub missed entirely is recovered only
+by «Aggiorna stato». The sealed PDF has one more page than the original, Documenso's
+audit certificate.
 
 **Recovery.** «Aggiorna stato» asks Documenso for the envelope's state and applies the
 same transition as the webhook, for the day a webhook is lost. «Annulla» cancels the
@@ -230,10 +239,12 @@ live in the host `.env`: the auth secret and encryption keys, the public URL, SM
 through Resend (for its own account mails only, since the hub sends the signing mails),
 and the signing certificate as base64 with its passphrase. The certificate starts
 self-signed: the seal is valid, but PDF readers mark it as not trusted; a certificate on
-Adobe's trust list is a later purchase. The preview uses the same instance with its own
-Documenso team, API token and webhook, so a preview can never touch production
-envelopes. Phase 1 confirms each of these on a real instance before phase 4 writes them
-down.
+Adobe's trust list is a later purchase. The preview uses the same instance through a
+separate Documenso user and organisation, with its own API token and webhook: phase 1
+showed that two teams under one user do not isolate each other (the production token read
+and cancelled a preview envelope). Documenso needs `NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS`
+to call the hub by an internal name, the owner's «Signing Complete!» mail switched off
+through the envelope's `emailSettings`, and public sign-up disabled.
 
 ## 8. Settings
 
