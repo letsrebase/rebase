@@ -28,7 +28,9 @@ shop that rounds a sticker's corners does it in the die cut.
 
 ## Rendering
 
-From the repository root, after `pnpm install`:
+From the repository root, after `pnpm install`, and once per machine
+`pnpm --filter @rebase/brand exec playwright install chromium` (the package brings
+Playwright, not the browser it drives):
 
 ```bash
 node shared/brand/print/stickers/render.mjs          # out/png, out/pdf

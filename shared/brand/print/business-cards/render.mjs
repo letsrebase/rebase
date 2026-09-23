@@ -29,7 +29,12 @@ const params = [guides && 'guides=1', placeholders && 'placeholders=1'].filter(B
 const root = join(here, 'out', placeholders ? 'preview' : '')
 
 const DPI = 300, dpr = DPI / 96, MM = 96 / 25.4
-const browser = await chromium.launch()
+// A fresh machine has the package but not the browser: say how to get it.
+const browser = await chromium.launch().catch((err) => {
+  console.error(`Chromium did not start: ${err.message.split('\n')[0]}`)
+  console.error('Once per machine: pnpm --filter @rebase/brand exec playwright install chromium')
+  process.exit(1)
+})
 const page = await browser.newPage({ viewport: { width: 400, height: 800 }, deviceScaleFactor: dpr })
 await page.goto(`${pathToFileURL(page_path)}${params ? `?${params}` : ''}`)
 await page.evaluate(() => document.fonts.ready)
