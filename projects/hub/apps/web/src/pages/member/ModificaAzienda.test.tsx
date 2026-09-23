@@ -6,12 +6,21 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  useNavigate,
 } from '@tanstack/react-router'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CompanyRequest } from '@/lib/api'
 import { editCompanyFields, ModificaAzienda } from './ModificaAzienda'
+
+// Wraps the real `useNavigate` for every test but one: the redirect-race test below
+// swaps in a no-op spy so it can prove the render-time guard withholds the form on its
+// own, independent of whether the navigation away has actually landed yet.
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>()
+  return { ...actual, useNavigate: vi.fn(actual.useNavigate) }
+})
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -167,5 +176,28 @@ describe('/me/edit-company', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('serve una cifra più bassa'),
     )
+  })
+
+  it('redirects to the member area on a direct visit with no company yet (REB-383)', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(answer(200, { ...PROFILE, ha_azienda: false }))
+    mount()
+    await screen.findByRole('heading', { name: 'La tua area' })
+    expect(screen.queryByLabelText('Progetto')).toBeNull()
+    expect(fetchSpy.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false)
+  })
+
+  it('withholds the form on its own even while the redirect is stalled (Greptile, PR #315)', async () => {
+    // A no-op `navigate`: real navigation never lands here, so `queryByLabelText`
+    // below is checked while the page would still be showing a form if only the
+    // `useEffect` redirect (and not the render-time `if (!hasCompany) return null`)
+    // were the thing keeping it away.
+    const navigateSpy = vi.fn()
+    vi.mocked(useNavigate).mockReturnValue(navigateSpy)
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { ...PROFILE, ha_azienda: false }))
+    mount()
+    await waitFor(() => expect(navigateSpy).toHaveBeenCalledWith({ to: '/me', replace: true }))
+    expect(screen.queryByLabelText('Progetto')).toBeNull()
   })
 })
