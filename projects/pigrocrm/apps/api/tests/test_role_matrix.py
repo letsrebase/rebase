@@ -221,6 +221,12 @@ ROWS: list[Row] = [
     Row("POST", "/api/proposals/{proposal_id}/reject", body={"deciso_da": "Matrice"}),
     # --- customers / people / deals: `require_write` on every plain write ------------
     Row("POST", "/api/customers", body={"ragione_sociale": "Matrice Due Srl"}),
+    # The ticked Gmail proposals (REB-223): `require_write`, like one «Nuovo cliente».
+    Row(
+        "POST",
+        "/api/customers/from-suggestions",
+        body={"clienti": [{"dominio": "matrice.it", "ragione_sociale": "Matrice", "persone": []}]},
+    ),
     Row("DELETE", "/api/customers/{customer_id}"),
     Row("PATCH", "/api/customers/{customer_id}", body={}),
     Row("POST", "/api/customers/{customer_id}/restore"),
@@ -317,6 +323,9 @@ ROWS: list[Row] = [
         body={"entity_type": "customer", "entity_id": "__CUST__"},
     ),
     Row("POST", "/api/gmail/sync", google=True),
+    # A GET, and gated all the same: the proposals spend the owner's Gmail quota, as
+    # discovery does (REB-223), so a readonly person is refused like on `sync`.
+    Row("GET", "/api/gmail/customer-suggestions", google=True),
     Row("GET", "/api/gmail/oauth/start", google=True),
     Row(
         "GET",

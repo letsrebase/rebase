@@ -40,6 +40,7 @@ describe('the funnel table', () => {
     ['POST', '/api/users/invites/i1/resend', 'invito_inviato'],
     ['DELETE', '/api/users/invites/i1', 'invito_revocato'],
     ['POST', '/api/customers', 'cliente_creato'],
+    ['POST', '/api/customers/from-suggestions', 'clienti_importati'],
     ['POST', '/api/deals', 'deal_creato'],
     ['POST', '/api/documents', 'documento_creato'],
     ['POST', '/api/documents/from-template', 'documento_creato'],

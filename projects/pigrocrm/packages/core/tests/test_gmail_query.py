@@ -212,10 +212,17 @@ def test_no_helper_can_build_a_url_that_takes_a_caller_supplied_search_string() 
         "build_list_queries",
         "customer_domain",
         "discovery_query",
+        # A predicate over a domain the caller already holds; it builds nothing.
+        "is_provider_domain",
         "message_get_url",
         "messages_list_url",
         "rfc822msgid_query",
+        # The customer proposals (REB-223): the connected mailbox's own address, checked
+        # like any roster address, and a number; and a thread id with a fixed set of
+        # headers. See `test_gmail_suggestions.py`.
+        "sent_since_query",
         "thread_get_url",
+        "thread_metadata_url",
     ]
 
 

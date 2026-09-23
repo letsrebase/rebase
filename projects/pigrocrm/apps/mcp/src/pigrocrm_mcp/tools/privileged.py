@@ -551,6 +551,38 @@ def register(
 
         @mcp.tool()
         @guard
+        def suggest_customers_from_gmail(mesi: int = 12) -> list[dict[str, Any]]:
+            """Le aziende con cui la casella collegata ha corrisposto negli ultimi `mesi`
+            mesi (da 1 a 24), proposte come clienti: per ogni dominio il numero di
+            conversazioni, l'ultimo messaggio e le persone viste, con un nome d'azienda
+            ricavato dal dominio da correggere prima di crearlo.
+
+            Legge la posta **inviata** dal titolare, solo le intestazioni: chi gli ha
+            soltanto scritto (newsletter, ricevute) non compare. Esclude il dominio della
+            casella, le webmail e la PEC, e i domini che sono già clienti. **Non salva
+            nulla**: per creare i clienti usa `create_customer` e `create_person`, o la
+            lista nella Home. Interroga Google, quindi spende la quota Gmail del titolare
+            sotto il suo consenso OAuth: è la ragione per cui esiste solo su
+            un'installazione che ha aperto `mcp_full_access`.
+            """
+            transport = GmailTransport()
+            service = GmailSyncService(
+                context.session,
+                settings=settings,
+                transport=transport,
+                tokens=GoogleTokenClient(
+                    client_id=settings.google_client_id,
+                    client_secret=settings.google_client_secret,
+                    transport=transport,
+                ),
+            )
+            return [
+                proposal.model_dump(mode="json")
+                for proposal in service.suggest_customers(actor=context.actor, mesi=mesi)
+            ]
+
+        @mcp.tool()
+        @guard
         def read_gmail_attachment(message_id: UUID, nome_file: str) -> dict[str, Any]:
             """Il **testo** di un allegato di un'email già archiviata nel CRM: PDF,
             `.docx`, `.md`/`.txt`, XML.

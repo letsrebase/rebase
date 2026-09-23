@@ -152,6 +152,35 @@ class DiscoveredCorrespondent(BaseModel):
     gia_in_anagrafica: bool
 
 
+class SuggestedPerson(BaseModel):
+    """Somebody at a proposed customer's domain who took part in a conversation with
+    the connected mailbox."""
+
+    model_config = ConfigDict(frozen=True)
+
+    indirizzo: str
+    # The display name the headers gave, or "" when they never did.
+    nome: str
+    # Already a Person in this CRM: importing leaves them alone.
+    gia_in_anagrafica: bool
+
+
+class SuggestedCustomer(BaseModel):
+    """One domain the connected mailbox has corresponded with, proposed as a customer
+    (spec 2026-09-16 §5, REB-223). A proposal, not a record: nothing is written until a
+    person ticks it and `POST /api/customers/from-suggestions` creates it."""
+
+    model_config = ConfigDict(frozen=True)
+
+    dominio: str
+    # A company name guessed from the domain, for the person to correct before importing.
+    nome: str
+    # Conversations (Gmail threads) the mailbox wrote in with somebody at this domain.
+    conversazioni: int
+    ultimo_messaggio: datetime | None
+    persone: list[SuggestedPerson]
+
+
 class DiscoveryReport(BaseModel):
     """What one discovery found. Addresses and names are the *point* of this report,
     which is what separates it from `SyncReport`: it goes back to whoever asked and to

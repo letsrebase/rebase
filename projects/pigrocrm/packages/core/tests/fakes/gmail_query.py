@@ -1,6 +1,7 @@
 """Just enough of Gmail's `q` to make the relevance test meaningful.
 
-Supports `from:`, `to:`, `after:`, `rfc822msgid:`, parenthesised groups and `OR`.
+Supports `from:`, `to:`, `after:`, `rfc822msgid:`, `-in:draft`, parenthesised groups and
+`OR`.
 Everything else raises, on purpose: a fake that silently ignores an operator the
 production code relies on turns a passing test into a false statement.
 """
@@ -24,6 +25,12 @@ def matches(message: "FakeMessage", query: str) -> bool:
 
     groups = re.findall(r"\(([^)]*)\)", query)
     outside = re.sub(r"\([^)]*\)", " ", query)
+
+    # The customer proposals (REB-223) leave drafts out: a draft carries the DRAFT label.
+    if "-in:draft" in outside.split():
+        if "DRAFT" in message.label_ids:
+            return False
+        outside = " ".join(token for token in outside.split() if token != "-in:draft")
 
     unknown = [token for token in outside.split() if ":" in token and not _TERM.fullmatch(token)]
     if unknown:
