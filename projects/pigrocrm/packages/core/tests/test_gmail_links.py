@@ -163,14 +163,22 @@ def test_syncing_twice_does_not_duplicate_a_link(db_session: Session) -> None:
 
     fake = FakeGmail()
     _thread(fake)
+    # Inside the 24-hour overlap the second cycle lists from. At `_thread`'s own two days
+    # and one day the second cycle listed nothing, and the count below held for an empty
+    # run every time (REB-262).
+    fake.messages["m1"].internal_date_ms = _ms(0.5)
+    fake.messages["m2"].internal_date_ms = _ms(0.25)
     service = sync_service(db_session, fake)
     service.sync(actor_for(account))
     db_session.commit()
     before = len(db_session.execute(select(GmailMessageLink)).scalars().all())
     assert before == 4, "the first cycle linked nothing, so the second proves nothing"
 
-    service.sync(actor_for(account))
+    second = service.sync(actor_for(account))
     db_session.commit()
+    assert (second.threads_fetched, second.messages_skipped) == (1, 2), (
+        "the second cycle did not fetch the conversation again, so it proves nothing"
+    )
     assert len(db_session.execute(select(GmailMessageLink)).scalars().all()) == before
 
 
