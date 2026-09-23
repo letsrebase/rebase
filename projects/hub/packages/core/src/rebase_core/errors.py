@@ -27,3 +27,11 @@ class ValidationFailed(DomainError):
 
     def __init__(self, entity: str, field: str, reason: str) -> None:
         super().__init__(f"{entity}.{field}: {reason}", entity=entity, field=field, reason=reason)
+
+
+class InvalidState(DomainError):
+    """An action the row's current state does not allow: cancelling a match that is no
+    longer a draft, closing one that is not active. The API answers it with a 409, the
+    status every `DomainError` without a mapping of its own already gets."""
+
+    code = "invalid_state"
