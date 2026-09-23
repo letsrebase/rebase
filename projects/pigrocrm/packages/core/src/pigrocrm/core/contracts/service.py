@@ -43,7 +43,7 @@ from pigrocrm.core.fields.validator import validate_custom_fields
 ENTITY: EntityType = "contract"
 
 
-def _check_payment_terms_together(payload: dict[str, Any]) -> None:
+def check_payment_terms_together(payload: dict[str, Any]) -> None:
     """Mirrors `ck_contracts_payment_terms_together`: a contract states both of its
     own payment-term facts or neither, never one paired with a term it never set."""
     if (payload.get("giorni_pagamento") is None) != (payload.get("pagamento_fine_mese") is None):
@@ -55,7 +55,7 @@ def _check_payment_terms_together(payload: dict[str, Any]) -> None:
         )
 
 
-def _check_renewal_notice(payload: dict[str, Any]) -> None:
+def check_renewal_notice(payload: dict[str, Any]) -> None:
     """Mirrors `ck_contracts_preavviso_rinnovo_required`: applicable, and required,
     for every renewal type except 'nessuno'."""
     if payload["tipo_rinnovo"] != "nessuno" and payload.get("preavviso_rinnovo_giorni") is None:
@@ -86,8 +86,8 @@ class ContractService:
     def create(self, data: ContractCreate, actor: Actor) -> ContractRead:
         actor.require_write("create_contract")
         payload = data.model_dump()
-        _check_payment_terms_together(payload)
-        _check_renewal_notice(payload)
+        check_payment_terms_together(payload)
+        check_renewal_notice(payload)
 
         if self.customers.get(payload["customer_id"]) is None:
             raise NotFound("customer", payload["customer_id"])
@@ -164,7 +164,7 @@ class ContractService:
         )
 
 
-def _check_rate_card_shape(payload: dict[str, Any]) -> None:
+def check_rate_card_shape(payload: dict[str, Any]) -> None:
     """Mirrors the two conditional CHECKs on `rate_cards`: `ore_minime` only for
     `tipo = 'orario'`, `periodo_erogazione` only for `tipo = 'ricorrente_fisso'`."""
     if payload["tipo"] != "orario" and payload.get("ore_minime") is not None:
@@ -197,7 +197,7 @@ class RateCardService:
             raise NotFound("contract", contract_id)
 
         payload = data.model_dump()
-        _check_rate_card_shape(payload)
+        check_rate_card_shape(payload)
         payload["contract_id"] = contract_id
 
         rate_card = RateCard(**payload)

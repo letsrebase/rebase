@@ -11,8 +11,10 @@ from pigrocrm.core.actor import Actor, Role
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings, get_settings
+from pigrocrm.core.contract_expenses.triggers import CONTRACT_EXPENSE_TRIGGER_SQL
 from pigrocrm.core.db import Base, create_engine_from_settings, session_factory
 from pigrocrm.core.storage import LocalFileStorage
+from pigrocrm.core.work_units.triggers import WORK_UNIT_TRIGGER_SQL
 from pigrocrm_api.deps import get_session, get_storage
 from pigrocrm_api.main import create_app
 from pigrocrm_api.ratelimit import reset_rate_limit
@@ -41,6 +43,15 @@ def api_engine() -> Iterator[Engine]:
         import pigrocrm.core.models_registry  # noqa: F401
 
         Base.metadata.create_all(engine)
+        # The trigger DDL `create_all` cannot express (packages/core/tests/conftest.py
+        # explains this at length) -- missing here left `contract_expenses.rimborsabile`
+        # silently stuck at its column default through this test database the moment a
+        # real API route (REB-360) started exercising it; `work_units` carries no API
+        # route yet, but installing its own trigger here too avoids leaving the
+        # identical gap for whoever adds one next.
+        with engine.begin() as connection:
+            connection.execute(text(WORK_UNIT_TRIGGER_SQL))
+            connection.execute(text(CONTRACT_EXPENSE_TRIGGER_SQL))
         yield engine
         engine.dispose()
 

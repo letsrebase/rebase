@@ -7,6 +7,7 @@ total at all, and a router that computed one would be the same defect one layer 
 """
 
 from datetime import date
+from decimal import Decimal
 from typing import Annotated
 from uuid import UUID
 
@@ -16,6 +17,9 @@ from pigrocrm.core.analytics.schemas import (
     BudgetPage,
     BudgetQuery,
     CashBase,
+    CeilingHeadroom,
+    CeilingSimulation,
+    CeilingSimulationQuery,
     EconomicOverview,
     FiscalEstimate,
     PeriodPnl,
@@ -128,3 +132,38 @@ def backlog(session: SessionDep, actor: ActorDep) -> UnbilledBacklog:
     one -- its euro value is a product of two columns.
     """
     return AnalyticsService(session).unbilled_backlog(actor)
+
+
+@router.get("/ceilings", response_model=CeilingHeadroom)
+def ceiling_headroom(
+    session: SessionDep, actor: ActorDep, anno: Annotated[int, Query(ge=2000, le=2200)]
+) -> CeilingHeadroom:
+    """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
+    configurato (REB-352 §1.4), sui ricavi incassati e reali dell'anno. Aperto a ogni
+    ruolo, a differenza di `/fiscal`: è un ricavo, non la stima fiscale che protegge
+    solo `get_fiscal_estimate`."""
+    return AnalyticsService(session).ceiling_headroom(anno, actor)
+
+
+@router.get("/ceilings/simulate", response_model=CeilingSimulation)
+def simulate_ceiling(
+    session: SessionDep,
+    actor: ActorDep,
+    anno: Annotated[int, Query(ge=2000, le=2200)],
+    ore_preventivate: Annotated[Decimal | None, Query(ge=0)] = None,
+    valore_preventivato: Annotated[Decimal | None, Query(ge=0)] = None,
+    tariffa_oraria: Annotated[Decimal | None, Query(ge=0)] = None,
+) -> CeilingSimulation:
+    """Il simulatore "ci sta?" (REB-352 §1.4): la stima di un deal non ancora vinto,
+    aggiunta ai ricavi reali e rivalutata su ogni soglia attiva, senza salvare
+    nulla. Serve `valore_preventivato`, oppure `ore_preventivate` insieme a
+    `tariffa_oraria`."""
+    return AnalyticsService(session).simulate_ceiling(
+        anno,
+        CeilingSimulationQuery(
+            ore_preventivate=ore_preventivate,
+            valore_preventivato=valore_preventivato,
+            tariffa_oraria=tariffa_oraria,
+        ),
+        actor,
+    )

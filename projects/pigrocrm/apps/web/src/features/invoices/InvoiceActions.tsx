@@ -134,17 +134,21 @@ export function InvoiceActions({
   /**
    * Emission and the render are two steps, deliberately.
    *
-   * `issue()` is one transaction and does not produce the artefacts; the caller does.
-   * That boundary exists because calling the render from inside emission made emission
-   * stop being one transaction, and an artefact commit then survived a rollback.
+   * `issue()` is one transaction and does not produce the artefacts; the endpoint renders
+   * them right after its commit, in a second one. That boundary exists because calling
+   * the render from inside emission made emission stop being one transaction, and an
+   * artefact commit then survived a rollback.
    *
-   * So a failure of the second call is **not** a failed emission. The invoice has its
-   * number and is fiscally complete; it is merely unprinted, and `produce_artifacts`
-   * regenerates deterministically from the frozen snapshot whenever it is called again.
-   * Saying "emission failed" here would be the more dangerous lie, so the message says
-   * exactly what happened and what to press.
+   * So a failed render is **not** a failed emission. The invoice has its number and is
+   * fiscally complete; it is merely unprinted, and `produce_artifacts` regenerates
+   * deterministically from the frozen snapshot whenever it is called again. Since
+   * REB-143 the endpoint says so itself: it answers the issued row whatever the render
+   * did, read back after it, so a missing `pdf_document_id` or `xml_document_id` is the
+   * render that failed. Only then does this bar try once more, and only if that also
+   * fails does it warn. Saying "emission failed" here would be the more dangerous lie,
+   * so the message says exactly what happened and what to press.
    *
-   * The render targets `issued.id`, not `invoice.id`: from a proforma the two differ,
+   * The retry targets `issued.id`, not `invoice.id`: from a proforma the two differ,
    * and rendering the proforma would print the wrong document (ORB-134). The toast
    * names the number, since it is the one fact the person cannot see on the page they
    * pressed the button on.
@@ -164,12 +168,14 @@ export function InvoiceActions({
       {
         onSuccess: (issued) => {
           toast.success(`Fattura ${formatInvoiceNumber(issued)} emessa`)
-          void artifacts.mutateAsync(issued.id).catch(() =>
-            toast.warning(
-              'Documento emesso correttamente, ma PDF e XML non sono stati generati. ' +
-                'Riprova con «Rigenera documenti»: il numero resta quello.',
-            ),
-          )
+          if (issued.pdf_document_id == null || issued.xml_document_id == null) {
+            void artifacts.mutateAsync(issued.id).catch(() =>
+              toast.warning(
+                'Documento emesso correttamente, ma PDF e XML non sono stati generati. ' +
+                  'Riprova con «Rigenera documenti»: il numero resta quello.',
+              ),
+            )
+          }
           onIssued?.(issued)
         },
         onError: (error) => setProblem(toProblem(error)),
