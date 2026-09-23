@@ -30,6 +30,7 @@ import { Area } from '@/pages/member/Area'
 import { Entra } from '@/pages/member/Entra'
 import { Modifica } from '@/pages/member/Modifica'
 import { ModificaAzienda } from '@/pages/member/ModificaAzienda'
+import { NuovaRichiestaAzienda } from '@/pages/member/NuovaRichiestaAzienda'
 
 /** A present, non-empty string out of `Record<string, unknown>`'s raw search params,
  *  or `undefined` -- the shape every optional filter on `/admin/talent` and
@@ -174,6 +175,11 @@ const meEditCompany = createRoute({
   getParentRoute: () => me,
   path: '/edit-company',
   component: ModificaAzienda,
+})
+const meNewCompany = createRoute({
+  getParentRoute: () => me,
+  path: '/new-company',
+  component: NuovaRichiestaAzienda,
 })
 // `/io`, `/io/modifica` and `/io/modifica-azienda` each renamed their own segment, not
 // just the shared `/io` prefix, so a deep link to any of the three needs its own
@@ -356,7 +362,7 @@ const routeTree = root.addChildren([
     verifyRedirect,
   ]),
   signedInLayout.addChildren([
-    me.addChildren([meIndex, meEdit, meEditCompany]),
+    me.addChildren([meIndex, meEdit, meEditCompany, meNewCompany]),
     meRedirect,
     meEditRedirect,
     meEditCompanyRedirect,

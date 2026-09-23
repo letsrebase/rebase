@@ -24,10 +24,12 @@ from rebase_core.members import MemberService
 from rebase_core.models import Freelancer
 from rebase_core.schemas import (
     CompanyCreate,
+    CompanyFields,
     CompanyUpdate,
     FreelancerCreate,
     MemberProfile,
     MemberUpdate,
+    SignupUtm,
     StatusChange,
 )
 from rebase_core.users import UserService
@@ -328,6 +330,49 @@ def test_a_signed_in_person_with_no_company_gets_a_named_404(
     assert refused.value.details["entity"] == "azienda"
     with pytest.raises(NotFound):
         members.update_company(user.id, CompanyUpdate(**GOOD_COMPANY))
+
+
+# ---- filing a genuinely new request instead of editing (REB-381) ----------------------
+
+
+def test_an_additional_request_carries_the_name_forward_as_a_new_row(
+    members: MemberService, hub_session: Session
+) -> None:
+    """REB-381: a fresh `Company` row, not an edit -- the company's name comes along,
+    nothing else does (no UTM, unlike a public wizard submission), and the request
+    self-edit already reaches stands exactly as it was."""
+    first_id = _request_company(
+        hub_session,
+        durata="1 mese",
+        utm=SignupUtm(utm_source="google", utm_campaign="lancio"),
+    )
+    user = UserService(hub_session).by_email("wile@acme.it")
+    assert user is not None
+
+    created = members.create_additional_request(
+        user.id,
+        CompanyFields(**{**GOOD_COMPANY, "durata": "6 mesi", "figura_richiesta": "Data engineer"}),
+    )
+    assert created.ha_azienda is True
+    assert created.durata == "6 mesi" and created.azienda_figura_richiesta == "Data engineer"
+
+    newest = members.require_company(user.id)
+    assert newest.id != first_id
+    assert newest.nome_azienda == "ACME Srl"  # carried forward, never asked again
+    assert newest.utm_source is None and newest.utm_campaign is None  # never carried forward
+
+    older = CompanyService(hub_session).get(first_id)
+    assert older.durata == "1 mese" and older.nome_azienda == "ACME Srl"
+    assert CompanyService(hub_session).list_recent().totale == 2
+
+
+def test_an_additional_request_with_no_company_yet_is_the_same_named_404(
+    members: MemberService, hub_session: Session
+) -> None:
+    user = UserService(hub_session).get_or_create("ivan@rebase.it", "Ivan", "Fiore")
+    with pytest.raises(NotFound) as refused:
+        members.create_additional_request(user.id, CompanyFields(**GOOD_COMPANY))
+    assert refused.value.details["entity"] == "azienda"
 
 
 # ---- completing a card an admin wrote from a signup (ORB-155) -------------------------

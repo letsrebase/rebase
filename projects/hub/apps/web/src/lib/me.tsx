@@ -64,6 +64,15 @@ export function useUpdateCompany() {
   })
 }
 
+/** A brand-new request instead of an edit (REB-381): same shape, different route. */
+export function useCreateCompanyRequest() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (data: CompanyUpdate) => member.createCompanyRequest(data),
+    onSuccess: (me) => client.setQueryData(ME_KEY, me),
+  })
+}
+
 export function useReplaceCv() {
   const client = useQueryClient()
   return useMutation({
@@ -144,9 +153,12 @@ export function toCompanyApplication(me: Me): CompanyRequest {
   }
 }
 
-/** What `PATCH /me/company` takes: the eight project answers, trimmed the way the
- *  wizard trims before posting; `giorni_presenza` blank means "not ibrido", the same
- *  null-when-empty conversion `requestPeople` makes on the public wizard's side. */
+/** What `PATCH /me/company` and, since REB-381, `POST /me/company` both take: the
+ *  eight project answers, trimmed the way the wizard trims before posting;
+ *  `giorni_presenza` blank means "not ibrido", the same null-when-empty conversion
+ *  `requestPeople` makes on the public wizard's side. `ModificaAzienda.tsx` sends it
+ *  to the `PATCH`, `NuovaRichiestaAzienda.tsx` to the `POST` -- the payload shape is
+ *  identical, only the route differs. */
 export function toCompanyUpdate(value: CompanyRequest): CompanyUpdate {
   return {
     progetto: value.progetto.trim(),

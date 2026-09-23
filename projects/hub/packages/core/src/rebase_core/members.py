@@ -6,7 +6,11 @@ The way in -- the magic link, session open/close, `resolve` -- moved to
 alike. Every change the person makes is a comment in the row's thread (ORB-59), so
 the admin sees what moved without an audit table. Self-edit of a company request
 (REB-314) reaches only the signed-in person's most recent `Company` row -- a company
-files several requests over time, and older ones stay admin-editable-only.
+files several requests over time, and older ones stay admin-editable-only. Filing a
+genuinely new request instead of editing that newest one (REB-381,
+`create_additional_request`) is the same signed-in door: it carries the company's
+name forward and asks everything else fresh, as a new row the older ones are none
+the wiser about.
 """
 
 from uuid import UUID
@@ -19,6 +23,7 @@ from rebase_core.errors import NotFound
 from rebase_core.freelancers import check_cv, cv_of
 from rebase_core.models import AUTORE_MAX_LENGTH, Company, Freelancer, User
 from rebase_core.schemas import (
+    CompanyFields,
     CompanyUpdate,
     CvFile,
     MemberLookup,
@@ -246,6 +251,35 @@ class MemberService:
                 f"Richiesta aggiornata dal referente: {', '.join(changed)}",
                 author,
             )
+        return self.me_read(user_id)
+
+    def create_additional_request(self, user_id: UUID, payload: CompanyFields) -> MeRead:
+        """A signed-in referente files a genuinely new request instead of correcting
+        their newest one (REB-381): a fresh `Company` row, not an edit, so the request
+        `update_company` already reaches (`require_company`) stands exactly as it was
+        -- admin-editable, like any other. The company's own name is read off that
+        same newest row and carried forward, never asked again; everything else is
+        the payload's own fresh answers. No UTM carried forward either: unlike the
+        public wizard's own `CompanyService.request`, a request filed from inside the
+        member area is not attributable to whatever ad brought the referente in the
+        first time, so it goes in blank, the same as anything an admin creates. A
+        person with no request yet has nothing to add to, so this is a 404 named
+        "azienda" for them too, the same as `update_company`."""
+        existing = self.require_company(user_id)
+        row = Company(
+            user_id=user_id,
+            nome_azienda=existing.nome_azienda,
+            figura_richiesta=payload.figura_richiesta,
+            progetto=payload.progetto,
+            periodo_da=payload.periodo_da,
+            durata=payload.durata,
+            budget_giornaliero=payload.budget_giornaliero,
+            remoto=payload.remoto,
+            giorni_presenza=payload.giorni_presenza,
+            numero_risorse=payload.numero_risorse,
+        )
+        self.session.add(row)
+        self.session.commit()
         return self.me_read(user_id)
 
     def replace_cv(

@@ -8,7 +8,10 @@ import { clearDraft, loadDraft, saveDraft } from '@/wizard/draft'
 import { ChoiceField, LongTextField, TextField } from '@/wizard/fields'
 import { screensFromFields, Wizard, type Field } from '@/wizard/Wizard'
 
-const EMPTY: CompanyRequest = {
+/** The blank starting shape, exported so a page that never asks the identity fields
+ *  (`member/NuovaRichiestaAzienda.tsx`, REB-381) can still satisfy `CompanyRequest`'s
+ *  full shape without retyping every key. */
+export const EMPTY: CompanyRequest = {
   nome_azienda: '',
   figura_richiesta: '',
   referente_nome: '',

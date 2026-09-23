@@ -147,8 +147,13 @@ function mount(path = '/me') {
     path: '/edit-company',
     component: () => <h1>Modifica azienda</h1>,
   })
+  const nuovaRichiestaAzienda = createRoute({
+    getParentRoute: () => me,
+    path: '/new-company',
+    component: () => <h1>Richiedi una nuova figura</h1>,
+  })
   const router = createRouter({
-    routeTree: root.addChildren([me.addChildren([index, edit, modificaAzienda])]),
+    routeTree: root.addChildren([me.addChildren([index, edit, modificaAzienda, nuovaRichiestaAzienda])]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -254,6 +259,7 @@ describe('/me, no card (REB-279: a card-less admin reads name, email and role, n
     // No company request either: neither section replaces the bare identity one.
     expect(screen.queryByText('La tua richiesta più recente')).toBeNull()
     expect(screen.queryByRole('link', { name: /Modifica richiesta/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /Richiedi una nuova figura/ })).toBeNull()
     // The perks stay unconditional even with no card.
     expect(screen.getByRole('link', { name: /Apri PigroCRM/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Scarica la guida/ })).toBeInTheDocument()
@@ -277,6 +283,10 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
       'href',
       '/me/edit-company',
     )
+    expect(screen.getByRole('link', { name: /Richiedi una nuova figura/ })).toHaveAttribute(
+      'href',
+      '/me/new-company',
+    )
     // No freelancer card: no wizard-shaped card section, and the "Chi sei" fallback
     // does not show either, since the company section already says who this is.
     expect(screen.queryByText('Come ti chiami?')).toBeNull()
@@ -293,6 +303,10 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
     expect(screen.getByRole('link', { name: /Modifica richiesta/ })).toHaveAttribute(
       'href',
       '/me/edit-company',
+    )
+    expect(screen.getByRole('link', { name: /Richiedi una nuova figura/ })).toHaveAttribute(
+      'href',
+      '/me/new-company',
     )
   })
 })

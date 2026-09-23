@@ -472,6 +472,85 @@ def test_a_member_with_no_company_gets_ha_azienda_false_and_a_404_on_edit(
     assert refused.status_code == 404
 
 
+# ---- filing a genuinely new request instead of editing (REB-381) ----------------------
+
+
+def test_a_company_contact_files_an_additional_request(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    _request_company(client, durata="1 mese")
+    profile, _ = _enter(client, sender, "wile@acme.it")
+    assert profile["ha_azienda"] is True and profile["durata"] == "1 mese"
+
+    created = client.post(
+        "/api/hub/me/company",
+        json={
+            "progetto": "Serve un data engineer per un progetto di sei mesi.",
+            "periodo_da": "2027-01-15",
+            "durata": "6 mesi",
+            "budget_giornaliero": "650",
+            "remoto": "ibrido",
+            "giorni_presenza": 2,
+            "numero_risorse": 2,
+            "figura_richiesta": "Data engineer",
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["ha_azienda"] is True
+    assert body["durata"] == "6 mesi" and body["azienda_figura_richiesta"] == "Data engineer"
+
+    # An admin sees two rows, the same company's name on both, the older untouched.
+    reset_rate_limit()
+    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.commit()
+    assert client.post("/api/hub/me/logout").status_code == 204
+    _enter(client, sender, ADMIN_EMAIL)
+    listed = client.get("/api/hub/companies").json()["items"]
+    matching = [item for item in listed if item["nome_azienda"] == "ACME Srl"]
+    assert len(matching) == 2
+    newest = next(item for item in matching if item["durata"] == "6 mesi")
+    older = next(item for item in matching if item["durata"] == "1 mese")
+    assert newest["referente"] == older["referente"] == "Wile E."
+    assert newest["utm_source"] is None
+
+
+def test_creating_a_company_request_needs_a_session(client: TestClient, clean: None) -> None:
+    unauthenticated = client.post(
+        "/api/hub/me/company",
+        json={
+            "progetto": "Un progetto qualsiasi abbastanza lungo da passare",
+            "periodo_da": "2026-10-01",
+            "durata": "3 mesi",
+            "budget_giornaliero": "500",
+            "remoto": "remoto",
+            "numero_risorse": 1,
+            "figura_richiesta": "Backend developer",
+        },
+    )
+    assert unauthenticated.status_code == 401
+
+
+def test_creating_a_company_request_with_no_existing_one_is_a_404(
+    client: TestClient, sender: RecordingSender, clean: None
+) -> None:
+    _apply(client, "ada@studio.it")
+    _enter(client, sender, "ada@studio.it")
+    refused = client.post(
+        "/api/hub/me/company",
+        json={
+            "progetto": "Un progetto qualsiasi abbastanza lungo da passare",
+            "periodo_da": "2026-10-01",
+            "durata": "3 mesi",
+            "budget_giornaliero": "500",
+            "remoto": "remoto",
+            "numero_risorse": 1,
+            "figura_richiesta": "Backend developer",
+        },
+    )
+    assert refused.status_code == 404
+
+
 # ---- completing a card an admin wrote from a signup (ORB-155) -------------------------
 
 
