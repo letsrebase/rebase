@@ -98,6 +98,14 @@ _VIETATE: dict[Method, str] = {
         "affianca perche' espone gli stessi fatti (fattura di un fornitore, conflitto "
         "col registro) prima che una persona confermi"
     ),
+    (
+        "InvoiceService",
+        "confirm_import",
+    ): (
+        "REB-366: converge sulla scrittura esatta di `import_issued` per ogni fattura "
+        "che la revisione classifica pronta -- la scrittura vera che il passo di "
+        "revisione sopra si limita a riportare"
+    ),
     ("TimeEntryService", "recalculate_rates"): "riscrive il passato (slice 4 §11)",
     ("TimeEntryService", "update_user_rates"): "configurazione tariffaria (slice 4 §11)",
     ("TimeEntryService", "update_deal_rate"): "configurazione tariffaria (slice 4 §11)",
@@ -223,6 +231,19 @@ _INTERNE: dict[Method, str] = {
     "un'operazione che qualcuno compie\"",
     ("TimeReportService", "variables_for"): "passo intermedio di render_pdf/build_xlsx",
     ("UserService", "count"): "conta gli utenti per il bootstrap del primo admin",
+    # REB-362: none of these three takes an actor -- the mechanical signature this
+    # category is named for. `ProposalService` is the real MCP-facing read (spec §10,
+    # "agents propose, humans confirm"): a proposal already carries `campi_proposti`/
+    # `estratto` for review, and once accepted, `id_risultato` names the row it
+    # produced -- so `get_proposal` is what an agent actually calls, never a direct
+    # read of the `work_unit`/`approval` row underneath.
+    ("WorkUnitService", "get"): "nessun actor: lettura interna dietro get_proposal",
+    ("WorkUnitService", "transitions_for"): (
+        "nessun actor: la cronologia di un day non ha una superficie propria -- "
+        "get_proposal espone l'esito di una proposta accettata, non il registro delle "
+        "transizioni del work_unit che ne e' risultato"
+    ),
+    ("ApprovalService", "get"): "nessun actor: lettura interna dietro get_proposal",
 }
 
 
@@ -622,6 +643,41 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     "che nessuno abbia deciso di sollecitare quella fattura. Elencare cosa si potrebbe "
     "sollecitare non e' una decisione, e infatti `list_payment_reminder_candidates` "
     "esiste; prepararlo lo e'",
+    # REB-362 lands the real "agents propose, humans confirm" surface for the day
+    # lifecycle: `propose_day`/`propose_contract` write a `proposals` row,
+    # `accept_proposal` is what actually creates the `approval`+`work_unit` pair (or
+    # the `contract`+`rate_card` pair), inside one transaction with the proposal's
+    # own decision. These four methods stay unreachable on purpose, not because
+    # nobody wrote a tool: exposing any of them directly would let an agent write
+    # the state-machine row, or manufacture approval evidence, with no proposal and
+    # no human decision in between -- exactly what invariant 3 forbids. This
+    # replaces the provisional `_IN_ATTESA_DI_REB_362` block below (deleted, not
+    # updated, the same discipline `_IN_ATTESA_DI_DECISIONE`/`_IN_ATTESA_DI_DRIVE_T7`
+    # were held to).
+    ("WorkUnitService", "create"): (
+        "would let an agent write a work_unit directly, skipping the proposal a "
+        "human has to confirm first (spec §0's invariant 3); `accept_proposal`'s "
+        "'giornata' branch is the only legitimate caller, and it writes through "
+        "WorkUnitRepository, not this method, so the accept and the approval it "
+        "pairs with stay one transaction"
+    ),
+    ("WorkUnitService", "transition"): (
+        "moving a day through the state graph directly is exactly what invariant 3 "
+        "denies an agent; nothing in this codebase calls it outside its own tests -- "
+        "a future human-facing (non-agent) UI action is the only plausible caller, "
+        "and it does not exist yet"
+    ),
+    ("WorkUnitService", "link_approval"): (
+        "same reason as `transition`: linking an approval outside `accept_proposal`'s "
+        "own atomic write would let an agent recover a flagged day, or attach "
+        "evidence to one, with no proposal behind it"
+    ),
+    ("ApprovalService", "create"): (
+        "recording an approval detached from the day it evidences is exactly what "
+        "`accept_proposal`'s 'giornata' branch already does atomically with the "
+        "work_unit; a standalone tool would let an agent manufacture approval "
+        "evidence with no day and no human review attached"
+    ),
 }
 
 
@@ -646,41 +702,19 @@ _COPERTE_O_UMANE: dict[Method, str] = {
 # registrato quel tool, quindi il metodo e' ora raggiungibile e la riga e' sparita
 # insieme alla sua categoria -- la stessa cancellazione, non aggiornamento, che A11
 # ha applicato a `_IN_ATTESA_DI_DECISIONE`.
-# Provisional, like `_IN_ATTESA_DI_DECISIONE`/`_IN_ATTESA_DI_DRIVE_T7` before it: REB-359
-# ships `work_units`/`approvals` as database-trigger-enforced tables and their
-# `packages/core` service layer, with no MCP tool or resource of their own yet. Spec
-# invariant 3, "agents propose, humans confirm" (design spec §0), is exactly what a raw
-# `create`/`transition`/`link_approval` tool would violate today: an agent could move a
-# day through the state graph directly, with nothing standing between it and the ledger.
-# REB-362 ("Let a document propose a contract or a day, for a human to confirm") is
-# where the actual agent-facing shape belongs -- a `propose_day`-style tool that writes
-# a `proposals` row, never the raw state machine -- and it must **delete** this block
-# when it lands, not update it, the same discipline the two provisional blocks above
-# were held to.
-_IN_ATTESA_DI_REB_362: dict[Method, str] = {
-    ("WorkUnitService", "get"): (
-        "nessun tool o resource ancora: la lettura di un day arriva con REB-362"
-    ),
-    ("WorkUnitService", "create"): (
-        "creare un work_unit direttamente violerebbe l'invariante 3 dello spec "
-        '("agents propose, humans confirm"): REB-362 espone `propose_day`, che scrive '
-        "una `proposals` row, mai questo metodo"
-    ),
-    ("WorkUnitService", "transition"): (
-        "muovere un day nel grafo di stato direttamente e' esattamente cio' che "
-        "l'invariante 3 vieta a un agente; REB-362 e' dove la conferma umana entra"
-    ),
-    ("WorkUnitService", "link_approval"): "stessa ragione di `transition`: collegare "
-    "un'approvazione e' parte del percorso che REB-362 deve ancora disegnare",
-    ("WorkUnitService", "transitions_for"): "nessun tool o resource ancora: la cronologia "
-    "di un day arriva con REB-362",
-    ("ApprovalService", "get"): "nessun tool o resource ancora: arriva con REB-362",
-    ("ApprovalService", "create"): (
-        "registrare un'approvazione e' meta' del percorso 'agents propose, humans "
-        "confirm' che REB-362 deve ancora disegnare, non un'operazione a se' stante "
-        "oggi"
-    ),
-}
+# Provisional, like `_IN_ATTESA_DI_DECISIONE`/`_IN_ATTESA_DI_DRIVE_T7` before it, REB-359
+# left one: `_IN_ATTESA_DI_REB_362`, seven entries on `WorkUnitService`/`ApprovalService`,
+# declaring that REB-362 would either register a tool for each or say why not, and that
+# it must **delete** the block, not update it, the same discipline as the two above.
+# REB-362 registered `propose_contract`, `propose_day`, `get_proposal`, `list_proposals`,
+# `accept_proposal` and `reject_proposal` (`tools/__init__.py`, section "proposals"). Of
+# the seven: `WorkUnitService.get`/`transitions_for` and `ApprovalService.get` take no
+# `actor` and moved to `_INTERNE` above, next to every other no-actor read; the four
+# writes (`WorkUnitService.create`/`transition`/`link_approval`,
+# `ApprovalService.create`) moved to `_COPERTE_O_UMANE` above, because REB-362's own
+# answer to "why no tool" is a permanent one, not "nobody wrote it yet" -- exposing any
+# of them would let an agent write the ledger directly, which is exactly what invariant
+# 3 forbids. So the block is gone, the same cancellazione as `_IN_ATTESA_DI_DECISIONE`.
 
 
 ESCLUSIONI: dict[Method, str] = {
@@ -690,7 +724,6 @@ ESCLUSIONI: dict[Method, str] = {
     **_CONFIGURAZIONE,
     **_BYTE,
     **_COPERTE_O_UMANE,
-    **_IN_ATTESA_DI_REB_362,
 }
 
 

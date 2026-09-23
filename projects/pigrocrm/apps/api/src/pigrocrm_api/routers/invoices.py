@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from pigrocrm.core.activities.schemas import ActivityRead
 from pigrocrm.core.activities.service import ActivityService
+from pigrocrm.core.invoices.import_confirm import InvoiceConfirmRequest, InvoiceConfirmResult
 from pigrocrm.core.invoices.import_review import InvoiceReviewRequest, InvoiceReviewResult
 from pigrocrm.core.invoices.schemas import (
     MAX_LINES,
@@ -154,6 +155,25 @@ def review_import(
     never writes a row."""
     righe = _service(session, storage, settings).review_import(data.document_ids, actor)
     return InvoiceReviewResult(righe=righe)
+
+
+@router.post("/import/confirm", response_model=InvoiceConfirmResult)
+def confirm_import(
+    data: InvoiceConfirmRequest,
+    session: SessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    actor: ActorDep,
+) -> InvoiceConfirmResult:
+    """REB-366: admin only, enforced by the service. Re-reads and re-parses the
+    document's own stored bytes -- never trusts an earlier `/import/review` call
+    -- and writes the register through `import_issued` itself for every invoice
+    that classifies `"ready"`: never a second, independently-maintained write
+    path."""
+    righe = _service(session, storage, settings).confirm_import(
+        data.document_id, actor, customer_id=data.customer_id
+    )
+    return InvoiceConfirmResult(righe=righe)
 
 
 @router.get("/register/{anno}/gaps", response_model=list[RegisterGapRead])

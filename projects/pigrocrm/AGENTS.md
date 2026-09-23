@@ -163,6 +163,37 @@ mounting an empty directory (REB-258).
 Ports, loopback only, from the table in `docs/adding-a-project.md` §7: production web
 8080, Postgres 55432; preview web 8081, Postgres 55434.
 
+**Launching the stdio MCP on the host without the token on the command line.** A
+client that can speak Streamable HTTP should use `/<slug>/mcp` with the token as a
+bearer, and nothing below concerns it. A client that starts the stdio server over ssh
+(Claude Code's `ssh <host> "... python -m pigrocrm_mcp"`) must not pass the token as
+`docker compose exec -e PIGROCRM_TOKEN=<value>`: the value then sits in clear text in
+the sudo log, the journal and `ps` on the host, and in the client's own config file
+(REB-127). Instead, the token lives on the host in `/etc/pigrocrm/mcp-token.env`
+(directory 0700, file 0600, both root's, one line `PIGROCRM_TOKEN=pgc_…`). It is
+outside the checkout, so no deploy touches it. The launch names only the path:
+
+```
+ssh -o BatchMode=yes <host> "cd /opt/pigrocrm/projects/pigrocrm && sudo sh -c 'set -a; . /etc/pigrocrm/mcp-token.env; set +a; exec docker compose --env-file ../../.env exec -T -e PIGROCRM_TOKEN api uv run --no-sync python -m pigrocrm_mcp'"
+```
+
+`-e PIGROCRM_TOKEN` with no value makes compose copy the variable from its own
+environment, so the logged command and `ps` show the name and never the value.
+`--env-file ../../.env` is the deploy's own `.env`, the same one the digest's cron line
+names: compose interpolates the required `PIGROCRM_*` and `POSTGRES_*` values even for
+an `exec`. Do not rely on a `.env` symlink beside the compose file. The
+server resolves the token once, at start-up (`apps/mcp/src/pigrocrm_mcp/__main__.py`).
+To rotate it:
+1. Mint the new token. Use Impostazioni → Token, or run `PatService.create` inside the
+   api container with its stdout redirected into the file *on the host*, so the value
+   never crosses the ssh connection.
+2. Restart the client's MCP server.
+3. Check that the new token's `last_used_at` moved.
+4. Revoke the old token.
+
+Revoking a token does not stop a stdio process that is already running with it, and
+the next start refuses it.
+
 ## Namespace
 
 Every environment variable is `PIGROCRM_*`, the CLI is `pigrocrm`, the databases and

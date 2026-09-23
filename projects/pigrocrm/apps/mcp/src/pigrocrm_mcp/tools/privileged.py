@@ -216,6 +216,44 @@ def register(
 
     @mcp.tool()
     @guard
+    def confirm_invoice_import(document_id: str, customer_id: str | None = None) -> dict[str, Any]:
+        """Conferma sul registro un documento gia' rivisto con `review_invoice_import`.
+
+        **Non si fida della revisione precedente**: rilegge e riparsa da capo i byte
+        gia' archiviati sotto `document_id`, riclassifica direzione e duplicati contro
+        lo stato *attuale* del database -- mai quello del momento della revisione -- e
+        per ogni fattura che il documento contiene, se risulta `ready`, la registra
+        chiamando la stessa `import_issued_invoice` di sotto usa: nessuna seconda via
+        di scrittura, nessuna regola di registro duplicata.
+
+        Confermare un documento gia' `already_present` non duplica nulla: la riga
+        torna com'e' gia' sul registro. Una fattura di un fornitore (`incoming_
+        skipped`), un numero gia' occupato con un hash diverso o assente (`conflict`),
+        o un documento che nessun formato riconosce (`unclaimed`) non scrivono niente,
+        con lo stesso significato di `review_invoice_import`.
+
+        `customer_id` e' la sola decisione umana che questo strumento aggiunge:
+        a quale cliente attaccare la fattura. Omesso, si usa la corrispondenza
+        automatica per P.IVA/codice fiscale ricalcolata ora; se non ne trova una,
+        la riga risulta `needs_customer_confirmation` e non scrive nulla -- creare
+        il cliente contestualmente e' un passo successivo, non ancora costruito.
+
+        Per un documento che contiene **una sola fattura**, la riga scritta porta
+        anche `xml_document_id`/`xml_hash_sha256`, puntati allo stesso `document_id`
+        gia' letto qui -- mai una seconda copia dei byte. Un documento `lotto` con
+        piu' fatture lascia entrambi i campi vuoti su ciascuna, esattamente come oggi
+        per l'import dichiarato a mano.
+        """
+        service = InvoiceService(context.session, context.storage)
+        righe = service.confirm_import(
+            UUID(document_id),
+            context.actor,
+            customer_id=UUID(customer_id) if customer_id is not None else None,
+        )
+        return {"righe": [riga.model_dump(mode="json") for riga in righe]}
+
+    @mcp.tool()
+    @guard
     def import_issued_invoice(dati: dict[str, Any]) -> dict[str, Any]:
         """Registra una fattura **gia' emessa da un sistema esterno** -- il gestionale
         precedente -- con il suo numero e la sua data: il contatore dell'anno sale fino a

@@ -14,6 +14,7 @@ from testcontainers.community.postgres import PostgresContainer
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
+from pigrocrm.core.contract_expenses.triggers import CONTRACT_EXPENSE_TRIGGER_SQL
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import Base, create_engine_from_settings, session_factory
 from pigrocrm.core.deals.models import Deal
@@ -58,6 +59,7 @@ def db_engine() -> Iterator[Engine]:
         Base.metadata.create_all(engine)
         with engine.begin() as connection:
             connection.execute(text(WORK_UNIT_TRIGGER_SQL))
+            connection.execute(text(CONTRACT_EXPENSE_TRIGGER_SQL))
         yield engine
         engine.dispose()
 
