@@ -63,6 +63,8 @@ NEXT_PRIVATE_SMTP_HOST=mailpit
 NEXT_PRIVATE_SMTP_PORT=1025
 NEXT_PRIVATE_SMTP_FROM_NAME=rebase probe
 NEXT_PRIVATE_SMTP_FROM_ADDRESS=probe@example.com
+# Documenso refuses to call private addresses unless they are listed (found by the 2026-09-23 run).
+NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS=host.docker.internal
 EOF
 ```
 
