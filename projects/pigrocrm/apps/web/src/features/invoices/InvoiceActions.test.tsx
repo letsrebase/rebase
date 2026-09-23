@@ -43,6 +43,9 @@ const ISSUED = {
   trasmessa_esternamente_il: null,
 } as unknown as Invoice
 const COLLECTED = { ...ISSUED, stato_pagamento: 'incassato', data_incasso: '2026-09-01' } as Invoice
+// REB-168: the download buttons follow the row's document ids, so a fixture that means
+// "an issued invoice with its files" has to say so.
+const RENDERED = { ...ISSUED, pdf_document_id: 'doc-pdf', xml_document_id: 'doc-xml' } as Invoice
 const PROFORMA = { id: 'pf-1', tipo: 'proforma', stato: 'confermata' } as unknown as Invoice
 const DRAFT_PROFORMA = { id: 'pf-1', tipo: 'proforma', stato: 'bozza' } as unknown as Invoice
 
@@ -58,6 +61,7 @@ beforeEach(() => {
   vi.mocked(api.DELETE).mockReset()
   vi.mocked(toast.success).mockReset()
   vi.mocked(toast.warning).mockReset()
+  vi.mocked(toast.error).mockReset()
   vi.spyOn(window, 'confirm').mockReturnValue(true)
 })
 
@@ -82,8 +86,30 @@ describe('InvoiceActions', () => {
     expect(api.POST).not.toHaveBeenCalled()
   })
 
-  it('renders the artefacts after issuing, as a second call', async () => {
-    vi.mocked(api.POST).mockResolvedValue(ok(ISSUED))
+  /**
+   * REB-143: the endpoint renders on emission and answers the row read back after it, so
+   * a row that already carries both files needs no second render. Two calls here used
+   * to compile the same PDF twice on every emission.
+   */
+  it('does not render again when the issued row already carries both files', async () => {
+    const rendered = { ...ISSUED, pdf_document_id: 'doc-pdf', xml_document_id: 'doc-xml' }
+    vi.mocked(api.POST).mockResolvedValue(ok(rendered))
+    const onIssued = vi.fn()
+    wrap(<InvoiceActions invoice={DRAFT} onIssued={onIssued} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /emetti/i }))
+
+    await waitFor(() => expect(onIssued).toHaveBeenCalledWith(rendered))
+    expect(api.POST).toHaveBeenCalledTimes(1)
+    expect(String(vi.mocked(api.POST).mock.calls[0]?.[0])).toContain('/issue')
+    expect(toast.success).toHaveBeenCalled()
+    expect(toast.warning).not.toHaveBeenCalled()
+  })
+
+  it('renders the artefacts again when the issued row is missing one, as a second call', async () => {
+    // The half-way case the endpoint can answer: the PDF committed, the XML export failed.
+    const halfRendered = { ...ISSUED, pdf_document_id: 'doc-pdf', xml_document_id: null }
+    vi.mocked(api.POST).mockResolvedValue(ok(halfRendered))
     const onIssued = vi.fn()
     wrap(<InvoiceActions invoice={DRAFT} onIssued={onIssued} />)
 
@@ -98,7 +124,7 @@ describe('InvoiceActions', () => {
     expect(paths[1]).toContain('/artifacts')
     // A draft fattura is issued in place: the caller gets the same id back and has
     // nothing to navigate to. The route relies on this to stay put (ORB-134).
-    expect(onIssued).toHaveBeenCalledWith(ISSUED)
+    expect(onIssued).toHaveBeenCalledWith(halfRendered)
     expect(onIssued.mock.calls[0]?.[0]?.id).toBe(DRAFT.id)
   })
 
@@ -389,13 +415,134 @@ describe('InvoiceActions', () => {
   })
 
   it('hides the XML and regenerate actions for an imported invoice', () => {
-    const imported = { ...ISSUED, importata_da: 'esterno' } as Invoice
+    // With an XML id on the row, so it is the import that hides the button and not the
+    // missing file.
+    const imported = { ...RENDERED, importata_da: 'esterno' } as Invoice
     wrap(<InvoiceActions invoice={imported} />)
     expect(screen.queryByRole('button', { name: /XML FatturaPA/i })).toBeNull()
     expect(screen.queryByRole('button', { name: /Rigenera/i })).toBeNull()
     // The PDF stays: for an imported invoice it is the original document, not one
     // pigroCRM produced, so there is nothing to regenerate but nothing to hide either.
     expect(screen.getByRole('button', { name: /^PDF$/i })).toBeInTheDocument()
+    // And no note about a missing XML: an imported invoice never had one rendered here,
+    // and «Rigenera documenti» is not on its page to point at.
+    expect(screen.queryByTestId('missing-invoice-files')).toBeNull()
+  })
+
+  // --- REB-168: a download exists only when its file does ---------------------------
+
+  it('offers both downloads, and says nothing, when both files exist', () => {
+    wrap(<InvoiceActions invoice={RENDERED} />)
+    expect(screen.getByRole('button', { name: /^PDF$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /XML FatturaPA/i })).toBeInTheDocument()
+    expect(screen.queryByTestId('missing-invoice-files')).toBeNull()
+  })
+
+  it('drops «XML FatturaPA» when the XML was never produced, and points at «Rigenera documenti»', () => {
+    wrap(<InvoiceActions invoice={{ ...RENDERED, xml_document_id: null } as Invoice} />)
+    expect(screen.queryByRole('button', { name: /XML FatturaPA/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /^PDF$/i })).toBeInTheDocument()
+    expect(screen.getByTestId('missing-invoice-files')).toHaveTextContent(
+      'L’XML FatturaPA di questa fattura non è stato generato. Premi «Rigenera documenti» per generarlo: il numero resta quello.',
+    )
+    expect(screen.getByRole('button', { name: /Rigenera documenti/i })).toBeInTheDocument()
+  })
+
+  it('drops both downloads when neither file exists, and says so once', () => {
+    const unrendered = { ...RENDERED, pdf_document_id: null, xml_document_id: null } as Invoice
+    wrap(<InvoiceActions invoice={unrendered} />)
+    expect(screen.queryByRole('button', { name: /^PDF$/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /XML FatturaPA/i })).toBeNull()
+    expect(screen.getByTestId('missing-invoice-files')).toHaveTextContent(
+      'Il PDF e l’XML FatturaPA di questa fattura non sono stati generati. Premi «Rigenera documenti» per generarli',
+    )
+  })
+
+  it('tells a readonly person where the file comes from rather than to press a button they lack', () => {
+    mockAuth.may = false
+    wrap(<InvoiceActions invoice={{ ...RENDERED, pdf_document_id: null } as Invoice} />)
+    expect(screen.queryByRole('button', { name: /^PDF$/i })).toBeNull()
+    expect(screen.getByRole('button', { name: /XML FatturaPA/i })).toBeInTheDocument()
+    expect(screen.getByTestId('missing-invoice-files')).toHaveTextContent(
+      'Il PDF di questa fattura non è stato generato. Si genera con «Rigenera documenti», che il tuo ruolo non può usare.',
+    )
+  })
+
+  /** What Ivan saw on production (2026-09-11): the press answered the server's log line,
+   *  `invoice_artifact <uuid>#xml not found`. A file that goes missing after the page
+   *  loaded still 404s, and the toast says what that means in Italian. */
+  it('turns a 404 on download into a sentence, never the raw identifier', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: 'about:blank',
+          title: 'Not Found',
+          status: 404,
+          code: 'not_found',
+          detail: 'invoice_artifact inv-1#xml not found',
+          entity: 'invoice_artifact',
+          identifier: 'inv-1#xml',
+        }),
+        { status: 404, headers: { 'content-type': 'application/problem+json' } },
+      ),
+    )
+    wrap(<InvoiceActions invoice={RENDERED} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /XML FatturaPA/i }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    const message = String(vi.mocked(toast.error).mock.calls[0]?.[0])
+    expect(message).toBe(
+      'L’XML FatturaPA di questa fattura non è disponibile. Premi «Rigenera documenti» per generarlo di nuovo.',
+    )
+    expect(message).not.toContain('invoice_artifact')
+  })
+
+  it('drops the pointer from the 404 sentence for a person who has no «Rigenera documenti»', async () => {
+    mockAuth.may = false
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: 'about:blank',
+          title: 'Not Found',
+          status: 404,
+          code: 'not_found',
+          detail: 'document_blob documents/doc-pdf/1 not found',
+        }),
+        { status: 404, headers: { 'content-type': 'application/problem+json' } },
+      ),
+    )
+    wrap(<InvoiceActions invoice={RENDERED} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /^PDF$/i }))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Il PDF di questa fattura non è disponibile.'),
+    )
+  })
+
+  it('keeps the server’s own words for a download that fails any other way', async () => {
+    const detail =
+      "emitter_profile.codice_fiscale: il nome del file XML richiede un codice fiscale o una partita IVA validi dell'emittente"
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: 'about:blank',
+          title: 'Validation Failed',
+          status: 422,
+          code: 'validation_failed',
+          detail,
+          entity: 'emitter_profile',
+          field: 'codice_fiscale',
+        }),
+        { status: 422, headers: { 'content-type': 'application/problem+json' } },
+      ),
+    )
+    wrap(<InvoiceActions invoice={RENDERED} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /XML FatturaPA/i }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(detail))
   })
 
   /** REB-294: a readonly actor is offered nothing the service would answer 403 to.
@@ -405,7 +552,7 @@ describe('InvoiceActions', () => {
    *  at all where «Conferma»/«Elimina bozza» used to stand. */
   it('shows a readonly actor only the downloads of an issued invoice', () => {
     mockAuth.may = false
-    wrap(<InvoiceActions invoice={ISSUED} />)
+    wrap(<InvoiceActions invoice={RENDERED} />)
     expect(screen.getByRole('button', { name: /^PDF$/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /XML FatturaPA/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /segna/i })).toBeNull()

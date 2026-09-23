@@ -1,0 +1,125 @@
+// The page of a contract. A pandoc Typst template, like `guide.typ.template` beside it:
+// a name between dollar signs is a variable and `$$body$$` is the contract after pandoc's
+// Typst writer (dollars are doubled in comments, because pandoc substitutes there too).
+//
+// The colours arrive as variables read out of `@rebase/brand/palette.css`, never typed
+// here. What changes from the guide is the purpose: a contract is printed, signed and
+// filed, so the page is white with no grid, the body is in the full ink rather than the
+// quiet one, and the text is justified with Italian hyphenation.
+//
+// `build_contract_pdf.py` rewrites two markers in the body before Typst sees it: a field
+// becomes `field("label")` when it is blank and `value("text")` when the data fill it,
+// and a proposal still to be decided becomes `proposal[...]`. It also passes `draft`,
+// read from the front matter's `status`, as a Typst boolean.
+
+#let ink = rgb("$ink$")
+#let inkquiet = rgb("$inkquiet$")
+#let cta = rgb("$cta$")
+#let gold = rgb("$gold$")
+#let gridline = rgb("$gridline$")
+
+#let draft = $draft$
+
+// The four tiles of the mark, in the order `shared/brand/mark.ts` fixes.
+#let mark(size: 3pt) = {
+  let tile(c) = rect(width: size, height: size, fill: c, stroke: none)
+  box(baseline: 15%, grid(
+    columns: (size, size),
+    rows: (size, size),
+    tile(ink), tile(gold),
+    tile(cta), tile(ink),
+  ))
+}
+
+// A blank to fill in: a rule with the field's name under the reader's pen. A signature
+// gets the room a pen needs above its rule.
+#let field(name) = context {
+  let signature = name.starts-with("firma")
+  let label = text(size: 0.75em, fill: inkquiet, name)
+  box(
+    width: calc.max(measure(label).width + 6pt, if signature { 55mm } else { 30mm }),
+    stroke: (bottom: 0.6pt + inkquiet),
+    inset: (x: 2pt, top: if signature { 16pt } else { 0pt }, bottom: 1.5pt),
+    label,
+  )
+}
+#let value(it) = text(fill: ink, it)
+#let proposal(body) = highlight(fill: gold.lighten(45%), extent: 1pt, body)
+
+#set document(title: "$title$", author: "rebase")
+
+#set page(
+  paper: "a4",
+  margin: (x: 24mm, top: 26mm, bottom: 24mm),
+  fill: white,
+  background: if draft {
+    rotate(-40deg, text(size: 120pt, weight: 500, fill: ink.transparentize(95%), "BOZZA"))
+  },
+  header: context {
+    if counter(page).get().first() > 1 {
+      set text(size: 8pt, fill: inkquiet)
+      grid(
+        columns: (1fr, auto),
+        [#mark() #h(3pt) rebase · $title$],
+        [Versione $version$#if draft [ · bozza]],
+      )
+    }
+  },
+  footer: context {
+    set text(size: 8pt, fill: inkquiet)
+    align(right)[Pagina #counter(page).display() di #counter(page).final().first()]
+  },
+)
+
+#set text(font: ("Outfit",), size: 10pt, weight: 300, fill: ink, lang: "it", hyphenate: true)
+#set par(leading: 0.6em, spacing: 0.95em, justify: true)
+#show strong: set text(weight: 500)
+#show link: set text(fill: cta)
+#set list(indent: 4pt, body-indent: 6pt)
+#set enum(indent: 4pt, body-indent: 6pt)
+
+// An article title keeps the accent square the site puts before a kicker, and stays
+// with the paragraph under it: a title alone at the foot of a page reads as a clause
+// that was left out.
+#show heading.where(level: 1): it => block(above: 1.6em, below: 0.8em, sticky: true)[
+  #box(rect(width: 5pt, height: 5pt, fill: cta, stroke: none))
+  #h(5pt)
+  #text(size: 11.5pt, weight: 500, it.body)
+]
+
+// The tables here are a handful of rows (the numbers of an engagement, the signatures),
+// and half a table at the foot of a page reads as a missing term: they stay whole. Pandoc
+// centres every table and passes `align: auto` per column, which inherits that centring
+// into the cells, so the cells are set back to the left edge here.
+#show figure.where(kind: table): set block(breakable: false)
+#set table(stroke: 0.5pt + gridline.darken(25%), inset: (x: 6pt, y: 6pt))
+#show table.cell: set align(left + horizon)
+#show table.cell.where(y: 0): set text(weight: 500)
+
+#block(below: 1.8em)[
+  #text(size: 9pt, weight: 500)[#mark() #h(3pt) rebase]
+  #v(10pt)
+  #text(size: 22pt, weight: 500)[$title$]
+  $if(subtitle)$
+  #v(2pt)
+  #text(size: 11pt, fill: inkquiet)[$subtitle$]
+  $endif$
+  #v(6pt)
+  #text(size: 8.5pt, fill: inkquiet)[Versione $version$ · $date$#if draft [ · bozza]]
+  #if draft {
+    v(10pt)
+    block(
+      width: 100%,
+      fill: gold.lighten(85%),
+      stroke: (left: 2pt + gold),
+      inset: 8pt,
+      text(size: 8.5pt)[
+        *Bozza da rivedere.* Il testo evidenziato così, #proposal[15%], è una proposta
+        ancora da decidere. Una riga con un'etichetta, #field("partita iva"), è un dato da
+        compilare per ogni firma.
+      ],
+    )
+  }
+]
+
+$body$

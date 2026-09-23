@@ -7,8 +7,11 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.invoices import pdf as invoice_pdf
+from pigrocrm.core.invoices.service import InvoiceService
 
 # `oggi_in_italia()`, not `date.today()`: `issue` and `mark_transmitted_externally`
 # both compare against Europe/Rome's own calendar (see `clock.py`), and the two can
@@ -170,6 +173,10 @@ def test_issuing_assigns_a_number_and_produces_both_artefacts(
     assert issued["stato"] == "emessa"
     assert issued["numero"] == 1
     assert issued["anno"] == oggi_in_italia().year
+    # The row is read back after the render (REB-143), so the answer already says both
+    # files exist and the web has no reason to render them a second time.
+    assert issued["pdf_document_id"] is not None
+    assert issued["xml_document_id"] is not None
 
     pdf = logged_in.get(f"/api/invoices/{issued['id']}/pdf")
     assert pdf.status_code == 200
@@ -182,6 +189,77 @@ def test_issuing_assigns_a_number_and_produces_both_artefacts(
     assert xml.headers["content-type"] == "application/xml"
     assert b"FatturaElettronica" in xml.content
     assert "IT" in xml.headers["content-disposition"]
+
+
+def test_a_render_that_raises_after_the_commit_still_answers_the_issued_row(
+    logged_in: TestClient,
+    customer: dict[str, Any],
+    fiscal_profile: dict[str, Any],
+    emitter: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REB-143: `issue` commits, then the PDF render raises. The number is consumed and
+    the invoice is a fiscal fact, so the answer is 200 with the issued row and no
+    document ids, never the 500 that told the person the emission failed."""
+
+    def typst_crashed(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("typst crashed")
+
+    draft = _draft(logged_in, customer["id"])
+    with monkeypatch.context() as patch:
+        patch.setattr(invoice_pdf, "render_invoice_pdf", typst_crashed)
+        response = logged_in.post(f"/api/invoices/{draft['id']}/issue", json={})
+        assert response.status_code == 200, response.text
+        issued = response.json()
+        assert issued["id"] == draft["id"]
+        assert issued["stato"] == "emessa"
+        assert issued["numero"] == 1
+        assert issued["pdf_document_id"] is None
+        assert issued["xml_document_id"] is None
+
+        # What the server answers from now on agrees with the response: the invoice is
+        # issued, and the file that was never produced is a 404, not an empty download.
+        assert logged_in.get(f"/api/invoices/{issued['id']}").json()["stato"] == "emessa"
+        assert logged_in.get(f"/api/invoices/{issued['id']}/pdf").status_code == 404
+
+    # And «Rigenera documenti» is the retry: once the render works, both files appear
+    # under the same number.
+    retried = logged_in.post(f"/api/invoices/{issued['id']}/artifacts")
+    assert retried.status_code == 200, retried.text
+    assert sorted(artifact["kind"] for artifact in retried.json()) == ["pdf", "xml"]
+    again = logged_in.get(f"/api/invoices/{issued['id']}").json()
+    assert again["numero"] == 1
+    assert again["pdf_document_id"] is not None
+    assert again["xml_document_id"] is not None
+
+
+def test_an_xml_export_that_breaks_the_transaction_leaves_the_pdf_it_already_committed(
+    logged_in: TestClient,
+    customer: dict[str, Any],
+    fiscal_profile: dict[str, Any],
+    emitter: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The half-way case: `produce_artifacts` commits the PDF before it exports the XML,
+    so a failure there leaves one file, and the answer names exactly that one.
+
+    The failure is a statement PostgreSQL refuses, so the transaction is aborted when the
+    endpoint catches it: without the rollback, the read-back would answer 500 on
+    `InFailedSqlTransaction` and the person would see the failure this card removes."""
+
+    def aborts_the_transaction(self: InvoiceService, *_args: object, **_kwargs: object) -> None:
+        self.session.execute(text("SELECT 1/0"))
+
+    monkeypatch.setattr(InvoiceService, "export_xml", aborts_the_transaction)
+    draft = _draft(logged_in, customer["id"])
+    response = logged_in.post(f"/api/invoices/{draft['id']}/issue", json={})
+    assert response.status_code == 200, response.text
+    issued = response.json()
+    assert issued["stato"] == "emessa"
+    assert issued["pdf_document_id"] is not None
+    assert issued["xml_document_id"] is None
+    assert logged_in.get(f"/api/invoices/{issued['id']}/pdf").status_code == 200
+    assert logged_in.get(f"/api/invoices/{issued['id']}/xml").status_code == 404
 
 
 def test_a_collaboratore_cannot_issue(

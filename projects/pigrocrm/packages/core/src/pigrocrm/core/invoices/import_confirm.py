@@ -10,14 +10,18 @@ state -- never whatever an earlier `review_invoice_import` call computed --
 for the same reason mastro's own `persist.ts:6-13` gives: "the structured
 document wins... simpler than trusting the client not to have tampered with it."
 
-**One write function.** The only thing this module adds beyond `import_review`'s
-own classification is `map_parsed_invoice_to_import`, a pure translation of a
-confirmed `ParsedInvoice` onto `InvoiceImport`'s own fields (design §5 item 2)
--- mirroring mastro's own `mapInvoiceToInput` (`persist.ts:91-112`). The actual
-write is `InvoiceService.import_issued` itself, called once per invoice inside
-`InvoiceService.confirm_import`: this is the direct guarantee against
-divergence between the hand-declared and the newly-parsed path, since both run
-the same register rules at the same call.
+**One write function.** Beyond `import_review`'s own classification, this
+module adds `map_parsed_invoice_to_import`, a pure translation of a confirmed
+`ParsedInvoice` onto `InvoiceImport`'s own fields (design §5 item 2) --
+mirroring mastro's own `mapInvoiceToInput` (`persist.ts:91-112`) -- and
+`map_parsed_party_to_customer`, the same translation for the matched
+counterparty onto `CustomerCreate` when no `Customer` already carries its tax
+id (design §7 item 5). The actual writes are `InvoiceService.import_issued`
+and `CustomerService._insert`, called once per invoice/customer inside
+`InvoiceService.confirm_import`, sharing its one session: this is the direct
+guarantee against divergence between the hand-declared and the newly-parsed
+path, since both run the same register rules at the same call, and against a
+customer committed with no invoice, since both writes share one commit.
 
 **`importata_da` stays `"esterno"`, on purpose.** Widening the column's
 `Literal` to a second value is design §5 item 4/§7 item 6, a later, unsigned-off
@@ -34,7 +38,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from pigrocrm.core.invoices.import_schemas import ParsedInvoice
+from pigrocrm.core.customers.schemas import CustomerCreate
+from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id
+from pigrocrm.core.invoices.import_schemas import ParsedInvoice, ParsedInvoiceParty
 from pigrocrm.core.invoices.schemas import InvoiceImport, InvoiceLineImport, InvoiceRead
 
 InvoiceConfirmOutcome = Literal[
@@ -74,23 +80,30 @@ class ConfirmedInvoiceRead(BaseModel):
 
 
 class InvoiceConfirmRequest(BaseModel):
-    """One already-archived document plus the one human decision this issue's
-    scope adds: which `Customer` to attach when no exact tax-id match exists
-    (`review_invoice_import`'s own `"needs_customer_confirmation"`). Creating a
-    customer inside the same transaction is design §7 item 5's own follow-up,
-    not built here: today's caller resolves or creates the `Customer` first,
-    through the existing customer surface, and hands its id here.
+    """One already-archived document plus the two human decisions this issue's
+    scope adds: which `Customer` to attach when no exact tax-id match exists, and
+    whether to create one (`review_invoice_import`'s own `"needs_customer_
+    confirmation"`).
 
     `customer_id`, when given, overrides whatever the current tax-id match
     would find on its own -- the human's decision always wins over the
     automatic match, exactly as `"needs_customer_confirmation"`'s own name
     promises a caller who reads it.
+
+    `create_customer`, when true and `customer_id` is omitted and no exact
+    match is found, creates the matched party as a new `Customer` instead of
+    reporting `"needs_customer_confirmation"` -- inside the same transaction
+    as the invoice write (design §7 item 5), never a premature commit of an
+    orphan customer. One document's `lotto` batch can carry several invoices
+    from the same new counterparty: every one of them attaches to the same
+    freshly-created row, never one `Customer` per invoice.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     document_id: UUID
     customer_id: UUID | None = None
+    create_customer: bool = False
 
 
 class InvoiceConfirmResult(BaseModel):
@@ -164,4 +177,32 @@ def map_parsed_invoice_to_import(
         imposta=invoice.imposta,
         bollo=invoice.bollo if invoice.bollo is not None else Decimal("0.00"),
         totale=invoice.totale,
+    )
+
+
+def map_parsed_party_to_customer(party: ParsedInvoiceParty) -> CustomerCreate:
+    """The parsed counterparty exactly as the confirmed invoice's own document
+    states it, onto `CustomerCreate`'s fields (design §7 item 5): the row
+    `confirm_import` creates when `create_customer` is set and no `Customer`
+    already carries this tax id -- never a second, hand-typed shape for the
+    same facts `import_review.match_customer` already reads off the same
+    `ParsedInvoiceParty` to look them up.
+
+    `partita_iva`/`codice_fiscale` are normalised through the same `normalise_
+    fiscal_id` `match_customer` itself calls first. `ParsedInvoiceParty.partita_
+    iva` carries the country prefix FPR12 requires (`"IT01234567890"`, its own
+    docstring), while `Customer.partita_iva` stores the bare eleven digits
+    `CustomerService`'s own `_check_fiscal` enforces -- skipping this step
+    would create a row `match_customer` could never find again on the next
+    invoice from the same counterparty.
+    """
+    return CustomerCreate(
+        ragione_sociale=party.ragione_sociale,
+        partita_iva=normalise_fiscal_id(party.partita_iva),
+        codice_fiscale=normalise_fiscal_id(party.codice_fiscale),
+        indirizzo=party.indirizzo,
+        cap=party.cap,
+        comune=party.comune,
+        provincia=party.provincia,
+        nazione=party.nazione,
     )

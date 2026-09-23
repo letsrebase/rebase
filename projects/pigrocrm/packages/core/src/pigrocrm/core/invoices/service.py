@@ -22,6 +22,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.clock import ITALY_TZ, oggi_in_italia
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.schemas import DocumentCreate
@@ -46,7 +47,11 @@ from pigrocrm.core.invoices.fatturapa import (
     normalise_fiscal_id,
 )
 from pigrocrm.core.invoices.import_classification import classify_parsed_invoice
-from pigrocrm.core.invoices.import_confirm import ConfirmedInvoiceRead, map_parsed_invoice_to_import
+from pigrocrm.core.invoices.import_confirm import (
+    ConfirmedInvoiceRead,
+    map_parsed_invoice_to_import,
+    map_parsed_party_to_customer,
+)
 from pigrocrm.core.invoices.import_review import (
     ReviewedInvoiceRead,
     detect_adapter,
@@ -55,6 +60,7 @@ from pigrocrm.core.invoices.import_review import (
     natural_key,
     review_content,
 )
+from pigrocrm.core.invoices.import_schemas import ParsedInvoiceParty
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine, InvoiceRegisterGap
 from pigrocrm.core.invoices.naming import (
     invoice_storage_prefix,
@@ -165,6 +171,11 @@ class InvoiceService:
         self.fiscal = FiscalProfileService(session)
         self.emitter = EmitterProfileService(session)
         self.documents = DocumentService(session, storage, self.settings)
+        # REB-367 (design §7 item 5): the same session as everything else here, so a
+        # customer `confirm_import` creates for a brand-new counterparty lands in the
+        # exact transaction the invoice write is about to commit, never a customer
+        # committed on its own moments before a register failure.
+        self.customers = CustomerService(session)
         # The one seam of §3.5: `None` in production, where the reader is composed from
         # the actor's own stored Drive account by `drive_reader_for`. A test that wants
         # an in-memory Drive injects the factory instead of seeding an account row and a
@@ -1095,7 +1106,12 @@ class InvoiceService:
         return rows
 
     def confirm_import(
-        self, document_id: UUID, actor: Actor, *, customer_id: UUID | None = None
+        self,
+        document_id: UUID,
+        actor: Actor,
+        *,
+        customer_id: UUID | None = None,
+        create_customer: bool = False,
     ) -> list[ConfirmedInvoiceRead]:
         """Confirm one already-reviewed document onto the register (REB-366, design
         record §4-5, §7 item 4): **re-reads and re-parses the document's own stored
@@ -1124,10 +1140,22 @@ class InvoiceService:
         `customer_id` is the one human decision this issue's scope adds: which
         `Customer` this invoice attaches to. When omitted, the current exact
         tax-id match (`import_review.match_customer`, re-run against the
-        database's current state, never review time's) is used; when neither
-        exists, the row reports `"needs_customer_confirmation"` and nothing is
-        written -- creating a customer inside this same call is design §7 item
-        5's own follow-up, not this issue's.
+        database's current state, never review time's) is used.
+
+        `create_customer` is REB-367's own addition (design §7 item 5): when
+        still unresolved after both of the above, and `create_customer` is
+        true, the matched party (`invoice.cliente`) is inserted as a new
+        `Customer` -- through `CustomerService._insert`, the non-committing
+        half of `create` -- inside this same transaction, never a premature
+        commit that could leave a customer on file with no invoice if the
+        register write fails a moment later. A `lotto` batch's several
+        invoices from the same brand-new counterparty share one freshly
+        created row, keyed on the parsed party itself (`ParsedInvoiceParty` is
+        frozen and compares by value, so the second invoice in the batch finds
+        the row the first one just created rather than inserting a second).
+        `create_customer` false (the default) leaves today's behaviour
+        unchanged: the row reports `"needs_customer_confirmation"` and nothing
+        is written.
 
         **`xml_document_id`/`xml_hash_sha256`, for a single-invoice source
         document only** (design §5 item 3): when the document parses into
@@ -1153,6 +1181,12 @@ class InvoiceService:
         digest = hashlib.sha256(content).hexdigest() if single_invoice_document else None
 
         rows: list[ConfirmedInvoiceRead] = []
+        # Keyed on the parsed party itself, not a tax id string: `ParsedInvoiceParty`
+        # is frozen and hashes/compares by value, and every invoice from the same
+        # counterparty in one document parses to an identical party object, so this
+        # is exactly "the same new counterparty seen again in this batch" with no
+        # normalisation of its own to get wrong.
+        created_customers: dict[ParsedInvoiceParty, UUID] = {}
         for invoice in invoices:
             classification = classify_parsed_invoice(
                 invoice, emitter, existing=existing_for(self.session, invoice), content=content
@@ -1185,6 +1219,21 @@ class InvoiceService:
             resolved_customer_id = customer_id
             if resolved_customer_id is None:
                 resolved_customer_id = match_customer(self.session, invoice.cliente)
+            # Not cached in `created_customers` yet: `self.session.rollback()` below
+            # would revert this insert in the database while leaving a Python-level
+            # cache entry pointing at an id that no longer exists, so a later invoice
+            # in the same batch from the same counterparty would reuse a dangling id
+            # and fail with an uncaught `NotFound` instead of its own outcome. Cached
+            # only once `import_issued` for *this* invoice has actually committed.
+            new_customer_id: UUID | None = None
+            if resolved_customer_id is None and create_customer:
+                resolved_customer_id = created_customers.get(invoice.cliente)
+                if resolved_customer_id is None:
+                    new_customer = self.customers._insert(
+                        map_parsed_party_to_customer(invoice.cliente), actor
+                    )
+                    resolved_customer_id = new_customer.id
+                    new_customer_id = new_customer.id
             if resolved_customer_id is None:
                 rows.append(
                     ConfirmedInvoiceRead(
@@ -1208,10 +1257,15 @@ class InvoiceService:
                 # commit); the four register-rule checks above its lock raise before any
                 # flush, so this is a defensive no-op there and the real guard on the
                 # committing paths -- either way the session must still answer the next
-                # invoice's own queries and writes in this same batch.
+                # invoice's own queries and writes in this same batch. The customer this
+                # iteration may have just inserted rolls back with it, and was never
+                # cached above, so the next invoice tries its own fresh insert instead of
+                # reusing a now-dangling id.
                 self.session.rollback()
                 rows.append(ConfirmedInvoiceRead(document_id=document_id, outcome="conflict"))
                 continue
+            if new_customer_id is not None:
+                created_customers[invoice.cliente] = new_customer_id
             rows.append(
                 ConfirmedInvoiceRead(
                     document_id=document_id,

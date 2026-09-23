@@ -95,6 +95,9 @@ pythonpath = [
   "projects/hub/packages/core/tests",
   "projects/hub/apps/api/tests",
   "projects/hub/apps/mcp/tests",
+  # Not a test root: the hub's typesetting scripts, so `test_contract_pdf.py` imports
+  # `build_contract_pdf` by the name it has when it runs (see mypy_path above).
+  "projects/hub/tools",
 ]
 asyncio_mode = "auto"
 # Nothing skips on either marker by default: a plan assertion that CI skips is a plan
@@ -122,6 +125,10 @@ mypy_path = [
   "projects/hub/packages/core/src",
   "projects/hub/apps/api/src",
   "projects/hub/apps/mcp/src",
+  # The hub's two typesetting scripts are modules of one directory, not a package:
+  # `build_contract_pdf.py` imports the palette and the fonts from `build_guide_pdf.py`,
+  # which is how Python resolves it when either runs, and this is how mypy does too.
+  "projects/hub/tools",
 ]
 explicit_package_bases = true
 # Matches what .github/workflows/ci.yml passes on the command line exactly, so the
@@ -136,8 +143,9 @@ files = [
   "projects/hub/packages/core/src",
   "projects/hub/apps/api/src",
   "projects/hub/apps/mcp/src",
-  # Not a package and not part of any project's runtime: the one script that builds
-  # the guide the hub hands to a member (ORB-70). Named explicitly because it sits
-  # outside every `src` above and would otherwise be checked by nothing.
+  # Not a package and not part of any project's runtime: the scripts that typeset the
+  # guide the hub hands to a member (ORB-70) and the contracts a member signs (REB-386).
+  # Named explicitly because they sit outside every `src` above and would otherwise be
+  # checked by nothing.
   "projects/hub/tools",
 ]

@@ -35,6 +35,7 @@ Every docstring below says what the operation does that cannot be undone. That i
 decoration: it is the only warning an agent reads.
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import date
@@ -71,6 +72,8 @@ from pigrocrm.core.timetracking.schemas import (
 )
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.context import McpContext
+
+logger = logging.getLogger(__name__)
 
 
 def _day(value: str | None) -> date | None:
@@ -119,6 +122,11 @@ def register(
         Prima di chiamarlo verifica con `get_invoice` che righe, cliente e imponibile
         siano quelli attesi: dopo, l'unica strada è `annul_invoice`, che lascia comunque
         traccia nel registro.
+
+        Restituisce la fattura emessa anche se PDF o XML non si sono generati: in quel
+        caso `pdf_document_id` o `xml_document_id` sono vuoti, la fattura resta emessa e
+        **non va emessa di nuovo**. L'XML si rigenera con `export_invoice_xml`, entrambi
+        i file con «Rigenera documenti» nell'applicazione.
         """
         service = InvoiceService(context.session, context.storage)
         invoice = service.issue(
@@ -126,7 +134,16 @@ def register(
         )
         # The artefacts are the caller's second transaction by design (slice 3 §3): a
         # Typst compile inside the numbering lock would serialise every emission on it.
-        service.produce_artifacts(invoice.id, context.actor)
+        # Once `issue` has committed the number is consumed, so a render that raises is
+        # logged and the issued row is still the answer (REB-143), with the document
+        # ids saying which file exists; `export_invoice_xml` below or the web's
+        # «Rigenera documenti» is the retry. Answering an error here would tell the agent
+        # the emission failed, and an agent that believes that issues the invoice again.
+        try:
+            service.produce_artifacts(invoice.id, context.actor)
+        except Exception:
+            logger.exception("invoice %s issued, its PDF/XML were not produced", invoice.id)
+            service.session.rollback()
         return service.get(invoice.id, context.actor).model_dump(mode="json")
 
     @mcp.tool()
@@ -192,6 +209,12 @@ def register(
         cambia mai lo stato del database e restituisce sempre lo stesso verdetto: quello
         che scrive nel registro e' `confirm_invoice_import`, non ancora su questa
         superficie.
+
+        Quando una riga e' `ready` e il cliente combacia con un solo contratto la cui
+        rate card in vigore alla data di emissione e' a giornata, la riga porta anche
+        `mappature_giorni`: la proposta -- una per riga -- di quali `work_units` gia'
+        registrate e non ancora fatturate su quel contratto la riga ha coperto, o
+        `null` finche' nessuna combinazione esatta si trova.
         """
         service = InvoiceService(context.session, context.storage)
         righe = service.review_import([UUID(d) for d in document_ids], context.actor)
@@ -199,7 +222,9 @@ def register(
 
     @mcp.tool()
     @guard
-    def confirm_invoice_import(document_id: str, customer_id: str | None = None) -> dict[str, Any]:
+    def confirm_invoice_import(
+        document_id: str, customer_id: str | None = None, create_customer: bool = False
+    ) -> dict[str, Any]:
         """Conferma sul registro un documento gia' rivisto con `review_invoice_import`.
 
         **Non si fida della revisione precedente**: rilegge e riparsa da capo i byte
@@ -215,11 +240,16 @@ def register(
         o un documento che nessun formato riconosce (`unclaimed`) non scrivono niente,
         con lo stesso significato di `review_invoice_import`.
 
-        `customer_id` e' la sola decisione umana che questo strumento aggiunge:
+        `customer_id` e' la prima decisione umana che questo strumento aggiunge:
         a quale cliente attaccare la fattura. Omesso, si usa la corrispondenza
         automatica per P.IVA/codice fiscale ricalcolata ora; se non ne trova una,
-        la riga risulta `needs_customer_confirmation` e non scrive nulla -- creare
-        il cliente contestualmente e' un passo successivo, non ancora costruito.
+        la riga risulta `needs_customer_confirmation` e non scrive nulla, a meno
+        che `create_customer` sia `true`: in quel caso la controparte cosi' come
+        il documento la dichiara diventa un nuovo `Customer`, creato dentro la
+        stessa transazione della fattura -- mai un cliente confermato da solo un
+        istante prima che il registro si rifiuti. Un documento `lotto` con piu'
+        fatture della stessa nuova controparte le attacca tutte allo stesso
+        cliente appena creato, non uno per fattura.
 
         Per un documento che contiene **una sola fattura**, la riga scritta porta
         anche `xml_document_id`/`xml_hash_sha256`, puntati allo stesso `document_id`
@@ -232,6 +262,7 @@ def register(
             UUID(document_id),
             context.actor,
             customer_id=UUID(customer_id) if customer_id is not None else None,
+            create_customer=create_customer,
         )
         return {"righe": [riga.model_dump(mode="json") for riga in righe]}
 

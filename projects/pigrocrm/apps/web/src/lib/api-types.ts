@@ -1388,7 +1388,10 @@ export interface paths {
          * Review Import
          * @description REB-365: read-only, admin only, enforced by the service. Reviews one or more
          *     already-archived documents and reports one row per invoice they parse into --
-         *     never writes a row.
+         *     never writes a row. A `"ready"` row whose customer resolves to exactly one
+         *     contract with a day-rate card in force on the invoice's own `data_emissione`
+         *     also carries `mappature_giorni` (REB-369): a proposed link, per line, to that
+         *     contract's recorded, unbilled `work_units`.
          */
         post: operations["review_import_api_invoices_import_review_post"];
         delete?: never;
@@ -1412,7 +1415,9 @@ export interface paths {
          *     document's own stored bytes -- never trusts an earlier `/import/review` call
          *     -- and writes the register through `import_issued` itself for every invoice
          *     that classifies `"ready"`: never a second, independently-maintained write
-         *     path.
+         *     path. `create_customer` (REB-367) creates the matched party as a new
+         *     `Customer` inside that same write when no `customer_id` is given and no
+         *     exact tax-id match exists.
          */
         post: operations["confirm_import_api_invoices_import_confirm_post"];
         delete?: never;
@@ -6008,17 +6013,23 @@ export interface components {
         };
         /**
          * InvoiceConfirmRequest
-         * @description One already-archived document plus the one human decision this issue's
-         *     scope adds: which `Customer` to attach when no exact tax-id match exists
-         *     (`review_invoice_import`'s own `"needs_customer_confirmation"`). Creating a
-         *     customer inside the same transaction is design §7 item 5's own follow-up,
-         *     not built here: today's caller resolves or creates the `Customer` first,
-         *     through the existing customer surface, and hands its id here.
+         * @description One already-archived document plus the two human decisions this issue's
+         *     scope adds: which `Customer` to attach when no exact tax-id match exists, and
+         *     whether to create one (`review_invoice_import`'s own `"needs_customer_
+         *     confirmation"`).
          *
          *     `customer_id`, when given, overrides whatever the current tax-id match
          *     would find on its own -- the human's decision always wins over the
          *     automatic match, exactly as `"needs_customer_confirmation"`'s own name
          *     promises a caller who reads it.
+         *
+         *     `create_customer`, when true and `customer_id` is omitted and no exact
+         *     match is found, creates the matched party as a new `Customer` instead of
+         *     reporting `"needs_customer_confirmation"` -- inside the same transaction
+         *     as the invoice write (design §7 item 5), never a premature commit of an
+         *     orphan customer. One document's `lotto` batch can carry several invoices
+         *     from the same new counterparty: every one of them attaches to the same
+         *     freshly-created row, never one `Customer` per invoice.
          */
         InvoiceConfirmRequest: {
             /**
@@ -6028,6 +6039,11 @@ export interface components {
             document_id: string;
             /** Customer Id */
             customer_id?: string | null;
+            /**
+             * Create Customer
+             * @default false
+             */
+            create_customer: boolean;
         };
         /** InvoiceConfirmResult */
         InvoiceConfirmResult: {
@@ -7586,6 +7602,8 @@ export interface components {
             invoice?: components["schemas"]["ParsedInvoice"] | null;
             /** Matched Customer Id */
             matched_customer_id?: string | null;
+            /** Mappature Giorni */
+            mappature_giorni?: (components["schemas"]["WorkUnitDayMappingProposal"] | null)[] | null;
         };
         /**
          * RootSpace
@@ -8366,6 +8384,37 @@ export interface components {
             giorni_senza_ore: string[];
             /** Ore Totali */
             ore_totali: string;
+        };
+        /**
+         * WorkUnitDayMappingProposal
+         * @description Mastro's `DayMappingProposal` (`day-mapping.ts:26-41`): which days a line
+         *     billed, the period they span, and whether their rate-card price actually
+         *     reconciles with what the line itself states -- the three facts the issue's own
+         *     acceptance names ("the period the picked days span, how many there are, and the
+         *     amount they price to next to what the document itself states"), never hidden
+         *     inside a single accept/reject boolean.
+         */
+        WorkUnitDayMappingProposal: {
+            /** Work Unit Ids */
+            work_unit_ids: string[];
+            /**
+             * Periodo Da
+             * Format: date
+             */
+            periodo_da: string;
+            /**
+             * Periodo A
+             * Format: date
+             */
+            periodo_a: string;
+            /** Numero Giorni */
+            numero_giorni: number;
+            /** Importo Proposto */
+            importo_proposto: string;
+            /** Importo Riga */
+            importo_riga: string;
+            /** Importi Coincidono */
+            importi_coincidono: boolean;
         };
         /** ValidationError */
         ValidationError: {

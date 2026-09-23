@@ -210,6 +210,42 @@ def test_an_explicit_customer_id_resolves_needs_customer_confirmation(
     assert row["fattura"]["customer_id"] == chosen["id"]
 
 
+def test_create_customer_writes_one_new_customer_for_the_whole_batch(
+    logged_in: TestClient, fiscal_profile: dict[str, Any], emitter: dict[str, Any]
+) -> None:
+    """REB-367: no `customer_id` and no exact match, but `create_customer` is
+    true -- the matched party becomes a new `Customer`, and every invoice in
+    the `lotto` batch attaches to that same freshly-created row."""
+    uploader = logged_in.post(
+        "/api/customers",
+        json={
+            "ragione_sociale": "Cliente Caricatore",
+            "indirizzo": "Via Roma 1",
+            "cap": "00100",
+            "comune": "Roma",
+            "provincia": "RM",
+            "nazione": "IT",
+        },
+    ).json()
+    document_id = _upload(logged_in, customer_id=uploader["id"], content=_fixture(LOTTO))
+
+    response = logged_in.post(
+        "/api/invoices/import/confirm",
+        json={"document_id": document_id, "create_customer": True},
+    )
+    assert response.status_code == 200, response.text
+    righe = response.json()["righe"]
+    assert [row["outcome"] for row in righe] == ["imported", "imported"]
+    customer_ids = {row["fattura"]["customer_id"] for row in righe}
+    assert len(customer_ids) == 1
+    [customer_id] = customer_ids
+    assert customer_id != uploader["id"]
+
+    created = logged_in.get(f"/api/customers/{customer_id}")
+    assert created.status_code == 200, created.text
+    assert created.json()["partita_iva"] == CLIENTE_PIVA
+
+
 def test_a_collaborator_cannot_confirm(
     logged_in: TestClient,
     fiscal_profile: dict[str, Any],

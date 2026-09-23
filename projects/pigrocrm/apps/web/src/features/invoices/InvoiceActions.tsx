@@ -114,6 +114,20 @@ export function InvoiceActions({
   // the column already says so. The button follows all four.
   const showMarkTransmitted =
     isIssued && mayMarkTransmitted && !isImported && invoice.trasmessa_esternamente_il === null
+  // REB-168: a download button exists only when its file does, read from the row the way
+  // the proforma branch below already reads `pdf_document_id`. «XML FatturaPA» used to
+  // show on every issued invoice, and on one whose render had failed the press answered
+  // the raw `invoice_artifact …#xml not found`. A render can fail whole or half-way
+  // (`produce_artifacts` commits the PDF before it exports the XML), and since REB-143
+  // the emission still succeeds either way, so an issued row with an empty id is a
+  // state this bar meets, not an accident.
+  const hasPdf = invoice.pdf_document_id != null
+  const hasXml = invoice.xml_document_id != null
+  // Said only where «Rigenera documenti» is the way out: an imported invoice never
+  // renders its own files (`produce_artifacts` refuses it), so pointing there would be
+  // pointing at a button that is not on its page.
+  const missingFiles =
+    isIssued && !isImported ? missingFilesSentence(hasPdf, hasXml, mayProduce) : null
 
   /**
    * No `window.confirm` here, unlike «Emetti» and «Elimina»: confirming consumes no
@@ -134,17 +148,21 @@ export function InvoiceActions({
   /**
    * Emission and the render are two steps, deliberately.
    *
-   * `issue()` is one transaction and does not produce the artefacts; the caller does.
-   * That boundary exists because calling the render from inside emission made emission
-   * stop being one transaction, and an artefact commit then survived a rollback.
+   * `issue()` is one transaction and does not produce the artefacts; the endpoint renders
+   * them right after its commit, in a second one. That boundary exists because calling
+   * the render from inside emission made emission stop being one transaction, and an
+   * artefact commit then survived a rollback.
    *
-   * So a failure of the second call is **not** a failed emission. The invoice has its
-   * number and is fiscally complete; it is merely unprinted, and `produce_artifacts`
-   * regenerates deterministically from the frozen snapshot whenever it is called again.
-   * Saying "emission failed" here would be the more dangerous lie, so the message says
-   * exactly what happened and what to press.
+   * So a failed render is **not** a failed emission. The invoice has its number and is
+   * fiscally complete; it is merely unprinted, and `produce_artifacts` regenerates
+   * deterministically from the frozen snapshot whenever it is called again. Since
+   * REB-143 the endpoint says so itself: it answers the issued row whatever the render
+   * did, read back after it, so a missing `pdf_document_id` or `xml_document_id` is the
+   * render that failed. Only then does this bar try once more, and only if that also
+   * fails does it warn. Saying "emission failed" here would be the more dangerous lie,
+   * so the message says exactly what happened and what to press.
    *
-   * The render targets `issued.id`, not `invoice.id`: from a proforma the two differ,
+   * The retry targets `issued.id`, not `invoice.id`: from a proforma the two differ,
    * and rendering the proforma would print the wrong document (ORB-134). The toast
    * names the number, since it is the one fact the person cannot see on the page they
    * pressed the button on.
@@ -164,12 +182,14 @@ export function InvoiceActions({
       {
         onSuccess: (issued) => {
           toast.success(`Fattura ${formatInvoiceNumber(issued)} emessa`)
-          void artifacts.mutateAsync(issued.id).catch(() =>
-            toast.warning(
-              'Documento emesso correttamente, ma PDF e XML non sono stati generati. ' +
-                'Riprova con «Rigenera documenti»: il numero resta quello.',
-            ),
-          )
+          if (issued.pdf_document_id == null || issued.xml_document_id == null) {
+            void artifacts.mutateAsync(issued.id).catch(() =>
+              toast.warning(
+                'Documento emesso correttamente, ma PDF e XML non sono stati generati. ' +
+                  'Riprova con «Rigenera documenti»: il numero resta quello.',
+              ),
+            )
+          }
           onIssued?.(issued)
         },
         onError: (error) => setProblem(toProblem(error)),
@@ -254,7 +274,14 @@ export function InvoiceActions({
     try {
       await downloadInvoiceArtifact(invoice.id, kind)
     } catch (error) {
-      toast.error(toProblem(error).detail)
+      toast.error(
+        downloadErrorSentence(
+          toProblem(error),
+          kind,
+          invoice.tipo === 'proforma' ? 'proforma' : 'fattura',
+          isIssued && !isImported && mayProduce,
+        ),
+      )
     }
   }
 
@@ -304,11 +331,13 @@ export function InvoiceActions({
                 Segna trasmessa
               </Button>
             ) : null}
-            <Button variant="outline" onClick={() => void onDownload('pdf')}>
-              <Download className="mr-2 size-4" />
-              PDF
-            </Button>
-            {isImported ? null : (
+            {hasPdf ? (
+              <Button variant="outline" onClick={() => void onDownload('pdf')}>
+                <Download className="mr-2 size-4" />
+                PDF
+              </Button>
+            ) : null}
+            {isImported || !hasXml ? null : (
               <Button variant="outline" onClick={() => void onDownload('xml')}>
                 <Download className="mr-2 size-4" />
                 XML FatturaPA
@@ -375,6 +404,12 @@ export function InvoiceActions({
           </Button>
         ) : null}
       </div>
+
+      {missingFiles ? (
+        <p className="text-muted-foreground text-sm" data-testid="missing-invoice-files">
+          {missingFiles}
+        </p>
+      ) : null}
 
       <Dialog open={collectOpen} onOpenChange={setCollectOpen}>
         <DialogContent>
@@ -479,4 +514,51 @@ export function InvoiceActions({
       </Dialog>
     </div>
   )
+}
+
+/**
+ * What the bar says under an issued invoice whose PDF or XML does not exist, or `null`
+ * when both do. The pointer at «Rigenera documenti» follows the role: a person who cannot
+ * press it is told where the file comes from rather than to press a button they do not
+ * have (REB-294 hides it from a readonly role).
+ */
+function missingFilesSentence(
+  hasPdf: boolean,
+  hasXml: boolean,
+  mayProduce: boolean,
+): string | null {
+  if (hasPdf && hasXml) return null
+  const both = !hasPdf && !hasXml
+  const what = both
+    ? 'Il PDF e l’XML FatturaPA di questa fattura non sono stati generati.'
+    : hasPdf
+      ? 'L’XML FatturaPA di questa fattura non è stato generato.'
+      : 'Il PDF di questa fattura non è stato generato.'
+  const how = mayProduce
+    ? `Premi «Rigenera documenti» per ${both ? 'generarli' : 'generarlo'}: il numero resta quello.`
+    : `${both ? 'Si generano' : 'Si genera'} con «Rigenera documenti», che il tuo ruolo non può usare.`
+  return `${what} ${how}`
+}
+
+/**
+ * The toast for a failed download. A 404 here means the row points at no file, at a
+ * document with no current version, or at a stored file that is gone, and the server's
+ * detail for each is written for a log: `invoice_artifact <uuid>#xml not found` (REB-168,
+ * seen on production 2026-09-11), `document_blob <key> not found`. It becomes a sentence
+ * naming the file, and «Rigenera documenti» when that button is on the page: it produces a
+ * missing file and repairs a lost one with identical bytes (`produce_artifacts`). Keyed on
+ * the status, which `toProblem` always takes from the response, rather than on the
+ * entity, so a lost `document_blob` gets the same sentence. Any other failure keeps the
+ * server's `detail` as every other action on this bar does.
+ */
+function downloadErrorSentence(
+  problem: ProblemDetail,
+  kind: 'pdf' | 'xml',
+  noun: 'fattura' | 'proforma',
+  canRegenerate: boolean,
+): string {
+  if (problem.status !== 404) return problem.detail
+  const file = kind === 'xml' ? 'L’XML FatturaPA' : 'Il PDF'
+  const retry = canRegenerate ? ' Premi «Rigenera documenti» per generarlo di nuovo.' : ''
+  return `${file} di questa ${noun} non è disponibile.${retry}`
 }
