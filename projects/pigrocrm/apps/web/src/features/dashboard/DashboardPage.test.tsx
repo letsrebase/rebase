@@ -55,6 +55,7 @@ const EMPTY_OVERVIEW = {
   },
   fiscale: null,
   fiscale_proiettato: null,
+  concentrazione_clienti: [],
   netto_effettivo: null,
   netto_proiettato: null,
 }

@@ -24,6 +24,7 @@ from pigrocrm.core.analytics.schemas import (
     PeriodPnl,
     PeriodPnlQuery,
     PnlTotals,
+    RevenueByCustomer,
     UnbilledBacklog,
 )
 from pigrocrm.core.config import get_settings
@@ -492,6 +493,12 @@ class AnalyticsService:
         Under `competenza`, the default, that is the cash view read twice: eight
         aggregates instead of four, on a page that already runs a dozen. Accepted, rather
         than threading two readings through `cash_overview`, whose one job is one reading.
+
+        `concentrazione_clienti` (§1.5, REB-370) is on no reading switch: it is
+        `revenue_by_customer(anno)` verbatim, a whole-practice, calendar-year share of
+        `annual_revenue` -- a different money entirely from `cassa` (cash, VAT included)
+        and open to every role the way the rest of this page is, not gated to `admin`
+        with the fiscal block.
         """
         cassa = self.cash_overview(anno, actor, base)
         per_fisco = cassa if base == "incasso" else self.cash_overview(anno, actor, "incasso")
@@ -517,6 +524,9 @@ class AnalyticsService:
             cassa=cassa,
             fiscale=fiscale,
             fiscale_proiettato=fiscale_proiettato,
+            concentrazione_clienti=[
+                RevenueByCustomer(**row._asdict()) for row in self.repo.revenue_by_customer(anno)
+            ],
             netto_effettivo=netto,
             netto_proiettato=netto_proiettato,
         )

@@ -1,7 +1,16 @@
+import { Link } from '@tanstack/react-router'
 import { RadioGroup } from 'radix-ui'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
 import { Skeleton } from '@rebase/ui/skeleton'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@rebase/ui/table'
 import { BigNumber } from './charts'
 import { FiscalPanel } from './FiscalPanel'
 import { money } from './format'
@@ -20,6 +29,20 @@ function yearOf(periodo: Periodo): number {
 function dovuto(estimate: FiscalEstimate | null): string {
   return estimate?.totale_dovuto ? money(estimate.totale_dovuto) : '—'
 }
+
+/**
+ * `quota` arrives as a plain ratio in [0, 1], the server's own share of the year's
+ * *whole* revenue (never of the largest customer, REB-370 §1.5) -- formatting it as a
+ * percentage is not the coercion criterion 14 bans: the ratio is already a number when
+ * it arrives, the same reasoning `charts.tsx`'s own `widthPercent` relies on to draw a
+ * bar from this same kind of field. `Intl.NumberFormat`, not a hand-rolled `toFixed`,
+ * for the same `it-IT` locale `money()` already uses.
+ */
+const shareFormatter = new Intl.NumberFormat('it-IT', {
+  style: 'percent',
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+})
 
 /**
  * The switch between the two readings of the charts (ORB-133). Radix's radio group, not
@@ -70,7 +93,14 @@ export function EconomicTab({
     )
   }
 
-  const { cassa, fiscale, fiscale_proiettato, netto_effettivo, netto_proiettato } = query.data
+  const {
+    cassa,
+    fiscale,
+    fiscale_proiettato,
+    netto_effettivo,
+    netto_proiettato,
+    concentrazione_clienti,
+  } = query.data
   // Named from the server's echo, not from the URL: the sentence describes what was
   // drawn. Through the label table, because the wire value is a contract and not copy.
   const lettura = CASH_BASES.find((candidate) => candidate.id === cassa.base)?.phrase ?? ''
@@ -177,6 +207,54 @@ export function EconomicTab({
           </div>
         )}
       </div>
+
+      {/* Whole-practice, calendar-year concentration (§1.5, REB-370): each customer's
+          own share of the year's *whole* invoiced revenue, never of the largest
+          customer's own figure -- deliberately not `per_cliente` on the receivables
+          page, which answers "who currently owes the most" against an outstanding
+          balance and is a different chart over a different question. Open to every
+          role, unlike the fiscal cards above it, so it sits outside the `fiscale`
+          branch and always renders. */}
+      <section className="space-y-2">
+        <h2 className="text-sm font-medium">Concentrazione clienti</h2>
+        <p className="text-sm text-muted-foreground">
+          La quota di ciascun cliente sui ricavi fatturati nell'anno -- non
+          l'esposizione residua di «Da incassare» nella scheda scadenze, che risponde a
+          una domanda diversa (chi deve di più oggi).
+        </p>
+        {concentrazione_clienti.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nessuna fattura emessa nell'anno.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Cliente</TableHead>
+                <TableHead className="text-right">Fatture</TableHead>
+                <TableHead className="text-right">Ricavi</TableHead>
+                <TableHead className="text-right">Quota</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {concentrazione_clienti.map((row) => (
+                <TableRow key={row.customer_id}>
+                  <TableCell>
+                    <Link
+                      to="/app/customers/$customerId"
+                      params={{ customerId: row.customer_id }}
+                      className="underline-offset-4 hover:underline"
+                    >
+                      {row.ragione_sociale}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-right">{row.fatture}</TableCell>
+                  <TableCell className="text-right">{money(row.ricavi)}</TableCell>
+                  <TableCell className="text-right">{shareFormatter.format(row.quota)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </section>
 
       {/* The whole estimate, immediately under the figures it explains: the cards say how
           much is owed, this says out of what and at which rates, so it belongs against

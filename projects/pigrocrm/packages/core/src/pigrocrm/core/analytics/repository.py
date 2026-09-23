@@ -13,13 +13,14 @@ this file is the structural counterpart of that.
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
-from typing import Any, TypeVar
+from typing import Any, NamedTuple, TypeVar
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, Select, SQLColumnExpression, func, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from pigrocrm.core.analytics.schemas import CashBase, RevenueBase
+from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.money import ZERO_MONEY, line_value, round_money, sum_hours, sum_money
@@ -79,6 +80,18 @@ def _cash_date(
     if base == "competenza":
         return _accrual_date()
     return by_money
+
+
+class RevenueByCustomerRow(NamedTuple):
+    customer_id: UUID
+    ragione_sociale: str
+    ricavi: Decimal
+    fatture: int
+    # This row's own share of the *year's whole* revenue, in [0, 1] -- never of the
+    # largest row here, which is what `InvoiceRepository._quota` scales against for a
+    # different question ("who owes the most"). A concentration figure caps a share of
+    # the total, so the denominator is `annual_revenue(anno)` itself.
+    quota: float
 
 
 class AnalyticsRepository:
@@ -387,6 +400,47 @@ class AnalyticsRepository:
                 ).scalar_one()
             )
         )
+
+    def revenue_by_customer(self, anno: int) -> list[RevenueByCustomerRow]:
+        """Each customer's own share of the year's invoiced revenue (§1.5, §5 item 1 of
+        `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`):
+        `Σ imponibile` grouped by `customer_id`, over the same `_revenue_filter()`
+        `annual_revenue` applies, each row's own share of that same annual total --
+        ranked, largest first.
+
+        **Not** `InvoiceRepository.receivables_by_customer`'s `quota`: that scales a
+        customer's outstanding receivable against the *largest* customer's own exposure
+        and answers "who currently owes the most". A concentration figure caps a
+        customer's share of *total* invoiced income instead, so the denominator here is
+        the whole year's `annual_revenue`, never the top row -- the two are easy to
+        conflate because both render as a per-customer percentage, and they are not the
+        same figure.
+
+        A customer with no invoice this year is simply absent, the same way
+        `receivables_by_customer` omits one with nothing outstanding.
+        """
+        totale_anno = self.annual_revenue(anno)
+        ricavi = func.coalesce(func.sum(Invoice.imponibile), 0)
+        stmt = (
+            select(Customer.id, Customer.ragione_sociale, ricavi, func.count(Invoice.id))
+            .join(Customer, Customer.id == Invoice.customer_id)
+            .where(Invoice.anno == anno, *_revenue_filter())
+            .group_by(Customer.id, Customer.ragione_sociale)
+            .order_by(ricavi.desc(), Customer.ragione_sociale)
+        )
+        righe: list[RevenueByCustomerRow] = []
+        for customer_id, ragione_sociale, importo, numero in self.session.execute(stmt).all():
+            valore = round_money(Decimal(importo))
+            righe.append(
+                RevenueByCustomerRow(
+                    customer_id=customer_id,
+                    ragione_sociale=ragione_sociale,
+                    ricavi=valore,
+                    fatture=int(numero),
+                    quota=float(valore / totale_anno) if totale_anno > ZERO_MONEY else 0.0,
+                )
+            )
+        return righe
 
     def deals_in_range(
         self, da: date, a: date, customer_id: UUID | None, base: RevenueBase = "emissione"
