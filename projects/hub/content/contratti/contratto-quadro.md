@@ -218,7 +218,9 @@ corrispondente.
 
 ## 9. Durata e recesso dal Contratto
 
-9.1 Il Contratto vale a tempo indeterminato dalla firma.
+9.1 Il Contratto dura 12 mesi dalla firma e si rinnova automaticamente per periodi di 12
+mesi, salvo disdetta di una delle Parti comunicata almeno 30 giorni prima della scadenza,
+come dice l'articolo 17.2.
 
 9.2 Ciascuna Parte può recedere dal Contratto in qualunque momento con un preavviso di
 30 giorni, comunicato come dice l'articolo 17.2.
@@ -442,6 +444,7 @@ specificamente queste clausole:
 
 - 4.4, divieto di farsi sostituire o di affidare il lavoro ad altri;
 - 7.4, sospensione del pagamento della parte di Compenso contestata dal Cliente;
+- 9.1, rinnovo automatico del Contratto ogni 12 mesi;
 - 9.2, recesso di rebase dal Contratto con 30 giorni di preavviso;
 - 10.1, 10.2 e 10.3, recesso di rebase da un Incarico, anche prima della fine del
   preavviso e durante il periodo di verifica;

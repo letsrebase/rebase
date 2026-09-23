@@ -85,8 +85,9 @@ real client: keep it outside the repository or in a `*.local.json`, which git ig
 The highlighted proposals, and what the text cannot settle on its own. Decided by Ivan on
 2026-09-23: the payment default (30 days from the end of the invoice's month, 7.1), the
 freelancer is paid whether or not the client has paid and rebase aligns the client's
-terms to that (7.2), the social security surcharge is inside the fee (5.5), and the 15%
-of 12.2.
+terms to that (7.2), the social security surcharge is inside the fee (5.5), the 15% of
+12.2, and the framework agreement lasting 12 months and renewing itself unless either side
+gives notice 30 days before the end (9.1, approved specifically as a tacit renewal).
 
 - **Non-circumvention** (12): it covers every company rebase introduces, not only the
   ones an engagement came from, for twelve months from the introduction or the last
