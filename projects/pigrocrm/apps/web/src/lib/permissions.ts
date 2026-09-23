@@ -96,6 +96,9 @@ export const MIN_ROLE = {
   annul_invoice: 'admin',
   mark_transmitted_externally: 'admin',
   bind_time_to_invoice: 'admin',
+  // Registering an invoice issued elsewhere: the start page's invoice door (REB-224) is
+  // the admin's, because the import its handoff asks the assistant for is.
+  import_issued_invoice: 'admin',
   update_user_rates: 'admin',
   update_deal_rate: 'admin',
   close_period: 'admin',
