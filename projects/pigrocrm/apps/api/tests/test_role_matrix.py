@@ -152,6 +152,30 @@ ROWS: list[Row] = [
     Row("DELETE", "/api/costs/{cost_id}"),
     Row("PATCH", "/api/costs/{cost_id}", body={}),
     Row("POST", "/api/costs/{cost_id}/restore"),
+    # --- contracts / rate cards (REB-358): `require_write` (contracts/service.py) ----
+    Row(
+        "POST",
+        "/api/contracts",
+        body={
+            "customer_id": "__CUST__",
+            "titolo": "Matrice",
+            "inizio": "2026-01-01",
+            "tipo_rinnovo": "nessuno",
+            "preavviso_disdetta_giorni": 30,
+            "cadenza_fatturazione": "mensile",
+            "politica_spese": {"tipo": "non_rimborsabile"},
+        },
+    ),
+    Row(
+        "POST",
+        "/api/contracts/{contract_id}/rate-cards",
+        body={
+            "valido_da": "2026-01-01",
+            "tipo": "ricorrente_fisso",
+            "importo": "1000.00",
+            "unita": "mese",
+        },
+    ),
     # --- customers / people / deals: `require_write` on every plain write ------------
     Row("POST", "/api/customers", body={"ragione_sociale": "Matrice Due Srl"}),
     Row("DELETE", "/api/customers/{customer_id}"),

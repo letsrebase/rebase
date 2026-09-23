@@ -216,6 +216,54 @@ def test_list_filters_by_customer_and_by_deal(
     assert [d.titolo for d in by_deal] == ["D"]
 
 
+def test_list_filters_by_contract_and_a_reowned_document_moves_lists(
+    service: DocumentService, customer: Customer, db_session: Session
+) -> None:
+    """REB-358 §11's own acceptance: a document re-owned by a contract is findable
+    through a contract-scoped document list, never only through the contract's own
+    detail page -- and it drops out of the customer-scoped list the moment it moves,
+    the same "widen at accept time" ownership handoff a future proposal-accept path
+    performs directly on the row (§11's own note: never a second, parallel query).
+    """
+    from pigrocrm.core.contracts.models import Contract
+
+    contract = Contract(
+        customer_id=customer.id,
+        titolo="Consulenza CTO",
+        inizio="2026-01-01",
+        tipo_rinnovo="nessuno",
+        preavviso_disdetta_giorni=30,
+        cadenza_fatturazione="mensile",
+        politica_spese={"tipo": "non_rimborsabile"},
+    )
+    db_session.add(contract)
+    db_session.flush()
+
+    # First intake: import_drive_file's own archiving call still owns the document
+    # by customer_id, exactly as it does today (§11) -- there is no contract row yet
+    # at that point in the real flow; here the contract already exists, so this
+    # models the moment *after* accept has re-pointed the row.
+    document = service.create(
+        DocumentCreate(customer_id=customer.id, tipo="contratto", titolo="Bozza firmata"), ADMIN
+    )
+    empty = service.list(DocumentListQuery(contract_id=contract.id), ADMIN).items
+    assert empty == []
+
+    # The accept path re-points ownership directly on the row, never through a second
+    # parallel query (§11's own note) -- reproduced here at the repository layer since
+    # the accept path itself belongs to a later issue (proposals).
+    row = service.repo.get(document.id)
+    assert row is not None
+    row.customer_id = None
+    row.contract_id = contract.id
+    db_session.flush()
+
+    by_contract = service.list(DocumentListQuery(contract_id=contract.id), ADMIN).items
+    by_customer = service.list(DocumentListQuery(customer_id=customer.id), ADMIN).items
+    assert [d.titolo for d in by_contract] == ["Bozza firmata"]
+    assert by_customer == []
+
+
 def test_list_limit_is_bounded(service: DocumentService) -> None:
     import pydantic
 

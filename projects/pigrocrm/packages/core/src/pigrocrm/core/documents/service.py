@@ -13,6 +13,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.automations.runner import AutomationRunner
 from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.config import Settings, get_settings
+from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import CustomerRead
 from pigrocrm.core.db import encode_cursor, today_local
@@ -107,31 +108,50 @@ class DocumentService:
 
     # ---- owner resolution ---------------------------------------------------
 
-    def _check_owner(self, customer_id: UUID | None, deal_id: UUID | None) -> None:
+    def _check_owner(
+        self,
+        customer_id: UUID | None,
+        deal_id: UUID | None,
+        contract_id: UUID | None = None,
+    ) -> None:
         """Exactly one owner, and it must exist.
 
         The database check constraint (`ck_documents_customer_xor_deal`) is the
         second line under concurrency; this is the first, and it is what turns a
         syntactically valid but unknown UUID into this project's own `NotFound`
         instead of a raw `ForeignKeyViolation` reaching the caller from `flush()`.
+
+        `contract_id` defaults to `None` so every existing caller that only knows
+        about `customer_id`/`deal_id` (`create_from_template`) keeps working
+        unchanged -- REB-358 widened the *rule* from two owners to three without
+        widening every call site's own schema.
         """
-        if (customer_id is None) == (deal_id is None):
+        owners = (customer_id, deal_id, contract_id)
+        if sum(owner is not None for owner in owners) != 1:
             raise ValidationFailed(
                 ENTITY,
                 "customer_id",
-                "un documento appartiene a un cliente oppure a un deal, mai a entrambi",
-                expected="esattamente uno fra customer_id e deal_id",
+                "un documento appartiene a un cliente, a un deal o a un contratto: "
+                "mai a più di uno, mai a nessuno",
+                expected="esattamente uno fra customer_id, deal_id e contract_id",
             )
         if customer_id is not None and self.session.get(Customer, customer_id) is None:
             raise NotFound("customer", customer_id)
         if deal_id is not None and self.session.get(Deal, deal_id) is None:
             raise NotFound("deal", deal_id)
+        if contract_id is not None and self.session.get(Contract, contract_id) is None:
+            raise NotFound("contract", contract_id)
 
     def _customer_of(self, document: Document) -> Customer | None:
         if document.customer_id is not None:
             return self.session.get(Customer, document.customer_id)
-        deal = self.session.get(Deal, document.deal_id) if document.deal_id else None
-        return self.session.get(Customer, deal.customer_id) if deal else None
+        if document.deal_id is not None:
+            deal = self.session.get(Deal, document.deal_id)
+            return self.session.get(Customer, deal.customer_id) if deal else None
+        if document.contract_id is not None:
+            contract = self.session.get(Contract, document.contract_id)
+            return self.session.get(Customer, contract.customer_id) if contract else None
+        return None
 
     def storage_key_for(
         self, document: Document, numero: int, content_type: str, *, prefix: str | None = None
@@ -208,7 +228,7 @@ class DocumentService:
         """
         actor.require_write("create_document")
         payload = data.model_dump()
-        self._check_owner(payload["customer_id"], payload["deal_id"])
+        self._check_owner(payload["customer_id"], payload["deal_id"], payload["contract_id"])
         # Only an offer has a state; everything else keeps NULL. A new offer starts as
         # a draft rather than stateless, so a Kanban-style state picker always has a
         # value to show.

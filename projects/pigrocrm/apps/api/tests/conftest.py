@@ -37,6 +37,7 @@ def api_engine() -> Iterator[Engine]:
         # Mirrors packages/core/tests/conftest.py, which explains it at length.
         with engine.begin() as connection:
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
         import pigrocrm.core.models_registry  # noqa: F401
 
         Base.metadata.create_all(engine)

@@ -65,6 +65,7 @@ def list_documents(
     actor: ActorDep,
     customer_id: Annotated[UUID | None, Query()] = None,
     deal_id: Annotated[UUID | None, Query()] = None,
+    contract_id: Annotated[UUID | None, Query()] = None,
     tipo: Annotated[DocumentTipo | None, Query()] = None,
     stato: Annotated[OfferState | None, Query()] = None,
     # New in slice 6 (spec §8.1). `SafeStr` for the same reason the other three lists
@@ -88,6 +89,7 @@ def list_documents(
     query = DocumentListQuery(
         customer_id=customer_id,
         deal_id=deal_id,
+        contract_id=contract_id,
         tipo=tipo,
         stato=stato,
         search=search,

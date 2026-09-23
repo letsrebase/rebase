@@ -33,6 +33,8 @@ EXPECTED = (
     # everything else does: whoever runs the installation knows what they need to record
     # about one, and the alternative is a `note` field holding a form.
     "attivita",
+    # REB-358. A contract engagement carries custom fields for the identical reason.
+    "contract",
 )
 
 
@@ -50,6 +52,11 @@ def test_native_fields_names_this_slice_columns() -> None:
     column without revisiting the guard's own test still trips something."""
     assert {"ore", "data", "descrizione"} <= set(native_fields("time_entry"))
     assert {"importo", "data", "descrizione"} <= set(native_fields("cost"))
+    # REB-358, Greptile-flagged: `stato`/`contratto_precedente_id` are real
+    # `contracts` columns `ContractCreate` deliberately does not declare, so they
+    # must be reserved here or an administrator could slugify a custom field onto
+    # either native column.
+    assert {"stato", "contratto_precedente_id"} <= set(native_fields("contract"))
 
 
 def test_document_tipo_gained_the_time_report() -> None:
