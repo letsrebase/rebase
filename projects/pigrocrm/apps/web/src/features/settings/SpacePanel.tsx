@@ -8,7 +8,13 @@ import { Checkbox } from '@rebase/ui/checkbox'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { api, toProblem, unwrap } from '@/lib/api'
-import { changesBetween, draftFrom, type Draft, type SpaceSettingsUpdate } from './spaceChanges'
+import {
+  changesBetween,
+  draftFrom,
+  switchingFromShared,
+  type Draft,
+  type SpaceSettingsUpdate,
+} from './spaceChanges'
 
 export const SPACE_SETTINGS_KEY = ['settings', 'space'] as const
 
@@ -75,11 +81,24 @@ export function SpacePanel() {
         <CardHeader>
           <CardTitle>Google: Gmail e Drive</CardTitle>
           <CardDescription>
-            Un client OAuth tuo, dalla console Google Cloud. Registra lì i due redirect qui
-            sotto. La chiave che cifra i token viene generata da sola al primo salvataggio.
-            {settings.gmail_configurato
-              ? ' Gmail e Drive sono attivi per questo spazio.'
-              : ' Finché manca qualcosa, Gmail e Drive non compaiono.'}
+            {settings.google_client_condiviso ? (
+              // REB-394: the root lends its client, so there is nothing to register and
+              // the redirect addresses are the platform's, not this space's.
+              <>
+                Questo spazio usa il client Google della piattaforma: Gmail e Drive sono
+                attivi senza configurare nulla. Compila i campi qui sotto solo se vuoi un
+                client OAuth tuo, dalla console Google Cloud: la casella e Drive andranno
+                poi ricollegati.
+              </>
+            ) : (
+              <>
+                Un client OAuth tuo, dalla console Google Cloud. Registra lì i due redirect qui
+                sotto. La chiave che cifra i token viene generata da sola al primo salvataggio.
+                {settings.gmail_configurato
+                  ? ' Gmail e Drive sono attivi per questo spazio.'
+                  : ' Finché manca qualcosa, Gmail e Drive non compaiono.'}
+              </>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -111,19 +130,29 @@ export function SpacePanel() {
               onChange={(event) => set('google_client_secret', event.target.value)}
             />
           </div>
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="google_app_unverified"
-              checked={draft.google_app_unverified}
-              onCheckedChange={(checked) => set('google_app_unverified', checked === true)}
-            />
-            <Label htmlFor="google_app_unverified">
-              Il client Google è ancora in "Testing" (i token scadono dopo 7 giorni)
-            </Label>
-          </div>
+          {/* The platform's client is the platform's to declare, and a row here would be
+              ignored while the space borrows it (`apply_overrides`). Typing a client id
+              of the space's own brings the switch back, so the new client is declared in
+              the same save that brings it. */}
+          {(!settings.google_client_condiviso || switchingFromShared(settings, draft)) && (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="google_app_unverified"
+                checked={draft.google_app_unverified}
+                onCheckedChange={(checked) => set('google_app_unverified', checked === true)}
+              />
+              <Label htmlFor="google_app_unverified">
+                Il client Google è ancora in "Testing" (i token scadono dopo 7 giorni)
+              </Label>
+            </div>
+          )}
           {settings.redirect_uri_gmail && (
             <dl className="text-sm">
-              <dt className="text-muted-foreground">Redirect URI da registrare su Google</dt>
+              <dt className="text-muted-foreground">
+                {settings.google_client_condiviso
+                  ? 'Solo per un client tuo: i redirect URI da registrare su Google'
+                  : 'Redirect URI da registrare su Google'}
+              </dt>
               <dd>
                 <code className="break-all">{settings.redirect_uri_gmail}</code>
               </dd>

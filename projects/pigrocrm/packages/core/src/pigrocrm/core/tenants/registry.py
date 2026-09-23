@@ -2,9 +2,10 @@
 
 Lifted out of `apps/api/deps.py` (ORB-170) because the MCP server over HTTP needs the
 same three answers the API needs on every request: which database a slug opens, what
-the space's base settings are (no root Google, a scoped public URL, documents on disk),
-and which `space_settings` rows lay over them. Both adapters hold one instance of this
-class per process and ask it; neither reimplements the caching.
+the space's base settings are (the root's Google only when the root lends it, a scoped
+public URL, documents on disk), and which `space_settings` rows lay over them. Both
+adapters hold one instance of this class per process and ask it; neither reimplements
+the caching.
 """
 
 import threading
@@ -17,6 +18,7 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.space_settings import SpaceSettingsService, apply_overrides
 from pigrocrm.core.tenants.database import ensure_tenants_database, tenant_database_url
+from pigrocrm.core.tenants.google import oauth_state_prefix, space_token_key
 from pigrocrm.core.tenants.service import TenantService
 
 OVERRIDES_TTL_SECONDS = 10.0
@@ -25,21 +27,40 @@ _ROOT = ""
 
 def space_base_settings(settings: Settings, slug: str | None) -> Settings:
     """The environment's settings as a space may see them, before its database has its
-    say. A space does not inherit the root's Google: the client, its secret and the
-    token key are blanked, so a space either configures its own (Impostazioni → Spazio)
-    or has no Gmail and no Drive. Its public URL is the root's plus the slug, which is
-    where Google will redirect to, and documents default to disk under the space's own
-    folder. The root sees the environment untouched, and gets the very same object."""
+    say. Its public URL is the root's plus the slug, and documents default to disk under
+    the space's own folder. The root sees the environment untouched, and gets the very
+    same object.
+
+    Google depends on `google_shared_client`. Off, a space does not inherit the root's
+    Google: the client, its secret and the token key are blanked, so a space either
+    configures its own (Impostazioni → Spazio) or has no Gmail and no Drive. On, the
+    space borrows the root's client and secret and whether the root declared it
+    unverified, seals its refresh tokens with a key derived for it alone, and sends
+    Google the root's callback with its slug in the `state` (`tenants/google.py`). A
+    space that configures a client of its own still gets its own, since the rows of
+    `space_settings` lay over this (`apply_overrides`)."""
     if slug is None:
         return settings
     public_url = f"{settings.public_url.rstrip('/')}/{slug}" if settings.public_url else ""
-    return settings.model_copy(
-        update={
+    if settings.google_shared_client and settings.google_client_id:
+        google: dict[str, object] = {
+            "google_token_key": space_token_key(settings.google_token_key, slug),
+            "google_callback_base_url": settings.public_url.rstrip("/"),
+            "google_oauth_state_prefix": oauth_state_prefix(slug),
+        }
+    else:
+        google = {
             "google_client_id": "",
             "google_client_secret": "",
             "google_token_key": "",
-            "public_url": public_url,
             "google_app_unverified": False,
+            "google_callback_base_url": "",
+            "google_oauth_state_prefix": "",
+        }
+    return settings.model_copy(
+        update={
+            **google,
+            "public_url": public_url,
             "storage_backend": "local",
         }
     )

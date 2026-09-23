@@ -30,6 +30,17 @@ _INTS = {
     "gmail_backfill_days",
 }
 _FLOATS = {"concentrazione_soglia_preferita"}
+# What `space_base_settings` lends a space from the root's Google, blanked again when the
+# space configures a client of its own (`apply_overrides`).
+_BORROWED_GOOGLE: dict[str, object] = {
+    "google_client_secret": "",
+    "google_token_key": "",
+    "google_app_unverified": False,
+    "google_callback_base_url": "",
+    "google_oauth_state_prefix": "",
+}
+# The rows that only mean something next to a client id of the space's own.
+_GOOGLE_ROWS = frozenset({"google_client_secret", "google_token_key", "google_app_unverified"})
 
 
 def _coerce(key: str, raw: str) -> Any:
@@ -50,8 +61,22 @@ def apply_overrides(base: Settings, overrides: dict[str, str]) -> Settings:
     if not overrides:
         return base
     merged = base.model_dump()
+    ignored: frozenset[str] = frozenset()
+    if base.google_oauth_state_prefix:
+        # The root lends this space its client (REB-394), and the Google rows go all
+        # together or not at all, decided by the client id. With a client id of its
+        # own, nothing borrowed may travel with it: the root's secret would
+        # authenticate somebody else's client, and the root's callback is not an
+        # address their client registered; their own rows then land on top, exactly
+        # as before the root lent anything. Without one, a secret, key or Testing row
+        # left over from a client the space once had would sit on top of the root's
+        # client and fail every exchange, so those rows are not read.
+        if "google_client_id" in overrides:
+            merged.update(_BORROWED_GOOGLE)
+        else:
+            ignored = _GOOGLE_ROWS
     for key, raw in overrides.items():
-        if key in OVERRIDABLE_KEYS:
+        if key in OVERRIDABLE_KEYS and key not in ignored:
             merged[key] = _coerce(key, raw)
     return Settings(_env_file=None, **merged)  # type: ignore[call-arg]
 
@@ -140,6 +165,10 @@ class SpaceSettingsService:
             google_token_key_impostata=bool(settings.google_token_key),
             google_app_unverified=settings.google_app_unverified,
             gmail_configurato=gmail_configured(settings),
+            google_client_condiviso=bool(settings.google_oauth_state_prefix),
+            # This space's own addresses, the ones a client of its own registers, even
+            # while it borrows the root's client (REB-394), whose consent comes back
+            # through the root's callback and needs nothing registered per space.
             redirect_uri_gmail=f"{public_url}/api/gmail/oauth/callback" if public_url else "",
             redirect_uri_drive=f"{public_url}/api/drive/oauth/callback" if public_url else "",
             storage_backend=settings.storage_backend,

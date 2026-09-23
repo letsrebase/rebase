@@ -4,10 +4,12 @@
  * Its state is `useGmailHealth`, the same read as Impostazioni → Gmail and the shell's
  * banner, so the door and the settings page cannot disagree. Four answers:
  *
- * - **No Google client for this space** (`configured: false`). Every space starts here:
- *   a space does not inherit the platform's client (`space_base_settings`), and whether
- *   it should is the open decision behind REB-223. So the door says what is missing and
- *   where it is set (Impostazioni → Spazio), and offers no button that would answer 409.
+ * - **No Google client for this space** (`configured: false`). A space inherits the
+ *   platform's client only where the platform lends it (`PIGROCRM_GOOGLE_SHARED_CLIENT`,
+ *   `space_base_settings`, REB-394); without it the door says what is missing and where
+ *   it is set (Impostazioni → Spazio), and offers no button that would answer 409. With
+ *   it every space is configured, and the consent comes back here through the root's
+ *   callback, which hands it to this space's own.
  * - **Nothing connected**, or a mailbox unhooked on purpose: the anchor that starts the
  *   consent flow, a navigation and never a fetch. The callback comes back to this page
  *   while the space is empty (`routers/gmail.py::_back`).
