@@ -20,9 +20,12 @@ const ROLE_LABELS: Record<string, string> = { admin: 'Amministratore', member: '
  *  `ha_scheda` is true, and the company section only when `ha_azienda` is true
  *  (REB-314); a person with neither sees their name, email and role instead of a
  *  wizard-shaped section reading from fields that are all `null`. A person can carry
- *  both, and both render together. The two perks stay unconditional -- PigroCRM and
- *  the guide are for the community, not for having applied through a wizard
- *  specifically.
+ *  both, and both render together. The two perks render only for a freelancer or an
+ *  admin (`value` truthy or `profile.role === 'admin'`), never for a company-only
+ *  referente: PigroCRM and the guide are pitched at a solo freelancer, and neither
+ *  means anything to a company that came here to find people (REB-385, Lorenzo
+ *  2026-09-23). A person who is both a freelancer and a company referente still
+ *  qualifies through the freelancer card, so both perks keep showing.
  *
  *  The `negato` flag is set by `AdminGuard` when a signed-in non-admin is bounced off
  *  `/admin/*`: this is where they land, with a sentence saying why instead of a blank
@@ -166,45 +169,47 @@ export function Area() {
         </section>
       )}
 
-      <section aria-label="I tuoi vantaggi" className="grid gap-4 sm:grid-cols-2">
-        <div className="flex flex-col gap-3 border-(length:--line-strong) border-foreground bg-card p-6">
-          <div className="flex-1 space-y-3">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Per chi è dentro</p>
-            <h2 className="text-lg font-semibold">PigroCRM è tuo, gratis</h2>
-            <p className="text-sm text-muted-foreground">
-              Preventivo, contratto, fattura, ore: fatturare e farti pagare, con i dati fiscali già giusti.
+      {(value || profile.role === 'admin') && (
+        <section aria-label="I tuoi vantaggi" className="grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-3 border-(length:--line-strong) border-foreground bg-card p-6">
+            <div className="flex-1 space-y-3">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Per chi è dentro</p>
+              <h2 className="text-lg font-semibold">PigroCRM è tuo, gratis</h2>
+              <p className="text-sm text-muted-foreground">
+                Preventivo, contratto, fattura, ore: fatturare e farti pagare, con i dati fiscali già giusti.
+              </p>
+            </div>
+            <Button asChild className="self-start">
+              <a href={PIGROCRM_URL}>
+                Apri PigroCRM
+                <ArrowUpRight className="ml-2 size-4" />
+              </a>
+            </Button>
+            <p className="invisible text-xs text-muted-foreground" aria-hidden="true">
+              &nbsp;
             </p>
           </div>
-          <Button asChild className="self-start">
-            <a href={PIGROCRM_URL}>
-              Apri PigroCRM
-              <ArrowUpRight className="ml-2 size-4" />
-            </a>
-          </Button>
-          <p className="invisible text-xs text-muted-foreground" aria-hidden="true">
-            &nbsp;
-          </p>
-        </div>
-        <div className="flex flex-col gap-3 border-(length:--line-strong) border-foreground bg-card p-6">
-          <div className="flex-1 space-y-3">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Per chi è dentro</p>
-            <h2 className="text-lg font-semibold">I primi passi da freelance</h2>
-            <p className="text-sm text-muted-foreground">
-              La parte che nessuno ti spiega prima della prima fattura: come dirti in una frase,
-              come arrivare a un numero e difenderlo, cosa scrivere prima di iniziare. Venti minuti.
+          <div className="flex flex-col gap-3 border-(length:--line-strong) border-foreground bg-card p-6">
+            <div className="flex-1 space-y-3">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Per chi è dentro</p>
+              <h2 className="text-lg font-semibold">I primi passi da freelance</h2>
+              <p className="text-sm text-muted-foreground">
+                La parte che nessuno ti spiega prima della prima fattura: come dirti in una frase,
+                come arrivare a un numero e difenderlo, cosa scrivere prima di iniziare. Venti minuti.
+              </p>
+            </div>
+            <Button asChild className="self-start">
+              <a href={member.guideUrl} onClick={() => capture('guida_scaricata')}>
+                <Download className="mr-2 size-4" />
+                Scarica la guida
+              </a>
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              PDF, {GUIDE.pages} pagine, {GUIDE.kilobytes} KB.
             </p>
           </div>
-          <Button asChild className="self-start">
-            <a href={member.guideUrl} onClick={() => capture('guida_scaricata')}>
-              <Download className="mr-2 size-4" />
-              Scarica la guida
-            </a>
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            PDF, {GUIDE.pages} pagine, {GUIDE.kilobytes} KB.
-          </p>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   )
 }
