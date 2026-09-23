@@ -10,7 +10,10 @@ script against API v2 and by Playwright for the signer. Everything ran against
 `lettera-di-incarico` from `incarico.esempio.json`, the signer
 `probe-freelancer@example.com`. The stack and its secrets were deleted afterwards.
 
-Every capability the design relies on works on the free self-hosted edition, with two
+Every API call and webhook the design relies on worked on the free self-hosted edition,
+on a local stack with the default providers (Mailpit as the mail sink, one machine). Not
+exercised, and left open for phase 4: Resend as Documenso's mail sender, public sign-up
+switched off (both in § 2), and a hub down for longer than the retry window (§ 5). The run brought two
 corrections to the spec: one team per environment does not isolate the preview from
 production, a separate Documenso user does (§ 8); and the webhook's retries arrive at
 once and can overlap a delivery still in progress, so "acknowledged and ignored" has to
