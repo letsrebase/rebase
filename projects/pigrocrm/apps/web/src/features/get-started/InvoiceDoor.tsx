@@ -160,6 +160,7 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
   const searching = typed.length >= 2 && (query !== typed || matches.isFetching)
 
   const [checking, setChecking] = useState(false)
+  const busy = checking || create.isPending
 
   async function next(event: FormEvent) {
     event.preventDefault()
@@ -194,6 +195,10 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
           value={nome}
           maxLength={255}
           autoComplete="off"
+          // Held while the name is being looked up or created: the customer that comes
+          // back is chosen for the name that was submitted, so that is the one on screen.
+          readOnly={busy}
+          aria-busy={busy}
           onChange={(event) => setNome(event.target.value)}
         />
         <p className="text-muted-foreground">Se è già tra i tuoi clienti, lo trovi qui sotto.</p>
@@ -205,6 +210,7 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
                   type="button"
                   variant="outline"
                   size="sm"
+                  disabled={busy}
                   onClick={() => onChosen({ id: item.id, name: item.ragione_sociale })}
                 >
                   {item.partita_iva ? `${item.ragione_sociale} · P.IVA ${item.partita_iva}` : item.ragione_sociale}

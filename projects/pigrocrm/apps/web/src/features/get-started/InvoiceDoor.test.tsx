@@ -185,6 +185,27 @@ describe('the invoice door, first the customer', () => {
     expect(api.POST).not.toHaveBeenCalledWith('/api/customers', expect.anything())
   })
 
+  it('holds the name while it is looked up, so the customer chosen is the one on screen', async () => {
+    let release: (value: unknown) => void = () => {}
+    vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: { limit?: number } } }) => {
+      if (path !== '/api/customers') return reply({ data: null })
+      if (init?.params?.query?.limit === 8) return reply({ data: EMPTY_PAGE })
+      return new Promise((resolve) => {
+        release = resolve
+      })
+    }) as never)
+    renderDoor()
+    const field = await screen.findByLabelText('Ragione sociale del cliente')
+    await userEvent.type(field, 'Officina')
+    await create()
+    await waitFor(() => expect(field).toHaveAttribute('readonly'))
+    await userEvent.type(field, ' Rossi')
+    expect(field).toHaveValue('Officina')
+    release({ data: EMPTY_PAGE, response: new Response(null, { status: 200 }) })
+    expect(await screen.findByTestId('upload-dropzone')).toBeInTheDocument()
+    expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { ragione_sociale: 'Officina' } })
+  })
+
   it('still takes a new name when the customers on file cannot be searched', async () => {
     gets({ '/api/customers': { status: 500 } })
     renderDoor()
