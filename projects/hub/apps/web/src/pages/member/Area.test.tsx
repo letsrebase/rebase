@@ -85,6 +85,19 @@ const CARDLESS_ADMIN = {
   completa: false,
 }
 
+/** A plain member with neither a freelancer card nor a company request (REB-385): the
+ *  "Chi sei" fallback renders, and neither perk qualifies -- this is the case the
+ *  freelancer-or-admin condition is meant to exclude, distinct from `CARDLESS_ADMIN`
+ *  only in `role`. */
+const NOBODY = {
+  ...CARDLESS_ADMIN,
+  id: 'n1',
+  nome: 'Nessuno',
+  cognome: 'Speciale',
+  email: 'nessuno@example.it',
+  role: 'member',
+}
+
 /** A company contact with no freelancer card, and the referente's most recent
  *  request (REB-314; REB-380 adds the last four fields): `ha_scheda` false,
  *  `ha_azienda` true, the project's own seven answers filled in. */
@@ -260,9 +273,19 @@ describe('/me, no card (REB-279: a card-less admin reads name, email and role, n
     expect(screen.queryByText('La tua richiesta più recente')).toBeNull()
     expect(screen.queryByRole('link', { name: /Modifica richiesta/ })).toBeNull()
     expect(screen.queryByRole('link', { name: /Richiedi una nuova figura/ })).toBeNull()
-    // The perks stay unconditional even with no card.
+    // The perks stay visible with no card, because this fixture is an admin
+    // (REB-385: freelancer-or-admin still gets both boxes).
     expect(screen.getByRole('link', { name: /Apri PigroCRM/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Scarica la guida/ })).toBeInTheDocument()
+  })
+
+  it('shows the "Chi sei" fallback and no perks for a member with neither a card nor a request (REB-385)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, NOBODY))
+    mount()
+    expect(await screen.findByLabelText('Chi sei')).toBeInTheDocument()
+    expect(screen.getByText('Membro')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Apri PigroCRM/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /Scarica la guida/ })).toBeNull()
   })
 })
 
@@ -292,6 +315,10 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
     expect(screen.queryByText('Come ti chiami?')).toBeNull()
     expect(screen.queryByRole('link', { name: 'Modifica' })).toBeNull()
     expect(screen.queryByLabelText('Chi sei')).toBeNull()
+    // A company-only referente qualifies as neither a freelancer nor an admin: no
+    // PigroCRM or guide box (REB-385).
+    expect(screen.queryByRole('link', { name: /Apri PigroCRM/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /Scarica la guida/ })).toBeNull()
   })
 
   it('renders alongside the freelancer card when a person has both (REB-314)', async () => {
@@ -308,6 +335,10 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
       'href',
       '/me/new-company',
     )
+    // The freelancer card alone is enough to qualify: both perks still show even
+    // though this person is also a company referente (REB-385).
+    expect(screen.getByRole('link', { name: /Apri PigroCRM/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Scarica la guida/ })).toBeInTheDocument()
   })
 })
 
