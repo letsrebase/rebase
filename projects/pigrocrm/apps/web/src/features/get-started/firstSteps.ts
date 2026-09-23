@@ -45,6 +45,9 @@ export interface FirstStepsState {
    *  `space_is_empty` (`pigrocrm.core.first_steps`) answers the same question over the
    *  same four tables, for the Gmail consent flow's way back. */
   spaceEmpty: boolean | null
+  /** Whether one of those four reads failed, retries spent: `spaceEmpty` is then a
+   *  guess (a failure counts as work), which the Home shows but does not hold. */
+  workFailed: boolean
 }
 
 const SCOPE = { scope: 'first-steps', limit: 1 } as const
@@ -95,6 +98,10 @@ async function hasToken(): Promise<boolean> {
 }
 
 const OPTIONS = { retry: false, staleTime: 30_000 } as const
+/** The four reads that decide which page the Home is. They keep the app's own retry
+ *  policy (`lib/query.ts`: two retries, none on 401/403) instead of `retry: false`: one
+ *  dropped request must not send an empty space's Home to the dashboard. */
+const WORK_OPTIONS = { staleTime: 30_000 } as const
 
 export function useFirstSteps(): FirstStepsState {
   const { user } = useAuth()
@@ -106,10 +113,10 @@ export function useFirstSteps(): FirstStepsState {
     ...OPTIONS,
   })
   const fiscali = useQuery({ queryKey: [...queryKeys.emitter, 'first-steps'], queryFn: fiscalDataSaved, ...OPTIONS })
-  const cliente = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: hasCustomers, ...OPTIONS })
-  const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: hasDeals, ...OPTIONS })
-  const ore = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: hasTimeEntries, ...OPTIONS })
-  const documento = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: hasDocuments, ...OPTIONS })
+  const cliente = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: hasCustomers, ...WORK_OPTIONS })
+  const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: hasDeals, ...WORK_OPTIONS })
+  const ore = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: hasTimeEntries, ...WORK_OPTIONS })
+  const documento = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: hasDocuments, ...WORK_OPTIONS })
 
   const work = [cliente, deal, ore, documento]
   const loading = [token, fiscali, ...work].some((q) => q.isPending)
@@ -166,5 +173,6 @@ export function useFirstSteps(): FirstStepsState {
     // customer was created would otherwise decide on the cached «empty» that the
     // invalidation is about to replace, and then hold that stale answer for the visit.
     spaceEmpty: work.some((q) => q.isPending || q.isFetching) ? null : !work.some(value),
+    workFailed: work.some((q) => q.isError),
   }
 }

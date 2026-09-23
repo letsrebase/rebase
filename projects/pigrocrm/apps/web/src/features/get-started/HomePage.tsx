@@ -11,8 +11,10 @@
  *
  * Nothing is drawn until the four work reads settle, so a space with data never flashes
  * the start page and an empty one never flashes the dashboard (nor sends its requests).
- * A read that fails counts as work (`useFirstSteps`), so a broken request lands on the
- * dashboard, which says so itself.
+ * Those reads retry like the rest of the app; one that still fails counts as work
+ * (`useFirstSteps`), so a broken API lands on the dashboard, whose own requests say so,
+ * rather than on a start page that would call the space empty. That fallback is shown,
+ * not held: the next read that succeeds decides.
  *
  * The choice is made once per visit and then held. A step's prompt asks the assistant to
  * create a customer, and the reads refresh when the person comes back to the tab: a Home
@@ -45,7 +47,7 @@ export function HomePage({
   // Set during render, React's pattern for state derived from a previous render: the
   // page never draws once with the choice still unmade.
   const [startPage, setStartPage] = useState<boolean | null>(null)
-  if (startPage === null && state.spaceEmpty !== null) setStartPage(state.spaceEmpty)
+  if (startPage === null && state.spaceEmpty !== null && !state.workFailed) setStartPage(state.spaceEmpty)
   const chosen = startPage ?? state.spaceEmpty
   if (chosen === null) return null
   if (chosen) return <GetStartedPage esito={search.esito} />

@@ -208,6 +208,36 @@ describe('the Home', () => {
     expect(screen.getByText('Casella Google collegata.')).toBeInTheDocument()
   })
 
+  it('retries a work read the way the app does, so one dropped request does not send an empty space to the dashboard', async () => {
+    let calls = 0
+    const base = vi.mocked(api.GET).getMockImplementation()
+    vi.mocked(api.GET).mockImplementation(((path: string, init?: unknown) => {
+      if (path === '/api/customers' && calls++ === 0) {
+        return Promise.resolve({ error: { detail: 'boom' }, response: new Response(null, { status: 502 }) })
+      }
+      return (base as (p: string, i?: unknown) => unknown)(path, init)
+    }) as never)
+    // The app's own client retries (`lib/query.ts`); these reads must not opt out of it.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: 1, retryDelay: 0 } } })
+    render(
+      <QueryClientProvider client={client}>
+        <HomePage search={SEARCH} onSearchChange={vi.fn()} />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByRole('heading', { name: 'Porta dentro il tuo lavoro' })).toBeInTheDocument()
+    expect(calls).toBe(2)
+  })
+
+  it('does not hold a choice made on a failed read: the next read that succeeds decides', async () => {
+    answers({}, { '/api/customers': 500 })
+    const client = renderHome()
+    expect(await screen.findByTestId('dashboard')).toBeInTheDocument()
+    answers()
+    await client.invalidateQueries()
+    expect(await screen.findByRole('heading', { name: 'Porta dentro il tuo lavoro' })).toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard')).toBeNull()
+  })
+
   it('falls back to the dashboard when a read fails, rather than guess the space is empty', async () => {
     answers({}, { '/api/customers': 500 })
     renderHome()
