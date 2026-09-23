@@ -1,0 +1,5 @@
+# What render.mjs writes: rebuilt from the sources on demand, never committed
+# (README.md § Rendering says where a finished picture goes).
+out/
+# The phone numbers on the back of the business card (see contacts.example.js).
+contacts.local.js

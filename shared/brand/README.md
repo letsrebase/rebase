@@ -16,6 +16,7 @@ surface.
 | `tools/build-wordmark.py` | How the four SVGs were drawn, and the only way to redraw them | Nobody at build time: run it by hand when the face changes |
 | `echo/` | The echo logo: «rebase» solid under three outlined copies of itself, six colourways as PNG | Covers, slides, social pictures; nothing yet at header size |
 | `tools/build-echo.mjs` | How the six PNGs were drawn, and the only way to redraw them | Nobody at build time: `pnpm --filter @rebase/brand build:echo` |
+| `print/` | The business card, the stickers and the temporary tattoo, as HTML in millimetres with a render script each (`print/README.md`) | Nobody at build time: run by hand for the print shop |
 
 ## Why a package rather than a file in one of the projects
 
