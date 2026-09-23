@@ -1,5 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { ApiError, type CompanyRequest } from '@/lib/api'
 import { toCompanyApplication, toCompanyUpdate, useMe, useUpdateCompany } from '@/lib/me'
@@ -27,6 +27,12 @@ export function editCompanyFields(): Field<CompanyRequest>[] {
   )
 }
 
+/** Reachable only when `ha_azienda` is true -- `Area.tsx`'s own CTA is the only door
+ *  here, but a direct visit with no company yet would otherwise let the whole form be
+ *  built from `toCompanyApplication(me.data)`'s blank fields before `PATCH /me/company`
+ *  refuses it with a 404 (the same shape of bug Greptile found on `NuovaRichiestaAzienda.tsx`,
+ *  PR #313; REB-383 is this page's own fix): the same mount-time redirect `AdminGuard`
+ *  uses for its own access rule bounces it back to `/me` before the form ever renders. */
 export function ModificaAzienda() {
   const me = useMe()
   const navigate = useNavigate()
@@ -34,6 +40,13 @@ export function ModificaAzienda() {
   const [draft, setDraft] = useState<CompanyRequest | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [failure, setFailure] = useState<string | null>(null)
+  const hasCompany = me.data?.ha_azienda ?? true
+
+  useEffect(() => {
+    if (me.data && !me.data.ha_azienda) void navigate({ to: '/me', replace: true })
+  }, [me.data, navigate])
+
+  if (!hasCompany) return null
 
   // State that follows a prop, adjusted during render: the draft starts from the
   // profile the first time it is known, and never again while the person is typing.
