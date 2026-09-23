@@ -319,11 +319,11 @@ def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -
     titolare the first active admin (`DigestRun` resolves it, from `owner_email=None`),
     and its links carry `PIGROCRM_ROOT_SLUG` the way a space's carry its own slug:
     `/<root_slug>/app` *is* the root. Its line reads `root: ...` whatever the slug, so the
-    log tells the installation from its spaces, and `--slug root` visits it alone, as does
-    `--slug <PIGROCRM_ROOT_SLUG>`: both names are reserved against signups, so neither can
-    also be a space, and a run for the root alone never opens the registry. An
-    unreachable registry no longer ends the run either: it is one line, and the root is
-    still sent.
+    log tells the installation from its spaces, and `--slug root` visits it alone without
+    opening the registry. Only that name: `root` is reserved against signups, so it can
+    never be a space, while `PIGROCRM_ROOT_SLUG` could still name a registry row created
+    before the root took it, and `--slug` with it goes on meaning that row. An unreachable
+    registry no longer ends the run either: it is one line, and the root is still sent.
 
     **This command migrates nothing.** `ensure-space-defaults` at boot is the only
     migrator (ORB-189), and that separation is the point: a cron job that ran Alembic on
@@ -355,7 +355,7 @@ def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -
     from pigrocrm.core.tenants.database import tenant_database_url
 
     settings = get_settings()
-    radice_sola = slug is not None and slug in {RADICE, settings.root_slug}
+    radice_sola = slug == RADICE
     # (the line's label, the database, the registry's owner or `None` for the root, the
     # base of every link in the mail)
     spaces: list[tuple[str, str | URL, str | None, str]] = []

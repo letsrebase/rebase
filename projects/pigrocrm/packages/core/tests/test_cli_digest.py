@@ -294,12 +294,11 @@ def test_the_cron_mails_every_space_its_week_and_prints_one_line_each(
 
 
 @pytest.mark.parametrize(
-    ("scelta", "root_slug", "base"),
+    ("root_slug", "base"),
     [
-        ("root", RADICE_SLUG, f"{PUBLIC_URL}/{RADICE_SLUG}/app"),
-        (RADICE_SLUG, RADICE_SLUG, f"{PUBLIC_URL}/{RADICE_SLUG}/app"),
+        (RADICE_SLUG, f"{PUBLIC_URL}/{RADICE_SLUG}/app"),
         # No root slug: the root answers without a prefix, and `root` still names it.
-        ("root", "", f"{PUBLIC_URL}/app"),
+        ("", f"{PUBLIC_URL}/app"),
     ],
 )
 def test_the_root_installation_gets_its_week_like_a_space(
@@ -307,14 +306,13 @@ def test_the_root_installation_gets_its_week_like_a_space(
     cron: RecordingSender,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    scelta: str,
     root_slug: str,
     base: str,
 ) -> None:
     """REB-263: the root holds the titolare's real data and has no registry row, so the
     walk alone never mailed it. Its database is `database_url`, its titolare the first
     admin still active, its links carry `PIGROCRM_ROOT_SLUG` like a space's carry its
-    slug, and `--slug root` (or that slug) visits it alone, without the registry."""
+    slug, and `--slug root` visits it alone, without the registry."""
     import pigrocrm.core.tenants as tenants
 
     def nessun_registro(_settings: Settings) -> Engine:
@@ -326,7 +324,7 @@ def test_the_root_installation_gets_its_week_like_a_space(
     monkeypatch.setattr(tenants, "ensure_tenants_database", nessun_registro)
     iso = iso_week(_settimana_scorsa(settings)[0])
 
-    assert cli.main(["digest", "--slug", scelta]) == 0
+    assert cli.main(["digest", "--slug", cli.RADICE]) == 0
 
     captured = capsys.readouterr()
     assert captured.out.strip() == f"{cli.RADICE}: inviato a 2"
@@ -406,6 +404,20 @@ def test_a_slug_that_is_not_in_the_registry_is_one_line_and_not_a_failure(
     assert captured.err.strip() == "prova-digest-mai-esistito: non nel registro"
     assert captured.out == ""
     assert _mie(cron) == []
+
+
+def test_the_root_slug_is_not_a_way_to_name_the_root(
+    cron: RecordingSender, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--slug` with `PIGROCRM_ROOT_SLUG` goes on meaning a registry row: one created before
+    the root took that name would otherwise be shadowed, and a `--forza` meant for it would
+    resend the root's week instead. Only `root` names the root."""
+    assert cli.main(["digest", "--slug", RADICE_SLUG]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err.strip() == f"{RADICE_SLUG}: non nel registro"
+    assert captured.out == ""
+    assert cron.sent == []
 
 
 def test_a_space_where_everybody_switched_it_off_is_said_and_not_sent(

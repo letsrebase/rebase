@@ -208,9 +208,10 @@ vero) tocca un solo spazio.
 
 L'installazione radice (il database di `PIGROCRM_DATABASE_URL`, quella che non sta nel
 registro) è la prima riga di ogni giro, e nel log si chiama sempre `root`. Per toccare
-solo lei: `--slug root` (va bene anche il valore di `PIGROCRM_ROOT_SLUG`). Tutti e due i
-nomi sono riservati, nessuno spazio può averli, e un giro della sola radice non apre
-nemmeno il registro. Per rimandare una settimana alla radice si usa quindi
+solo lei: `--slug root`, un nome riservato che nessuno spazio può avere; un giro della
+sola radice non apre nemmeno il registro. Non il valore di `PIGROCRM_ROOT_SLUG`: con
+`--slug` quello resta il nome di uno spazio del registro, se ce n'è uno nato prima che la
+radice lo prendesse. Per rimandare una settimana alla radice si usa quindi
 `--slug root --forza --data …`, mai `--forza` sul giro completo, che la rimanderebbe a
 ogni spazio.
 
