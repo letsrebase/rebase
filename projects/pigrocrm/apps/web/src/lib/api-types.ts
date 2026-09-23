@@ -2893,6 +2893,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/contracts/{contract_id}/concentration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Concentration Cap */
+        get: operations["concentration_cap_api_contracts__contract_id__concentration_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/contracts/{contract_id}/rate-cards": {
         parameters: {
             query?: never;
@@ -3366,6 +3383,8 @@ export interface components {
             lordo_proiettato: string;
             /** Mesi */
             mesi: components["schemas"]["CashMonth"][];
+            /** Scadenze Contrattuali */
+            scadenze_contrattuali: components["schemas"]["ContractDateMarker"][];
         };
         /**
          * CassaAttesaMese
@@ -3423,6 +3442,53 @@ export interface components {
             chiusure_non_attribuibili: number;
             /** Offerte Accettate Deal Non Vinto */
             offerte_accettate_deal_non_vinto: number;
+        };
+        /**
+         * ContractConcentrationCap
+         * @description REB-352 §1.5's contract-anchored concentration cap: one engagement's own
+         *     share of total invoiced revenue over the anniversary year containing `as_of`,
+         *     read the same way `annual_revenue`/`_revenue_filter` already define revenue --
+         *     mastro's `percentage_share` measure, on its `cash_received_contract_year` basis
+         *     (`ceiling.ts:55-75, 197-233`), anchored to `Contract.inizio` instead of a
+         *     ledger row.
+         *
+         *     `soglia` is never persisted: no threshold column exists on `contracts` yet (a
+         *     future ceiling entity's own concern, REB-361), so a caller names the share it
+         *     wants checked against, per REB-352 §5 item 4's "would this fit" reading -- a
+         *     live comparison with no persistence required. `superata` mirrors mastro's own
+         *     `crossed` (`ceiling.ts:257`) and stays `None` until a `soglia` is supplied.
+         */
+        ContractConcentrationCap: {
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /**
+             * Periodo Da
+             * Format: date
+             */
+            periodo_da: string;
+            /**
+             * Periodo A
+             * Format: date
+             */
+            periodo_a: string;
+            /** Ricavi Cliente */
+            ricavi_cliente: string;
+            /** Ricavi Totali */
+            ricavi_totali: string;
+            /** Quota */
+            quota: number;
+            /** Soglia */
+            soglia?: number | null;
+            /** Superata */
+            superata?: boolean | null;
         };
         /**
          * ContractCreate
@@ -3489,6 +3555,40 @@ export interface components {
             custom_fields: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * ContractDateMarker
+         * @description One contract-specific date on the cash calendar (REB-352 §1.6): an
+         *     irrevocability window closing or a renewal deadline, layered onto the month it
+         *     falls in. Neither is a sum and neither moves a `CashMonth` figure -- a marker
+         *     only names a day and which contract it belongs to, the way mastro's own cash
+         *     calendar overlays "irrevocability window ends" and "renewal dates" onto its
+         *     chart without folding either into the chart's own bars
+         *     (`2026-08-23-analysis-section-design.md:205-219`).
+         */
+        ContractDateMarker: {
+            /**
+             * Contract Id
+             * Format: uuid
+             */
+            contract_id: string;
+            /** Titolo */
+            titolo: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /**
+             * Tipo
+             * @enum {string}
+             */
+            tipo: "fine_irrevocabilita" | "scadenza_rinnovo";
+            /**
+             * Data
+             * Format: date
+             */
+            data: string;
         };
         /** ContractPage */
         ContractPage: {
@@ -30539,6 +30639,128 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContractRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    concentration_cap_api_contracts__contract_id__concentration_get: {
+        parameters: {
+            query?: {
+                as_of?: string | null;
+                soglia?: number | null;
+            };
+            header?: never;
+            path: {
+                contract_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContractConcentrationCap"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

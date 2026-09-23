@@ -1,9 +1,11 @@
+from datetime import date
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 
 from pigrocrm.core.contracts.schemas import (
+    ContractConcentrationCap,
     ContractCreate,
     ContractListQuery,
     ContractPage,
@@ -50,6 +52,17 @@ def list_contracts(
 @router.get("/{contract_id}", response_model=ContractRead)
 def get(contract_id: UUID, session: SessionDep, actor: ActorDep) -> ContractRead:
     return ContractService(session).get(contract_id, actor)
+
+
+@router.get("/{contract_id}/concentration", response_model=ContractConcentrationCap)
+def concentration_cap(
+    contract_id: UUID,
+    session: SessionDep,
+    actor: ActorDep,
+    as_of: Annotated[date | None, Query()] = None,
+    soglia: Annotated[float | None, Query(ge=0, le=1)] = None,
+) -> ContractConcentrationCap:
+    return ContractService(session).concentration_cap(contract_id, actor, as_of, soglia)
 
 
 @router.post(

@@ -264,6 +264,23 @@ class CashMonth(BaseModel):
     quote_proiezione: dict[str, float]
 
 
+class ContractDateMarker(BaseModel):
+    """One contract-specific date on the cash calendar (REB-352 §1.6): an
+    irrevocability window closing or a renewal deadline, layered onto the month it
+    falls in. Neither is a sum and neither moves a `CashMonth` figure -- a marker
+    only names a day and which contract it belongs to, the way mastro's own cash
+    calendar overlays "irrevocability window ends" and "renewal dates" onto its
+    chart without folding either into the chart's own bars
+    (`2026-08-23-analysis-section-design.md:205-219`).
+    """
+
+    contract_id: UUID
+    titolo: str
+    customer_id: UUID
+    tipo: Literal["fine_irrevocabilita", "scadenza_rinnovo"]
+    data: date
+
+
 class CashOverview(BaseModel):
     """The year as money: `incassato` is invoices paid, `da_incassare` invoices issued
     and unpaid, `bozze` drafts and proformas not yet turned into invoices, `costi` what
@@ -283,6 +300,13 @@ class CashOverview(BaseModel):
     lordo_effettivo: Decimal = Field(max_digits=12, decimal_places=2)
     lordo_proiettato: Decimal = Field(max_digits=12, decimal_places=2)
     mesi: list[CashMonth]
+    # REB-352 §1.6's overlay: every irrevocability-window close and renewal
+    # deadline that falls inside `anno`, across every contract -- computed "as of"
+    # today regardless of which `anno` is on screen (an irrevocability window is
+    # always a forward-looking promise), so a marker on a past year's calendar
+    # never appears and a marker on a future one only does once today's window
+    # actually reaches into it.
+    scadenze_contrattuali: list[ContractDateMarker]
 
 
 class RevenueByCustomer(BaseModel):

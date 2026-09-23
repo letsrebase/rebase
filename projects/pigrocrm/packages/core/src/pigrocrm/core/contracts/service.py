@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -6,10 +7,13 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.analytics.repository import AnalyticsRepository
+from pigrocrm.core.contracts.dates import anniversary_year_bounds
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.contracts.repository import ContractRepository, RateCardRepository
 from pigrocrm.core.contracts.schemas import (
     CONTRACT_SORTS,
+    ContractConcentrationCap,
     ContractCreate,
     ContractListQuery,
     ContractPage,
@@ -18,7 +22,7 @@ from pigrocrm.core.contracts.schemas import (
     RateCardRead,
 )
 from pigrocrm.core.customers.repository import CustomerRepository
-from pigrocrm.core.db import encode_cursor
+from pigrocrm.core.db import encode_cursor, today_local
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -61,6 +65,7 @@ class ContractService:
         self.customers = CustomerRepository(session)
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
+        self.analytics = AnalyticsRepository(session)
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         """Used by `create` only: `values` is the *complete* desired set of custom
@@ -89,6 +94,48 @@ class ContractService:
         if contract is None:
             raise NotFound(ENTITY, contract_id)
         return ContractRead.model_validate(contract)
+
+    def concentration_cap(
+        self,
+        contract_id: UUID,
+        actor: Actor,
+        as_of: date | None = None,
+        soglia: float | None = None,
+    ) -> ContractConcentrationCap:
+        """REB-352 §1.5: one engagement's own share of total invoiced revenue over
+        the anniversary year containing `as_of` (today, in the emitter's own zone,
+        when not given). Read-only, like every other figure `AnalyticsService`
+        exposes -- no `require_write`. `soglia` is a caller-supplied share in [0, 1];
+        `superata` stays `None` until one is given, the same "no persistence
+        required" reading REB-352 §5 item 4 gives the ceiling simulator.
+        """
+        contract = self.repo.get(contract_id)
+        if contract is None:
+            raise NotFound(ENTITY, contract_id)
+        reference = as_of if as_of is not None else today_local()
+        if reference < contract.inizio:
+            raise ValidationFailed(
+                ENTITY,
+                "as_of",
+                "precede l'inizio del contratto",
+                expected=f">= {contract.inizio.isoformat()}",
+            )
+        periodo_da, periodo_a = anniversary_year_bounds(contract.inizio, reference)
+        ricavi_cliente, ricavi_totali = self.analytics.revenue_for_customer_in_window(
+            contract.customer_id, periodo_da, periodo_a
+        )
+        quota = float(ricavi_cliente / ricavi_totali) if ricavi_totali > 0 else 0.0
+        return ContractConcentrationCap(
+            contract_id=contract.id,
+            customer_id=contract.customer_id,
+            periodo_da=periodo_da,
+            periodo_a=periodo_a,
+            ricavi_cliente=ricavi_cliente,
+            ricavi_totali=ricavi_totali,
+            quota=quota,
+            soglia=soglia,
+            superata=(quota >= soglia) if soglia is not None else None,
+        )
 
     # `list` is defined LAST in this class on purpose -- see ContractRepository.list's
     # own comment for the Python 3.13 annotation-evaluation reason.

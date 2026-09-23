@@ -18,6 +18,7 @@ from pigrocrm.core.analytics.schemas import (
     CashBase,
     CashMonth,
     CashOverview,
+    ContractDateMarker,
     DealPnl,
     EconomicOverview,
     FiscalEstimate,
@@ -28,6 +29,9 @@ from pigrocrm.core.analytics.schemas import (
     UnbilledBacklog,
 )
 from pigrocrm.core.config import get_settings
+from pigrocrm.core.contracts.dates import irrevocability_window_end, renewal_deadline
+from pigrocrm.core.contracts.repository import ContractRepository
+from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -146,6 +150,7 @@ class AnalyticsService:
         self.repo = AnalyticsRepository(session)
         self.deals = DealRepository(session)
         self.entries = TimeEntryService(session)
+        self.contracts = ContractRepository(session)
 
     def deal_pnl(self, deal_id: UUID, actor: Actor) -> DealPnl:
         """The rows of §7.1, each from its one stated source.
@@ -398,6 +403,44 @@ class AnalyticsService:
             deal_non_preventivati=len(rows) - len(budgeted),
         )
 
+    def _contract_date_markers(self, anno: int) -> list[ContractDateMarker]:
+        """REB-352 §1.6's overlay: every irrevocability-window close and renewal
+        deadline that falls inside `anno`'s calendar, across every non-deleted
+        contract. The irrevocability date is measured "as of" today regardless of
+        `anno` -- a notice period is a forward-looking promise, never a fact about a
+        past year -- so a past `anno` never grows one and a future one only does
+        once today's window actually reaches into it.
+        """
+        year_start = date(anno, 1, 1)
+        year_end = date(anno, 12, 31)
+        oggi = today_local()
+        markers: list[ContractDateMarker] = []
+        for contract in self.contracts.list_active():
+            end = irrevocability_window_end(contract, oggi)
+            if end is not None and year_start <= end <= year_end:
+                markers.append(
+                    ContractDateMarker(
+                        contract_id=contract.id,
+                        titolo=contract.titolo,
+                        customer_id=contract.customer_id,
+                        tipo="fine_irrevocabilita",
+                        data=end,
+                    )
+                )
+            deadline = renewal_deadline(contract)
+            if deadline is not None and year_start <= deadline <= year_end:
+                markers.append(
+                    ContractDateMarker(
+                        contract_id=contract.id,
+                        titolo=contract.titolo,
+                        customer_id=contract.customer_id,
+                        tipo="scadenza_rinnovo",
+                        data=deadline,
+                    )
+                )
+        markers.sort(key=lambda m: (m.data, m.titolo))
+        return markers
+
     def cash_overview(self, anno: int, actor: Actor, base: CashBase = "competenza") -> CashOverview:
         """The year as cash, month by month (`CashOverview`). Read by anyone who may read
         the dashboard: nothing here is fiscal, and every figure is a SUM the repository
@@ -473,6 +516,7 @@ class AnalyticsService:
             lordo_effettivo=round_money(tot_incassato - tot_costi),
             lordo_proiettato=round_money(proiettato - tot_costi),
             mesi=mesi,
+            scadenze_contrattuali=self._contract_date_markers(anno),
         )
 
     def economic_overview(

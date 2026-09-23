@@ -1,8 +1,9 @@
 from datetime import date
 from decimal import Decimal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
+from orologio import OGGI_IN_ITALIA, congela
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -10,6 +11,7 @@ from pigrocrm.core.contracts.schemas import ContractCreate, ContractListQuery, R
 from pigrocrm.core.contracts.service import ContractService, RateCardService
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.invoices.models import Invoice
 
 ADMIN = Actor(id=None, type="system", role="admin")
 
@@ -191,3 +193,124 @@ def test_rate_card_list_for_an_unknown_contract_is_not_found(db_session: Session
     rate_cards = RateCardService(db_session)
     with pytest.raises(NotFound):
         rate_cards.list_for_contract(uuid4(), ADMIN)
+
+
+# ---- concentration_cap (REB-352 §1.5) ----------------------------------------------
+
+
+def _invoice(
+    db_session: Session, customer_id: UUID, *, imponibile: str, data_emissione: date
+) -> None:
+    row = Invoice(
+        customer_id=customer_id,
+        tipo="fattura",
+        stato="emessa",
+        stato_pagamento="da_incassare",
+        imponibile=Decimal(imponibile),
+        imposta=Decimal("0.00"),
+        bollo=Decimal("0.00"),
+        totale=Decimal(imponibile),
+        data_emissione=data_emissione,
+        tipo_documento="TD01",
+        divisa="EUR",
+        custom_fields={},
+    )
+    db_session.add(row)
+    db_session.flush()
+
+
+def test_concentration_cap_computes_the_clients_share_of_the_anniversary_year(
+    db_session: Session,
+) -> None:
+    """The window anchors to the contract's own `inizio` (10 March), not the calendar
+    year: an invoice dated before that anniversary is out of the window even though
+    it falls inside the same `data_emissione.year`."""
+    customer = _customer(db_session)
+    other = Customer(ragione_sociale="Altro Cliente")
+    db_session.add(other)
+    db_session.flush()
+    contract = ContractService(db_session).create(
+        _create_payload(customer.id, inizio=date(2026, 3, 10)), ADMIN
+    )
+
+    _invoice(db_session, customer.id, imponibile="300.00", data_emissione=date(2026, 4, 1))
+    _invoice(db_session, other.id, imponibile="700.00", data_emissione=date(2026, 4, 1))
+    # Before the anniversary: excluded from the window even though it is the same year.
+    _invoice(db_session, customer.id, imponibile="9000.00", data_emissione=date(2026, 2, 1))
+
+    cap = ContractService(db_session).concentration_cap(contract.id, ADMIN, as_of=date(2026, 6, 1))
+
+    assert cap.contract_id == contract.id
+    assert cap.customer_id == customer.id
+    assert (cap.periodo_da, cap.periodo_a) == (date(2026, 3, 10), date(2027, 3, 9))
+    assert cap.ricavi_cliente == Decimal("300.00")
+    assert cap.ricavi_totali == Decimal("1000.00")
+    assert cap.quota == pytest.approx(0.3)
+    assert cap.soglia is None
+    assert cap.superata is None
+
+
+def test_concentration_cap_is_zero_when_nothing_has_been_invoiced_in_the_window(
+    db_session: Session,
+) -> None:
+    customer = _customer(db_session)
+    contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
+
+    cap = ContractService(db_session).concentration_cap(contract.id, ADMIN, as_of=date(2026, 6, 1))
+
+    assert cap.ricavi_cliente == Decimal("0.00")
+    assert cap.ricavi_totali == Decimal("0.00")
+    assert cap.quota == 0.0
+
+
+def test_concentration_cap_reports_whether_a_threshold_is_exceeded(db_session: Session) -> None:
+    customer = _customer(db_session)
+    other = Customer(ragione_sociale="Altro Cliente")
+    db_session.add(other)
+    db_session.flush()
+    contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
+    _invoice(db_session, customer.id, imponibile="300.00", data_emissione=date(2026, 4, 1))
+    _invoice(db_session, other.id, imponibile="700.00", data_emissione=date(2026, 4, 1))
+
+    below = ContractService(db_session).concentration_cap(
+        contract.id, ADMIN, as_of=date(2026, 6, 1), soglia=0.5
+    )
+    above = ContractService(db_session).concentration_cap(
+        contract.id, ADMIN, as_of=date(2026, 6, 1), soglia=0.2
+    )
+
+    assert below.soglia == 0.5 and below.superata is False
+    assert above.soglia == 0.2 and above.superata is True
+
+
+def test_concentration_cap_defaults_as_of_to_today(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    congela(monkeypatch)
+    customer = _customer(db_session)
+    contract = ContractService(db_session).create(
+        _create_payload(customer.id, inizio=date(2025, 6, 1)), ADMIN
+    )
+
+    cap = ContractService(db_session).concentration_cap(contract.id, ADMIN)
+
+    assert cap.periodo_da == date(2025, 6, 1)
+    assert OGGI_IN_ITALIA.year == 2026  # sanity: the frozen "today" is inside this window
+
+
+def test_concentration_cap_rejects_an_as_of_before_the_contracts_own_start(
+    db_session: Session,
+) -> None:
+    customer = _customer(db_session)
+    contract = ContractService(db_session).create(
+        _create_payload(customer.id, inizio=date(2026, 3, 10)), ADMIN
+    )
+
+    with pytest.raises(ValidationFailed) as excinfo:
+        ContractService(db_session).concentration_cap(contract.id, ADMIN, as_of=date(2026, 1, 1))
+    assert excinfo.value.details["field"] == "as_of"
+
+
+def test_concentration_cap_of_an_unknown_contract_is_not_found(db_session: Session) -> None:
+    with pytest.raises(NotFound):
+        ContractService(db_session).concentration_cap(uuid4(), ADMIN, as_of=date(2026, 1, 1))
