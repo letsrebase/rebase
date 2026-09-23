@@ -21,6 +21,7 @@ from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.storage.local import LocalFileStorage
 from pigrocrm.core.timetracking.models import CostCategory, TimeEntry
+from pigrocrm.core.work_units.triggers import WORK_UNIT_TRIGGER_SQL
 
 
 @pytest.fixture(scope="session")
@@ -35,6 +36,16 @@ def db_engine() -> Iterator[Engine]:
     statement for the path that bypasses the migrations. `btree_gist` is REB-358's own
     addition, for the identical reason: `RateCard`'s exclusion constraint needs it, and
     `create_all` fails with `operator class "gist_uuid_ops" does not exist` without it.
+
+    The trigger DDL after `create_all` is REB-359's own addition, and runs the other way
+    round: it needs `work_units`/`work_unit_transitions`/`approvals` to already exist,
+    so it comes *after* `create_all`, not before. `WORK_UNIT_TRIGGER_SQL` is the exact
+    text the migration that creates those tables also runs (`triggers.py`'s own
+    docstring explains why this is imported rather than hand-copied a second time) --
+    the same "run it twice" shape this fixture already uses for the two extensions
+    above, chosen over a second, `alembic upgrade head`-based schema fixture because
+    nothing else about these three tables needs a real migration run: only the trigger
+    bodies are DDL `create_all` cannot express.
     """
     with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
         settings = Settings(database_url=container.get_connection_url())
@@ -45,6 +56,8 @@ def db_engine() -> Iterator[Engine]:
         import pigrocrm.core.models_registry  # noqa: F401  (imports every model)
 
         Base.metadata.create_all(engine)
+        with engine.begin() as connection:
+            connection.execute(text(WORK_UNIT_TRIGGER_SQL))
         yield engine
         engine.dispose()
 
