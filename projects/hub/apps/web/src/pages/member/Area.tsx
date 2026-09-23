@@ -1,6 +1,6 @@
 import { capture } from '@rebase/analytics/browser'
 import { Link, useSearch } from '@tanstack/react-router'
-import { ArrowUpRight, Download, Pencil } from 'lucide-react'
+import { ArrowUpRight, Download, Pencil, Plus } from 'lucide-react'
 import { Button } from '@rebase/ui/button'
 import { member } from '@/lib/api'
 import { formatBytes } from '@/lib/format'
@@ -125,14 +125,22 @@ export function Area() {
 
       {companyValue && (
         <section aria-label="La tua richiesta" className="space-y-3">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <h2 className="text-lg font-semibold tracking-tight">La tua richiesta più recente</h2>
-            <Button asChild variant="outline" size="sm">
-              <Link to="/me/edit-company">
-                <Pencil className="mr-2 size-4" />
-                Modifica richiesta
-              </Link>
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button asChild variant="outline" size="sm">
+                <Link to="/me/new-company">
+                  <Plus className="mr-2 size-4" />
+                  Richiedi una nuova figura
+                </Link>
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link to="/me/edit-company">
+                  <Pencil className="mr-2 size-4" />
+                  Modifica richiesta
+                </Link>
+              </Button>
+            </div>
           </div>
           <dl className="divide-y border bg-card">
             {companyFields.map((field) => (

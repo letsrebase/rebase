@@ -674,6 +674,9 @@ export const member = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }),
+  /** A brand-new request (REB-381), not an edit: the same eight-field shape as
+   *  `updateCompany`, since `CompanyFields` is what both accept. */
+  createCompanyRequest: (data: CompanyUpdate) => request<Me>('/api/hub/me/company', json(data)),
   replaceCv: (file: File) => {
     const form = new FormData()
     form.set('cv', file, file.name)
