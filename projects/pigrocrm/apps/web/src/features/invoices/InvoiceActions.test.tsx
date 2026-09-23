@@ -82,8 +82,30 @@ describe('InvoiceActions', () => {
     expect(api.POST).not.toHaveBeenCalled()
   })
 
-  it('renders the artefacts after issuing, as a second call', async () => {
-    vi.mocked(api.POST).mockResolvedValue(ok(ISSUED))
+  /**
+   * REB-143: the endpoint renders on emission and answers the row read back after it, so
+   * a row that already carries both files needs no second render. Two calls here used
+   * to compile the same PDF twice on every emission.
+   */
+  it('does not render again when the issued row already carries both files', async () => {
+    const rendered = { ...ISSUED, pdf_document_id: 'doc-pdf', xml_document_id: 'doc-xml' }
+    vi.mocked(api.POST).mockResolvedValue(ok(rendered))
+    const onIssued = vi.fn()
+    wrap(<InvoiceActions invoice={DRAFT} onIssued={onIssued} />)
+
+    await userEvent.click(screen.getByRole('button', { name: /emetti/i }))
+
+    await waitFor(() => expect(onIssued).toHaveBeenCalledWith(rendered))
+    expect(api.POST).toHaveBeenCalledTimes(1)
+    expect(String(vi.mocked(api.POST).mock.calls[0]?.[0])).toContain('/issue')
+    expect(toast.success).toHaveBeenCalled()
+    expect(toast.warning).not.toHaveBeenCalled()
+  })
+
+  it('renders the artefacts again when the issued row is missing one, as a second call', async () => {
+    // The half-way case the endpoint can answer: the PDF committed, the XML export failed.
+    const halfRendered = { ...ISSUED, pdf_document_id: 'doc-pdf', xml_document_id: null }
+    vi.mocked(api.POST).mockResolvedValue(ok(halfRendered))
     const onIssued = vi.fn()
     wrap(<InvoiceActions invoice={DRAFT} onIssued={onIssued} />)
 
@@ -98,7 +120,7 @@ describe('InvoiceActions', () => {
     expect(paths[1]).toContain('/artifacts')
     // A draft fattura is issued in place: the caller gets the same id back and has
     // nothing to navigate to. The route relies on this to stay put (ORB-134).
-    expect(onIssued).toHaveBeenCalledWith(ISSUED)
+    expect(onIssued).toHaveBeenCalledWith(halfRendered)
     expect(onIssued.mock.calls[0]?.[0]?.id).toBe(DRAFT.id)
   })
 

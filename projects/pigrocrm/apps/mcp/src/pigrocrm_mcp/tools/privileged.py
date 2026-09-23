@@ -35,6 +35,7 @@ Every docstring below says what the operation does that cannot be undone. That i
 decoration: it is the only warning an agent reads.
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import date
@@ -71,6 +72,8 @@ from pigrocrm.core.timetracking.schemas import (
 )
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.context import McpContext
+
+logger = logging.getLogger(__name__)
 
 
 def _day(value: str | None) -> date | None:
@@ -119,6 +122,11 @@ def register(
         Prima di chiamarlo verifica con `get_invoice` che righe, cliente e imponibile
         siano quelli attesi: dopo, l'unica strada è `annul_invoice`, che lascia comunque
         traccia nel registro.
+
+        Restituisce la fattura emessa anche se PDF o XML non si sono generati: in quel
+        caso `pdf_document_id` o `xml_document_id` sono vuoti, la fattura resta emessa e
+        **non va emessa di nuovo**. L'XML si rigenera con `export_invoice_xml`, entrambi
+        i file con «Rigenera documenti» nell'applicazione.
         """
         service = InvoiceService(context.session, context.storage)
         invoice = service.issue(
@@ -126,7 +134,16 @@ def register(
         )
         # The artefacts are the caller's second transaction by design (slice 3 §3): a
         # Typst compile inside the numbering lock would serialise every emission on it.
-        service.produce_artifacts(invoice.id, context.actor)
+        # Once `issue` has committed the number is consumed, so a render that raises is
+        # logged and the issued row is still the answer (REB-143), with the document
+        # ids saying which file exists; `export_invoice_xml` below or the web's
+        # «Rigenera documenti» is the retry. Answering an error here would tell the agent
+        # the emission failed, and an agent that believes that issues the invoice again.
+        try:
+            service.produce_artifacts(invoice.id, context.actor)
+        except Exception:
+            logger.exception("invoice %s issued, its PDF/XML were not produced", invoice.id)
+            service.session.rollback()
         return service.get(invoice.id, context.actor).model_dump(mode="json")
 
     @mcp.tool()
