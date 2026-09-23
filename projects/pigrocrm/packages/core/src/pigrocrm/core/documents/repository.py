@@ -65,6 +65,20 @@ class DocumentRepository:
         self.session.flush()
         return document
 
+    def reassign_to_contract(self, document: Document, contract_id: UUID) -> Document:
+        """Re-points a document's ownership at a contract, clearing whichever of
+        `customer_id`/`deal_id` it held before -- the accept half of REB-358 §11's
+        widened three-way ownership (`ck_documents_customer_xor_deal`), read by
+        `ProposalService._accept_contratto` in the same transaction that creates the
+        contract itself (spec §10's own "widen at accept time, not at archive time"
+        ordering). Flushes -- and only flushes -- like every other method here: the
+        surrounding service is the transaction."""
+        document.customer_id = None
+        document.deal_id = None
+        document.contract_id = contract_id
+        self.session.flush()
+        return document
+
     def add_version(self, version: DocumentVersion) -> DocumentVersion:
         """Flushes -- and only flushes -- so the caller can observe (and, on the
         unique `(document_id, numero)` constraint, catch) the outcome before deciding

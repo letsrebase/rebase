@@ -68,6 +68,31 @@ WORK_UNIT_STATI: tuple[str, ...] = (
 # the redirect below -- a caller can never name it on creation.
 WORK_UNIT_ENTRY_STATI: frozenset[str] = frozenset({"proposto", "approvato", "lavorato"})
 
+# REB-372: the states `AnalyticsRepository.unbilled_backlog` treats as "approved to
+# bill", once work_units exist to make the distinction at all -- mastro's own three
+# qualifying states (`certainty.ts:116-120`: "approved/worked/disputed"), translated,
+# and nothing wider.
+#
+# `fatturato`/`pagato` are deliberately NOT in this set, even though they sit later in
+# the graph: `bind_work_units` (`invoicing.py`) sets only `invoice_line_id`, never
+# `stato`, so the normal invoicing path never actually produces `fatturato` on its
+# own -- and `WorkUnitService.transition` is a generic, already-public method with no
+# coupling to `invoice_line_id` at all, so a work_unit can reach `fatturato`/`pagato`
+# (both legal edges from `lavorato`/`contestato`/`fatturato`) while `invoice_line_id`
+# is still NULL. Relying on the backlog query's own `invoice_line_id IS NULL` filter
+# to keep such a row out would be relying on an invariant this codebase does not
+# enforce; the state itself is what says "already billed" or "already paid", and
+# that is reason enough on its own to leave the backlog, independent of the link.
+#
+# Also deliberately excluded: `proposto` (merely logged, the one distinction this
+# issue exists to draw), `lavorato_senza_approvazione` (worked *without* the approval
+# its own contract requires -- the flagged, uncertain branch REB-359's invoicing step
+# already refuses to gather automatically, `work_units/repository.py`'s own
+# `unbilled_for_contract` default), `rifiutato`/`revocato` (never happened, or no
+# longer counts), and `non_fatturabile` (recorded, real, but declared unbillable --
+# the opposite of committed revenue).
+WORK_UNIT_COMMITTED_STATI: frozenset[str] = frozenset({"approvato", "lavorato", "contestato"})
+
 # The state graph `work_unit_enforce_state_machine` enforces (`triggers.py` renders
 # this into the migration's own `op.execute(...)` text and into
 # `tests/conftest.py`'s second bootstrap block, so the documented graph and the

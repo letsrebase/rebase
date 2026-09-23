@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from datetime import date
+from decimal import Decimal
 from typing import Annotated, Any, cast
 from uuid import UUID
 
@@ -7,7 +8,8 @@ from mcp.server import MCPServer
 from pydantic import WithJsonSchema
 
 from pigrocrm.core.activities.service import ActivityService
-from pigrocrm.core.analytics.schemas import BudgetQuery, PeriodPnlQuery
+from pigrocrm.core.analytics.schemas import BudgetQuery, CeilingSimulationQuery, PeriodPnlQuery
+from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import ContractListQuery, ContractProjectionQuery
 from pigrocrm.core.customers.schemas import CustomerListQuery, CustomerUpdate
 from pigrocrm.core.dashboard.schemas import PeriodoQuery
@@ -18,6 +20,7 @@ from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.invoices.schemas import InvoiceListQuery
 from pigrocrm.core.people.schemas import PersonListQuery, PersonUpdate
 from pigrocrm.core.pipeline.service import PipelineService
+from pigrocrm.core.proposals.schemas import ProposalListQuery
 from pigrocrm.core.search.schemas import PER_CLASS_LIMIT, SearchQuery
 from pigrocrm.core.timetracking.schemas import (
     ANNO_MAX,
@@ -31,12 +34,14 @@ from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import automations as automation_tools
 from pigrocrm_mcp.tools import calendario as calendar_tools
 from pigrocrm_mcp.tools import (
+    contract_expenses,
     contracts,
     customers,
     deals,
     documents,
     invoices,
     people,
+    proposals,
     timetracking,
 )
 from pigrocrm_mcp.tools import dashboard as dashboard_tools
@@ -66,6 +71,9 @@ from pigrocrm_mcp.tools import search as search_tools
 CustomerChanges = Annotated[dict[str, Any], WithJsonSchema(CustomerUpdate.model_json_schema())]
 PersonChanges = Annotated[dict[str, Any], WithJsonSchema(PersonUpdate.model_json_schema())]
 DealChanges = Annotated[dict[str, Any], WithJsonSchema(DealUpdate.model_json_schema())]
+ContractExpenseChanges = Annotated[
+    dict[str, Any], WithJsonSchema(ContractExpenseUpdate.model_json_schema())
+]
 
 # Same runtime-permissive / schema-only-strict split as the `*Changes` aliases
 # above, applied to a scalar instead of a nested object: the parameter stays a
@@ -206,7 +214,22 @@ OptionalAnno = Annotated[
         }
     ),
 ]
+# The required counterpart of `OptionalAnno` above (REB-373's ceiling headroom and
+# its simulator): unlike `list_period_locks`'s optional year, a ceiling is always
+# evaluated for one specific calendar year, so there is no "every year" reading to
+# fall back to.
+Anno = Annotated[
+    int | str, WithJsonSchema({"type": "integer", "minimum": ANNO_MIN, "maximum": ANNO_MAX})
+]
 VersionNumber = Annotated[int | str, WithJsonSchema({"type": "integer", "minimum": 1})]
+
+# REB-362's own `confidenza`/`quantita` numeric parameters, on the identical
+# runtime-permissive / schema-only-strict split as `MoneyArg`/`HoursArg` above: a
+# bare `float` lets the SDK reject a wrong-typed argument ahead of `_guard`, so both
+# stay `float | str` and let `ProposalCreate`/`GiornataProposalFields` (inside the
+# guarded call) enforce the real bound.
+Confidenza = Annotated[float | str, WithJsonSchema({"type": "number", "minimum": 0, "maximum": 1})]
+QuantitaArg = Annotated[float | str, WithJsonSchema({"type": "number", "exclusiveMinimum": 0})]
 
 
 def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[..., Any]) -> None:
@@ -664,6 +687,53 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
+    def create_contract_expense(
+        contract_id: str,
+        category_id: str,
+        data: str,
+        importo: MoneyArg,
+        descrizione: str,
+        pre_autorizzata: bool = False,
+        riferimento_autorizzazione: str | None = None,
+        document_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Registra una spesa rimborsabile su un contratto. `data` in formato
+        YYYY-MM-DD. `riferimento_autorizzazione` è obbligatorio quando
+        `pre_autorizzata` è vero, assente altrimenti. `rimborsabile` non si imposta
+        mai qui: lo calcola il database dalla politica_spese del contratto, e non
+        rifiuta mai la scrittura -- registra comunque la spesa, solo segnalata.
+        """
+        return contract_expenses.create(
+            context,
+            contract_id,
+            {
+                "category_id": category_id,
+                "data": data,
+                "importo": importo,
+                "descrizione": descrizione,
+                "pre_autorizzata": pre_autorizzata,
+                "riferimento_autorizzazione": riferimento_autorizzazione,
+                "document_id": document_id,
+            },
+        )
+
+    @mcp.tool()
+    @guard
+    def update_contract_expense(
+        contract_id: str, expense_id: str, changes: ContractExpenseChanges
+    ) -> dict[str, Any]:
+        """Aggiorna una spesa di contratto. `changes` contiene solo i campi da
+        modificare; `rimborsabile` si ricalcola da solo e non è tra questi."""
+        return contract_expenses.update(context, contract_id, expense_id, changes)
+
+    @mcp.tool()
+    @guard
+    def list_contract_expenses(contract_id: str) -> dict[str, Any]:
+        """Elenca le spese di un contratto, dalla più vecchia alla più recente."""
+        return {"items": contract_expenses.list_for_contract(context, contract_id)}
+
+    @mcp.tool()
+    @guard
     def get_contract_concentration(
         contract_id: str, as_of: IsoDateStr = None, soglia: OptionalShare = None
     ) -> dict[str, Any]:
@@ -725,6 +795,206 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
             contract_id,
             ContractProjectionQuery.model_validate({"da": da, "a": a, "come_di": come_di}),
         )
+
+    # ---- proposals (REB-362) --------------------------------------------------
+    #
+    # "agents propose, humans confirm" (spec §0). `propose_contract`/`propose_day`
+    # are the *only* write path from an agent onto a document already archived by
+    # any door (`import_drive_file`, a direct upload, or a mail attachment archived
+    # the same way) -- they write a `proposals` row, never a `Contract`/`WorkUnit`
+    # directly. `accept_proposal`/`reject_proposal` are the confirm half: accepting
+    # creates the real row(s) in one transaction with the proposal's own decision,
+    # and a `'giornata'` accept never leaves a day at `'proposto'`.
+
+    @mcp.tool()
+    @guard
+    def propose_contract(
+        document_id: str,
+        estratto: str,
+        confidenza: Confidenza,
+        customer_id: str,
+        titolo: str,
+        inizio: str,
+        tipo_rinnovo: str,
+        preavviso_disdetta_giorni: int,
+        cadenza_fatturazione: str,
+        politica_spese: dict[str, Any],
+        rate_card_valido_da: str,
+        rate_card_tipo: str,
+        rate_card_importo: MoneyArg,
+        rate_card_unita: str,
+        fine: IsoDateStr = None,
+        preavviso_rinnovo_giorni: int | None = None,
+        giorni_pagamento: int | None = None,
+        pagamento_fine_mese: bool | None = None,
+        divisa: str = "EUR",
+        requires_prior_approval: bool = False,
+        applies_social_charge: bool = False,
+        note: str | None = None,
+        custom_fields: dict[str, Any] | None = None,
+        rate_card_valido_a: IsoDateStr = None,
+        rate_card_frazioni_ammesse: list[float] | None = None,
+        rate_card_ore_minime: OptionalMoney = None,
+        rate_card_periodo_erogazione: str | None = None,
+        tipo_estratto: str = "citato",
+        motivo_confidenza: str | None = None,
+    ) -> dict[str, Any]:
+        """Propone un nuovo contratto letto da un documento già archiviato: scrive
+        solo una `proposals` row in attesa di `accept_proposal`, mai un
+        `Contract`. `document_id` è il documento (da `import_drive_file`, da un
+        caricamento diretto, o da un allegato di posta già archiviato) da cui
+        `estratto` è stato letto verbatim (`tipo_estratto='citato'`) o trascritto
+        da una scansione senza testo (`'trascritto'`). I campi restanti sono lo
+        stesso contratto che `create_contract` accetterebbe, più la sua prima
+        scheda tariffaria (`rate_card_*`, come `create_rate_card`) -- nessuno dei
+        due viene creato finché la proposta non è accettata.
+        """
+        rate_card: dict[str, Any] = {
+            "valido_da": rate_card_valido_da,
+            "valido_a": rate_card_valido_a,
+            "tipo": rate_card_tipo,
+            "importo": rate_card_importo,
+            "unita": rate_card_unita,
+            "ore_minime": rate_card_ore_minime,
+            "periodo_erogazione": rate_card_periodo_erogazione,
+        }
+        if rate_card_frazioni_ammesse is not None:
+            rate_card["frazioni_ammesse"] = rate_card_frazioni_ammesse
+        return proposals.propose(
+            context,
+            {
+                "document_id": UUID(document_id),
+                "target_type": "contratto",
+                "estratto": estratto,
+                "tipo_estratto": tipo_estratto,
+                "confidenza": confidenza,
+                "motivo_confidenza": motivo_confidenza,
+                "campi_proposti": {
+                    "contract": {
+                        "customer_id": customer_id,
+                        "titolo": titolo,
+                        "inizio": inizio,
+                        "fine": fine,
+                        "tipo_rinnovo": tipo_rinnovo,
+                        "preavviso_rinnovo_giorni": preavviso_rinnovo_giorni,
+                        "preavviso_disdetta_giorni": preavviso_disdetta_giorni,
+                        "giorni_pagamento": giorni_pagamento,
+                        "pagamento_fine_mese": pagamento_fine_mese,
+                        "cadenza_fatturazione": cadenza_fatturazione,
+                        "divisa": divisa,
+                        "requires_prior_approval": requires_prior_approval,
+                        "applies_social_charge": applies_social_charge,
+                        "politica_spese": politica_spese,
+                        "note": note,
+                        "custom_fields": custom_fields or {},
+                    },
+                    "rate_card": rate_card,
+                },
+            },
+        )
+
+    @mcp.tool()
+    @guard
+    def propose_day(
+        document_id: str,
+        contract_id: str,
+        estratto: str,
+        confidenza: Confidenza,
+        data: str,
+        quantita: QuantitaArg,
+        descrizione: str,
+        canale: str,
+        mittente: str,
+        ricevuto_il: str,
+        message_id: str | None = None,
+        tipo_estratto: str = "citato",
+        motivo_confidenza: str | None = None,
+    ) -> dict[str, Any]:
+        """Propone una giornata letta da un'email (o da un altro documento) di
+        approvazione già archiviata: scrive solo una `proposals` row in attesa di
+        `accept_proposal`, mai un `WorkUnit`. `contract_id` è il contratto che la
+        giornata riguarda; `canale`/`mittente`/`ricevuto_il`/`message_id` sono
+        l'evidenza dell'approvazione che `accept_proposal` scriverà come
+        `approval` insieme al `work_unit` approvato, entrambi nella stessa
+        transazione -- mai una giornata lasciata `'proposto'`."""
+        return proposals.propose(
+            context,
+            {
+                "document_id": UUID(document_id),
+                "contract_id": UUID(contract_id),
+                "target_type": "giornata",
+                "estratto": estratto,
+                "tipo_estratto": tipo_estratto,
+                "confidenza": confidenza,
+                "motivo_confidenza": motivo_confidenza,
+                "campi_proposti": {
+                    "contract_id": contract_id,
+                    "data": data,
+                    "quantita": quantita,
+                    "descrizione": descrizione,
+                    "approvazione": {
+                        "canale": canale,
+                        "mittente": mittente,
+                        "ricevuto_il": ricevuto_il,
+                        "message_id": message_id,
+                    },
+                },
+            },
+        )
+
+    @mcp.tool()
+    @guard
+    def get_proposal(proposal_id: str) -> dict[str, Any]:
+        """Legge una proposta: campi proposti, estratto, stato ed esito se già
+        decisa (`campi_accettati`, `id_risultato`, `deciso_da`, `deciso_il`)."""
+        return proposals.get(context, proposal_id)
+
+    @mcp.tool()
+    @guard
+    def list_proposals(
+        stato: str | None = None,
+        target_type: str | None = None,
+        document_id: str | None = None,
+        contract_id: str | None = None,
+        limit: BoundedLimit = 50,
+    ) -> dict[str, Any]:
+        """Elenca le proposte, dalla più vecchia. `stato` è uno fra `in_attesa`,
+        `accettata`, `rifiutata`; senza filtro restituisce ogni stato -- passa
+        `stato='in_attesa'` per la coda di revisione."""
+        return proposals.search(
+            context,
+            ProposalListQuery(
+                stato=stato,  # type: ignore[arg-type]
+                target_type=target_type,  # type: ignore[arg-type]
+                document_id=UUID(document_id) if document_id else None,
+                contract_id=UUID(contract_id) if contract_id else None,
+                limit=cast(int, limit),
+            ),
+        )
+
+    @mcp.tool()
+    @guard
+    def accept_proposal(
+        proposal_id: str, deciso_da: str, campi_accettati: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """Accetta una proposta: crea il contratto (con la sua prima scheda
+        tariffaria) o l'approvazione e il work_unit approvato che descrive, in
+        un'unica transazione -- mai una giornata lasciata `'proposto'`.
+        `campi_accettati` corregge uno o più campi prima di scrivere; omesso,
+        scrive esattamente ciò che la proposta conteneva (`campi_proposti` non
+        viene mai sovrascritto). `deciso_da` è chi ha deciso."""
+        return proposals.accept(
+            context, proposal_id, {"deciso_da": deciso_da, "campi_accettati": campi_accettati}
+        )
+
+    @mcp.tool()
+    @guard
+    def reject_proposal(
+        proposal_id: str, deciso_da: str, motivo: str | None = None
+    ) -> dict[str, Any]:
+        """Rifiuta una proposta: non crea nulla, scrive solo il proprio stato.
+        `motivo` finisce nella timeline, non su un campo della proposta."""
+        return proposals.reject(context, proposal_id, {"deciso_da": deciso_da, "motivo": motivo})
 
     # ---- shared ------------------------------------------------------------
 
@@ -1627,6 +1897,12 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         e tariffa zero sono cose diverse. Le ore già legate a una **bozza** di fattura
         contano ancora: una bozza non è un ricavo. Il valore maturato **non è un ricavo** e
         non entra in nessun margine: il ricavo è la fattura.
+
+        Il valore maturato e le voci includono anche le giornate di un contratto
+        (`work_units`) non ancora fatturate, ma solo quelle in uno stato approvato o
+        successivo: una giornata solo proposta, o lavorata senza l'approvazione richiesta
+        dal contratto, non conta ancora (REB-372). Le ore fatturabili restano solo quelle
+        di `time_entries`: una giornata di contratto non si misura in ore.
         """
         return timetracking.get_unbilled_backlog(context)
 
@@ -1651,6 +1927,45 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 customer_id=UUID(customer_id) if customer_id else None,
                 limit=cast(int, limit),
                 cursor=UUID(cursor) if cursor else None,
+            ),
+        )
+
+    @mcp.tool()
+    @guard
+    def get_ceiling_headroom(anno: Anno) -> dict[str, Any]:
+        """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
+        configurato, sui ricavi incassati e reali dell'anno (REB-352 §1.4): `residuo`
+        è soglia meno ricavi, la cifra che l'audit di mastro segnalava come "calcolata
+        da nessuna parte" finché REB-361 non ha aggiunto `evaluate_ceiling`. Nessun
+        `admin` richiesto: è un ricavo, non la stima fiscale che protegge solo
+        `get_fiscal_estimate`."""
+        return timetracking.get_ceiling_headroom(context, anno)
+
+    @mcp.tool()
+    @guard
+    def simulate_ceiling(
+        anno: Anno,
+        ore_preventivate: OptionalFactor = None,
+        valore_preventivato: OptionalFactor = None,
+        tariffa_oraria: OptionalFactor = None,
+    ) -> dict[str, Any]:
+        """Il simulatore "ci sta?" (REB-352 §1.4): aggiunge la stima di un deal non
+        ancora vinto ai ricavi reali dell'anno e rivaluta ogni soglia attiva, senza
+        salvare nulla. Serve `valore_preventivato`, oppure `ore_preventivate` insieme
+        a `tariffa_oraria` -- le stesse tre colonne che legge `get_budget_vs_actual`."""
+        return timetracking.simulate_ceiling(
+            context,
+            anno,
+            CeilingSimulationQuery(
+                ore_preventivate=cast(Decimal, ore_preventivate)
+                if ore_preventivate is not None
+                else None,
+                valore_preventivato=cast(Decimal, valore_preventivato)
+                if valore_preventivato is not None
+                else None,
+                tariffa_oraria=cast(Decimal, tariffa_oraria)
+                if tariffa_oraria is not None
+                else None,
             ),
         )
 

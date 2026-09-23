@@ -17,6 +17,22 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from pigrocrm.core.fiscal.pack import CeilingConsequence
+
+# Mirrors `Deal`'s own Numeric(p, s) column widths (`deals/models.py`), the same
+# reasoning `deals/schemas.py`'s own constants give for existing at all: a value
+# beyond a column's capacity would otherwise sail past Pydantic and reach `flush()`
+# as a raw `DataError`. Declared locally rather than imported from `deals.schemas`:
+# `pigrocrm.core.deals`'s own `__init__.py` imports `DealService`, which reaches
+# `dashboard.schemas`, which imports back from this very module -- the same
+# reasoning `auth/schemas.py` already gives for declaring `tariffa_oraria_default`'s
+# own width locally rather than importing it.
+CEILING_ORE_MAX_DIGITS = 8
+CEILING_VALORE_MAX_DIGITS = 12
+CEILING_DECIMAL_PLACES = 2
+CEILING_FACTOR_MAX_DIGITS = 12
+CEILING_FACTOR_DECIMAL_PLACES = 6
+
 # The same three values as `DealTimeSummary.stato`, and deliberately a separate
 # declaration rather than an import: `timetracking` answers "what is the state of these
 # hours" and `analytics` answers "what is the state of this deal's economics". They
@@ -145,12 +161,17 @@ class UnbilledBacklog(BaseModel):
     """
 
     ore_fatturabili_non_fatturate: Decimal = Field(max_digits=8, decimal_places=2)
-    # `Σ ROUND(ore × tariffa_applicata, 2)` -- slice 4 §7.3's formula, computed here
-    # because §3 forbids `core/dashboard/` any multiplication at all. It is **not**
-    # revenue and enters no margin: the revenue is the invoice.
+    # `Σ ROUND(ore × tariffa_applicata, 2)` over `time_entries` -- slice 4 §7.3's
+    # formula, computed here because §3 forbids `core/dashboard/` any multiplication at
+    # all -- plus REB-372's own contribution from approved-or-later `work_units`, priced
+    # against their own contract's rate card. It is **not** revenue and enters no
+    # margin: the revenue is the invoice.
     valore_maturato: Decimal = Field(max_digits=12, decimal_places=2)
-    # A rate of zero and no rate are different facts (slice 4 §5.1). These rows are in
-    # `ore_fatturabili_non_fatturate` and contribute nothing to `valore_maturato`.
+    # A rate of zero and no rate are different facts (slice 4 §5.1); the same holds for
+    # a `work_unit` day whose date has no rate card in force (REB-372). Every row here
+    # contributes nothing to `valore_maturato`; only the `time_entries` half also
+    # contributes to `ore_fatturabili_non_fatturate` -- a `work_unit`'s own quantity is
+    # priced in whatever unit its rate card names, not always an hour.
     voci_senza_tariffa: int
     voci: int
 
@@ -307,6 +328,86 @@ class CashOverview(BaseModel):
     # never appears and a marker on a future one only does once today's window
     # actually reaches into it.
     scadenze_contrattuali: list[ContractDateMarker]
+
+
+class CeilingStatusRead(BaseModel):
+    """One ceiling of the configured jurisdiction pack, evaluated against `anno`'s
+    real paid revenue -- REB-352 §1.4's headroom figure, the reader-facing shape of
+    `fiscal.ceiling.evaluate_ceiling`'s own output. `residuo` (`soglia - ricavi`) is
+    the "one number a ceiling exists to produce" mastro's own audit named as
+    computed nowhere until REB-361 added `evaluate_ceiling`; this class only
+    exposes it, and adds no arithmetic of its own.
+    """
+
+    id: str
+    etichetta: str
+    soglia: Decimal = Field(max_digits=12, decimal_places=2)
+    conseguenza: CeilingConsequence
+    ricavi: Decimal = Field(max_digits=12, decimal_places=2)
+    residuo: Decimal = Field(max_digits=12, decimal_places=2)
+    superata: bool
+    livello_allerta: str | None
+
+
+class CeilingHeadroom(BaseModel):
+    """Every active ceiling of the fiscal profile's own pack, for one calendar
+    year -- `evaluate_pack`'s own list, unmodified."""
+
+    anno: int
+    pack_id: str
+    pack_version: str
+    soglie: list[CeilingStatusRead]
+
+
+class CeilingSimulationQuery(BaseModel):
+    """A not-yet-won deal's own estimate, in the shape its three columns already
+    carry (`deals/schemas.py`'s own `DealCreate`) -- accepted raw and never by
+    `deal_id`, so REB-352 §1.4's "would this fit?" simulator answers before the
+    deal is ever saved. `valore_preventivato` is the synthetic addition directly
+    when typed; with only `ore_preventivate` and `tariffa_oraria` set, the service
+    derives it as their product, the same two columns `budget_vs_actual` already
+    reads plus the one it does not."""
+
+    ore_preventivate: Decimal | None = Field(
+        default=None, max_digits=CEILING_ORE_MAX_DIGITS, decimal_places=CEILING_DECIMAL_PLACES, ge=0
+    )
+    valore_preventivato: Decimal | None = Field(
+        default=None,
+        max_digits=CEILING_VALORE_MAX_DIGITS,
+        decimal_places=CEILING_DECIMAL_PLACES,
+        ge=0,
+    )
+    tariffa_oraria: Decimal | None = Field(
+        default=None,
+        max_digits=CEILING_FACTOR_MAX_DIGITS,
+        decimal_places=CEILING_FACTOR_DECIMAL_PLACES,
+        ge=0,
+    )
+
+
+class CeilingSimulationResult(BaseModel):
+    """One ceiling, before and after the synthetic addition -- `rientra` is
+    "would this fit?" itself: the addition does not push this ceiling's own
+    revenue to or past its threshold."""
+
+    id: str
+    etichetta: str
+    soglia: Decimal = Field(max_digits=12, decimal_places=2)
+    conseguenza: CeilingConsequence
+    ricavi_attuali: Decimal = Field(max_digits=12, decimal_places=2)
+    residuo_attuale: Decimal = Field(max_digits=12, decimal_places=2)
+    ricavi_simulati: Decimal = Field(max_digits=12, decimal_places=2)
+    residuo_simulato: Decimal = Field(max_digits=12, decimal_places=2)
+    rientra: bool
+    livello_allerta_simulato: str | None
+
+
+class CeilingSimulation(BaseModel):
+    anno: int
+    pack_id: str
+    pack_version: str
+    aggiunta_sintetica: Decimal = Field(max_digits=12, decimal_places=2)
+    soglie: list[CeilingSimulationResult]
 
 
 class RevenueByCustomer(BaseModel):

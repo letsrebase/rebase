@@ -20,11 +20,13 @@ from sqlalchemy import ColumnElement, Select, SQLColumnExpression, case, func, s
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from pigrocrm.core.analytics.schemas import CashBase, RevenueBase
+from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.money import ZERO_MONEY, line_value, round_money, sum_hours, sum_money
 from pigrocrm.core.timetracking.models import Cost, TimeEntry
+from pigrocrm.core.work_units.models import WORK_UNIT_COMMITTED_STATI, WorkUnit
 
 # `Self`-preserving, so a scoped statement keeps the row type its `select()` gave it and
 # the caller's `session.execute(...)` stays typed. A bare `Select[Any]` would work at
@@ -234,10 +236,68 @@ class AnalyticsRepository:
         stmt = self._customer_scope(stmt, customer_id, TimeEntry.deal_id)
         return {row[0]: Decimal(row[1]) for row in self.session.execute(stmt).all()}
 
+    def _committed_work_units_backlog(
+        self, da: date | None, a: date | None, customer_id: UUID | None
+    ) -> tuple[Decimal, int, int]:
+        """`(valore, voci, voci_senza_tariffa)` -- `unbilled_backlog`'s REB-372
+        contribution from `work_units`: every day in an approved-or-later state
+        (`WORK_UNIT_COMMITTED_STATI`) with no invoice line yet, priced against
+        whichever of its own contract's rate cards covers its date.
+
+        Contributes to `valore`/`voci` only, never to `ore_fatturabili_non_fatturate`:
+        `WorkUnit.quantita` is priced in whatever unit its rate card names (a day, a
+        month, a lump sum -- `RATE_CARD_UNITA`, not always an hour), so folding it into
+        an hours total would silently misreport a day as an hour. A day whose date has
+        no rate card in force prices at nothing and is counted in `voci_senza_tariffa`
+        instead -- the same "a missing rate is not a rate of zero" refusal `line_value`
+        gives `TimeEntry`, not the harder `ValidationFailed` `unbilled_work_unit_lines`
+        gives an actual invoicing attempt: a read-only aggregate must survive a coverage
+        gap, not raise because of one.
+        """
+        stmt = select(WorkUnit.contract_id, WorkUnit.data, WorkUnit.quantita).where(
+            WorkUnit.stato.in_(WORK_UNIT_COMMITTED_STATI),
+            WorkUnit.invoice_line_id.is_(None),
+        )
+        if da is not None:
+            stmt = stmt.where(WorkUnit.data >= da)
+        if a is not None:
+            stmt = stmt.where(WorkUnit.data <= a)
+        if customer_id is not None:
+            stmt = stmt.join(Contract, Contract.id == WorkUnit.contract_id).where(
+                Contract.customer_id == customer_id
+            )
+        rows = self.session.execute(stmt).all()
+        if not rows:
+            return ZERO_MONEY, 0, 0
+
+        contract_ids = {contract_id for contract_id, _, _ in rows}
+        cards_by_contract: dict[UUID, list[RateCard]] = defaultdict(list)
+        for rate_card in self.session.execute(
+            select(RateCard).where(RateCard.contract_id.in_(contract_ids))
+        ).scalars():
+            cards_by_contract[rate_card.contract_id].append(rate_card)
+
+        values: list[Decimal | None] = []
+        for contract_id, giorno, quantita in rows:
+            card = next(
+                (
+                    c
+                    for c in cards_by_contract.get(contract_id, [])
+                    if c.valido_da <= giorno and (c.valido_a is None or giorno <= c.valido_a)
+                ),
+                None,
+            )
+            values.append(round_money(Decimal(quantita) * card.importo) if card else None)
+        return (
+            sum_money(values),
+            len(rows),
+            sum(1 for value in values if value is None),
+        )
+
     def unbilled_backlog(
         self, da: date | None = None, a: date | None = None, customer_id: UUID | None = None
     ) -> tuple[Decimal, Decimal, int, int]:
-        """`(ore, valore, voci_senza_tariffa, voci)` over billable hours not yet invoiced.
+        """`(ore, valore, voci_senza_tariffa, voci)` over billable work not yet invoiced.
 
         With no window it is the whole arrears, over every period there has ever been:
         "quanto ho da fatturare" is not a question about March (slice 6 §6.3). With one it
@@ -262,6 +322,17 @@ class AnalyticsRepository:
         `tariffa_applicata IS NULL` rows are counted in `ore` and in `voci_senza_tariffa`
         and contribute nothing to `valore`: a missing rate is not a rate of zero, and
         `line_value` is what refuses to conflate them.
+
+        **REB-372: `work_units` narrows this figure's own contribution, it does not
+        replace it.** `TimeEntry` has no state machine at all (REB-352 §1.2's own
+        citation) and every one of its billable, unbilled hours has always counted
+        here unconditionally -- that half is unchanged by this method. `work_units`
+        is the one source that *does* carry an approval state (REB-358/REB-359), so
+        its own contribution is narrowed to `WORK_UNIT_COMMITTED_STATI` --
+        approved-or-later days only, never a merely `proposto` one and never a
+        `lavorato_senza_approvazione` day the "propose, human confirms" invariant has
+        not cleared -- and folded into `valore`/`voci` alongside the unchanged
+        `TimeEntry` figures (`_committed_work_units_backlog`).
         """
         billed = (
             select(InvoiceLine.id)
@@ -280,11 +351,14 @@ class AnalyticsRepository:
         stmt = self._customer_scope(stmt, customer_id, TimeEntry.deal_id)
 
         rows = self.session.execute(stmt).all()
+        wu_valore, wu_voci, wu_senza_tariffa = self._committed_work_units_backlog(
+            da, a, customer_id
+        )
         return (
             sum_hours([ore for ore, _ in rows]),
-            sum_money([line_value(ore, tariffa) for ore, tariffa in rows]),
-            sum(1 for _, tariffa in rows if tariffa is None),
-            len(rows),
+            sum_money([line_value(ore, tariffa) for ore, tariffa in rows]) + wu_valore,
+            sum(1 for _, tariffa in rows if tariffa is None) + wu_senza_tariffa,
+            len(rows) + wu_voci,
         )
 
     def late_entry_count(self, da: date, a: date) -> int:

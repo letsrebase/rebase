@@ -10,7 +10,7 @@ from pigrocrm.core.auth.magic_models import MagicLinkToken  # noqa: F401
 from pigrocrm.core.auth.models import User  # noqa: F401
 from pigrocrm.core.auth.pat_models import PersonalAccessToken  # noqa: F401
 from pigrocrm.core.auth.refresh_models import RefreshToken  # noqa: F401
-from pigrocrm.core.automations.models import AutomationConfig  # noqa: F401
+from pigrocrm.core.contract_expenses.models import ContractExpense  # noqa: F401
 from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption  # noqa: F401
 from pigrocrm.core.customers.models import Customer  # noqa: F401
 from pigrocrm.core.deals.models import Deal  # noqa: F401
@@ -37,6 +37,7 @@ from pigrocrm.core.invoices.models import (  # noqa: F401
 )
 from pigrocrm.core.people.models import Person  # noqa: F401
 from pigrocrm.core.pipeline.models import PipelineStage  # noqa: F401
+from pigrocrm.core.proposals.models import Proposal  # noqa: F401
 from pigrocrm.core.space_settings.models import SpaceSetting  # noqa: F401
 from pigrocrm.core.templates.models import Template  # noqa: F401
 from pigrocrm.core.timetracking.models import (  # noqa: F401
