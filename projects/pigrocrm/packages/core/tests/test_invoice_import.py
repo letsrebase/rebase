@@ -216,6 +216,32 @@ def test_an_imported_invoice_is_issued_numbered_and_moves_the_counter(
     assert row.snapshot is not None and row.snapshot["versione"] == 1
 
 
+def test_import_issued_accepts_xml_document_id_and_hash_gated_by_the_caller(
+    db_session: Session, tmp_path
+) -> None:  # noqa: ANN001
+    """REB-366 §5 item 3: `import_issued` never derives these itself -- they default
+    to `None`, exactly the state a hand-declared import leaves them in -- and only a
+    caller that already has the original bytes in hand (`InvoiceService.confirm_
+    import`) ever passes real values. Proven here at `import_issued` itself, in
+    isolation from `confirm_import`'s own classification. `document_id` names a real
+    `documents` row -- `invoices.xml_document_id` carries a foreign key -- but is
+    otherwise unrelated to it: this test proves the plumbing, not the archiving."""
+    service = _svc(db_session, tmp_path)
+    customer_id = _fiscal_customer_id(db_session)
+    document_id = _pdf_document(db_session, tmp_path, customer_id)
+    read = service.import_issued(
+        _payload(customer_id, numero=7, giorno=date(2026, 5, 5)),
+        ADMIN,
+        xml_document_id=document_id,
+        xml_hash_sha256="a" * 64,
+    )
+    assert read.xml_document_id == document_id
+    assert read.xml_hash_sha256 == "a" * 64
+    # Still `"esterno"`: widening `importata_da` is a separate, later follow-up
+    # (design §5 item 4/§7 item 6), not this capability's.
+    assert read.importata_da == "esterno"
+
+
 def test_the_counter_never_moves_backwards(db_session: Session, tmp_path) -> None:  # noqa: ANN001
     from pigrocrm.core.invoices.models import InvoiceCounter
 

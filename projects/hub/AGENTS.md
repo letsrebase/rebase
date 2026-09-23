@@ -28,8 +28,8 @@ packages/core/   rebase_core: models, migrations, services, the ad conversion, t
 apps/api/        rebase_api: FastAPI, one process, its own database
 apps/mcp/        rebase_mcp: the same services over stdio or Streamable HTTP, for an admin with a token
 apps/web/        pnpm package `hub`: the SPA at letsrebase.com/hub/ (wizards, the member area, admin)
-content/         the prose a perk is made of, reviewed as prose
-tools/           the one script that turns that prose into a file a member downloads
+content/         the prose a perk is made of and the contracts a member signs, reviewed as prose
+tools/           the scripts that typeset that prose into PDFs
 ```
 
 `packages/core` may import neither adapter, and neither adapter may import the other:

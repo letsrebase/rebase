@@ -154,7 +154,21 @@ class CustomerService:
         merged.update(validated)
         return merged
 
-    def create(self, data: CustomerCreate, actor: Actor) -> CustomerRead:
+    def _insert(self, data: CustomerCreate, actor: Actor) -> Customer:
+        """The write half of `create`, without the commit (design record
+        `2026-09-23-mastro-invoice-import-onto-pigrocrm-design.md` §7 item 5):
+        flushes the row and records its own "created" activity, on `self.session`,
+        exactly as `create` does, but leaves the commit to the caller.
+
+        This is the shape mastro's own `confirmClientContractProposal` takes an
+        optional `tx: DbExecutor` for instead of opening its own transaction --
+        `InvoiceService.confirm_import` is the caller that needs it: a `Customer`
+        this method inserts must not outlive a register write that fails a moment
+        later, so both have to land in one commit or neither does. `create` is
+        `self.session` already; a caller sharing that same session (`InvoiceService`
+        composes its own `CustomerService(self.session)`) inserts the customer into
+        the exact transaction its own write is about to join.
+        """
         actor.require_write("create_customer")
         payload = data.model_dump()
         _check_fiscal(payload, payload.get("nazione") or "IT")
@@ -164,6 +178,10 @@ class CustomerService:
         self.activities.record(
             ENTITY, customer.id, "created", actor, {"ragione_sociale": customer.ragione_sociale}
         )
+        return customer
+
+    def create(self, data: CustomerCreate, actor: Actor) -> CustomerRead:
+        customer = self._insert(data, actor)
         self.session.commit()
         return CustomerRead.model_validate(customer)
 

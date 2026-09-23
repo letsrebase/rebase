@@ -86,8 +86,17 @@ class ParsedInvoiceLine(BaseModel):
     the same field names `InvoiceLineImport` already uses for a hand-declared line
     -- it is the same fact, read two different ways.
 
-    `aliquota_iva` is the line's own VAT rate, which is what ties it back to the
-    `ParsedInvoiceTaxSummary` block it was folded into.
+    `aliquota_iva` is the line's own VAT rate. `natura`, when the rate is zero,
+    is the line's *own* declared exemption code (FatturaPA's `DettaglioLinee/
+    Natura`) -- read directly from the line, never reconstructed from a
+    `ParsedInvoiceTaxSummary` block matched by rate alone: a document can carry
+    more than one `riepiloghi` entry at the same zero rate with a *different*
+    `natura` each (mixed-exemption invoices are routine, and this codebase's own
+    export side already treats `(aliquota_iva, natura)` as the real grouping key
+    -- `totals.RiepilogoGroup`'s own docstring), so a rate-only lookup would
+    silently mistag a line that belongs to the other group. `riferimento_
+    normativo`, which FatturaPA never repeats at the line level, is still the
+    matching `riepiloghi` entry's own field, looked up by the pair.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -97,6 +106,7 @@ class ParsedInvoiceLine(BaseModel):
     prezzo_unitario: Decimal
     prezzo_totale: Decimal
     aliquota_iva: Decimal
+    natura: SafeStr | None = None
 
 
 class ParsedInvoiceTaxSummary(BaseModel):

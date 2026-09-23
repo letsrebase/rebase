@@ -1388,9 +1388,38 @@ export interface paths {
          * Review Import
          * @description REB-365: read-only, admin only, enforced by the service. Reviews one or more
          *     already-archived documents and reports one row per invoice they parse into --
-         *     never writes a row.
+         *     never writes a row. A `"ready"` row whose customer resolves to exactly one
+         *     contract with a day-rate card in force on the invoice's own `data_emissione`
+         *     also carries `mappature_giorni` (REB-369): a proposed link, per line, to that
+         *     contract's recorded, unbilled `work_units`.
          */
         post: operations["review_import_api_invoices_import_review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/invoices/import/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Import
+         * @description REB-366: admin only, enforced by the service. Re-reads and re-parses the
+         *     document's own stored bytes -- never trusts an earlier `/import/review` call
+         *     -- and writes the register through `import_issued` itself for every invoice
+         *     that classifies `"ready"`: never a second, independently-maintained write
+         *     path. `create_customer` (REB-367) creates the matched party as a new
+         *     `Customer` inside that same write when no `customer_id` is given and no
+         *     exact tax-id match exists.
+         */
+        post: operations["confirm_import_api_invoices_import_confirm_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3811,6 +3840,34 @@ export interface components {
             offerte_accettate_deal_non_vinto: number;
         };
         /**
+         * ConfirmedInvoiceRead
+         * @description One row of `confirm_invoice_import`'s own output: one per invoice the
+         *     reviewed document parses into, mirroring `ReviewedInvoiceRead`'s own shape.
+         *
+         *     `fattura` is set only for `"imported"` (freshly written) and
+         *     `"already_present"` (the row already on record at that natural key) --
+         *     never for a refusal, since nothing was written or matched. `buchi_non_
+         *     dichiarati` is set only for `"imported"`, mirroring `POST /api/invoices/
+         *     import`'s own response: the numbers still missing under this invoice's own
+         *     `anno`, so a caller sees in one round trip what `declare_invoice_register_
+         *     gaps` still has to cover.
+         */
+        ConfirmedInvoiceRead: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "imported" | "already_present" | "conflict" | "incoming_skipped" | "needs_customer_confirmation" | "unclaimed";
+            fattura?: components["schemas"]["InvoiceRead"] | null;
+            /** Buchi Non Dichiarati */
+            buchi_non_dichiarati?: number[] | null;
+        };
+        /**
          * ContractConcentrationCap
          * @description REB-352 §1.5's contract-anchored concentration cap: one engagement's own
          *     share of total invoiced revenue over the anniversary year containing `as_of`,
@@ -5955,6 +6012,45 @@ export interface components {
             hash_sha256: string;
         };
         /**
+         * InvoiceConfirmRequest
+         * @description One already-archived document plus the two human decisions this issue's
+         *     scope adds: which `Customer` to attach when no exact tax-id match exists, and
+         *     whether to create one (`review_invoice_import`'s own `"needs_customer_
+         *     confirmation"`).
+         *
+         *     `customer_id`, when given, overrides whatever the current tax-id match
+         *     would find on its own -- the human's decision always wins over the
+         *     automatic match, exactly as `"needs_customer_confirmation"`'s own name
+         *     promises a caller who reads it.
+         *
+         *     `create_customer`, when true and `customer_id` is omitted and no exact
+         *     match is found, creates the matched party as a new `Customer` instead of
+         *     reporting `"needs_customer_confirmation"` -- inside the same transaction
+         *     as the invoice write (design §7 item 5), never a premature commit of an
+         *     orphan customer. One document's `lotto` batch can carry several invoices
+         *     from the same new counterparty: every one of them attaches to the same
+         *     freshly-created row, never one `Customer` per invoice.
+         */
+        InvoiceConfirmRequest: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /** Customer Id */
+            customer_id?: string | null;
+            /**
+             * Create Customer
+             * @default false
+             */
+            create_customer: boolean;
+        };
+        /** InvoiceConfirmResult */
+        InvoiceConfirmResult: {
+            /** Righe */
+            righe: components["schemas"]["ConfirmedInvoiceRead"][];
+        };
+        /**
          * InvoiceCreate
          * @description A draft invoice or a proforma. Neither has a number: a number is assigned only
          *     at emission, which is why "a failed creation burns a number" is impossible by
@@ -6507,8 +6603,17 @@ export interface components {
          *     the same field names `InvoiceLineImport` already uses for a hand-declared line
          *     -- it is the same fact, read two different ways.
          *
-         *     `aliquota_iva` is the line's own VAT rate, which is what ties it back to the
-         *     `ParsedInvoiceTaxSummary` block it was folded into.
+         *     `aliquota_iva` is the line's own VAT rate. `natura`, when the rate is zero,
+         *     is the line's *own* declared exemption code (FatturaPA's `DettaglioLinee/
+         *     Natura`) -- read directly from the line, never reconstructed from a
+         *     `ParsedInvoiceTaxSummary` block matched by rate alone: a document can carry
+         *     more than one `riepiloghi` entry at the same zero rate with a *different*
+         *     `natura` each (mixed-exemption invoices are routine, and this codebase's own
+         *     export side already treats `(aliquota_iva, natura)` as the real grouping key
+         *     -- `totals.RiepilogoGroup`'s own docstring), so a rate-only lookup would
+         *     silently mistag a line that belongs to the other group. `riferimento_
+         *     normativo`, which FatturaPA never repeats at the line level, is still the
+         *     matching `riepiloghi` entry's own field, looked up by the pair.
          */
         ParsedInvoiceLine: {
             /** Descrizione */
@@ -6521,6 +6626,8 @@ export interface components {
             prezzo_totale: string;
             /** Aliquota Iva */
             aliquota_iva: string;
+            /** Natura */
+            natura?: string | null;
         };
         /**
          * ParsedInvoiceParty
@@ -7495,6 +7602,8 @@ export interface components {
             invoice?: components["schemas"]["ParsedInvoice"] | null;
             /** Matched Customer Id */
             matched_customer_id?: string | null;
+            /** Mappature Giorni */
+            mappature_giorni?: (components["schemas"]["WorkUnitDayMappingProposal"] | null)[] | null;
         };
         /**
          * RootSpace
@@ -8275,6 +8384,37 @@ export interface components {
             giorni_senza_ore: string[];
             /** Ore Totali */
             ore_totali: string;
+        };
+        /**
+         * WorkUnitDayMappingProposal
+         * @description Mastro's `DayMappingProposal` (`day-mapping.ts:26-41`): which days a line
+         *     billed, the period they span, and whether their rate-card price actually
+         *     reconciles with what the line itself states -- the three facts the issue's own
+         *     acceptance names ("the period the picked days span, how many there are, and the
+         *     amount they price to next to what the document itself states"), never hidden
+         *     inside a single accept/reject boolean.
+         */
+        WorkUnitDayMappingProposal: {
+            /** Work Unit Ids */
+            work_unit_ids: string[];
+            /**
+             * Periodo Da
+             * Format: date
+             */
+            periodo_da: string;
+            /**
+             * Periodo A
+             * Format: date
+             */
+            periodo_a: string;
+            /** Numero Giorni */
+            numero_giorni: number;
+            /** Importo Proposto */
+            importo_proposto: string;
+            /** Importo Riga */
+            importo_riga: string;
+            /** Importi Coincidono */
+            importi_coincidono: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -19698,6 +19838,127 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvoiceReviewResult"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_import_api_invoices_import_confirm_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvoiceConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceConfirmResult"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

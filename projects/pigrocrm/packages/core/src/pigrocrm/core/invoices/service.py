@@ -22,6 +22,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.clock import ITALY_TZ, oggi_in_italia
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.schemas import DocumentCreate
@@ -45,7 +46,21 @@ from pigrocrm.core.invoices.fatturapa import (
     check_recipient_routing,
     normalise_fiscal_id,
 )
-from pigrocrm.core.invoices.import_review import ReviewedInvoiceRead, review_content
+from pigrocrm.core.invoices.import_classification import classify_parsed_invoice
+from pigrocrm.core.invoices.import_confirm import (
+    ConfirmedInvoiceRead,
+    map_parsed_invoice_to_import,
+    map_parsed_party_to_customer,
+)
+from pigrocrm.core.invoices.import_review import (
+    ReviewedInvoiceRead,
+    detect_adapter,
+    existing_for,
+    match_customer,
+    natural_key,
+    review_content,
+)
+from pigrocrm.core.invoices.import_schemas import ParsedInvoiceParty
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine, InvoiceRegisterGap
 from pigrocrm.core.invoices.naming import (
     invoice_storage_prefix,
@@ -100,6 +115,7 @@ ZERO = Decimal("0.00")
 IMPORT_ACTION = "import_issued_invoice"
 GAPS_ACTION = "declare_invoice_register_gaps"
 REVIEW_ACTION = "review_invoice_import"
+CONFIRM_ACTION = "confirm_invoice_import"
 # How many undeclared numbers `issue`'s refusal spells out. The whole list always stays
 # in `details["numeri"]`, machine-readable; the *sentence* is read by a person, and a
 # register whose lowest imported number is high can leave hundreds of them.
@@ -155,6 +171,11 @@ class InvoiceService:
         self.fiscal = FiscalProfileService(session)
         self.emitter = EmitterProfileService(session)
         self.documents = DocumentService(session, storage, self.settings)
+        # REB-367 (design §7 item 5): the same session as everything else here, so a
+        # customer `confirm_import` creates for a brand-new counterparty lands in the
+        # exact transaction the invoice write is about to commit, never a customer
+        # committed on its own moments before a register failure.
+        self.customers = CustomerService(session)
         # The one seam of §3.5: `None` in production, where the reader is composed from
         # the actor's own stored Drive account by `drive_reader_for`. A test that wants
         # an in-memory Drive injects the factory instead of seeding an account row and a
@@ -1084,7 +1105,185 @@ class InvoiceService:
             rows.extend(review_content(self.session, content, emitter, document_id))
         return rows
 
-    def import_issued(self, data: InvoiceImport, actor: Actor) -> InvoiceRead:
+    def confirm_import(
+        self,
+        document_id: UUID,
+        actor: Actor,
+        *,
+        customer_id: UUID | None = None,
+        create_customer: bool = False,
+    ) -> list[ConfirmedInvoiceRead]:
+        """Confirm one already-reviewed document onto the register (REB-366, design
+        record §4-5, §7 item 4): **re-reads and re-parses the document's own stored
+        bytes**, never trusts an earlier `review_invoice_import` call, re-classifies
+        direction and duplication against the database's *current* state, and --
+        for every invoice that classifies `"ready"` -- maps it onto `InvoiceImport`
+        and calls `import_issued` itself for the write, exactly as a hand-declared
+        import would. Never a second, independently-maintained set of register
+        rules (design §5): the write is the same call, in the same one transaction
+        `import_issued` already commits.
+
+        Confirming an invoice already on the register at its own natural key is a
+        no-op: `"already_present"` is reported, never a duplicate insert. A
+        supplier's invoice (`"incoming_skipped"`), a number already on record under
+        a different or no hash (`"conflict"`), a document no adapter recognises
+        (`"unclaimed"`), and `import_issued`'s own four further register rules
+        (declared gaps, the first-native-number ceiling, chronological order both
+        ways) refusing with `Conflict`/`ValidationFailed` are all reported as
+        `"conflict"` and never written, mirroring `review_invoice_import`'s own
+        vocabulary for the first three and never a silent drop for the last: a
+        `lotto` batch keeps attempting every remaining invoice, and every invoice
+        already committed earlier in the same call still comes back with its own
+        row, exactly the guarantee `import_classification.py`'s own docstring
+        states ("never a silent drop, always one named outcome per invoice").
+
+        `customer_id` is the one human decision this issue's scope adds: which
+        `Customer` this invoice attaches to. When omitted, the current exact
+        tax-id match (`import_review.match_customer`, re-run against the
+        database's current state, never review time's) is used.
+
+        `create_customer` is REB-367's own addition (design §7 item 5): when
+        still unresolved after both of the above, and `create_customer` is
+        true, the matched party (`invoice.cliente`) is inserted as a new
+        `Customer` -- through `CustomerService._insert`, the non-committing
+        half of `create` -- inside this same transaction, never a premature
+        commit that could leave a customer on file with no invoice if the
+        register write fails a moment later. A `lotto` batch's several
+        invoices from the same brand-new counterparty share one freshly
+        created row, keyed on the parsed party itself (`ParsedInvoiceParty` is
+        frozen and compares by value, so the second invoice in the batch finds
+        the row the first one just created rather than inserting a second).
+        `create_customer` false (the default) leaves today's behaviour
+        unchanged: the row reports `"needs_customer_confirmation"` and nothing
+        is written.
+
+        **`xml_document_id`/`xml_hash_sha256`, for a single-invoice source
+        document only** (design §5 item 3): when the document parses into
+        exactly one invoice, the invoice row is pointed at the very `document_id`
+        this call already read the bytes from -- never a second `documents` row
+        for the same content -- and its hash is computed from those same bytes.
+        A `lotto` batch's invoices leave both `NULL`, exactly like today's
+        `esterno` path: a shared source document does not fit this project's
+        document-ownership rules (design §5 item 3), so none of a batch's
+        invoices takes ownership of it.
+        """
+        actor.require_admin(CONFIRM_ACTION)
+        emitter = self.emitter.repo.get()
+        if emitter is None:
+            raise NotFound("emitter_profile", "singleton")
+        content, _content_type, _filename = self.documents.download(document_id, None, actor)
+        adapter = detect_adapter(content)
+        if adapter is None:
+            return [ConfirmedInvoiceRead(document_id=document_id, outcome="unclaimed")]
+
+        invoices = adapter.parse(content)
+        single_invoice_document = len(invoices) == 1
+        digest = hashlib.sha256(content).hexdigest() if single_invoice_document else None
+
+        rows: list[ConfirmedInvoiceRead] = []
+        # Keyed on the parsed party itself, not a tax id string: `ParsedInvoiceParty`
+        # is frozen and hashes/compares by value, and every invoice from the same
+        # counterparty in one document parses to an identical party object, so this
+        # is exactly "the same new counterparty seen again in this batch" with no
+        # normalisation of its own to get wrong.
+        created_customers: dict[ParsedInvoiceParty, UUID] = {}
+        for invoice in invoices:
+            classification = classify_parsed_invoice(
+                invoice, emitter, existing=existing_for(self.session, invoice), content=content
+            )
+            if classification == "incoming_skipped":
+                rows.append(
+                    ConfirmedInvoiceRead(document_id=document_id, outcome="incoming_skipped")
+                )
+                continue
+            if classification == "conflict":
+                rows.append(ConfirmedInvoiceRead(document_id=document_id, outcome="conflict"))
+                continue
+            # `existing_for` derives its own comparison row from the same `natural_key`
+            # this re-derives: a `None` key always routes here through "conflict" above
+            # (a keyless invoice compares against a synthetic hashless row, and a
+            # hashless comparison is never "new" -- `import_dedup.check_invoice_
+            # duplicate`), so "already_present"/"ready" both guarantee one.
+            key = natural_key(invoice)
+            assert key is not None, "already_present/ready both require a derivable natural key"
+            anno, numero = key
+            if classification == "already_present":
+                existing = self.repo.existing_by_number(anno, numero)
+                fattura = self.get(existing.id, actor) if existing is not None else None
+                rows.append(
+                    ConfirmedInvoiceRead(
+                        document_id=document_id, outcome="already_present", fattura=fattura
+                    )
+                )
+                continue
+            resolved_customer_id = customer_id
+            if resolved_customer_id is None:
+                resolved_customer_id = match_customer(self.session, invoice.cliente)
+            # Not cached in `created_customers` yet: `self.session.rollback()` below
+            # would revert this insert in the database while leaving a Python-level
+            # cache entry pointing at an id that no longer exists, so a later invoice
+            # in the same batch from the same counterparty would reuse a dangling id
+            # and fail with an uncaught `NotFound` instead of its own outcome. Cached
+            # only once `import_issued` for *this* invoice has actually committed.
+            new_customer_id: UUID | None = None
+            if resolved_customer_id is None and create_customer:
+                resolved_customer_id = created_customers.get(invoice.cliente)
+                if resolved_customer_id is None:
+                    new_customer = self.customers._insert(
+                        map_parsed_party_to_customer(invoice.cliente), actor
+                    )
+                    resolved_customer_id = new_customer.id
+                    new_customer_id = new_customer.id
+            if resolved_customer_id is None:
+                rows.append(
+                    ConfirmedInvoiceRead(
+                        document_id=document_id, outcome="needs_customer_confirmation"
+                    )
+                )
+                continue
+            data = map_parsed_invoice_to_import(
+                invoice, anno=anno, numero=numero, customer_id=resolved_customer_id
+            )
+            try:
+                fattura = self.import_issued(
+                    data,
+                    actor,
+                    xml_document_id=document_id if single_invoice_document else None,
+                    xml_hash_sha256=digest if single_invoice_document else None,
+                )
+            except (Conflict, ValidationFailed):
+                # `import_issued` itself already rolled back on the paths that flushed
+                # anything (its own `except IntegrityError`/`except Exception` around the
+                # commit); the four register-rule checks above its lock raise before any
+                # flush, so this is a defensive no-op there and the real guard on the
+                # committing paths -- either way the session must still answer the next
+                # invoice's own queries and writes in this same batch. The customer this
+                # iteration may have just inserted rolls back with it, and was never
+                # cached above, so the next invoice tries its own fresh insert instead of
+                # reusing a now-dangling id.
+                self.session.rollback()
+                rows.append(ConfirmedInvoiceRead(document_id=document_id, outcome="conflict"))
+                continue
+            if new_customer_id is not None:
+                created_customers[invoice.cliente] = new_customer_id
+            rows.append(
+                ConfirmedInvoiceRead(
+                    document_id=document_id,
+                    outcome="imported",
+                    fattura=fattura,
+                    buchi_non_dichiarati=self.undeclared_gaps(anno),
+                )
+            )
+        return rows
+
+    def import_issued(
+        self,
+        data: InvoiceImport,
+        actor: Actor,
+        *,
+        xml_document_id: UUID | None = None,
+        xml_hash_sha256: str | None = None,
+    ) -> InvoiceRead:
         """Register a fattura that another system issued (slice 9 §3).
 
         Same lock, same snapshot, same lines as `issue`; the two differences are the
@@ -1118,6 +1317,18 @@ class InvoiceService:
         rolled back, and a missing emitter profile is not an `IntegrityError`. So the
         reads happen first, the writes happen last, and the commit is wrapped in a
         rollback for anything that still escapes.
+
+        **`xml_document_id`/`xml_hash_sha256`, gated by the caller (design §5 item
+        3).** Both default to `None`, exactly the state a hand-declared import
+        leaves them in today. `InvoiceService.confirm_import` is the one caller
+        that ever passes real values, and only for a single-invoice source
+        document: the newly-parsed path *has* the original transmitted bytes in
+        hand, already stored under `xml_document_id`, so pointing the row at that
+        same `document_id` instead of archiving a second copy is additive, never
+        a change to what a hand-declared import (`xml_document_id` staying
+        `None`) already guarantees. No `CHECK` constraint ties either column to
+        `importata_da` (confirmed by reading `models.py`), so this is safe to set
+        alongside `importata_da == "esterno"`, unchanged.
         """
         actor.require_admin(IMPORT_ACTION)
         self._check_owner(data.customer_id, data.deal_id)
@@ -1237,6 +1448,8 @@ class InvoiceService:
                 trasmessa_esternamente_il=data.trasmessa_esternamente_il,
                 note_interne=data.note_interne,
                 importata_da=data.importata_da,
+                xml_document_id=xml_document_id,
+                xml_hash_sha256=xml_hash_sha256,
                 snapshot=snapshot.model_dump(mode="json"),
                 snapshot_versione=SNAPSHOT_VERSIONE,
                 custom_fields={},

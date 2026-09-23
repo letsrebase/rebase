@@ -316,6 +316,12 @@ def _map_linea(linea: etree._Element) -> ParsedInvoiceLine:
             _required_text(linea, "AliquotaIVA", context="DettaglioLinee"),
             context="DettaglioLinee.AliquotaIVA",
         ),
+        # Optional in the schema (`Natura?` in `DettaglioLinee`'s own sequence,
+        # `_dettaglio_linee` in `fatturapa.py`'s export side already writes it
+        # the same way): the line's own declared exemption code, read directly
+        # rather than reconstructed from `DatiRiepilogo` -- see `ParsedInvoiceLine`'s
+        # own docstring for why a rate-only reconstruction is unsound.
+        natura=_text(linea, "Natura"),
     )
 
 
