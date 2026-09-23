@@ -804,11 +804,13 @@ export function AdminFreelancerDetail() {
   const move = useMutation({
     mutationFn: ({ stato, note }: { stato: string; note: string }) =>
       admin.moveFreelancer(id, stato, note.trim() || null),
-    // The PATCH answers the plain card, not the REB-284 sections: merged onto the
-    // cached detail rather than replacing it, or a save would wipe them from view.
+    // The PATCH answers the plain card, not the REB-284 sections, and its own
+    // `commenti` is always `[]` (REB-356, same cause as REB-355's own mutations
+    // below): merged onto the cached detail with `commenti` kept from the current
+    // cache, or a save would drop both the sections and the thread from view.
     onSuccess: (updated: Freelancer) => {
       client.setQueryData<FreelancerDetail>(['freelancer', id], (current) =>
-        current && { ...current, ...updated },
+        current && { ...current, ...updated, commenti: current.commenti },
       )
       void client.invalidateQueries({ queryKey: ['freelancers'] })
     },
@@ -1175,8 +1177,13 @@ export function AdminCompanyDetail() {
   const move = useMutation({
     mutationFn: ({ stato, note }: { stato: string; note: string }) =>
       admin.moveCompany(id, stato, note.trim() || null),
+    // The PATCH's own `commenti` is always `[]` (REB-356, same cause as REB-355's own
+    // mutations below): merged onto the cached detail with `commenti` kept from the
+    // current cache, or a save would wipe the thread from view.
     onSuccess: (updated: Company) => {
-      client.setQueryData(['company', id], updated)
+      client.setQueryData<Company>(['company', id], (current) =>
+        current && { ...current, ...updated, commenti: current.commenti },
+      )
       void client.invalidateQueries({ queryKey: ['companies'] })
     },
   })

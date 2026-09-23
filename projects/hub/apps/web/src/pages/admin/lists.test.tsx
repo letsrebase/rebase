@@ -530,6 +530,69 @@ describe('REB-355: override, delete/restore and the audit trail on the freelance
   })
 })
 
+describe('REB-356: the state-change mutations keep the comment thread visible', () => {
+  it('keeps the existing comment thread after a state change on the freelancer detail', async () => {
+    const withComment = {
+      ...INCOMPLETE,
+      commenti: [
+        { id: 'c1', entity_type: 'freelancer', entity_id: 'f1', testo: 'Ha risposto alla call.', autore: 'Ivan', created_at: '2026-09-12T10:00:00Z' },
+      ],
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/hub/freelancers/f1/audit') return answer(200, [])
+      if (url === '/api/hub/freelancers/f1' && init?.method === 'PATCH') {
+        const body = JSON.parse(init.body as string)
+        expect(body.stato).toBe('contattato')
+        // The move response's own `commenti` is always `[]` (only `get` fills it):
+        // a replace that took it verbatim would wipe the existing thread from view.
+        return answer(200, { ...withComment, stato: 'contattato', commenti: [] })
+      }
+      return answer(200, withComment)
+    })
+    mount('/admin/freelance/f1')
+    await screen.findByRole('heading', { name: 'Ada Lovelace' })
+    await screen.findByText('Ha risposto alla call.')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Contattato' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    const banner = await screen.findByRole('banner')
+    await within(banner).findByText('Contattato')
+    expect(screen.getByText('Ha risposto alla call.')).toBeInTheDocument()
+  })
+
+  it('keeps the existing comment thread after a state change on the company detail', async () => {
+    const withComment = {
+      ...COMPANY_A,
+      commenti: [
+        { id: 'c2', entity_type: 'company', entity_id: 'c1', testo: 'In attesa di risposta.', autore: 'Ivan', created_at: '2026-09-12T10:00:00Z' },
+      ],
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/hub/companies/c1/audit') return answer(200, [])
+      if (url === '/api/hub/companies/c1' && init?.method === 'PATCH') {
+        const body = JSON.parse(init.body as string)
+        expect(body.stato).toBe('contattato')
+        // The moveCompany response's own `commenti` is always `[]` (only `get` fills
+        // it): the old `setQueryData(['company', id], updated)` replaced the cache
+        // outright with that empty array, which is exactly what this guards against.
+        return answer(200, { ...withComment, stato: 'contattato', commenti: [] })
+      }
+      return answer(200, withComment)
+    })
+    mount('/admin/companies/c1')
+    await screen.findByRole('heading', { name: 'Rossi Studio' })
+    await screen.findByText('In attesa di risposta.')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Contattato' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    const banner = await screen.findByRole('banner')
+    await within(banner).findByText('Contattato')
+    expect(screen.getByText('In attesa di risposta.')).toBeInTheDocument()
+  })
+})
+
 describe('the company detail', () => {
   it('shows the request, its referente, its state and the REB-380 fields', async () => {
     routeFetch({
