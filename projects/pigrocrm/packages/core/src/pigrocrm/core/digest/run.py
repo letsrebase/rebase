@@ -171,7 +171,7 @@ class DigestRun:
     def send_for_space(
         self,
         slug: str,
-        owner_email: str,
+        owner_email: str | None,
         settimana: tuple[date, date],
         *,
         forza: bool = False,
@@ -183,11 +183,20 @@ class DigestRun:
         -- are returned before anything is built and write nothing at all. Only the last
         path opens the snapshot, and everything it does after that point is inside the
         `try` below, because half a sent week is worse than an unsent one.
+
+        `owner_email` is the registry's `Tenant.owner_email` for a space, and `None` for
+        the root installation, which has no registry row (REB-263): its titolare is the
+        first active admin, so a root with none answers `titolare_mancante` like a space
+        whose owner's address matches nobody.
         """
         iso = iso_week(settimana[0])
         utenti = UserRepository(self.session)
 
-        titolare = utenti.get_by_email(owner_email)
+        titolare = (
+            utenti.get_by_email(owner_email)
+            if owner_email is not None
+            else utenti.first_active_admin()
+        )
         if titolare is None:
             return self._senza_scrivere(
                 DigestOutcome(slug, "saltato", iso, motivo=TITOLARE_MANCANTE)
