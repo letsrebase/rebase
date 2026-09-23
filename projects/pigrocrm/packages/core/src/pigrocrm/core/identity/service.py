@@ -17,6 +17,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.auth.tokens import issue_identity_token
@@ -110,7 +111,16 @@ class IdentityService:
         (`_issue_identity_cookie`, `routers/auth.py`), which wraps this in the
         ephemeral-engine/`SQLAlchemyError` shape `_space_link` already established;
         this method itself commits or raises plainly, like every other service in
-        this codebase. `None` only for an address that normalises to nothing."""
+        this codebase. `None` only for an address that normalises to nothing.
+
+        The get-or-create below is not atomic on its own -- two first logins for the
+        same brand-new address, racing, can both miss the `SELECT` and both try to
+        insert. That is not a real failure, only two winners racing for one row: the
+        loser's `flush` hits the functional unique index (`IntegrityError`, caught
+        here specifically, never the broader `SQLAlchemyError` the caller already
+        guards with), and the fix is to read the winner's row rather than to give up
+        the request's own identity cookie over a collision this method caused
+        itself."""
         normalized = email.strip().lower()
         if not normalized:
             return None
@@ -118,7 +128,13 @@ class IdentityService:
         if identity is None:
             identity = Identity(email=normalized)
             self.session.add(identity)
-            self.session.flush()
+            try:
+                self.session.flush()
+            except IntegrityError:
+                self.session.rollback()
+                identity = self._get_by_email(normalized)
+                if identity is None:
+                    raise
         jti = uuid4()
         now = datetime.now(UTC)
         expires_at = now + timedelta(days=self.settings.identity_token_days)

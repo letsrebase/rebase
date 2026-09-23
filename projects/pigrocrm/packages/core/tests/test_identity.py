@@ -109,6 +109,48 @@ def test_upsert_and_issue_is_idempotent_on_the_row_but_mints_a_fresh_session_eac
     assert len(sessions) == 2 and all(row.revoked_at is None for row in sessions)
 
 
+def test_upsert_and_issue_recovers_from_a_racing_insert_on_the_same_address(
+    settings: Settings, registry: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two first logins for the same brand-new address, racing: the get-or-create's
+    `SELECT` then `INSERT` is not atomic on its own. Simulated here by forcing the
+    first `_get_by_email` call to answer `None` even though a second session has
+    already committed the winning row -- the exact shape a real race produces --
+    and pinning the recovery this method's `IntegrityError` branch performs, rather
+    than losing the request's own identity cookie over a collision it caused
+    itself."""
+    email = f"racing-{uuid4()}@example.it"
+    winner = session_factory(registry)()
+    try:
+        winner.add(Identity(email=email))
+        winner.commit()
+        identity_id = winner.scalar(select(Identity.id).where(Identity.email == email))
+    finally:
+        winner.close()
+
+    loser = session_factory(registry)()
+    try:
+        service = IdentityService(loser, settings)
+        real_get_by_email = IdentityService._get_by_email
+        calls = {"n": 0}
+
+        def _racy_get_by_email(self: IdentityService, normalized: str) -> Identity | None:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return None  # the moment the real race was already lost against
+            return real_get_by_email(self, normalized)
+
+        monkeypatch.setattr(IdentityService, "_get_by_email", _racy_get_by_email)
+        token = service.upsert_and_issue(email)
+        assert token
+        payload = decode_token(token, settings, expected_type="identity")
+        assert payload.sub == identity_id
+        rows = list(loser.scalars(select(Identity).where(Identity.email == email)))
+        assert len(rows) == 1
+    finally:
+        loser.close()
+
+
 def test_upsert_and_issue_refuses_an_address_that_normalises_to_nothing(
     settings: Settings, registry_session: Session
 ) -> None:
@@ -256,3 +298,36 @@ def test_request_sweeps_the_spent_and_expired_rows_of_that_identity(
         )
     )
     assert len(rows) == 1 and rows[0].used_at is None
+
+
+# --- ensure_tenants_database's create_all must see every one of these tables -------
+
+
+def test_the_cli_boot_import_path_alone_registers_every_identity_table() -> None:
+    """The exact bug a reviewer flagged on the first pass of this PR: `Tenant` lives
+    in the same module as `TenantsBase`, so importing one always defines the other,
+    but `Identity`/`IdentityLinkToken`/`IdentitySession` are a sibling package with
+    no reason to be on any particular caller's own import path. The production boot
+    step that actually calls `ensure_tenants_database` in a fresh process
+    (`pigrocrm ensure-space-defaults`) imports only `pigrocrm.core.tenants` -- so a
+    subprocess mirroring exactly that import, and nothing more, is what proves
+    `TenantsBase.metadata` is complete without relying on whatever this test file
+    happened to import first."""
+    import ast
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from pigrocrm.core.tenants import Tenant, ensure_defaults, ensure_tenants_database\n"
+            "from pigrocrm.core.tenants.models import TenantsBase\n"
+            "print(sorted(TenantsBase.metadata.tables))",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    tables = ast.literal_eval(result.stdout.strip())
+    assert tables == ["identities", "identity_link_tokens", "identity_sessions", "tenants"]

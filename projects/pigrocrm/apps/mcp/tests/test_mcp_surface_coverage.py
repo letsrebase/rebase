@@ -358,6 +358,19 @@ _CREDENZIALI: dict[Method, str] = {
     ("RefreshTokenService", "revoke_all"): "sessione del browser, non superficie agentica",
     ("MagicLinkService", "request"): "e' il passo di login via mail, non un'operazione",
     ("MagicLinkService", "enter"): "e' il passo di login via mail, non un'operazione",
+    # REB-376 (design 2026-09-23 §1-2): `IdentityService` vive nel registro, non in
+    # una singola CRM -- l'MCP server e' avviato per un solo spazio (`ScopedSessionProvider`)
+    # e non ha mai una sessione sul database del registro, quindi nessuno di questi
+    # metodi e' raggiungibile da un tool anche in linea di principio.
+    ("IdentityService", "request"): "e' il passo di login via mail, un layer sopra -- come sopra",
+    ("IdentityService", "enter"): "e' il passo di login via mail, un layer sopra -- come sopra",
+    ("IdentityService", "upsert_and_issue"): (
+        "e' l'effetto collaterale del login (`login`, `enter_with_link`, `accept_invite`), "
+        "non un'operazione che qualcuno compie di per se'"
+    ),
+    ("IdentityService", "revoke_all"): (
+        "sessione del browser, non superficie agentica -- come sopra"
+    ),
     # REB-290 (spec 2026-09-17 §6): ogni metodo di `InvitationService` e' dichiarato,
     # non esposto. Invitare persone e' amministrazione dello spazio, la stessa ragione
     # che gia' tiene `UserService` fuori dai tool; in piu' qui c'e' il token grezzo,
