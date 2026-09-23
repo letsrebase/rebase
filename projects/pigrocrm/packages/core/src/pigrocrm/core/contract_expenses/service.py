@@ -126,7 +126,9 @@ class ContractExpenseService:
             setattr(expense, key, value)
         self.session.flush()
         self.session.refresh(expense)  # see create()'s own comment
-        self.activities.record(ENTITY, expense.id, "updated", actor, {"changed": sorted(changes)})
+        self.activities.record(
+            "contract", contract_id, "expense_updated", actor, {"changed": sorted(changes)}
+        )
         self.session.commit()
         return ContractExpenseRead.model_validate(expense)
 
