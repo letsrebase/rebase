@@ -31,6 +31,7 @@ from pigrocrm_api.routers import (
     people,
     period_locks,
     pipeline,
+    proposals,
     schema,
     search,
     space_settings,
@@ -109,6 +110,9 @@ def create_app() -> FastAPI:
         contracts,
         # REB-360: rebillable expenses against a contract's own spending policy.
         contract_expenses,
+        # REB-362: the review-before-write step -- a contract's first draft, or a
+        # day's evidence -- accepted or rejected by a human.
+        proposals,
     ):
         app.include_router(module.router)
 

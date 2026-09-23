@@ -51,7 +51,7 @@ def actor_to_transition_json(actor: Actor) -> str:
     return json.dumps(payload)
 
 
-def _set_transition_context(session: Session, actor: Actor, motivo: str) -> None:
+def set_transition_context(session: Session, actor: Actor, motivo: str) -> None:
     """Session-local Postgres settings (`set_config(..., true)`, scoped to the
     transaction), read by `work_unit_log_transition` immediately after. Local, not
     global: the setting resets at the next commit or rollback, so it can never leak
@@ -90,7 +90,7 @@ class WorkUnitService:
                 f"un work_unit non si crea direttamente in stato '{data.stato}'",
                 expected=f"uno tra {sorted(WORK_UNIT_ENTRY_STATI)}",
             )
-        _set_transition_context(self.session, actor, motivo)
+        set_transition_context(self.session, actor, motivo)
         work_unit = self.repo.add(
             WorkUnit(
                 contract_id=data.contract_id,
@@ -123,7 +123,7 @@ class WorkUnitService:
         work_unit = self.repo.get(work_unit_id)
         if work_unit is None:
             raise NotFound(WORK_UNIT_ENTITY, work_unit_id)
-        _set_transition_context(self.session, actor, motivo)
+        set_transition_context(self.session, actor, motivo)
         work_unit.stato = nuovo_stato
         self.session.flush()
         self.session.refresh(work_unit)  # see create()'s own comment
@@ -143,7 +143,7 @@ class WorkUnitService:
         approval = self.session.get(Approval, approval_id)
         if approval is None:
             raise NotFound(APPROVAL_ENTITY, approval_id)
-        _set_transition_context(self.session, actor, motivo)
+        set_transition_context(self.session, actor, motivo)
         work_unit.approval_id = approval_id
         self.session.flush()
         self.session.refresh(work_unit)  # see create()'s own comment
@@ -186,4 +186,9 @@ class ApprovalService:
         return ApprovalRead.model_validate(approval)
 
 
-__all__ = ["ApprovalService", "WorkUnitService", "actor_to_transition_json"]
+__all__ = [
+    "ApprovalService",
+    "WorkUnitService",
+    "actor_to_transition_json",
+    "set_transition_context",
+]
