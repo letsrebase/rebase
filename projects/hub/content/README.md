@@ -80,21 +80,21 @@ real client: keep it outside the repository or in a `*.local.json`, which git ig
 
 ### Open before the first signature
 
-The highlighted proposals, and what the text cannot settle on its own:
+The highlighted proposals, and what the text cannot settle on its own. Decided by Ivan on
+2026-09-23: the payment default (30 days from the end of the invoice's month, 7.1), the
+freelancer is paid whether or not the client has paid and rebase aligns the client's
+terms to that (7.2), the social security surcharge is inside the fee (5.5), and the 15%
+of 12.2.
 
-- **Who carries the client's late payment** (7.2). The draft says rebase does: the
-  freelancer is paid at 30 days from the end of the invoice's month (7.1, decided) whatever
-  the client does. The alternative is to pay once the client has paid, but article 3 of
-  law 81/2017 makes any term past 60 days from the invoice void, so rebase carries the
-  risk after that anyway.
-- **The social security surcharge** (rivalsa INPS, 5.5): inside the fee, as drafted, or on
-  top of it.
 - **Non-circumvention** (12): it covers every company rebase introduces, not only the
   ones an engagement came from, for twelve months from the introduction or the last
   engagement. A company the freelancer declares within seven days as a client of the
   previous 24 months is exempt; going direct early means paying rebase 15% of what the
-  freelancer invoices that company until the twelve months end; €2,000 plus the 15% when
-  it was hidden.
+  freelancer invoices that company until the twelve months end (decided). Hidden, it
+  costs the 15% plus a penalty; the €2,000 of the first draft was too low (Ivan), and the
+  proposal is three times the last engagement's average monthly fee, at least €5,000,
+  which scales with the engagement and gives a judge less reason to cut it under article
+  1384 of the civil code.
 - **Notice**: 30 days per engagement. When the client stops, rebase may close sooner
   only by paying the fee for the notice days that are missing, so the company contract
   has to give rebase at least that much notice (10.2). Two days during the opening check,
@@ -114,8 +114,9 @@ The highlighted proposals, and what the text cannot settle on its own:
   approval as its own step, and an advanced signature (a one-time code) for the framework
   agreement is worth weighing.
 - **The company contract** (roadmap #286) has to give rebase what this one promises:
-  rights on the work passing on payment, a notice from the client at least as long as the
-  freelancer's, and the client's authorisation to appoint the freelancer as a
+  client payment terms that let rebase pay the freelancer at 30 days from the end of the
+  month, rights on the work passing on payment, a notice from the client at least as long
+  as the freelancer's, and the client's authorisation to appoint the freelancer as a
   sub-processor.
 
 No lawyer has read these texts (#285: our own draft).

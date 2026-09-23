@@ -144,7 +144,7 @@ fascia 8-20 si svolge solo se il Professionista è d'accordo, e si paga come ind
 Lettera di incarico.
 
 5.5 Il Compenso è al netto dell'IVA, se dovuta. La rivalsa previdenziale, se il
-Professionista la applica, [[è compresa nel Compenso]].
+Professionista la applica, è compresa nel Compenso.
 
 5.6 Le spese (viaggi, trasferte, licenze) sono rimborsate solo se rebase le ha
 autorizzate per iscritto prima che siano sostenute, e se sono documentate in fattura.
@@ -178,8 +178,8 @@ indica nell'Area riservata il proprio regime fiscale e lo tiene aggiornato.
 la Lettera di incarico indichi un altro termine, e in ogni caso entro 60 giorni dal
 ricevimento della fattura, come prevede l'articolo 3 della legge 81/2017.
 
-7.2 [[Il pagamento al Professionista non dipende dal pagamento del Cliente: se il
-Cliente paga in ritardo o non paga, il rischio è di rebase.]]
+7.2 Il pagamento al Professionista non dipende dal pagamento del Cliente: se il Cliente
+paga in ritardo o non paga, il rischio è di rebase.
 
 7.3 Sulle somme pagate in ritardo maturano gli interessi di mora previsti dal decreto
 legislativo 231/2002.
@@ -280,7 +280,7 @@ società, un'altra piattaforma, un altro intermediario.
 
 12.2 Se il Professionista vuole lavorare direttamente con un'Azienda presentata prima
 della scadenza, lo dice a rebase e può farlo riconoscendole, fino alla scadenza, il
-[[15%]] degli importi che fattura a quell'azienda, IVA esclusa. In alternativa rebase può
+15% degli importi che fattura a quell'azienda, IVA esclusa. In alternativa rebase può
 liberarlo per iscritto.
 
 12.3 Il limite non vale per un'Azienda presentata con cui il Professionista aveva già
@@ -289,8 +289,9 @@ dall'articolo 3.3.
 
 12.4 Se il Professionista lavora con un'Azienda presentata senza passare da rebase e
 senza averlo detto, deve a rebase la percentuale dell'articolo 12.2 su tutti gli importi
-fatturati a quell'azienda nel periodo dell'articolo 12.1, più una penale di [[2.000]]
-euro, salvo il maggior danno.
+fatturati a quell'azienda nel periodo dell'articolo 12.1, più una penale pari a
+[[tre volte il Compenso medio mensile dell'ultimo Incarico presso quell'azienda, e
+comunque non inferiore a 5.000 euro]], salvo il maggior danno.
 
 12.5 A sua volta rebase, per tutta la durata del Contratto e nei 12 mesi successivi, non
 presenta ad altri membri i clienti che il Professionista le ha fatto conoscere, senza il
