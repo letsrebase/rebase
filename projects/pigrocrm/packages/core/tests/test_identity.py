@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -226,6 +226,73 @@ def test_revoke_all_on_an_unknown_identity_touches_nothing_and_raises_nothing(
     settings: Settings, registry_session: Session
 ) -> None:
     IdentityService(registry_session, settings).revoke_all(uuid4())
+
+
+# --- resolve: the chooser's own gate (§3, REB-377) ---------------------------------
+
+
+def test_resolve_answers_the_email_behind_a_live_session(
+    settings: Settings, registry_session: Session
+) -> None:
+    email = f"resolve-{uuid4()}@example.it"
+    token = IdentityService(registry_session, settings).upsert_and_issue(email)
+    assert token
+    payload = decode_token(token, settings, expected_type="identity")
+    assert IdentityService(registry_session, settings).resolve(payload.sub, payload.jti) == email
+
+
+def test_resolve_answers_none_for_a_jti_that_does_not_match_this_session(
+    settings: Settings, registry_session: Session
+) -> None:
+    email = f"wrong-jti-{uuid4()}@example.it"
+    service = IdentityService(registry_session, settings)
+    token = service.upsert_and_issue(email)
+    assert token
+    payload = decode_token(token, settings, expected_type="identity")
+    assert service.resolve(payload.sub, uuid4()) is None
+    # ... and never for a session that plainly does not exist at all.
+    assert service.resolve(uuid4(), uuid4()) is None
+
+
+def test_resolve_answers_none_for_a_token_with_no_jti_at_all(
+    settings: Settings, registry_session: Session
+) -> None:
+    """A decoded access/refresh token can carry `jti=None`; `resolve` must refuse
+    that shape outright rather than let a bare `None == None` compare it live
+    against the column (`IdentitySession.jti` is never null once written)."""
+    assert IdentityService(registry_session, settings).resolve(uuid4(), None) is None
+
+
+def test_resolve_answers_none_once_the_session_is_revoked(
+    settings: Settings, registry_session: Session
+) -> None:
+    email = f"resolve-revoked-{uuid4()}@example.it"
+    service = IdentityService(registry_session, settings)
+    token = service.upsert_and_issue(email)
+    assert token
+    payload = decode_token(token, settings, expected_type="identity")
+    service.revoke_all(payload.sub)
+    assert service.resolve(payload.sub, payload.jti) is None
+
+
+def test_resolve_answers_none_once_the_session_has_expired(
+    settings: Settings, registry_session: Session
+) -> None:
+    """Revocation is a database fact, not the JWT's own `exp` claim -- `resolve`
+    checks the row's `expires_at`, not merely that the token still decodes. Set
+    directly on the row rather than waited for, so the test needs no clock mock."""
+    email = f"resolve-expired-{uuid4()}@example.it"
+    service = IdentityService(registry_session, settings)
+    token = service.upsert_and_issue(email)
+    assert token
+    payload = decode_token(token, settings, expected_type="identity")
+    registry_session.execute(
+        update(IdentitySession)
+        .where(IdentitySession.jti == payload.jti)
+        .values(expires_at=datetime.now(UTC) - timedelta(seconds=1))
+    )
+    registry_session.commit()
+    assert service.resolve(payload.sub, payload.jti) is None
 
 
 # --- request/enter: proving an address nobody has vouched for yet ------------------

@@ -1,12 +1,12 @@
 """Cross-space identity over HTTP: the passwordless side effect three existing entry
-points gain, and the one new root-scoped route this issue adds (design 2026-09-23,
-REB-345/376).
+points gain, and the three root-scoped routes this issue adds (design 2026-09-23,
+REB-345/376/377).
 
 Follows `test_tenants_api.py`'s own fixture shape: the registry and every space this
 file creates live in the container `api_engine` starts, `get_settings` is overridden
 to that container's URL, and the per-process caches in `deps` are reset around each
-test -- so `TenantsRegistryDep` (used by `POST /api/identity/logout`) and the
-ephemeral registry engine `_issue_identity_cookie` opens (used by `login`,
+test -- so `TenantsRegistryDep` (used by `POST /api/identity/logout` and the chooser)
+and the ephemeral registry engine `_issue_identity_cookie` opens (used by `login`,
 `enter_with_link`, `accept_invite`) both land on the same real Postgres.
 """
 
@@ -15,7 +15,7 @@ from contextlib import contextmanager
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from pigrocrm.core.auth.repository import UserRepository
@@ -23,7 +23,12 @@ from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db.session import session_factory
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.mail import RecordingSender
-from pigrocrm.core.tenants import TenantService, ensure_tenants_database, tenants_database_url
+from pigrocrm.core.tenants import (
+    Tenant,
+    TenantService,
+    ensure_tenants_database,
+    tenants_database_url,
+)
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm_api.deps import IDENTITY_COOKIE, reset_session_factories
 from pigrocrm_api.main import create_app
@@ -33,6 +38,12 @@ from pigrocrm_api.sessions import get_sender
 SLUG = "identita-prova"
 SIGNUP = {"slug": SLUG, "nome": "Ada Lovelace", "email": "ada@identita.it"}
 WIZARD_SIGNUP = {**SIGNUP, "membro": False}
+
+# A second tenant, provisioned only by the tests that need to prove the scan reaches
+# more than one space: Grace's own, never Ada's, so a test can invite Ada into it
+# without Ada ever being its creator (design §3's own widening past `Tenant.owner_email`).
+SLUG2 = "identita-prova-2"
+OWNER2 = {"slug": SLUG2, "nome": "Grace Hopper", "email": "grace@identita.it", "membro": False}
 
 
 def _cookie_path(set_cookie_header: str) -> str | None:
@@ -138,6 +149,13 @@ def _sign_up_and_verify(
     assert entered.status_code == 200, entered.text
     recording.sent.clear()
     return recording
+
+
+def _drop_second_tenant(settings: Settings) -> None:
+    """`_serving`'s own teardown only drops `SLUG`'s database; a test that also
+    provisions `SLUG2` calls this itself so the container does not accumulate one
+    more real Postgres database per test run."""
+    drop_database(settings, tenant_database_url(settings, tenant_database_name(SLUG2)))
 
 
 # --- signup is excluded, on purpose (design §2) -------------------------------------
@@ -386,3 +404,200 @@ def test_the_identity_cookie_mint_never_fails_a_login_when_the_registry_is_unrea
     assert any(c.startswith("pigrocrm_access=") for c in cookies)
     assert any(c.startswith("pigrocrm_refresh=") for c in cookies)
     assert not any(c.startswith(f"{IDENTITY_COOKIE}=") for c in cookies)
+
+
+# --- REB-377: GET /api/identity/spaces ----------------------------------------------
+#
+# SLUG2 is Grace's own space, provisioned only by the tests below that need a second
+# tenant beside `SLUG` -- each drops it in a `finally` (`_drop_second_tenant`), since
+# `_serving`'s own teardown only knows about `SLUG`.
+
+
+def test_spaces_requires_a_live_identity_cookie(spaces_client: TestClient) -> None:
+    assert spaces_client.get("/api/identity/spaces").status_code == 401
+
+
+def test_spaces_refuses_a_garbage_cookie(spaces_client: TestClient) -> None:
+    spaces_client.cookies.set(IDENTITY_COOKIE, "not-a-real-token")
+    assert spaces_client.get("/api/identity/spaces").status_code == 401
+
+
+def test_spaces_lists_a_created_space_and_one_only_entered_by_invitation(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """Widened from `_owned_slugs`'s `Tenant.owner_email` to each space's own
+    `users.email` (design §3, §7 decision B1): Grace's invitation into SLUG2 shows up
+    beside the space Ada created herself, each with its own role."""
+    grace = spaces_client
+    try:
+        recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
+        invite = grace.post(
+            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
+        )
+        assert invite.status_code == 201, invite.text
+        invite_token = _token_from(recording.sent[0].text)
+
+        # Ada's own client, sharing the same app and database, so accepting the
+        # invitation never touches Grace's own admin session held in `grace`.
+        ada = TestClient(grace.app, base_url="https://testserver")
+        accepted = ada.post(f"/{SLUG2}/api/auth/invite", json={"t": invite_token})
+        assert accepted.status_code == 200, accepted.text
+        _sign_up_and_verify(ada)  # Ada's own space, SLUG -- she is its admin there.
+
+        listed = {row["slug"]: row["ruolo"] for row in ada.get("/api/identity/spaces").json()}
+        assert listed == {SLUG: "admin", SLUG2: "collaboratore"}
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_spaces_stops_listing_a_space_once_the_row_there_is_deactivated(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """The scan is a live read, not a cache of who was once invited: a role turned
+    off in one space drops out of the very next answer."""
+    grace = spaces_client
+    try:
+        recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
+        invite = grace.post(
+            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
+        )
+        assert invite.status_code == 201, invite.text
+        invite_token = _token_from(recording.sent[0].text)
+
+        ada = TestClient(grace.app, base_url="https://testserver")
+        accepted = ada.post(f"/{SLUG2}/api/auth/invite", json={"t": invite_token})
+        assert accepted.status_code == 200, accepted.text
+        ada_id = accepted.json()["id"]
+        assert {row["slug"] for row in ada.get("/api/identity/spaces").json()} == {SLUG2}
+
+        deactivated = grace.patch(f"/{SLUG2}/api/users/{ada_id}", json={"attivo": False})
+        assert deactivated.status_code == 200, deactivated.text
+
+        assert ada.get("/api/identity/spaces").json() == []
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_spaces_skips_a_tenant_whose_database_cannot_be_reached(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """A registry row this scan cannot open must not fail the whole response
+    (design §7 decision B1, mirroring `_space_link`'s own discipline): the reachable
+    space still comes back, and the unreachable one is silently absent."""
+    _sign_up_and_verify(spaces_client)
+    registry = ensure_tenants_database(container_settings)
+    with session_factory(registry)() as session:
+        session.add(
+            Tenant(
+                slug="spazio-fantasma",
+                db_name="pigro_t_spazio_fantasma_mai_creato",
+                owner_email=SIGNUP["email"],
+            )
+        )
+        session.commit()
+
+    response = spaces_client.get("/api/identity/spaces")
+    assert response.status_code == 200
+    assert {row["slug"] for row in response.json()} == {SLUG}
+
+
+# --- REB-377: POST /api/identity/enter/{slug} ---------------------------------------
+
+
+def test_enter_requires_a_live_identity_cookie(spaces_client: TestClient) -> None:
+    assert spaces_client.post("/api/identity/enter/qualunque-cosa").status_code == 401
+
+
+def test_enter_answers_404_for_a_slug_nobody_registered(spaces_client: TestClient) -> None:
+    _sign_up_and_verify(spaces_client)
+    assert spaces_client.post("/api/identity/enter/questo-spazio-non-esiste").status_code == 404
+
+
+def test_enter_answers_404_for_a_space_with_no_row_for_this_email_and_creates_none(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """`enter` only ever reads `users` (design §3): a space Ada was never invited
+    into answers the same 404 as an unknown slug, and never gains a row for her."""
+    grace = spaces_client
+    try:
+        _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
+        ada = TestClient(grace.app, base_url="https://testserver")
+        _sign_up_and_verify(ada)  # Ada's own identity cookie, from her own space.
+
+        assert ada.post(f"/api/identity/enter/{SLUG2}").status_code == 404
+
+        registry = ensure_tenants_database(container_settings)
+        with session_factory(registry)() as session:
+            row = session.scalar(select(Tenant).where(Tenant.slug == SLUG2))
+        assert row is not None
+        engine = create_engine(tenant_database_url(container_settings, row.db_name), future=True)
+        try:
+            with engine.connect() as connection:
+                count = connection.execute(
+                    text("SELECT count(*) FROM users WHERE email = :e"), {"e": SIGNUP["email"]}
+                ).scalar_one()
+        finally:
+            engine.dispose()
+        assert count == 0
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_enter_answers_404_for_a_deactivated_row(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    grace = spaces_client
+    try:
+        recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
+        invite = grace.post(
+            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
+        )
+        assert invite.status_code == 201, invite.text
+        invite_token = _token_from(recording.sent[0].text)
+
+        ada = TestClient(grace.app, base_url="https://testserver")
+        accepted = ada.post(f"/{SLUG2}/api/auth/invite", json={"t": invite_token})
+        assert accepted.status_code == 200, accepted.text
+        ada_id = accepted.json()["id"]
+
+        deactivated = grace.patch(f"/{SLUG2}/api/users/{ada_id}", json={"attivo": False})
+        assert deactivated.status_code == 200, deactivated.text
+
+        assert ada.post(f"/api/identity/enter/{SLUG2}").status_code == 404
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_enter_opens_the_space_with_a_fresh_pair_scoped_to_its_own_path(
+    spaces_client: TestClient, container_settings: Settings
+) -> None:
+    """A live, active row mints the ordinary access+refresh pair scoped
+    `path=/<slug>/`, exactly as `login` does today (design §3) -- proven by using
+    the minted cookies for a real follow-up call under that space's own prefix."""
+    grace = spaces_client
+    try:
+        recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
+        invite = grace.post(
+            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
+        )
+        assert invite.status_code == 201, invite.text
+        invite_token = _token_from(recording.sent[0].text)
+
+        ada = TestClient(grace.app, base_url="https://testserver")
+        accepted = ada.post(f"/{SLUG2}/api/auth/invite", json={"t": invite_token})
+        assert accepted.status_code == 200, accepted.text
+
+        entered = ada.post(f"/api/identity/enter/{SLUG2}")
+        assert entered.status_code == 200, entered.text
+        assert entered.json()["email"] == SIGNUP["email"]
+        cookies = entered.headers.get_list("set-cookie")
+        assert _cookie_path(_cookie(cookies, "pigrocrm_access")) == f"/{SLUG2}/"
+        assert _cookie_path(_cookie(cookies, "pigrocrm_refresh")) == f"/{SLUG2}/"
+
+        # The pair `enter` just minted -- not the one `accept_invite` minted earlier
+        # in this same client -- is what the jar now holds and what this call sends.
+        me = ada.get(f"/{SLUG2}/api/auth/me")
+        assert me.status_code == 200, me.text
+        assert me.json()["email"] == SIGNUP["email"]
+    finally:
+        _drop_second_tenant(container_settings)

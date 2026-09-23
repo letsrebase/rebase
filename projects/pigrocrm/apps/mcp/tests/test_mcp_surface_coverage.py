@@ -379,6 +379,10 @@ _CREDENZIALI: dict[Method, str] = {
         "questo modulo (design 2026-09-23 §0) -- oltre a vivere nel registro, come "
         "sopra"
     ),
+    ("IdentityService", "resolve"): (
+        "e' la verifica di liveness dietro il cookie del chooser (REB-377), sullo stesso "
+        "registro senza sessione MCP -- come sopra"
+    ),
     # REB-290 (spec 2026-09-17 §6): ogni metodo di `InvitationService` e' dichiarato,
     # non esposto. Invitare persone e' amministrazione dello spazio, la stessa ragione
     # che gia' tiene `UserService` fuori dai tool; in piu' qui c'e' il token grezzo,

@@ -480,6 +480,12 @@ PUBLIC_ROUTES: dict[tuple[str, str], str] = {
         "sweep would end an identity session none of the three role clients hold in a "
         "form worth revoking."
     ),
+    ("POST", "/api/identity/enter/{slug}"): (
+        "Root-scoped and gated by the identity cookie, not a space actor (design "
+        "2026-09-23 §3, REB-377): there is no role to check before a space's own "
+        "database is even open, and the three role clients here hold no identity "
+        "session worth entering with."
+    ),
 }
 
 _SAFE_METHODS = {"get", "head", "options", "trace"}

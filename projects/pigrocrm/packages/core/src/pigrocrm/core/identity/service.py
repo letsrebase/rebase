@@ -8,7 +8,9 @@ three existing entry points (`login`, `enter_with_link`, `accept_invite`,
 `apps/api/src/pigrocrm_api/routers/auth.py`) ride on: it records a proof that already
 happened one call away, and never asks for one of its own. `signup` is deliberately
 not a fourth call site (§2) -- an address nobody has proven anything about must not get
-a durable, cross-space cookie.
+a durable, cross-space cookie. `resolve` is the read the chooser gates on (design §3,
+REB-377): the "checked-on-every-read" liveness §2 describes, one more `SELECT` like
+`RefreshTokenService`'s own revocation check.
 """
 
 import hashlib
@@ -178,3 +180,28 @@ class IdentityService:
             .values(revoked_at=now)
         )
         self.session.commit()
+
+    def resolve(self, identity_id: UUID, jti: UUID | None) -> str | None:
+        """The proven email behind a live identity session, or `None`: an absent
+        `jti` (never minted by `issue_identity_token`, so a decoded token missing one
+        is malformed), an unknown identity, an unknown or already-revoked
+        `IdentitySession`, or one past its own `expires_at` -- the same liveness §2
+        describes, checked on every read rather than trusted from the JWT's own `exp`
+        alone, because a *revoked* session's token still decodes fine (revocation is
+        a database fact, not a cryptographic one). Never raises: an absent or dead
+        session is not a database error, it is the 401 the caller answers with."""
+        if jti is None:
+            return None
+        now = datetime.now(UTC)
+        live = self.session.scalar(
+            select(IdentitySession).where(
+                IdentitySession.jti == jti,
+                IdentitySession.identity_id == identity_id,
+                IdentitySession.revoked_at.is_(None),
+                IdentitySession.expires_at > now,
+            )
+        )
+        if live is None:
+            return None
+        identity = self.session.get(Identity, identity_id)
+        return identity.email if identity is not None else None

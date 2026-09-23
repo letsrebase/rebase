@@ -19,6 +19,8 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
   }
 })
 
+vi.mock('@rebase/ui/sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+
 const login = vi.fn()
 const user: { value: unknown } = { value: null }
 vi.mock('@/lib/auth', async (importOriginal) => {
@@ -32,6 +34,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 
 import { api } from '@/lib/api'
+import { toast } from '@rebase/ui/sonner'
 import { LoginPage } from './login'
 
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
@@ -107,5 +110,78 @@ describe('the login page', () => {
   it('offers to create a space only on the root', async () => {
     render(<LoginPage />)
     expect(await screen.findByRole('button', { name: 'Crea il tuo spazio' })).toBeInTheDocument()
+  })
+})
+
+describe('the chooser (REB-377)', () => {
+  function mockSpaces(spaces: Array<{ slug: string; ruolo: string }> | null, status = 200) {
+    GET.mockImplementation((path: string) => {
+      if (path === '/api/identity/spaces') {
+        return Promise.resolve(
+          status === 200
+            ? { data: spaces, response: { status } }
+            : { error: { detail: 'nessuna identità provata' }, response: { status } },
+        )
+      }
+      return Promise.resolve({ data: { slug: null }, response: { status: 200 } })
+    })
+  }
+
+  it('shows one row per space instead of the email form once at least one resolves', async () => {
+    mockSpaces([
+      { slug: 'studio', ruolo: 'admin' },
+      { slug: 'altro', ruolo: 'collaboratore' },
+    ])
+    render(<LoginPage />)
+    expect(await screen.findByRole('button', { name: /studio/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /altro/ })).toBeInTheDocument()
+    expect(screen.getByText('amministratore')).toBeInTheDocument()
+    expect(screen.getByText('collaboratore')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Email')).toBeNull()
+  })
+
+  it('falls back to the email form on a 200 with zero spaces', async () => {
+    mockSpaces([])
+    render(<LoginPage />)
+    expect(await screen.findByLabelText('Email')).toBeInTheDocument()
+  })
+
+  it('falls back to the email form on a 401 with no identity cookie', async () => {
+    mockSpaces(null, 401)
+    render(<LoginPage />)
+    expect(await screen.findByLabelText('Email')).toBeInTheDocument()
+  })
+
+  it('enters the chosen space and navigates to its own basepath', async () => {
+    mockSpaces([{ slug: 'studio', ruolo: 'admin' }])
+    POST.mockResolvedValue({
+      data: { id: 'u1', email: 'ada@studio.it', nome: 'Ada', ruolo: 'admin' },
+      response: { status: 200 },
+    })
+    const go = vi.fn()
+    render(<LoginPage go={go} />)
+    await userEvent.click(await screen.findByRole('button', { name: /studio/ }))
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/identity/enter/{slug}', {
+        params: { path: { slug: 'studio' } },
+      }),
+    )
+    await waitFor(() => expect(go).toHaveBeenCalledWith('/studio/app/'))
+  })
+
+  it('reports the API sentence and leaves the row usable when entering fails', async () => {
+    mockSpaces([{ slug: 'studio', ruolo: 'admin' }])
+    POST.mockResolvedValue({
+      error: { detail: 'Questo spazio non esiste, o non lo hai mai raggiunto.' },
+      response: { status: 404 },
+    })
+    render(<LoginPage />)
+    await userEvent.click(await screen.findByRole('button', { name: /studio/ }))
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'Questo spazio non esiste, o non lo hai mai raggiunto.',
+      ),
+    )
+    expect(screen.getByRole('button', { name: /studio/ })).toBeInTheDocument()
   })
 })
