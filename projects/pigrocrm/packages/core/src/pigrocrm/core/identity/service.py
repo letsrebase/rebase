@@ -103,27 +103,16 @@ class IdentityService:
 
     # ---- recording a proof that already happened one call away ------------------
 
-    def upsert_and_issue(self, email: str) -> str | None:
-        """Creates the `identities` row if none exists yet, and always mints a fresh,
-        revocable identity token -- the write is a pure side effect of a proof that
-        already happened at the caller, and its own failure must never turn a working
-        space login into a 500. That discipline lives in the caller
-        (`_issue_identity_cookie`, `routers/auth.py`), which wraps this in the
-        ephemeral-engine/`SQLAlchemyError` shape `_space_link` already established;
-        this method itself commits or raises plainly, like every other service in
-        this codebase. `None` only for an address that normalises to nothing.
-
-        The get-or-create below is not atomic on its own -- two first logins for the
-        same brand-new address, racing, can both miss the `SELECT` and both try to
-        insert. That is not a real failure, only two winners racing for one row: the
-        loser's `flush` hits the functional unique index (`IntegrityError`, caught
-        here specifically, never the broader `SQLAlchemyError` the caller already
-        guards with), and the fix is to read the winner's row rather than to give up
-        the request's own identity cookie over a collision this method caused
-        itself."""
-        normalized = email.strip().lower()
-        if not normalized:
-            return None
+    def _get_or_create(self, normalized: str) -> Identity:
+        """`normalized` must already be `.strip().lower()`d by the caller. Not atomic
+        on its own -- two callers racing for the same brand-new address, whether two
+        first logins (`upsert_and_issue`) or two overlapping `rebuild-identity-index`
+        runs (`get_or_create`), can both miss the `SELECT` and both try to insert.
+        That is not a real failure, only two winners racing for one row: the loser's
+        `flush` hits the functional unique index (`IntegrityError`, caught here
+        specifically, never the broader `SQLAlchemyError` callers already guard
+        with), and the fix is to read the winner's row rather than raise over a
+        collision this method caused itself."""
         identity = self._get_by_email(normalized)
         if identity is None:
             identity = Identity(email=normalized)
@@ -135,6 +124,40 @@ class IdentityService:
                 identity = self._get_by_email(normalized)
                 if identity is None:
                     raise
+        return identity
+
+    def get_or_create(self, email: str) -> Identity | None:
+        """The `identities` row for this address, creating it if none exists yet, and
+        committing on its own -- the backfill's own primitive (`pigrocrm
+        rebuild-identity-index`, REB-379). Unlike `upsert_and_issue`, this never mints
+        a session or a token: it records that an address exists, without pretending
+        anyone has just logged in, which is the whole point of a backfill that only
+        makes an already-correct-eventually index complete sooner (design
+        2026-09-23 §6, §8). `None` only for an address that normalises to nothing."""
+        normalized = email.strip().lower()
+        if not normalized:
+            return None
+        identity = self._get_or_create(normalized)
+        self.session.commit()
+        return identity
+
+    def upsert_and_issue(self, email: str) -> str | None:
+        """Creates the `identities` row if none exists yet, and always mints a fresh,
+        revocable identity token -- the write is a pure side effect of a proof that
+        already happened at the caller, and its own failure must never turn a working
+        space login into a 500. That discipline lives in the caller
+        (`_issue_identity_cookie`, `routers/auth.py`), which wraps this in the
+        ephemeral-engine/`SQLAlchemyError` shape `_space_link` already established;
+        this method itself commits or raises plainly, like every other service in
+        this codebase. `None` only for an address that normalises to nothing.
+
+        The get-or-create is `_get_or_create`, shared with the backfill's own
+        `get_or_create` above -- see its docstring for the race the retry-once
+        handles."""
+        normalized = email.strip().lower()
+        if not normalized:
+            return None
+        identity = self._get_or_create(normalized)
         jti = uuid4()
         now = datetime.now(UTC)
         expires_at = now + timedelta(days=self.settings.identity_token_days)

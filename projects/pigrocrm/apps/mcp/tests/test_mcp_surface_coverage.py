@@ -371,6 +371,14 @@ _CREDENZIALI: dict[Method, str] = {
     ("IdentityService", "revoke_all"): (
         "sessione del browser, non superficie agentica -- come sopra"
     ),
+    ("IdentityService", "get_or_create"): (
+        "e' il primitivo del backfill da riga di comando (`pigrocrm "
+        "rebuild-identity-index`, REB-379), mai una chiamata di un agente: crea una "
+        "riga in `identities` per un indirizzo che nessuno ha ancora provato, "
+        "l'esatto contrario del principio 'prova prima, elenco poi' che regge tutto "
+        "questo modulo (design 2026-09-23 §0) -- oltre a vivere nel registro, come "
+        "sopra"
+    ),
     # REB-290 (spec 2026-09-17 §6): ogni metodo di `InvitationService` e' dichiarato,
     # non esposto. Invitare persone e' amministrazione dello spazio, la stessa ragione
     # che gia' tiene `UserService` fuori dai tool; in piu' qui c'e' il token grezzo,

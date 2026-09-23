@@ -205,6 +205,97 @@ def ensure_space_defaults() -> int:
     return 0
 
 
+def rebuild_identity_index() -> int:
+    """`pigrocrm rebuild-identity-index`: a day-one backfill for an installation that
+    wants "my spaces" complete immediately, never a correctness requirement --
+    `identities` already grows to completeness on its own as people log back in
+    (`IdentityService.upsert_and_issue`, called from `login`, `enter_with_link` and
+    `accept_invite`). Follows the exact shape `ensure_space_defaults` above already
+    uses (design 2026-09-23 §6, §8; REB-379): read every `Tenant` row from the
+    registry, `select(Tenant)` ordered by `created_at`, then visit each space in
+    turn. For each space it reads every `users` row -- not only `owner_email`, since
+    a space may already hold people invited after it was created -- and upserts one
+    `identities` row per distinct address found, through
+    `IdentityService.get_or_create`, which never mints a session or a token: a
+    backfill records that an address exists, it does not pretend anyone has just
+    logged in.
+
+    Always answers 0, whatever happens, the same discipline `ensure_space_defaults`
+    follows: a registry that cannot be reached is one line on stderr and nothing
+    raised, and one space that cannot be reached -- or one space's identities that
+    fail to write -- costs a line on stderr with the exception's type, never its
+    text (a psycopg error can carry the URL, password included), and never the
+    whole command."""
+    from sqlalchemy import create_engine, select
+
+    from pigrocrm.core.auth.models import User
+    from pigrocrm.core.identity.models import Identity
+    from pigrocrm.core.identity.service import IdentityService
+    from pigrocrm.core.tenants import Tenant, ensure_tenants_database
+    from pigrocrm.core.tenants.database import tenant_database_url
+
+    settings = get_settings()
+    try:
+        registry = ensure_tenants_database(settings)
+    except Exception as exc:  # noqa: BLE001 - never fails the whole command
+        print(f"registro degli spazi non raggiungibile ({type(exc).__name__})", file=sys.stderr)
+        return 0
+    try:
+        try:
+            with session_factory(registry)() as registry_session:
+                spaces = [
+                    (row.slug, row.db_name)
+                    for row in registry_session.scalars(
+                        select(Tenant).order_by(Tenant.created_at)
+                    ).all()
+                ]
+        except Exception as exc:  # noqa: BLE001 - never fails the whole command
+            print(f"registro degli spazi non raggiungibile ({type(exc).__name__})", file=sys.stderr)
+            return 0
+        if not spaces:
+            print("nessuno spazio nel registro")
+            return 0
+        for slug, db_name in spaces:
+            url = tenant_database_url(settings, db_name)
+            engine = create_engine(url, future=True)
+            try:
+                try:
+                    with session_factory(engine)() as space:
+                        emails = sorted(
+                            {row.strip().lower() for row in space.scalars(select(User.email)).all()}
+                            - {""}
+                        )
+                except Exception as exc:  # noqa: BLE001 - one space must not stop the others
+                    print(f"{slug}: non raggiungibile ({type(exc).__name__})", file=sys.stderr)
+                    continue
+            finally:
+                engine.dispose()
+            if not emails:
+                print(f"{slug}: nessun utente")
+                continue
+            try:
+                with session_factory(registry)() as registry_session:
+                    existing = set(
+                        registry_session.scalars(
+                            select(Identity.email).where(Identity.email.in_(emails))
+                        ).all()
+                    )
+                    service = IdentityService(registry_session, settings)
+                    for email in emails:
+                        service.get_or_create(email)
+            except Exception as exc:  # noqa: BLE001 - one space must not stop the others
+                print(f"{slug}: identità non aggiornate ({type(exc).__name__})", file=sys.stderr)
+                continue
+            new_count = len(emails) - len(existing)
+            if new_count:
+                print(f"{slug}: {len(emails)} indirizzi, {new_count} nuove identità")
+            else:
+                print(f"{slug}: {len(emails)} indirizzi, già indicizzati")
+    finally:
+        registry.dispose()
+    return 0
+
+
 def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -> int:
     """`pigrocrm digest`: the weekly report of every space in the registry, for cron.
 
@@ -521,6 +612,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "ensure-space-defaults",
         help="Dà a ogni spazio del registro stati, template e categorie predefiniti, se mancano",
     )
+    sub.add_parser(
+        "rebuild-identity-index",
+        help="Indicizza in identities ogni indirizzo trovato negli users di ogni spazio",
+    )
     sync = sub.add_parser("gmail-sync", help="Sincronizza la casella Google collegata (per cron)")
     sync.add_argument("--email", help="La casella da sincronizzare, se ne è collegata più di una")
     settimanale = sub.add_parser(
@@ -554,6 +649,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return seed_templates()
     if args.command == "ensure-space-defaults":
         return ensure_space_defaults()
+    if args.command == "rebuild-identity-index":
+        return rebuild_identity_index()
     if args.command == "gmail-sync":
         return gmail_sync(args.email)
     if args.command == "digest":
