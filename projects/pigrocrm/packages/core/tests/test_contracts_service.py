@@ -21,16 +21,18 @@ def _customer(db_session: Session) -> Customer:
     return customer
 
 
-def _create_payload(customer_id: object) -> ContractCreate:
-    return ContractCreate(
-        customer_id=customer_id,  # type: ignore[arg-type]
-        titolo="Consulenza CTO",
-        inizio=date(2026, 1, 1),
-        tipo_rinnovo="nessuno",
-        preavviso_disdetta_giorni=30,
-        cadenza_fatturazione="mensile",
-        politica_spese={"tipo": "non_rimborsabile"},
-    )
+def _create_payload(customer_id: object, **overrides: object) -> ContractCreate:
+    payload: dict[str, object] = {
+        "customer_id": customer_id,
+        "titolo": "Consulenza CTO",
+        "inizio": date(2026, 1, 1),
+        "tipo_rinnovo": "nessuno",
+        "preavviso_disdetta_giorni": 30,
+        "cadenza_fatturazione": "mensile",
+        "politica_spese": {"tipo": "non_rimborsabile"},
+    }
+    payload.update(overrides)
+    return ContractCreate(**payload)  # type: ignore[arg-type]
 
 
 # ---- Done-when: created, read and listed through the API's own service layer ------
@@ -83,6 +85,26 @@ def test_get_of_an_unknown_contract_is_not_found(db_session: Session) -> None:
     service = ContractService(db_session)
     with pytest.raises(NotFound):
         service.get(uuid4(), ADMIN)
+
+
+def test_contract_create_rejects_fine_before_inizio() -> None:
+    """An inverted validity period is never even constructed -- Greptile flagged
+    this as unenforced; ck_contracts_fine_ordered is the database's own backstop,
+    but the schema is what gives a clean 422 instead of a raw IntegrityError."""
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError, match="fine"):
+        _create_payload(uuid4(), fine=date(2025, 1, 1))
+
+
+def test_rate_card_create_rejects_valido_a_before_valido_da() -> None:
+    """Greptile: the service's own `except IntegrityError` cannot distinguish an
+    inverted range from a genuine overlap, so this must never reach the database
+    at all -- caught here, at construction, not translated into a Conflict."""
+    import pydantic
+
+    with pytest.raises(pydantic.ValidationError, match="valido_a"):
+        _rate_card_payload(valido_da=date(2026, 6, 1), valido_a=date(2026, 1, 1))
 
 
 # ---- rate cards, through the service layer -----------------------------------------

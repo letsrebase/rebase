@@ -102,7 +102,12 @@ EXTRA_NATIVE_FIELDS: dict[str, tuple[str, ...]] = {
     # could set them could claim to be an automation. They are listed here so a
     # custom-field definition cannot be slugified onto one of them.
     "attivita": ("stato", "completata_il", "origine", "regola"),
-    "contract": (),
+    # `stato` moves only through a dedicated method (none exists yet in this
+    # spike) and `contratto_precedente_id` is the renewal chain, deliberately
+    # left unset here (REB-358) -- neither is on `ContractCreate`, so both must
+    # be reserved here or an administrator could slugify a custom field onto
+    # either native column.
+    "contract": ("stato", "contratto_precedente_id"),
 }
 
 

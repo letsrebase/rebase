@@ -107,6 +107,7 @@ def upgrade() -> None:
             "tipo_rinnovo = 'nessuno' OR preavviso_rinnovo_giorni IS NOT NULL",
             name="ck_contracts_preavviso_rinnovo_required",
         ),
+        sa.CheckConstraint("fine IS NULL OR inizio <= fine", name="ck_contracts_fine_ordered"),
     )
     op.create_index("ix_contracts_customer_id", "contracts", ["customer_id"])
     # Autogenerate is known to silently drop a GIN index, so it (and the three
@@ -193,6 +194,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # A document owned solely by a contract (customer_id and deal_id both NULL)
+    # would violate the old two-way CHECK the instant it is restored below --
+    # reassign it to its contract's own customer first, the same fallback owner
+    # `_customer_of` already resolves through at read time.
+    op.execute(
+        "UPDATE documents SET customer_id = contracts.customer_id "
+        "FROM contracts WHERE documents.contract_id = contracts.id"
+    )
     op.drop_constraint("ck_documents_customer_xor_deal", "documents", type_="check")
     op.create_check_constraint(
         "ck_documents_customer_xor_deal",

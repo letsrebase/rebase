@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
@@ -62,6 +62,12 @@ class ContractCreate(BaseModel):
     politica_spese: dict[str, Any]
     note: SafeStr | None = None
     custom_fields: dict[str, Any] = {}
+
+    @model_validator(mode="after")
+    def _fine_not_before_inizio(self) -> "ContractCreate":
+        if self.fine is not None and self.fine < self.inizio:
+            raise ValueError("fine non può precedere inizio")
+        return self
 
 
 class ContractRead(BaseModel):
@@ -131,6 +137,18 @@ class RateCardCreate(BaseModel):
     # Meaningful, and refused outside it, only for tipo == "ricorrente_fisso" -- see
     # ck_rate_cards_periodo_only_ricorrente_fisso.
     periodo_erogazione: RateCardPeriodo | None = None
+
+    @model_validator(mode="after")
+    def _valido_a_not_before_valido_da(self) -> "RateCardCreate":
+        # Also DB-enforced (ck_rate_cards_validity_ordered), but that CHECK fires
+        # inside the same flush the exclusion constraint does, and
+        # RateCardService.create's own except IntegrityError cannot tell the two
+        # apart -- an inverted range would otherwise be misreported as an overlap
+        # conflict. Catching it here, before the row ever reaches the database,
+        # is what keeps the two failures distinguishable.
+        if self.valido_a is not None and self.valido_a < self.valido_da:
+            raise ValueError("valido_a non può precedere valido_da")
+        return self
 
 
 class RateCardRead(BaseModel):

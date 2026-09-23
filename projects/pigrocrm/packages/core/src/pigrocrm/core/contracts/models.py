@@ -130,6 +130,7 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
             "tipo_rinnovo = 'nessuno' OR preavviso_rinnovo_giorni IS NOT NULL",
             name="ck_contracts_preavviso_rinnovo_required",
         ),
+        CheckConstraint("fine IS NULL OR inizio <= fine", name="ck_contracts_fine_ordered"),
         Index("ix_contracts_custom_fields", "custom_fields", postgresql_using="gin"),
         # Residuo R9: one `(column, id)` B-tree per key CONTRACT_SORTS admits.
         Index("ix_contracts_created_at_id", "created_at", "id"),
