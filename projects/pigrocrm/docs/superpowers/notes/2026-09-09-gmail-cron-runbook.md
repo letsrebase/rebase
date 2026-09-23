@@ -15,8 +15,7 @@ smette me ne accorgo?»):
    è in Testing.
 
 Il §4 è il secondo lavoro: `pigrocrm digest`, il resoconto settimanale che ogni lunedì
-mattina scrive a chi l'ha chiesto, uno spazio alla volta, a cominciare dall'installazione
-radice.
+mattina scrive a chi l'ha chiesto, uno spazio alla volta.
 
 ## 1. Installare il cron (operatore, sul server)
 
@@ -206,14 +205,25 @@ Le righe della prova portano `(prova)` in fondo proprio perché nel log non si c
 con una settimana partita davvero. Con `--slug studio-rossi` la prova (come il comando
 vero) tocca un solo spazio.
 
-L'installazione radice (il database di `PIGROCRM_DATABASE_URL`, quella che non sta nel
-registro) è la prima riga di ogni giro, e nel log si chiama sempre `root`. Per toccare
-solo lei: `--slug root`, un nome riservato che nessuno spazio può avere; un giro della
-sola radice non apre nemmeno il registro. Non il valore di `PIGROCRM_ROOT_SLUG`: con
-`--slug` quello resta il nome di uno spazio del registro, se ce n'è uno nato prima che la
-radice lo prendesse. Per rimandare una settimana alla radice si usa quindi
-`--slug root --forza --data …`, mai `--forza` sul giro completo, che la rimanderebbe a
-ogni spazio.
+### The root installation (REB-263)
+
+The root installation, the database in `PIGROCRM_DATABASE_URL`, is not in the registry,
+and it is the first line of every run. Its line always reads `root:`, in every form the
+table below gives for a space: `root: inviato a 2`, `root: vuoto`, `root: saltato (…)`.
+It goes to the same people a space's report does (every active user with the report
+switched on), and it is read as its titolare, the first admin still active, so
+`root: saltato (titolare_mancante)` means no active admin is left. Its links carry
+`PIGROCRM_ROOT_SLUG`, the way a space's carry its slug.
+
+To visit the root alone: `--slug root`. `root` is a reserved name no space can take, and a
+run for the root alone does not open the registry. The value of `PIGROCRM_ROOT_SLUG` is
+not a way to name it: with `--slug`, that value keeps meaning a registry space, should one
+older than the setting exist. So a root week is resent with
+`--slug root --forza --data …`, never with `--forza` on the full run, which would resend
+it to every space as well.
+
+When the registry cannot be reached, the full run still sends the root:
+`registro degli spazi non raggiungibile (…)` is followed by the `root:` line.
 
 ### Rimandare una settimana
 
@@ -237,21 +247,19 @@ Una riga per spazio, contatori soltanto: mai un indirizzo, mai una cifra del res
 
 | Riga | Cosa è successo | Cosa fare |
 | --- | --- | --- |
-| `root: inviato a 2` | L'installazione radice: stesso resoconto, stessi destinatari (gli utenti attivi con il resoconto acceso), letto come il primo admin attivo. Le altre righe di uno spazio valgono anche per lei, con `root:` davanti | Niente |
+| `root: inviato a 2` | The root installation, not a registry space: see «The root installation» above | Nothing |
 | `studio-rossi: inviato a 3` | Il resoconto è partito a tre persone, e la settimana è registrata | Niente |
 | `studio-rossi: inviato a 3 (prova)` | `--dry-run`: sarebbe partito a tre persone | Niente: nessuna mail, nessuna riga scritta |
 | `studio-rossi: vuoto` | Lo spazio non ha ancora né clienti, né deal, né fatture, né ore | Niente: chi non ha ancora cominciato non riceve una mail piena di zeri |
 | `studio-rossi: già inviato per 2026-W37` | Quella settimana era già partita (un secondo cron, o una riga eseguita a mano) | Niente. Se va rimandata davvero, vedi «Rimandare una settimana» |
 | `studio-rossi: nessun destinatario` | Nessun utente attivo di quello spazio ha il resoconto acceso | Niente: è una scelta loro (Impostazioni → Profilo) |
 | `studio-rossi: saltato (…)` su `stderr` | Quello spazio non è stato mandato; fra parentesi c'è il **tipo** dell'errore, mai il testo (che può contenere l'URL del database, password compresa) | Vedi qui sotto |
-| `registro degli spazi non raggiungibile (…)` su `stderr` | Il registro dei tenant non risponde: nessuno spazio del registro è stato visitato. Nel giro completo la radice sì, perché non ci sta: la sua riga `root:` c'è lo stesso | Controllare il database e i `PIGROCRM_*` del `.env`; poi rieseguire la riga a mano |
+| `registro degli spazi non raggiungibile (…)` su `stderr` | Il registro dei tenant non risponde: nessuno spazio è stato visitato | Controllare il database e i `PIGROCRM_*` del `.env`; poi rieseguire la riga a mano |
 
 Gli `saltato` che si incontrano davvero:
 
 - `titolare_mancante` / `titolare_disattivato`: la mail del titolare nel registro non
-  corrisponde a nessun utente di quello spazio, o quell'utente è stato disattivato. La
-  radice non ha una riga nel registro e il suo titolare è il primo admin ancora attivo:
-  `root: saltato (titolare_mancante)` vuol dire che non ne resta nessuno.
+  corrisponde a nessun utente di quello spazio, o quell'utente è stato disattivato.
 - `invio_rifiutato`: Resend ha rifiutato **tutti** gli indirizzi. Non viene registrato
   niente, quindi la prossima esecuzione ci riprova: una settimana che non è arrivata a
   nessuno non è una settimana inviata.
