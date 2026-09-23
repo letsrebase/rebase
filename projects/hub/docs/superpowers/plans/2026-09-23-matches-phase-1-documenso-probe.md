@@ -89,6 +89,8 @@ services:
     depends_on:
       documenso-db: { condition: service_healthy }
     ports: ["127.0.0.1:3300:3000"]
+    # Docker Desktop resolves host.docker.internal by itself; native Linux needs the alias.
+    extra_hosts: ["host.docker.internal:host-gateway"]
 ```
 
 - [ ] **Step 5: Start it and wait for it.**
@@ -216,7 +218,7 @@ Expected: `pdfsig` lists one signature, signer `rebase probe signing`, and says 
 
 - [ ] **Step 3: Cancel.** Create and distribute a second envelope, then find and call the cancel or delete call. Expected: the signing URL no longer lets anyone sign, and the webhook receives `DOCUMENT_CANCELLED` (or record which event, if any). Record the call.
 
-- [ ] **Step 4: Second team.** Create a team `rebase-probe-preview` with its own token and webhook; confirm the first team's token cannot read the second team's envelope (expect 401/403/404). This is what lets the preview share the production instance (spec § 7).
+- [ ] **Step 4: Isolation between environments.** Create a team `rebase-probe-preview` under the same user, with its own token and webhook, and try the first team's token on the second team's envelope. Then do the same with a second Documenso user and organisation. Record both results: the spec lets the preview share the production instance only through whichever arrangement refuses the other environment's token (401/403/404). (Run on 2026-09-23: two teams under one user did not isolate, separate users did; spec § 7 follows that.)
 
 ### Task 4: Measure the signature positions from Typst
 

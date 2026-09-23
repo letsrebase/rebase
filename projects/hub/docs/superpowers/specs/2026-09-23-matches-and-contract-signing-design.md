@@ -75,8 +75,10 @@ the company request's `budget_giornaliero` is never copied into a letter (Ivan,
 
 ## 2. Data model
 
-One migration, `0017`, written defensively like the others (`IF NOT EXISTS`), three new
-tables. None of them is synced to the PostHog warehouse, so
+One migration, `0017`, written defensively like the others (`IF NOT EXISTS`), four new
+tables: the three below and `contract_letter_counters` (one row per year, `year` and
+`last`, bumped under a row lock so two admins never get the same letter number and a
+rolled-back transaction leaves no gap). None of them is synced to the PostHog warehouse, so
 `test_warehouse_contract.py` does not change; that is also why the freelancer's tax data
 is its own table rather than columns on `freelancers`, which the warehouse does sync.
 
@@ -103,7 +105,8 @@ user), `stato`, `created_by`, `cancelled_at`, timestamps. States:
 match), `numero` (letters only: `YYYY-NNN`, a per-year counter taken at generation),
 `text_version` (the `version` of the Markdown's front matter), `data` (JSONB: every
 field value the PDF printed, so a document can be regenerated identically), `pdf`
-(bytea), `stato`, `documenso_id`, `signing_url`, `sent_at`, `signed_at`, `signed_pdf`
+(bytea), `testo_bozza` (true when the Markdown said `status: draft`, so § 1f can refuse to
+send it), `stato`, `documenso_id`, `signing_url`, `sent_at`, `signed_at`, `signed_pdf`
 (bytea), `notice_at` (framework agreements: a notice or withdrawal recorded), `created_by`,
 `sent_by`, timestamps. States: `generato`, `in_attesa` (a letter waiting for its
 framework agreement), `inviato`, `firmato`, `annullato`, `disdetto` (framework only).
@@ -192,7 +195,7 @@ a letter's `data-contratto-quadro` is the active framework agreement's `signed_a
 
 ## 6. Signing
 
-**Sending** (`POST /api/hub/admin/matches/{id}/send`): for each document that leaves now,
+**Sending** (`POST /api/hub/matches/{id}/send`, under `/api/hub/` like every admin route): for each document that leaves now,
 the hub creates the Documenso envelope with the PDF, the freelancer as the one `SIGNER`
 and the fields from § 5, distributes it with `distributionMethod: NONE`, stores
 `documenso_id` and `signing_url`, and mails the freelancer through Resend: subject «Da
