@@ -94,10 +94,48 @@ describe('InvoicePdfPreview', () => {
 
   it('shows the server refusal instead of an empty frame', async () => {
     vi.mocked(fetchWithRefresh).mockResolvedValue(
-      new Response(JSON.stringify({ detail: 'invoice_artifact non trovato' }), { status: 404 }),
+      new Response(JSON.stringify({ code: 'conflict', detail: 'archivio documenti non raggiungibile' }), {
+        status: 409,
+      }),
     )
     wrap(<InvoicePdfPreview invoice={ISSUED} />)
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/non trovato/))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/non raggiungibile/))
     expect(screen.queryByTitle(/Anteprima PDF/)).not.toBeInTheDocument()
+  })
+
+  /** REB-168: a 404 is a file that is not there, never the server's log line. */
+  it('says in Italian that the PDF is missing when the server answers 404, and where it comes from', async () => {
+    vi.mocked(fetchWithRefresh).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 'not_found',
+          detail: 'invoice_artifact inv-1#pdf not found',
+          entity: 'invoice_artifact',
+        }),
+        { status: 404 },
+      ),
+    )
+    wrap(<InvoicePdfPreview invoice={ISSUED} />)
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Il PDF di questa fattura non è disponibile. «Rigenera documenti» lo genera di nuovo.',
+        ),
+      ).toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/invoice_artifact/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('names no button for a lost proforma PDF, since «Genera PDF proforma» is not on its page', async () => {
+    vi.mocked(fetchWithRefresh).mockResolvedValue(
+      new Response(JSON.stringify({ code: 'not_found', detail: 'document_blob k not found' }), {
+        status: 404,
+      }),
+    )
+    wrap(<InvoicePdfPreview invoice={{ ...PROFORMA, pdf_document_id: 'doc-3' } as Invoice} />)
+    await waitFor(() =>
+      expect(screen.getByText('Il PDF di questa proforma non è disponibile.')).toBeInTheDocument(),
+    )
   })
 })
