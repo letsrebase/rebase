@@ -25,6 +25,7 @@ const PROFILE = {
   cognome: 'Lovelace',
   email: 'ada@studio.it',
   linkedin_url: null,
+  ha_scheda: true,
   cv_filename: 'Ada CV.pdf',
   cv_size: 2048,
   tariffa_giornaliera: '450.00',
@@ -200,5 +201,15 @@ describe('/me/edit', () => {
       expect(alert).toHaveTextContent('Le altre risposte sono salvate')
     })
     expect(screen.getByRole('button', { name: 'Salva' })).toBeInTheDocument()
+  })
+
+  it('redirects to the member area on a direct visit with no freelancer card yet', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(answer(200, { ...PROFILE, ha_scheda: false }))
+    mount()
+    await screen.findByRole('heading', { name: 'La tua area' })
+    expect(screen.queryByLabelText('Posizione')).toBeNull()
+    expect(fetchSpy.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false)
   })
 })
