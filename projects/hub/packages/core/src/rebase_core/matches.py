@@ -241,12 +241,26 @@ class MatchService:
         raise ValidationFailed(ENTITY, "documento", "uno fra lettera e quadro")
 
     def create(self, freelancer_id: UUID, data: MatchCreate, admin_id: UUID) -> MatchRead:
+        """Two admins racing to match the same freelancer (or one double click on «Salva
+        come bozza») must not both read "no active framework" and both write a fresh
+        `generato` one: the first statement of the transaction locks the freelancer's own
+        row (`SELECT ... FOR UPDATE`), so the second waits here, before it reads
+        `active_framework`/`pending_framework`, for the first to commit or roll back. The
+        lock order is always the freelancer row first and only then the letter counter's
+        row (`next_letter_number`), so two of these transactions can never deadlock on each
+        other. The counter's own row lock is held on purpose through the letter's render,
+        for gapless numbering (see `test_a_render_that_fails_takes_no_number_and_leaves_
+        nothing_behind`) -- nobody may move the render or the number-taking earlier to
+        "speed this up"."""
         renderer = self._renderer()
         freelancer, user = self._freelancer(freelancer_id)
         company, _referente = self._matchable_company(data.company_id)
         fiscal = self._fiscal(freelancer.id)
         today = self.today()
         try:
+            self.session.execute(
+                select(Freelancer.id).where(Freelancer.id == freelancer.id).with_for_update()
+            )
             active = active_framework(self.session, freelancer.id)
             documents: list[ContractDocument] = []
             if active is None:

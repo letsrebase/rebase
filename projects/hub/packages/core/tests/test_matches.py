@@ -2,6 +2,7 @@
 generates, never sent. Every test hands `FakeRenderer`: the real typesetting is
 `test_contract_render.py`'s."""
 
+import threading
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -10,14 +11,16 @@ from uuid import UUID
 import pytest
 from fakes_contracts import FailingRenderer, FakeRenderer
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import func, select, text
+from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
+from rebase_core import matches as matches_module
 from rebase_core.audit import AdminActionService
 from rebase_core.companies import CompanyService
 from rebase_core.contract_schemas import ClienteData, FiscalData, LetteraFields, MatchCreate
 from rebase_core.contracts.fields import FIELD, TERM, ContractFailed, Value
 from rebase_core.contracts.render import Renderer, text_path
+from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
 from rebase_core.freelancers import FreelancerService
@@ -494,3 +497,84 @@ def test_a_document_downloads_as_its_own_pdf_and_a_missing_signed_copy_is_not_fo
     assert service.document_pdf(quadro.id).filename == "contratto-quadro-v0.1.pdf"
     with pytest.raises(NotFound):
         service.document_pdf(match.lettera.id, signed=True)
+
+
+def test_two_admins_matching_the_same_freelancer_at_once_never_leave_two_open_frameworks(
+    monkeypatch: pytest.MonkeyPatch, hub_engine: Engine, clean: Session
+) -> None:
+    """Review fix round 1: two real `create()` calls, on two sessions, for the same
+    freelancer -- the shape of `test_two_letters_taken_at_once_get_two_numbers`, but for
+    the framework agreement rather than the letter counter.
+
+    Postgres itself already serializes the two `Match` inserts a beat later (both name
+    the freelancer as a foreign key), so pausing an *unrelated* session on a bare
+    `SELECT ... FOR UPDATE` and then calling `create()` on a second session -- blocked or
+    not -- proves nothing about *this* fix: it blocks at the `Match` insert either way, fix
+    or no fix, with the framework's fate already decided by then. What must actually be
+    tested is that `create()`'s own transaction takes its lock *before* it ever reads
+    `active_framework`/`pending_framework`, not merely somewhere before it commits.
+
+    So this test drives two genuine `create()` calls: `next_letter_number` -- the next
+    real statement after the fix's own lock, and one the fix's own docstring names by
+    name -- is patched to pause the first session there, after everything upstream of it
+    has already run once. The second session's `create()` is then started for real:
+    without the fix it races ahead of the paused first one, reads "no active, no
+    pending" same as the first did, and writes its own `generato` framework -- so when
+    the first is released and finishes writing *its* framework from the same stale
+    read, both commit and two open frameworks exist at once (RED). With the fix, the
+    second cannot get past its own first statement (the same row lock, already held,
+    uncommitted, by the first) until the first commits; only then does it see the
+    first's `generato` framework, cancel it, and write its own -- exactly one open
+    framework survives (GREEN)."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    factory = session_factory(hub_engine)
+    first, second = factory(), factory()
+    paused = threading.Event()
+    release = threading.Event()
+    real_next_letter_number = matches_module.next_letter_number
+
+    def paced_next_letter_number(session: Session, year: int) -> str:
+        if session is first:
+            paused.set()
+            assert release.wait(timeout=5), "the test never released the first create()"
+        return real_next_letter_number(session, year)
+
+    monkeypatch.setattr(matches_module, "next_letter_number", paced_next_letter_number)
+
+    errors: list[BaseException] = []
+
+    def run(session: Session) -> None:
+        try:
+            MatchService(session, FakeRenderer(), SIGNER, today=lambda: TODAY).create(
+                freelancer_id, _body(company_id), admin_id
+            )
+        except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
+            errors.append(exc)
+
+    try:
+        first_worker = threading.Thread(target=run, args=(first,))
+        first_worker.start()
+        assert paused.wait(timeout=5), "the first create() never reached next_letter_number"
+
+        second_worker = threading.Thread(target=run, args=(second,))
+        second_worker.start()
+        second_worker.join(timeout=0.5)
+        assert second_worker.is_alive(), (
+            "the second create() read the freelancer while the first's transaction, "
+            "past the same lock, was still open"
+        )
+
+        release.set()
+        first_worker.join(timeout=5)
+        second_worker.join(timeout=5)
+        assert not first_worker.is_alive()
+        assert not second_worker.is_alive()
+        assert not errors, errors
+
+        assert [q.stato for q in _documents(clean, freelancer_id, "quadro")] == [
+            "annullato",
+            "generato",
+        ]
+    finally:
+        first.close()
+        second.close()
