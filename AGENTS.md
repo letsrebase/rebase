@@ -197,9 +197,29 @@ tested on a branch and is proven on the trunk instead.
   `docs/design/DECISIONS.md`, as a row, with the date.
 - **The tracker is Linear, and using it is not optional.** Team `rebase`, issue
   prefix `REB-`. Work that is not on the board did not happen, for either of us or
-  for any agent either of us runs, and there is no second tracker: the GitHub
-  issues and any GitHub Project on other repositories are not part of this repo's
-  flow.
+  for any agent either of us runs, and there is no second tracker for development: no
+  GitHub Project other than the public roadmap below is part of this repo's flow.
+- **One kind of GitHub issue exists here, and it is not development work.** An issue
+  labelled `roadmap` is a point of the public roadmap
+  (`github.com/orgs/letsrebase/projects/1`): the company, the contracts, the events,
+  the merch, a product line named from far away. It is written in English like
+  everything else, it carries the project's own `Area`, `Start`, `End` and `Status`
+  fields (`Area` there is the roadmap's, not the board's `area:*` group), and it
+  closes when that piece of work is done, which is how a reader sees what is
+  finished. The label alone does not put it on the board: a new point is added by
+  hand (`gh project item-add 1 --owner letsrebase --url <issue url>`) and its fields
+  set there; closing the issue is what moves `Status` to `Done`. Nothing else opens a
+  GitHub issue here, and the test is the shape of the work, not its subject: a point
+  spans weeks or months, is owned by Ivan or Lorenzo and has no worktree of its own,
+  which is why a product point (`#297`, `#302`) is still a roadmap point while every
+  card under it is not. Anything one agent run can finish, a defect and a release
+  step included, is a Linear card; in doubt, it is a Linear card, and only Ivan or
+  Lorenzo opens a roadmap issue. A pull request may name the roadmap point it moves
+  (`Roadmap: #297`) on the line right before its own `Linear: REB-N.` line, which
+  stays last so the check in `.claude/skills/pr-creation/` § Before `gh pr create`
+  still passes. `Closes #297` goes on that line only when merging that pull request
+  really finishes the whole roadmap point, which on a milestone's draft PR means
+  waiting for the card that finishes it.
 - Four levels, in order. An **initiative** is a product and is permanent: four
   exist today (`Website`, `Hub`, `PigroCRM`, `Monorepo`). A **project** is a
   release, or a body of work with an end, and it closes when it ships. A **project

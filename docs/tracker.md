@@ -3,8 +3,9 @@
 Linear is where the work is recorded, and using it is not optional. An agent that fixes
 something real and leaves no trace has done half the job: the next person, human or
 agent, starts from the board, and what is not there did not happen. Linear is the only
-tracker for this repository: GitHub issues and any GitHub Project on other repositories
-are not part of this repo's flow.
+tracker for the work this repository does: a GitHub Project on another repository is not
+part of its flow, and the one kind of GitHub issue that lives here, the `roadmap` label,
+is the public roadmap rather than development work (`AGENTS.md` § Conventions).
 
 ## Where things are
 
