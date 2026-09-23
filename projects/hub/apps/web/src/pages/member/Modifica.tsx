@@ -1,5 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { ApiError, type FreelancerApplication } from '@/lib/api'
 import { toApplication, toUpdate, useMe, useReplaceCv, useUpdateProfile } from '@/lib/me'
@@ -41,6 +41,13 @@ export function Modifica() {
   const [draft, setDraft] = useState<FreelancerApplication | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [failure, setFailure] = useState<string | null>(null)
+  const hasCard = me.data?.ha_scheda ?? true
+
+  useEffect(() => {
+    if (me.data && !me.data.ha_scheda) void navigate({ to: '/me', replace: true })
+  }, [me.data, navigate])
+
+  if (!hasCard) return null
 
   // State that follows a prop, adjusted during render: the draft starts from the
   // profile the first time it is known, and never again while the person is typing.
