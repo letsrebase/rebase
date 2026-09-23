@@ -205,6 +205,26 @@ Le righe della prova portano `(prova)` in fondo proprio perché nel log non si c
 con una settimana partita davvero. Con `--slug studio-rossi` la prova (come il comando
 vero) tocca un solo spazio.
 
+### The root installation (REB-263)
+
+The root installation, the database in `PIGROCRM_DATABASE_URL`, is not in the registry,
+and it is the first line of every run. Its line always reads `root:`, in every form the
+table below gives for a space: `root: inviato a 2`, `root: vuoto`, `root: saltato (…)`.
+It goes to the same people a space's report does (every active user with the report
+switched on), and it is read as its titolare, the first admin still active, so
+`root: saltato (titolare_mancante)` means no active admin is left. Its links carry
+`PIGROCRM_ROOT_SLUG`, the way a space's carry its slug.
+
+To visit the root alone: `--slug root`. `root` is a reserved name no space can take, and a
+run for the root alone does not open the registry. The value of `PIGROCRM_ROOT_SLUG` is
+not a way to name it: with `--slug`, that value keeps meaning a registry space, should one
+older than the setting exist. So a root week is resent with
+`--slug root --forza --data …`, never with `--forza` on the full run, which would resend
+it to every space as well.
+
+When the registry cannot be reached, the full run still sends the root:
+`registro degli spazi non raggiungibile (…)` is followed by the `root:` line.
+
 ### Rimandare una settimana
 
 Una settimana già inviata non parte una seconda volta: la riga `digests.settimana` è
@@ -227,6 +247,7 @@ Una riga per spazio, contatori soltanto: mai un indirizzo, mai una cifra del res
 
 | Riga | Cosa è successo | Cosa fare |
 | --- | --- | --- |
+| `root: inviato a 2` | The root installation, not a registry space: see «The root installation» above | Nothing |
 | `studio-rossi: inviato a 3` | Il resoconto è partito a tre persone, e la settimana è registrata | Niente |
 | `studio-rossi: inviato a 3 (prova)` | `--dry-run`: sarebbe partito a tre persone | Niente: nessuna mail, nessuna riga scritta |
 | `studio-rossi: vuoto` | Lo spazio non ha ancora né clienti, né deal, né fatture, né ore | Niente: chi non ha ancora cominciato non riceve una mail piena di zeri |

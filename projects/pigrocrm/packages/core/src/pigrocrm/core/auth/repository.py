@@ -29,6 +29,20 @@ class UserRepository:
         stmt = select(User).where(User.email == email.strip().lower())
         return self.session.execute(stmt).scalar_one_or_none()
 
+    def first_active_admin(self) -> User | None:
+        """The installation's titolare when nothing else names one: the admin created
+        first among those still active. The root installation has no registry row and so
+        no `owner_email`, and this is who stands in for it (REB-263). `id` breaks the tie
+        between two admins created in the same transaction, so the answer never depends
+        on the plan Postgres picks."""
+        stmt = (
+            select(User)
+            .where(User.ruolo == "admin", User.attivo.is_(True))
+            .order_by(User.created_at, User.id)
+            .limit(1)
+        )
+        return self.session.execute(stmt).scalar_one_or_none()
+
     def list_all(self) -> list[User]:
         return list(self.session.execute(select(User).order_by(User.nome)).scalars())
 

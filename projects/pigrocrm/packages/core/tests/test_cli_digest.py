@@ -1,11 +1,16 @@
 """`pigrocrm digest`: the Monday cron, against a real registry and real spaces.
 
 Spec 2026-09-16 §3.4. The command is the only piece of the weekly report that knows
-there is more than one space: it walks the tenant registry, opens each space's own
-database and hands `DigestRun` one session per space. So this file provisions two spaces
-for real -- `CREATE DATABASE`, the repository's migrations to head, the first admin --
-exactly as `test_tenants.py` does, gives each of them one customer and one invoice issued
-in the week that has just closed, and then runs `cli.main(["digest", ...])`.
+there is more than one space: it visits the root installation, walks the tenant registry,
+opens each space's own database and hands `DigestRun` one session per space. So this file
+provisions two spaces for real -- `CREATE DATABASE`, the repository's migrations to head,
+the first admin -- exactly as `test_tenants.py` does, gives each of them one customer and
+one invoice issued in the week that has just closed, and then runs
+`cli.main(["digest", ...])`.
+
+The root is a database of this module's own too, migrated the same way, rather than the
+session's shared one (REB-263): the command now reports on whatever the root holds, and
+the shared database holds whatever the other tests on this worker left in it.
 
 Nothing is asserted against a mock. The sender is a `RecordingSender` holding the real
 `Mail` objects the run handed it, and what a space remembers of its week is read back out
@@ -19,17 +24,20 @@ is undone after every test, so each one starts from a space that has never been 
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
+from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory, today_local
+from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
 from pigrocrm.core.digest.service import iso_week
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.mail import Mail, RecordingSender
@@ -39,6 +47,7 @@ from pigrocrm.core.tenants import (
     ensure_tenants_database,
 )
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
+from pigrocrm.core.tenants.service import migrate_to_head
 
 PUBLIC_URL = "https://crm.example.it"
 UNO = "prova-digest-uno"
@@ -49,21 +58,43 @@ VUOTO = "prova-digest-vuoto"
 TITOLARI = {UNO: "uno@studio.it", DUE: "due@studio.it"}
 SPAZI = (UNO, DUE, VUOTO)
 TITOLARE_VUOTO = "vuoto@studio.it"
+# The root installation: its own database, and `PIGROCRM_ROOT_SLUG` in its links.
+ROOT_DB = "prova_digest_radice"
+ROOT_SLUG = "prova-digest-radice"
+# Created first and switched off since, so "the first admin" alone would be the wrong one.
+FORMER_ADMIN = "ex@radice.it"
+ROOT_OWNER = "titolare@radice.it"
+ROOT_COLLEAGUE = "collega@radice.it"
 
 
 # --- the container, the registry, and three spaces in it -----------------------------
 
 
 @pytest.fixture(scope="module")
-def settings(db_engine: Engine) -> Settings:
+def settings(db_engine: Engine) -> Iterator[Settings]:
     """The environment the command reads. `public_url` is the root's: each space's own is
-    that plus its slug, and that is the difference the mails are checked for."""
-    return Settings(
-        database_url=db_engine.url.render_as_string(hide_password=False),
+    that plus its slug, and that is the difference the mails are checked for.
+
+    `database_url` is a root of this module's own, on the session's server, migrated to
+    head like a space and given three users and one invoice in the week (`_seed_root`). The
+    registry and every space are derived from that URL's server, as in production."""
+    shared_url = db_engine.url.render_as_string(hide_password=False)
+    root_url = make_url(shared_url).set(database=ROOT_DB)
+    helper = Settings(database_url=shared_url, _env_file=None)  # type: ignore[call-arg]
+    configured = Settings(
+        database_url=root_url.render_as_string(hide_password=False),
         public_url=PUBLIC_URL,
+        root_slug=ROOT_SLUG,
         timezone="Europe/Rome",
         _env_file=None,  # type: ignore[call-arg]
     )
+    create_database_if_missing(helper, root_url)
+    try:
+        migrate_to_head(configured, configured.database_url)
+        _seed_root(configured)
+        yield configured
+    finally:
+        drop_database(helper, root_url)
 
 
 @pytest.fixture(scope="module")
@@ -105,8 +136,7 @@ def _nessuna_settimana_inviata(settings: Settings, spazi: None) -> Iterator[None
     """What a run writes, undone. The `digests` row is what makes the second Monday say
     «già inviato», so a test that left one behind would decide the next one's answer."""
     yield
-    for slug in SPAZI:
-        engine = _motore(settings, slug)
+    for engine in [_motore(settings, slug) for slug in SPAZI] + [_root_engine(settings)]:
         try:
             with engine.begin() as connection:
                 connection.execute(text("delete from activities where entity_type = 'digest'"))
@@ -142,11 +172,48 @@ def _motore(settings: Settings, slug: str) -> Engine:
     return create_engine(tenant_database_url(settings, tenant_database_name(slug)), future=True)
 
 
+def _root_engine(settings: Settings) -> Engine:
+    return create_engine(settings.database_url, future=True)
+
+
+def _seed_root(settings: Settings) -> None:
+    """The root as `createadmin` and a year of use leave it: an admin who has since been
+    switched off, created first; the titolare, the first admin still active; a
+    collaborator; and one invoice in the week."""
+    lunedi = _settimana_scorsa(settings)[0]
+    engine = _root_engine(settings)
+    try:
+        with session_factory(engine)() as session:
+            for giorni, email, ruolo, attivo in (
+                (300, FORMER_ADMIN, "admin", False),
+                (200, ROOT_OWNER, "admin", True),
+                (100, ROOT_COLLEAGUE, "collaboratore", True),
+            ):
+                session.add(
+                    User(
+                        email=email,
+                        nome=email.split("@")[0],
+                        ruolo=ruolo,
+                        attivo=attivo,
+                        created_at=datetime.combine(
+                            lunedi - timedelta(days=giorni), datetime.min.time(), UTC
+                        ),
+                    )
+                )
+            session.commit()
+    finally:
+        engine.dispose()
+    _write_invoice(_root_engine(settings), _settimana_scorsa(settings))
+
+
 def _una_fattura(settings: Settings, slug: str, settimana: tuple[date, date]) -> None:
+    _write_invoice(_motore(settings, slug), settimana)
+
+
+def _write_invoice(engine: Engine, settimana: tuple[date, date]) -> None:
     """One customer and one invoice issued inside the week: enough that the space is not
-    empty (§2) and that the report has a section in it."""
+    empty (§2) and that the report has a section in it. Disposes of `engine`."""
     da, a = settimana
-    engine = _motore(settings, slug)
     try:
         with session_factory(engine)() as session:
             customer = Customer(ragione_sociale="Cliente Uno", nazione="IT", custom_fields={})
@@ -177,9 +244,9 @@ def _una_fattura(settings: Settings, slug: str, settimana: tuple[date, date]) ->
         engine.dispose()
 
 
-def _settimane(settings: Settings, slug: str) -> list[str]:
-    """What the space remembers of the weeks it was mailed."""
-    engine = _motore(settings, slug)
+def _settimane(settings: Settings, slug: str | None) -> list[str]:
+    """What the space remembers of the weeks it was mailed; `None` is the root."""
+    engine = _motore(settings, slug) if slug is not None else _root_engine(settings)
     try:
         with engine.connect() as connection:
             return list(
@@ -221,6 +288,68 @@ def test_the_cron_mails_every_space_its_week_and_prints_one_line_each(
         mail = next(mail for mail in _mie(cron) if mail.to == indirizzo)
         assert f"{PUBLIC_URL}/{slug}/app" in mail.text
         assert _settimane(settings, slug) == [iso]
+    # The root installation is not in the registry and is visited all the same, first.
+    assert out.splitlines()[0] == f"{cli.ROOT_LABEL}: inviato a 2"
+    assert _settimane(settings, None) == [iso]
+
+
+@pytest.mark.parametrize(
+    ("root_slug", "base"),
+    [
+        (ROOT_SLUG, f"{PUBLIC_URL}/{ROOT_SLUG}/app"),
+        # No root slug: the root answers without a prefix, and `root` still names it.
+        ("", f"{PUBLIC_URL}/app"),
+    ],
+)
+def test_the_root_installation_gets_its_week_like_a_space(
+    settings: Settings,
+    cron: RecordingSender,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    root_slug: str,
+    base: str,
+) -> None:
+    """REB-263: the root holds the titolare's real data and has no registry row, so the
+    walk alone never mailed it. Its database is `database_url`, its titolare the first
+    admin still active, its links carry `PIGROCRM_ROOT_SLUG` like a space's carry its
+    slug, and `--slug root` visits it alone, without the registry."""
+    import pigrocrm.core.tenants as tenants
+
+    def no_registry(_settings: Settings) -> Engine:
+        raise AssertionError("the root is not in the registry")
+
+    monkeypatch.setattr(
+        cli, "get_settings", lambda: settings.model_copy(update={"root_slug": root_slug})
+    )
+    monkeypatch.setattr(tenants, "ensure_tenants_database", no_registry)
+    iso = iso_week(_settimana_scorsa(settings)[0])
+
+    assert cli.main(["digest", "--slug", cli.ROOT_LABEL]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out.strip() == f"{cli.ROOT_LABEL}: inviato a 2"
+    assert captured.err == ""
+    root_mails = [mail for mail in cron.sent if mail.to.endswith("@radice.it")]
+    # Every active user who kept it on, as in a space; never the one switched off.
+    assert sorted(mail.to for mail in root_mails) == [ROOT_COLLEAGUE, ROOT_OWNER]
+    assert all(f"{base}/" in mail.text for mail in root_mails)
+    assert all(f"{PUBLIC_URL}//" not in mail.text for mail in root_mails)
+    assert _mie(cron) == []
+    assert _settimane(settings, None) == [iso]
+    # The week was read and recorded as the titolare: the first admin still active, not
+    # the older one who was switched off.
+    engine = _root_engine(settings)
+    try:
+        with engine.connect() as connection:
+            actors = connection.execute(
+                text(
+                    "select u.email from activities a join users u on u.id = a.actor_id "
+                    "where a.entity_type = 'digest'"
+                )
+            ).scalars()
+            assert list(actors) == [ROOT_OWNER]
+    finally:
+        engine.dispose()
 
 
 def test_a_week_already_sent_is_not_sent_a_second_time(
@@ -275,6 +404,20 @@ def test_a_slug_that_is_not_in_the_registry_is_one_line_and_not_a_failure(
     assert captured.err.strip() == "prova-digest-mai-esistito: non nel registro"
     assert captured.out == ""
     assert _mie(cron) == []
+
+
+def test_the_root_slug_is_not_a_way_to_name_the_root(
+    cron: RecordingSender, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--slug` with `PIGROCRM_ROOT_SLUG` goes on meaning a registry row: one created before
+    the root took that name would otherwise be shadowed, and a `--forza` meant for it would
+    resend the root's week instead. Only `root` names the root."""
+    assert cli.main(["digest", "--slug", ROOT_SLUG]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err.strip() == f"{ROOT_SLUG}: non nel registro"
+    assert captured.out == ""
+    assert cron.sent == []
 
 
 def test_a_space_where_everybody_switched_it_off_is_said_and_not_sent(
@@ -400,6 +543,8 @@ def test_an_unreachable_registry_is_one_line_on_stderr_and_still_exits_zero(
 
     captured = capsys.readouterr()
     assert "registro degli spazi non raggiungibile" in captured.err
+    # The root is not in the registry, so it is still tried, and fails on its own line.
+    assert f"{cli.ROOT_LABEL}: saltato (OperationalError)" in captured.err
     assert "segreta" not in captured.err
     assert sender.sent == []
 
@@ -408,6 +553,4 @@ def test_an_unreachable_registry_is_one_line_on_stderr_and_still_exits_zero(
 
 
 def _drop(settings: Settings, slug: str) -> None:
-    from pigrocrm.core.db.sidecar import drop_database
-
     drop_database(settings, tenant_database_url(settings, tenant_database_name(slug)))

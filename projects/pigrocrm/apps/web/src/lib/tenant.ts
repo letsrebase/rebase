@@ -14,6 +14,7 @@ export const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/
 export const SLUG_MAX = 32
 
 export const RESERVED_SLUGS = new Set([
+  'root',
   'app',
   'api',
   'health',
