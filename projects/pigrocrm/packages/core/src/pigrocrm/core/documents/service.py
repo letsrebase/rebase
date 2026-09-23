@@ -131,7 +131,8 @@ class DocumentService:
             raise ValidationFailed(
                 ENTITY,
                 "customer_id",
-                "un documento appartiene a un cliente, a un deal o a un contratto: mai a più di uno, mai a nessuno",
+                "un documento appartiene a un cliente, a un deal o a un contratto: "
+                "mai a più di uno, mai a nessuno",
                 expected="esattamente uno fra customer_id, deal_id e contract_id",
             )
         if customer_id is not None and self.session.get(Customer, customer_id) is None:

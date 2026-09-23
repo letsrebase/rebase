@@ -80,9 +80,7 @@ class ContractService:
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
 
         contract = self.repo.add(Contract(**payload))
-        self.activities.record(
-            ENTITY, contract.id, "created", actor, {"titolo": contract.titolo}
-        )
+        self.activities.record(ENTITY, contract.id, "created", actor, {"titolo": contract.titolo})
         self.session.commit()
         return ContractRead.model_validate(contract)
 
@@ -159,7 +157,8 @@ class RateCardService:
             self.session.rollback()
             raise Conflict(
                 "rate_card",
-                "il periodo di validità si sovrappone a un'altra scheda tariffaria di questo contratto",
+                "il periodo di validità si sovrappone a un'altra scheda tariffaria "
+                "di questo contratto",
                 contract_id=str(contract_id),
             ) from exc
 
@@ -177,6 +176,5 @@ class RateCardService:
         if self.contracts.get(contract_id) is None:
             raise NotFound("contract", contract_id)
         return [
-            RateCardRead.model_validate(card)
-            for card in self.repo.list_for_contract(contract_id)
+            RateCardRead.model_validate(card) for card in self.repo.list_for_contract(contract_id)
         ]

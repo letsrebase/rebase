@@ -86,9 +86,7 @@ def upgrade() -> None:
             "applies_social_charge", sa.Boolean(), nullable=False, server_default=sa.text("false")
         ),
         sa.Column("politica_spese", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column(
-            "stato", sa.String(length=20), nullable=False, server_default=sa.text("'bozza'")
-        ),
+        sa.Column("stato", sa.String(length=20), nullable=False, server_default=sa.text("'bozza'")),
         sa.Column("contratto_precedente_id", sa.Uuid(), nullable=True, unique=True),
         sa.Column("note", sa.Text(), nullable=True),
         sa.Column("custom_fields", postgresql.JSONB(astext_type=sa.Text()), nullable=False),

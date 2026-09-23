@@ -64,7 +64,5 @@ def create_rate_card(
 
 
 @router.get("/{contract_id}/rate-cards", response_model=list[RateCardRead])
-def list_rate_cards(
-    contract_id: UUID, session: SessionDep, actor: ActorDep
-) -> list[RateCardRead]:
+def list_rate_cards(contract_id: UUID, session: SessionDep, actor: ActorDep) -> list[RateCardRead]:
     return RateCardService(session).list_for_contract(contract_id, actor)

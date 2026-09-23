@@ -31,9 +31,7 @@ ORE_MINIME_MAX_DIGITS = 6
 FRAZIONE_MAX_DIGITS = 4
 DECIMAL_PLACES = 2
 
-Frazione = Annotated[
-    Decimal, Field(max_digits=FRAZIONE_MAX_DIGITS, decimal_places=DECIMAL_PLACES)
-]
+Frazione = Annotated[Decimal, Field(max_digits=FRAZIONE_MAX_DIGITS, decimal_places=DECIMAL_PLACES)]
 
 
 class ContractCreate(BaseModel):

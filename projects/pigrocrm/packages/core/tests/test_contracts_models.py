@@ -121,9 +121,7 @@ def test_payment_terms_fully_null_inherits_the_customers_own_term(db_session: Se
 
 def test_payment_terms_fully_set_is_accepted(db_session: Session) -> None:
     customer = _customer(db_session)
-    contract = _contract(
-        db_session, customer, giorni_pagamento=30, pagamento_fine_mese=True
-    )
+    contract = _contract(db_session, customer, giorni_pagamento=30, pagamento_fine_mese=True)
     assert contract.giorni_pagamento == 30
     assert contract.pagamento_fine_mese is True
 
