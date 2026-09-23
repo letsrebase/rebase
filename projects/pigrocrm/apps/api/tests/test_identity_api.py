@@ -429,17 +429,17 @@ def test_spaces_lists_a_created_space_and_one_only_entered_by_invitation(
     `users.email` (design §3, §7 decision B1): Grace's invitation into SLUG2 shows up
     beside the space Ada created herself, each with its own role."""
     grace = spaces_client
-    recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
-    invite = grace.post(
-        f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
-    )
-    assert invite.status_code == 201, invite.text
-    invite_token = _token_from(recording.sent[0].text)
-
-    # Ada's own client, sharing the same app and database, so accepting the
-    # invitation never touches Grace's own admin session held in `grace`.
-    ada = TestClient(grace.app, base_url="https://testserver")
     try:
+        recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
+        invite = grace.post(
+            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
+        )
+        assert invite.status_code == 201, invite.text
+        invite_token = _token_from(recording.sent[0].text)
+
+        # Ada's own client, sharing the same app and database, so accepting the
+        # invitation never touches Grace's own admin session held in `grace`.
+        ada = TestClient(grace.app, base_url="https://testserver")
         accepted = ada.post(f"/{SLUG2}/api/auth/invite", json={"t": invite_token})
         assert accepted.status_code == 200, accepted.text
         _sign_up_and_verify(ada)  # Ada's own space, SLUG -- she is its admin there.
@@ -456,15 +456,15 @@ def test_spaces_stops_listing_a_space_once_the_row_there_is_deactivated(
     """The scan is a live read, not a cache of who was once invited: a role turned
     off in one space drops out of the very next answer."""
     grace = spaces_client
-    recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
-    invite = grace.post(
-        f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
-    )
-    assert invite.status_code == 201, invite.text
-    invite_token = _token_from(recording.sent[0].text)
-
-    ada = TestClient(grace.app, base_url="https://testserver")
     try:
+        recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
+        invite = grace.post(
+            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
+        )
+        assert invite.status_code == 201, invite.text
+        invite_token = _token_from(recording.sent[0].text)
+
+        ada = TestClient(grace.app, base_url="https://testserver")
         accepted = ada.post(f"/{SLUG2}/api/auth/invite", json={"t": invite_token})
         assert accepted.status_code == 200, accepted.text
         ada_id = accepted.json()["id"]
@@ -519,8 +519,8 @@ def test_enter_answers_404_for_a_space_with_no_row_for_this_email_and_creates_no
     """`enter` only ever reads `users` (design §3): a space Ada was never invited
     into answers the same 404 as an unknown slug, and never gains a row for her."""
     grace = spaces_client
-    _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
     try:
+        _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
         ada = TestClient(grace.app, base_url="https://testserver")
         _sign_up_and_verify(ada)  # Ada's own identity cookie, from her own space.
 
@@ -547,15 +547,15 @@ def test_enter_answers_404_for_a_deactivated_row(
     spaces_client: TestClient, container_settings: Settings
 ) -> None:
     grace = spaces_client
-    recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
-    invite = grace.post(
-        f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
-    )
-    assert invite.status_code == 201, invite.text
-    invite_token = _token_from(recording.sent[0].text)
-
-    ada = TestClient(grace.app, base_url="https://testserver")
     try:
+        recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
+        invite = grace.post(
+            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
+        )
+        assert invite.status_code == 201, invite.text
+        invite_token = _token_from(recording.sent[0].text)
+
+        ada = TestClient(grace.app, base_url="https://testserver")
         accepted = ada.post(f"/{SLUG2}/api/auth/invite", json={"t": invite_token})
         assert accepted.status_code == 200, accepted.text
         ada_id = accepted.json()["id"]
@@ -575,15 +575,15 @@ def test_enter_opens_the_space_with_a_fresh_pair_scoped_to_its_own_path(
     `path=/<slug>/`, exactly as `login` does today (design §3) -- proven by using
     the minted cookies for a real follow-up call under that space's own prefix."""
     grace = spaces_client
-    recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
-    invite = grace.post(
-        f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
-    )
-    assert invite.status_code == 201, invite.text
-    invite_token = _token_from(recording.sent[0].text)
-
-    ada = TestClient(grace.app, base_url="https://testserver")
     try:
+        recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
+        invite = grace.post(
+            f"/{SLUG2}/api/users/invites", json={"email": SIGNUP["email"], "nome": "Ada"}
+        )
+        assert invite.status_code == 201, invite.text
+        invite_token = _token_from(recording.sent[0].text)
+
+        ada = TestClient(grace.app, base_url="https://testserver")
         accepted = ada.post(f"/{SLUG2}/api/auth/invite", json={"t": invite_token})
         assert accepted.status_code == 200, accepted.text
 
