@@ -1,6 +1,7 @@
 import { FileText } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
+import { toProblem } from '@/lib/api'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { useInvoicePdf, type Invoice } from './queries'
 
@@ -41,9 +42,13 @@ export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
       {empty ? (
         <Empty invoice={invoice} />
       ) : pdf.isError ? (
-        <div className="p-4">
-          <QueryErrorBanner error={pdf.error} />
-        </div>
+        toProblem(pdf.error).status === 404 ? (
+          <Missing invoice={invoice} />
+        ) : (
+          <div className="p-4">
+            <QueryErrorBanner error={pdf.error} />
+          </div>
+        )
       ) : !url ? (
         <>
           <p className="sr-only">Caricamento del PDF…</p>
@@ -77,6 +82,30 @@ function Empty({ invoice }: { invoice: Invoice }) {
         : invoice.importata_da != null
           ? 'Fattura importata: il PDF originale non è archiviato qui.'
           : 'Nessun PDF archiviato per questo documento. «Rigenera documenti» lo produce.'
+  return (
+    <div className="text-muted-foreground m-auto flex max-w-xs flex-col items-center gap-3 p-6 text-center text-sm">
+      <FileText className="size-8" aria-hidden="true" />
+      <p>{text}</p>
+    </div>
+  )
+}
+
+/**
+ * The row names a PDF and the server answers 404 for it: the document has no current
+ * version, or its stored file is gone. The server's detail for either is a log line
+ * (`invoice_artifact <uuid>#pdf not found`, `document_blob <key> not found`), so this says
+ * it in Italian instead (REB-168), in the same voice as `Empty`, and names «Rigenera
+ * documenti» only where it is on the page: an issued fattura of ours, since that button
+ * repairs a lost file with identical bytes. A proforma's «Genera PDF proforma» is not
+ * shown while the row carries an id, and an imported invoice has no rendering of ours.
+ */
+function Missing({ invoice }: { invoice: Invoice }) {
+  const text =
+    invoice.tipo === 'proforma'
+      ? 'Il PDF di questa proforma non è disponibile.'
+      : invoice.stato === 'emessa' && invoice.importata_da == null
+        ? 'Il PDF di questa fattura non è disponibile. «Rigenera documenti» lo genera di nuovo.'
+        : 'Il PDF di questa fattura non è disponibile.'
   return (
     <div className="text-muted-foreground m-auto flex max-w-xs flex-col items-center gap-3 p-6 text-center text-sm">
       <FileText className="size-8" aria-hidden="true" />
