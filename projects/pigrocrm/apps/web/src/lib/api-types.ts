@@ -7762,6 +7762,8 @@ export interface components {
             google_app_unverified: boolean;
             /** Gmail Configurato */
             gmail_configurato: boolean;
+            /** Google Client Condiviso */
+            google_client_condiviso: boolean;
             /** Redirect Uri Gmail */
             redirect_uri_gmail: string;
             /** Redirect Uri Drive */

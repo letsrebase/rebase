@@ -70,6 +70,10 @@ NOT_FORWARDED: dict[str, str] = {
     # reasoning as the three `solleciti_*` thresholds just above -- and, like them,
     # reachable per space through `space_settings` instead.
     "concentrazione_soglia_preferita": "quota preferita di un cliente: scelta del praticante",
+    # Computed per space by `space_base_settings` while the root lends its Google client
+    # (REB-394), empty for the root: never an installation's choice.
+    "google_callback_base_url": "calcolato da space_base_settings, mai dall'ambiente",
+    "google_oauth_state_prefix": "calcolato da space_base_settings, mai dall'ambiente",
 }
 
 

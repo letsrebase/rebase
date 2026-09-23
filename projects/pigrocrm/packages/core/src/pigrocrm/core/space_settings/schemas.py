@@ -49,6 +49,9 @@ class SpaceSettingsRead(BaseModel):
     google_token_key_impostata: bool
     google_app_unverified: bool
     gmail_configurato: bool
+    # True while the space borrows the root's Google client (REB-394): nothing to set
+    # or register. The redirect URIs below stay this space's own, for a client of its own.
+    google_client_condiviso: bool
     redirect_uri_gmail: str
     redirect_uri_drive: str
     storage_backend: str
