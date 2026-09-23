@@ -31,6 +31,12 @@ proved ownership by redeeming their own state does the mailbox-mismatch refusal 
 the two addresses -- and by then it is naming an address that caller can already read
 on their own settings page, while the alternative ("that is not the right mailbox",
 without saying which is) is an instruction nobody can act on.
+
+**A space borrowing the root's client** (REB-394, `tenants/google.py`) changes two
+strings and nothing else: the redirect URI is the root's callback, and the state is the
+jti with the space's prefix in front, so the root can relay the browser to the right
+space. `complete` strips that prefix and refuses a state that lacks it before anything
+is looked up, so the redemption below is the same single-use row either way.
 """
 
 import base64
@@ -71,6 +77,30 @@ def _b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
+def callback_url(settings: Settings, path: str) -> str:
+    """The redirect URI Google compares character by character: this installation's
+    own address, or the root's while a space borrows the root's client (REB-394).
+    Shared with `drive/oauth.py`, whose consent comes back the same way."""
+    base = settings.google_callback_base_url or settings.public_url
+    return f"{base.rstrip('/')}{path}"
+
+
+def published_state(settings: Settings, jti: str) -> str:
+    """The `state` sent to Google: the jti, behind the space's prefix when the root
+    relays this consent (`google_oauth_state_prefix`, empty everywhere else)."""
+    return f"{settings.google_oauth_state_prefix}{jti}"
+
+
+def jti_of(settings: Settings, state: str) -> str | None:
+    """The jti a returning `state` carries, or None when it does not carry this
+    installation's prefix. None is refused with the same sentence as an unknown jti:
+    a state minted for another space is exactly that, here."""
+    prefix = settings.google_oauth_state_prefix
+    if not state.startswith(prefix):
+        return None
+    return state[len(prefix) :] or None
+
+
 class GmailOAuthService:
     def __init__(self, session: Session, *, settings: Settings, tokens: GoogleTokenClient) -> None:
         self.session = session
@@ -85,7 +115,7 @@ class GmailOAuthService:
     @property
     def redirect_uri(self) -> str:
         # One fixed, configured string. Google compares it character for character.
-        return f"{self.settings.public_url.rstrip('/')}/api/gmail/oauth/callback"
+        return callback_url(self.settings, "/api/gmail/oauth/callback")
 
     def start(self, actor: Actor) -> str:
         require_gmail_configured(self.settings)
@@ -125,7 +155,7 @@ class GmailOAuthService:
                 "include_granted_scopes": "false",
                 "code_challenge": challenge,
                 "code_challenge_method": "S256",
-                "state": jti,
+                "state": published_state(self.settings, jti),
             }
         )
 
@@ -138,7 +168,8 @@ class GmailOAuthService:
             # could ever have been issued, so it takes the same silent refusal.
             raise self._invalid_authorisation()
 
-        row = self.repo.consume_state(state, now)
+        jti = jti_of(self.settings, state)
+        row = self.repo.consume_state(jti, now) if jti is not None else None
         if row is None:
             raise self._invalid_authorisation()
         # The redemption stands whatever happens next. See the module docstring.

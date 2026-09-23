@@ -55,8 +55,9 @@ from pigrocrm.core.gmail.schemas import (
 from pigrocrm.core.gmail.sync import GmailSyncService
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
+from pigrocrm_api.oauth_relay import relay_to_space
 from pigrocrm_api.tenancy import cookie_path
 
 router = APIRouter(prefix="/api/gmail", tags=["gmail"], responses=PROBLEM_RESPONSES)
@@ -87,7 +88,14 @@ _ESITO_ERRORE = "errore"
 # overrides the dependency per test and an identity key would leak one test's client
 # into the next. The secret is not part of the key -- one client id has one secret, and
 # a dict key is one more place a credential would sit.
-_token_clients: dict[str, GoogleTokenClient] = {}
+#
+# The space's state prefix is part of it (REB-394). Spaces borrowing the root's client
+# share its client id, and the access tokens in a client's cache are keyed by the
+# account's id alone: a row copied into another space's database would otherwise pick
+# up the first space's live token without unsealing anything, and `forget()` in one
+# space would evict another's. The prefix is empty for the root and for a space with a
+# client of its own, and it is not a secret.
+_token_clients: dict[tuple[str, str], GoogleTokenClient] = {}
 # FastAPI runs sync endpoints in a thread pool, so two requests can reach a cold cache
 # at once. Same reasoning, and the same shape, as `deps.py`'s `_registry_lock`.
 _token_clients_lock = threading.Lock()
@@ -99,20 +107,29 @@ _token_clients_lock = threading.Lock()
 # rather than spelled here in a way that evades the scan.
 _MESSAGES_PATH = "/messages"
 _ACCOUNT_PATH = "/account"
+_CALLBACK_ROUTE = "/oauth/callback"
+_CALLBACK_PATH = f"{router.prefix}{_CALLBACK_ROUTE}"
+
+
+def token_client_key(settings: Settings) -> tuple[str, str]:
+    """Which cached `GoogleTokenClient` a request's settings get: one per client id and
+    per space borrowing it (see `_token_clients`)."""
+    return (settings.google_oauth_state_prefix, settings.google_client_id)
 
 
 def token_client(settings: Settings) -> GoogleTokenClient:
-    client = _token_clients.get(settings.google_client_id)
+    key = token_client_key(settings)
+    client = _token_clients.get(key)
     if client is None:
         with _token_clients_lock:
-            client = _token_clients.get(settings.google_client_id)
+            client = _token_clients.get(key)
             if client is None:
                 client = GoogleTokenClient(
                     client_id=settings.google_client_id,
                     client_secret=settings.google_client_secret,
                     transport=GmailTransport(),
                 )
-                _token_clients[settings.google_client_id] = client
+                _token_clients[key] = client
     return client
 
 
@@ -144,16 +161,21 @@ def start_oauth(session: SessionDep, actor: ActorDep, settings: SettingsDep) -> 
     return RedirectResponse(_oauth(session, settings).start(actor), status_code=307)
 
 
-@router.get("/oauth/callback")
+@router.get(_CALLBACK_ROUTE)
 def finish_oauth(
     request: Request,
     session: SessionDep,
-    actor: ActorDep,
     settings: SettingsDep,
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
+    # Before the actor, on purpose: a consent a space started through the root's client
+    # comes back here carrying that space's cookie only (`oauth_relay.py`, REB-394).
+    relayed = relay_to_space(request, settings, _CALLBACK_PATH, code=code, state=state, error=error)
+    if relayed is not None:
+        return relayed
+    actor = get_actor(request, session, settings)
     if error is not None or code is None or state is None:
         # One outcome code for every refusal on Google's side. Google's own `error` is
         # not forwarded: it is English, and it sometimes embeds the client id.

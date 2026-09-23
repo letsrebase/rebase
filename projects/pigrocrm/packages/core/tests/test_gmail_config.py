@@ -131,6 +131,7 @@ def test_the_env_example_documents_every_gmail_variable() -> None:
         "PIGROCRM_GOOGLE_TOKEN_KEY",
         "PIGROCRM_PUBLIC_URL",
         "PIGROCRM_GOOGLE_APP_UNVERIFIED",
+        "PIGROCRM_GOOGLE_SHARED_CLIENT",
     ):
         assert f"\n{variable}=" in example, variable
 

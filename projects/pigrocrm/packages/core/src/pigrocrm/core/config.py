@@ -182,6 +182,27 @@ class Settings(BaseSettings):
     # it. True means Testing, which means a consumer refresh token expires 7 days after
     # consent -- so `consent_expires_at` gets set and the UI warns 48 hours ahead.
     google_app_unverified: bool = False
+    # Whether the root lends its Google client to every space that has none of its own
+    # (spec 2026-09-16 §5, REB-394). Off, the default: a space has no Google unless it
+    # configures a client in Impostazioni → Spazio, which is what a self-hosted
+    # installation with no spaces expects. On: `space_base_settings` hands each space
+    # the root's client and secret, a token key derived for that space alone, and the
+    # root's callback, which relays the consent to the space named in the `state`
+    # (`tenants/google.py`). Read from the environment only, never per space.
+    google_shared_client: bool = False
+    # The two below are never read from the environment in practice: `space_base_settings`
+    # computes them for a space that borrows the root's client, and they are empty for
+    # the root and for a space with a client of its own. Fields rather than arguments
+    # because both OAuth flows (Gmail and Drive) and the settings page read them from the
+    # one `Settings` they already hold, and no service has to learn what a space is.
+    #
+    # Where Google sends the browser back: `{google_callback_base_url}/api/gmail/oauth/
+    # callback`. Empty means `public_url`, which is every installation's own address.
+    google_callback_base_url: str = ""
+    # Written ahead of the jti in the `state`, so the root's callback can tell which
+    # space started the flow. The space's own callback refuses a state that does not
+    # carry its own prefix before it looks anything up.
+    google_oauth_state_prefix: str = ""
 
     # --- Outbound mail (spec 2026-09-12 §6.1). Resend sends the login link and the
     # welcome mail. Empty key: no sender, and the endpoints that would mail answer 503

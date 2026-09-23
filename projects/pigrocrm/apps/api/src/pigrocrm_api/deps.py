@@ -140,11 +140,13 @@ def request_base_settings(
     """The environment's settings as *this request* may see them, before the database
     has its say.
 
-    A space does not inherit the root's Google: the client, its secret and the token key
-    are blanked, so a space either configures its own (Impostazioni → Spazio) or has no
-    Gmail and no Drive -- `gmail_configured` false, sections hidden, endpoints 409. Its
-    public URL is the root's plus the slug, which is where Google will redirect to, and
-    documents default to disk under the space's own folder. The root sees the
+    A space inherits the root's Google only while the root lends its client
+    (`PIGROCRM_GOOGLE_SHARED_CLIENT`, REB-394): then it gets the root's client, a token
+    key derived for it alone and the root's callback. Otherwise the client, its secret
+    and the token key are blanked, so a space either configures its own (Impostazioni →
+    Spazio) or has no Gmail and no Drive -- `gmail_configured` false, sections hidden,
+    endpoints 409. Its public URL is the root's plus the slug, and documents default to
+    disk under the space's own folder. `space_base_settings` says the rest. The root sees the
     environment untouched. Chained on `get_settings` so a test's override of that one
     dependency still reaches every route.
     """

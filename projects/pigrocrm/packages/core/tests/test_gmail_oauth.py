@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
-from pigrocrm.core.config import Settings
+from pigrocrm.core.config import Settings, decode_google_token_key
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.errors import Conflict, DomainError, PermissionDenied
 from pigrocrm.core.gmail.crypto import seal, unseal
@@ -46,6 +46,7 @@ from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES, SCOPE_READONLY, SCOPE_SEND
 from pigrocrm.core.gmail.tokens import GOOGLE_AUTH_URL, GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.tenants import space_base_settings
 
 KEY = b"k" * 32
 KEY_B64 = base64.b64encode(KEY).decode()
@@ -736,3 +737,84 @@ def test_prune_states_removes_the_expired_rows_and_only_those(db_session: Sessio
     assert repo.prune_states(now) == 2
     survivors = db_session.execute(select(GoogleOAuthState.jti)).scalars().all()
     assert survivors == ["jti-300.0"]
+
+
+# --- a space on the root's client (REB-394) -------------------------------------------
+
+
+def _space_settings() -> Settings:
+    """What a space called `studio` sees while the root lends its client."""
+    root = _settings(google_shared_client=True, public_url="https://pigro.example")
+    return space_base_settings(root, "studio")
+
+
+def test_a_space_on_the_root_client_goes_to_google_with_the_root_callback_and_its_slug(
+    db_session: Session,
+) -> None:
+    """The redirect URI is the root's own, which is the one address the root's client
+    has registered; the state carries the space's name for the root to relay it, and
+    the jti behind it is the row this space's database holds."""
+    user = _user(db_session)
+    fake = _fake()
+    service = _service(db_session, fake, _space_settings())
+    _, query = _start(service, _actor(user))
+
+    assert query["redirect_uri"] == ["https://pigro.example/api/gmail/oauth/callback"]
+    assert query["client_id"] == ["cid.apps.googleusercontent.com"]
+    state = query["state"][0]
+    slug, _, jti = state.partition(".")
+    assert slug == "studio"
+    stored = db_session.execute(select(GoogleOAuthState.jti)).scalars().all()
+    assert stored == [jti]
+
+    read = service.complete(code="4/0A-code", state=state, actor=_actor(user))
+    assert read.status == "active"
+    # Google refuses an exchange whose redirect URI differs from the consent's.
+    exchanges = [
+        body for body in _token_bodies(fake) if body.get("grant_type") == ["authorization_code"]
+    ]
+    assert exchanges[0]["redirect_uri"] == ["https://pigro.example/api/gmail/oauth/callback"]
+    # Sealed with the space's derived key, which the root's key does not open.
+    account = _accounts(db_session)[0]
+    space_key = decode_google_token_key(_space_settings())
+    ciphertext, nonce = account.refresh_token_ciphertext, account.refresh_token_nonce
+    assert unseal(ciphertext, nonce, space_key) == REFRESH
+    with pytest.raises(Conflict):
+        unseal(ciphertext, nonce, KEY)
+
+
+def test_the_root_lending_its_client_keeps_its_own_consent_as_it_was(
+    db_session: Session,
+) -> None:
+    """The setting changes what the spaces see, never the root: a bare jti, its own
+    callback, its own key."""
+    root = _settings(google_shared_client=True, public_url="https://pigro.example")
+    assert space_base_settings(root, None) is root
+    user = _user(db_session)
+    service = _service(db_session, _fake(), root)
+    _, query = _start(service, _actor(user))
+    assert query["redirect_uri"] == ["https://pigro.example/api/gmail/oauth/callback"]
+    assert "." not in query["state"][0]
+    service.complete(code="4/0A-code", state=query["state"][0], actor=_actor(user))
+    account = _accounts(db_session)[0]
+    assert unseal(account.refresh_token_ciphertext, account.refresh_token_nonce, KEY) == REFRESH
+
+
+def test_a_space_refuses_a_state_that_does_not_carry_its_own_prefix(
+    db_session: Session,
+) -> None:
+    """A state minted here and handed back without the prefix, or under another space's
+    name, is refused with the sentence an unknown jti gets, before any row is touched:
+    the real state is still there for the consent that carries it."""
+    user = _user(db_session)
+    service = _service(db_session, _fake(), _space_settings())
+    state = _state_of(service, _actor(user))
+    jti = state.partition(".")[2]
+
+    for forged in (jti, f"altro-studio.{jti}", "studio."):
+        with pytest.raises(Conflict) as caught:
+            service.complete(code="4/0A-code", state=forged, actor=_actor(user))
+        assert "non è più valida" in caught.value.message
+    assert _accounts(db_session) == []
+
+    assert service.complete(code="4/0A-code", state=state, actor=_actor(user)).status == "active"

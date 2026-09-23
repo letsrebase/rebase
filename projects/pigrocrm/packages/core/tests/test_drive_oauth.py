@@ -37,6 +37,7 @@ from pigrocrm.core.gmail.models import GoogleAccount, GoogleOAuthState
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import MAX_HTTP_ATTEMPTS, GmailTransport
+from pigrocrm.core.tenants import space_base_settings
 
 
 @pytest.fixture
@@ -219,6 +220,36 @@ def test_complete_stores_a_sealed_token_and_refuses_a_foreign_sub(
     )
     kinds = db_session.execute(select(Activity.kind)).scalars().all()
     assert "drive.account_collegato" in kinds
+
+
+def test_a_space_on_the_root_client_consents_to_drive_through_the_root_callback(
+    db_session: Session, admin_user: User
+) -> None:
+    """REB-394: Drive's consent rides the same relay as Gmail's, or a space's «Collega
+    Drive» would send Google a callback the root's client never registered."""
+    space = space_base_settings(
+        gmail_settings(google_shared_client=True, public_url="https://pigro.example"), "studio"
+    )
+    fake = _drive_fake("sub-drive", "ada@studio.it")
+    transport = GmailTransport(http=fake, sleep=lambda _: None)
+    service = GoogleDriveOAuthService(
+        db_session,
+        settings=space,
+        tokens=GoogleTokenClient(
+            client_id=space.google_client_id,
+            client_secret=space.google_client_secret,
+            transport=transport,
+        ),
+    )
+    q = parse_qs(urlparse(service.start(_actor(admin_user))).query)
+    assert q["redirect_uri"] == ["https://pigro.example/api/drive/oauth/callback"]
+    state = q["state"][0]
+    assert state.startswith("studio.")
+
+    with pytest.raises(Conflict):
+        service.complete(code="c", state=state.partition(".")[2], actor=_actor(admin_user))
+    read = service.complete(code="c", state=state, actor=_actor(admin_user))
+    assert read.status == "active"
 
 
 def _complete_drive(
