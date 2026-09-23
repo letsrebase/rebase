@@ -927,3 +927,42 @@ def test_0033_dates_every_undated_proforma_in_rome_and_touches_no_fattura() -> N
         f"upgrade changes nothing: got {after_second_upgrade}"
     )
     assert checks_after_second_upgrade == checks_after_upgrade
+
+
+def test_0041_backfills_pack_id_and_pack_version_on_the_existing_row() -> None:
+    """REB-361. The `server_default` alone already makes a row inserted at
+    `ADD COLUMN` time satisfy the `NOT NULL` constraint; this asserts the belt-and-
+    suspenders `UPDATE` the migration also runs, against a row planted before the
+    column existed at all -- exactly the one row `fiscal_profile` has ever held in
+    production."""
+    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0039")
+
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO fiscal_profile (id, singleton, codice_regime,
+                        aliquota_iva_default, applica_bollo, soglia_bollo,
+                        importo_bollo, condizioni_pagamento, modalita_pagamento,
+                        giorni_scadenza, created_at, updated_at)
+                    VALUES ('00000000-0000-7000-8000-0000000000f1', true, 'RF19',
+                        0.00, true, 77.47, 2.00, 'TP02', 'MP05', 30, now(), now());
+                    """
+                )
+            )
+        engine.dispose()
+
+        upgrade(config, "0041")
+
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            pack_id, pack_version = connection.execute(
+                text("SELECT pack_id, pack_version FROM fiscal_profile")
+            ).one()
+        engine.dispose()
+
+    assert (pack_id, pack_version) == ("it-flat-rate", "1")

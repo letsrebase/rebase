@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Integer, Numeric, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
@@ -72,3 +72,19 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
         Numeric(5, 2), default=Decimal("5.00")
     )
     aliquota_inps: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=Decimal("26.07"))
+    # REB-361: which jurisdiction pack governs the ceiling and rivalsa arithmetic
+    # (`pigrocrm.core.fiscal.pack`) -- a pointer, not a duplication of the pack's own
+    # data, and `NOT NULL` on purpose: every space this product has ever provisioned
+    # is on this one regime today, so there is no real "which pack" question for an
+    # existing row to leave unanswered, and a nullable pair would only invent one (an
+    # undefined ceiling evaluation the day someone reads it before someone else sets
+    # it). `server_default`, not only a Python-side one, the same reasoning
+    # `Customer.pagamento_fine_mese` (REB-326) already uses: it is what keeps every
+    # row this table already holds valid without depending on the ORM path that
+    # inserted it.
+    pack_id: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="it-flat-rate", server_default=text("'it-flat-rate'")
+    )
+    pack_version: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="1", server_default=text("'1'")
+    )
