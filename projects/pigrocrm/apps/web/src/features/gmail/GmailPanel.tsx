@@ -5,9 +5,9 @@ import { Button } from '@rebase/ui/button'
 import { Checkbox } from '@rebase/ui/checkbox'
 import { Label } from '@rebase/ui/label'
 import { toProblem } from '@/lib/api'
-import { tenantPrefix } from '@/lib/tenant'
 import { formatInstant } from './instants'
 import {
+  GMAIL_OAUTH_START,
   GMAIL_READONLY_SCOPE,
   useDisconnectGmail,
   useGmailHealth,
@@ -17,11 +17,6 @@ import {
   type GoogleAccountRead,
   type SyncReport,
 } from './queries'
-
-// Under a space, and under the root's own name, the API answers at `/<slug>/api/...` and
-// the session cookie is scoped to that prefix: a plain anchor to `/api/...` reaches the
-// root API with no cookie and answers «Autenticazione richiesta» (live, 2026-09-09).
-const OAUTH_START = `${tenantPrefix}/api/gmail/oauth/start`
 
 /** The four statuses, in the words their owner would use. */
 const STATUS_LABEL: Record<string, string> = {
@@ -166,7 +161,7 @@ export function GmailPanel() {
             Sincronizza adesso
           </Button>
           <Button asChild variant="outline">
-            <a href={OAUTH_START}>Ri-autorizza</a>
+            <a href={GMAIL_OAUTH_START}>Ri-autorizza</a>
           </Button>
         </div>
         <ActionError error={sync.error} />
@@ -243,7 +238,7 @@ function NotConnected({ account }: { account: GoogleAccountRead | null }) {
         indirizzi già presenti in anagrafica.
       </p>
       <Button asChild>
-        <a href={OAUTH_START}>Collega la casella Google</a>
+        <a href={GMAIL_OAUTH_START}>Collega la casella Google</a>
       </Button>
     </section>
   )

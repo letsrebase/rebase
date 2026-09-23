@@ -12,7 +12,10 @@ query. Every *other* endpoint answers 409 with the one sentence
 anything at all.
 
 **The OAuth callback is a browser navigation, not an XHR.** It therefore always ends on
-the settings page, with an outcome code the SPA renders in Italian. Google's own `error`
+a page of the SPA, with an outcome code the SPA renders in Italian: the Home while the
+space is still empty, since that is where its «Collega Gmail» door is (spec 2026-09-16
+§4.2, REB-222); otherwise the settings page for an admin, and «Primi passi», the other
+page with that door, for anybody the admin-only settings page would turn away. Google's own `error`
 is never forwarded: it is English and occasionally embeds the client id. Nor is a
 `Conflict` from the exchange rendered as a problem document -- an RFC 9457 body in the
 address bar strands the user outside the SPA at the end of a consent flow, with the one
@@ -34,8 +37,10 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings, gmail_configured
 from pigrocrm.core.errors import Conflict
+from pigrocrm.core.first_steps import space_is_empty
 from pigrocrm.core.gmail.account import GoogleAccountService
 from pigrocrm.core.gmail.oauth import GmailOAuthService
 from pigrocrm.core.gmail.repository import GmailRepository
@@ -58,8 +63,11 @@ router = APIRouter(prefix="/api/gmail", tags=["gmail"], responses=PROBLEM_RESPON
 
 # Where the SPA renders the outcome of a consent flow. Three codes and no free text:
 # `esito` is looked up in a fixed table on the page, so nothing an attacker appends to
-# this URL can put words of their own on the screen.
+# this URL can put words of their own on the screen. The start page's Gmail door reads
+# the same table, on the Home of an empty space and on «Primi passi» (`_back`).
 _SETTINGS_PAGE = "/app/settings/gmail"
+_HOME_PAGE = "/app/"
+_START_PAGE = "/app/get-started"
 _ESITO_COLLEGATO = "collegato"
 _ESITO_NEGATO = "negato"
 _ESITO_ERRORE = "errore"
@@ -149,27 +157,42 @@ def finish_oauth(
     if error is not None or code is None or state is None:
         # One outcome code for every refusal on Google's side. Google's own `error` is
         # not forwarded: it is English, and it sometimes embeds the client id.
-        return _back_to_settings(request, _ESITO_NEGATO)
+        return _back(request, session, actor, _ESITO_NEGATO)
     try:
         _oauth(session, settings).complete(code=code, state=state, actor=actor)
     except Conflict:
         # Every refusal this flow can produce is a `Conflict` -- a replayed or expired
         # state, a mailbox that is not the connected one, a grant that came back with
         # no refresh token, Gmail not answering. All of them arrive here through a
-        # browser redirect, so all of them end on the settings page, which re-reads
-        # `GET /account` and shows the true state. A `PermissionDenied` deliberately is
-        # *not* caught: that is not an outcome of the consent flow but a caller who may
-        # not perform it, and it belongs in the problem document like every other 403.
-        return _back_to_settings(request, _ESITO_ERRORE)
-    return _back_to_settings(request, _ESITO_COLLEGATO)
+        # browser redirect, so all of them end on a page that re-reads `GET /account`
+        # and shows the true state (the settings panel, or the Home's Gmail door). A
+        # `PermissionDenied` deliberately is *not* caught: that is not an outcome of the
+        # consent flow but a caller who may not perform it, and it belongs in the
+        # problem document like every other 403.
+        return _back(request, session, actor, _ESITO_ERRORE)
+    return _back(request, session, actor, _ESITO_COLLEGATO)
 
 
-def _back_to_settings(request: Request, esito: str) -> RedirectResponse:
+def _back(request: Request, session: Session, actor: Actor, esito: str) -> RedirectResponse:
     # Under the prefix the request wore: a space's consent must end on that space's
-    # settings page, not on the root's. `cookie_path` is the one place that already
-    # knows the prefix, and its `/` is the bare root.
+    # page, not on the root's. `cookie_path` is the one place that already knows the
+    # prefix, and its `/` is the bare root.
+    #
+    # Every outcome goes to the same page, the refusals included: whoever pressed
+    # «Collega Gmail» on an empty space's Home reads «Autorizzazione negata» next to the
+    # door they pressed. Read after `complete`, which never creates a customer, so the
+    # answer is the one the person saw before leaving for Google. A space with work in it
+    # sends an admin to the settings page, as it always has, and anybody else to «Primi
+    # passi»: a collaboratore may connect their own mailbox (`require_write`) but may not
+    # open Impostazioni, which would answer the consent with «Accesso riservato».
     prefix = cookie_path(request).rstrip("/")
-    return RedirectResponse(f"{prefix}{_SETTINGS_PAGE}?esito={esito}", status_code=307)
+    if space_is_empty(session):
+        page = _HOME_PAGE
+    elif actor.role == "admin":
+        page = _SETTINGS_PAGE
+    else:
+        page = _START_PAGE
+    return RedirectResponse(f"{prefix}{page}?esito={esito}", status_code=307)
 
 
 @router.delete(_ACCOUNT_PATH, status_code=204)

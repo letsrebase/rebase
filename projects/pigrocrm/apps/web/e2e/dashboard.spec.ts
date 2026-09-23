@@ -33,7 +33,7 @@
  * is never truncated between invocations.
  */
 import { expect, test, type Page } from '@playwright/test'
-import { loginAsAdmin, seedCycleFixture, seedDealWithRate } from './helpers'
+import { ensureSpaceHasWork, loginAsAdmin, seedCycleFixture, seedDealWithRate } from './helpers'
 
 /**
  * Today, from the browser host's own calendar parts.
@@ -268,6 +268,7 @@ test.describe('il ciclo completo — metà umana', () => {
 
   test('le due schede sono raggiungibili e il periodo è nell’URL', async ({ page }) => {
     await loginAsAdmin(page)
+    await ensureSpaceHasWork(page)
     const { da, a } = currentMonth()
 
     await page.goto(`/app/?tab=economica&da=${da}&a=${a}`)
@@ -300,6 +301,7 @@ test.describe('il ciclo completo — metà umana', () => {
     page,
   }) => {
     await loginAsAdmin(page)
+    await ensureSpaceHasWork(page)
     await page.goto('/app/?tab=economica')
     await expect(page.getByRole('group', { name: 'Ricavi incassati' })).toBeVisible()
     await expect(page.getByRole('figure', { name: /Andamento economico/ })).toBeVisible()

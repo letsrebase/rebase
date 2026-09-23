@@ -43,6 +43,22 @@ export async function loginAsAdmin(page: Page): Promise<void> {
 }
 
 /**
+ * Makes sure the space holds work, so `/app/` is the dashboard. Since REB-222 the Home of
+ * a space with no customer, deal, time entry or document is the start page, and
+ * `e2e-setup.sh` seeds none of the four: a spec that opens the dashboard would pass after
+ * `crm.spec.ts` had run and fail on its own (`-g`). One customer, only when there is none,
+ * so a run against a stack kept alive does not grow a row per spec.
+ */
+export async function ensureSpaceHasWork(page: Page): Promise<void> {
+  const list = (await (await page.request.get('/api/customers?limit=1')).json()) as { items: unknown[] }
+  if (list.items.length > 0) return
+  const created = await page.request.post('/api/customers', {
+    data: { ragione_sociale: `Home ${Date.now()} Srl` },
+  })
+  expect(created.status()).toBe(201)
+}
+
+/**
  * Signs out through the profile menu at the foot of the sidebar, and waits for the login
  * page.
  *

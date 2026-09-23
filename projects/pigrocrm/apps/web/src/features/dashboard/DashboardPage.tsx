@@ -1,4 +1,5 @@
 import { LayoutDashboard } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { CommercialTab } from './CommercialTab'
@@ -23,9 +24,13 @@ import { DASHBOARD_TABS, type DashboardSearch } from './search'
 export function DashboardPage({
   search,
   onSearchChange,
+  notice,
 }: {
   search: DashboardSearch
   onSearchChange: (next: Partial<DashboardSearch>) => void
+  /** Drawn above the tab's content, under the header: the Home's «Completa lo spazio»
+   *  card (REB-222), which belongs to the page and not to any one tab. */
+  notice?: ReactNode
 }) {
   const { tab, da, a, base } = search
 
@@ -57,6 +62,7 @@ export function DashboardPage({
       />
 
       <div className="px-8 py-6">
+        {notice}
         {/* One tab is mounted at a time, deliberately. Rendering all three and hiding two
             would issue three requests -- three snapshot transactions, each holding two
             pooled connections on the API side -- to draw one screen. §17's placeholders that
