@@ -166,6 +166,25 @@ describe('the invoice door, first the customer', () => {
     expect(api.POST).not.toHaveBeenCalledWith('/api/customers', expect.anything())
   })
 
+  it('uses a customer named exactly so even when the suggestions do not show it, instead of a duplicate', async () => {
+    const partial = Array.from({ length: 8 }, (_, i) => ({ id: `p${i}`, ragione_sociale: `ACME Srl filiale ${i}` }))
+    vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: { limit?: number; cursor?: string } } }) => {
+      if (path !== '/api/customers') return reply({ data: null })
+      const query = init?.params?.query ?? {}
+      if (query.limit === 8) return reply({ data: { items: partial, next_cursor: 'more' } })
+      // The whole search, page by page: the exact name is on the second page.
+      return query.cursor === undefined
+        ? reply({ data: { items: partial, next_cursor: 'page-2' } })
+        : reply({ data: { items: [{ id: 'c-old', ragione_sociale: 'ACME Srl' }], next_cursor: null } })
+    }) as never)
+    renderDoor()
+    await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'ACME Srl')
+    await create()
+    expect(await screen.findByTestId('upload-dropzone')).toBeInTheDocument()
+    expect(screen.getByText('ACME Srl')).toBeInTheDocument()
+    expect(api.POST).not.toHaveBeenCalledWith('/api/customers', expect.anything())
+  })
+
   it('still takes a new name when the customers on file cannot be searched', async () => {
     gets({ '/api/customers': { status: 500 } })
     renderDoor()

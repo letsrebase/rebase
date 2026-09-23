@@ -116,12 +116,30 @@ function useSettled(value: string, delay = 250): string {
   return settled
 }
 
+/** Every customer whose name is exactly `nome`, read through the whole search rather
+ *  than its first page: the search is a substring match over several fields, oldest
+ *  first, so an exact name can sit behind any number of partial ones. */
+async function customerNamed(nome: string): Promise<{ id: string; ragione_sociale: string } | null> {
+  const wanted = nome.toLowerCase()
+  let cursor: string | undefined
+  do {
+    const page = await unwrap(
+      api.GET('/api/customers', { params: { query: { search: nome, limit: 200, cursor } } }),
+    )
+    const hit = page.items.find((item) => item.ragione_sociale.trim().toLowerCase() === wanted)
+    if (hit) return hit
+    cursor = page.next_cursor ?? undefined
+  } while (cursor)
+  return null
+}
+
 /**
  * One field: the customer's name. As it is typed, the customers already on file whose
  * name or VAT number matches are offered (`GET /api/customers?search=`, the Clienti
- * page's own search), so a space of any size finds its customer, and a name that is
- * already on file is used rather than created twice. Only a name with no exact match
- * creates a customer, and not while the search for it is still on its way.
+ * page's own search), so a space of any size finds its customer. A name that is already
+ * on file is used rather than created twice: shown as «Usa …» when it is among the
+ * suggestions, and looked up through every page of the search before anything is
+ * created. Nothing is created while the search for the typed name is still on its way.
  */
 function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name: string }) => void }) {
   const [nome, setNome] = useState('')
@@ -141,11 +159,23 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
   // a second copy of a customer the search was about to show.
   const searching = typed.length >= 2 && (query !== typed || matches.isFetching)
 
-  function next(event: FormEvent) {
+  const [checking, setChecking] = useState(false)
+
+  async function next(event: FormEvent) {
     event.preventDefault()
-    if (!typed || create.isPending || searching) return
+    if (!typed || create.isPending || searching || checking) return
     if (exact) {
       onChosen({ id: exact.id, name: exact.ragione_sociale })
+      return
+    }
+    // The suggestions are the first eight matches: before creating, the whole search is
+    // read for this exact name. If that read fails the person still gets the customer
+    // they asked for, as when the suggestions could not be read.
+    setChecking(true)
+    const onFile = await customerNamed(typed).catch(() => null)
+    setChecking(false)
+    if (onFile) {
+      onChosen({ id: onFile.id, name: onFile.ragione_sociale })
       return
     }
     create.mutate(
@@ -155,7 +185,7 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
   }
 
   return (
-    <form onSubmit={next} className="space-y-3 text-sm">
+    <form onSubmit={(event) => void next(event)} className="space-y-3 text-sm">
       <fieldset className="space-y-2">
         <legend className="font-medium">A chi l’hai emessa?</legend>
         <Label htmlFor={`${ids}-nome`}>Ragione sociale del cliente</Label>
@@ -194,7 +224,7 @@ function ChooseCustomer({ onChosen }: { onChosen: (customer: { id: string; name:
           {toProblem(create.error).detail}
         </p>
       ) : null}
-      <Button type="submit" disabled={!typed || create.isPending || searching}>
+      <Button type="submit" disabled={!typed || create.isPending || searching || checking}>
         {exact ? `Usa ${exact.ragione_sociale}` : 'Crea il cliente e vai avanti'}
       </Button>
     </form>
