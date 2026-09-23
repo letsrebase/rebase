@@ -59,12 +59,12 @@ TITOLARI = {UNO: "uno@studio.it", DUE: "due@studio.it"}
 SPAZI = (UNO, DUE, VUOTO)
 TITOLARE_VUOTO = "vuoto@studio.it"
 # The root installation: its own database, and `PIGROCRM_ROOT_SLUG` in its links.
-RADICE_DB = "prova_digest_radice"
-RADICE_SLUG = "prova-digest-radice"
+ROOT_DB = "prova_digest_radice"
+ROOT_SLUG = "prova-digest-radice"
 # Created first and switched off since, so "the first admin" alone would be the wrong one.
-EX_TITOLARE = "ex@radice.it"
-TITOLARE_RADICE = "titolare@radice.it"
-COLLEGA_RADICE = "collega@radice.it"
+FORMER_ADMIN = "ex@radice.it"
+ROOT_OWNER = "titolare@radice.it"
+ROOT_COLLEAGUE = "collega@radice.it"
 
 
 # --- the container, the registry, and three spaces in it -----------------------------
@@ -76,25 +76,25 @@ def settings(db_engine: Engine) -> Iterator[Settings]:
     that plus its slug, and that is the difference the mails are checked for.
 
     `database_url` is a root of this module's own, on the session's server, migrated to
-    head like a space and given three users and one invoice in the week (`_radice`). The
+    head like a space and given three users and one invoice in the week (`_seed_root`). The
     registry and every space are derived from that URL's server, as in production."""
-    condivisa = db_engine.url.render_as_string(hide_password=False)
-    radice = make_url(condivisa).set(database=RADICE_DB)
-    appoggio = Settings(database_url=condivisa, _env_file=None)  # type: ignore[call-arg]
-    impostazioni = Settings(
-        database_url=radice.render_as_string(hide_password=False),
+    shared_url = db_engine.url.render_as_string(hide_password=False)
+    root_url = make_url(shared_url).set(database=ROOT_DB)
+    helper = Settings(database_url=shared_url, _env_file=None)  # type: ignore[call-arg]
+    configured = Settings(
+        database_url=root_url.render_as_string(hide_password=False),
         public_url=PUBLIC_URL,
-        root_slug=RADICE_SLUG,
+        root_slug=ROOT_SLUG,
         timezone="Europe/Rome",
         _env_file=None,  # type: ignore[call-arg]
     )
-    create_database_if_missing(appoggio, radice)
+    create_database_if_missing(helper, root_url)
     try:
-        migrate_to_head(impostazioni, impostazioni.database_url)
-        _radice(impostazioni)
-        yield impostazioni
+        migrate_to_head(configured, configured.database_url)
+        _seed_root(configured)
+        yield configured
     finally:
-        drop_database(appoggio, radice)
+        drop_database(helper, root_url)
 
 
 @pytest.fixture(scope="module")
@@ -136,7 +136,7 @@ def _nessuna_settimana_inviata(settings: Settings, spazi: None) -> Iterator[None
     """What a run writes, undone. The `digests` row is what makes the second Monday say
     «già inviato», so a test that left one behind would decide the next one's answer."""
     yield
-    for engine in [_motore(settings, slug) for slug in SPAZI] + [_motore_radice(settings)]:
+    for engine in [_motore(settings, slug) for slug in SPAZI] + [_root_engine(settings)]:
         try:
             with engine.begin() as connection:
                 connection.execute(text("delete from activities where entity_type = 'digest'"))
@@ -172,22 +172,22 @@ def _motore(settings: Settings, slug: str) -> Engine:
     return create_engine(tenant_database_url(settings, tenant_database_name(slug)), future=True)
 
 
-def _motore_radice(settings: Settings) -> Engine:
+def _root_engine(settings: Settings) -> Engine:
     return create_engine(settings.database_url, future=True)
 
 
-def _radice(settings: Settings) -> None:
+def _seed_root(settings: Settings) -> None:
     """The root as `createadmin` and a year of use leave it: an admin who has since been
     switched off, created first; the titolare, the first admin still active; a
     collaborator; and one invoice in the week."""
     lunedi = _settimana_scorsa(settings)[0]
-    engine = _motore_radice(settings)
+    engine = _root_engine(settings)
     try:
         with session_factory(engine)() as session:
             for giorni, email, ruolo, attivo in (
-                (300, EX_TITOLARE, "admin", False),
-                (200, TITOLARE_RADICE, "admin", True),
-                (100, COLLEGA_RADICE, "collaboratore", True),
+                (300, FORMER_ADMIN, "admin", False),
+                (200, ROOT_OWNER, "admin", True),
+                (100, ROOT_COLLEAGUE, "collaboratore", True),
             ):
                 session.add(
                     User(
@@ -203,14 +203,14 @@ def _radice(settings: Settings) -> None:
             session.commit()
     finally:
         engine.dispose()
-    _scrivi_fattura(_motore_radice(settings), _settimana_scorsa(settings))
+    _write_invoice(_root_engine(settings), _settimana_scorsa(settings))
 
 
 def _una_fattura(settings: Settings, slug: str, settimana: tuple[date, date]) -> None:
-    _scrivi_fattura(_motore(settings, slug), settimana)
+    _write_invoice(_motore(settings, slug), settimana)
 
 
-def _scrivi_fattura(engine: Engine, settimana: tuple[date, date]) -> None:
+def _write_invoice(engine: Engine, settimana: tuple[date, date]) -> None:
     """One customer and one invoice issued inside the week: enough that the space is not
     empty (§2) and that the report has a section in it. Disposes of `engine`."""
     da, a = settimana
@@ -246,7 +246,7 @@ def _scrivi_fattura(engine: Engine, settimana: tuple[date, date]) -> None:
 
 def _settimane(settings: Settings, slug: str | None) -> list[str]:
     """What the space remembers of the weeks it was mailed; `None` is the root."""
-    engine = _motore(settings, slug) if slug is not None else _motore_radice(settings)
+    engine = _motore(settings, slug) if slug is not None else _root_engine(settings)
     try:
         with engine.connect() as connection:
             return list(
@@ -289,14 +289,14 @@ def test_the_cron_mails_every_space_its_week_and_prints_one_line_each(
         assert f"{PUBLIC_URL}/{slug}/app" in mail.text
         assert _settimane(settings, slug) == [iso]
     # The root installation is not in the registry and is visited all the same, first.
-    assert out.splitlines()[0] == f"{cli.RADICE}: inviato a 2"
+    assert out.splitlines()[0] == f"{cli.ROOT_LABEL}: inviato a 2"
     assert _settimane(settings, None) == [iso]
 
 
 @pytest.mark.parametrize(
     ("root_slug", "base"),
     [
-        (RADICE_SLUG, f"{PUBLIC_URL}/{RADICE_SLUG}/app"),
+        (ROOT_SLUG, f"{PUBLIC_URL}/{ROOT_SLUG}/app"),
         # No root slug: the root answers without a prefix, and `root` still names it.
         ("", f"{PUBLIC_URL}/app"),
     ],
@@ -315,39 +315,39 @@ def test_the_root_installation_gets_its_week_like_a_space(
     slug, and `--slug root` visits it alone, without the registry."""
     import pigrocrm.core.tenants as tenants
 
-    def nessun_registro(_settings: Settings) -> Engine:
-        raise AssertionError("la radice non sta nel registro")
+    def no_registry(_settings: Settings) -> Engine:
+        raise AssertionError("the root is not in the registry")
 
     monkeypatch.setattr(
         cli, "get_settings", lambda: settings.model_copy(update={"root_slug": root_slug})
     )
-    monkeypatch.setattr(tenants, "ensure_tenants_database", nessun_registro)
+    monkeypatch.setattr(tenants, "ensure_tenants_database", no_registry)
     iso = iso_week(_settimana_scorsa(settings)[0])
 
-    assert cli.main(["digest", "--slug", cli.RADICE]) == 0
+    assert cli.main(["digest", "--slug", cli.ROOT_LABEL]) == 0
 
     captured = capsys.readouterr()
-    assert captured.out.strip() == f"{cli.RADICE}: inviato a 2"
+    assert captured.out.strip() == f"{cli.ROOT_LABEL}: inviato a 2"
     assert captured.err == ""
-    radice = [mail for mail in cron.sent if mail.to.endswith("@radice.it")]
+    root_mails = [mail for mail in cron.sent if mail.to.endswith("@radice.it")]
     # Every active user who kept it on, as in a space; never the one switched off.
-    assert sorted(mail.to for mail in radice) == [COLLEGA_RADICE, TITOLARE_RADICE]
-    assert all(f"{base}/" in mail.text for mail in radice)
-    assert all(f"{PUBLIC_URL}//" not in mail.text for mail in radice)
+    assert sorted(mail.to for mail in root_mails) == [ROOT_COLLEAGUE, ROOT_OWNER]
+    assert all(f"{base}/" in mail.text for mail in root_mails)
+    assert all(f"{PUBLIC_URL}//" not in mail.text for mail in root_mails)
     assert _mie(cron) == []
     assert _settimane(settings, None) == [iso]
     # The week was read and recorded as the titolare: the first admin still active, not
     # the older one who was switched off.
-    engine = _motore_radice(settings)
+    engine = _root_engine(settings)
     try:
         with engine.connect() as connection:
-            attori = connection.execute(
+            actors = connection.execute(
                 text(
                     "select u.email from activities a join users u on u.id = a.actor_id "
                     "where a.entity_type = 'digest'"
                 )
             ).scalars()
-            assert list(attori) == [TITOLARE_RADICE]
+            assert list(actors) == [ROOT_OWNER]
     finally:
         engine.dispose()
 
@@ -412,10 +412,10 @@ def test_the_root_slug_is_not_a_way_to_name_the_root(
     """`--slug` with `PIGROCRM_ROOT_SLUG` goes on meaning a registry row: one created before
     the root took that name would otherwise be shadowed, and a `--forza` meant for it would
     resend the root's week instead. Only `root` names the root."""
-    assert cli.main(["digest", "--slug", RADICE_SLUG]) == 0
+    assert cli.main(["digest", "--slug", ROOT_SLUG]) == 0
 
     captured = capsys.readouterr()
-    assert captured.err.strip() == f"{RADICE_SLUG}: non nel registro"
+    assert captured.err.strip() == f"{ROOT_SLUG}: non nel registro"
     assert captured.out == ""
     assert cron.sent == []
 
@@ -544,7 +544,7 @@ def test_an_unreachable_registry_is_one_line_on_stderr_and_still_exits_zero(
     captured = capsys.readouterr()
     assert "registro degli spazi non raggiungibile" in captured.err
     # The root is not in the registry, so it is still tried, and fails on its own line.
-    assert f"{cli.RADICE}: saltato (OperationalError)" in captured.err
+    assert f"{cli.ROOT_LABEL}: saltato (OperationalError)" in captured.err
     assert "segreta" not in captured.err
     assert sender.sent == []
 

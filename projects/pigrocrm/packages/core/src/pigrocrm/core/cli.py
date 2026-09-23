@@ -38,7 +38,7 @@ from pigrocrm.core.telemetry import tracker_from_settings
 # What `pigrocrm digest` prints in front of the root installation's line (REB-263). Not
 # the root slug: the log names the installation apart from its spaces, and the runbook,
 # which can never carry a real company's name, documents this line as it is.
-RADICE = "root"
+ROOT_LABEL = "root"
 
 
 def createadmin(email: str | None, nome: str | None) -> int:
@@ -355,17 +355,17 @@ def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -
     from pigrocrm.core.tenants.database import tenant_database_url
 
     settings = get_settings()
-    radice_sola = slug == RADICE
+    root_only = slug == ROOT_LABEL
     # (the line's label, the database, the registry's owner or `None` for the root, the
     # base of every link in the mail)
     spaces: list[tuple[str, str | URL, str | None, str]] = []
-    if slug is None or radice_sola:
+    if slug is None or root_only:
         # `rstrip`: with no root slug this is `public_url` untouched, and a trailing slash
         # on it would put `//app` in every link.
         root_url = space_base_settings(settings, settings.root_slug or None).public_url
-        spaces.append((RADICE, settings.database_url, None, root_url.rstrip("/")))
-    registro_letto = False
-    if not radice_sola:
+        spaces.append((ROOT_LABEL, settings.database_url, None, root_url.rstrip("/")))
+    registry_read = False
+    if not root_only:
         try:
             registry = ensure_tenants_database(settings)
             try:
@@ -380,7 +380,7 @@ def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -
                         for row in session.scalars(select(Tenant).order_by(Tenant.created_at)).all()
                         if slug is None or row.slug == slug
                     )
-                registro_letto = True
+                registry_read = True
             finally:
                 registry.dispose()
         except Exception as exc:  # noqa: BLE001 - a cron line, never a traceback
@@ -391,7 +391,7 @@ def digest(*, slug: str | None, data: date | None, forza: bool, dry_run: bool) -
     if not spaces:
         # A typo in a cron line, said only when the registry was really read: an
         # unreachable one has had its own line already. Never as a week that went out.
-        if slug is not None and registro_letto:
+        if slug is not None and registry_read:
             print(f"{slug}: non nel registro", file=sys.stderr)
         return 0
 
