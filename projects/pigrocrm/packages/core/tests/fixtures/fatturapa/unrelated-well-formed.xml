@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Ordine xmlns="urn:example:ordine">
+  <Numero>42</Numero>
+  <Cliente>Acme S.r.l.</Cliente>
+</Ordine>
