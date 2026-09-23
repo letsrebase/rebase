@@ -45,3 +45,8 @@ from pigrocrm.core.timetracking.models import (  # noqa: F401
     PeriodLock,
     TimeEntry,
 )
+from pigrocrm.core.work_units.models import (  # noqa: F401
+    Approval,
+    WorkUnit,
+    WorkUnitTransition,
+)

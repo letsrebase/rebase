@@ -637,6 +637,43 @@ _COPERTE_O_UMANE: dict[Method, str] = {
 # registrato quel tool, quindi il metodo e' ora raggiungibile e la riga e' sparita
 # insieme alla sua categoria -- la stessa cancellazione, non aggiornamento, che A11
 # ha applicato a `_IN_ATTESA_DI_DECISIONE`.
+# Provisional, like `_IN_ATTESA_DI_DECISIONE`/`_IN_ATTESA_DI_DRIVE_T7` before it: REB-359
+# ships `work_units`/`approvals` as database-trigger-enforced tables and their
+# `packages/core` service layer, with no MCP tool or resource of their own yet. Spec
+# invariant 3, "agents propose, humans confirm" (design spec §0), is exactly what a raw
+# `create`/`transition`/`link_approval` tool would violate today: an agent could move a
+# day through the state graph directly, with nothing standing between it and the ledger.
+# REB-362 ("Let a document propose a contract or a day, for a human to confirm") is
+# where the actual agent-facing shape belongs -- a `propose_day`-style tool that writes
+# a `proposals` row, never the raw state machine -- and it must **delete** this block
+# when it lands, not update it, the same discipline the two provisional blocks above
+# were held to.
+_IN_ATTESA_DI_REB_362: dict[Method, str] = {
+    ("WorkUnitService", "get"): (
+        "nessun tool o resource ancora: la lettura di un day arriva con REB-362"
+    ),
+    ("WorkUnitService", "create"): (
+        "creare un work_unit direttamente violerebbe l'invariante 3 dello spec "
+        '("agents propose, humans confirm"): REB-362 espone `propose_day`, che scrive '
+        "una `proposals` row, mai questo metodo"
+    ),
+    ("WorkUnitService", "transition"): (
+        "muovere un day nel grafo di stato direttamente e' esattamente cio' che "
+        "l'invariante 3 vieta a un agente; REB-362 e' dove la conferma umana entra"
+    ),
+    ("WorkUnitService", "link_approval"): "stessa ragione di `transition`: collegare "
+    "un'approvazione e' parte del percorso che REB-362 deve ancora disegnare",
+    ("WorkUnitService", "transitions_for"): "nessun tool o resource ancora: la cronologia "
+    "di un day arriva con REB-362",
+    ("ApprovalService", "get"): "nessun tool o resource ancora: arriva con REB-362",
+    ("ApprovalService", "create"): (
+        "registrare un'approvazione e' meta' del percorso 'agents propose, humans "
+        "confirm' che REB-362 deve ancora disegnare, non un'operazione a se' stante "
+        "oggi"
+    ),
+}
+
+
 ESCLUSIONI: dict[Method, str] = {
     **_VIETATE,
     **_INTERNE,
@@ -644,6 +681,7 @@ ESCLUSIONI: dict[Method, str] = {
     **_CONFIGURAZIONE,
     **_BYTE,
     **_COPERTE_O_UMANE,
+    **_IN_ATTESA_DI_REB_362,
 }
 
 
