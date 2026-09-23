@@ -172,9 +172,14 @@ def confirm_import(
     document's own stored bytes -- never trusts an earlier `/import/review` call
     -- and writes the register through `import_issued` itself for every invoice
     that classifies `"ready"`: never a second, independently-maintained write
-    path."""
+    path. `create_customer` (REB-367) creates the matched party as a new
+    `Customer` inside that same write when no `customer_id` is given and no
+    exact tax-id match exists."""
     righe = _service(session, storage, settings).confirm_import(
-        data.document_id, actor, customer_id=data.customer_id
+        data.document_id,
+        actor,
+        customer_id=data.customer_id,
+        create_customer=data.create_customer,
     )
     return InvoiceConfirmResult(righe=righe)
 

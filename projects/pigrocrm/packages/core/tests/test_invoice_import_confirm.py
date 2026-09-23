@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.emitter.models import EmitterProfile
@@ -332,6 +333,100 @@ def test_an_explicit_customer_id_overrides_the_automatic_match(
     assert row.outcome == "imported"
     assert row.fattura is not None
     assert row.fattura.customer_id == chosen.id
+
+
+def test_create_customer_makes_exactly_one_new_customer_for_a_brand_new_counterpartys_batch(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """Design record §7 item 5's own acceptance: a `lotto` batch from a brand-new
+    counterparty produces exactly one new `Customer` row, with every invoice in
+    that batch attached to it -- never one per invoice, even though `invoice.
+    cliente` is parsed fresh for each `FatturaElettronicaBody` in the file."""
+    service = _svc(db_session, local_storage)
+    document_id = _document(db_session, local_storage, _fixture(LOTTO))
+    before_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
+
+    rows = service.confirm_import(document_id, ADMIN, create_customer=True)
+
+    assert [row.outcome for row in rows] == ["imported", "imported"]
+    customer_ids = {row.fattura.customer_id for row in rows if row.fattura is not None}
+    assert len(customer_ids) == 1
+    after_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
+    # The document's own owner customer (the `_document` baseline) plus exactly one
+    # new row for the counterparty every invoice in the batch shares.
+    assert after_customers == before_customers + 1
+    [customer_id] = customer_ids
+    created = CustomerRepository(db_session).get(customer_id)
+    assert created is not None
+    assert created.ragione_sociale == "Esempio Servizi S.r.l."
+    assert created.partita_iva == CLIENTE_PIVA
+
+
+def test_a_register_failure_after_the_customer_insert_leaves_neither_committed(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """The other half of design §7 item 5's acceptance: the customer `confirm_
+    import` creates for a brand-new counterparty and the invoice write share one
+    commit. A declared-gap conflict on the invoice's own number -- one of `import_
+    issued`'s register rules, raised *after* the customer has already been
+    flushed -- must roll back the customer too, never leave it on file with no
+    invoice pointing at it."""
+    service = _svc(db_session, local_storage)
+    InvoiceRepository(db_session).add_gap(
+        InvoiceRegisterGap(anno=2026, numero=6, motivo="annullata prima della trasmissione")
+    )
+    document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
+    before_invoices = _invoice_count(db_session)
+    before_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
+
+    [row] = service.confirm_import(document_id, ADMIN, create_customer=True)
+
+    assert row.outcome == "conflict"
+    assert row.fattura is None
+    assert _invoice_count(db_session) == before_invoices
+    assert (
+        db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
+        == before_customers
+    )
+    assert (
+        CustomerRepository(db_session).match_by_fiscal_id(
+            partita_iva=CLIENTE_PIVA, codice_fiscale=None
+        )
+        is None
+    )
+
+
+def test_a_conflict_on_the_customer_creating_invoice_does_not_poison_the_rest_of_the_batch(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """The dangling-cache regression: the first invoice in a `lotto` batch creates
+    a customer for a brand-new counterparty, then hits a register-rule conflict of
+    its own (a declared gap) and rolls back -- taking that customer with it. The
+    *second* invoice, from the same counterparty, must not reuse the now-rolled-
+    back id: it gets its own fresh customer and imports normally, rather than
+    crashing with a `NotFound` on a dangling id."""
+    service = _svc(db_session, local_storage)
+    InvoiceRepository(db_session).add_gap(
+        InvoiceRegisterGap(anno=2026, numero=6, motivo="annullata prima della trasmissione")
+    )
+    document_id = _document(db_session, local_storage, _fixture(LOTTO))
+    before_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
+
+    rows = service.confirm_import(document_id, ADMIN, create_customer=True)
+
+    assert [row.outcome for row in rows] == ["conflict", "imported"]
+    assert rows[0].fattura is None
+    assert rows[1].fattura is not None
+    assert rows[1].fattura.numero == 7
+    after_customers = db_session.execute(select(func.count()).select_from(Customer)).scalar_one()
+    # Exactly one new customer survives: the one invoice 6's own rollback undid,
+    # plus the one invoice 7 created for itself.
+    assert after_customers == before_customers + 1
+    created = CustomerRepository(db_session).match_by_fiscal_id(
+        partita_iva=CLIENTE_PIVA, codice_fiscale=None
+    )
+    assert created is not None
+    assert rows[1].fattura.customer_id == created.id
 
 
 def test_confirming_the_same_document_twice_the_second_time_is_already_present(
