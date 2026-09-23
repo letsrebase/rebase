@@ -15,8 +15,10 @@ import {
   type Comment,
   type CompaniesFilters,
   type Company,
+  type CompanyOverride,
   type Freelancer,
   type FreelancerDraft,
+  type FreelancerOverride,
   type Remoto,
   type Talento,
   type TalentiFilters,
@@ -33,7 +35,9 @@ import {
   formatEuro,
 } from '@/lib/format'
 import { cn } from '@rebase/ui/cn'
+import { AuditTrail } from './AuditTrail'
 import { Comments } from './Comments'
+import { CompanyOverrideDialog, FreelancerOverrideDialog, RecordLifecycle } from './Override'
 
 const SEARCH_DEBOUNCE_MS = 300
 
@@ -792,6 +796,7 @@ function RecentEvents({
 export function AdminFreelancerDetail() {
   const { id } = useParams({ from: '/signedIn/admin/freelance/$id' })
   const client = useQueryClient()
+  const auditKey = ['audit', 'freelancers', id] as const
   const row = useQuery({
     queryKey: ['freelancer', id],
     queryFn: async () => (await admin.freelancer(id)) as FreelancerDetail,
@@ -808,6 +813,30 @@ export function AdminFreelancerDetail() {
       void client.invalidateQueries({ queryKey: ['freelancers'] })
     },
   })
+  // Every mutation REB-355 adds shares `move`'s own merge-not-replace contract, plus a
+  // fresh read of the trail: an override, a clear, a delete or a restore all write a
+  // fresh `AdminAction` the admin expects to see without reloading the page. `commenti`
+  // is kept from the current cache rather than `updated`'s own (always `[]`, since none
+  // of these routes' response models fill it -- only `get` does): replacing it here
+  // would wipe the thread from view until the next full fetch.
+  function mergeAndRefresh(updated: Freelancer) {
+    client.setQueryData<FreelancerDetail>(['freelancer', id], (current) =>
+      current && { ...current, ...updated, commenti: current.commenti },
+    )
+    void client.invalidateQueries({ queryKey: ['freelancers'] })
+    void client.invalidateQueries({ queryKey: auditKey })
+  }
+  const [overrideOpen, setOverrideOpen] = useState(false)
+  const override = useMutation({
+    mutationFn: (data: FreelancerOverride) => admin.overrideFreelancer(id, data),
+    onSuccess: (updated) => {
+      mergeAndRefresh(updated)
+      setOverrideOpen(false)
+    },
+  })
+  const clearCv = useMutation({ mutationFn: () => admin.clearFreelancerCv(id), onSuccess: mergeAndRefresh })
+  const del = useMutation({ mutationFn: () => admin.deleteFreelancer(id), onSuccess: mergeAndRefresh })
+  const restore = useMutation({ mutationFn: () => admin.restoreFreelancer(id), onSuccess: mergeAndRefresh })
   // The thread lives on the detail row, so a new comment goes into the same cache entry
   // and nothing is fetched twice.
   const onCommentAdded = (created: Comment) =>
@@ -817,22 +846,70 @@ export function AdminFreelancerDetail() {
   if (row.isError) return <Empty>Scheda non trovata.</Empty>
   if (row.isPending) return <Empty>Caricamento…</Empty>
   const f = row.data
+  const overrideFailure =
+    override.error instanceof ApiError
+      ? override.error.message
+      : override.error
+        ? 'Non riesco a salvare la scheda.'
+        : null
+  const clearCvFailure =
+    clearCv.error instanceof ApiError
+      ? clearCv.error.message
+      : clearCv.error
+        ? 'Non riesco a rimuovere il CV.'
+        : null
+  const lifecycleError = del.error ?? restore.error
+  const lifecycleFailure =
+    lifecycleError instanceof ApiError
+      ? lifecycleError.message
+      : lifecycleError
+        ? 'Non riesco a completare l’operazione.'
+        : null
   return (
     <>
       <Header title={`${f.nome} ${f.cognome}`}>
         <div className="flex flex-wrap items-center gap-2">
           <StatePill stato={f.stato} />
           {!f.completa && <IncompletePill />}
-          {f.cv_filename !== null && f.cv_size !== null && (
-            <Button asChild variant="outline" size="sm">
-              <a href={admin.cvUrl(f.id)}>
-                <Download className="mr-2 size-4" />
-                CV · {formatBytes(f.cv_size)}
-              </a>
+          {f.cv_filename !== null && f.cv_size !== null && f.deleted_at === null && (
+            <>
+              <Button asChild variant="outline" size="sm">
+                <a href={admin.cvUrl(f.id)}>
+                  <Download className="mr-2 size-4" />
+                  CV · {formatBytes(f.cv_size)}
+                </a>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => clearCv.mutate()}
+                disabled={clearCv.isPending}
+              >
+                {clearCv.isPending ? 'Rimuovo…' : 'Rimuovi CV'}
+              </Button>
+            </>
+          )}
+          {f.deleted_at === null && (
+            <Button type="button" variant="outline" size="sm" onClick={() => setOverrideOpen(true)}>
+              Modifica scheda
             </Button>
           )}
+          <RecordLifecycle
+            deletedAt={f.deleted_at}
+            deleting={del.isPending}
+            restoring={restore.isPending}
+            onDelete={() => del.mutate()}
+            onRestore={() => restore.mutate()}
+            error={lifecycleFailure}
+          />
         </div>
       </Header>
+      {clearCvFailure && (
+        <p role="alert" className="px-6 text-sm text-destructive">
+          {clearCvFailure}
+        </p>
+      )}
       <div className="grid gap-6 p-6 lg:grid-cols-3">
         <dl className="space-y-3 text-sm lg:col-span-2">
           <Row label="Email"><a className="underline underline-offset-2" href={`mailto:${f.email}`}>{f.email}</a></Row>
@@ -862,13 +939,15 @@ export function AdminFreelancerDetail() {
           </Row>
           <Row label="Scheda">{ownership(f)}</Row>
         </dl>
-        <StatusEditor
-          states={FREELANCER_STATES}
-          stato={f.stato}
-          note={f.note}
-          saving={move.isPending}
-          onSave={(stato, note) => move.mutate({ stato, note })}
-        />
+        {f.deleted_at === null && (
+          <StatusEditor
+            states={FREELANCER_STATES}
+            stato={f.stato}
+            note={f.note}
+            saving={move.isPending}
+            onSave={(stato, note) => move.mutate({ stato, note })}
+          />
+        )}
       </div>
       <FreelancerIscrizione utm={f.iscrizione_utm} />
       <RecentEvents
@@ -890,12 +969,26 @@ export function AdminFreelancerDetail() {
           <p className="text-sm"><code className="border bg-muted px-1.5 py-0.5">{f.pigro_slug}</code></p>
         </section>
       )}
+      <AuditTrail
+        kind="freelancers"
+        id={f.id}
+        canRevert={f.deleted_at === null}
+        onReverted={() => void client.invalidateQueries({ queryKey: ['freelancer', id] })}
+      />
       <Comments kind="freelancers" id={f.id} comments={f.commenti} onAdded={onCommentAdded} />
       <p className="px-6 pb-6">
         <Link to="/admin/talent" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
           <ArrowLeft className="size-4" /> Tutti i talenti
         </Link>
       </p>
+      <FreelancerOverrideDialog
+        freelancer={f}
+        open={overrideOpen}
+        onOpenChange={setOverrideOpen}
+        onSave={(data) => override.mutate(data)}
+        saving={override.isPending}
+        error={overrideFailure}
+      />
     </>
   )
 }
@@ -1077,6 +1170,7 @@ export function AdminCompanies() {
 export function AdminCompanyDetail() {
   const { id } = useParams({ from: '/signedIn/admin/companies/$id' })
   const client = useQueryClient()
+  const auditKey = ['audit', 'companies', id] as const
   const row = useQuery({ queryKey: ['company', id], queryFn: () => admin.company(id) })
   const move = useMutation({
     mutationFn: ({ stato, note }: { stato: string; note: string }) =>
@@ -1086,6 +1180,29 @@ export function AdminCompanyDetail() {
       void client.invalidateQueries({ queryKey: ['companies'] })
     },
   })
+  // Every mutation REB-355 adds shares `move`'s own merge-not-replace contract, plus a
+  // fresh read of the trail: an override, a delete or a restore all write a fresh
+  // `AdminAction` the admin expects to see without reloading the page. `commenti` is
+  // kept from the current cache rather than `updated`'s own (always `[]`, since none of
+  // these routes' response models fill it -- only `get` does): replacing it here would
+  // wipe the thread from view until the next full fetch.
+  function mergeAndRefresh(updated: Company) {
+    client.setQueryData<Company>(['company', id], (current) =>
+      current && { ...current, ...updated, commenti: current.commenti },
+    )
+    void client.invalidateQueries({ queryKey: ['companies'] })
+    void client.invalidateQueries({ queryKey: auditKey })
+  }
+  const [overrideOpen, setOverrideOpen] = useState(false)
+  const override = useMutation({
+    mutationFn: (data: CompanyOverride) => admin.overrideCompany(id, data),
+    onSuccess: (updated) => {
+      mergeAndRefresh(updated)
+      setOverrideOpen(false)
+    },
+  })
+  const del = useMutation({ mutationFn: () => admin.deleteCompany(id), onSuccess: mergeAndRefresh })
+  const restore = useMutation({ mutationFn: () => admin.restoreCompany(id), onSuccess: mergeAndRefresh })
   const onCommentAdded = (created: Comment) =>
     client.setQueryData<Company>(['company', id], (current) =>
       current && { ...current, commenti: [created, ...current.commenti] },
@@ -1093,9 +1210,39 @@ export function AdminCompanyDetail() {
   if (row.isError) return <Empty>Richiesta non trovata.</Empty>
   if (row.isPending) return <Empty>Caricamento…</Empty>
   const c = row.data
+  const overrideFailure =
+    override.error instanceof ApiError
+      ? override.error.message
+      : override.error
+        ? 'Non riesco a salvare la richiesta.'
+        : null
+  const lifecycleError = del.error ?? restore.error
+  const lifecycleFailure =
+    lifecycleError instanceof ApiError
+      ? lifecycleError.message
+      : lifecycleError
+        ? 'Non riesco a completare l’operazione.'
+        : null
   return (
     <>
-      <Header title={c.nome_azienda}><StatePill stato={c.stato} /></Header>
+      <Header title={c.nome_azienda}>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatePill stato={c.stato} />
+          {c.deleted_at === null && (
+            <Button type="button" variant="outline" size="sm" onClick={() => setOverrideOpen(true)}>
+              Modifica richiesta
+            </Button>
+          )}
+          <RecordLifecycle
+            deletedAt={c.deleted_at}
+            deleting={del.isPending}
+            restoring={restore.isPending}
+            onDelete={() => del.mutate()}
+            onRestore={() => restore.mutate()}
+            error={lifecycleFailure}
+          />
+        </div>
+      </Header>
       <div className="grid gap-6 p-6 lg:grid-cols-3">
         <dl className="space-y-3 text-sm lg:col-span-2">
           <Row label="Referente">{c.referente} · <a className="underline underline-offset-2" href={`mailto:${c.email}`}>{c.email}</a></Row>
@@ -1104,20 +1251,36 @@ export function AdminCompanyDetail() {
           <Row label="Budget a giornata">{formatEuro(c.budget_giornaliero)}</Row>
           <Row label="Arrivata">{formatDate(c.created_at)}{c.utm_source ? ` · da ${c.utm_source}` : ''}{c.origine ? ` · pagina ${c.origine}` : ''}</Row>
         </dl>
-        <StatusEditor
-          states={COMPANY_STATES}
-          stato={c.stato}
-          note={c.note}
-          saving={move.isPending}
-          onSave={(stato, note) => move.mutate({ stato, note })}
-        />
+        {c.deleted_at === null && (
+          <StatusEditor
+            states={COMPANY_STATES}
+            stato={c.stato}
+            note={c.note}
+            saving={move.isPending}
+            onSave={(stato, note) => move.mutate({ stato, note })}
+          />
+        )}
       </div>
+      <AuditTrail
+        kind="companies"
+        id={c.id}
+        canRevert={c.deleted_at === null}
+        onReverted={() => void client.invalidateQueries({ queryKey: ['company', id] })}
+      />
       <Comments kind="companies" id={c.id} comments={c.commenti} onAdded={onCommentAdded} />
       <p className="px-6 pb-6">
         <Link to="/admin/companies" className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
           <ArrowLeft className="size-4" /> Tutte le aziende
         </Link>
       </p>
+      <CompanyOverrideDialog
+        company={c}
+        open={overrideOpen}
+        onOpenChange={setOverrideOpen}
+        onSave={(data) => override.mutate(data)}
+        saving={override.isPending}
+        error={overrideFailure}
+      />
     </>
   )
 }

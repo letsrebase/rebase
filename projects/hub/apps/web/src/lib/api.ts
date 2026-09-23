@@ -189,6 +189,9 @@ export interface Freelancer {
   provenienza: 'form' | 'landing'
   /** When they last did, null if never. */
   ultimo_accesso: string | null
+  /** `null` while the card is live; a moment once an admin soft-deletes it (REB-347),
+   *  reversed by `restoreFreelancer` (REB-355). */
+  deleted_at: string | null
 }
 
 export interface Company {
@@ -207,6 +210,8 @@ export interface Company {
   utm_source: string | null
   created_at: string
   commenti: Comment[]
+  /** Same soft-delete as `Freelancer.deleted_at`. */
+  deleted_at: string | null
 }
 
 /** One remark in a row's thread: appended, signed and dated, never edited. */
@@ -230,6 +235,54 @@ export interface PigroSpace {
   created_at: string
   url: string
   membro: { id: string; nome: string; cognome: string } | null
+}
+
+/** One entry of the override/clear/delete/restore/revert trail (REB-347), as an admin
+ *  reads it (REB-355): who, when, which kind, and the diff for an `overridden`/
+ *  `cleared` entry -- `changed`/`before`/`after` are absent on a `deleted`/`restored`
+ *  entry, whose kind is the whole story. */
+export interface AdminAction {
+  id: string
+  entity_type: string
+  entity_id: string
+  kind: 'overridden' | 'cleared' | 'deleted' | 'restored'
+  admin_id: string
+  admin_nome: string
+  payload: {
+    changed?: string[]
+    before?: Record<string, unknown>
+    after?: Record<string, unknown>
+  }
+  created_at: string
+}
+
+/** What an admin may set or clear on a `Freelancer` beyond `stato`/`note` (REB-347),
+ *  mirroring `FreelancerOverride` on the server one for one: a key present and `null`
+ *  clears a nullable field, a key left out of the body leaves it alone. `links` and
+ *  `nome`/`cognome` are never nullable columns, so those are only ever a value. */
+export interface FreelancerOverride {
+  nome?: string
+  cognome?: string
+  linkedin_url?: string | null
+  tariffa_giornaliera?: string | null
+  posizione?: string | null
+  remoto?: Remoto | null
+  links?: string[]
+  compilata_da?: 'persona' | 'admin'
+}
+
+/** Same contract as `FreelancerOverride`, for a `Company` request's own fields beyond
+ *  `stato`/`note`: the four project answers, the company's own name, and the
+ *  referente's identity on the linked `users` row -- admin-only even for a self-edit. */
+export interface CompanyOverride {
+  nome?: string
+  cognome?: string
+  linkedin_url?: string | null
+  nome_azienda?: string
+  progetto?: string
+  periodo_da?: string
+  durata?: string
+  budget_giornaliero?: string
 }
 
 /** The guide's numbers for the admin area (ORB-156), as `GET /api/hub/perks/guide` answers. */
@@ -415,6 +468,21 @@ export const admin = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stato, note }),
     }),
+  /** Sets or clears any field beyond `stato`/`note` (REB-347/355): a key present and
+   *  `null` clears it, a key left out of `data` leaves it alone. */
+  overrideFreelancer: (id: string, data: FreelancerOverride) =>
+    request<Freelancer>(`/api/hub/freelancers/${id}/override`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  /** Drops the stored CV; the file itself never leaves the audit trail (REB-347/355). */
+  clearFreelancerCv: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}/cv`, { method: 'DELETE' }),
+  /** Soft-deletes the card: it drops off `GET /freelancers` and `GET /talent`, and
+   *  `restoreFreelancer` reverses it. Never a hard delete (REB-347/355). */
+  deleteFreelancer: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}`, { method: 'DELETE' }),
+  restoreFreelancer: (id: string) =>
+    request<Freelancer>(`/api/hub/freelancers/${id}/restore`, { method: 'POST' }),
   companies: (filters: CompaniesFilters & { cursor?: string; limit?: number } = {}) => {
     const qs = filterQuery(filters)
     return request<CompanyList>(`/api/hub/companies${qs ? `?${qs}` : ''}`)
@@ -426,6 +494,18 @@ export const admin = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stato, note }),
     }),
+  /** Sets or clears any field beyond `stato`/`note` (REB-347/355), same contract as
+   *  `overrideFreelancer`. */
+  overrideCompany: (id: string, data: CompanyOverride) =>
+    request<Company>(`/api/hub/companies/${id}/override`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  /** Soft-deletes the request: it drops off `GET /companies`, and `restoreCompany`
+   *  reverses it. Never a hard delete (REB-347/355). */
+  deleteCompany: (id: string) => request<Company>(`/api/hub/companies/${id}`, { method: 'DELETE' }),
+  restoreCompany: (id: string) => request<Company>(`/api/hub/companies/${id}/restore`, { method: 'POST' }),
   /** Every card and every bare sign-up as one list (REB-282/283), `stato` `lead` for
    *  the bare ones alone -- the read model «Talenti» replaced «Developer e CTO» and
    *  «Iscrizioni» with. `filters` beside `stato` and `cursor` are REB-285's search and
@@ -479,6 +559,14 @@ export const admin = {
   /** The author is the session's, so the body is the text alone. */
   addComment: (kind: CommentKind, id: string, testo: string) =>
     request<Comment>(`/api/hub/${kind}/${id}/comments`, json({ testo })),
+  /** Who overrode, cleared, deleted, restored or reverted this card or request, and
+   *  when (REB-355): the same trail shape for either `kind`, newest first. */
+  auditTrail: (kind: CommentKind, id: string) => request<AdminAction[]>(`/api/hub/${kind}/${id}/audit`),
+  /** Puts a field back to the value a past `overridden` entry's own `before` names,
+   *  itself recorded as a fresh override (REB-355): the response is the plain card or
+   *  request, which the caller already reads through its own detail query. */
+  revertAction: (kind: CommentKind, id: string, actionId: string) =>
+    request<unknown>(`/api/hub/${kind}/${id}/audit/${actionId}/revert`, { method: 'POST' }),
 }
 
 // ---- whoever is signed in --------------------------------------------------------------
