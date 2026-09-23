@@ -34,6 +34,8 @@ from pigrocrm.core.contracts.repository import ContractRepository
 from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.fiscal.ceiling import taxable_ricavi
+from pigrocrm.core.fiscal.pack import resolve_pack
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceLineIn, InvoiceRead
@@ -608,13 +610,21 @@ class AnalyticsService:
         # which tells the user which screen to go to -- better than an estimate of zero
         # computed from three nulls, which reads as "you owe nothing".
         profile = FiscalProfileService(self.session).get(actor)
-        return estimate_income(
-            anno=anno,
+        if ricavi is None:
             # Every issued invoice of the year, deal or no deal: the estimate is about
             # the person's income, and an invoice attached to no deal is still income.
-            # `ricavi` overrides the year's issued revenue when the caller asks "what if":
-            # the economic overview passes what was collected, and what is projected.
-            ricavi=ricavi if ricavi is not None else self.repo.annual_revenue(anno),
+            # Reduced by the pack's own tagged charges (REB-352 §2, §6's resolved
+            # decision): a rivalsa line counts toward the ceiling in full but is not
+            # taxable income, so it never reaches the coefficiente base here even
+            # though `annual_revenue` sums it in full.
+            pack = resolve_pack(profile.pack_id, profile.pack_version)
+            ricavi = taxable_ricavi(pack, self.session, anno, self.repo.annual_revenue(anno))
+        return estimate_income(
+            anno=anno,
+            # `ricavi` overrides the reduced figure above when the caller asks "what
+            # if": the economic overview passes what was collected, and what is
+            # projected, neither of which the pack's own tag applies to.
+            ricavi=ricavi,
             coefficiente=profile.coefficiente_redditivita,
             aliquota_sostitutiva=profile.aliquota_imposta_sostitutiva,
             aliquota_inps=profile.aliquota_inps,
