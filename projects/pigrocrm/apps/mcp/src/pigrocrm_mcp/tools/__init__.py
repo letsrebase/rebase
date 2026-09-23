@@ -8,7 +8,7 @@ from pydantic import WithJsonSchema
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.schemas import BudgetQuery, PeriodPnlQuery
-from pigrocrm.core.contracts.schemas import ContractListQuery
+from pigrocrm.core.contracts.schemas import ContractListQuery, ContractProjectionQuery
 from pigrocrm.core.customers.schemas import CustomerListQuery, CustomerUpdate
 from pigrocrm.core.dashboard.schemas import PeriodoQuery
 from pigrocrm.core.db import SortDirection
@@ -126,6 +126,13 @@ OptionalProbabilita = Annotated[
             "default": None,
         }
     ),
+]
+# The required counterpart of `OptionalProbabilita` above, for a percentage that has
+# no "unset" reading (REB-375's `set_renewal_assumption`: a renewal assumption with
+# no probability is not a lesser assumption, it is not one) -- same bound, same
+# runtime-permissive / schema-only-strict split, minus the `null` branch.
+Probabilita = Annotated[
+    int | str, WithJsonSchema({"type": "integer", "minimum": 0, "maximum": 100})
 ]
 OptionalMoney = Annotated[
     float | str | None,
@@ -669,6 +676,54 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
             contract_id,
             _iso_date(as_of),
             cast(float, soglia) if soglia is not None else None,
+        )
+
+    @mcp.tool()
+    @guard
+    def set_renewal_assumption(
+        contract_id: str,
+        probabilita: Probabilita,
+        volume_atteso: MoneyArg,
+        orizzonte_al: str,
+    ) -> dict[str, Any]:
+        """Registra o aggiorna l'assunzione di rinnovo di un contratto: quanto e' probabile
+        che rinnovi (`probabilita`, 0-100), il volume atteso oltre il termine noto e fino a
+        `orizzonte_al` (YYYY-MM-DD). Una per contratto: una seconda chiamata sovrascrive la
+        precedente. Contribuisce a `project_contract_revenue` insieme allo scadenzario
+        ricorrente del contratto, mai al `proiettato` di `get_economic_dashboard`.
+        """
+        return contracts.set_renewal_assumption(
+            context,
+            contract_id,
+            {
+                "probabilita": probabilita,
+                "volume_atteso": volume_atteso,
+                "orizzonte_al": orizzonte_al,
+            },
+        )
+
+    @mcp.tool()
+    @guard
+    def get_renewal_assumption(contract_id: str) -> dict[str, Any]:
+        """Legge l'assunzione di rinnovo di un contratto, se registrata."""
+        return contracts.get_renewal_assumption(context, contract_id)
+
+    @mcp.tool()
+    @guard
+    def project_contract_revenue(
+        contract_id: str, da: str, a: str, come_di: IsoDateStr = None
+    ) -> dict[str, Any]:
+        """Il ricavo «programmato» di un contratto oltre la sua finestra di irrevocabilita'
+        nella finestra `[da, a)` (YYYY-MM-DD, `a` esclusa), piu' l'eventuale contributo
+        dell'assunzione di rinnovo, prorata sul proprio orizzonte. `come_di` e' la data di
+        riferimento per calcolare la finestra di irrevocabilita'; assente, e' oggi. Una
+        cifra distinta dal `proiettato` di `get_economic_dashboard`, basata sullo
+        scadenzario ricorrente del contratto e non sulle bozze/proforma in corso.
+        """
+        return contracts.project_revenue(
+            context,
+            contract_id,
+            ContractProjectionQuery.model_validate({"da": da, "a": a, "come_di": come_di}),
         )
 
     # ---- shared ------------------------------------------------------------

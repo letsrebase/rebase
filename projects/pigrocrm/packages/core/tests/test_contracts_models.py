@@ -12,7 +12,7 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.contracts.models import Contract, RateCard
+from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption
 from pigrocrm.core.customers.models import Customer
 
 
@@ -249,3 +249,76 @@ def test_periodo_erogazione_is_accepted_on_a_tipo_ricorrente_fisso_card(
 def test_rate_cards_has_an_index_on_contract_id(db_session: Session) -> None:
     indexes = inspect(db_session.get_bind()).get_indexes("rate_cards")
     assert any(index["name"] == "ix_rate_cards_contract_id" for index in indexes)
+
+
+# ---- renewal_assumptions (REB-375) --------------------------------------------------
+
+
+def _renewal_assumption(
+    db_session: Session, contract: Contract, **overrides: object
+) -> RenewalAssumption:
+    payload: dict[str, object] = {
+        "contract_id": contract.id,
+        "probabilita": 50,
+        "volume_atteso": Decimal("36500.00"),
+        "orizzonte_al": date(2027, 12, 31),
+    }
+    payload.update(overrides)
+    assumption = RenewalAssumption(**payload)  # type: ignore[arg-type]
+    db_session.add(assumption)
+    db_session.flush()
+    return assumption
+
+
+def test_a_renewal_assumption_can_be_created_and_read(db_session: Session) -> None:
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer)
+    assumption = _renewal_assumption(db_session, contract)
+    assert assumption.contract_id == contract.id
+    assert assumption.probabilita == 50
+    assert assumption.volume_atteso == Decimal("36500.00")
+    assert assumption.orizzonte_al == date(2027, 12, 31)
+
+
+def test_probabilita_below_zero_is_refused(db_session: Session) -> None:
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer)
+    with pytest.raises(IntegrityError):
+        _renewal_assumption(db_session, contract, probabilita=-1)
+
+
+def test_probabilita_above_a_hundred_is_refused(db_session: Session) -> None:
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer)
+    with pytest.raises(IntegrityError):
+        _renewal_assumption(db_session, contract, probabilita=101)
+
+
+def test_a_negative_volume_atteso_is_refused(db_session: Session) -> None:
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer)
+    with pytest.raises(IntegrityError):
+        _renewal_assumption(db_session, contract, volume_atteso=Decimal("-1.00"))
+
+
+def test_a_second_renewal_assumption_on_the_same_contract_is_refused(
+    db_session: Session,
+) -> None:
+    """One row per contract (Done-when: a human revises the belief in place, this
+    table never accumulates a history the database would have to disambiguate)."""
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer)
+    _renewal_assumption(db_session, contract)
+    with pytest.raises(IntegrityError):
+        _renewal_assumption(db_session, contract)
+
+
+def test_renewal_assumptions_on_different_contracts_are_both_accepted(
+    db_session: Session,
+) -> None:
+    customer = _customer(db_session)
+    contract_a = _contract(db_session, customer, titolo="Contratto A")
+    contract_b = _contract(db_session, customer, titolo="Contratto B")
+    first = _renewal_assumption(db_session, contract_a)
+    second = _renewal_assumption(db_session, contract_b)
+    assert first.contract_id != second.contract_id

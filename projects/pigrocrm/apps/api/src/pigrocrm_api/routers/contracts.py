@@ -9,11 +9,20 @@ from pigrocrm.core.contracts.schemas import (
     ContractCreate,
     ContractListQuery,
     ContractPage,
+    ContractProjectionQuery,
+    ContractProjectionRead,
     ContractRead,
     RateCardCreate,
     RateCardRead,
+    RenewalAssumptionRead,
+    RenewalAssumptionUpsert,
 )
-from pigrocrm.core.contracts.service import ContractService, RateCardService
+from pigrocrm.core.contracts.service import (
+    ContractProjectionService,
+    ContractService,
+    RateCardService,
+    RenewalAssumptionService,
+)
 from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection
 from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import ActorDep, SessionDep
@@ -79,3 +88,39 @@ def create_rate_card(
 @router.get("/{contract_id}/rate-cards", response_model=list[RateCardRead])
 def list_rate_cards(contract_id: UUID, session: SessionDep, actor: ActorDep) -> list[RateCardRead]:
     return RateCardService(session).list_for_contract(contract_id, actor)
+
+
+@router.put("/{contract_id}/renewal-assumption", response_model=RenewalAssumptionRead)
+def upsert_renewal_assumption(
+    contract_id: UUID, data: RenewalAssumptionUpsert, session: SessionDep, actor: ActorDep
+) -> RenewalAssumptionRead:
+    """Admin or collaboratore, enforced by the service (`actor.require_write`), not
+    here -- there is no role dependency in this codebase, and adding one here would
+    put the same rule in two places."""
+    return RenewalAssumptionService(session).upsert(contract_id, data, actor)
+
+
+@router.get("/{contract_id}/renewal-assumption", response_model=RenewalAssumptionRead)
+def get_renewal_assumption(
+    contract_id: UUID, session: SessionDep, actor: ActorDep
+) -> RenewalAssumptionRead:
+    return RenewalAssumptionService(session).get(contract_id, actor)
+
+
+@router.get("/{contract_id}/projection", response_model=ContractProjectionRead)
+def project_revenue(
+    contract_id: UUID,
+    session: SessionDep,
+    actor: ActorDep,
+    da: Annotated[date, Query(description="Inizio della finestra, YYYY-MM-DD, inclusa")],
+    a: Annotated[date, Query(description="Fine della finestra, YYYY-MM-DD, esclusa")],
+    come_di: Annotated[
+        date | None,
+        Query(description="Data di riferimento per la finestra di irrevocabilità; default oggi"),
+    ] = None,
+) -> ContractProjectionRead:
+    """Il ricavo «programmato» oltre la finestra di irrevocabilità, più il contributo
+    dell'eventuale assunzione di rinnovo -- una figura distinta dal `proiettato` di
+    `GET /api/analytics/overview`, mai combinata con esso."""
+    query = ContractProjectionQuery(da=da, a=a, come_di=come_di)
+    return ContractProjectionService(session).project(contract_id, query, actor)

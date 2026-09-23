@@ -203,3 +203,43 @@ class RateCard(Base, PrimaryKeyMixin, TimestampMixin):
             name="ck_rate_cards_no_overlap",
         ),
     )
+
+
+class RenewalAssumption(Base, PrimaryKeyMixin, TimestampMixin):
+    """A contract's own human-recorded belief about revenue beyond its known term --
+    mastro's `RenewalAssumption` (`certainty.ts:133-147`), REB-352 spec §1.7/§1.3,
+    REB-375. `projected` never invents a fourth certainty tier by estimating a pace
+    nobody recorded (mastro's own "Assumptions and pace" design note): this table is
+    the human's own probability, expected volume and horizon, nothing else, and it
+    is read by `contracts/projection.py` -- never written there.
+
+    One row per contract, not a history: the belief is revised in place (`unique=True`
+    below), the same "single row, admin decides" shape as `FiscalProfile`, scoped here
+    to one contract instead of the whole installation. No `SoftDeleteMixin`, matching
+    `RateCard`: an owned fact of its contract, cleared by overwriting it, not archived.
+
+    `probabilita` is `Integer`, 0-100, matching `Deal.probabilita`'s own shape
+    (deals/models.py) rather than mastro's `number` 0-1 fraction -- the same percentage
+    concept already has one representation on this schema, and a second one beside it
+    is exactly the duplication this project's own rule forbids. The projection divides
+    by 100 where mastro divides by 1.
+    """
+
+    __tablename__ = "renewal_assumptions"
+
+    contract_id: Mapped[UUID] = mapped_column(
+        ForeignKey("contracts.id"), nullable=False, unique=True
+    )
+    probabilita: Mapped[int] = mapped_column(Integer, nullable=False)
+    volume_atteso: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    orizzonte_al: Mapped[date] = mapped_column(Date, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint(
+            "probabilita >= 0 AND probabilita <= 100",
+            name="ck_renewal_assumptions_probabilita_range",
+        ),
+        CheckConstraint(
+            "volume_atteso >= 0", name="ck_renewal_assumptions_volume_atteso_non_negative"
+        ),
+    )

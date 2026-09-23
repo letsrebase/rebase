@@ -196,3 +196,67 @@ class ContractConcentrationCap(BaseModel):
     quota: float
     soglia: float | None = None
     superata: bool | None = None
+
+
+# ---- renewal assumptions and the projected figure (REB-375) -----------------------
+
+
+class RenewalAssumptionUpsert(BaseModel):
+    """A contract's own recorded belief about revenue beyond its known term -- mastro's
+    `RenewalAssumption` (`certainty.ts:133-147`). `probabilita` mirrors
+    `Deal.probabilita`'s own 0-100 integer shape (deals/models.py), not a 0-1 fraction:
+    the same percentage concept already has one representation on this schema."""
+
+    probabilita: int = Field(ge=0, le=100)
+    volume_atteso: Decimal = Field(
+        ge=0, max_digits=IMPORTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES
+    )
+    orizzonte_al: date
+
+
+class RenewalAssumptionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    contract_id: UUID
+    probabilita: int
+    volume_atteso: Decimal
+    orizzonte_al: date
+    created_at: datetime
+    updated_at: datetime
+
+
+class ContractProjectionQuery(BaseModel):
+    """The window `ContractProjectionService.project` reads: `[da, a)`, half-open --
+    an occurrence dated exactly `a` belongs to the next window, matching
+    `PeriodPnlQuery`'s own convention (analytics/schemas.py). `come_di` is the date
+    a termination notice is assumed served on; `None` reads as "today", resolved by
+    the service and never by this schema (packages/core's own single clock,
+    db/clock.py)."""
+
+    da: date
+    a: date
+    come_di: date | None = None
+
+    @model_validator(mode="after")
+    def _a_after_da(self) -> "ContractProjectionQuery":
+        if self.a <= self.da:
+            raise ValueError("a deve essere successiva a da")
+        return self
+
+
+class ContractProjectionRead(BaseModel):
+    """Distinct from, and never combined with, `CashOverview.proiettato`
+    (analytics/schemas.py): that figure is drafts and proformas already in the
+    system, this one is a contract's own recurring-fee schedule plus its own
+    recorded renewal assumption -- the Done-when criterion's "genuine 'projected'
+    figure"."""
+
+    contract_id: UUID
+    come_di: date
+    da: date
+    a: date
+    finestra_irrevocabilita_fino_al: date | None
+    programmato: Decimal
+    da_rinnovo: Decimal
+    totale: Decimal

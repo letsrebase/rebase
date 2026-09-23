@@ -8,18 +8,27 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.analytics.repository import AnalyticsRepository
+from pigrocrm.core.contracts import projection
 from pigrocrm.core.contracts.dates import anniversary_year_bounds
-from pigrocrm.core.contracts.models import Contract, RateCard
-from pigrocrm.core.contracts.repository import ContractRepository, RateCardRepository
+from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption
+from pigrocrm.core.contracts.repository import (
+    ContractRepository,
+    RateCardRepository,
+    RenewalAssumptionRepository,
+)
 from pigrocrm.core.contracts.schemas import (
     CONTRACT_SORTS,
     ContractConcentrationCap,
     ContractCreate,
     ContractListQuery,
     ContractPage,
+    ContractProjectionQuery,
+    ContractProjectionRead,
     ContractRead,
     RateCardCreate,
     RateCardRead,
+    RenewalAssumptionRead,
+    RenewalAssumptionUpsert,
 )
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db import encode_cursor, today_local
@@ -225,3 +234,101 @@ class RateCardService:
         return [
             RateCardRead.model_validate(card) for card in self.repo.list_for_contract(contract_id)
         ]
+
+
+class RenewalAssumptionService:
+    """A contract's own recorded belief about revenue beyond its known term
+    (REB-375). One row per contract, revised in place -- see `RenewalAssumption`
+    (contracts/models.py) for why this is a singleton-per-parent, not a history."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.repo = RenewalAssumptionRepository(session)
+        self.contracts = ContractRepository(session)
+        self.activities = ActivityService(session)
+
+    def upsert(
+        self, contract_id: UUID, data: RenewalAssumptionUpsert, actor: Actor
+    ) -> RenewalAssumptionRead:
+        """Create-or-update the one row for `contract_id`.
+
+        `repo.add` sits **inside** the `try`, not before it: it is the only
+        statement that can violate `uq_renewal_assumptions_contract_id`, and leaving
+        it outside would let two concurrent first-time saves poison the session with
+        a raw `IntegrityError` instead of surfacing a clean `Conflict` -- the same
+        shape `FiscalProfileService.upsert` already uses for its own singleton race.
+        """
+        actor.require_write("set_renewal_assumption")
+        if self.contracts.get(contract_id) is None:
+            raise NotFound("contract", contract_id)
+
+        payload = data.model_dump()
+        assumption = self.repo.get_for_contract(contract_id)
+        try:
+            if assumption is None:
+                assumption = self.repo.add(RenewalAssumption(contract_id=contract_id, **payload))
+            else:
+                for key, value in payload.items():
+                    setattr(assumption, key, value)
+                self.session.flush()
+            self.activities.record(
+                "contract",
+                contract_id,
+                "renewal_assumption_set",
+                actor,
+                {
+                    "probabilita": assumption.probabilita,
+                    "orizzonte_al": str(assumption.orizzonte_al),
+                },
+            )
+            self.session.commit()
+        except IntegrityError as exc:
+            self.session.rollback()
+            raise Conflict(
+                "renewal_assumption",
+                "esiste già un'assunzione di rinnovo per questo contratto",
+                contract_id=str(contract_id),
+            ) from exc
+        return RenewalAssumptionRead.model_validate(assumption)
+
+    def get(self, contract_id: UUID, actor: Actor) -> RenewalAssumptionRead:
+        if self.contracts.get(contract_id) is None:
+            raise NotFound("contract", contract_id)
+        assumption = self.repo.get_for_contract(contract_id)
+        if assumption is None:
+            raise NotFound("renewal_assumption", contract_id)
+        return RenewalAssumptionRead.model_validate(assumption)
+
+
+class ContractProjectionService:
+    """The genuine "projected" figure a contract's own recurring-fee schedule and
+    renewal assumption produce (REB-375) -- entirely apart from
+    `AnalyticsService.cash_overview`'s draft-based `proiettato`. Reads only: every
+    number here is derived, nothing is written."""
+
+    def __init__(self, session: Session) -> None:
+        self.contracts = ContractRepository(session)
+        self.rate_cards = RateCardRepository(session)
+        self.renewal_assumptions = RenewalAssumptionRepository(session)
+
+    def project(
+        self, contract_id: UUID, query: ContractProjectionQuery, actor: Actor
+    ) -> ContractProjectionRead:
+        contract = self.contracts.get(contract_id)
+        if contract is None:
+            raise NotFound("contract", contract_id)
+
+        come_di: date = query.come_di if query.come_di is not None else today_local()
+        rate_cards = self.rate_cards.list_for_contract(contract_id)
+        assumption = self.renewal_assumptions.get_for_contract(contract_id)
+        result = projection.project(contract, rate_cards, assumption, come_di, query.da, query.a)
+        return ContractProjectionRead(
+            contract_id=result.contract_id,
+            come_di=result.come_di,
+            da=result.da,
+            a=result.a,
+            finestra_irrevocabilita_fino_al=result.finestra_irrevocabilita_fino_al,
+            programmato=result.programmato,
+            da_rinnovo=result.da_rinnovo,
+            totale=result.totale,
+        )
