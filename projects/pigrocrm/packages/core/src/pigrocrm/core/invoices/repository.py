@@ -315,6 +315,20 @@ class InvoiceRepository:
         stmt = select(InvoiceRegisterGap.numero).where(InvoiceRegisterGap.anno == anno)
         return set(self.session.execute(stmt).scalars().all())
 
+    def existing_by_number(self, anno: int, numero: int) -> Invoice | None:
+        """The invoice already on the register at `(anno, numero)`, if any -- the same
+        set `numbers_present` answers, read one row at a time for REB-364's
+        duplicate check, which needs the row itself (specifically its
+        `xml_hash_sha256`), not merely whether the number is taken.
+
+        Not scoped by `importata_da`: `uq_invoices_anno_numero` allows exactly one
+        row per `(anno, numero)` regardless of provenance, so a re-import of a
+        natively-issued number is exactly as much a duplicate as a re-import of a
+        previously-imported one.
+        """
+        stmt = select(Invoice).where(Invoice.anno == anno, Invoice.numero == numero)
+        return self.session.execute(stmt).scalars().first()
+
     def gaps(self, anno: int) -> list[InvoiceRegisterGap]:
         stmt = (
             select(InvoiceRegisterGap)
