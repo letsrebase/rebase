@@ -13,12 +13,13 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from fakes.fake_gmail import FakeGmail, FakeMessage
 from fakes.gmail_fixtures import MAILBOX, actor_for, connected_account, sync_service
-from sqlalchemy import func, select
+from sqlalchemy import Engine, func, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.customers.repository import CUSTOMERS_LOCK_NAMESPACE, CustomerRepository
 from pigrocrm.core.customers.schemas import CustomersFromSuggestions
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.errors import AgentForbidden, Conflict, PermissionDenied, ValidationFailed
@@ -26,6 +27,7 @@ from pigrocrm.core.gmail import sync as sync_module
 from pigrocrm.core.gmail.errors import GmailUnavailable, GoogleCallFailed, UpstreamFailure
 from pigrocrm.core.gmail.models import GmailMessage
 from pigrocrm.core.gmail.query import sent_since_query, thread_metadata_url
+from pigrocrm.core.gmail.roster import AddressRoster
 from pigrocrm.core.gmail.sync import company_name_from_domain
 from pigrocrm.core.people.models import Person
 
@@ -268,6 +270,30 @@ def test_gmail_failing_is_a_sentence_to_retry_not_a_server_error(
         service.suggest_customers(actor=actor_for(account))
 
 
+def test_a_read_that_finished_in_time_counts_even_behind_a_slow_one(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Listing order is not arrival order: a slow first conversation past the budget
+    does not drop the later ones that already answered."""
+    monkeypatch.setattr(sync_module, "SUGGEST_READ_BUDGET_SECONDS", 0.5)
+    account = connected_account(db_session)
+    service = sync_service(db_session, _mailbox())
+    real = service._thread_headers
+
+    def first_is_slow(thread_id: str, token: str) -> dict[str, object]:
+        if thread_id == "t1":
+            time.sleep(2.0)
+        return real(thread_id, token)
+
+    monkeypatch.setattr(service, "_thread_headers", first_is_slow)
+    proposals = service.suggest_customers(actor=actor_for(account))
+
+    # t1 (Acme, with Sara) missed the budget; t2 (Acme) and t3 (Studio Rossi) did not.
+    assert {proposal.dominio for proposal in proposals} == {"acme.it", "studio-rossi.it"}
+    acme = next(proposal for proposal in proposals if proposal.dominio == "acme.it")
+    assert [person.indirizzo for person in acme.persone] == ["marco@acme.it"]
+
+
 def test_a_slow_gmail_gives_a_shorter_list_not_a_timeout(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -448,6 +474,41 @@ def test_a_display_name_longer_than_a_person_holds_is_clipped(db_session: Sessio
     person = db_session.execute(select(Person)).scalar_one()
     assert len(person.nome) == 120
     assert person.cognome is not None and len(person.cognome) == 120
+
+
+def test_an_import_holds_the_lock_a_concurrent_one_waits_on(
+    db_session: Session, db_engine: Engine
+) -> None:
+    """Two imports of the same proposal at once (a double click, two tabs) must not
+    both see the domain free: each takes the same transaction lock first, so the
+    second waits for the first to commit and then refuses the domain."""
+    CustomerRepository(db_session).lock_imports()
+    with db_engine.connect() as other:
+        free = other.execute(
+            text("SELECT pg_try_advisory_xact_lock(:ns, 1)"), {"ns": CUSTOMERS_LOCK_NAMESPACE}
+        ).scalar_one()
+    assert free is False
+
+
+def test_the_import_takes_the_lock_before_it_reads(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[str] = []
+    real_lock = CustomerRepository.lock_imports
+    real_domains = AddressRoster.customer_domains
+
+    def lock(self: CustomerRepository) -> None:
+        calls.append("lock")
+        real_lock(self)
+
+    def domains(self: AddressRoster) -> frozenset[str]:
+        calls.append("read")
+        return real_domains(self)
+
+    monkeypatch.setattr(CustomerRepository, "lock_imports", lock)
+    monkeypatch.setattr(AddressRoster, "customer_domains", domains)
+    CustomerService(db_session).create_from_suggestions(_import(), ADMIN)
+    assert calls[:2] == ["lock", "read"]
 
 
 def test_a_readonly_person_imports_nothing(db_session: Session) -> None:

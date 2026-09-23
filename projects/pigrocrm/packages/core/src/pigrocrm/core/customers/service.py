@@ -226,6 +226,9 @@ class CustomerService:
         page do not already grant the same person.
         """
         actor.require_write("create_customer")
+        # Before anything is read: a concurrent import of the same proposal waits here
+        # and then sees what this one committed (`lock_imports`).
+        self.repo.lock_imports()
         roster = AddressRoster(self.session)
         taken = set(roster.customer_domains())
         known = set(roster.known_addresses())

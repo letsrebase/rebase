@@ -33,8 +33,7 @@ failure carries the counters and Google's own status, which is all a caller can 
 
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeout
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -572,32 +571,40 @@ class GmailSyncService:
     def _read_headers(self, thread_ids: list[str], token: str) -> list[tuple[str, dict[str, Any]]]:
         """Each conversation's headers, in the listing's order, two reads at a time.
 
-        A conversation deleted between the listing and its read (404) is skipped. Any
-        other failure stops the reads still queued and is raised. Past
-        `SUGGEST_READ_BUDGET_SECONDS` the reads still queued are dropped and the
-        proposals are built from what arrived. The worker threads touch the transport
-        only, never the session."""
+        Every read that finished within `SUGGEST_READ_BUDGET_SECONDS` is used, whatever
+        its place in the listing; the reads still queued at the budget are cancelled. A
+        conversation deleted between the listing and its read (404) is skipped; any
+        other failure cancels what is queued and is raised. A read already on the wire
+        cannot be recalled, so at most `_SUGGEST_FETCH_WORKERS` of them finish after the
+        answer, each within the transport's own timeout. The worker threads touch the
+        transport only, never the session."""
         deadline = time.monotonic() + SUGGEST_READ_BUDGET_SECONDS
         pool = ThreadPoolExecutor(max_workers=_SUGGEST_FETCH_WORKERS)
         futures = [
             (thread_id, pool.submit(self._thread_headers, thread_id, token))
             for thread_id in thread_ids
         ]
-        read: list[tuple[str, dict[str, Any]]] = []
+        pending = {future for _, future in futures}
         try:
-            for thread_id, future in futures:
-                try:
-                    payload = future.result(timeout=max(0.0, deadline - time.monotonic()))
-                except FutureTimeout:
+            while pending:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
                     break
-                except GoogleCallFailed as failed:
-                    if failed.failure.status == 404:
+                done, pending = wait(pending, timeout=remaining, return_when=FIRST_EXCEPTION)
+                for future in done:
+                    failure = future.exception()
+                    if failure is None:
                         continue
-                    raise
-                read.append((thread_id, payload))
+                    if isinstance(failure, GoogleCallFailed) and failure.failure.status == 404:
+                        continue
+                    raise failure
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
-        return read
+        return [
+            (thread_id, future.result())
+            for thread_id, future in futures
+            if future.done() and not future.cancelled() and future.exception() is None
+        ]
 
     def _thread_headers(self, thread_id: str, token: str) -> dict[str, Any]:
         return self.transport.json(
