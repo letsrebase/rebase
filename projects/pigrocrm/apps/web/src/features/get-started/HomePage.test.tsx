@@ -26,6 +26,7 @@ const auth: { user: { id: string; email: string; nome: string; ruolo: string; at
 vi.mock('@/lib/auth', () => ({
   useAuth: () => ({ user: auth.user, isLoading: false, login: vi.fn(), logout: vi.fn(), enterWithLink: vi.fn() }),
   useCanWrite: () => auth.user.ruolo !== 'readonly',
+  useCan: () => auth.user.ruolo === 'admin',
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -212,7 +213,9 @@ describe('the Home', () => {
     let calls = 0
     const base = vi.mocked(api.GET).getMockImplementation()
     vi.mocked(api.GET).mockImplementation(((path: string, init?: unknown) => {
-      if (path === '/api/customers' && calls++ === 0) {
+      // Only the first-steps probe (`limit: 1`): the invoice door reads the customers too.
+      const probe = (init as { params?: { query?: { limit?: number } } } | undefined)?.params?.query?.limit === 1
+      if (path === '/api/customers' && probe && calls++ === 0) {
         return Promise.resolve({ error: { detail: 'boom' }, response: new Response(null, { status: 502 }) })
       }
       return (base as (p: string, i?: unknown) => unknown)(path, init)

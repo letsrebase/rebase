@@ -1,7 +1,7 @@
 /** The prompts a person copies into the assistant (ORB-182): one per step, honest about
  *  what the MCP can do, which since ORB-188 includes the fiscal identity. */
 import { describe, expect, it } from 'vitest'
-import { INTRO_PROMPT, STEP_PROMPTS } from './prompts'
+import { INTRO_PROMPT, STEP_PROMPTS, invoicePrompt } from './prompts'
 
 describe('the ready prompts', () => {
   it('cover every step and leave the values to fill in marked', () => {
@@ -28,5 +28,38 @@ describe('the ready prompts', () => {
     expect(STEP_PROMPTS.fiscali).toMatch(/non inventare/)
     expect(STEP_PROMPTS.documento).toMatch(/anteprima/)
     expect(STEP_PROMPTS.cliente).toMatch(/non inventare/)
+  })
+})
+
+describe('the invoice handoff prompt (REB-224)', () => {
+  const prompt = invoicePrompt({
+    documentId: 'doc-1',
+    customerId: 'cust-1',
+    customerName: 'Officina Verdi S.r.l.',
+  })
+
+  it('names the document, the customer and the tool, and links the PDF as the source', () => {
+    expect(prompt).toContain('documento doc-1')
+    expect(prompt).toContain('«Officina Verdi S.r.l.» (customer_id cust-1)')
+    expect(prompt).toContain('import_issued_invoice')
+    // What makes the door say «Registrata»: the invoice's `pdf_document_id`.
+    expect(prompt).toContain('pdf_sorgente.document_id doc-1')
+  })
+
+  it('asks for the summary and the ok before an import that cannot be undone', () => {
+    expect(prompt).toMatch(/aspetta il mio ok/)
+    expect(prompt).toMatch(/non si disfa/)
+    expect(prompt).toMatch(/non inventare/)
+  })
+
+  it('covers what the import needs and the PDF does not say', () => {
+    // The import reads the regime and refuses without a fiscal profile.
+    expect(prompt).toMatch(/profilo fiscale/)
+    // Payment and transmission are not printed on the PDF: asked, not defaulted.
+    expect(prompt).toMatch(/incassata/)
+    expect(prompt).toMatch(/SdI/)
+    // The earlier numbers of the year are real invoices, never gaps to declare.
+    expect(prompt).toMatch(/numeri precedenti/)
+    expect(prompt).toMatch(/non buchi da dichiarare/)
   })
 })

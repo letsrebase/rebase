@@ -30,6 +30,8 @@ vi.mock('@/lib/auth', () => ({
     enterWithLink: vi.fn(),
   }),
   useCanWrite: () => auth.user?.ruolo !== 'readonly',
+  // The invoice door's own gate (REB-224): registering an issued invoice is the admin's.
+  useCan: () => auth.user?.ruolo === 'admin',
 }))
 
 vi.mock('@rebase/ui/sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -345,6 +347,20 @@ describe('the manual steps', () => {
     expect(await screen.findByText(/2 di 4/)).toBeInTheDocument()
     expect(screen.getAllByText('Fatto:')).toHaveLength(2)
     expect(screen.queryByRole('link', { name: 'A mano: Clienti' })).toBeNull()
+    expect(screen.getAllByRole('link', { name: 'A mano: Deal' })).toHaveLength(2)
+  })
+
+  it('does not tick «La prima offerta» for a document that is not an offer, such as an uploaded invoice', async () => {
+    const base = vi.mocked(api.GET).getMockImplementation()
+    vi.mocked(api.GET).mockImplementation(((path: string, init?: { params?: { query?: { tipo?: string } } }) =>
+      path === '/api/documents'
+        ? Promise.resolve({
+            data: init?.params?.query?.tipo === 'offerta' ? EMPTY_PAGE : { items: [{ id: 'fattura-1' }], next_cursor: null },
+            response: new Response(null, { status: 200 }),
+          })
+        : (base as (p: string, i?: unknown) => unknown)(path, init)) as never)
+    renderPage()
+    expect(await screen.findByText(/0 di 4/)).toBeInTheDocument()
     expect(screen.getAllByRole('link', { name: 'A mano: Deal' })).toHaveLength(2)
   })
 

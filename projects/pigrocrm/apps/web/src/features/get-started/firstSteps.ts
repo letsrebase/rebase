@@ -1,6 +1,6 @@
 /**
  * What a new space still has to do, read from the data and never stored (spec
- * 2026-09-12 §6.7): a step is done because the thing exists. Six one-row reads behind
+ * 2026-09-12 §6.7): a step is done because the thing exists. Seven one-row reads behind
  * the «Primi passi» page (ORB-180) and behind the Home, which is that same page while
  * the space is empty and the dashboard afterwards (spec 2026-09-16 §4.1, REB-222).
  *
@@ -86,6 +86,17 @@ async function hasDocuments(): Promise<boolean> {
   return (page?.items.length ?? 0) > 0
 }
 
+/** «La prima offerta» is an offer, not any document: since the invoice door (REB-224)
+ *  files an issued invoice's PDF as a `fattura` document, «any document» would tick the
+ *  step for a file that is not an offer. Any document still counts as work
+ *  (`hasDocuments`, `spaceEmpty`). */
+async function hasOffers(): Promise<boolean> {
+  const page = settled(
+    await api.GET('/api/documents', { params: { query: { tipo: 'offerta', limit: 1 } } }),
+  )
+  return (page?.items.length ?? 0) > 0
+}
+
 async function fiscalDataSaved(): Promise<boolean> {
   // 404 until the emitter profile is saved once: not an error here, a step to do.
   const profile = settled(await api.GET('/api/emitter'), [404])
@@ -117,9 +128,14 @@ export function useFirstSteps(): FirstStepsState {
   const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: hasDeals, ...WORK_OPTIONS })
   const ore = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: hasTimeEntries, ...WORK_OPTIONS })
   const documento = useQuery({ queryKey: queryKeys.documents(SCOPE), queryFn: hasDocuments, ...WORK_OPTIONS })
+  const offerta = useQuery({
+    queryKey: queryKeys.documents({ ...SCOPE, tipo: 'offerta' }),
+    queryFn: hasOffers,
+    ...OPTIONS,
+  })
 
   const work = [cliente, deal, ore, documento]
-  const loading = [token, fiscali, ...work].some((q) => q.isPending)
+  const loading = [token, fiscali, offerta, ...work].some((q) => q.isPending)
   const value = (q: { data?: boolean; isError: boolean }) => (q.isError ? true : (q.data ?? false))
 
   const list: FirstStep[] = [
@@ -159,7 +175,7 @@ export function useFirstSteps(): FirstStepsState {
       to: '/app/deal',
       screen: 'Deal',
       canDo: true,
-      done: value(documento),
+      done: value(offerta),
     },
   ]
   const doneCount = list.filter((s) => s.done).length

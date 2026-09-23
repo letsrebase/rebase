@@ -22,3 +22,42 @@ export const STEP_PROMPTS: Record<StepId, string> = {
   documento:
     'Prepara un’offerta per il deal «…» del cliente «…» usando il template «Offerta». Oggetto: «…». Ambito e obiettivi: «…». Attività: «…». Condizioni economiche: «…». Fatturazione e pagamento: «…». Mostrami l’anteprima del testo e aspetta il mio ok prima di generare il PDF.',
 }
+
+/**
+ * The invoice door's handoff (spec 2026-09-16 §6, REB-224): the PDF is on file as a
+ * `fattura` document of the customer the person chose first, and the assistant reads it
+ * (`read_document_text`) and registers it (`import_issued_invoice`). What the spec's
+ * wording did not carry, each because the import needs it or would go wrong without it:
+ *
+ * - the customer's id, since the person already chose it and the import takes it;
+ * - the document as `pdf_sorgente.document_id`, which is what makes the door say
+ *   «Registrata»;
+ * - the fiscal profile, because the import reads the regime and refuses without one, and
+ *   a new space has none (`update_fiscal_profile`, admin, on the default surface);
+ * - what the PDF does not say (whether it was paid, whether it went to the SdI), asked
+ *   rather than left to the import's defaults;
+ * - the earlier numbers of the year: importing the last invoice leaves 1 to n-1 as
+ *   undeclared gaps, and PigroCRM refuses to issue that year until they are imported or
+ *   declared. They are real invoices, so the assistant says so instead of declaring them;
+ * - the summary before the write, the rule every prompt here keeps, which matters most
+ *   for an import that cannot be undone.
+ */
+export function invoicePrompt({
+  documentId,
+  customerId,
+  customerName,
+}: {
+  documentId: string
+  customerId: string
+  customerName: string
+}): string {
+  return (
+    `Leggi su PigroCRM il documento ${documentId}: è una fattura che ho emesso al cliente «${customerName}» (customer_id ${customerId}). ` +
+    'Se il mio profilo emittente è vuoto, compilalo con i miei dati che leggi lì; se manca il profilo fiscale, chiedimi regime e parametri e impostalo. ' +
+    'Chiedimi anche se è già stata incassata (e quando) e se l’ho già trasmessa allo SdI: sul PDF non c’è scritto. ' +
+    'Poi prepara l’import con import_issued_invoice: il suo numero e la sua data, le righe e i totali come sono stampati, ' +
+    `quel cliente, e questo documento come PDF originale (pdf_sorgente.document_id ${documentId}). ` +
+    'Prima di scrivere qualsiasi cosa mostrami il riepilogo e aspetta il mio ok, perché l’import non si disfa; se un dato non si legge, dimmelo e non inventare niente. ' +
+    'Alla fine dimmi cosa hai registrato e quali numeri precedenti dello stesso anno mancano ancora nel registro: sono fatture vere da importare, non buchi da dichiarare.'
+  )
+}

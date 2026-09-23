@@ -2,7 +2,8 @@
  * «Primi passi», the start page (spec 2026-09-16 §4, REB-222), in three blocks:
  *
  * 1. **Porta dentro il tuo lavoro**: what brings a person's real work in without typing
- *    it, today the Gmail door (`GmailDoor`). The invoice door of §6 is REB-224's.
+ *    it, the Gmail door (`GmailDoor`) and the invoice door of §6 (`InvoiceDoor`,
+ *    REB-224).
  * 2. **Fai lavorare l’assistente**: the connection itself, inline (`ConnectAgentPanel`,
  *    the body of the sidebar's dialog), and the first prompt to say to it. Once this
  *    person has a token the block is the prompt alone.
@@ -27,6 +28,7 @@ import { useUnsavedTokenGuard } from '@/features/tokens/useUnsavedTokenGuard'
 import { CopyPrompt, PromptBody } from './CopyPrompt'
 import { useFirstSteps, type FirstStep } from './firstSteps'
 import { GmailDoor } from './GmailDoor'
+import { InvoiceDoor } from './InvoiceDoor'
 import { INTRO_PROMPT, STEP_PROMPTS } from './prompts'
 
 export function GetStartedPage({ esito }: { esito?: string }) {
@@ -47,7 +49,12 @@ export function GetStartedPage({ esito }: { esito?: string }) {
               title="Porta dentro il tuo lavoro"
               description="Il lavoro che hai già, senza riscriverlo a mano."
             >
-              <GmailDoor esito={esito} />
+              {/* Two doors side by side (§4.2): the mailbox, and the last invoice issued
+                  (REB-224). */}
+              <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+                <GmailDoor esito={esito} />
+                <InvoiceDoor assistantConnected={state.assistantConnected} />
+              </div>
             </Block>
             {/* Side by side on a wide screen: the assistant and the manual steps are the
                 two ways to use what the first block brought in, and the connection's

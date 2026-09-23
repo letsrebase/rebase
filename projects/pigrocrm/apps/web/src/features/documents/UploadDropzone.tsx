@@ -7,6 +7,8 @@ interface Props {
   busy?: boolean
   /** The `accept` attribute, mirroring the backend's own ALLOWED_CONTENT_TYPES. */
   accept: string
+  /** The file input's accessible name, for a caller that asks for one kind of file. */
+  inputLabel?: string
 }
 
 /**
@@ -18,7 +20,7 @@ interface Props {
  * does no type filtering of its own: the backend's `ALLOWED_CONTENT_TYPES` is the
  * authority, and a client-side second opinion is how the two start disagreeing.
  */
-export function UploadDropzone({ onFiles, busy, accept }: Props) {
+export function UploadDropzone({ onFiles, busy, accept, inputLabel = 'Carica un documento' }: Props) {
   const [over, setOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -33,6 +35,9 @@ export function UploadDropzone({ onFiles, busy, accept }: Props) {
       onDrop={(event) => {
         event.preventDefault()
         setOver(false)
+        // A drop lands whatever `busy` says, since only the input can be disabled: the
+        // same guard here, so a second drop during an upload is not a second upload.
+        if (busy) return
         const files = Array.from(event.dataTransfer?.files ?? [])
         if (files.length > 0) onFiles(files)
       }}
@@ -58,7 +63,7 @@ export function UploadDropzone({ onFiles, busy, accept }: Props) {
       <input
         ref={inputRef}
         type="file"
-        aria-label="Carica un documento"
+        aria-label={inputLabel}
         accept={accept}
         className="sr-only"
         disabled={busy}
