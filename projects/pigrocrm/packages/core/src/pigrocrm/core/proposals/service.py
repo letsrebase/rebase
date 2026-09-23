@@ -292,8 +292,21 @@ class ProposalService:
 
     def _accept_giornata(self, proposal: Proposal, campi: dict[str, Any], actor: Actor) -> UUID:
         """Creates the `approval` row and the `work_unit` at `'approvato'`, both in
-        one transaction -- never leaving a day at `'proposto'` (spec §10)."""
+        one transaction -- never leaving a day at `'proposto'` (spec §10).
+
+        Re-checks `fields.contract_id` against `proposal.contract_id` even though
+        `create()` already checked it once: `campi` here may be a human's edited
+        `campi_accettati`, not the original `campi_proposti` `create()` validated,
+        and a reviewer who approved a proposal against contract A must not have
+        their accept silently redirected to contract B by an edited payload."""
         fields = self._parse_giornata_fields(campi)
+        if fields.contract_id != proposal.contract_id:
+            raise ValidationFailed(
+                ENTITY,
+                "campi_accettati.contract_id",
+                "non corrisponde al contract_id della proposta",
+                expected=str(proposal.contract_id),
+            )
         if self.session.get(Contract, fields.contract_id) is None:
             raise NotFound("contract", fields.contract_id)
 

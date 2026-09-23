@@ -1,7 +1,7 @@
 """proposals: review-before-write for a contract's first draft or a day's evidence
 
-Revision ID: 0043
-Revises: 0042
+Revision ID: 0044
+Revises: 0043
 
 REB-362, the intake issue of "Bring mastro's ledger, invoice import and forecasting
 into PigroCRM" (REB-344's signed-off mapping,
@@ -20,8 +20,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0043"
-down_revision: str | Sequence[str] | None = "0042"
+revision: str = "0044"
+down_revision: str | Sequence[str] | None = "0043"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

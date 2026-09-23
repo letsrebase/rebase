@@ -458,6 +458,37 @@ def test_accept_giornata_creates_an_approval_and_a_work_unit_at_approvato_in_one
     assert approval.origine == {"kind": "agente", "proposal_id": str(proposal.id)}
 
 
+def test_accept_giornata_rejects_an_edited_contract_id_that_diverges_from_the_proposal(
+    db_session: Session,
+) -> None:
+    """The reviewer looked at `proposal.contract_id`; an edited `campi_accettati`
+    must not be able to silently redirect the accept onto a different contract."""
+    contract = _contract(db_session)
+    other_contract = _contract(db_session)
+    document = _document(db_session, contract_id=contract.id)
+    service = ProposalService(db_session)
+    proposal = service.create(
+        _proposal_create(
+            document.id,
+            target_type="giornata",
+            contract_id=contract.id,
+            campi_proposti=_giornata_campi(contract.id),
+        ),
+        ADMIN,
+    )
+
+    diverging = _giornata_campi(other_contract.id)
+    with pytest.raises(ValidationFailed) as excinfo:
+        service.accept(
+            proposal.id, ProposalAccept(deciso_da="Lorenzo", campi_accettati=diverging), ADMIN
+        )
+    assert excinfo.value.details["field"] == "campi_accettati.contract_id"
+    assert db_session.query(WorkUnit).count() == 0
+    assert db_session.query(Approval).count() == 0
+    reloaded = service.get(proposal.id, ADMIN)
+    assert reloaded.stato == "in_attesa"
+
+
 def test_accept_giornata_is_atomic_when_the_work_unit_write_conflicts(
     db_session: Session,
 ) -> None:
