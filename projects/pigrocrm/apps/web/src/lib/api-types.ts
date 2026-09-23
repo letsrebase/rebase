@@ -1375,6 +1375,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/invoices/import/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Review Import
+         * @description REB-365: read-only, admin only, enforced by the service. Reviews one or more
+         *     already-archived documents and reports one row per invoice they parse into --
+         *     never writes a row.
+         */
+        post: operations["review_import_api_invoices_import_review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/invoices/register/{anno}/gaps": {
         parameters: {
             query?: never;
@@ -5921,6 +5943,22 @@ export interface components {
              */
             updated_at: string;
         };
+        /**
+         * InvoiceReviewRequest
+         * @description One or more `document_id`s, never raw bytes -- the MCP rule
+         *     (`tools/__init__.py`'s own "the download of bytes never goes through MCP")
+         *     applied symmetrically to the *input* side, and the same shape `InvoiceImport.
+         *     pdf_sorgente` already uses for a `documents` row that is already on file.
+         */
+        InvoiceReviewRequest: {
+            /** Document Ids */
+            document_ids: string[];
+        };
+        /** InvoiceReviewResult */
+        InvoiceReviewResult: {
+            /** Righe */
+            righe: components["schemas"]["ReviewedInvoiceRead"][];
+        };
         /** InvoiceTransmitted */
         InvoiceTransmitted: {
             /**
@@ -6068,6 +6106,210 @@ export interface components {
             segnali: components["schemas"]["Signal"][];
             /** Attivita Recenti */
             attivita_recenti: components["schemas"]["ActivityRead"][];
+        };
+        /**
+         * ParsedInvoice
+         * @description A single invoice, exactly as a structured document states it -- mastro's
+         *     `Invoice` (`invoice.ts:169-196`), translated into PigroCRM's own vocabulary.
+         *
+         *     `imponibile`/`imposta` are the sums of `riepiloghi[].imponibile`/`.imposta`,
+         *     kept as their own fields because the fiscal domain already names them at the
+         *     invoice level (mirrors `InvoiceImport`). `totale` is the document's own stated
+         *     total, never derived by summing the fields above -- a document is free to
+         *     round or add charges this shape does not model, and the total it declares is
+         *     the one that must reconcile with what was actually paid.
+         */
+        ParsedInvoice: {
+            /** Numero */
+            numero: string;
+            /**
+             * Data Emissione
+             * Format: date
+             */
+            data_emissione: string;
+            /**
+             * Tipo Documento
+             * @enum {string}
+             */
+            tipo_documento: "fattura" | "acconto_fattura" | "acconto_parcella" | "nota_credito" | "nota_debito" | "parcella";
+            /** Divisa */
+            divisa: string;
+            fornitore: components["schemas"]["ParsedInvoiceParty"];
+            cliente: components["schemas"]["ParsedInvoiceParty"];
+            /** Righe */
+            righe: components["schemas"]["ParsedInvoiceLine"][];
+            /** Riepiloghi */
+            riepiloghi: components["schemas"]["ParsedInvoiceTaxSummary"][];
+            /** Imponibile */
+            imponibile: string;
+            /** Imposta */
+            imposta: string;
+            /** Totale */
+            totale: string;
+            /** Bollo */
+            bollo?: string | null;
+            /** Cassa Previdenziale */
+            cassa_previdenziale: components["schemas"]["ParsedInvoiceSocialCharge"][];
+            /** Termini Pagamento */
+            termini_pagamento: components["schemas"]["ParsedInvoicePaymentTerms"][];
+            trasmissione: components["schemas"]["ParsedInvoiceTransmission"];
+        };
+        /**
+         * ParsedInvoiceLine
+         * @description One billed line, mirroring mastro's `InvoiceLine` (`invoice.ts:65-73`) with
+         *     the same field names `InvoiceLineImport` already uses for a hand-declared line
+         *     -- it is the same fact, read two different ways.
+         *
+         *     `aliquota_iva` is the line's own VAT rate, which is what ties it back to the
+         *     `ParsedInvoiceTaxSummary` block it was folded into.
+         */
+        ParsedInvoiceLine: {
+            /** Descrizione */
+            descrizione: string;
+            /** Quantita */
+            quantita: string;
+            /** Prezzo Unitario */
+            prezzo_unitario: string;
+            /** Prezzo Totale */
+            prezzo_totale: string;
+            /** Aliquota Iva */
+            aliquota_iva: string;
+        };
+        /**
+         * ParsedInvoiceParty
+         * @description One party to a parsed invoice, exactly as the source document states it --
+         *     not `PartySnapshot` (what the CRM's own emission recorded at the time) and not
+         *     a `Customer` row (what a caller declares about an entity on file): this is what
+         *     the document itself claims about whoever issued it or whoever it was issued to,
+         *     before any matching against the register has happened.
+         *
+         *     `partita_iva`/`codice_fiscale` are two first-class, independently optional
+         *     fields rather than mastro's single `taxId` (which changes shape depending on
+         *     which identifier the source document happened to carry): PigroCRM already
+         *     treats both as first-class columns on `Customer`/`EmitterProfile`, so there is
+         *     no "whichever one" concept to port here. `partita_iva` carries `IdPaese` +
+         *     `IdCodice` concatenated (e.g. `"IT01234567890"`) exactly as mastro's
+         *     `fiscalIdString` does, since a later direction-detection step needs the
+         *     identifier a FatturaPA document actually guarantees. A concrete adapter
+         *     enforces that at least one of the two is present when the source schema
+         *     itself allows neither -- FatturaPA's `CessionarioCommittente` is the one case
+         *     (mastro's `mapCustomer` throws for the same reason); `CedentePrestatore`
+         *     always carries `IdFiscaleIVA`, mandatory in FatturaPA's own schema.
+         */
+        ParsedInvoiceParty: {
+            /** Ragione Sociale */
+            ragione_sociale: string;
+            /** Partita Iva */
+            partita_iva?: string | null;
+            /** Codice Fiscale */
+            codice_fiscale?: string | null;
+            /** Indirizzo */
+            indirizzo: string;
+            /** Cap */
+            cap: string;
+            /** Comune */
+            comune: string;
+            /** Provincia */
+            provincia?: string | null;
+            /** Nazione */
+            nazione: string;
+        };
+        /**
+         * ParsedInvoicePaymentInstallment
+         * @description One instalment of a payment plan. `data_scadenza` is either read verbatim
+         *     from the document (FatturaPA's `DataScadenzaPagamento`) or computed from a
+         *     relative term the document expresses instead (`DataRiferimentoTerminiPagamento`
+         *     plus `GiorniTerminiPagamento`) -- never invented from anything outside the
+         *     document itself. `origine_scadenza` tells a reader which case produced it.
+         */
+        ParsedInvoicePaymentInstallment: {
+            /**
+             * Data Scadenza
+             * Format: date
+             */
+            data_scadenza: string;
+            /**
+             * Origine Scadenza
+             * @enum {string}
+             */
+            origine_scadenza: "documento" | "calcolata";
+            /** Importo */
+            importo: string;
+            /** Modalita Pagamento */
+            modalita_pagamento: string;
+            /** Iban */
+            iban?: string | null;
+        };
+        /**
+         * ParsedInvoicePaymentTerms
+         * @description One payment-terms block: a condition code plus the instalments it governs.
+         *     FatturaPA allows more than one block when a document mixes payment
+         *     conditions; kept as a list on `ParsedInvoice` for the same reason as
+         *     `riepiloghi`.
+         */
+        ParsedInvoicePaymentTerms: {
+            /** Condizioni Pagamento */
+            condizioni_pagamento: string;
+            /** Rate */
+            rate: components["schemas"]["ParsedInvoicePaymentInstallment"][];
+        };
+        /**
+         * ParsedInvoiceSocialCharge
+         * @description A social-security fund contribution charged on the invoice (FatturaPA's
+         *     `DatiCassaPrevidenziale`). An invoice can carry more than one fund, though a
+         *     single consultant only ever pays into one; kept as a list so a second one is a
+         *     longer list, not a dropped field.
+         */
+        ParsedInvoiceSocialCharge: {
+            /** Tipo Cassa */
+            tipo_cassa: string;
+            /** Aliquota Cassa */
+            aliquota_cassa: string;
+            /** Importo Contributo Cassa */
+            importo_contributo_cassa: string;
+            /** Imponibile Cassa */
+            imponibile_cassa?: string | null;
+            /** Aliquota Iva */
+            aliquota_iva: string;
+        };
+        /**
+         * ParsedInvoiceTaxSummary
+         * @description One VAT-rate summary block (FatturaPA's `DatiRiepilogo`). A real invoice can
+         *     carry more than one -- mixed-rate invoices are routine -- which is why this is
+         *     a list on `ParsedInvoice` rather than a single flat pair.
+         *
+         *     `riferimento_normativo` is the literal wording the issuing document carries,
+         *     already in the language it was written in -- never translated, never replaced
+         *     by a jurisdiction's own wording for the same `natura` code: this is what a
+         *     specific document actually said, which can legitimately disagree with what the
+         *     code should say (a supplier's software using outdated wording).
+         */
+        ParsedInvoiceTaxSummary: {
+            /** Aliquota Iva */
+            aliquota_iva: string;
+            /** Natura */
+            natura?: string | null;
+            /** Riferimento Normativo */
+            riferimento_normativo?: string | null;
+            /** Imponibile */
+            imponibile: string;
+            /** Imposta */
+            imposta: string;
+        };
+        /**
+         * ParsedInvoiceTransmission
+         * @description Who actually sent this document to the Sistema di Interscambio, and that
+         *     transmission's own sequence number. Deliberately not where direction detection
+         *     looks: when an invoicing service files on the account holder's behalf,
+         *     `id_trasmittente` is the *service*, and the account holder appears only as
+         *     `fornitore`. Reading this field for direction would misclassify every invoice a
+         *     service transmits on someone else's behalf.
+         */
+        ParsedInvoiceTransmission: {
+            /** Id Trasmittente */
+            id_trasmittente: string;
+            /** Progressivo Invio */
+            progressivo_invio: string;
         };
         /** PatRead */
         PatRead: {
@@ -6761,6 +7003,28 @@ export interface components {
             fatture: number;
             /** Quota */
             quota: number;
+        };
+        /**
+         * ReviewedInvoiceRead
+         * @description One row of `review_invoice_import`'s own output: one per invoice a reviewed
+         *     document actually parses into, or exactly one `"unclaimed"` row for a document
+         *     no adapter recognised at all -- so a caller never has to distinguish "found
+         *     nothing" from "found nothing and I dropped it".
+         */
+        ReviewedInvoiceRead: {
+            /**
+             * Document Id
+             * Format: uuid
+             */
+            document_id: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "ready" | "needs_customer_confirmation" | "already_present" | "conflict" | "incoming_skipped" | "unclaimed";
+            invoice?: components["schemas"]["ParsedInvoice"] | null;
+            /** Matched Customer Id */
+            matched_customer_id?: string | null;
         };
         /**
          * RootSpace
@@ -18843,6 +19107,127 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InvoiceImportResult"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    review_import_api_invoices_import_review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvoiceReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceReviewResult"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */

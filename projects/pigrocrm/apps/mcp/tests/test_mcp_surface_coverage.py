@@ -89,6 +89,15 @@ _VIETATE: dict[Method, str] = {
         "import_issued",
     ): "scrive nel registro fiscale un numero deciso altrove (slice 9 §3)",
     ("InvoiceService", "declare_gaps"): "dichiara i buchi del registro fiscale (slice 9 §3.2)",
+    (
+        "InvoiceService",
+        "review_import",
+    ): (
+        "REB-365: legge i byte gia' archiviati di un documento e classifica cosa "
+        "succederebbe, senza scrivere nulla -- vietata come le due scritture che "
+        "affianca perche' espone gli stessi fatti (fattura di un fornitore, conflitto "
+        "col registro) prima che una persona confermi"
+    ),
     ("TimeEntryService", "recalculate_rates"): "riscrive il passato (slice 4 §11)",
     ("TimeEntryService", "update_user_rates"): "configurazione tariffaria (slice 4 §11)",
     ("TimeEntryService", "update_deal_rate"): "configurazione tariffaria (slice 4 §11)",

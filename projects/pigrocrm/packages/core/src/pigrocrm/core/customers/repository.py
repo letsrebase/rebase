@@ -25,6 +25,30 @@ class CustomerRepository:
         self.session.flush()
         return customer
 
+    def match_by_fiscal_id(
+        self, *, partita_iva: str | None, codice_fiscale: str | None
+    ) -> Customer | None:
+        """Exact match against a normalised `partita_iva`/`codice_fiscale` -- the same
+        two columns `list`'s own fuzzy `ilike` search already reads (`:42-45` below),
+        read here for an identity check instead of a text search (REB-365's review
+        step: matching a parsed invoice's `cliente` against an existing `Customer`).
+
+        A match on *either* column counts, mirroring `import_direction.
+        classify_direction`'s own two-channel comparison: neither identifier alone is
+        reliable, since either side is free to have populated only one of the two.
+        `None` when neither identifier is given (nothing to match on) or neither
+        matches an active customer.
+        """
+        if partita_iva is None and codice_fiscale is None:
+            return None
+        conditions = []
+        if partita_iva is not None:
+            conditions.append(Customer.partita_iva == partita_iva)
+        if codice_fiscale is not None:
+            conditions.append(Customer.codice_fiscale == codice_fiscale)
+        stmt = select(Customer).where(Customer.deleted_at.is_(None), or_(*conditions))
+        return self.session.execute(stmt).scalars().first()
+
     def list(self, query: CustomerListQuery) -> list[Customer]:
         stmt = select(Customer).where(Customer.deleted_at.is_(None))
 

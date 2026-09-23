@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from pigrocrm.core.activities.schemas import ActivityRead
 from pigrocrm.core.activities.service import ActivityService
+from pigrocrm.core.invoices.import_review import InvoiceReviewRequest, InvoiceReviewResult
 from pigrocrm.core.invoices.schemas import (
     MAX_LINES,
     ArtifactKind,
@@ -116,7 +117,7 @@ class InvoiceImportResult(BaseModel):
     buchi_non_dichiarati: list[int]
 
 
-# The three routes below must stay ahead of every `/{invoice_id}` route in this file:
+# The four routes below must stay ahead of every `/{invoice_id}` route in this file:
 # `import` and `register` are literal path segments, and FastAPI matches routes in
 # declaration order, so a `/{invoice_id}` route declared first would swallow them and
 # try (and fail) to parse `"import"`/`"register"` as a UUID.
@@ -135,6 +136,21 @@ def import_issued(
     return InvoiceImportResult(
         fattura=fattura, buchi_non_dichiarati=service.undeclared_gaps(data.anno)
     )
+
+
+@router.post("/import/review", response_model=InvoiceReviewResult)
+def review_import(
+    data: InvoiceReviewRequest,
+    session: SessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    actor: ActorDep,
+) -> InvoiceReviewResult:
+    """REB-365: read-only, admin only, enforced by the service. Reviews one or more
+    already-archived documents and reports one row per invoice they parse into --
+    never writes a row."""
+    righe = _service(session, storage, settings).review_import(data.document_ids, actor)
+    return InvoiceReviewResult(righe=righe)
 
 
 @router.get("/register/{anno}/gaps", response_model=list[RegisterGapRead])
