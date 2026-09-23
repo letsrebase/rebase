@@ -11,6 +11,7 @@ from pigrocrm_api.routers import (
     auth,
     automations,
     calendar,
+    contract_expenses,
     contracts,
     cost_categories,
     costs,
@@ -106,6 +107,8 @@ def create_app() -> FastAPI:
         calendar,
         # REB-358: the mastro-ledger foundations -- contracts and their rate cards.
         contracts,
+        # REB-360: rebillable expenses against a contract's own spending policy.
+        contract_expenses,
     ):
         app.include_router(module.router)
 

@@ -176,6 +176,18 @@ ROWS: list[Row] = [
             "unita": "mese",
         },
     ),
+    # --- contracts / expenses (REB-360): `require_write` (contract_expenses/service.py)
+    Row(
+        "POST",
+        "/api/contracts/{contract_id}/expenses",
+        body={
+            "category_id": "__FAKE__",
+            "data": "2026-01-01",
+            "importo": "10.00",
+            "descrizione": "Matrice",
+        },
+    ),
+    Row("PATCH", "/api/contracts/{contract_id}/expenses/{expense_id}", body={}),
     # --- contracts / renewal assumption (REB-375): `require_write` -------------------
     Row(
         "PUT",

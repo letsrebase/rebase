@@ -8,6 +8,7 @@ from pydantic import WithJsonSchema
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.schemas import BudgetQuery, PeriodPnlQuery
+from pigrocrm.core.contract_expenses.schemas import ContractExpenseUpdate
 from pigrocrm.core.contracts.schemas import ContractListQuery, ContractProjectionQuery
 from pigrocrm.core.customers.schemas import CustomerListQuery, CustomerUpdate
 from pigrocrm.core.dashboard.schemas import PeriodoQuery
@@ -31,6 +32,7 @@ from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import automations as automation_tools
 from pigrocrm_mcp.tools import calendario as calendar_tools
 from pigrocrm_mcp.tools import (
+    contract_expenses,
     contracts,
     customers,
     deals,
@@ -66,6 +68,9 @@ from pigrocrm_mcp.tools import search as search_tools
 CustomerChanges = Annotated[dict[str, Any], WithJsonSchema(CustomerUpdate.model_json_schema())]
 PersonChanges = Annotated[dict[str, Any], WithJsonSchema(PersonUpdate.model_json_schema())]
 DealChanges = Annotated[dict[str, Any], WithJsonSchema(DealUpdate.model_json_schema())]
+ContractExpenseChanges = Annotated[
+    dict[str, Any], WithJsonSchema(ContractExpenseUpdate.model_json_schema())
+]
 
 # Same runtime-permissive / schema-only-strict split as the `*Changes` aliases
 # above, applied to a scalar instead of a nested object: the parameter stays a
@@ -661,6 +666,53 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         """Elenca le schede tariffarie di un contratto, dalla più vecchia alla più
         recente."""
         return {"items": contracts.list_rate_cards(context, contract_id)}
+
+    @mcp.tool()
+    @guard
+    def create_contract_expense(
+        contract_id: str,
+        category_id: str,
+        data: str,
+        importo: MoneyArg,
+        descrizione: str,
+        pre_autorizzata: bool = False,
+        riferimento_autorizzazione: str | None = None,
+        document_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Registra una spesa rimborsabile su un contratto. `data` in formato
+        YYYY-MM-DD. `riferimento_autorizzazione` è obbligatorio quando
+        `pre_autorizzata` è vero, assente altrimenti. `rimborsabile` non si imposta
+        mai qui: lo calcola il database dalla politica_spese del contratto, e non
+        rifiuta mai la scrittura -- registra comunque la spesa, solo segnalata.
+        """
+        return contract_expenses.create(
+            context,
+            contract_id,
+            {
+                "category_id": category_id,
+                "data": data,
+                "importo": importo,
+                "descrizione": descrizione,
+                "pre_autorizzata": pre_autorizzata,
+                "riferimento_autorizzazione": riferimento_autorizzazione,
+                "document_id": document_id,
+            },
+        )
+
+    @mcp.tool()
+    @guard
+    def update_contract_expense(
+        contract_id: str, expense_id: str, changes: ContractExpenseChanges
+    ) -> dict[str, Any]:
+        """Aggiorna una spesa di contratto. `changes` contiene solo i campi da
+        modificare; `rimborsabile` si ricalcola da solo e non è tra questi."""
+        return contract_expenses.update(context, contract_id, expense_id, changes)
+
+    @mcp.tool()
+    @guard
+    def list_contract_expenses(contract_id: str) -> dict[str, Any]:
+        """Elenca le spese di un contratto, dalla più vecchia alla più recente."""
+        return {"items": contract_expenses.list_for_contract(context, contract_id)}
 
     @mcp.tool()
     @guard
