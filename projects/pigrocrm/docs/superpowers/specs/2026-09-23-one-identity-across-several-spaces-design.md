@@ -1,17 +1,16 @@
 # One identity, several spaces: proving who you are before any space opens
 
-Date: 2026-09-23. Status: proposed, decision pending from Lorenzo on the session/cookie
-model and on how a chooser learns which spaces someone may enter (§ Decision needed from
-Lorenzo). Tracker: REB-345, project "Give every space its own team", milestone "Let one
-identity run several spaces". Written in English, per the repository's current rule; the
+Date: 2026-09-23. Status: **signed off by Lorenzo, 2026-09-23** — A1 (the dedicated
+`pigrocrm_identity` cookie) and B1 (a live per-chooser-view scan) chosen, per § Decision
+needed from Lorenzo below. Tracker: REB-345, project "Give every space its own team",
+milestone "Let one identity run several spaces". Written in English, per the repository's
+current rule; the
 two neighbour specs this one reads before writing, `2026-09-08-spazi-un-database-per-tenant-design.md`
 and `2026-09-17-inviti-e-ruoli-di-uno-spazio-design.md`, are Italian only because they are
 grandfathered pre-existing records (root `AGENTS.md:192-195`).
 
-**No implementation issue is filed from this document.** The project this issue belongs
-to states it explicitly: three design spikes, sign-off on each spike's entity mapping
-first. This document's own "Done when" is the same gate, restated on the card. § Proposed
-follow-up work below names the shape of the work, not tickets.
+Implementation issues REB-376 through REB-379 are filed under the milestone "Switch
+between spaces without logging in twice."
 
 ## 0. Why
 

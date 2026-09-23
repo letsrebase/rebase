@@ -1,7 +1,9 @@
 # Mapping mastro's forecasting and analytics section onto PigroCRM
 
-Date: 2026-09-23. Status: proposed design spike; no implementation issues are filed
-against this document (see § 5, the project-level sign-off gate). Tracker: REB-352, in
+Date: 2026-09-23. Status: **signed off by Lorenzo, 2026-09-23.** Implementation
+issues REB-370 through REB-375 are filed under the milestone "See ceiling headroom,
+concentration and a real forecast" (see § 5); § 6's own decision is resolved and
+recorded in REB-361. Tracker: REB-352, in
 the project *Bring mastro's ledger, invoice import and forecasting into PigroCRM*.
 Written in English, the repository's current rule for anything written from now on;
 the two spec documents this one matches in shape,
@@ -413,16 +415,14 @@ where that is genuinely possible.
    Acceptance: a contract's own recorded pace or assumption contributes to a genuine
    "projected" figure distinct from PigroCRM's existing draft-based `proiettato`.
 
-## 6. Decision for the lead
+## 6. Decision for the lead — resolved 2026-09-23
 
-Whether `estimate_income` grows a second `ricavi`-shaped input (ceiling-perimeter
-gross vs. coefficiente-taxable), or whether the rivalsa amount is instead carried as
-its own tagged, subtractable figure at the point revenue is summed (mirroring
-mastro's `countsTowardsRevenuePerimeter` declaration, `it-flat-rate.ts:280-283`) — my
-recommendation is the second: a tagged figure keeps `estimate_income`'s signature
-stable for every other caller and puts the "does this charge count toward the ceiling
-but not the coefficiente" question on the charge itself, the same place mastro's own
-pack declares it, rather than as an extra parameter every future caller of
-`estimate_income` has to remember to pass correctly. This is recorded here rather than
-decided, since it touches REB-344's own invoice-line design as much as this spike's
-ceiling arithmetic, and both spikes are themselves waiting on the same sign-off.
+Lorenzo, 2026-09-23: the rivalsa amount is carried as its own tagged, subtractable
+figure at the point revenue is summed (mirroring mastro's `countsTowardsRevenuePerimeter`
+declaration, `it-flat-rate.ts:280-283`), not a second `ricavi`-shaped input on
+`estimate_income`. This keeps `estimate_income`'s signature stable for every other
+caller and puts the "does this charge count toward the ceiling but not the coefficiente"
+question on the charge itself, the same place mastro's own pack declares it. Built as
+part of REB-361 (the ceiling-and-rivalsa issue in the ledger milestone), alongside the
+pack module and the rivalsa invoice line themselves — the same issue this decision
+always belonged to, since neither is correct without the other.
