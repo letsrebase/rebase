@@ -1,0 +1,11 @@
+{
+  "rebase-ragione-sociale": "rebase S.r.l.",
+  "rebase-sede": null,
+  "rebase-cf": null,
+  "rebase-piva": null,
+  "rebase-codice-destinatario": null,
+  "rebase-pec": null,
+  "rebase-rappresentante": null,
+  "giorni-pagamento": 30,
+  "fine-mese": true
+}

@@ -138,6 +138,17 @@
       "why": "The other half of packages/core/tests/test_guide_pdf.py. That test compares hashes and needs nothing installed, so it runs in the hub's gate on every pull request; this rebuilds the PDF with pandoc, Typst and fontTools and compares the bytes, which only a machine with all three can do. Two seconds, and it is what makes committing a built artefact safe: a source edited without a regeneration fails here rather than leaving a download that says something the repository no longer does."
     },
     {
+      "id": "contract-pdf",
+      "run": "uv run python projects/hub/tools/build_contract_pdf.py",
+      "when": [
+        "projects/hub/content/contratti/**",
+        "projects/hub/tools/**",
+        "shared/brand/palette.css",
+        "shared/brand/fonts/**"
+      ],
+      "why": "Typesets both contracts with pandoc and Typst into the ignored content/contratti/dist/. Nothing is committed, so nothing can go stale; what this catches is a Markdown edit, a marker or a template change that no longer compiles, which the hub's pytest gate cannot see because it runs without either binary."
+    },
+    {
       "id": "wordmark",
       "run": "uv run shared/brand/tools/build-wordmark.py --check",
       "when": [
