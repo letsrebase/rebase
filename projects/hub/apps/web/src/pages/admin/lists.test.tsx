@@ -12,10 +12,23 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CompaniesFilters, Remoto, TalentiFilters } from '@/lib/api'
 import { strParam } from '@/router'
-import { AdminCompanies, AdminFreelancerDetail, AdminTalenti, AdminTalentoLead } from './lists'
+import { AdminCompanies, AdminCompanyDetail, AdminFreelancerDetail, AdminTalenti, AdminTalentoLead } from './lists'
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+}
+
+/** Routes a mocked `fetch` by exact `"<method> <url>"`, so a page reading more than
+ *  one endpoint on mount (REB-355's own audit trail, fetched alongside the record
+ *  itself) gets the right shape for each rather than one blanket response replayed at
+ *  both -- a single `Response` cannot even be read twice, which is what silently broke
+ *  the freelancer/company detail page the moment `AuditTrail` added its own fetch. */
+function routeFetch(handlers: Record<string, unknown>) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const key = `${init?.method ?? 'GET'} ${String(input)}`
+    if (!(key in handlers)) throw new Error(`unhandled fetch in this test: ${key}`)
+    return answer(200, handlers[key])
+  })
 }
 
 /** A card the admin wrote from a signup (ORB-155): no CV, no rate, no position, no
@@ -47,6 +60,7 @@ const INCOMPLETE = {
   ultimi_accessi: [],
   ultimi_download_guida: [],
   pigro_slug: null,
+  deleted_at: null,
 }
 
 const COMPLETE = {
@@ -111,6 +125,7 @@ const COMPANY_A = {
   utm_source: 'linkedin',
   created_at: '2026-09-10T10:00:00Z',
   commenti: [],
+  deleted_at: null,
 }
 
 const COMPANY_B = { ...COMPANY_A, id: 'c2', nome_azienda: 'Bianchi Srl', stato: 'contattato' }
@@ -201,8 +216,15 @@ function mount(path: string) {
       creato_a: strParam(search.creato_a),
     }),
   })
+  const companiesDetail = createRoute({
+    getParentRoute: () => signedIn,
+    path: '/admin/companies/$id',
+    component: AdminCompanyDetail,
+  })
   const router = createRouter({
-    routeTree: root.addChildren([signedIn.addChildren([talent, talentLead, freelanceDetail, companies])]),
+    routeTree: root.addChildren([
+      signedIn.addChildren([talent, talentLead, freelanceDetail, companies, companiesDetail]),
+    ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   render(
@@ -274,6 +296,9 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
       if (url === '/api/hub/freelancers/f9') {
         return answer(200, { ...INCOMPLETE, id: 'f9', nome: 'Bob', cognome: 'Ross' })
       }
+      if (url === '/api/hub/freelancers/f9/audit') {
+        return answer(200, [])
+      }
       return answer(200, { totale: 1, items: [LEAD_TALENTO], per_stato: { lead: 1 } })
     })
     mount('/admin/talent/s2')
@@ -304,10 +329,13 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
 
 describe('the freelancer detail', () => {
   it('shows an incomplete card without a CV link and says the admin wrote it', async () => {
-    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, INCOMPLETE))
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': INCOMPLETE,
+      'GET /api/hub/freelancers/f1/audit': [],
+    })
     mount('/admin/freelance/f1')
     await screen.findByRole('heading', { name: 'Ada Lovelace' })
-    expect(spy.mock.calls[0]![0]).toBe('/api/hub/freelancers/f1')
+    expect(spy).toHaveBeenCalledWith('/api/hub/freelancers/f1', expect.anything())
     expect(screen.queryByRole('link', { name: /CV/ })).toBeNull()
     expect(screen.getByText('Da completare')).toBeInTheDocument()
     expect(screen.getByText('scritta dall’admin, da completare')).toBeInTheDocument()
@@ -318,7 +346,10 @@ describe('the freelancer detail', () => {
   })
 
   it('shows a complete card with its CV and says the person filled it in', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, COMPLETE))
+    routeFetch({
+      'GET /api/hub/freelancers/f2': COMPLETE,
+      'GET /api/hub/freelancers/f2/audit': [],
+    })
     mount('/admin/freelance/f2')
     await screen.findByRole('heading', { name: 'Grace Hopper' })
     expect(screen.getByRole('link', { name: /CV/ })).toHaveAttribute('href', '/api/hub/freelancers/f2/cv')
@@ -349,7 +380,7 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
   }
 
   it('shows the sign-up utm, the recent logins and downloads, and the Pigro slug, in order', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, ENRICHED))
+    routeFetch({ 'GET /api/hub/freelancers/f2': ENRICHED, 'GET /api/hub/freelancers/f2/audit': [] })
     mount('/admin/freelance/f2')
     await screen.findByRole('heading', { name: 'Grace Hopper' })
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
@@ -358,6 +389,7 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
       'Ultimi accessi',
       'Download della guida',
       'Spazio PigroCRM',
+      'Registro delle modifiche',
       'Commenti',
     ])
     expect(screen.getByText('newsletter')).toBeInTheDocument()
@@ -367,15 +399,16 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
   })
 
   it('shows sensible empty values with none of the four sources, not a crash', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': {
         ...INCOMPLETE,
         iscrizione_utm: null,
         ultimi_accessi: [],
         ultimi_download_guida: [],
         pigro_slug: null,
-      }),
-    )
+      },
+      'GET /api/hub/freelancers/f1/audit': [],
+    })
     mount('/admin/freelance/f1')
     await screen.findByRole('heading', { name: 'Ada Lovelace' })
     expect(screen.getByText('Nessuna iscrizione con questo indirizzo.')).toBeInTheDocument()
@@ -386,12 +419,6 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
   })
 
   it('keeps the enriched sections after saving a state change from the plain PATCH response', async () => {
-    const spy = vi.spyOn(globalThis, 'fetch')
-    spy.mockResolvedValueOnce(answer(200, ENRICHED))
-    mount('/admin/freelance/f2')
-    await screen.findByRole('heading', { name: 'Grace Hopper' })
-    expect(screen.getByText('studio-grace')).toBeInTheDocument()
-
     // `PATCH /freelancers/{id}` answers a plain `FreelancerRead`: none of REB-284's
     // keys even exist on the body, since only `get`'s response model carries them.
     const plainCard: Record<string, unknown> = { ...ENRICHED, stato: 'contattato' }
@@ -399,7 +426,16 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
     delete plainCard.ultimi_accessi
     delete plainCard.ultimi_download_guida
     delete plainCard.pigro_slug
-    spy.mockResolvedValueOnce(answer(200, plainCard))
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/hub/freelancers/f2/audit') return answer(200, [])
+      if (init?.method === 'PATCH') return answer(200, plainCard)
+      return answer(200, ENRICHED)
+    })
+    mount('/admin/freelance/f2')
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    expect(screen.getByText('studio-grace')).toBeInTheDocument()
+
     await userEvent.click(screen.getByRole('button', { name: 'Contattato' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     const banner = await screen.findByRole('banner')
@@ -408,6 +444,143 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
     // the other REB-284 sections the PATCH never answers stay on the page.
     expect(screen.getByText('studio-grace')).toBeInTheDocument()
     expect(screen.getByText('newsletter')).toBeInTheDocument()
+  })
+})
+
+describe('REB-355: override, delete/restore and the audit trail on the freelancer detail', () => {
+  it('overrides a field through "Modifica scheda" and shows it, keeping the existing comment thread', async () => {
+    const withComment = {
+      ...INCOMPLETE,
+      commenti: [
+        { id: 'c1', entity_type: 'freelancer', entity_id: 'f1', testo: 'Ha risposto alla call.', autore: 'Ivan', created_at: '2026-09-12T10:00:00Z' },
+      ],
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/hub/freelancers/f1/audit') return answer(200, [])
+      if (url === '/api/hub/freelancers/f1/override' && init?.method === 'PATCH') {
+        const body = JSON.parse(init.body as string)
+        expect(body.posizione).toBe('Staff engineer')
+        // The override response's own `commenti` is always `[]` (only `get` fills it):
+        // a merge that took it verbatim would wipe the existing thread from view.
+        return answer(200, { ...withComment, posizione: 'Staff engineer', commenti: [] })
+      }
+      return answer(200, withComment)
+    })
+    mount('/admin/freelance/f1')
+    await screen.findByRole('heading', { name: 'Ada Lovelace' })
+    await screen.findByText('Ha risposto alla call.')
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica scheda' }))
+    const posizione = await screen.findByLabelText('Posizione')
+    await userEvent.type(posizione, 'Staff engineer')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(screen.getByText('Staff engineer')).toBeInTheDocument())
+    expect(screen.getByText('Ha risposto alla call.')).toBeInTheDocument()
+  })
+
+  it('deletes the card, hides the CV/edit actions, then restores it', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/hub/freelancers/f2/audit') return answer(200, [])
+      if (url === '/api/hub/freelancers/f2' && init?.method === 'DELETE') {
+        return answer(200, { ...COMPLETE, deleted_at: '2026-09-23T10:00:00Z' })
+      }
+      if (url === '/api/hub/freelancers/f2/restore' && init?.method === 'POST') {
+        return answer(200, { ...COMPLETE, deleted_at: null })
+      }
+      return answer(200, COMPLETE)
+    })
+    mount('/admin/freelance/f2')
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    expect(screen.getByRole('button', { name: 'Modifica scheda' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Elimina' }))
+    await screen.findByText(/Eliminata il/)
+    expect(screen.queryByRole('button', { name: 'Modifica scheda' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Rimuovi CV' })).toBeNull()
+    // `set_status` 404s on a deleted row (`FreelancerService._require`'s own default):
+    // the note/state editor must not offer an action the backend will refuse.
+    expect(screen.queryByRole('button', { name: 'Contattato' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ripristina' }))
+    await waitFor(() => expect(screen.queryByText(/Eliminata il/)).toBeNull())
+    expect(screen.getByRole('button', { name: 'Modifica scheda' })).toBeInTheDocument()
+    expect(spy).toHaveBeenCalledWith('/api/hub/freelancers/f2', expect.objectContaining({ method: 'DELETE' }))
+  })
+
+  it('clears the CV and drops its download link and button', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/hub/freelancers/f2/audit') return answer(200, [])
+      if (url === '/api/hub/freelancers/f2/cv' && init?.method === 'DELETE') {
+        return answer(200, { ...COMPLETE, cv_filename: null, cv_size: null })
+      }
+      return answer(200, COMPLETE)
+    })
+    mount('/admin/freelance/f2')
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    await userEvent.click(screen.getByRole('button', { name: 'Rimuovi CV' }))
+    await waitFor(() => expect(screen.queryByRole('link', { name: /CV/ })).toBeNull())
+    expect(screen.queryByRole('button', { name: 'Rimuovi CV' })).toBeNull()
+  })
+})
+
+describe('the company detail', () => {
+  it('shows the request, its referente and its state', async () => {
+    routeFetch({
+      'GET /api/hub/companies/c1': COMPANY_A,
+      'GET /api/hub/companies/c1/audit': [],
+    })
+    mount('/admin/companies/c1')
+    await screen.findByRole('heading', { name: 'Rossi Studio' })
+    expect(screen.getByText(/Mario Rossi/)).toBeInTheDocument()
+    expect(screen.getByText('Piattaforma di prenotazione')).toBeInTheDocument()
+  })
+
+  it('overrides a field through "Modifica richiesta" and shows the new value', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/hub/companies/c1/audit') return answer(200, [])
+      if (url === '/api/hub/companies/c1/override' && init?.method === 'PATCH') {
+        const body = JSON.parse(init.body as string)
+        expect(body.durata).toBe('6 mesi')
+        return answer(200, { ...COMPANY_A, durata: '6 mesi' })
+      }
+      return answer(200, COMPANY_A)
+    })
+    mount('/admin/companies/c1')
+    await screen.findByRole('heading', { name: 'Rossi Studio' })
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica richiesta' }))
+    const durata = await screen.findByLabelText('Durata')
+    await userEvent.clear(durata)
+    await userEvent.type(durata, '6 mesi')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(screen.getByText(/6 mesi/)).toBeInTheDocument())
+  })
+
+  it('deletes the request, then restores it', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/hub/companies/c1/audit') return answer(200, [])
+      if (url === '/api/hub/companies/c1' && init?.method === 'DELETE') {
+        return answer(200, { ...COMPANY_A, deleted_at: '2026-09-23T10:00:00Z' })
+      }
+      if (url === '/api/hub/companies/c1/restore' && init?.method === 'POST') {
+        return answer(200, { ...COMPANY_A, deleted_at: null })
+      }
+      return answer(200, COMPANY_A)
+    })
+    mount('/admin/companies/c1')
+    await screen.findByRole('heading', { name: 'Rossi Studio' })
+
+    await userEvent.click(screen.getByRole('button', { name: 'Elimina' }))
+    await screen.findByText(/Eliminata il/)
+    expect(screen.queryByRole('button', { name: 'Modifica richiesta' })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ripristina' }))
+    await waitFor(() => expect(screen.queryByText(/Eliminata il/)).toBeNull())
+    expect(screen.getByRole('button', { name: 'Modifica richiesta' })).toBeInTheDocument()
+    expect(spy).toHaveBeenCalledWith('/api/hub/companies/c1', expect.objectContaining({ method: 'DELETE' }))
   })
 })
 
