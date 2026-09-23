@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.contracts.models import Contract, RateCard
+from pigrocrm.core.contracts.models import Contract, RateCard, RenewalAssumption
 from pigrocrm.core.contracts.schemas import CONTRACT_SORTS, ContractListQuery
 from pigrocrm.core.db import decode_cursor, keyset_predicate, order_by
 
@@ -84,3 +84,20 @@ class RateCardRepository:
             .order_by(RateCard.valido_da.asc(), RateCard.id.asc())
         )
         return list(self.session.execute(stmt).scalars())
+
+
+class RenewalAssumptionRepository:
+    """A repository never commits (project rule): every method here reads or
+    flushes, and the surrounding service method is the one transaction."""
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_for_contract(self, contract_id: UUID) -> RenewalAssumption | None:
+        stmt = select(RenewalAssumption).where(RenewalAssumption.contract_id == contract_id)
+        return self.session.execute(stmt).scalars().first()
+
+    def add(self, assumption: RenewalAssumption) -> RenewalAssumption:
+        self.session.add(assumption)
+        self.session.flush()
+        return assumption

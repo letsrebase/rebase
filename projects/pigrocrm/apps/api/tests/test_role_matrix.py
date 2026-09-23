@@ -176,6 +176,12 @@ ROWS: list[Row] = [
             "unita": "mese",
         },
     ),
+    # --- contracts / renewal assumption (REB-375): `require_write` -------------------
+    Row(
+        "PUT",
+        "/api/contracts/{contract_id}/renewal-assumption",
+        body={"probabilita": 50, "volume_atteso": "1000.00", "orizzonte_al": "2027-01-01"},
+    ),
     # --- customers / people / deals: `require_write` on every plain write ------------
     Row("POST", "/api/customers", body={"ragione_sociale": "Matrice Due Srl"}),
     Row("DELETE", "/api/customers/{customer_id}"),

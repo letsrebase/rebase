@@ -7,8 +7,20 @@ from orologio import OGGI_IN_ITALIA, congela
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.contracts.schemas import ContractCreate, ContractListQuery, RateCardCreate
-from pigrocrm.core.contracts.service import ContractService, RateCardService
+from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.contracts.schemas import (
+    ContractCreate,
+    ContractListQuery,
+    ContractProjectionQuery,
+    RateCardCreate,
+    RenewalAssumptionUpsert,
+)
+from pigrocrm.core.contracts.service import (
+    ContractProjectionService,
+    ContractService,
+    RateCardService,
+    RenewalAssumptionService,
+)
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice
@@ -314,3 +326,170 @@ def test_concentration_cap_rejects_an_as_of_before_the_contracts_own_start(
 def test_concentration_cap_of_an_unknown_contract_is_not_found(db_session: Session) -> None:
     with pytest.raises(NotFound):
         ContractService(db_session).concentration_cap(uuid4(), ADMIN, as_of=date(2026, 1, 1))
+
+
+# ---- renewal assumptions, through the service layer (REB-375) ----------------------
+
+
+def _assumption_payload(**overrides: object) -> RenewalAssumptionUpsert:
+    payload: dict[str, object] = {
+        "probabilita": 50,
+        "volume_atteso": Decimal("36500.00"),
+        "orizzonte_al": date(2027, 12, 31),
+    }
+    payload.update(overrides)
+    return RenewalAssumptionUpsert(**payload)  # type: ignore[arg-type]
+
+
+def test_a_renewal_assumption_can_be_set_and_read(db_session: Session) -> None:
+    customer = _customer(db_session)
+    contracts = ContractService(db_session)
+    assumptions = RenewalAssumptionService(db_session)
+    contract = contracts.create(_create_payload(customer.id), ADMIN)
+
+    created = assumptions.upsert(contract.id, _assumption_payload(), ADMIN)
+    assert created.contract_id == contract.id
+    assert created.probabilita == 50
+
+    read = assumptions.get(contract.id, ADMIN)
+    assert read.id == created.id
+    assert read.volume_atteso == Decimal("36500.00")
+
+
+def test_a_second_upsert_revises_the_same_row_in_place(db_session: Session) -> None:
+    """Done-when: a human's belief is revised, not accumulated into a history."""
+    customer = _customer(db_session)
+    contracts = ContractService(db_session)
+    assumptions = RenewalAssumptionService(db_session)
+    contract = contracts.create(_create_payload(customer.id), ADMIN)
+
+    first = assumptions.upsert(contract.id, _assumption_payload(probabilita=50), ADMIN)
+    second = assumptions.upsert(contract.id, _assumption_payload(probabilita=80), ADMIN)
+
+    assert second.id == first.id
+    read = assumptions.get(contract.id, ADMIN)
+    assert read.probabilita == 80
+
+
+def test_renewal_assumption_upsert_rejects_an_unknown_contract(db_session: Session) -> None:
+    assumptions = RenewalAssumptionService(db_session)
+    with pytest.raises(NotFound):
+        assumptions.upsert(uuid4(), _assumption_payload(), ADMIN)
+
+
+def test_renewal_assumption_get_of_an_unknown_contract_is_not_found(db_session: Session) -> None:
+    assumptions = RenewalAssumptionService(db_session)
+    with pytest.raises(NotFound):
+        assumptions.get(uuid4(), ADMIN)
+
+
+def test_renewal_assumption_get_before_any_upsert_is_not_found(db_session: Session) -> None:
+    """A contract with no recorded belief yet -- the honest default this slice's own
+    design insists on (never a guessed pace standing in for a missing one)."""
+    customer = _customer(db_session)
+    contract = ContractService(db_session).create(_create_payload(customer.id), ADMIN)
+    with pytest.raises(NotFound):
+        RenewalAssumptionService(db_session).get(contract.id, ADMIN)
+
+
+# ---- the projected figure, through the service layer (REB-375) ---------------------
+
+
+def test_project_rejects_an_unknown_contract(db_session: Session) -> None:
+    projections = ContractProjectionService(db_session)
+    query = ContractProjectionQuery(da=date(2026, 1, 1), a=date(2027, 1, 1))
+    with pytest.raises(NotFound):
+        projections.project(uuid4(), query, ADMIN)
+
+
+def test_the_projected_figure_combines_the_schedule_and_the_renewal_assumption(
+    db_session: Session,
+) -> None:
+    """Done-when: a contract's own recorded pace or assumption contributes to a
+    genuine "projected" figure -- exercised end to end through the real services,
+    with numbers chosen to divide evenly so the assertion is exact, not a tolerance.
+    """
+    customer = _customer(db_session)
+    contracts = ContractService(db_session)
+    rate_cards = RateCardService(db_session)
+    assumptions = RenewalAssumptionService(db_session)
+    projections = ContractProjectionService(db_session)
+
+    contract = contracts.create(
+        _create_payload(
+            customer.id,
+            fine=date(2026, 12, 31),
+            preavviso_disdetta_giorni=30,
+        ),
+        ADMIN,
+    )
+    rate_cards.create(
+        contract.id,
+        _rate_card_payload(
+            valido_da=date(2026, 1, 1),
+            tipo="ricorrente_fisso",
+            periodo_erogazione="mensile",
+            importo=Decimal("1000.00"),
+        ),
+        ADMIN,
+    )
+    assumptions.upsert(
+        contract.id,
+        _assumption_payload(
+            probabilita=50, volume_atteso=Decimal("36500.00"), orizzonte_al=date(2027, 12, 31)
+        ),
+        ADMIN,
+    )
+
+    result = projections.project(
+        contract.id,
+        ContractProjectionQuery(da=date(2026, 1, 1), a=date(2027, 6, 1), come_di=date(2026, 6, 1)),
+        ADMIN,
+    )
+
+    assert result.finestra_irrevocabilita_fino_al == date(2026, 7, 1)
+    # Occurrences beyond the window (2026-08-01..2026-12-01) and within the contract's
+    # own term: five monthly occurrences at 1000.00 each.
+    assert result.programmato == Decimal("5000.00")
+    # The renewal assumption's own share of 2027-01-01..2027-06-01, prorated across
+    # its full 2027-01-01..2027-12-31 horizon.
+    assert result.da_rinnovo == Decimal("7550.00")
+    assert result.totale == Decimal("12550.00")
+
+
+def test_the_projected_figure_is_independent_of_cash_overviews_own_proiettato(
+    db_session: Session,
+) -> None:
+    """The Done-when's other half, stated explicitly by the issue: this is a new
+    figure *alongside* `CashOverview.proiettato`, never a replacement or an input to
+    it. A contract's own schedule and assumption contribute nothing to the
+    draft-based figure, and an empty ledger's `proiettato` stays exactly zero
+    whether or not a contract projects real money."""
+    customer = _customer(db_session)
+    contracts = ContractService(db_session)
+    rate_cards = RateCardService(db_session)
+    assumptions = RenewalAssumptionService(db_session)
+    projections = ContractProjectionService(db_session)
+
+    contract = contracts.create(
+        _create_payload(customer.id, fine=date(2026, 12, 31), preavviso_disdetta_giorni=30),
+        ADMIN,
+    )
+    rate_cards.create(
+        contract.id,
+        _rate_card_payload(
+            valido_da=date(2026, 1, 1), tipo="ricorrente_fisso", periodo_erogazione="mensile"
+        ),
+        ADMIN,
+    )
+    assumptions.upsert(contract.id, _assumption_payload(), ADMIN)
+
+    result = projections.project(
+        contract.id,
+        ContractProjectionQuery(da=date(2026, 1, 1), a=date(2027, 6, 1), come_di=date(2026, 6, 1)),
+        ADMIN,
+    )
+    assert result.totale > Decimal("0.00")
+
+    overview = AnalyticsService(db_session).cash_overview(2026, ADMIN)
+    assert overview.proiettato == Decimal("0.00")
