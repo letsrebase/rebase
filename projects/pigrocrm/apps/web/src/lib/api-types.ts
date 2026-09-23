@@ -5099,6 +5099,10 @@ export interface components {
             aliquota_imposta_sostitutiva: string | null;
             /** Aliquota Inps */
             aliquota_inps: string | null;
+            /** Pack Id */
+            pack_id: string;
+            /** Pack Version */
+            pack_version: string;
             /**
              * Created At
              * Format: date-time

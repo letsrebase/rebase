@@ -202,6 +202,11 @@ class FiscalProfileRead(BaseModel):
     coefficiente_redditivita: Decimal | None
     aliquota_imposta_sostitutiva: Decimal | None
     aliquota_inps: Decimal | None
+    # REB-361: the jurisdiction pack pointer -- read, never written through this
+    # schema (no field on `FiscalProfileUpsert`): a second pack is a later feature,
+    # and nothing here asks a caller to choose one yet.
+    pack_id: str
+    pack_version: str
     created_at: datetime
     updated_at: datetime
 

@@ -320,3 +320,85 @@ def test_there_is_no_per_deal_variant_anywhere() -> None:
         for field in DealPnl.model_fields
         if "imposta" in field or "inps" in field or "netto" in field
     ]
+
+
+# --- REB-361: the rivalsa amount never reaches the coefficiente base ---------------
+
+
+def test_the_rivalsa_amount_is_excluded_from_the_coefficiente_base(db_session: Session) -> None:
+    """REB-352 §2's tension, resolved per §6: a rivalsa line counts toward the
+    ceiling in full (`AnalyticsRepository.annual_revenue` sums it, unmodified) but
+    must never reach the coefficiente base -- `estimate_income`'s `ricavi` here must
+    read 1000.00, the fee alone, not 1040.00, or the surcharge gets taxed at 67% like
+    ordinary income."""
+    from datetime import date
+
+    from pigrocrm.core.customers.models import Customer
+    from pigrocrm.core.fiscal.pack import IT_FLAT_RATE_PACK
+    from pigrocrm.core.invoices.models import Invoice, InvoiceLine
+
+    _set_rates(db_session, coefficiente="67.00", sostitutiva="5.00", inps="26.07")
+    customer = Customer(ragione_sociale="Acme")
+    db_session.add(customer)
+    db_session.flush()
+    invoice = Invoice(
+        customer_id=customer.id,
+        tipo="fattura",
+        stato="emessa",
+        anno=ANNO,
+        numero=999001,
+        data_emissione=date(ANNO, 3, 1),
+        imponibile=Decimal("1040.00"),
+        imposta=Decimal("0.00"),
+        bollo=Decimal("0.00"),
+        totale=Decimal("1040.00"),
+        stato_pagamento="da_incassare",
+    )
+    db_session.add(invoice)
+    db_session.flush()
+    charge = IT_FLAT_RATE_PACK.charge("rivalsa_inps")
+    db_session.add_all(
+        [
+            InvoiceLine(
+                invoice_id=invoice.id,
+                numero_linea=1,
+                descrizione="Consulenza",
+                quantita=Decimal("1.000000"),
+                prezzo_unitario=Decimal("1000.00"),
+                prezzo_totale=Decimal("1000.00"),
+                aliquota_iva=Decimal("0.00"),
+                natura="N2.2",
+            ),
+            InvoiceLine(
+                invoice_id=invoice.id,
+                numero_linea=2,
+                descrizione=charge.descrizione_riga,
+                quantita=Decimal("1.000000"),
+                prezzo_unitario=Decimal("40.00"),
+                prezzo_totale=Decimal("40.00"),
+                aliquota_iva=Decimal("0.00"),
+                natura="N2.2",
+            ),
+        ]
+    )
+    db_session.flush()
+
+    estimate = AnalyticsService(db_session).get_fiscal_estimate(ANNO, ADMIN)
+
+    assert estimate.ricavi == Decimal("1000.00")
+    # 1000.00 * 0.67 = 670.00 -- and not 1040.00 * 0.67 = 696.80.
+    assert estimate.imponibile == Decimal("670.00")
+
+
+def test_an_explicit_ricavi_override_is_never_reduced_by_the_pack(
+    db_session: Session,
+) -> None:
+    """The "what if" override (the economic overview's collected/projected figures,
+    per `get_fiscal_estimate`'s own docstring) is the caller's own already-decided
+    number -- the pack's tag applies only to the default, `annual_revenue`-derived
+    path, never to a figure a caller hands in explicitly."""
+    _set_rates(db_session, coefficiente="67.00", sostitutiva="5.00", inps="26.07")
+    estimate = AnalyticsService(db_session).get_fiscal_estimate(
+        ANNO, ADMIN, ricavi=Decimal("1040.00")
+    )
+    assert estimate.ricavi == Decimal("1040.00")
