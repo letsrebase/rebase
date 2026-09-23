@@ -32,13 +32,16 @@ def db_engine() -> Iterator[Engine]:
     slice 6 on, four models declare GIN indexes with `gin_trgm_ops`, and `create_all`
     fails outright with `operator class "gin_trgm_ops" does not exist` if the extension
     is not there yet. Migration 0021 creates the extension too -- this is the same
-    statement for the path that bypasses the migrations.
+    statement for the path that bypasses the migrations. `btree_gist` is REB-358's own
+    addition, for the identical reason: `RateCard`'s exclusion constraint needs it, and
+    `create_all` fails with `operator class "gist_uuid_ops" does not exist` without it.
     """
     with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
         settings = Settings(database_url=container.get_connection_url())
         engine = create_engine_from_settings(settings)
         with engine.begin() as connection:
             connection.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
         import pigrocrm.core.models_registry  # noqa: F401  (imports every model)
 
         Base.metadata.create_all(engine)

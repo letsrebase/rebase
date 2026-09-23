@@ -1,0 +1,152 @@
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Annotated, Any, Literal
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from pigrocrm.core.contracts.models import Contract
+from pigrocrm.core.db import CURSOR_MAX_LENGTH, SortDirection, SortSpec, SortWhitelist
+from pigrocrm.core.validation import SafeStr
+
+# Mirrors Contract's column widths (models.py). Without these, an over-length value
+# sails past Pydantic, reaches flush(), and comes back as a raw sqlalchemy.exc.DataError
+# (StringDataRightTruncation) -- not a subclass of IntegrityError, so no handler
+# catches it, and it poisons the session. The same gap CustomerCreate's/DealCreate's
+# own *_MAX_LENGTH constants close.
+TITOLO_MAX_LENGTH = 255
+CADENZA_FATTURAZIONE_MAX_LENGTH = 20
+DIVISA_MAX_LENGTH = 3
+
+RenewalType = Literal["nessuno", "esplicito", "opzione_controparte", "tacito"]
+RateCardTipo = Literal["ricorrente_fisso", "giornaliero", "orario", "una_tantum"]
+RateCardUnita = Literal["ora", "giorno", "mese", "anno", "forfait"]
+RateCardPeriodo = Literal["mensile", "trimestrale", "annuale", "una_tantum"]
+
+# Mirror RateCard's Numeric(p, s) column widths (models.py): importo is
+# Numeric(12, 2), the same precision as every other money column on this schema;
+# ore_minime is Numeric(6, 2); each element of frazioni_ammesse is Numeric(4, 2).
+IMPORTO_MAX_DIGITS = 12
+ORE_MINIME_MAX_DIGITS = 6
+FRAZIONE_MAX_DIGITS = 4
+DECIMAL_PLACES = 2
+
+Frazione = Annotated[
+    Decimal, Field(max_digits=FRAZIONE_MAX_DIGITS, decimal_places=DECIMAL_PLACES)
+]
+
+
+class ContractCreate(BaseModel):
+    """`contratto_precedente_id` and `stato` are deliberately absent: the renewal
+    chain is left unset by this spike (spec §3's own note), and a new contract
+    always starts life as `bozza` -- there is no state-transition endpoint yet for
+    either to reach through."""
+
+    customer_id: UUID
+    titolo: SafeStr = Field(max_length=TITOLO_MAX_LENGTH)
+    inizio: date
+    fine: date | None = None
+    tipo_rinnovo: RenewalType
+    preavviso_rinnovo_giorni: int | None = Field(default=None, ge=0)
+    preavviso_disdetta_giorni: int = Field(ge=0)
+    # Reuses Customer.giorni_pagamento's own shape (REB-326): null cascades to the
+    # customer's own term. See models.py for why pagamento_fine_mese is nullable
+    # here, unlike Customer's own copy.
+    giorni_pagamento: int | None = Field(default=None, ge=0)
+    pagamento_fine_mese: bool | None = None
+    cadenza_fatturazione: SafeStr = Field(max_length=CADENZA_FATTURAZIONE_MAX_LENGTH)
+    divisa: SafeStr = Field(default="EUR", max_length=DIVISA_MAX_LENGTH)
+    requires_prior_approval: bool = False
+    applies_social_charge: bool = False
+    # mastro's ExpensePolicy (contract.ts:90-99), kept as an open tagged JSONB union
+    # -- see models.py's Contract.politica_spese for why this is not deeply
+    # validated here.
+    politica_spese: dict[str, Any]
+    note: SafeStr | None = None
+    custom_fields: dict[str, Any] = {}
+
+
+class ContractRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    customer_id: UUID
+    titolo: str
+    inizio: date
+    fine: date | None
+    tipo_rinnovo: str
+    preavviso_rinnovo_giorni: int | None
+    preavviso_disdetta_giorni: int
+    giorni_pagamento: int | None
+    pagamento_fine_mese: bool | None
+    cadenza_fatturazione: str
+    divisa: str
+    requires_prior_approval: bool
+    applies_social_charge: bool
+    politica_spese: dict[str, Any]
+    stato: str
+    contratto_precedente_id: UUID | None
+    note: str | None
+    custom_fields: dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+
+
+# Residuo R9. Mirrors CUSTOMER_SORTS (customers/schemas.py) -- see there for why three
+# keys and why `created_at` is the default.
+CONTRACT_SORTS = SortWhitelist(
+    specs=(
+        SortSpec(key="created_at", column=Contract.created_at, kind="datetime", nullable=False),
+        SortSpec(key="updated_at", column=Contract.updated_at, kind="datetime", nullable=False),
+        SortSpec(key="titolo", column=Contract.titolo, kind="text", nullable=False),
+    ),
+    default_key="created_at",
+)
+
+
+class ContractListQuery(BaseModel):
+    customer_id: UUID | None = None
+    stato: str | None = None
+    limit: int = Field(default=50, ge=1, le=200)
+    cursor: str | None = Field(default=None, max_length=CURSOR_MAX_LENGTH)
+    sort: SafeStr | None = None
+    dir: SortDirection = "asc"
+
+
+class ContractPage(BaseModel):
+    items: list[ContractRead]
+    next_cursor: str | None
+
+
+class RateCardCreate(BaseModel):
+    valido_da: date
+    valido_a: date | None = None
+    tipo: RateCardTipo
+    importo: Decimal = Field(max_digits=IMPORTO_MAX_DIGITS, decimal_places=DECIMAL_PLACES)
+    unita: RateCardUnita
+    frazioni_ammesse: list[Frazione] = Field(default_factory=lambda: [Decimal("1")])
+    # Meaningful, and refused outside it, only for tipo == "orario" -- see
+    # ck_rate_cards_ore_minime_only_orario.
+    ore_minime: Decimal | None = Field(
+        default=None, max_digits=ORE_MINIME_MAX_DIGITS, decimal_places=DECIMAL_PLACES
+    )
+    # Meaningful, and refused outside it, only for tipo == "ricorrente_fisso" -- see
+    # ck_rate_cards_periodo_only_ricorrente_fisso.
+    periodo_erogazione: RateCardPeriodo | None = None
+
+
+class RateCardRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    contract_id: UUID
+    valido_da: date
+    valido_a: date | None
+    tipo: str
+    importo: Decimal
+    unita: str
+    frazioni_ammesse: list[Decimal]
+    ore_minime: Decimal | None
+    periodo_erogazione: str | None
+    created_at: datetime
+    updated_at: datetime

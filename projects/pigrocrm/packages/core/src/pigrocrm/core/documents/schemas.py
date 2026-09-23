@@ -52,13 +52,14 @@ DIMENSIONE_MAX = 100 * 1024 * 1024
 
 
 class DocumentCreate(BaseModel):
-    """`customer_id` and `deal_id` are both optional here and mutually exclusive; the
-    service raises `ValidationFailed` when neither or both is given, and the database
-    check constraint (`ck_documents_customer_xor_deal`) is the second line under
-    concurrency. Task 9 fills in the rest of this module (updates, reads, versions)."""
+    """`customer_id`, `deal_id` and `contract_id` are all optional here and mutually
+    exclusive -- exactly one must be supplied; the service raises `ValidationFailed`
+    when zero or more than one is given, and the database check constraint
+    (`ck_documents_customer_xor_deal`) is the second line under concurrency."""
 
     customer_id: UUID | None = None
     deal_id: UUID | None = None
+    contract_id: UUID | None = None
     tipo: DocumentTipo = "documento"
     titolo: SafeStr = Field(max_length=TITOLO_MAX_LENGTH)
     stato: OfferState | None = None
@@ -83,6 +84,7 @@ class DocumentRead(BaseModel):
     id: UUID
     customer_id: UUID | None
     deal_id: UUID | None
+    contract_id: UUID | None
     tipo: str
     titolo: str
     stato: str | None
@@ -125,6 +127,7 @@ DOCUMENT_SORTS = SortWhitelist(
 class DocumentListQuery(BaseModel):
     customer_id: UUID | None = None
     deal_id: UUID | None = None
+    contract_id: UUID | None = None
     tipo: DocumentTipo | None = None
     stato: OfferState | None = None
     # New in slice 6: spec §8.1 makes `titolo` searchable, and task A13's "vedi tutti"

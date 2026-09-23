@@ -33,6 +33,8 @@ EXPECTED = (
     # everything else does: whoever runs the installation knows what they need to record
     # about one, and the alternative is a `note` field holding a form.
     "attivita",
+    # REB-358. A contract engagement carries custom fields for the identical reason.
+    "contract",
 )
 
 

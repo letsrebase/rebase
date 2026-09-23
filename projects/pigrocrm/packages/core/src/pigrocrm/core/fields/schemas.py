@@ -26,6 +26,10 @@ EntityType = Literal[
     # else does: whoever runs the installation knows what they need to record about
     # one, and the alternative is a `note` field holding a form.
     "attivita",
+    # REB-358. A contract engagement carries custom fields for the identical
+    # reason: whoever runs the installation knows what they need to record about
+    # one engagement that the schema's own columns do not already carry.
+    "contract",
 ]
 
 _SLUG_STRIP = re.compile(r"[^a-z0-9]+")

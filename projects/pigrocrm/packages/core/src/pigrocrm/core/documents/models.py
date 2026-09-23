@@ -20,7 +20,11 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMi
 
 
 class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
-    """A document belongs to a customer **or** to a deal -- never both, never neither.
+    """A document belongs to a customer, a deal, or a contract -- exactly one, never
+    more than one, never none (REB-358 widened this from two owners to three: once
+    `contracts` exists, a contract's own signed document, and any later addendum,
+    should be discoverable from the contract itself, not only from the proposal row
+    that produced it).
 
     `tipo` and `stato` are `String` + a Pydantic `Literal`, not a Postgres `ENUM`:
     that is how every closed set in this schema is already spelled (`pipeline_stages.
@@ -39,6 +43,13 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         ForeignKey("customers.id"), default=None, index=True
     )
     deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None, index=True)
+    # REB-358 §11: a contract's own signed document (and any later addendum). Widens
+    # the ownership from two mutually-exclusive columns to three, the identical
+    # situation mastro already solved once for its own single-discriminator
+    # `document.ownerType` (`0011_approval_constraints.sql:50-57`).
+    contract_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("contracts.id"), default=None, index=True
+    )
     tipo: Mapped[str] = mapped_column(String(20), nullable=False)
     titolo: Mapped[str] = mapped_column(String(200), nullable=False)
     stato: Mapped[str | None] = mapped_column(String(20), default=None)
@@ -56,7 +67,12 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
 
     __table_args__ = (
         CheckConstraint(
-            "(customer_id IS NOT NULL) <> (deal_id IS NOT NULL)",
+            # Postgres's own `num_nonnulls` -- built in since 9.5 -- is the "exactly
+            # one of three" test in one call, the natural three-way widening of the
+            # original two-way `(customer_id IS NOT NULL) <> (deal_id IS NOT NULL)`.
+            # Same constraint name: this is a widening of the existing rule, not a
+            # second one beside it.
+            "num_nonnulls(customer_id, deal_id, contract_id) = 1",
             name="ck_documents_customer_xor_deal",
         ),
         Index("ix_documents_custom_fields", "custom_fields", postgresql_using="gin"),

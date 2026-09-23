@@ -86,6 +86,7 @@ export type EntityType =
   | 'time_entry'
   | 'cost'
   | 'attivita'
+  | 'contract'
 
 /**
  * The subset of `EntityType` that has a real `GET /api/{plural}/{id}/timeline`
@@ -109,8 +110,11 @@ export type EntityType =
  * closure of a commitment, so the timeline *data* exists, and
  * `GET /api/activities/{id}/timeline` does not. Excluded until it does -- inventing the
  * route in this type would give `Timeline` a fetcher that 404s.
+ *
+ * `contract` joined them at REB-358 for the identical reason: `ContractService.create`
+ * writes an activity row, and no `GET /api/contracts/{id}/timeline` route exists yet.
  */
-export type TimelineEntityType = Exclude<EntityType, 'time_entry' | 'cost' | 'attivita'>
+export type TimelineEntityType = Exclude<EntityType, 'time_entry' | 'cost' | 'attivita' | 'contract'>
 
 export interface EntitySchema {
   entity_type: string

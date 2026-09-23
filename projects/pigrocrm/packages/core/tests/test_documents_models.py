@@ -5,6 +5,7 @@ from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.emitter.models import EmitterProfile
@@ -17,6 +18,21 @@ def _customer(db_session: Session) -> Customer:
     db_session.add(customer)
     db_session.flush()
     return customer
+
+
+def _contract(db_session: Session, customer: Customer) -> Contract:
+    contract = Contract(
+        customer_id=customer.id,
+        titolo="Consulenza CTO",
+        inizio="2026-01-01",
+        tipo_rinnovo="nessuno",
+        preavviso_disdetta_giorni=30,
+        cadenza_fatturazione="mensile",
+        politica_spese={"tipo": "non_rimborsabile"},
+    )
+    db_session.add(contract)
+    db_session.flush()
+    return contract
 
 
 def test_a_document_belongs_to_a_customer(db_session: Session) -> None:
@@ -38,6 +54,46 @@ def test_a_document_with_both_customer_and_deal_is_refused(db_session: Session) 
     customer = _customer(db_session)
     db_session.add(
         Document(customer_id=customer.id, deal_id=uuid4(), tipo="documento", titolo="Doppio")
+    )
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+
+def test_a_document_can_belong_to_a_contract(db_session: Session) -> None:
+    """REB-358 §11: the three-way widening's own third branch -- a contract's
+    signed original, discoverable from the contract itself."""
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer)
+    document = Document(contract_id=contract.id, tipo="contratto", titolo="Contratto firmato")
+    db_session.add(document)
+    db_session.flush()
+    assert document.customer_id is None
+    assert document.deal_id is None
+
+
+def test_a_document_with_customer_and_contract_is_refused(db_session: Session) -> None:
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer)
+    db_session.add(
+        Document(
+            customer_id=customer.id, contract_id=contract.id, tipo="documento", titolo="Doppio"
+        )
+    )
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+
+def test_a_document_with_all_three_owners_is_refused(db_session: Session) -> None:
+    customer = _customer(db_session)
+    contract = _contract(db_session, customer)
+    db_session.add(
+        Document(
+            customer_id=customer.id,
+            deal_id=uuid4(),
+            contract_id=contract.id,
+            tipo="documento",
+            titolo="Triplo",
+        )
     )
     with pytest.raises(IntegrityError):
         db_session.flush()
@@ -79,7 +135,14 @@ def test_two_templates_cannot_share_a_name_case_insensitively(db_session: Sessio
 
 def test_document_is_a_recognised_entity_type() -> None:
     assert "document" in ENTITY_TYPES
-    assert native_fields("document") == ["customer_id", "deal_id", "tipo", "titolo", "stato"]
+    assert native_fields("document") == [
+        "customer_id",
+        "deal_id",
+        "contract_id",
+        "tipo",
+        "titolo",
+        "stato",
+    ]
 
 
 def test_documents_has_a_gin_index_on_custom_fields(db_session: Session) -> None:

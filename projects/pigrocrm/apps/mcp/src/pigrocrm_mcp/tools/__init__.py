@@ -8,6 +8,7 @@ from pydantic import WithJsonSchema
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.analytics.schemas import BudgetQuery, PeriodPnlQuery
+from pigrocrm.core.contracts.schemas import ContractListQuery
 from pigrocrm.core.customers.schemas import CustomerListQuery, CustomerUpdate
 from pigrocrm.core.dashboard.schemas import PeriodoQuery
 from pigrocrm.core.db import SortDirection
@@ -29,7 +30,15 @@ from pigrocrm.core.timetracking.schemas import (
 from pigrocrm_mcp.context import McpContext
 from pigrocrm_mcp.tools import automations as automation_tools
 from pigrocrm_mcp.tools import calendario as calendar_tools
-from pigrocrm_mcp.tools import customers, deals, documents, invoices, people, timetracking
+from pigrocrm_mcp.tools import (
+    contracts,
+    customers,
+    deals,
+    documents,
+    invoices,
+    people,
+    timetracking,
+)
 from pigrocrm_mcp.tools import dashboard as dashboard_tools
 from pigrocrm_mcp.tools import search as search_tools
 
@@ -506,6 +515,133 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     def restore_deal(deal_id: str) -> dict[str, Any]:
         """Ripristina un deal archiviato."""
         return deals.restore(context, deal_id)
+
+    # ---- contracts (REB-358) ------------------------------------------------
+
+    @mcp.tool()
+    @guard
+    def create_contract(
+        customer_id: str,
+        titolo: str,
+        inizio: str,
+        tipo_rinnovo: str,
+        preavviso_disdetta_giorni: int,
+        cadenza_fatturazione: str,
+        politica_spese: dict[str, Any],
+        fine: str | None = None,
+        preavviso_rinnovo_giorni: int | None = None,
+        giorni_pagamento: int | None = None,
+        pagamento_fine_mese: bool | None = None,
+        divisa: str = "EUR",
+        requires_prior_approval: bool = False,
+        applies_social_charge: bool = False,
+        note: str | None = None,
+        custom_fields: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Crea un contratto. `inizio`/`fine` in formato YYYY-MM-DD. `tipo_rinnovo` è
+        uno fra `nessuno`/`esplicito`/`opzione_controparte`/`tacito`;
+        `preavviso_rinnovo_giorni` è obbligatorio per ogni valore diverso da
+        `nessuno`. `giorni_pagamento`/`pagamento_fine_mese` vanno impostati insieme, o
+        nessuno dei due -- assenti, ereditano i termini del cliente. Chiama prima
+        `describe_schema` per i campi personalizzati.
+        """
+        return contracts.create(
+            context,
+            {
+                "customer_id": UUID(customer_id),
+                "titolo": titolo,
+                "inizio": inizio,
+                "fine": fine,
+                "tipo_rinnovo": tipo_rinnovo,
+                "preavviso_rinnovo_giorni": preavviso_rinnovo_giorni,
+                "preavviso_disdetta_giorni": preavviso_disdetta_giorni,
+                "giorni_pagamento": giorni_pagamento,
+                "pagamento_fine_mese": pagamento_fine_mese,
+                "cadenza_fatturazione": cadenza_fatturazione,
+                "divisa": divisa,
+                "requires_prior_approval": requires_prior_approval,
+                "applies_social_charge": applies_social_charge,
+                "politica_spese": politica_spese,
+                "note": note,
+                "custom_fields": custom_fields or {},
+            },
+        )
+
+    @mcp.tool()
+    @guard
+    def get_contract(contract_id: str) -> dict[str, Any]:
+        """Legge un contratto."""
+        return contracts.get(context, contract_id)
+
+    @mcp.tool()
+    @guard
+    def search_contracts(
+        customer_id: str | None = None,
+        stato: str | None = None,
+        limit: BoundedLimit = 50,
+        cursor: str | None = None,
+        sort: str | None = None,
+        dir: str = "asc",
+    ) -> dict[str, Any]:
+        """Cerca contratti per cliente o stato. `sort` accetta `created_at`,
+        `updated_at` o `titolo`, `dir` accetta `asc` o `desc`. Per leggere la pagina
+        successiva passa `next_cursor` come `cursor` nella chiamata seguente, senza
+        interpretarlo.
+        """
+        return contracts.search(
+            context,
+            ContractListQuery(
+                customer_id=UUID(customer_id) if customer_id else None,
+                stato=stato,
+                limit=cast(int, limit),
+                cursor=cursor,
+                sort=sort,
+                dir=cast(SortDirection, dir),
+            ),
+        )
+
+    @mcp.tool()
+    @guard
+    def create_rate_card(
+        contract_id: str,
+        valido_da: str,
+        tipo: str,
+        importo: MoneyArg,
+        unita: str,
+        valido_a: str | None = None,
+        frazioni_ammesse: list[float] | None = None,
+        ore_minime: OptionalMoney = None,
+        periodo_erogazione: str | None = None,
+    ) -> dict[str, Any]:
+        """Crea una scheda tariffaria per un contratto. `valido_da`/`valido_a` in
+        formato YYYY-MM-DD; `valido_a` assente è la scheda corrente, aperta. Un
+        periodo che si sovrappone a una scheda già esistente sullo stesso contratto
+        viene rifiutato dal database. `ore_minime` è significativo solo per
+        `tipo = 'orario'`, `periodo_erogazione` solo per `tipo = 'ricorrente_fisso'`.
+        """
+        payload: dict[str, Any] = {
+            "valido_da": valido_da,
+            "valido_a": valido_a,
+            "tipo": tipo,
+            "importo": importo,
+            "unita": unita,
+            "ore_minime": ore_minime,
+            "periodo_erogazione": periodo_erogazione,
+        }
+        # Omitted rather than `None`: `RateCardCreate.frazioni_ammesse` has no `None`
+        # branch (its default is `[1]`, mirroring `RateCard.frazioni_ammesse`'s own
+        # column default), so passing an explicit `None` through would raise instead
+        # of falling back to it.
+        if frazioni_ammesse is not None:
+            payload["frazioni_ammesse"] = frazioni_ammesse
+        return contracts.create_rate_card(context, contract_id, payload)
+
+    @mcp.tool()
+    @guard
+    def list_rate_cards(contract_id: str) -> dict[str, Any]:
+        """Elenca le schede tariffarie di un contratto, dalla più vecchia alla più
+        recente."""
+        return {"items": contracts.list_rate_cards(context, contract_id)}
 
     # ---- shared ------------------------------------------------------------
 
