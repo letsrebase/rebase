@@ -268,16 +268,16 @@ def issue(
     own single commit, and this is the caller `service.py` documents as owning the
     second transaction: `produce_artifacts` is called here, right after, so a caller
     of this endpoint never has to make a separate call to see the PDF/XML.
-
-    Once `issue` has committed, the answer is the issued row whatever the render does
-    (REB-143). The number is consumed and the invoice is a fiscal fact; a render that
-    raised used to turn that into a 500, and the person saw a failure for an invoice
-    that was really issued. The failure is logged and the row is read back as it
-    stands, so `pdf_document_id`/`xml_document_id` say which file exists and «Rigenera
-    documenti» (`POST /artifacts`, below) is the retry.
     """
     service = _service(session, storage, settings)
     result = service.issue(invoice_id, data, actor)
+    # Once `issue` has committed, the answer is the issued row whatever the render does
+    # (REB-143). The number is consumed and the invoice is a fiscal fact; a render that
+    # raised used to turn that into an error, and the person saw a failure for an
+    # invoice that was really issued. The failure is logged and the row is read back as
+    # it stands, so `pdf_document_id`/`xml_document_id` say which file exists and
+    # «Rigenera documenti» (`POST /artifacts`, below) is the retry. A comment and not
+    # the docstring, which is this route's OpenAPI description.
     try:
         service.produce_artifacts(result.id, actor)
     except Exception:
