@@ -24,11 +24,11 @@ products that need to agree on something agree through `shared/`.
 ## Layout
 
 ```
-packages/core/   rebase_core: models, migrations, services, the ad conversion, the perk files
+packages/core/   rebase_core: models, migrations, services, the ad conversion, the perk files, the contracts and their texts
 apps/api/        rebase_api: FastAPI, one process, its own database
 apps/mcp/        rebase_mcp: the same services over stdio or Streamable HTTP, for an admin with a token
 apps/web/        pnpm package `hub`: the SPA at letsrebase.com/hub/ (wizards, the member area, admin)
-content/         the prose a perk is made of and the contracts a member signs, reviewed as prose
+content/         the prose a perk is made of, reviewed as prose, and the contracts' example data
 tools/           the scripts that typeset that prose into PDFs
 ```
 

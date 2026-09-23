@@ -126,8 +126,8 @@ mypy_path = [
   "projects/hub/apps/api/src",
   "projects/hub/apps/mcp/src",
   # The hub's two typesetting scripts are modules of one directory, not a package:
-  # `build_contract_pdf.py` imports the palette and the fonts from `build_guide_pdf.py`,
-  # which is how Python resolves it when either runs, and this is how mypy does too.
+  # `test_contract_pdf.py` imports both by bare name, which is how Python resolves them
+  # when either runs, and this is how mypy does too.
   "projects/hub/tools",
 ]
 explicit_package_bases = true

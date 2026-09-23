@@ -139,14 +139,16 @@
     },
     {
       "id": "contract-pdf",
-      "run": "uv run python projects/hub/tools/build_contract_pdf.py",
+      "run": "uv run python projects/hub/tools/build_contract_pdf.py && uv run pytest -q projects/hub/packages/core/tests/test_contract_render.py",
       "when": [
         "projects/hub/content/contratti/**",
         "projects/hub/tools/**",
+        "projects/hub/packages/core/src/rebase_core/contracts/**",
+        "projects/hub/packages/core/tests/test_contract_render.py",
         "shared/brand/palette.css",
         "shared/brand/fonts/**"
       ],
-      "why": "Typesets both contracts with pandoc and Typst into the ignored content/contratti/dist/. Nothing is committed, so nothing can go stale; what this catches is a Markdown edit, a marker or a template change that no longer compiles, which the hub's pytest gate cannot see because it runs without either binary."
+      "why": "Typesets both contracts with pandoc and Typst twice: through the laptop script into the ignored content/contratti/dist/, and through rebase_core.contracts the way the API renders them, the signature query included. Nothing is committed, so nothing can go stale; what this catches is a Markdown edit, a marker or a template change that no longer compiles."
     },
     {
       "id": "wordmark",

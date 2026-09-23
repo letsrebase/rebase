@@ -515,8 +515,7 @@ jobs:
     with:
       filter: website
 
-  # The rebase hub (projects/hub): its own Python gate, without the renderer -- it
-  # produces no PDF and shells out to nothing.
+  # The rebase hub (projects/hub): its own Python gate.
   hub-py:
     name: hub · python
     needs: changes
@@ -532,6 +531,9 @@ jobs:
         projects/hub/packages/core/tests
         projects/hub/apps/api/tests
         projects/hub/apps/mcp/tests
+      # The contracts are typeset at request time since REB-387 (rebase_core.contracts),
+      # and test_contract_render.py runs the real pandoc and Typst over both texts.
+      renderer: true
 
   # The hub's SPA (projects/hub/apps/web, pnpm package `hub`): the same node gate as the
   # CRM's web and the website.
