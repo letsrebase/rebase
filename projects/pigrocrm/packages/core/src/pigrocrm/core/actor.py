@@ -101,6 +101,11 @@ AGENT_FORBIDDEN_ACTIONS: frozenset[str] = frozenset(
         # incoming-supplier and register-conflict facts the two writes above guard,
         # ahead of a human's own confirm step, so it is gated the same way.
         "review_invoice_import",
+        # REB-366: converges the review step's own classification onto `import_
+        # issued`'s exact validation/lock/write sequence -- the actual register
+        # write this human's-own-confirm step exists to gate, so it carries the
+        # same ban as `import_issued_invoice` itself.
+        "confirm_invoice_import",
         # Slice 9 §4.2: reading the titolare's Google Drive, and copying a file from it
         # into the CRM. Not irreversible -- nothing on Drive changes, and an imported
         # document can be deleted -- but on this list for the reason

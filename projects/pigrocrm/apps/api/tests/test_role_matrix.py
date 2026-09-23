@@ -367,6 +367,12 @@ ROWS: list[Row] = [
     ),
     Row(
         "POST",
+        "/api/invoices/import/confirm",
+        admin_only=True,
+        body={"document_id": "__FAKE__"},
+    ),
+    Row(
+        "POST",
         "/api/invoices/register/{anno}/gaps",
         admin_only=True,
         body={"buchi": [{"numero": 9501, "motivo": "matrice"}]},
