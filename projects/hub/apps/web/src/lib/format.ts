@@ -43,3 +43,20 @@ export const STATE_LABELS: Record<string, string> = {
   in_corso: 'In corso',
   chiuso: 'Chiuso',
 }
+
+/** REB-387: what a match and a contract document are, in the admin's words. */
+export const MATCH_STATE_LABELS: Record<string, string> = {
+  bozza: 'Bozza',
+  in_firma: 'In firma',
+  attivo: 'Attivo',
+  concluso: 'Concluso',
+  annullato: 'Annullato',
+}
+export const DOCUMENT_STATE_LABELS: Record<string, string> = {
+  generato: 'Generato',
+  in_attesa: 'In attesa del contratto quadro',
+  inviato: 'Inviato',
+  firmato: 'Firmato',
+  annullato: 'Annullato',
+  disdetto: 'Disdetto',
+}

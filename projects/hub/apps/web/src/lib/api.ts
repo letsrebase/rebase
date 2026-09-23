@@ -442,6 +442,73 @@ export interface CompanyList {
   next_cursor: string | null
 }
 
+/** REB-387: a match's state, and a contract document's. */
+export type MatchStato = 'bozza' | 'in_firma' | 'attivo' | 'concluso' | 'annullato'
+export type DocumentStato = 'generato' | 'in_attesa' | 'inviato' | 'firmato' | 'annullato' | 'disdetto'
+
+/** A freelancer's tax data, as the two contracts print them. */
+export interface FiscalData {
+  codice_fiscale: string
+  partita_iva: string
+  domicilio: string
+  pec: string | null
+}
+
+export interface Fiscal extends FiscalData {
+  freelancer_id: string
+  updated_by: string
+  updated_at: string
+}
+
+/** A generated contract as the pages read it: never its bytes, which are a link. */
+export interface ContractDocument {
+  id: string
+  kind: 'quadro' | 'lettera'
+  freelancer_id: string
+  match_id: string | null
+  numero: string | null
+  text_version: string
+  testo_bozza: boolean
+  stato: DocumentStato
+  created_at: string
+  created_by: string
+  sent_at: string | null
+  signed_at: string | null
+  notice_at: string | null
+  ha_pdf_firmato: boolean
+  attivo: boolean
+  rinnovo: string | null
+  ultimo_giorno_disdetta: string | null
+  nuova_versione: boolean
+}
+
+export interface Match {
+  id: string
+  freelancer_id: string
+  company_id: string
+  nome_azienda: string
+  figura_richiesta: string
+  cliente_ragione_sociale: string
+  cliente_piva: string
+  cliente_sede: string
+  stato: MatchStato
+  created_at: string
+  created_by: string
+  cancelled_at: string | null
+  updated_at: string
+  lettera: ContractDocument
+}
+
+/** «Match e contratti»: the framework agreement at the top, every one of them, the
+ *  matches newest first, and the tax data the page edits. */
+export interface FreelancerContracts {
+  freelancer_id: string
+  quadro: ContractDocument | null
+  quadri: ContractDocument[]
+  matches: Match[]
+  fiscale: Fiscal | null
+}
+
 /** Every value in `params` that is not `undefined` or `""`, as a query string: the two
  *  list endpoints below send exactly the filters an admin actually set, rather than
  *  the fixed `limit=500` that fetched everything in one page before REB-285/286 gave
@@ -587,6 +654,21 @@ export const admin = {
    *  request, which the caller already reads through its own detail query. */
   revertAction: (kind: CommentKind, id: string, actionId: string) =>
     request<unknown>(`/api/hub/${kind}/${id}/audit/${actionId}/revert`, { method: 'POST' }),
+  /** A freelancer's matches and contracts (REB-387). */
+  contracts: (freelancerId: string) =>
+    request<FreelancerContracts>(`/api/hub/freelancers/${freelancerId}/matches`),
+  fiscal: (freelancerId: string) => request<Fiscal | null>(`/api/hub/freelancers/${freelancerId}/fiscal`),
+  saveFiscal: (freelancerId: string, data: FiscalData) =>
+    request<Fiscal>(`/api/hub/freelancers/${freelancerId}/fiscal`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  cancelMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/cancel`, { method: 'POST' }),
+  closeMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/close`, { method: 'POST' }),
+  /** A plain href, like `cvUrl`: the route answers an attachment behind the cookie. */
+  contractPdfUrl: (documentId: string, firmato = false) =>
+    `/api/hub/contract-documents/${documentId}/pdf${firmato ? '?firmato=true' : ''}`,
 }
 
 // ---- whoever is signed in --------------------------------------------------------------

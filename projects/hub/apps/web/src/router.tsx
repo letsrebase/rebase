@@ -17,6 +17,7 @@ import { AdminAgenti } from '@/pages/admin/Agenti'
 import { AdminGuard } from '@/pages/admin/AdminGuard'
 import { AdminGuida } from '@/pages/admin/Guida'
 import { AdminPigro } from '@/pages/admin/Pigro'
+import { AdminContratti } from '@/pages/admin/Contratti'
 import { Thanks } from '@/pages/Thanks'
 import {
   AdminCompanies,
@@ -264,6 +265,12 @@ const adminFreelanceDetail = createRoute({
   path: '/freelance/$id',
   component: AdminFreelancerDetail,
 })
+// REB-387: a card's matches and contracts, from the talent row's menu and the card's header.
+const adminFreelanceContracts = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/freelance/$id/contracts',
+  component: AdminContratti,
+})
 // The website's footer links to /hub/admin/freelance (ORB-106: the hub router has no
 // index route under /admin, so a signed-in admin sent to a bare /admin would see the
 // frame with an empty panel). Talent replaced the list this used to be (REB-283, then
@@ -372,6 +379,7 @@ const routeTree = root.addChildren([
       adminTalentLead,
       adminTalentLeadRedirect,
       adminFreelanceDetail,
+      adminFreelanceContracts,
       adminFreelanceRedirect,
       adminCompanies,
       adminCompaniesRedirect,
