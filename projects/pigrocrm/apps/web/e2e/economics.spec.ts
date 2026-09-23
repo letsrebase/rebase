@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { loginAsAdmin, seedDealWithRate } from './helpers'
+import { ensureSpaceHasWork, loginAsAdmin, seedDealWithRate } from './helpers'
 
 /**
  * Plan 4B's own definition of done -- **criterion 12**, the full cycle -- driven the
@@ -136,6 +136,7 @@ test.describe('economics', () => {
     const mesePerEsteso = `${MESI[oggi.getMonth()]} ${oggi.getFullYear()}`
 
     await loginAsAdmin(page)
+    await ensureSpaceHasWork(page)
 
     // 1. What the annual estimate said *before* this test existed.
     //

@@ -32,6 +32,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.config import Settings, get_settings
+from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
 
@@ -216,7 +217,8 @@ def test_the_callback_never_renders_the_upstream_error_to_the_browser(
     )
     assert response.status_code == 307
     location = response.headers["location"]
-    assert location.startswith("/app/settings/gmail?esito=")
+    # An empty space, so the Home (REB-222); the page is the next test's subject.
+    assert location == "/app/?esito=negato"
     assert "access_denied" not in location
 
 
@@ -238,7 +240,51 @@ def test_a_callback_with_a_state_nobody_issued_never_reports_a_connection(
         "/api/gmail/oauth/callback?code=abc&state=mai-emesso", follow_redirects=False
     )
     assert response.status_code == 307, response.text
-    assert response.headers["location"] == "/app/settings/gmail?esito=errore"
+    assert response.headers["location"] == "/app/?esito=errore"
+
+
+def test_the_consent_flow_ends_on_the_home_only_while_the_space_is_empty(
+    logged_in: TestClient, gmail_ready: TestClient, api_session: Session
+) -> None:
+    """Spec 2026-09-16 §4.2 (REB-222): an empty space's Home is the start page, and its
+    «Collega Gmail» door is where the person pressed the button, so the consent flow
+    comes back there. Once the space holds work the Home is the dashboard, which has no
+    Gmail door, and the settings page is where the outcome can be read. A deleted
+    customer is not work: the lists the browser reads skip it, and so does this."""
+
+    def landing() -> str:
+        response = logged_in.get(
+            "/api/gmail/oauth/callback?error=access_denied", follow_redirects=False
+        )
+        assert response.status_code == 307, response.text
+        return str(response.headers["location"])
+
+    assert landing() == "/app/?esito=negato"
+
+    customer = Customer(ragione_sociale="Acme S.r.l.", nazione="IT", custom_fields={})
+    api_session.add(customer)
+    api_session.flush()
+    assert landing() == "/app/settings/gmail?esito=negato"
+
+    customer.deleted_at = datetime.now(UTC)
+    api_session.flush()
+    assert landing() == "/app/?esito=negato"
+
+
+def test_a_collaboratore_is_brought_back_to_primi_passi_not_to_settings_they_cannot_open(
+    collaborator_client: TestClient, gmail_ready: TestClient, api_session: Session
+) -> None:
+    """A collaboratore may connect their own mailbox (`require_write`), from the start
+    page's Gmail door, but Impostazioni is admin-only: a consent that ended there would
+    answer «Accesso riservato». With work in the space the way back is «Primi passi»,
+    the other page that carries the door and reads the same outcome table."""
+    api_session.add(Customer(ragione_sociale="Acme S.r.l.", nazione="IT", custom_fields={}))
+    api_session.flush()
+    response = collaborator_client.get(
+        "/api/gmail/oauth/callback?error=access_denied", follow_redirects=False
+    )
+    assert response.status_code == 307, response.text
+    assert response.headers["location"] == "/app/get-started?esito=negato"
 
 
 # --- reading what is already stored ---------------------------------------------------

@@ -1,33 +1,37 @@
 /**
- * «Primi passi» (ORB-180): the assistant first, because it is what the landing sells and
- * what a space is for, then the four first steps with their state, each with a prompt to
- * copy into the assistant (ORB-182). Both read from the data
- * (`useFirstSteps`) and nothing is stored: the card stays until this user has a token, the
- * steps stay with their ticks. The Home sends a person here once, after the first login;
- * the sidebar brings them back whenever they want.
+ * «Primi passi», the start page (spec 2026-09-16 §4, REB-222), in three blocks:
+ *
+ * 1. **Porta dentro il tuo lavoro**: what brings a person's real work in without typing
+ *    it, today the Gmail door (`GmailDoor`). The invoice door of §6 is REB-224's.
+ * 2. **Fai lavorare l’assistente**: the connection itself, inline (`ConnectAgentPanel`,
+ *    the body of the sidebar's dialog), and the first prompt to say to it. Once this
+ *    person has a token the block is the prompt alone.
+ * 3. **Oppure a mano**: the four first steps, each with its screen and its prompt side
+ *    by side. The §6.7 rules of 2026-09-12 stand: a step is ticked because the thing
+ *    exists, a person who cannot do it reads who can, nothing can be hidden.
+ *
+ * The same page is the Home while the space is empty (`HomePage`) and the sidebar's
+ * «Primi passi» always, so whoever arrives from either sees the same thing. Nothing is
+ * stored: every state is read from the data (`useFirstSteps`, `useGmailHealth`).
  */
 import { Link } from '@tanstack/react-router'
-import { Bot, Check, ChevronRight, Circle, Rocket } from 'lucide-react'
-import { useEffect } from 'react'
+import { Check, Circle, Rocket } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rebase/ui/card'
-import { useAuth, useCanWrite } from '@/lib/auth'
-import { CopyPrompt } from './CopyPrompt'
-import { CONNECT_ASSISTANT_TO, markGetStartedSeen, useFirstSteps, type FirstStep } from './firstSteps'
+import { useCanWrite } from '@/lib/auth'
+import { ConnectAgentPanel } from '@/features/tokens/ConnectAgentPanel'
+import type { CreatedToken } from '@/features/tokens/queries'
+import { useUnsavedTokenGuard } from '@/features/tokens/useUnsavedTokenGuard'
+import { CopyPrompt, PromptBody } from './CopyPrompt'
+import { useFirstSteps, type FirstStep } from './firstSteps'
+import { GmailDoor } from './GmailDoor'
 import { INTRO_PROMPT, STEP_PROMPTS } from './prompts'
 
-export function GetStartedPage() {
-  const { user } = useAuth()
-  const userId = user?.id ?? ''
+export function GetStartedPage({ esito }: { esito?: string }) {
   const canWrite = useCanWrite()
   const state = useFirstSteps()
-
-  // Being here is what the Home's one-time redirect remembers, however one arrived:
-  // through the redirect or through the sidebar. Either way the page has been seen.
-  useEffect(() => {
-    if (userId) markGetStartedSeen(userId)
-  }, [userId])
 
   return (
     <>
@@ -39,8 +43,19 @@ export function GetStartedPage() {
       <div className="space-y-4 px-8 py-6" data-testid="get-started">
         {state.loading ? null : (
           <>
-            {!state.assistantConnected && <AssistantCard />}
-            <FirstStepsList steps={state.steps} doneCount={state.doneCount} canWrite={canWrite} />
+            <Block
+              title="Porta dentro il tuo lavoro"
+              description="Il lavoro che hai già, senza riscriverlo a mano."
+            >
+              <GmailDoor esito={esito} />
+            </Block>
+            {/* Side by side on a wide screen: the assistant and the manual steps are the
+                two ways to use what the first block brought in, and the connection's
+                snippets are tall enough to push the steps under the fold on their own. */}
+            <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+              <AssistantBlock connected={state.assistantConnected} />
+              <ManualSteps steps={state.steps} doneCount={state.doneCount} canWrite={canWrite} />
+            </div>
           </>
         )}
       </div>
@@ -48,34 +63,63 @@ export function GetStartedPage() {
   )
 }
 
-function AssistantCard() {
+function Block({
+  title,
+  description,
+  children,
+}: {
+  title: string
+  description: string
+  children: ReactNode
+}) {
   return (
-    <Card className="border-foreground border-2">
-      <CardHeader className="flex flex-row items-start gap-4">
-        <Bot className="mt-1 size-8 shrink-0 text-[var(--color-watermelon)]" aria-hidden />
-        <div className="space-y-1.5">
-          <CardTitle className="text-xl">Il CRM che lavora al posto tuo</CardTitle>
-          <CardDescription className="text-base">
-            Collega Claude al tuo spazio e chiedigli di registrare le ore, preparare
-            un’offerta, riassumere la settimana. Tutto quello che fai qui lo può fare lui.
-          </CardDescription>
-        </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>
+          <h2 className="text-lg">{title}</h2>
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
-      <CardContent>
-        <Button asChild size="lg">
-          <Link to={CONNECT_ASSISTANT_TO}>
-            Collega l’assistente
-            <ChevronRight className="ml-1 size-4" aria-hidden />
-          </Link>
-        </Button>
-        {/* What to say first, once connected (ORB-182). */}
-        <CopyPrompt text={INTRO_PROMPT} summary="Il primo prompt, appena collegato" />
-      </CardContent>
+      <CardContent>{children}</CardContent>
     </Card>
   )
 }
 
-function FirstStepsList({
+/**
+ * The connection inline, until this person has a token; then the prompt alone.
+ *
+ * The token minted here is held here, and it keeps the panel on screen: minting one
+ * refreshes the token read behind `connected`, and without `issued` the panel would
+ * vanish the instant it showed the one copy of the token that will ever exist. The same
+ * guard as the dialog and the Token page asks before leaving with it on screen, and
+ * «Ho copiato il token» puts it away, as «Chiudi» does in the dialog.
+ */
+function AssistantBlock({ connected }: { connected: boolean }) {
+  const [issued, setIssued] = useState<CreatedToken | null>(null)
+  useUnsavedTokenGuard(Boolean(issued))
+  const full = !connected || issued !== null
+  return (
+    <Block
+      title="Fai lavorare l’assistente"
+      description={
+        full
+          ? 'Collega Claude al tuo spazio e chiedigli di registrare le ore, preparare un’offerta, riassumere la settimana. Tutto quello che fai qui lo può fare lui.'
+          : 'Il tuo assistente è collegato: ecco da dove cominciare.'
+      }
+    >
+      {full && <ConnectAgentPanel issued={issued} onIssued={setIssued} />}
+      {issued && (
+        <Button type="button" variant="outline" className="mt-4" onClick={() => setIssued(null)}>
+          Ho copiato il token
+        </Button>
+      )}
+      {/* What to say first, once connected (ORB-182). */}
+      <CopyPrompt text={INTRO_PROMPT} summary="Il primo prompt, appena collegato" />
+    </Block>
+  )
+}
+
+function ManualSteps({
   steps,
   doneCount,
   canWrite,
@@ -86,57 +130,73 @@ function FirstStepsList({
 }) {
   const allDone = doneCount === steps.length
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Primi passi</CardTitle>
-        <CardDescription>
-          {allDone
-            ? 'Fatti tutti. Da qui in avanti il CRM è tuo.'
-            : `${doneCount} di ${steps.length}. Nell’ordine in cui il CRM li chiede.`}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ol className="divide-y">
-          {steps.map((step) => {
-            const linkable = !step.done && canWrite && step.canDo
-            return (
-              <li key={step.id} className="flex items-start gap-3 py-3">
-                {step.done ? (
-                  <Check className="text-foreground mt-0.5 size-5 shrink-0" aria-hidden />
-                ) : (
-                  <Circle className="text-muted-foreground mt-0.5 size-5 shrink-0" aria-hidden />
-                )}
-                <div className="min-w-0 flex-1">
-                  <span className="sr-only">{step.done ? 'Fatto: ' : 'Da fare: '}</span>
-                  {step.done ? (
-                    <p className="text-muted-foreground line-through">{step.title}</p>
-                  ) : linkable ? (
-                    <Link to={step.to} className="font-medium underline-offset-4 hover:underline">
-                      {step.title}
-                    </Link>
-                  ) : (
-                    <p className="font-medium">{step.title}</p>
-                  )}
-                  {!step.done && (
-                    <p className="text-muted-foreground text-sm">
-                      {canWrite ? step.hint : 'Lo fa chi può scrivere nello spazio.'}
-                    </p>
-                  )}
-                  {/* The same step, said to the assistant (ORB-182): only for a step still
-                      to do, and only for someone who may do it. Named after the step, so
-                      three disclosures on one page read apart. */}
-                  {linkable && (
-                    <CopyPrompt
-                      text={STEP_PROMPTS[step.id]}
-                      summary={`Prompt per l’assistente: ${step.title}`}
-                    />
-                  )}
-                </div>
-              </li>
-            )
-          })}
-        </ol>
-      </CardContent>
-    </Card>
+    <Block
+      title="Oppure a mano"
+      description={
+        allDone
+          ? 'Fatti tutti. Da qui in avanti il CRM è tuo.'
+          : `${doneCount} di ${steps.length}. Nell’ordine in cui il CRM li chiede.`
+      }
+    >
+      <ol className="divide-y">
+        {steps.map((step) => (
+          <StepRow key={step.id} step={step} canWrite={canWrite} />
+        ))}
+      </ol>
+    </Block>
+  )
+}
+
+/**
+ * One step: its title and hint, then two actions side by side while it is still to do
+ * and the person may do it, the screen and the prompt (spec 2026-09-16 §4.2). The
+ * prompt opens under the row rather than inside it, so the two actions stay on one line.
+ */
+function StepRow({ step, canWrite }: { step: FirstStep; canWrite: boolean }) {
+  const [promptOpen, setPromptOpen] = useState(false)
+  const actionable = !step.done && canWrite && step.canDo
+  const promptId = `prompt-${step.id}`
+  // Four «Chiedilo all’assistente» and two «A mano: Deal» on one page: each action is
+  // described by its step's title, so a screen reader's list of controls reads apart.
+  const titleId = `step-${step.id}`
+  return (
+    <li className="flex items-start gap-3 py-3">
+      {step.done ? (
+        <Check className="text-foreground mt-0.5 size-5 shrink-0" aria-hidden />
+      ) : (
+        <Circle className="text-muted-foreground mt-0.5 size-5 shrink-0" aria-hidden />
+      )}
+      <div className="min-w-0 flex-1">
+        <span className="sr-only">{step.done ? 'Fatto: ' : 'Da fare: '}</span>
+        <p id={titleId} className={step.done ? 'text-muted-foreground line-through' : 'font-medium'}>
+          {step.title}
+        </p>
+        {!step.done && (
+          <p className="text-muted-foreground text-sm">
+            {canWrite ? step.hint : 'Lo fa chi può scrivere nello spazio.'}
+          </p>
+        )}
+        {actionable && (
+          <>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+              <Link to={step.to} aria-describedby={titleId} className="font-medium underline underline-offset-4">
+                A mano: {step.screen}
+              </Link>
+              <button
+                type="button"
+                aria-describedby={titleId}
+                aria-expanded={promptOpen}
+                aria-controls={promptOpen ? promptId : undefined}
+                onClick={() => setPromptOpen((open) => !open)}
+                className="font-medium underline underline-offset-4"
+              >
+                Chiedilo all’assistente
+              </button>
+            </div>
+            {promptOpen && <PromptBody id={promptId} text={STEP_PROMPTS[step.id]} className="mt-2" />}
+          </>
+        )}
+      </div>
+    </li>
   )
 }

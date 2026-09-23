@@ -36,11 +36,18 @@ test('a correct login reaches the dashboard and logout returns to login', async 
   // documents at length.
   await expect(page).toHaveURL(/\/app\/?(\?|$)/)
   // Two facts, because either alone is satisfied by the wrong screen: the shell knows who
-  // is logged in, and the dashboard behind it actually rendered. This used to read
+  // is logged in, and the Home behind it actually rendered. This used to read
   // `Ciao E2E`, the greeting on the placeholder that stood at `/app/` until the real
-  // dashboard replaced it — a string no screen prints any more.
+  // dashboard replaced it — a string no screen prints any more. Since REB-222 the Home of
+  // an empty space is the start page and the dashboard only once it holds work, and this
+  // spec runs first on a freshly seeded database or after the others on a full one, so
+  // either Home is a login that worked.
   await expect(page.getByText('E2E', { exact: true })).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'Commerciale' })).toBeVisible()
+  await expect(
+    page
+      .getByRole('tab', { name: 'Commerciale' })
+      .or(page.getByRole('heading', { name: 'Porta dentro il tuo lavoro' })),
+  ).toBeVisible()
 
   // Through the profile menu, which is where «Esci» has lived since the UI revision of
   // 2026-09-08 -- see `helpers.ts::logout`. This spec spent thirty seconds waiting for a
