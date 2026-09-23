@@ -194,6 +194,31 @@ ROWS: list[Row] = [
         "/api/contracts/{contract_id}/renewal-assumption",
         body={"probabilita": 50, "volume_atteso": "1000.00", "orizzonte_al": "2027-01-01"},
     ),
+    # --- proposals (REB-362): `require_write` (proposals/service.py) ----------------
+    Row(
+        "POST",
+        "/api/proposals",
+        body={
+            "document_id": "__FAKE__",
+            "contract_id": "__FAKE__",
+            "target_type": "giornata",
+            "campi_proposti": {
+                "contract_id": "__FAKE__",
+                "data": "2026-01-01",
+                "quantita": "1.00",
+                "descrizione": "Matrice",
+                "approvazione": {
+                    "canale": "email",
+                    "mittente": "matrice@example.it",
+                    "ricevuto_il": "2026-01-01T00:00:00Z",
+                },
+            },
+            "estratto": "Matrice",
+            "confidenza": "0.90",
+        },
+    ),
+    Row("POST", "/api/proposals/{proposal_id}/accept", body={"deciso_da": "Matrice"}),
+    Row("POST", "/api/proposals/{proposal_id}/reject", body={"deciso_da": "Matrice"}),
     # --- customers / people / deals: `require_write` on every plain write ------------
     Row("POST", "/api/customers", body={"ragione_sociale": "Matrice Due Srl"}),
     Row("DELETE", "/api/customers/{customer_id}"),
