@@ -871,10 +871,11 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     def get_operational_dashboard() -> dict[str, Any]:
         """Che cosa c'è da fare adesso: le ore registrate giorno per giorno nella settimana
         corrente (compresi i giorni senza ore, che è il punto), l'arretrato da fatturare in
-        totale, tre segnali di incoerenza da sistemare -- fatturato ma non vinto, vinto ma
-        da fatturare, scaduto e non incassato -- e le ultime attività. Non prende periodo:
-        la settimana corrente e l'arretrato sono le due cose che nel passato non hanno
-        senso. I segnali sono conteggi: non inviano niente e non cambiano niente.
+        totale, quattro segnali di incoerenza da sistemare -- fatturato ma non vinto, vinto
+        ma da fatturare, scaduto e non incassato, concentrazione di un cliente sopra la
+        quota preferita -- e le ultime attività. Non prende periodo: la settimana corrente
+        e l'arretrato sono le due cose che nel passato non hanno senso. I segnali sono
+        conteggi: non inviano niente e non cambiano niente.
         """
         return dashboard_tools.get_operational_dashboard(context)
 

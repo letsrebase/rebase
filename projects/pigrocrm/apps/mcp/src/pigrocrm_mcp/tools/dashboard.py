@@ -57,6 +57,15 @@ def get_operational_dashboard(context: McpContext) -> dict[str, Any]:
 
     Registered by Task C6 for the reason recorded on `get_economic_dashboard` above. **Task
     C7 must not register a second `get_operational_dashboard`.**
+
+    `DashboardService(context.session)` with no second argument reads the *environment's*
+    `concentrazione_soglia_preferita` for the fourth signal (REB-371), not a space's own
+    `space_settings` override -- `McpContext` carries no `Settings` at all, so every other
+    settings-dependent service reached through this transport already has the same gap
+    (`InvoiceService(context.session, context.storage)` a few files over reads its
+    `solleciti_*` thresholds from the environment for the identical reason). Not this
+    ticket's gap to close: giving the MCP transport a space's effective `Settings` is a
+    change to `McpContext` itself, for every tool that reads one, not one signal's tool.
     """
     return (
         DashboardService(context.session)

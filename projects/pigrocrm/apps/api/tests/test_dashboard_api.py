@@ -452,17 +452,22 @@ def test_the_operational_endpoint_returns_what_the_service_returns(
 def test_every_signal_carries_a_drill_through_link(
     logged_in: TestClient, dashboard_corpus: Engine
 ) -> None:
-    """§6.2's three signals, in order, each with somewhere to go. A count with no way to
-    see the rows behind it is a number nobody can act on."""
+    """§6.2's three signals plus REB-371's concentration signal, in order, each with
+    somewhere to go. A count with no way to see the rows behind it is a number nobody
+    can act on."""
     body = logged_in.get("/api/dashboard/operational").json()
     assert [s["codice"] for s in body["segnali"]] == [
         "fatturato_non_vinto",
         "vinto_da_fatturare",
         "scaduto_non_incassato",
+        "concentrazione_sopra_soglia",
     ]
     assert all(s["collegamento"] for s in body["segnali"])
-    # The corpus's invoice makes two of the three non-zero, so the links below are being
-    # checked against cards that have rows behind them.
+    # The corpus's invoice makes two of the four non-zero, so the links below are being
+    # checked against cards that have rows behind them. The fourth, concentration, needs
+    # a fiscal-register `anno` no invoice here carries -- `dashboard_corpus`'s invoices
+    # are never issued through `InvoiceService` -- and is its own dedicated test,
+    # `test_the_concentration_signals_link_leads_to_the_same_rows_it_counted`, below.
     conteggi = {s["codice"]: s["conteggio"] for s in body["segnali"]}
     assert conteggi["fatturato_non_vinto"] >= 1
     assert conteggi["scaduto_non_incassato"] >= 1
@@ -480,12 +485,21 @@ def test_every_signal_link_names_a_filter_the_api_actually_declares(
     So each link is taken apart and its query parameter is looked up in the published
     OpenAPI schema of the list endpoint it corresponds to, then sent for real: declared,
     accepted, and narrowing. A parameter FastAPI does not declare is one it ignores.
+
+    `concentrazione_sopra_soglia` is not in this loop, by design and not by omission: its
+    own link is the concentration table itself, not a filtered list -- there is no
+    "customers over the threshold" endpoint for a query parameter to narrow, so it would
+    fail this loop's `items` assumption for a reason unrelated to the one the loop checks.
+    `test_the_concentration_signals_link_leads_to_the_same_rows_it_counted`, immediately
+    below, is its own criterion 2.
     """
     body = logged_in.get("/api/dashboard/operational").json()
     schema = logged_in.get("/openapi.json").json()
     assert body["segnali"], "no signals, so this test proved nothing"
 
     for signal in body["segnali"]:
+        if signal["codice"] == "concentrazione_sopra_soglia":
+            continue
         parts = urlsplit(signal["collegamento"])
         target = SIGNAL_LINK_TARGETS[parts.path]
         declared = {p["name"] for p in schema["paths"][target]["get"]["parameters"]}
@@ -500,6 +514,64 @@ def test_every_signal_link_names_a_filter_the_api_actually_declares(
             # rather than in a count nobody compares.
             everything = logged_in.get(target).json()
             assert len(filtered.json()["items"]) < len(everything["items"]), name
+
+
+def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
+    logged_in: TestClient, dashboard_corpus: Engine
+) -> None:
+    """The fourth signal's own criterion 2, shaped differently because its own link is
+    (§3, §5 item 2 of
+    `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`):
+    the economic tab's `concentrazione_clienti` table, not a filtered list. The card and
+    the rows behind its link still must not disagree, checked here by recomputing, from
+    the same threshold `/api/settings/space` reports as effective right now, exactly
+    which customers the tab would show as over it -- and comparing the count to the
+    signal's own.
+
+    `dashboard_corpus`'s own invoices never carry `anno` (nothing else on this page reads
+    it), so a customer with an actual fiscal-register entry is added here -- without one
+    the signal would sit at zero and the equality below would prove nothing.
+    """
+    anno = today_local().year
+    with session_factory(dashboard_corpus)() as session:
+        cliente = Customer(ragione_sociale=f"{_PREFIX} Concentrato", nazione="IT", custom_fields={})
+        session.add(cliente)
+        session.flush()
+        cliente_id = cliente.id
+        session.add(
+            Invoice(
+                customer_id=cliente_id,
+                tipo="fattura",
+                stato="emessa",
+                anno=anno,
+                numero=8001,
+                stato_pagamento="incassata",
+                imponibile=Decimal("900.00"),
+                imposta=Decimal("0.00"),
+                bollo=Decimal("0.00"),
+                totale=Decimal("900.00"),
+                data_emissione=today_local(),
+                tipo_documento="TD01",
+                divisa="EUR",
+                custom_fields={},
+            )
+        )
+        session.commit()
+    try:
+        body = logged_in.get("/api/dashboard/operational").json()
+        signal = next(s for s in body["segnali"] if s["codice"] == "concentrazione_sopra_soglia")
+        assert signal["collegamento"] == "/app/?tab=economica"
+
+        soglia = logged_in.get("/api/settings/space").json()["concentrazione_soglia_preferita"]
+        overview = logged_in.get("/api/analytics/overview", params={"anno": anno}).json()
+        sopra_soglia = [row for row in overview["concentrazione_clienti"] if row["quota"] > soglia]
+        assert len(sopra_soglia) == signal["conteggio"]
+        assert signal["conteggio"] >= 1, "the added customer alone should cross the default share"
+    finally:
+        with session_factory(dashboard_corpus)() as session:
+            session.execute(delete(Invoice).where(Invoice.customer_id == cliente_id))
+            session.execute(delete(Customer).where(Customer.id == cliente_id))
+            session.commit()
 
 
 # -- both new dashboards ---------------------------------------------------------

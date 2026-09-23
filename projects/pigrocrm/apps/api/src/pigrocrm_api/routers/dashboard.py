@@ -27,7 +27,7 @@ from pigrocrm.core.dashboard.schemas import (
     ReceivablesDashboard,
 )
 from pigrocrm.core.dashboard.service import DashboardService
-from pigrocrm_api.deps import ActorDep, SnapshotSessionDep
+from pigrocrm_api.deps import ActorDep, SettingsDep, SnapshotSessionDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"], responses=PROBLEM_RESPONSES)
@@ -62,7 +62,9 @@ def economica(
 
 
 @router.get("/operational", response_model=OperationalDashboard)
-def operativa(session: SnapshotSessionDep, actor: ActorDep) -> OperationalDashboard:
+def operativa(
+    session: SnapshotSessionDep, actor: ActorDep, settings: SettingsDep
+) -> OperationalDashboard:
     """No period parameter, and not an optional one either.
 
     §6: its figures are the current week and a backlog, which are the two things that make
@@ -71,8 +73,13 @@ def operativa(session: SnapshotSessionDep, actor: ActorDep) -> OperationalDashbo
     the generated client would offer it and a caller would believe it worked. FastAPI
     ignores undeclared query parameters, so `?da=2020-01-01` is answered with the current
     week rather than with a period nobody can supply.
+
+    `settings` is this request's own effective `Settings` -- the environment with any
+    `space_settings` rows already laid over it, the same value `ActorDep` itself already
+    resolved to authenticate this request -- so the concentration signal (REB-371) reads
+    the threshold a space actually configured, not the process's bare environment.
     """
-    return DashboardService(session).get_operational_dashboard(actor)
+    return DashboardService(session, settings).get_operational_dashboard(actor)
 
 
 @router.get("/receivables", response_model=ReceivablesDashboard)

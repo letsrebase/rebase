@@ -2461,6 +2461,11 @@ export interface paths {
          *     the generated client would offer it and a caller would believe it worked. FastAPI
          *     ignores undeclared query parameters, so `?da=2020-01-01` is answered with the current
          *     week rather than with a period nobody can supply.
+         *
+         *     `settings` is this request's own effective `Settings` -- the environment with any
+         *     `space_settings` rows already laid over it, the same value `ActorDep` itself already
+         *     resolved to authenticate this request -- so the concentration signal (REB-371) reads
+         *     the threshold a space actually configured, not the process's bare environment.
          */
         get: operations["operativa_api_dashboard_operational_get"];
         put?: never;
@@ -5979,9 +5984,13 @@ export interface components {
          *     **No new economic total.** The only money here is `arretrato.valore_maturato`, which
          *     belongs to `AnalyticsService` and is labelled accrued value, never revenue.
          *
-         *     Three signals, not four: "offerta accettata, deal non vinto" is on the *commercial*
-         *     dashboard, because it needs no invoices and therefore shipped in the same sub-plan as
-         *     the automation it cross-checks (§17).
+         *     Four signals now: REB-371 adds `concentrazione_sopra_soglia` beside the original
+         *     three, once `AnalyticsRepository.revenue_by_customer` (REB-370) existed and a
+         *     preferred-share threshold could be configured for it
+         *     (`Settings.concentrazione_soglia_preferita`). §6.2's own *fourth* signal is a
+         *     different thing entirely and still not among these: "offerta accettata, deal non
+         *     vinto" is on the *commercial* dashboard, because it needs no invoices and therefore
+         *     shipped in the same sub-plan as the automation it cross-checks (§17).
          */
         OperationalDashboard: {
             /**
@@ -6862,6 +6871,8 @@ export interface components {
             solleciti_max_reminders: number;
             /** Gmail Backfill Days */
             gmail_backfill_days: number;
+            /** Concentrazione Soglia Preferita */
+            concentrazione_soglia_preferita: number;
             /** Sovrascritte */
             sovrascritte: string[];
         };
@@ -6889,6 +6900,8 @@ export interface components {
             solleciti_max_reminders?: number | null;
             /** Gmail Backfill Days */
             gmail_backfill_days?: number | null;
+            /** Concentrazione Soglia Preferita */
+            concentrazione_soglia_preferita?: number | null;
         };
         /**
          * SyncReport

@@ -36,6 +36,7 @@ const SETTINGS: components['schemas']['SpaceSettingsRead'] = {
   solleciti_min_interval_days: 14,
   solleciti_max_reminders: 3,
   gmail_backfill_days: 90,
+  concentrazione_soglia_preferita: 0.3,
   sovrascritte: [],
 }
 

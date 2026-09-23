@@ -148,3 +148,51 @@ def test_economic_overview_carries_the_same_concentration_for_every_role(
         ]
         assert overview.concentrazione_clienti[0].ricavi == Decimal("6000.00")
         assert overview.concentrazione_clienti[0].ragione_sociale == "Grande S.r.l."
+
+
+# --- count_over_concentration_threshold (REB-371) --------------------------------------
+
+
+def test_count_over_concentration_threshold_counts_customers_above_the_share(
+    db_session: Session,
+) -> None:
+    """The COUNT `OperationalDashboard`'s fourth signal reads (§3, §5 item 2 of
+    `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`):
+    both `grande` (2/3) and `piccolo` (1/3) cross a permissive 0.30 threshold; only
+    `grande` crosses a 0.50 one."""
+    _corpus(db_session)
+    repo = AnalyticsRepository(db_session)
+
+    assert repo.count_over_concentration_threshold(ANNO, 0.30) == 2
+    assert repo.count_over_concentration_threshold(ANNO, 0.50) == 1
+
+
+def test_count_over_concentration_threshold_is_strictly_above_not_at_it(
+    db_session: Session,
+) -> None:
+    """A customer sitting exactly on the configured share has not yet crossed it -- the
+    boundary the signal's own name promises."""
+    pari_uno = Customer(ragione_sociale="Pari Uno S.r.l.", nazione="IT", custom_fields={})
+    pari_due = Customer(ragione_sociale="Pari Due S.r.l.", nazione="IT", custom_fields={})
+    db_session.add_all([pari_uno, pari_due])
+    db_session.flush()
+    db_session.add_all(
+        [
+            _invoice(pari_uno.id, 101, "5000.00", anno=ANNO + 1),
+            _invoice(pari_due.id, 102, "5000.00", anno=ANNO + 1),
+        ]
+    )
+    db_session.flush()
+    repo = AnalyticsRepository(db_session)
+
+    assert repo.count_over_concentration_threshold(ANNO + 1, 0.5) == 0
+
+
+def test_count_over_concentration_threshold_is_zero_when_the_year_has_no_revenue(
+    db_session: Session,
+) -> None:
+    """`revenue_by_customer` returns nothing for a year with no invoice at all; the
+    signal must read that as "nobody is over the threshold", not raise on an empty
+    result."""
+    repo = AnalyticsRepository(db_session)
+    assert repo.count_over_concentration_threshold(ANNO + 2, 0.30) == 0

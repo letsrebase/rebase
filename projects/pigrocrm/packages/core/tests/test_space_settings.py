@@ -23,6 +23,7 @@ def test_apply_overrides_gives_values_their_types_back_and_touches_nothing_else(
             "mcp_full_access": "true",
             "solleciti_grace_days": "12",
             "storage_backend": "gdrive",
+            "concentrazione_soglia_preferita": "0.45",
             "database_url": "postgresql://evil",  # not overridable: ignored
         },
     )
@@ -30,6 +31,7 @@ def test_apply_overrides_gives_values_their_types_back_and_touches_nothing_else(
     assert effective.mcp_full_access is True
     assert effective.solleciti_grace_days == 12
     assert effective.storage_backend == "gdrive"
+    assert effective.concentrazione_soglia_preferita == 0.45
     assert effective.database_url == BASE.database_url
     assert apply_overrides(BASE, {}) is BASE
 
@@ -37,6 +39,8 @@ def test_apply_overrides_gives_values_their_types_back_and_touches_nothing_else(
 def test_a_value_the_environment_would_refuse_is_refused_from_the_database_too() -> None:
     with pytest.raises(ValueError):
         apply_overrides(BASE, {"solleciti_max_reminders": "9"})
+    with pytest.raises(ValueError):
+        apply_overrides(BASE, {"concentrazione_soglia_preferita": "1.5"})
 
 
 def test_update_writes_rows_makes_a_token_key_once_and_never_shows_secrets(
@@ -69,6 +73,7 @@ def test_update_writes_rows_makes_a_token_key_once_and_never_shows_secrets(
     service.update(SpaceSettingsUpdate(solleciti_grace_days=10), ADMIN, spazio="studio")
     assert service.overrides()["google_token_key"] == key_before
     assert service.effective().solleciti_grace_days == 10
+    assert service.effective().concentrazione_soglia_preferita == 0.30
 
 
 def test_an_empty_string_clears_an_override(db_session: Session) -> None:

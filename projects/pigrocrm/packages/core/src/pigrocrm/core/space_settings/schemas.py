@@ -16,6 +16,7 @@ OVERRIDABLE_KEYS: tuple[str, ...] = (
     "solleciti_min_interval_days",
     "solleciti_max_reminders",
     "gmail_backfill_days",
+    "concentrazione_soglia_preferita",
 )
 # Never sent back to a browser; the page learns only whether they are set.
 SECRET_KEYS: frozenset[str] = frozenset({"google_client_secret", "google_token_key"})
@@ -34,6 +35,7 @@ class SpaceSettingsUpdate(BaseModel):
     solleciti_min_interval_days: int | None = Field(default=None, ge=1, le=365)
     solleciti_max_reminders: int | None = Field(default=None, ge=1, le=3)
     gmail_backfill_days: int | None = Field(default=None, ge=1, le=3650)
+    concentrazione_soglia_preferita: float | None = Field(default=None, gt=0.0, le=1.0)
 
 
 class SpaceSettingsRead(BaseModel):
@@ -55,4 +57,5 @@ class SpaceSettingsRead(BaseModel):
     solleciti_min_interval_days: int
     solleciti_max_reminders: int
     gmail_backfill_days: int
+    concentrazione_soglia_preferita: float
     sovrascritte: list[str]

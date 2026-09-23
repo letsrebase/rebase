@@ -17,14 +17,21 @@ def test_the_root_reads_the_environment_and_writes_over_it(logged_in: TestClient
     body = before.json()
     assert body["spazio"] is None
     assert body["gmail_configurato"] is False
+    assert body["concentrazione_soglia_preferita"] == 0.30
     assert body["sovrascritte"] == []
 
     saved = logged_in.put(
         "/api/settings/space",
-        json={"solleciti_grace_days": 21, "mcp_full_access": True, "google_client_id": "abc.apps"},
+        json={
+            "solleciti_grace_days": 21,
+            "mcp_full_access": True,
+            "google_client_id": "abc.apps",
+            "concentrazione_soglia_preferita": 0.5,
+        },
     )
     assert saved.status_code == 200, saved.text
     assert saved.json()["solleciti_grace_days"] == 21
+    assert saved.json()["concentrazione_soglia_preferita"] == 0.5
     assert saved.json()["mcp_full_access"] is True
     # A client id alone is not a configured Gmail: no secret, no public URL.
     assert saved.json()["gmail_configurato"] is False
@@ -40,6 +47,7 @@ def test_the_root_reads_the_environment_and_writes_over_it(logged_in: TestClient
     # The next read sees it, without waiting for the cache to expire.
     again = logged_in.get("/api/settings/space").json()
     assert again["solleciti_grace_days"] == 21
+    assert again["concentrazione_soglia_preferita"] == 0.5
 
     # And clearing puts the environment's value back.
     cleared = logged_in.put("/api/settings/space", json={"google_client_id": ""}).json()
@@ -50,4 +58,10 @@ def test_the_root_reads_the_environment_and_writes_over_it(logged_in: TestClient
 def test_an_out_of_range_value_is_a_422(logged_in: TestClient) -> None:
     assert (
         logged_in.put("/api/settings/space", json={"solleciti_max_reminders": 7}).status_code == 422
+    )
+    assert (
+        logged_in.put(
+            "/api/settings/space", json={"concentrazione_soglia_preferita": 1.5}
+        ).status_code
+        == 422
     )

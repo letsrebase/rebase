@@ -246,6 +246,24 @@ class Settings(BaseSettings):
     # name. The `le` therefore matches the template rather than being a round number.
     solleciti_max_reminders: int = Field(default=3, ge=1, le=3)
 
+    # The whole-practice, calendar-year concentration cap (§1.5, §3 and §5 item 2 of
+    # docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md):
+    # the maximum share of a calendar year's invoiced revenue any one customer should
+    # represent before `OperationalDashboard.segnali` flags it. A fraction in (0, 1],
+    # the same range `AnalyticsRepository.RevenueByCustomerRow.quota` already reports
+    # in -- never a percentage, so the two compare directly with no conversion at the
+    # call site. `gt=0.0` because a threshold of zero would flag every customer with
+    # any revenue at all, which is not a preference, and `le=1.0` because a share
+    # cannot exceed the whole.
+    #
+    # 0.30 is a starting default, not a rule of law the way `soglia_bollo` is: a
+    # freelance practice with one dominant client for a season is not wrong, only
+    # worth naming. That is why this is a per-space `Settings` field an operator can
+    # raise or lower exactly the way the three `solleciti_*` thresholds above already
+    # are, rather than a column on `FiscalProfile` -- nothing here is a legal fact the
+    # way the stamp-duty threshold is.
+    concentrazione_soglia_preferita: float = Field(default=0.30, gt=0.0, le=1.0)
+
     @field_validator("jwt_secret")
     @classmethod
     def _jwt_secret_must_be_long_enough(cls, value: str) -> str:

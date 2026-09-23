@@ -442,6 +442,21 @@ class AnalyticsRepository:
             )
         return righe
 
+    def count_over_concentration_threshold(self, anno: int, soglia: float) -> int:
+        """How many customers cross `soglia`, a configured preferred-share threshold
+        (`Settings.concentrazione_soglia_preferita`, §3 and §5 item 2 of
+        `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`):
+        the COUNT `OperationalDashboard`'s fourth signal reads (REB-371).
+
+        Strictly above, never at it: a customer sitting exactly on the configured share
+        has not yet crossed it. Reuses `revenue_by_customer`'s own rows rather than a
+        second query, so the signal and the concentration table its `collegamento`
+        points to can never disagree on which customer this counts -- the same
+        drill-through discipline `count_deals_invoiced_not_won` and its siblings apply
+        with their own filtered lists.
+        """
+        return sum(1 for row in self.revenue_by_customer(anno) if row.quota > soglia)
+
     def deals_in_range(
         self, da: date, a: date, customer_id: UUID | None, base: RevenueBase = "emissione"
     ) -> list[Deal]:

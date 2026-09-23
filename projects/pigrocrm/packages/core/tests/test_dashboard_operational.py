@@ -34,8 +34,10 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.analytics.service import AnalyticsService
 from pigrocrm.core.auth.models import User
+from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.dashboard.schemas import OperationalDashboard
 from pigrocrm.core.dashboard.service import DashboardService
@@ -65,7 +67,7 @@ class Seeded(NamedTuple):
 
 
 def _require_empty(session: Session) -> None:
-    """The three signals are counts over the whole register, with no period and no scope,
+    """The four signals are counts over the whole register, with no period and no scope,
     so the literals below are only true if this file's rows are the only committed ones.
     A loud precondition beats an off-by-N nobody can read."""
     for model in (Invoice, TimeEntry, Deal):
@@ -78,7 +80,7 @@ def _require_empty(session: Session) -> None:
 
 @pytest.fixture
 def seeded(db_engine: Engine) -> Iterator[Seeded]:
-    """One corpus carrying all three signals plus the rows each of them must exclude.
+    """One corpus carrying all four signals plus the rows each of them must exclude.
 
     Every near miss differs from a wanted row in **exactly one** clause, which is what makes
     the negative tests below able to fail one at a time:
@@ -230,6 +232,59 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
         _invoice(None, stato_pagamento="incassata", data_scadenza=date(2026, 1, 1))
         _invoice(None, stato="annullata", data_scadenza=date(2026, 1, 1))
 
+        # -- concentrazione sopra soglia (REB-371) ------------------------------
+        # Two customers, both outside the single-customer register the other three
+        # signals share. `anno` is set explicitly here (§7.1's fiscal register value,
+        # never derived from `data_emissione`) because `revenue_by_customer` filters
+        # by it, and every invoice above leaves it `None` on purpose -- the value one
+        # never issued through `InvoiceService` carries. 900.00 against 100.00 puts
+        # one customer's own share at 0.90 (over the default 0.30 threshold) and the
+        # other's at 0.10 (under it), clear of the boundary so the ordinary case needs
+        # no exact-float care.
+        concentrato = Customer(
+            ragione_sociale=f"{_PREFIX} Concentrato", nazione="IT", custom_fields={}
+        )
+        diluito = Customer(ragione_sociale=f"{_PREFIX} Diluito", nazione="IT", custom_fields={})
+        session.add_all([concentrato, diluito])
+        session.flush()
+        session.add_all(
+            [
+                Invoice(
+                    customer_id=concentrato.id,
+                    tipo="fattura",
+                    stato="emessa",
+                    anno=oggi.year,
+                    numero=9001,
+                    stato_pagamento="incassata",
+                    imponibile=Decimal("900.00"),
+                    imposta=Decimal("0.00"),
+                    bollo=Decimal("0.00"),
+                    totale=Decimal("900.00"),
+                    data_emissione=oggi,
+                    tipo_documento="TD01",
+                    divisa="EUR",
+                    custom_fields={},
+                ),
+                Invoice(
+                    customer_id=diluito.id,
+                    tipo="fattura",
+                    stato="emessa",
+                    anno=oggi.year,
+                    numero=9002,
+                    stato_pagamento="incassata",
+                    imponibile=Decimal("100.00"),
+                    imposta=Decimal("0.00"),
+                    bollo=Decimal("0.00"),
+                    totale=Decimal("100.00"),
+                    data_emissione=oggi,
+                    tipo_documento="TD01",
+                    divisa="EUR",
+                    custom_fields={},
+                ),
+            ]
+        )
+        session.flush()
+
         session.add(
             Activity(
                 entity_type="deal",
@@ -280,6 +335,10 @@ def _signal(engine: Engine, codice: str) -> int:
     return next(s.conteggio for s in _dashboard(engine).segnali if s.codice == codice)
 
 
+def _codice(result: OperationalDashboard, codice: str) -> int:
+    return next(s.conteggio for s in result.segnali if s.codice == codice)
+
+
 def _deals(engine: Engine, query: DealListQuery) -> list[Deal]:
     with session_factory(engine)() as session:
         return DealRepository(session).list(query)
@@ -326,6 +385,7 @@ def test_the_signals_are_present_in_order_with_their_links(seeded: Seeded) -> No
         "fatturato_non_vinto",
         "vinto_da_fatturare",
         "scaduto_non_incassato",
+        "concentrazione_sopra_soglia",
     ]
     # Every signal has a drill-through, because a count with no way to see the rows behind
     # it is a number nobody can act on (§6.2, §7.2).
@@ -350,6 +410,7 @@ def test_no_signal_is_stored_anywhere() -> None:
         "fatturato_non_vinto",
         "vinto_da_fatturare",
         "scaduto_non_incassato",
+        "concentrazione_sopra_soglia",
         "segnale",
         "segnali",
     ):
@@ -510,3 +571,59 @@ def test_the_overdue_filter_excludes_each_row_it_must(seeded: Seeded) -> None:
 def test_the_overdue_filter_composes_with_the_others(seeded: Seeded) -> None:
     rows = _invoices(seeded.engine, InvoiceListQuery(scadute=True, stato="annullata", limit=_ALL))
     assert rows == []
+
+
+# --- signal 4: concentrazione sopra soglia (REB-371) -----------------------------------
+
+
+def test_the_concentration_signal_counts_customers_over_the_configured_share(
+    seeded: Seeded,
+) -> None:
+    """`Concentrato` holds 0.90 of the year's two-customer register, well past the
+    default 0.30 threshold `Settings.concentrazione_soglia_preferita` carries;
+    `Diluito`'s 0.10 does not."""
+    assert _signal(seeded.engine, "concentrazione_sopra_soglia") == 1
+
+
+def test_the_concentration_signal_names_the_customer_that_crosses_it(seeded: Seeded) -> None:
+    """Criterion 2, shaped for this signal: not a filtered list (there is none), but the
+    same `AnalyticsRepository.revenue_by_customer` rows the economic tab's own
+    concentration table would show, checked by name rather than only by count."""
+    with session_factory(seeded.engine)() as session:
+        rows = AnalyticsRepository(session).revenue_by_customer(today_local().year)
+    sopra = {row.ragione_sociale for row in rows if row.quota > 0.30}
+    assert sopra == {f"{_PREFIX} Concentrato"}
+
+
+def test_the_concentration_signal_reflects_a_differently_configured_threshold(
+    seeded: Seeded,
+) -> None:
+    """The threshold is `Settings.concentrazione_soglia_preferita`, read through the
+    `DashboardService` the same way every other per-space setting reaches a service --
+    not a constant this module could drift from without a test noticing."""
+    with session_factory(seeded.engine)() as session:
+        stringente = Settings(
+            _env_file=None,
+            concentrazione_soglia_preferita=0.95,  # type: ignore[call-arg]
+        )
+        alto = DashboardService(session, stringente).get_operational_dashboard(READONLY)
+    assert _codice(alto, "concentrazione_sopra_soglia") == 0
+
+    with session_factory(seeded.engine)() as session:
+        permissivo = Settings(
+            _env_file=None,
+            concentrazione_soglia_preferita=0.05,  # type: ignore[call-arg]
+        )
+        basso = DashboardService(session, permissivo).get_operational_dashboard(READONLY)
+    assert _codice(basso, "concentrazione_sopra_soglia") == 2
+
+
+def test_the_concentration_signal_link_is_the_economic_tab(seeded: Seeded) -> None:
+    """Unlike the other three, this link is not a filtered list: there is no "customers
+    over the threshold" endpoint, only the concentration table itself, on the tab that
+    already renders it."""
+    signal = next(
+        s for s in _dashboard(seeded.engine).segnali if s.codice == "concentrazione_sopra_soglia"
+    )
+    assert signal.collegamento == "/app/?tab=economica"
+    assert signal.etichetta

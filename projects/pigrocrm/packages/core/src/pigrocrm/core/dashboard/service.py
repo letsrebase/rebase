@@ -39,8 +39,10 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.activities.repository import ActivityRepository
 from pigrocrm.core.activities.schemas import ActivityRead
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.analytics.repository import AnalyticsRepository
 from pigrocrm.core.analytics.schemas import PeriodPnlQuery
 from pigrocrm.core.analytics.service import AnalyticsService
+from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.dashboard.schemas import (
     CassaAttesaMese,
     CommercialDashboard,
@@ -81,16 +83,24 @@ _FASCE_ETICHETTE: dict[str, str] = {
 # The overdue bucket's drill-through: `?scadute=true` on the invoice list is
 # `_overdue_predicate`, the predicate the bucket is summed with (criterion 2).
 _SCADUTO_LINK = "/app/invoices?scadute=true"
+# The concentration signal's own drill-through (REB-371): the economic tab, where
+# every customer's share of the year's revenue is listed
+# (`EconomicOverview.concentrazione_clienti`). Unlike the other three signals there is
+# no separate filtered list of "customers over the threshold" to point at instead --
+# the concentration table itself is the rows behind this count.
+_CONCENTRAZIONE_LINK = "/app/?tab=economica"
 _CLIENTI_SHOWN = 10
 _SCADUTE_SHOWN = 50
 
 
 class DashboardService:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, settings: Settings | None = None) -> None:
         self.session = session
+        self.settings = settings or get_settings()
         self.deals = DealRepository(session)
         self.documents = DocumentRepository(session)
         self.analytics = AnalyticsService(session)
+        self.analytics_repo = AnalyticsRepository(session)
         self.invoices = InvoiceRepository(session)
         self.entries = TimeEntryRepository(session)
         self.activities = ActivityRepository(session)
@@ -215,31 +225,42 @@ class DashboardService:
         and it is why the backlog comes from `unbilled_backlog`, which has no period, rather
         than from `period_pnl`, which is by definition of one (§6.3).
 
-        The three signals are built here as `Signal` rows, and that is composition and not
+        Four signals are built here as `Signal` rows, and that is composition and not
         arithmetic: each `conteggio` is a `COUNT` its own repository produced, and every
         label and link is a literal. `core/dashboard/` still contains no `*`, `/` or `-`,
         and `test_dashboard_no_arithmetic.py` is what confirms it rather than this sentence.
+        The fourth, `concentrazione_sopra_soglia` (REB-371, §3 and §5 item 2 of
+        `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`),
+        keeps to the same rule: its COUNT, `AnalyticsRepository.count_over_concentration_
+        threshold`, is the one place each customer's share is compared against
+        `self.settings.concentrazione_soglia_preferita` -- that comparison stays in the
+        repository, never here. Its link is the only one of the four that is not a
+        matching filtered list: it points at the economic tab's own concentration table,
+        because no separate "customers over the threshold" list exists to filter.
 
-        None of the three is stored and none is a flag on a row -- they are predicates,
+        None of the four is stored and none is a flag on a row -- they are predicates,
         evaluated on request. A stored signal is §1's second source of truth in disguise,
         and it would need somewhere to be recomputed from, which is the materialised summary
         §7 refuses.
 
-        Every `collegamento` names a filter that exists and that shares its predicate
+        Every other `collegamento` names a filter that exists and that shares its predicate
         function with the count beside it (criterion 2), so a card and the list behind it
         cannot describe different rows: `invoiced_not_won_predicate`,
         `won_with_unbilled_hours_predicate` and `_overdue_predicate` each have exactly two
         callers, one per side.
 
-        The fourth signal of §6.2 is not here: "offerta accettata, deal non vinto" is on the
-        commercial dashboard, because it needs no invoices and therefore shipped with the
-        automation it cross-checks (§17).
+        §6.2's own fourth signal is still not here: "offerta accettata, deal non vinto" is on
+        the commercial dashboard, because it needs no invoices and therefore shipped with the
+        automation it cross-checks (§17). REB-371's concentration signal is a different,
+        later addition and does not fill that slot -- this page now carries four signals of
+        its own regardless.
 
-        `current_week()` is read **before** the snapshot opens, like the period on the other
-        two dashboards: it needs no transaction, and it keeps the first statement of the
-        session the one that fixes the snapshot.
+        `current_week()` and the calendar year are both read **before** the snapshot opens,
+        like the period on the other two dashboards: neither needs a transaction, and it
+        keeps the first statement of the session the one that fixes the snapshot.
         """
         da, a = current_week()
+        anno = today_local().year
         calcolato_alle = self._open_snapshot()
         return OperationalDashboard(
             calcolato_alle=calcolato_alle,
@@ -263,6 +284,14 @@ class DashboardService:
                     etichetta="Scaduto e non incassato",
                     conteggio=self.invoices.count_scadute_non_incassate(),
                     collegamento="/app/invoices?scadute=true",
+                ),
+                Signal(
+                    codice="concentrazione_sopra_soglia",
+                    etichetta="Concentrazione cliente sopra soglia",
+                    conteggio=self.analytics_repo.count_over_concentration_threshold(
+                        anno, self.settings.concentrazione_soglia_preferita
+                    ),
+                    collegamento=_CONCENTRAZIONE_LINK,
                 ),
             ],
             attivita_recenti=[
