@@ -37,6 +37,7 @@ describe('slugProblem', () => {
     expect(slugProblem('Studio')).toMatch(/minuscole/)
     expect(slugProblem('app')).toMatch(/riservato/)
     expect(slugProblem('mcp')).toMatch(/riservato/)
+    expect(slugProblem('root')).toMatch(/riservato/)
   })
 })
 

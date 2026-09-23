@@ -15,7 +15,8 @@ smette me ne accorgo?»):
    è in Testing.
 
 Il §4 è il secondo lavoro: `pigrocrm digest`, il resoconto settimanale che ogni lunedì
-mattina scrive a chi l'ha chiesto, uno spazio alla volta.
+mattina scrive a chi l'ha chiesto, uno spazio alla volta, a cominciare dall'installazione
+radice.
 
 ## 1. Installare il cron (operatore, sul server)
 
@@ -205,6 +206,14 @@ Le righe della prova portano `(prova)` in fondo proprio perché nel log non si c
 con una settimana partita davvero. Con `--slug studio-rossi` la prova (come il comando
 vero) tocca un solo spazio.
 
+L'installazione radice (il database di `PIGROCRM_DATABASE_URL`, quella che non sta nel
+registro) è la prima riga di ogni giro, e nel log si chiama sempre `root`. Per toccare
+solo lei: `--slug root` (va bene anche il valore di `PIGROCRM_ROOT_SLUG`). Tutti e due i
+nomi sono riservati, nessuno spazio può averli, e un giro della sola radice non apre
+nemmeno il registro. Per rimandare una settimana alla radice si usa quindi
+`--slug root --forza --data …`, mai `--forza` sul giro completo, che la rimanderebbe a
+ogni spazio.
+
 ### Rimandare una settimana
 
 Una settimana già inviata non parte una seconda volta: la riga `digests.settimana` è
@@ -227,18 +236,21 @@ Una riga per spazio, contatori soltanto: mai un indirizzo, mai una cifra del res
 
 | Riga | Cosa è successo | Cosa fare |
 | --- | --- | --- |
+| `root: inviato a 2` | L'installazione radice: stesso resoconto, stessi destinatari (gli utenti attivi con il resoconto acceso), letto come il primo admin attivo. Le altre righe di uno spazio valgono anche per lei, con `root:` davanti | Niente |
 | `studio-rossi: inviato a 3` | Il resoconto è partito a tre persone, e la settimana è registrata | Niente |
 | `studio-rossi: inviato a 3 (prova)` | `--dry-run`: sarebbe partito a tre persone | Niente: nessuna mail, nessuna riga scritta |
 | `studio-rossi: vuoto` | Lo spazio non ha ancora né clienti, né deal, né fatture, né ore | Niente: chi non ha ancora cominciato non riceve una mail piena di zeri |
 | `studio-rossi: già inviato per 2026-W37` | Quella settimana era già partita (un secondo cron, o una riga eseguita a mano) | Niente. Se va rimandata davvero, vedi «Rimandare una settimana» |
 | `studio-rossi: nessun destinatario` | Nessun utente attivo di quello spazio ha il resoconto acceso | Niente: è una scelta loro (Impostazioni → Profilo) |
 | `studio-rossi: saltato (…)` su `stderr` | Quello spazio non è stato mandato; fra parentesi c'è il **tipo** dell'errore, mai il testo (che può contenere l'URL del database, password compresa) | Vedi qui sotto |
-| `registro degli spazi non raggiungibile (…)` su `stderr` | Il registro dei tenant non risponde: nessuno spazio è stato visitato | Controllare il database e i `PIGROCRM_*` del `.env`; poi rieseguire la riga a mano |
+| `registro degli spazi non raggiungibile (…)` su `stderr` | Il registro dei tenant non risponde: nessuno spazio del registro è stato visitato. Nel giro completo la radice sì, perché non ci sta: la sua riga `root:` c'è lo stesso | Controllare il database e i `PIGROCRM_*` del `.env`; poi rieseguire la riga a mano |
 
 Gli `saltato` che si incontrano davvero:
 
 - `titolare_mancante` / `titolare_disattivato`: la mail del titolare nel registro non
-  corrisponde a nessun utente di quello spazio, o quell'utente è stato disattivato.
+  corrisponde a nessun utente di quello spazio, o quell'utente è stato disattivato. La
+  radice non ha una riga nel registro e il suo titolare è il primo admin ancora attivo:
+  `root: saltato (titolare_mancante)` vuol dire che non ne resta nessuno.
 - `invio_rifiutato`: Resend ha rifiutato **tutti** gli indirizzi. Non viene registrato
   niente, quindi la prossima esecuzione ci riprova: una settimana che non è arrivata a
   nessuno non è una settimana inviata.
