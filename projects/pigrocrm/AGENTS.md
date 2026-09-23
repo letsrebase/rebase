@@ -174,11 +174,14 @@ the sudo log, the journal and `ps` on the host, and in the client's own config f
 outside the checkout, so no deploy touches it. The launch names only the path:
 
 ```
-ssh -o BatchMode=yes <host> "cd /opt/pigrocrm/projects/pigrocrm && sudo sh -c 'set -a; . /etc/pigrocrm/mcp-token.env; set +a; exec docker compose exec -T -e PIGROCRM_TOKEN api uv run --no-sync python -m pigrocrm_mcp'"
+ssh -o BatchMode=yes <host> "cd /opt/pigrocrm/projects/pigrocrm && sudo sh -c 'set -a; . /etc/pigrocrm/mcp-token.env; set +a; exec docker compose --env-file ../../.env exec -T -e PIGROCRM_TOKEN api uv run --no-sync python -m pigrocrm_mcp'"
 ```
 
 `-e PIGROCRM_TOKEN` with no value makes compose copy the variable from its own
-environment, so the logged command and `ps` show the name and never the value. The
+environment, so the logged command and `ps` show the name and never the value.
+`--env-file ../../.env` is the deploy's own `.env`, the same one the digest's cron line
+names: compose interpolates the required `PIGROCRM_*` and `POSTGRES_*` values even for
+an `exec`. Do not rely on a `.env` symlink beside the compose file. The
 server resolves the token once, at start-up (`apps/mcp/src/pigrocrm_mcp/__main__.py`).
 To rotate it:
 1. Mint the new token. Use Impostazioni → Token, or run `PatService.create` inside the
