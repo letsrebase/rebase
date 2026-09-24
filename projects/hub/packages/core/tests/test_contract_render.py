@@ -89,7 +89,7 @@ def test_a_blank_the_data_fill_is_not_marked() -> None:
 
 
 def test_a_value_full_of_typst_syntax_prints_as_text() -> None:
-    """Review Focus 5: a value is a Typst string, so markup inside it is inert, and it is
+    """A value is a Typst string, so markup inside it is inert, and it is
     inserted after the markers are counted, so a `[[` or a `{{...}}` in it is neither a
     proposal nor a field."""
     cliente = 'Rossi & "Figli" #1 $x$ *uno* _due_ <tre> @quattro \\ S.r.l.'

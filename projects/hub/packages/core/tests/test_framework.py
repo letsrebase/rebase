@@ -73,7 +73,7 @@ def test_a_framework_is_active_while_signed_and_without_notice(
 
 
 def test_a_signature_is_dated_in_rome() -> None:
-    """Review Focus 3: 23:30 UTC on 30 September is 1 October where rebase signs."""
+    """23:30 UTC on 30 September is 1 October where rebase signs."""
     late = _quadro(signed_at=datetime(2026, 9, 30, 23, 30, tzinfo=UTC))
     assert signed_on(late) == date(2026, 10, 1)
     assert signed_on(_quadro(signed_at=None)) is None
@@ -129,7 +129,7 @@ def test_letters_are_numbered_per_year_and_a_rollback_leaves_no_gap(clean: Sessi
 
 
 def test_two_letters_taken_at_once_get_two_numbers(hub_engine: Engine, clean: Session) -> None:
-    """Review Focus 1: the second transaction waits on the first one's row and then takes
+    """The second transaction waits on the first one's row and then takes
     the next number, instead of reading the same one or failing on the key."""
     factory = session_factory(hub_engine)
     first, second = factory(), factory()

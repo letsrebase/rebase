@@ -97,7 +97,10 @@ Since REB-387 phase 3 «Invia per la firma» sends a match's documents through D
 (`rebase_core.signing`, `rebase_core.documenso`), and the hub mails the signing link
 itself: Documenso sends no mail of its own. Documenso calls back
 `POST /api/hub/documenso/webhook` with `X-Documenso-Secret` equal to
-`REBASE_DOCUMENSO_WEBHOOK_SECRET`; production's webhook points at
+`REBASE_DOCUMENSO_WEBHOOK_SECRET`, which must be long and random (`openssl rand -hex
+32`): the route sits public behind `/api/hub/` with no rate limit, and the secret is the
+only thing standing between it and a forged signature event. Production's webhook points
+at
 `http://api:8000/api/hub/documenso/webhook` inside the compose network, preview's at
 `https://preview.letsrebase.com/api/hub/documenso/webhook`. Documenso retries a failed
 delivery only at once, so an event lost while the API restarts stays lost: «Aggiorna

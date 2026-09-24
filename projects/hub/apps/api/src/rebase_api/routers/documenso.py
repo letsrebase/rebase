@@ -4,7 +4,9 @@ No cookie: Documenso authenticates with `X-Documenso-Secret`, the value typed in
 webhook's form, sent verbatim (probe § 5). It is compared in constant time with
 `REBASE_DOCUMENSO_WEBHOOK_SECRET`, and a missing header and an empty one are refused
 alike, since a webhook saved without a secret sends the header empty (probe § 11.4). The
-check is a dependency, so it runs before the body is validated.
+check is a dependency, but FastAPI reads and decodes the body before running it along
+with the route's other parameters, so a malformed body with no secret at all still
+answers 422, not 401.
 
 The answer is fast on purpose. Documenso gives up on a delivery after ten seconds and
 retries at once, three times within about 160 ms, then never again (probe § 5): the

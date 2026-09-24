@@ -170,7 +170,7 @@ def test_the_first_send_hands_documenso_the_framework_and_the_letter_waits(
 def test_the_sent_copy_says_the_day_it_left_and_prints_the_tax_data_saved_since_the_draft(
     clean: Session,
 ) -> None:
-    """Review Focus 5: the draft was saved on the 23rd with the old address; the admin
+    """REB-390: the draft was saved on the 23rd with the old address; the admin
     corrected the tax data and sends on the 25th. What leaves is today's."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
@@ -236,12 +236,17 @@ def test_a_letter_waiting_on_a_framework_already_out_for_signature_sends_nothing
     assert (report.inviato, report.mail_inviata) == (None, None)
     assert (report.match.stato, report.match.lettera.stato) == ("in_firma", "in_attesa")
     assert len(fake.envelopes) == 1 and len(sender.sent) == 1
+    # A send that sends nothing leaves no `documents_sent` trail of its own: the second
+    # match's timeline still holds only what `create` wrote for it.
+    assert [a.kind for a in AdminActionService(clean).timeline("match", second.id)] == [
+        "match_created"
+    ]
 
 
 def test_two_matches_sent_at_once_send_the_framework_once(
     hub_engine: Engine, clean: Session
 ) -> None:
-    """Review Focus 3: two admins send two matches of one freelancer at the same moment,
+    """REB-390: two admins send two matches of one freelancer at the same moment,
     and both need the same framework agreement. The second send waits on the framework's
     row, then finds it out for signature: one envelope, and the second letter waits."""
     admin_id, freelancer_id, company_id = _setup(clean)
@@ -327,7 +332,7 @@ def test_without_rebases_signer_nothing_leaves(clean: Session) -> None:
 
 
 def test_documenso_refusing_the_distribution_marks_nothing_sent(clean: Session) -> None:
-    """Review Focus 4: the envelope exists on Documenso, the distribution fails. Nothing
+    """REB-406: the envelope exists on Documenso, the distribution fails. Nothing
     in the hub says sent, the admin reads Documenso's sentence alone, and the same draft
     can be sent again with the same letter number."""
     admin_id, freelancer_id, company_id = _setup(clean)
@@ -357,7 +362,7 @@ def test_documenso_refusing_the_distribution_marks_nothing_sent(clean: Session) 
 
 
 def test_a_refused_mail_leaves_the_document_sent_and_says_so(clean: Session) -> None:
-    """Review Focus 4, the other half: Documenso took it, the mail provider did not."""
+    """REB-406, the other half: Documenso took it, the mail provider did not."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer = FakeRenderer(draft=False)
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
@@ -667,7 +672,7 @@ def test_a_completion_signs_the_document_with_the_signers_date_and_calls_nobody(
 def test_a_second_delivery_waits_for_the_first_and_changes_nothing(
     hub_engine: Engine, clean: Session
 ) -> None:
-    """Review Focus 1: Documenso retries at once, and even while a slow first delivery is
+    """REB-391: Documenso retries at once, and even while a slow first delivery is
     still running (probe § 5). The second waits on the row, then finds it signed."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
@@ -909,8 +914,9 @@ def test_a_download_that_fails_is_done_by_the_next_finish(clean: Session) -> Non
 def test_a_framework_signed_late_at_night_releases_its_letter_with_the_rome_date(
     clean: Session,
 ) -> None:
-    """Review Focus 2: signed at 23:30 UTC on 30 September, which is 1 October in Rome.
-    The letter that waited leaves on its own, citing that date, mailed as its own."""
+    """REB-391: signed at 23:30 UTC on 30 September, which is 1 October in Rome. The
+    letter that waited leaves on its own, citing that date, mailed as its own, and its
+    own trail entry, as `send_match` leaves for a letter it sends itself."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
@@ -929,6 +935,29 @@ def test_a_framework_signed_late_at_night_releases_its_letter_with_the_rome_date
     assert letter.sent_by == admin_id
     assert sender.sent[-1].subject == f"Da firmare: lettera di incarico n. {letter.numero}"
     assert len(fake.envelopes) == 2
+    trail = AdminActionService(clean).timeline("match", match.id)
+    assert trail[0].kind == "documents_sent"
+    assert trail[0].payload == {"documento": str(letter.id), "kind": "lettera", "mail": True}
+
+
+def test_a_released_letters_refused_mail_still_names_it_in_the_trail(clean: Session) -> None:
+    """REB-391: the mail provider refusing a released letter's link is not only logged
+    (as `send_match`'s own refusal is not): the trail entry says `mail: false`."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    match = _sent(clean, renderer, fake, RecordingSender(), freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, RefusingSender())
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+
+    signing.finish(signed)
+
+    letter = _letter_of(clean, match.id)
+    assert letter.stato == "inviato"
+    trail = AdminActionService(clean).timeline("match", match.id)
+    assert trail[0].payload == {"documento": str(letter.id), "kind": "lettera", "mail": False}
 
 
 def test_a_release_documenso_refuses_waits_for_the_next_finish(clean: Session) -> None:

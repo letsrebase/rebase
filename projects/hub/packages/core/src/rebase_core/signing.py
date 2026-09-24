@@ -226,13 +226,16 @@ class SigningService:
         sent_kind = leaving.kind if leaving is not None else None
         sent_id = leaving.id if leaving is not None else None
         mailed = self._mail_signing_request(leaving) if leaving is not None else None
-        AdminActionService(self.session).record(
-            ENTITY,
-            match_id,
-            "documents_sent",
-            admin_id,
-            {"documento": sent_id, "kind": sent_kind, "mail": mailed},
-        )
+        # Nothing left when the letter waits on a framework agreement already out for
+        # signature (`leaving` is `None`): no trail entry for a send that sent nothing.
+        if leaving is not None:
+            AdminActionService(self.session).record(
+                ENTITY,
+                match_id,
+                "documents_sent",
+                admin_id,
+                {"documento": sent_id, "kind": sent_kind, "mail": mailed},
+            )
         return SendReport(match=self.matches.get(match_id), inviato=sent_kind, mail_inviata=mailed)
 
     def _framework_to_send(self, freelancer_id: UUID, admin_id: UUID) -> ContractDocument | None:
@@ -473,7 +476,17 @@ class SigningService:
                 )
                 continue
             if letter is not None:
-                self._mail_signing_request(letter)
+                mailed = self._mail_signing_request(letter)
+                # A letter released this way leaves the same trail `send_match` leaves
+                # for one it sends itself, attributed to whoever sent the framework
+                # agreement that just freed it (REB-391).
+                AdminActionService(self.session).record(
+                    ENTITY,
+                    match_id,
+                    "documents_sent",
+                    sent_by,
+                    {"documento": letter.id, "kind": LETTERA, "mail": mailed},
+                )
 
     def _send_waiting(
         self,
