@@ -10,7 +10,7 @@ dependencies = [
   "alembic==1.19.0",
   "psycopg[binary]==3.3.4",
   "pydantic==2.13.5",
-  "pydantic-settings==2.14.2",
+  "pydantic-settings==2.15.0",
   "email-validator==2.3.0",
   "uuid-utils==0.17.0",
   "argon2-cffi==25.1.0",
