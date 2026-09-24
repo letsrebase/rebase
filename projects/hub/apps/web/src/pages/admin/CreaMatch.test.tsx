@@ -335,4 +335,30 @@ describe('«Crea match» in five steps (REB-387)', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Genera l’anteprima' }))
     expect(await screen.findByRole('link', { name: 'Apri la lettera di incarico' })).toHaveAttribute('href', 'blob:anteprima-2')
   })
+
+  it('reaches a request beyond the first page through «Mostra altre» (Greptile 4092036042)', async () => {
+    const OLDER = { ...OPEN, id: 'c7', nome_azienda: 'Neri Spa', referente: 'Anna Neri', created_at: '2026-01-10T10:00:00Z' }
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 51, items: [OPEN], per_stato: {}, next_cursor: 'p2' },
+      'GET /api/hub/companies?limit=50&cursor=p2': { totale: 51, items: [OLDER], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c7': {
+        ...prefill('450.00'),
+        cliente: { cliente_ragione_sociale: 'Neri Spa', cliente_piva: null, cliente_sede: null },
+      },
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+    })
+    mount()
+    await screen.findByRole('button', { name: /Rossi Studio/ })
+    expect(screen.queryByRole('button', { name: /Neri Spa/ })).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Mostra altre' }))
+    await userEvent.click(await screen.findByRole('button', { name: /Neri Spa/ }))
+    expect(screen.getByRole('button', { name: /Rossi Studio/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Mostra altre' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByLabelText('Codice fiscale')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Freelance -> Cliente
+    expect(await screen.findByLabelText('Ragione sociale del cliente')).toHaveValue('Neri Spa')
+  })
 })

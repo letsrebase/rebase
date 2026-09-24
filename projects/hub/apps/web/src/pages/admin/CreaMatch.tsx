@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
@@ -35,6 +35,7 @@ import { Header } from './lists'
 
 const STEPS = ['Azienda', 'Freelance', 'Cliente', 'Lettera di incarico', 'Anteprima'] as const
 const SEARCH_DEBOUNCE_MS = 300
+const COMPANIES_PAGE = 50
 
 interface Previews {
   lettera: string
@@ -115,18 +116,24 @@ function CompanyStep({
 }) {
   const [q, setQ] = useState('')
   const term = useDebounce(q.trim(), SEARCH_DEBOUNCE_MS)
-  const companies = useQuery({
+  // A page at a time, through the same cursor «Aziende» walks: an older request past the
+  // first page stays one «Mostra altre» away (Greptile 4092036042).
+  const companies = useInfiniteQuery({
     queryKey: ['companies', 'match', term],
-    queryFn: () => admin.companies({ q: term || undefined, limit: 50 }),
+    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
+      admin.companies({ q: term || undefined, limit: COMPANIES_PAGE, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   })
+  const items = companies.data?.pages.flatMap((page) => page.items) ?? []
   let list: ReactNode
   if (companies.isError) list = <p className="text-sm text-destructive">Non riesco a leggere le richieste.</p>
   else if (companies.isPending) list = <p className="text-sm text-muted-foreground">Caricamento…</p>
-  else if (companies.data.items.length === 0) list = <p className="text-sm text-muted-foreground">Nessuna richiesta trovata.</p>
+  else if (items.length === 0) list = <p className="text-sm text-muted-foreground">Nessuna richiesta trovata.</p>
   else
     list = (
       <ul className="space-y-2">
-        {companies.data.items.map((item) => {
+        {items.map((item) => {
           const closed = item.stato === 'chiuso'
           const chosen = selected?.id === item.id
           return (
@@ -174,6 +181,17 @@ function CompanyStep({
         />
       </div>
       {list}
+      {companies.hasNextPage && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void companies.fetchNextPage()}
+          disabled={companies.isFetchingNextPage}
+        >
+          {companies.isFetchingNextPage ? 'Caricamento…' : 'Mostra altre'}
+        </Button>
+      )}
       <StepFooter next="Avanti" pending={pending} ready={selected !== null} failure={failure} />
     </form>
   )
