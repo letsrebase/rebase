@@ -55,7 +55,7 @@ jobs:
     steps:
       # Fail open: a missing or unreadable verdict deploys. A preview that ran once too
       # often is cheap, and a preview silently stuck on an old commit is not.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         id: verdict
         continue-on-error: true
         with:
