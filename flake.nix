@@ -476,7 +476,8 @@
           devShells.default = pkgs.mkShell {
             packages = [
               # The two package managers. uv's own version is not load-bearing: every
-              # command in this repository runs `--frozen` against uv.lock. pnpm's is
+              # command in this repository runs against uv.lock as written (`--frozen`,
+              # and `--locked` in the CI gate, which only checks it). pnpm's is
               # not either, since pnpm 10+ reads `packageManager` from package.json
               # and switches itself to the pinned version on first use.
               pkgs.uv

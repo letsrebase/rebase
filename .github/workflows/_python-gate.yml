@@ -66,7 +66,12 @@ jobs:
           version: '0.9.24'
           enable-cache: true
 
-      - run: uv sync --frozen
+      # `--locked`, not `--frozen`: both install exactly what uv.lock says, but only
+      # `--locked` first checks that uv.lock still answers the pins in every
+      # pyproject.toml. Under `--frozen` a pin changed without a relock installs the
+      # old version and goes green, which is what a grouped Dependabot uv update can
+      # produce (dependabot-core#15786) and what a hand edit can too.
+      - run: uv sync --locked
 
       # Cheapest first, on purpose: lint and format are the checks most likely to
       # fail, and the cheapest to have failed. A retry is a whole round trip.
