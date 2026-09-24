@@ -351,7 +351,9 @@ function PreviewStep({
         <Button type="button" variant="outline" onClick={onSave} disabled={saving || sending}>
           {saving ? 'Salvo…' : 'Salva come bozza'}
         </Button>
-        <Button type="button" onClick={onSend} disabled={saving || sending}>
+        {/* A report already back (even a refusal's, `sentMessage`) means this send
+         *  already happened once: a second click must not send it again (REB-406). */}
+        <Button type="button" onClick={onSend} disabled={saving || sending || sentMessage !== null}>
           {sending ? 'Invio…' : 'Invia per la firma'}
         </Button>
       </div>

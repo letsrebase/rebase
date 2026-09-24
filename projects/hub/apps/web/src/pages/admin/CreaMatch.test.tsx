@@ -434,7 +434,7 @@ describe('«Crea match» in five steps (REB-387)', () => {
   })
 
   it('stays on the preview and points at «Match e contratti» when the signing mail did not leave (REB-406)', async () => {
-    routeFetch({
+    const spy = routeFetch({
       'GET /api/hub/freelancers/f1': PERSON,
       'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
       'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
@@ -458,9 +458,15 @@ describe('«Crea match» in five steps (REB-387)', () => {
         'Partito il contratto quadro: la lettera n. 2026-001 partirà da sola dopo la sua firma. La mail però non è partita: usa «Reinvia email».',
       ),
     ).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Invia per la firma' })).toBeInTheDocument()
     expect(screen.queryByText('pagina contratti')).toBeNull()
     const link = screen.getByRole('link', { name: 'Vai a Match e contratti' })
     expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/contracts$/)
+
+    // A report already showing means this send already happened once: the button stays
+    // disabled so a second click cannot send it again.
+    const sendButton = screen.getByRole('button', { name: 'Invia per la firma' })
+    expect(sendButton).toBeDisabled()
+    const sends = spy.mock.calls.filter(([url]) => url === '/api/hub/matches/m1/send')
+    expect(sends).toHaveLength(1)
   })
 })
