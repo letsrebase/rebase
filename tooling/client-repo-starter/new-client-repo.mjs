@@ -127,7 +127,7 @@ const GREPTILE_BLOCK = args.greptile
       "sha=$(git rev-parse HEAD)",
       "for i in $(seq 20); do   # ten minutes, then the @greptileai nudge below",
       "  run=$(gh api \"repos/" + args.org + "/" + args.repo + "/commits/$sha/check-runs\" \\",
-      "      --jq '.check_runs[] | select(.name == \"Greptile Review\" and .status == \"completed\") | \"\\(.conclusion)\\t\\(.output.summary)\"')",
+      "      --jq '.check_runs[] | select(.name == \"Greptile Review\" and .status == \"completed\" and (.conclusion == \"success\" or .conclusion == \"failure\")) | \"\\(.conclusion)\\t\\(.output.summary)\"')",
       "  rid=$(gh api repos/" + args.org + "/" + args.repo + "/pulls/<n>/reviews \\",
       "      --jq \".[] | select(.user.login == \\\"greptile-apps[bot]\\\" and .commit_id == \\\"$sha\\\") | .id\" | tail -n 1)",
       "  [ -n \"$run$rid\" ] && break; sleep 30",
