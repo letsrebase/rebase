@@ -66,17 +66,29 @@ function MatchRow({ item }: { item: MatchListItem }) {
 export function AdminMatches() {
   const search = useSearch({ from: '/signedIn/admin/matches' })
   const navigate = useNavigate()
-  const [qInput, setQInput] = useState(search.q ?? '')
+  const urlQ = search.q ?? ''
+  const [qInput, setQInput] = useState(urlQ)
+  const [seenQ, setSeenQ] = useState(urlQ)
   const debouncedQ = useDebounce(qInput, SEARCH_DEBOUNCE_MS)
 
+  // `?q=` moved while the page stayed open (back, forward, a link): unless this box
+  // wrote it, the box follows the URL (Greptile 4092036048). Adjusted while rendering,
+  // React's own pattern for state that tracks a changing input.
+  if (urlQ !== seenQ) {
+    setSeenQ(urlQ)
+    if (urlQ !== debouncedQ) setQInput(urlQ)
+  }
+
+  // Only a settled box writes the URL: while the debounce still holds an older value,
+  // writing it would put back the search the URL just moved away from.
   useEffect(() => {
-    if (debouncedQ === (search.q ?? '')) return
+    if (debouncedQ !== qInput || debouncedQ === urlQ) return
     void navigate({
       to: '/admin/matches',
       search: (prev: MatchesFilters) => ({ ...prev, q: debouncedQ || undefined }),
       replace: true,
     })
-  }, [debouncedQ, navigate, search.q])
+  }, [debouncedQ, qInput, navigate, urlQ])
 
   function setFilter<K extends keyof MatchesFilters>(key: K, value: MatchesFilters[K]) {
     void navigate({
@@ -86,7 +98,8 @@ export function AdminMatches() {
     })
   }
 
-  const filters: MatchesFilters = { ...search, q: debouncedQ || undefined }
+  // The URL drives the request: the box reaches it through the URL, debounced.
+  const filters: MatchesFilters = search
   const list = useInfiniteQuery({
     queryKey: ['matches', filters],
     queryFn: ({ pageParam }: { pageParam: number }) =>

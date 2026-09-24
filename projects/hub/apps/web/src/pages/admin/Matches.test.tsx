@@ -7,7 +7,7 @@ import {
   createRoute,
   createRouter,
 } from '@tanstack/react-router'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MatchesFilters } from '@/lib/api'
@@ -184,5 +184,24 @@ describe('the Match list (REB-413)', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [] }))
     mount('/admin/matches?stato=concluso')
     expect(await screen.findByText('Nessun risultato per questi filtri.')).toBeInTheDocument()
+  })
+
+  it('follows ?q= when the URL moves under the open page and never writes the old search back (Greptile 4092036048)', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, { totale: 0, items: [] }))
+    const router = mount('/admin/matches?q=ada')
+    expect(await screen.findByLabelText('Cerca')).toHaveValue('ada')
+
+    await act(() => router.navigate({ to: '/admin/matches', search: { q: 'grace' } }))
+    await waitFor(() => expect(screen.getByLabelText('Cerca')).toHaveValue('grace'))
+    await settle()
+    expect(router.state.location.search).toMatchObject({ q: 'grace' })
+
+    spy.mockClear()
+    await act(async () => router.history.back())
+    await waitFor(() => expect(screen.getByLabelText('Cerca')).toHaveValue('ada'))
+    await settle()
+    expect(router.state.location.search).toMatchObject({ q: 'ada' })
+    const calls = spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/hub/matches'))
+    expect(calls.some((url) => url.includes('q=grace'))).toBe(false)
   })
 })
