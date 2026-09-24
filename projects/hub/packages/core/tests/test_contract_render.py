@@ -7,9 +7,11 @@ the markers, the template and the signature query against the real tools; every 
 test hands `FakeRenderer` instead.
 """
 
+from io import BytesIO
 from pathlib import Path
 
 import pytest
+from pypdf import PdfReader
 
 from rebase_core.cli import main
 from rebase_core.contracts.fields import Value, read_layer
@@ -86,14 +88,20 @@ def test_a_value_full_of_typst_syntax_prints_as_text() -> None:
     """Review Focus 5: a value is a Typst string, so markup inside it is inert, and it is
     inserted after the markers are counted, so a `[[` or a `{{...}}` in it is neither a
     proposal nor a field."""
+    cliente = 'Rossi & "Figli" #1 $x$ *uno* _due_ <tre> @quattro \\ S.r.l.'
+    attivita = "Correzioni [[in corso]] e {{non-un-campo}} al 10% // senza /* commenti */"
     data = {
         **_example(),
-        "cliente-ragione-sociale": 'Rossi & "Figli" #1 $x$ *uno* _due_ <tre> @quattro \\ S.r.l.',
-        "attivita": "Correzioni [[in corso]] e {{non-un-campo}} al 10% // senza /* commenti */",
+        "cliente-ragione-sociale": cliente,
+        "attivita": attivita,
     }
     rendered = render("lettera-di-incarico", data)
     assert rendered.pdf.startswith(b"%PDF-")
     assert set(rendered.blank) == LETTER_BLANKS
+    reader = PdfReader(BytesIO(rendered.pdf))
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert cliente in text
+    assert attivita in text
 
 
 def test_the_contracts_check_command_typesets_both_texts(
