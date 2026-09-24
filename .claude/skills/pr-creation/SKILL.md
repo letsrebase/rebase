@@ -276,8 +276,9 @@ gh pr create --body-file pr-body.md \
    a given sha is read from that sha's own `Greptile Review` check run, never from the
    summary, which may still be the last round's: `success` is 5/5 (the check's
    threshold, set in app.greptile.com, Status Checks), `failure` is under it, with
-   `Confidence N/5` in its title (`Confidence 2/5`, #388's first commit), and does not
-   block the merge. When the run raised findings, it also leaves a review by the bot
+   `Confidence N/5` in its title (`Confidence 2/5`, #388's first commit). GitHub lets a
+   PR merge over that `failure`, since only `ci` is required, but this loop does not: it
+   ends on `success`. When the run raised findings, it also leaves a review by the bot
    with an empty body that owns them. Greptile's replies in its own threads are reviews
    as well, with no finding of their own, so the run's review is the one that owns a
    top-level comment on that sha. The completed check run is the signal; the review can
