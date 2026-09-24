@@ -365,18 +365,11 @@ class MatchService:
                     ):
                         stale.stato = "annullato"
                         stale_ids.append(stale.id)
-                    documents.append(
-                        self._document(
-                            renderer,
-                            QUADRO,
-                            self._quadro_data(user, fiscal, today),
-                            freelancer.id,
-                            None,
-                            None,
-                            "generato",
-                            admin_id,
-                        )
-                    )
+                    # REB-406 fix round 1, M10: the same write `write_framework` makes
+                    # for a match whose letter waits on a cancelled or refused one --
+                    # `create` already holds the freelancer's row lock `write_framework`
+                    # assumes.
+                    documents.append(self.write_framework(freelancer.id, admin_id))
             match = Match(
                 freelancer_id=freelancer.id,
                 company_id=company.id,
@@ -485,6 +478,20 @@ class MatchService:
             **self._signing_fields(today),
         }
 
+    def _letter_party_fields(
+        self, user: User, fiscal: FreelancerFiscal, signed: date | None
+    ) -> dict[str, Value]:
+        """A letter's own fields that must always be today's, not the draft's: the
+        framework agreement's signature date, the freelancer's name and VAT number.
+        Shared by `_lettera_data` (`create`) and `data_for_sending` (a send), so a
+        field added to one cannot print stale data on the other (REB-406 fix round 1,
+        M9)."""
+        return {
+            "data-contratto-quadro": italian_date(signed) if signed is not None else None,
+            "professionista-nome": _full_name(user),
+            "professionista-piva": fiscal.partita_iva,
+        }
+
     def _lettera_data(
         self,
         user: User,
@@ -499,9 +506,7 @@ class MatchService:
             **self._rebase_fields(),
             **data.lettera.to_fields(),
             "numero": numero,
-            "data-contratto-quadro": italian_date(signed) if signed is not None else None,
-            "professionista-nome": _full_name(user),
-            "professionista-piva": fiscal.partita_iva,
+            **self._letter_party_fields(user, fiscal, signed),
             "cliente-ragione-sociale": data.cliente.cliente_ragione_sociale,
             "cliente-piva": data.cliente.cliente_piva,
             "cliente-sede": data.cliente.cliente_sede,
@@ -551,16 +556,16 @@ class MatchService:
         return {
             **document.data,
             **self._rebase_fields(),
-            "data-contratto-quadro": italian_date(signed) if signed is not None else None,
-            "professionista-nome": _full_name(user),
-            "professionista-piva": fiscal.partita_iva,
+            **self._letter_party_fields(user, fiscal, signed),
             **self._signing_fields(today),
         }
 
     def write_framework(self, freelancer_id: UUID, admin_id: UUID) -> ContractDocument:
-        """A new framework agreement, added and flushed and not committed, for a match
-        whose letter waits on one that was cancelled or refused: «Invia per la firma»
-        writes it and sends it in one transaction (REB-387 phase 3)."""
+        """A new framework agreement, added and flushed and not committed: written by
+        `create` for a fresh draft, and by `SigningService._framework_to_send` for a
+        match whose letter waits on one that was cancelled or refused, sent in the same
+        transaction (REB-406 fix round 1, M10: one write, two callers). The caller must
+        already hold the freelancer's row lock (REB-406 fix round 1, M8)."""
         renderer = self._renderer()
         freelancer, user = self._freelancer(freelancer_id)
         fiscal = self._fiscal(freelancer.id)

@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import SendReport
-from rebase_core.contracts.fields import ContractFailed, Value
+from rebase_core.contracts.fields import ContractFailed, Value, signer_data
 from rebase_core.contracts.render import Renderer
 from rebase_core.documenso import DocumensoClient, fields_from_blanks
 from rebase_core.errors import InvalidState, NotFound, SigningUnavailable
@@ -101,13 +101,23 @@ class SigningService:
         documenso: DocumensoClient | None = None,
         sender: EmailSender | None = None,
         signer: Mapping[str, Value] | None = None,
+        signer_json: str = "",
         contracts_mail: str = DEFAULT_CONTRACTS_MAIL,
         allow_draft: bool = False,
         today: Callable[[], date] = rome_today,
         now: Callable[[], datetime] = utcnow,
     ) -> None:
         """Each collaborator is needed only by the steps that use it: a webhook that
-        cancels a document needs no renderer, a draft's cancellation no Documenso."""
+        cancels a document needs no renderer, a draft's cancellation no Documenso.
+
+        `signer` is the resolved mapping, for tests that already have one (including an
+        explicit `{}`, which the caller means literally: no signer, and no
+        `REBASE_SIGNER_JSON` to fall back on). `signer_json` is the raw setting, read
+        and cached on first use by a path that actually typesets a document (`_dispatch`,
+        `_framework_to_send`), never here: this constructor runs for every `SigningDep`
+        route (a future cancel, refresh or the webhook among them), and a malformed
+        value must 503 only the send it breaks, not a route that never reaches a
+        renderer (REB-406 fix round 1, I1)."""
         self.session = session
         self.renderer = renderer
         self.documenso = documenso
@@ -116,7 +126,9 @@ class SigningService:
         self.allow_draft = allow_draft
         self.today = today
         self.now = now
-        self.matches = MatchService(session, renderer, signer, today)
+        self._signer_json = signer_json
+        self._signer_cache: Mapping[str, Value] | None = signer
+        self.matches = MatchService(session, renderer, signer or {}, today)
 
     # ---- «Invia per la firma» ---------------------------------------------------------
 
@@ -134,9 +146,7 @@ class SigningService:
             # The freelancer's row first, as `MatchService.create` already does, so
             # «Crea match» racing this send waits for it rather than reading a framework
             # this send is about to dispatch as still merely `generato`.
-            self.session.execute(
-                select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
-            )
+            self._lock_freelancer(freelancer_id)
             match = self._lock_match(match_id)
             if match.stato not in ("bozza", "in_firma"):
                 raise InvalidState(
@@ -183,7 +193,9 @@ class SigningService:
     def _framework_to_send(self, freelancer_id: UUID, admin_id: UUID) -> ContractDocument | None:
         """The framework agreement a waiting letter needs, locked: none when one is out for
         signature already (the letter leaves after it), the one generated for a draft,
-        else a new one, written now because the last was cancelled or refused."""
+        else a new one, written now because the last was cancelled or refused. The
+        caller must already hold the freelancer's row lock."""
+        self._signer()
         pending = pending_framework(self.session, freelancer_id)
         if pending is None:
             return self.matches.write_framework(freelancer_id, admin_id)
@@ -201,7 +213,11 @@ class SigningService:
     ) -> None:
         """Typeset `document` as it leaves, hand it to Documenso and record the envelope,
         inside the caller's transaction: nothing here commits, so a refusal at any step
-        leaves the document as it was."""
+        leaves the document as it was. The caller must already hold the freelancer's row
+        lock. If `get` or `distribute` fails after `create` already left an envelope on
+        Documenso, a best-effort cancel follows it (`_cancel_orphan`, REB-406 fix round
+        1, M11), so a retried send does not pile up drafts under the same externalId."""
+        self._signer()
         renderer, documenso = self._renderer(), self._documenso()
         name = DOCUMENT_BY_KIND[document.kind]
         data = self.matches.data_for_sending(document, self.today(), framework)
@@ -221,8 +237,12 @@ class SigningService:
             signer_name=_full_name(user),
             fields=fields,
         )
-        envelope = documenso.get(envelope_id)
-        signing_url = documenso.distribute(envelope_id)
+        try:
+            envelope = documenso.get(envelope_id)
+            signing_url = documenso.distribute(envelope_id)
+        except Exception:
+            self._cancel_orphan(documenso, envelope_id)
+            raise
         document.data = dict(data)
         document.pdf = rendered.pdf
         document.text_version = rendered.version
@@ -233,6 +253,17 @@ class SigningService:
         document.stato = "inviato"
         document.sent_at = self.now()
         document.sent_by = sent_by
+
+    def _cancel_orphan(self, documenso: DocumensoClient, envelope_id: str) -> None:
+        """`get` or `distribute` failed after `create` already left an envelope on
+        Documenso: a best-effort cancel, so a retried send does not pile up drafts under
+        the same externalId. A failure of this cancel (a still-draft envelope refuses
+        one, probe § 4) is logged and never raised over the failure the admin already
+        sees (REB-406 fix round 1, M11)."""
+        try:
+            documenso.cancel(envelope_id, "invio non completato: annullo l'envelope orfano")
+        except Exception:
+            _log.warning("could not cancel the orphaned envelope %s", envelope_id, exc_info=True)
 
     def _mail_signing_request(self, document: ContractDocument) -> bool:
         """After the commit: a refused mail leaves the document `inviato`, and says so."""
@@ -249,10 +280,29 @@ class SigningService:
 
     # ---- plumbing ----------------------------------------------------------------------
 
+    def _signer(self) -> Mapping[str, Value]:
+        """`REBASE_SIGNER_JSON`, parsed once and cached, and only from here: the two
+        paths that typeset (`_dispatch`, `_framework_to_send`) call this before they
+        read `self.matches.signer`, so a malformed value 503s the send it actually
+        breaks and nothing else (REB-406 fix round 1, I1)."""
+        if self._signer_cache is None:
+            self._signer_cache = signer_data(self._signer_json)
+            self.matches.signer = self._signer_cache
+        return self._signer_cache
+
+    def _lock_freelancer(self, freelancer_id: UUID) -> None:
+        """The freelancer's row, locked until this transaction ends: every other lock
+        below (`_lock`, `_lock_match`, `_lock_letter`) and `MatchService.write_framework`
+        assume the caller already took this one first (REB-406 fix round 1, M8)."""
+        self.session.execute(
+            select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
+        )
+
     def _lock(self, document_id: UUID) -> ContractDocument:
         """The document, row-locked until this transaction ends, and read again from the
         database rather than from the session's memory: another transaction may have
-        moved it while this one waited."""
+        moved it while this one waited. The caller must already hold the freelancer's
+        row lock (`_lock_freelancer`)."""
         document = self.session.scalars(
             select(ContractDocument)
             .where(ContractDocument.id == document_id)
@@ -264,6 +314,7 @@ class SigningService:
         return document
 
     def _lock_match(self, match_id: UUID) -> Match:
+        """The caller must already hold the freelancer's row lock (`_lock_freelancer`)."""
         match = self.session.scalars(
             select(Match)
             .where(Match.id == match_id)
@@ -275,6 +326,7 @@ class SigningService:
         return match
 
     def _lock_letter(self, match_id: UUID) -> ContractDocument | None:
+        """The caller must already hold the freelancer's row lock (`_lock_freelancer`)."""
         return self.session.scalars(
             select(ContractDocument)
             .where(ContractDocument.match_id == match_id)

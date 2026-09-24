@@ -389,4 +389,35 @@ describe('«Crea match» in five steps (REB-387)', () => {
     expect(creates).toHaveLength(1)
     expect(tries).toBe(2)
   })
+
+  it('stays on the preview and points at «Match e contratti» when the signing mail did not leave (REB-406 fix round 1, I2)', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': pdf,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=quadro': pdf,
+      'POST /api/hub/freelancers/f1/matches': { id: 'm1' },
+      'POST /api/hub/matches/m1/send': {
+        match: { id: 'm1', lettera: { numero: '2026-001' } },
+        inviato: 'quadro',
+        mail_inviata: false,
+      },
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(await screen.findByRole('button', { name: 'Genera l’anteprima' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma' }))
+
+    expect(
+      await screen.findByText(
+        'Partito il contratto quadro: la lettera n. 2026-001 partirà da sola dopo la sua firma. La mail però non è partita: usa «Reinvia email».',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Invia per la firma' })).toBeInTheDocument()
+    expect(screen.queryByText('pagina contratti')).toBeNull()
+    const link = screen.getByRole('link', { name: 'Vai a Match e contratti' })
+    expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/contracts$/)
+  })
 })

@@ -147,9 +147,14 @@ describe('«Match e contratti» (REB-387)', () => {
       '/api/hub/contract-documents/d1/pdf?firmato=true',
     )
     // A framework agreement never leaves on its own: it goes with a match, not with the
-    // framework section, so «Invia per la firma» sits on the match's own row instead.
+    // framework section, so «Invia per la firma» sits on the match's own row instead
+    // (REB-406 fix round 1, M2: scoped to the row, so a button that landed in the
+    // fiscal section or the header would still fail this).
     expect(within(section).queryByRole('button', { name: /Invia per la firma/ })).toBeNull()
-    expect(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio' })).toBeInTheDocument()
+    const row = screen.getByRole('row', { name: /Rossi Studio/ })
+    expect(
+      within(row).getByRole('button', { name: 'Invia per la firma il match con Rossi Studio' }),
+    ).toBeInTheDocument()
   })
 
   it('lists the matches with their letter and cancels a draft after asking', async () => {

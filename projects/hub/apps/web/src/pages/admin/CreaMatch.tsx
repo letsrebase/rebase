@@ -20,6 +20,7 @@ import {
   clienteForm,
   draftFromFiscal,
   letteraForm,
+  sendReportMessage,
   toCliente,
   toFiscalData,
   toLettera,
@@ -302,6 +303,8 @@ function PreviewStep({
   sending,
   locked,
   failure,
+  sentMessage,
+  freelancerId,
 }: {
   previews: Previews
   prefill: MatchPrefill
@@ -312,6 +315,8 @@ function PreviewStep({
   sending: boolean
   locked: boolean
   failure: Failure | null
+  sentMessage: string | null
+  freelancerId: string
 }) {
   const order = prefill.quadro_necessario
     ? 'Con la firma elettronica partirà per primo il contratto quadro; la lettera di incarico aspetterà la sua firma e partirà da sola subito dopo.'
@@ -354,6 +359,18 @@ function PreviewStep({
         <p role="alert" className="text-sm text-destructive">
           {failure.message}
         </p>
+      )}
+      {sentMessage && (
+        <div role="status" className="space-y-1 text-sm">
+          <p>{sentMessage}</p>
+          <Link
+            to="/admin/freelance/$id/contracts"
+            params={{ id: freelancerId }}
+            className="underline underline-offset-2"
+          >
+            Vai a Match e contratti
+          </Link>
+        </div>
       )}
     </div>
   )
@@ -433,13 +450,23 @@ export function AdminCreaMatch() {
   // «Invia per la firma» writes the match first, once: after a refusal the draft exists,
   // and the next click sends that one rather than writing another with a new number.
   const [created, setCreated] = useState<Match | null>(null)
+  // I2 (fix round 1): a refused mail (`mail_inviata: false`) stays on step 5 with the
+  // report's own sentence and a link onward, so the admin sees it rather than land on
+  // «Match e contratti» none the wiser that the freelancer never got the link.
+  const [sentMessage, setSentMessage] = useState<string | null>(null)
   const sendNow = useMutation({
     mutationFn: async (payload: MatchCreate) => {
       const match = created ?? (await admin.createMatch(id, payload))
       setCreated(match)
       return admin.sendMatch(match.id)
     },
-    onSuccess: () => void navigate({ to: '/admin/freelance/$id/contracts', params: { id } }),
+    onSuccess: (report) => {
+      if (report.mail_inviata === false) {
+        setSentMessage(sendReportMessage(report))
+        return
+      }
+      void navigate({ to: '/admin/freelance/$id/contracts', params: { id } })
+    },
   })
   const sendFailure = failureOf(sendNow.error, 'Non riesco a inviare per la firma.')
   const previewFailure =
@@ -542,6 +569,7 @@ export function AdminCreaMatch() {
               if (body) save.mutate(body)
             }}
             onSend={() => {
+              setSentMessage(null)
               const body = payload()
               if (body) sendNow.mutate(body)
             }}
@@ -549,6 +577,8 @@ export function AdminCreaMatch() {
             sending={sendNow.isPending}
             locked={created !== null}
             failure={previewFailure}
+            sentMessage={sentMessage}
+            freelancerId={id}
           />
         )}
       </div>

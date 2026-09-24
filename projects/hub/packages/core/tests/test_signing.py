@@ -12,12 +12,12 @@ from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
 from sqlalchemy import Engine, select, text
 from sqlalchemy.orm import Session
-from test_matches import SIGNER, TODAY, _body, _framework, _setup
+from test_matches import SIGNER, TABLES, TODAY, _body, _documents, _framework, _setup
 
 from rebase_core import signing as signing_module
 from rebase_core.audit import AdminActionService
 from rebase_core.contract_schemas import FiscalData, MatchRead, SendReport
-from rebase_core.contracts.fields import Value
+from rebase_core.contracts.fields import ContractFailed, Value
 from rebase_core.contracts.render import Renderer
 from rebase_core.db import session_factory
 from rebase_core.errors import DocumensoFailed, InvalidState, SigningUnavailable
@@ -31,20 +31,6 @@ from rebase_core.signing import SigningService
 SIGNED_AT = datetime(2026, 9, 30, 23, 30, tzinfo=UTC)
 NOW = datetime(2026, 9, 23, 10, 0, tzinfo=UTC)
 CONTRACTS_MAIL = "contratti@rebase.test"
-# "signups" is here (Global Constraints' truncation list) so this fixture clears the same
-# tables in the same order `test_matches.py`'s own `clean` does.
-TABLES = (
-    "admin_actions",
-    "contract_documents",
-    "matches",
-    "contract_letter_counters",
-    "freelancer_fiscal",
-    "comments",
-    "freelancers",
-    "companies",
-    "users",
-    "signups",
-)
 
 
 class RefusingSender:
@@ -108,22 +94,11 @@ def _signing(
     )
 
 
-def _documents(
-    session: Session, freelancer_id: UUID, kind: str | None = None
-) -> list[ContractDocument]:
-    session.expire_all()
-    stmt = select(ContractDocument).where(ContractDocument.freelancer_id == freelancer_id)
-    if kind is not None:
-        stmt = stmt.where(ContractDocument.kind == kind)
-    return list(session.scalars(stmt.order_by(ContractDocument.created_at, ContractDocument.id)))
-
-
 def _framework_of(session: Session, freelancer_id: UUID) -> ContractDocument:
     return _documents(session, freelancer_id, "quadro")[-1]
 
 
 def _letter_of(session: Session, match_id: UUID) -> ContractDocument:
-    session.expire_all()
     return session.scalars(
         select(ContractDocument).where(ContractDocument.match_id == match_id)
     ).one()
@@ -161,6 +136,9 @@ def test_the_first_send_hands_documenso_the_framework_and_the_letter_waits(
     assert [field["type"] for field in fields] == ["DATE", "SIGNATURE", "SIGNATURE"]
     assert envelope.payload["recipients"][0]["email"] == "ada@studio.it"
     assert renderer.signing[-1] is True
+    # The blanks Documenso's fields come from are read off the signing copy, the same
+    # one just typeset (REB-406 fix round 1, M4).
+    assert renderer.blanks_signing[-1] is True
     [mail] = sender.sent
     assert (mail.to, mail.subject) == ("ada@studio.it", "Da firmare: contratto quadro rebase")
     assert quadro.signing_url in mail.text
@@ -210,6 +188,15 @@ def test_with_an_active_framework_the_letter_leaves_and_cites_its_signature(
     assert [mail.subject for mail in sender.sent] == [
         f"Da firmare: lettera di incarico n. {letter.numero}"
     ]
+    # Spec § 1h, proven on the sent copy itself (REB-406 fix round 1, M3): what rebase
+    # agreed with the client (the request's 777.77 a day) reaches neither the data
+    # handed to the renderer nor the mail that tells the freelancer to sign.
+    document, data = renderer.calls[-1]
+    assert document == "lettera-di-incarico"
+    assert not any("budget" in key for key in data)
+    assert "777.77" not in str(list(data.values()))
+    [mail] = sender.sent
+    assert "budget" not in mail.text and "777.77" not in mail.text
 
 
 def test_a_letter_waiting_on_a_framework_already_out_for_signature_sends_nothing_new(
@@ -275,9 +262,11 @@ def test_a_draft_text_never_leaves(clean: Session) -> None:
     renderer, fake, sender = FakeRenderer(draft=True), FakeDocumenso(), RecordingSender()
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
 
-    with pytest.raises(InvalidState, match="ancora una bozza"):
+    with pytest.raises(InvalidState, match="ancora una bozza") as caught:
         _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
 
+    # The way out is named too (REB-406 fix round 1, M6).
+    assert "REBASE_CONTRACTS_ALLOW_DRAFT" in caught.value.message
     assert fake.calls == [] and sender.sent == []
     assert _matches(clean, renderer).get(match.id).stato == "bozza"
     assert _framework_of(clean, freelancer_id).stato == "generato"
@@ -300,7 +289,7 @@ def test_a_draft_text_leaves_on_the_preview_when_the_setting_allows_it(clean: Se
     assert quadro.testo_bozza is True
     assert quadro.stato == "inviato"
     [envelope] = fake.envelopes.values()
-    assert envelope.pdf.startswith(b"%PDF-")
+    assert envelope.pdf == quadro.pdf == b"%PDF-1.7 fake contratto-quadro"
 
 
 def test_without_rebases_signer_nothing_leaves(clean: Session) -> None:
@@ -478,3 +467,109 @@ def test_a_crea_match_racing_a_send_waits_for_it_and_does_not_annul_the_framewor
     assert isinstance(second, MatchRead)
     assert second.lettera.stato == "in_attesa"
     assert [d.stato for d in _documents(clean, freelancer_id, "quadro")] == ["inviato"]
+
+
+def test_a_malformed_signer_setting_does_not_break_construction_or_a_read(clean: Session) -> None:
+    """REB-406 fix round 1, I1 (a): a malformed REBASE_SIGNER_JSON must not turn every
+    `SigningDep` route into a 503, only the one that actually typesets. Building the
+    service, and a plain read through it, must both work."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+
+    signing = SigningService(
+        clean,
+        renderer=renderer,
+        documenso=fake.client(),
+        sender=RecordingSender(),
+        signer_json="{not json",
+        contracts_mail=CONTRACTS_MAIL,
+        today=lambda: TODAY,
+        now=lambda: NOW,
+    )
+
+    assert signing.matches.get(match.id).stato == "bozza"
+
+
+def test_a_malformed_signer_setting_503s_only_the_send_it_breaks(clean: Session) -> None:
+    """REB-406 fix round 1, I1 (b): parsed lazily, so the refusal names the setting only
+    once a document is actually about to be typeset -- Documenso is never even called."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    signing = SigningService(
+        clean,
+        renderer=renderer,
+        documenso=fake.client(),
+        sender=RecordingSender(),
+        signer_json="{not json",
+        contracts_mail=CONTRACTS_MAIL,
+        today=lambda: TODAY,
+        now=lambda: NOW,
+    )
+
+    with pytest.raises(ContractFailed) as caught:
+        signing.send_match(match.id, admin_id)
+
+    assert "REBASE_SIGNER_JSON" in caught.value.message
+    assert fake.calls == []
+
+
+def test_an_empty_signer_setting_still_refuses_to_send_with_blank_signer_fields(
+    clean: Session,
+) -> None:
+    """REB-406 fix round 1, I1 (c): the lazy path (`signer_json=""`, the default) 503s
+    exactly as the eager one already did (`test_without_rebases_signer_nothing_leaves`,
+    an explicit `signer={}`) -- it never sends a document with blank signer fields."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    signing = SigningService(
+        clean,
+        renderer=renderer,
+        documenso=fake.client(),
+        sender=RecordingSender(),
+        contracts_mail=CONTRACTS_MAIL,
+        today=lambda: TODAY,
+        now=lambda: NOW,
+    )
+
+    with pytest.raises(SigningUnavailable, match="REBASE_SIGNER_JSON") as caught:
+        signing.send_match(match.id, admin_id)
+
+    assert "rebase-sede" in caught.value.message
+    assert fake.calls == []
+
+
+def test_a_refused_distribute_cancels_the_orphaned_envelope(
+    clean: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """REB-406 fix round 1, M11: `get` succeeds (the envelope already exists on
+    Documenso, as after a real create) and this test then moves it to `PENDING` itself,
+    simulating Documenso having processed the distribute server-side even though the
+    client's own parsing of the answer fails -- `FakeDocumenso.cancel` (probe § 4: only
+    a `PENDING` envelope accepts one) would otherwise refuse a cancel just as the real
+    API would for a still-`DRAFT` envelope, which `fake.fail('distribute', ...)` alone
+    never advances past. The fix's best-effort cancel succeeds here, and the original
+    refusal is still what reaches the admin."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    real_get = fake._get
+
+    def get_then_mark_pending(envelope_id: str) -> tuple[int, bytes]:
+        status, body = real_get(envelope_id)
+        fake.envelopes[envelope_id].status = "PENDING"
+        return status, body
+
+    monkeypatch.setattr(fake, "_get", get_then_mark_pending)
+    fake.fail("distribute", 400, "Recipient is missing a signature field")
+
+    with pytest.raises(DocumensoFailed) as caught:
+        _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
+
+    assert caught.value.message == (
+        "Documenso ha rifiutato la richiesta: Recipient is missing a signature field"
+    )
+    [envelope] = fake.envelopes.values()
+    assert envelope.status == "CANCELLED"

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_renderer, get_sender
+from rebase_api.deps import get_renderer
 from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
 from rebase_core.models import User
@@ -51,13 +51,6 @@ TABLES = (
     "users",
     "signups",
 )
-
-
-@pytest.fixture
-def sender(client: TestClient) -> Iterator[RecordingSender]:
-    recording = RecordingSender()
-    client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
-    yield recording
 
 
 @pytest.fixture

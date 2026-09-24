@@ -12,21 +12,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_documenso, get_renderer, get_sender
+from rebase_api.deps import get_documenso, get_renderer
 from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
 from rebase_core.models import User
 
 CONTRACTS_MAIL = "contratti@rebase.test"
-
-
-@pytest.fixture
-def sender(client: TestClient) -> Iterator[RecordingSender]:
-    """Not imported from `test_matches_api`: a fixture ruff would flag as redefined
-    wherever a test's own parameter list also names it, which every test here does."""
-    recording = RecordingSender()
-    client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
-    yield recording
 
 
 @pytest.fixture
@@ -142,7 +133,11 @@ def test_a_soft_deleted_freelancers_match_cannot_be_sent(
     api_session: Session,
 ) -> None:
     """REB-406 controller ruling: the send route checks `_require_live_freelancer`
-    exactly as `cancel_match` already does, before calling the service."""
+    exactly as `cancel_match` already does, before calling the service. REB-406 fix
+    round 1, M1: the service itself would eventually answer a NotFound too (once
+    `_dispatch` reads the freelancer), so the exact sentence -- naming the match, the
+    guard's own entity, not the freelancer -- is what proves the guard, not the
+    service's own lookup, is what actually stopped this."""
     match = draft_match(client, sender)
     api_session.execute(
         text("UPDATE freelancers SET deleted_at = now() WHERE id = :id"),
@@ -153,4 +148,5 @@ def test_a_soft_deleted_freelancers_match_cannot_be_sent(
     answered = client.post(f"/api/hub/matches/{match['id']}/send")
 
     assert answered.status_code == 404
+    assert answered.json() == {"detail": f"match {match['id']} non trovato"}
     assert documenso.created() == []

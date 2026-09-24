@@ -11,7 +11,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.analytics import Tracker, tracker_from_settings
 from rebase_core.config import Settings, get_settings
-from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.documenso import DocumensoClient, client_from_settings
@@ -132,10 +131,11 @@ def get_signing_factory(
 ) -> SigningFactory:
     """`SigningService` as this environment configures it, for any session: the
     request's own, or the one a background task opens for itself (the webhook's).
-    `REBASE_SIGNER_JSON` is read inside `build`, not here: this factory itself runs on
-    every request a signing route takes, and a malformed value must not turn a route
-    that never typesets (a future cancel or webhook) into a 503 (REB-406 controller
-    ruling)."""
+    `REBASE_SIGNER_JSON` is handed to `SigningService` as the raw setting, unparsed:
+    `build` runs for every route behind `SigningDep` (a future cancel, refresh, resend
+    or the webhook among them), so parsing it here would 503 all of them on a malformed
+    value. `SigningService` itself parses it once, lazily, only where a document is
+    about to be typeset (REB-406 fix round 1, I1)."""
 
     def build(session: Session) -> SigningService:
         return SigningService(
@@ -143,7 +143,7 @@ def get_signing_factory(
             renderer=renderer,
             documenso=documenso,
             sender=sender,
-            signer=signer_data(settings.signer_json),
+            signer_json=settings.signer_json,
             contracts_mail=settings.contracts_mail,
             allow_draft=settings.contracts_allow_draft,
         )
