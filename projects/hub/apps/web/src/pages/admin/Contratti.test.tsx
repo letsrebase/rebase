@@ -105,8 +105,13 @@ function mount(path: string) {
     path: '/admin/freelance/$id',
     component: () => <p>scheda</p>,
   })
+  const nuovoMatch = createRoute({
+    getParentRoute: () => signedIn,
+    path: '/admin/freelance/$id/match/new',
+    component: () => <p>nuovo match</p>,
+  })
   const router = createRouter({
-    routeTree: root.addChildren([signedIn.addChildren([contratti, card])]),
+    routeTree: root.addChildren([signedIn.addChildren([contratti, card, nuovoMatch])]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   render(
@@ -213,5 +218,12 @@ describe('«Match e contratti» (REB-387)', () => {
     expect(await screen.findByText('Nessun contratto quadro: lo genera il primo match.')).toBeInTheDocument()
     expect(screen.getByText('Nessun match per questa persona.')).toBeInTheDocument()
     expect(screen.getByLabelText('Codice fiscale')).toHaveValue('')
+  })
+
+  it('starts a new match from the page', async () => {
+    routeFetch({ 'GET /api/hub/freelancers/f1': PERSON, 'GET /api/hub/freelancers/f1/matches': PAGE })
+    mount('/admin/freelance/f1/contracts')
+    const link = await screen.findByRole('link', { name: 'Crea match' })
+    expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/match\/new$/)
   })
 })

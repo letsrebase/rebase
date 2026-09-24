@@ -211,6 +211,11 @@ function mount(path: string) {
     path: '/admin/freelance/$id/contracts',
     component: () => <p>contratti</p>,
   })
+  const nuovoMatch = createRoute({
+    getParentRoute: () => signedIn,
+    path: '/admin/freelance/$id/match/new',
+    component: () => <p>nuovo match</p>,
+  })
   const companies = createRoute({
     getParentRoute: () => signedIn,
     path: '/admin/companies',
@@ -233,7 +238,7 @@ function mount(path: string) {
   })
   const router = createRouter({
     routeTree: root.addChildren([
-      signedIn.addChildren([talent, talentLead, freelanceDetail, contratti, companies, companiesDetail]),
+      signedIn.addChildren([talent, talentLead, freelanceDetail, contratti, nuovoMatch, companies, companiesDetail]),
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
@@ -840,5 +845,14 @@ describe('the talent row menu and the card link to its contracts (REB-387)', () 
     mount('/admin/freelance/f2')
     const link = await screen.findByRole('link', { name: 'Match e contratti' })
     expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f2\/contracts$/)
+  })
+
+  it('offers «Crea match» first in a card row menu', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 1, items: [CARD_TALENTO], per_stato: {} }))
+    mount('/admin/talent')
+    await userEvent.click(await screen.findByRole('button', { name: 'Azioni per Ada Lovelace' }))
+    const items = await screen.findAllByRole('menuitem')
+    expect(items.map((item) => item.textContent)).toEqual(['Crea match', 'Match e contratti'])
+    expect(items[0]!.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/match\/new$/)
   })
 })

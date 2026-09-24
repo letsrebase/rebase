@@ -55,6 +55,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T
 }
 
+/** A file the API answers, a preview PDF: the same error handling as `request`. */
+async function requestBlob(path: string, init: RequestInit = {}): Promise<Blob> {
+  const response = await fetch(path, { credentials: 'same-origin', ...init })
+  if (!response.ok) await fail(response)
+  return response.blob()
+}
+
 const json = (body: unknown): RequestInit => ({
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -509,6 +516,70 @@ export interface FreelancerContracts {
   fiscale: Fiscal | null
 }
 
+/** The letter's text fields, in the order `lettera-di-incarico.md` asks for them and the
+ *  server's `LETTERA_TEXT_FIELDS` lists them. */
+export const LETTERA_TEXT_KEYS = [
+  'ruolo',
+  'attivita',
+  'risultati',
+  'accettazione',
+  'impegno',
+  'periodo_verifica',
+  'luogo',
+  'coordinamento',
+  'referente_cliente',
+  'referente_rebase',
+  'modalita',
+  'unita',
+  'lavoro_extra',
+  'spese',
+  'scadenze_fatturazione',
+  'dati_personali',
+  'dati_finalita',
+  'dati_categorie',
+  'dati_interessati',
+  'dati_autorizzazione',
+  'esclusiva',
+  'portfolio',
+  'assicurazione',
+  'altre_condizioni',
+  'rapporti_precedenti',
+] as const
+export type LetteraTextKey = (typeof LETTERA_TEXT_KEYS)[number]
+
+/** What `LetteraFields` takes: an empty text field is `null` and prints a blank line. */
+export type Lettera = Record<LetteraTextKey, string | null> & {
+  data_inizio: string
+  data_fine: string | null
+  compenso: string
+  giorni_pagamento: number
+  fine_mese: boolean
+  giorni_preavviso: number | null
+}
+export type LetteraDraft = { [K in keyof Lettera]: Lettera[K] | null }
+
+export interface Cliente {
+  cliente_ragione_sociale: string
+  cliente_piva: string
+  cliente_sede: string
+}
+export type ClienteDraft = { [K in keyof Cliente]: string | null }
+
+export interface MatchCreate {
+  company_id: string
+  cliente: Cliente
+  lettera: Lettera
+}
+
+export interface MatchPrefill {
+  fiscale: Fiscal | null
+  cliente: ClienteDraft
+  lettera: LetteraDraft
+  quadro_attivo: ContractDocument | null
+  quadro_necessario: boolean
+  lettera_in_attesa: boolean
+}
+
 /** Every value in `params` that is not `undefined` or `""`, as a query string: the two
  *  list endpoints below send exactly the filters an admin actually set, rather than
  *  the fixed `limit=500` that fetched everything in one page before REB-285/286 gave
@@ -664,6 +735,16 @@ export const admin = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }),
+  matchPrefill: (freelancerId: string, companyId: string) =>
+    request<MatchPrefill>(
+      `/api/hub/freelancers/${freelancerId}/matches/prefill?company_id=${encodeURIComponent(companyId)}`,
+    ),
+  /** Step 5's preview: a PDF typeset now and saved nowhere. */
+  matchPreview: (freelancerId: string, payload: MatchCreate, documento: 'lettera' | 'quadro') =>
+    requestBlob(`/api/hub/freelancers/${freelancerId}/matches/preview?documento=${documento}`, json(payload)),
+  /** «Salva come bozza»: the draft match with its numbered letter. */
+  createMatch: (freelancerId: string, payload: MatchCreate) =>
+    request<Match>(`/api/hub/freelancers/${freelancerId}/matches`, json(payload)),
   cancelMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/cancel`, { method: 'POST' }),
   closeMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/close`, { method: 'POST' }),
   /** A plain href, like `cvUrl`: the route answers an attachment behind the cookie. */

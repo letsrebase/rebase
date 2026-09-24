@@ -274,7 +274,13 @@ export function AdminContratti() {
         : null
   return (
     <>
-      <Header title={name ? `Match e contratti · ${name}` : 'Match e contratti'} />
+      <Header title={name ? `Match e contratti · ${name}` : 'Match e contratti'}>
+        <Button asChild size="sm">
+          <Link to="/admin/freelance/$id/match/new" params={{ id }}>
+            Crea match
+          </Link>
+        </Button>
+      </Header>
       <FrameworkSection quadro={data.quadro} />
       <FiscalSection freelancerId={id} fiscale={data.fiscale} onSaved={refresh} />
       <MatchesSection

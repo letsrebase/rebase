@@ -477,6 +477,11 @@ function TalentoMenu({ id, label }: { id: string; label: string }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem asChild>
+          <Link to="/admin/freelance/$id/match/new" params={{ id }}>
+            Crea match
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
           <Link to="/admin/freelance/$id/contracts" params={{ id }}>
             Match e contratti
           </Link>
