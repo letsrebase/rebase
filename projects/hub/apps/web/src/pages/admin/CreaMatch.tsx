@@ -348,6 +348,7 @@ export function AdminCreaMatch() {
   const person = useQuery({ queryKey: ['freelancer', id], queryFn: () => admin.freelancer(id) })
   const [step, setStep] = useState(0)
   const [company, setCompany] = useState<Company | null>(null)
+  const [prefillFor, setPrefillFor] = useState<string | null>(null)
   const [prefill, setPrefill] = useState<MatchPrefill | null>(null)
   const [fiscal, setFiscal] = useState<FiscalDraft>(FISCAL_EMPTY)
   const [cliente, setCliente] = useState<ClienteForm>(CLIENTE_EMPTY)
@@ -365,8 +366,9 @@ export function AdminCreaMatch() {
 
   const loadPrefill = useMutation({
     mutationFn: (companyId: string) => admin.matchPrefill(id, companyId),
-    onSuccess: (data) => {
+    onSuccess: (data, companyId) => {
       setPrefill(data)
+      setPrefillFor(companyId)
       setFiscal(draftFromFiscal(data.fiscale))
       setCliente(clienteForm(data.cliente))
       setLettera(letteraForm(data.lettera))
@@ -424,7 +426,11 @@ export function AdminCreaMatch() {
           <CompanyStep
             selected={company}
             onSelect={setCompany}
-            onNext={() => company && loadPrefill.mutate(company.id)}
+            onNext={() => {
+              if (!company) return
+              if (prefillFor === company.id) setStep(1)
+              else loadPrefill.mutate(company.id)
+            }}
             pending={loadPrefill.isPending}
             failure={failureOf(loadPrefill.error, 'Non riesco a leggere questa richiesta.')}
           />

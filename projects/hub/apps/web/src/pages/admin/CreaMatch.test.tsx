@@ -219,4 +219,55 @@ describe('«Crea match» in five steps (REB-387)', () => {
     expect(await screen.findByLabelText('Ruolo')).toBeInTheDocument()
     await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:anteprima-1'))
   })
+
+  it('keeps an edited letter after going back to Azienda and forward with the same company (REB-402)', async () => {
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    const ruolo = await screen.findByLabelText('Ruolo')
+    await userEvent.clear(ruolo)
+    await userEvent.type(ruolo, 'Ruolo modificato')
+    await userEvent.click(screen.getByRole('button', { name: 'Indietro' })) // Lettera -> Cliente
+    await userEvent.click(screen.getByRole('button', { name: 'Indietro' })) // Cliente -> Freelance
+    await userEvent.click(screen.getByRole('button', { name: 'Indietro' })) // Freelance -> Azienda
+    expect(screen.getByText('1. Azienda')).toHaveAttribute('aria-current', 'step')
+    const prefillCallsBefore = spy.mock.calls.filter(([url]) => String(url).includes('/matches/prefill')).length
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByLabelText('Codice fiscale')).toHaveValue('LVLDAA85T50H501Z')
+    const prefillCallsAfter = spy.mock.calls.filter(([url]) => String(url).includes('/matches/prefill')).length
+    expect(prefillCallsAfter).toBe(prefillCallsBefore)
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Freelance -> Cliente
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Cliente -> Lettera
+    expect(await screen.findByLabelText('Ruolo')).toHaveValue('Ruolo modificato')
+  })
+
+  it('reloads the prefill when the company changes after going back to Azienda (REB-402)', async () => {
+    const OPEN2 = { ...OPEN, id: 'c9', nome_azienda: 'Verdi Snc', referente: 'Luca Verdi' }
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 2, items: [OPEN, OPEN2], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c9': {
+        ...prefill('900.00'),
+        cliente: { cliente_ragione_sociale: 'Verdi Snc', cliente_piva: null, cliente_sede: null },
+      },
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    expect(screen.getByLabelText('Compenso, IVA esclusa (€)')).toHaveValue('450.00')
+    await userEvent.click(screen.getByRole('button', { name: 'Indietro' })) // Lettera -> Cliente
+    await userEvent.click(screen.getByRole('button', { name: 'Indietro' })) // Cliente -> Freelance
+    await userEvent.click(screen.getByRole('button', { name: 'Indietro' })) // Freelance -> Azienda
+    await userEvent.click(await screen.findByRole('button', { name: /Verdi Snc/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByLabelText('Codice fiscale')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Freelance -> Cliente
+    expect(await screen.findByLabelText('Ragione sociale del cliente')).toHaveValue('Verdi Snc')
+  })
 })
