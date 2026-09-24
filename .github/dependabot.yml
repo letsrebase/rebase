@@ -89,8 +89,9 @@ updates:
       - dependency-name: rebase-api
       - dependency-name: rebase-mcp
 
-  # The base images of every Dockerfile. A project that ships an image adds its
-  # directory here (docs/adding-a-project.md, section 5).
+  # The base images of every Dockerfile. The updater reads only the directories
+  # listed, not their subdirectories, so a project that ships an image adds every
+  # directory holding one of its Dockerfiles (docs/adding-a-project.md, section 5).
   #
   # Images are built on the trunk and in preflight, never on a pull request (ci.yml,
   # tier 3), so a PR from this entry goes green without its image having been built.
@@ -163,7 +164,12 @@ updates:
   # The Actions every workflow uses. They are pinned by major tag (`@v4`), so what
   # arrives here is a major; one PR for all of them, since they are read together.
   # The deploy workflows run on `workflow_run`, which only ever runs the version on
-  # main, so a bump there is proven by the first deploy after the merge.
+  # main, so a bump there is proven by the first deploy after the merge. What they
+  # share with CI, the `changed-paths` artifact (`upload-artifact` in ci.yml, on push
+  # only, and `download-artifact` in each deploy), fails open: a verdict a deploy
+  # cannot read deploys the preview instead of skipping it and says so in its log
+  # («no verdict from CI run ...»). A broken bump of that pair costs extra previews,
+  # never a missed one, and production, which deploys on a tag, never reads it.
   - package-ecosystem: github-actions
     directory: /
     schedule:

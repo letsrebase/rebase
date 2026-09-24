@@ -139,9 +139,10 @@ before 2026-09-09, when each deploy carried its own grep and PigroCRM's had lost
 **`.github/dependabot.yml` learns about the project in two places.** Its Python
 packages' names join the `uv` entry's `ignore` list, since Dependabot can otherwise look
 a workspace member up on PyPI and "update" it to a stranger's package of the same name.
-And a project with a Dockerfile adds its directory under the `docker` entry, and under
-`docker-compose` too when its compose file runs an image as published (PostgreSQL,
-today). Its Node packages need nothing: they depend on each other through
+And a project with a Dockerfile adds, under the `docker` entry, every directory that
+holds one (the project root, where the existing three keep theirs; the updater does
+not look into subdirectories), and its compose file's directory under `docker-compose`
+too when that file runs an image as published (PostgreSQL, today). Its Node packages need nothing: they depend on each other through
 `workspace:*`, which Dependabot leaves alone, and the `npm` entry reads the root
 workspace the project joined in section 2.
 
