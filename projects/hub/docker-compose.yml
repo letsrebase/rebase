@@ -26,6 +26,13 @@ x-api-environment: &api-environment
   # Who signs for rebase in the contracts (REB-387): one JSON object of `rebase-*`
   # fields. Empty: those fields print as blank lines.
   REBASE_SIGNER_JSON: ${REBASE_SIGNER_JSON:-}
+  # The signing site (REB-387): Documenso's URL as this stack reaches it, this
+  # environment's own token and webhook secret, and where rebase's signed copies go.
+  # Empty URL or token: signing is off and says so.
+  REBASE_DOCUMENSO_URL: ${REBASE_DOCUMENSO_URL:-}
+  REBASE_DOCUMENSO_API_TOKEN: ${REBASE_DOCUMENSO_API_TOKEN:-}
+  REBASE_DOCUMENSO_WEBHOOK_SECRET: ${REBASE_DOCUMENSO_WEBHOOK_SECRET:-}
+  REBASE_CONTRACTS_MAIL: ${REBASE_CONTRACTS_MAIL:-ciao@letsrebase.com}
 
 services:
   db:

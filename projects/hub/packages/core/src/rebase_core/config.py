@@ -84,6 +84,20 @@ class Settings(BaseSettings):
     # public. Empty means those fields print as blank lines.
     signer_json: str = ""
 
+    # --- the signing site: Documenso (REB-387) ---------------------------------------
+    # The instance's base URL as this process reaches it (production: the compose
+    # service, `http://documenso:3000`; preview: `https://firma.letsrebase.com`), and the
+    # API token of this environment's own Documenso user and team: one user per
+    # environment, because a token reads and cancels every envelope of its user's teams
+    # (probe § 8). Either empty: signing is off and «Invia per la firma» answers 503.
+    documenso_url: str = ""
+    documenso_api_token: str = ""
+    # The secret typed into this environment's Documenso webhook, which Documenso sends
+    # verbatim as `X-Documenso-Secret`. Empty: the webhook answers 503.
+    documenso_webhook_secret: str = ""
+    # Where rebase's own copy of every signed contract is mailed.
+    contracts_mail: str = "ciao@letsrebase.com"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
