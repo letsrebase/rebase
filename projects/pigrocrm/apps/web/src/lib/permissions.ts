@@ -12,9 +12,9 @@ import type { SettingsTabValue } from '@/features/settings/tabs'
  * source: every key must name an action the core really guards, and the guard's kind
  * must match the table's minimum (a `require_admin` string cannot be listed as
  * `collaboratore`, a `require_write` string not as `admin`). Actions the SPA gates by
- * the coarse checks or does not offer a control for (restores, email drafts, the
- * timer rename) are deliberately not rows: the table lists what a named control
- * consults.
+ * the coarse checks or does not offer a control for (restores, creating or editing an
+ * email draft, the timer rename) are deliberately not rows: the table lists what a
+ * named control consults.
  *
  * A control the server gates by identity rather than role (editing one's own profile,
  * minting one's own token, connecting one's own agent) has no row here at all: absence
@@ -40,9 +40,9 @@ const RANK: Record<Role, 0 | 1 | 2> = { readonly: 0, collaboratore: 1, admin: 2 
  * `readonly` never appears as a minimum: a readonly actor may press no control in here,
  * which is the card's own rule, not an omission.
  *
- * The Gmail and Drive strings are the two Italian ones because those services build
- * the sentence themselves and surface the action inside it; every other key is the
- * English action string. The table mirrors the source exactly, in either language.
+ * The Gmail and Drive strings are the Italian ones because those services build the
+ * sentence themselves and surface the action inside it; every other key is the English
+ * action string. The table mirrors the source exactly, in either language.
  */
 export const MIN_ROLE = {
   // Vendite
@@ -103,9 +103,15 @@ export const MIN_ROLE = {
   update_deal_rate: 'admin',
   close_period: 'admin',
   reopen_period: 'admin',
-  // Impostazioni: the write behind each tab. The Gmail and Drive strings are the two
-  // Italian ones because those services build the sentence themselves and surface the
-  // action inside it; they guard with `require_write`, and the table says so. What a
+  // The Email tab: the three presses on a draft the assistant prepared (REB-415). The
+  // send and its verification are Italian strings, like the Gmail and Drive settings
+  // below, because `gmail/send.py` builds its sentence around them.
+  "inviare un'email": 'collaboratore',
+  "verificare l'esito di un'email": 'collaboratore',
+  delete_email_draft: 'collaboratore',
+  // Impostazioni: the write behind each tab. The Gmail and Drive strings are Italian
+  // because those services build the sentence themselves and surface the action
+  // inside it; they guard with `require_write`, and the table says so. What a
   // readonly person never reaches there is decided by the tab's visibility, not by
   // these rows -- see `SETTINGS_TAB_MIN_ROLE` below.
   'modificare le impostazioni Gmail': 'collaboratore',
