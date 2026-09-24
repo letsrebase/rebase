@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     pigro_api_url: str = "https://pigro.letsrebase.com"
     pigro_registry_token: str = ""
 
+    # --- the contracts (REB-387) -----------------------------------------------------
+    # Who signs for rebase, as the `rebase-*` fields of the framework agreement and the
+    # letter: one JSON object, e.g. {"rebase-rappresentante": "Nome Cognome"}, read over
+    # the package's own `rebase.json`. The server's `.env` only: this repository is
+    # public. Empty means those fields print as blank lines.
+    signer_json: str = ""
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

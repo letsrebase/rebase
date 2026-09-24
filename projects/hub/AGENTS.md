@@ -24,11 +24,11 @@ products that need to agree on something agree through `shared/`.
 ## Layout
 
 ```
-packages/core/   rebase_core: models, migrations, services, the ad conversion, the perk files
+packages/core/   rebase_core: models, migrations, services, the ad conversion, the perk files, the contracts and their texts
 apps/api/        rebase_api: FastAPI, one process, its own database
 apps/mcp/        rebase_mcp: the same services over stdio or Streamable HTTP, for an admin with a token
 apps/web/        pnpm package `hub`: the SPA at letsrebase.com/hub/ (wizards, the member area, admin)
-content/         the prose a perk is made of and the contracts a member signs, reviewed as prose
+content/         the prose a perk is made of, reviewed as prose, and the contracts' example data
 tools/           the scripts that typeset that prose into PDFs
 ```
 
@@ -78,6 +78,18 @@ Markdown, the template, the palette or the typeface run
 and the `guide-pdf` preflight check rebuilds the bytes. Comparing bytes is meaningful
 only because the build is reproducible on purpose: `--creation-timestamp 0` for Typst,
 `recalcTimestamp=False` for the font instances.
+
+## The contracts are typeset at request time
+
+Since REB-387 the API writes the framework agreement and the letter of engagement itself,
+with `rebase_core.contracts`: pandoc and Typst over the Markdown in
+`packages/core/src/rebase_core/contracts/texts/`, the template beside it, and the palette
+and the typeface read from `shared/brand/` at the paths the image mirrors. So
+`Dockerfile.api` carries PigroCRM's pandoc and Typst (`test_api_image.py` holds the two
+images to one pair) and fontTools is a dependency of `rebase_core`. `rebase
+contracts-check` typesets both texts from fiction and says whether a machine can; the
+`hub-image` preflight check and CI's image job run it inside the built image. Who signs
+for rebase comes from `REBASE_SIGNER_JSON` in the host `.env`, never from the repository.
 
 ## Running it
 

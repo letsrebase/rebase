@@ -23,6 +23,9 @@ x-api-environment: &api-environment
   # reaches the container only if it is named here.
   REBASE_POSTHOG_KEY: ${REBASE_POSTHOG_KEY:-}
   REBASE_POSTHOG_HOST: ${REBASE_POSTHOG_HOST:-https://eu.i.posthog.com}
+  # Who signs for rebase in the contracts (REB-387): one JSON object of `rebase-*`
+  # fields. Empty: those fields print as blank lines.
+  REBASE_SIGNER_JSON: ${REBASE_SIGNER_JSON:-}
 
 services:
   db:

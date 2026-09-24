@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.analytics import Tracker, tracker_from_settings
 from rebase_core.config import Settings, get_settings
+from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.http import HttpCall, urllib_call
 from rebase_core.mail import EmailSender, sender_from_settings
@@ -101,3 +102,12 @@ def get_tracker(settings: SettingsDep) -> Tracker | None:
 
 
 TrackerDep = Annotated[Tracker | None, Depends(get_tracker)]
+
+
+def get_renderer() -> Renderer:
+    """The contracts' typesetter (REB-387): pandoc and Typst in the image. A dependency
+    so a test hands `FakeRenderer` and never needs either binary."""
+    return ContractRenderer()
+
+
+RendererDep = Annotated[Renderer, Depends(get_renderer)]

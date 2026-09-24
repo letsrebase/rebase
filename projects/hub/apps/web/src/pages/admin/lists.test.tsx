@@ -206,6 +206,16 @@ function mount(path: string) {
     path: '/admin/freelance/$id',
     component: AdminFreelancerDetail,
   })
+  const contratti = createRoute({
+    getParentRoute: () => signedIn,
+    path: '/admin/freelance/$id/contracts',
+    component: () => <p>contratti</p>,
+  })
+  const nuovoMatch = createRoute({
+    getParentRoute: () => signedIn,
+    path: '/admin/freelance/$id/match/new',
+    component: () => <p>nuovo match</p>,
+  })
   const companies = createRoute({
     getParentRoute: () => signedIn,
     path: '/admin/companies',
@@ -228,7 +238,7 @@ function mount(path: string) {
   })
   const router = createRouter({
     routeTree: root.addChildren([
-      signedIn.addChildren([talent, talentLead, freelanceDetail, companies, companiesDetail]),
+      signedIn.addChildren([talent, talentLead, freelanceDetail, contratti, nuovoMatch, companies, companiesDetail]),
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
@@ -814,5 +824,35 @@ describe('the Aziende list renders a request (REB-286, previously untested)', ()
     mount('/admin/companies')
     expect(await screen.findByText('Rossi Studio')).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('1')
+  })
+})
+
+describe('the talent row menu and the card link to its contracts (REB-387)', () => {
+  it('offers «Match e contratti» on a card row and no menu on a lead', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { totale: 2, items: [CARD_TALENTO, LEAD_TALENTO], per_stato: {} }),
+    )
+    mount('/admin/talent')
+    const bob = (await screen.findByText('bob@example.org')).closest('tr')!
+    expect(within(bob).queryByRole('button', { name: /Azioni per/ })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Azioni per Ada Lovelace' }))
+    const item = await screen.findByRole('menuitem', { name: 'Match e contratti' })
+    expect(item.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/contracts$/)
+  })
+
+  it('links a card to its matches and contracts from its header', async () => {
+    routeFetch({ 'GET /api/hub/freelancers/f2': COMPLETE, 'GET /api/hub/freelancers/f2/audit': [] })
+    mount('/admin/freelance/f2')
+    const link = await screen.findByRole('link', { name: 'Match e contratti' })
+    expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f2\/contracts$/)
+  })
+
+  it('offers «Crea match» first in a card row menu', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 1, items: [CARD_TALENTO], per_stato: {} }))
+    mount('/admin/talent')
+    await userEvent.click(await screen.findByRole('button', { name: 'Azioni per Ada Lovelace' }))
+    const items = await screen.findAllByRole('menuitem')
+    expect(items.map((item) => item.textContent)).toEqual(['Crea match', 'Match e contratti'])
+    expect(items[0]!.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/match\/new$/)
   })
 })

@@ -5,7 +5,7 @@ import {
   createRouter,
   redirect,
 } from '@tanstack/react-router'
-import type { CompaniesFilters, Remoto, TalentiFilters } from '@/lib/api'
+import type { CompaniesFilters, MatchesFilters, Remoto, TalentiFilters } from '@/lib/api'
 import { Shell } from '@/components/Shell'
 import { Chooser } from '@/pages/Chooser'
 import { CompanyWizard } from '@/pages/CompanyWizard'
@@ -17,6 +17,9 @@ import { AdminAgenti } from '@/pages/admin/Agenti'
 import { AdminGuard } from '@/pages/admin/AdminGuard'
 import { AdminGuida } from '@/pages/admin/Guida'
 import { AdminPigro } from '@/pages/admin/Pigro'
+import { AdminContratti } from '@/pages/admin/Contratti'
+import { AdminCreaMatch } from '@/pages/admin/CreaMatch'
+import { AdminMatches } from '@/pages/admin/Matches'
 import { Thanks } from '@/pages/Thanks'
 import {
   AdminCompanies,
@@ -264,6 +267,18 @@ const adminFreelanceDetail = createRoute({
   path: '/freelance/$id',
   component: AdminFreelancerDetail,
 })
+// REB-387: a card's matches and contracts, from the talent row's menu and the card's header.
+const adminFreelanceContracts = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/freelance/$id/contracts',
+  component: AdminContratti,
+})
+// REB-387: the five-step «Crea match», from the talent row's menu and the contracts page.
+const adminFreelanceMatchNew = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/freelance/$id/match/new',
+  component: AdminCreaMatch,
+})
 // The website's footer links to /hub/admin/freelance (ORB-106: the hub router has no
 // index route under /admin, so a signed-in admin sent to a bare /admin would see the
 // frame with an empty panel). Talent replaced the list this used to be (REB-283, then
@@ -275,6 +290,17 @@ const adminFreelanceRedirect = createRoute({
   beforeLoad: () => {
     throw redirect({ to: '/admin/talent' })
   },
+})
+// REB-413: the last addition to the milestone, listing every match the other four
+// admin pages create (Task 5-8) rather than any one card's or request's own.
+const adminMatches = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/matches',
+  component: AdminMatches,
+  validateSearch: (search: Record<string, unknown>): MatchesFilters => ({
+    stato: strParam(search.stato),
+    q: strParam(search.q),
+  }),
 })
 const adminCompanies = createRoute({
   getParentRoute: () => adminArea,
@@ -372,7 +398,10 @@ const routeTree = root.addChildren([
       adminTalentLead,
       adminTalentLeadRedirect,
       adminFreelanceDetail,
+      adminFreelanceContracts,
+      adminFreelanceMatchNew,
       adminFreelanceRedirect,
+      adminMatches,
       adminCompanies,
       adminCompaniesRedirect,
       adminCompaniesDetail,

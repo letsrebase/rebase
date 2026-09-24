@@ -33,6 +33,13 @@ def cv_response(cv: CvFile) -> Response:
     )
 
 
+def pdf_response(filename: str, content: bytes) -> Response:
+    """A contract's PDF as an attachment (REB-387), through `cv_response` so the one
+    header-safety rule stays in one place. The name carries a letter number, never
+    something a person typed, but a second shape for this header is what would drift."""
+    return cv_response(CvFile(filename=filename, mime="application/pdf", content=content))
+
+
 def perk_response(content: bytes, filename: str) -> Response:
     """A perk's file as an attachment. Its name is ours rather than something a person
     typed, so it needs no sanitising, but it is written here anyway so a second perk
