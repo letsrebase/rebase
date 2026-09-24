@@ -201,7 +201,7 @@ def test_the_contract_constraints_are_installed(hub_engine: Engine) -> None:
 def test_migration_0017_can_run_again_and_roll_back() -> None:
     """A retried deploy runs 0017's statements over tables that already exist, and the
     downgrade leaves 0016's schema: both must work, and the result must still be the
-    models' schema. REB-387 controller ruling: also prove the downgrade actually drops
+    models' schema. REB-387: also prove the downgrade actually drops
     the four new tables, and the forced re-run actually recreates them, rather than
     relying only on the final schema diff, which a partial downgrade could still pass."""
     with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:

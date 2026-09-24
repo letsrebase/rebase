@@ -49,8 +49,9 @@ __all__ = [
 
 
 def enter(client: TestClient, sender: RecordingSender, email: str) -> None:
-    """Signs `email` in through the magic link, as the member area does: Tasks 3 and 5
-    use this to enter as the freelancer, not only the admin `_ready` signs in as."""
+    """Signs `email` in through the magic link, as the member area does: the
+    member-contract tests use this to enter as the freelancer, not only the admin
+    `_ready` signs in as."""
     _login_as(client, sender, email)
 
 

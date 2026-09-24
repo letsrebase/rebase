@@ -295,7 +295,7 @@ def test_a_draft_text_never_leaves(clean: Session) -> None:
 
 
 def test_a_draft_text_leaves_on_the_preview_when_the_setting_allows_it(clean: Session) -> None:
-    """REB-406 controller ruling: `REBASE_CONTRACTS_ALLOW_DRAFT` lets a draft leave, only
+    """REB-406: `REBASE_CONTRACTS_ALLOW_DRAFT` lets a draft leave, only
     where that setting is true (the preview's own `.env`), so the text can be tested end
     to end with Documenso before it loses its `draft` status."""
     admin_id, freelancer_id, company_id = _setup(clean)
@@ -1438,12 +1438,17 @@ def test_a_send_and_a_cancel_of_the_same_draft_never_leave_a_letter_annulled_wit
     assert isinstance(results.get("cancel"), MatchRead)
     assert results["cancel"].stato == "annullato"
     assert (letter.stato, match_row.stato) == ("annullato", "annullato")
-    if letter.documenso_id is None:
-        # the cancel won the race before any send ever created an envelope: the send
-        # that followed found nothing left to send.
-        assert isinstance(results.get("send"), InvalidState)
-    else:
+    # `send_first` must be what decided the winner, not just whatever the gate
+    # happened to produce: branching on the outcome alone would still pass if the gate
+    # stopped fixing the order (a regression `send_first` exists to catch).
+    assert (letter.documenso_id is not None) is send_first
+    if send_first:
         # the send won the race and created a live envelope; the cancel that followed
         # cancelled it rather than merely annulling the row.
         assert isinstance(results.get("send"), SendReport)
         assert fake.envelopes[letter.documenso_id].status == "CANCELLED"
+    else:
+        # the cancel won the race before any send ever created an envelope: the send
+        # that followed found nothing left to send, and Documenso never heard from it.
+        assert isinstance(results.get("send"), InvalidState)
+        assert fake.envelopes == {}

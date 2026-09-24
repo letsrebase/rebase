@@ -156,8 +156,8 @@ async def test_get_match_of_a_soft_deleted_freelancer_answers_the_matchs_own_mes
     factory: sessionmaker[Session],
 ) -> None:
     """The admin API answers this same case with `match {id} non trovato`
-    (`_require_live_freelancer` in `routers/matches.py`); the MCP tool used to answer
-    with the freelancer's own not-found message instead, from `for_freelancer` (REB-417)."""
+    (`rebase_core.matches.require_live_freelancer`); the MCP tool used to answer with
+    the freelancer's own not-found message instead, from `for_freelancer` (REB-417)."""
     card, match = _seed(factory)
     try:
         async with Client(build_server(factory, lambda: IVAN)) as client:

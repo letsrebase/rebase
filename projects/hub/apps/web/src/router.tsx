@@ -291,8 +291,8 @@ const adminFreelanceRedirect = createRoute({
     throw redirect({ to: '/admin/talent' })
   },
 })
-// REB-413: the last addition to the milestone, listing every match the other four
-// admin pages create (Task 5-8) rather than any one card's or request's own.
+// REB-413: the last addition to the milestone, listing every match the other admin
+// pages create rather than any one card's or request's own.
 const adminMatches = createRoute({
   getParentRoute: () => adminArea,
   path: '/matches',

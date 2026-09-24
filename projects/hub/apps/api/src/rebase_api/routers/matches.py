@@ -60,8 +60,8 @@ def _writing(session: Session, settings: Settings, renderer: Renderer) -> MatchS
 
 
 def _document_guard(session: Session, document_id: UUID) -> ContractDocument:
-    """404 when the document itself is gone or its freelancer is soft-deleted, exactly as
-    `download_contract` already checks it, before a signing action reaches the service."""
+    """404 when the document itself is gone or its freelancer is soft-deleted, before a
+    signing action -- or `download_contract` -- reaches the service."""
     document = session.get(ContractDocument, document_id)
     if document is None:
         raise NotFound(DOCUMENT_ENTITY, document_id)

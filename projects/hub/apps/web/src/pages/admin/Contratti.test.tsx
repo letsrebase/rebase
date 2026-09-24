@@ -314,6 +314,24 @@ describe('«Match e contratti» (REB-387)', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
+  it('shows a failed «Reinvia email» on the framework agreement inside its own section, not under the matches table (REB-407)', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, quadro: OUT, quadri: [OUT] },
+      'POST /api/hub/contract-documents/d1/resend': () =>
+        answer(503, {
+          detail: 'La mail non è partita: il provider l’ha rifiutata. Riprova tra qualche minuto.',
+        }),
+    })
+    mount('/admin/freelance/f1/contracts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Reinvia email del contratto quadro' }))
+
+    const alerts = await screen.findAllByRole('alert')
+    expect(alerts).toHaveLength(1)
+    const quadroSection = screen.getByRole('region', { name: 'Contratto quadro' })
+    expect(within(quadroSection).getByRole('alert')).toHaveTextContent('non è partita')
+  })
+
   it('resends the signing mail and refreshes a framework agreement out for signature (REB-407)', async () => {
     const spy = routeFetch({
       'GET /api/hub/freelancers/f1': PERSON,
