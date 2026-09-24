@@ -31,6 +31,7 @@ TABLES = (
     "freelancers",
     "companies",
     "users",
+    "signups",
 )
 
 
