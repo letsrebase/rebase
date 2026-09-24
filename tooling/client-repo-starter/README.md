@@ -137,6 +137,14 @@ retrofit lands as a branch and a pull request like any other change, reviewed be
 it merges, not pushed straight to `main` on a repository someone else is actively
 committing to.
 
+That additive rule cuts the other way once a repository already carries its own
+`AGENTS.md`: a later change to `template/AGENTS.md` (a new rule, like this PR's
+project-update paragraph) does not reach that repository just because the script
+runs again, since an existing file is skipped without `--force`. Carrying a template
+change into an already-retrofitted repository is the same by-hand fold as the pilot's
+own `WARP.md` merge above, not a second run of the script, and it lands as its own
+small PR on that repository, reviewed the same way.
+
 ## Configurable per contract
 
 Two knobs the script takes, because not every contract carries the same weight:

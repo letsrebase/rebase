@@ -24,7 +24,7 @@ the paragraph typed instead) has to answer, before the first Linear call:
 | Client / macroprogetto name | `--project-name`, the initiative name | Ask whether this is a brand-new macroprogetto or one already exists (`list_initiatives` first, since a name close to an existing one is probably the same relationship, not a second one). |
 | One-line description | `--one-liner` | Ask for one sentence, the shape `docs/tracker.md` uses for an initiative or a project summary. |
 | The contract itself | `--linear-project`, named with a verb (`MVP delivery`, `Booking flow rebuild`) | Ask what this specific contract covers, distinct from the macroprogetto it lives under. |
-| New repository or an existing checkout | `--create-repo` vs `--target-dir` | Ask, if the spec does not say; check `gh repo view letsrebase/<slug>` first regardless, since guessing wrong here is the one mistake `--force` will not undo cleanly. |
+| New repository or an existing checkout | `--create-repo` vs `--target-dir` | When the macroprogetto is new, `--create-repo`. When it already exists, find the repository already tied to it before choosing either flag (`get_project` on one of its existing projects, `links`, or ask): README § The model is one GitHub repository per macroprogetto, never a second one for a second contract, so an existing macroprogetto always gets `--target-dir` on that same checkout, not `--create-repo` with a new slug. |
 | Worktree / Greptile | `--worktree`/`--greptile` | Default on / off (README § Configurable per contract); ask only when the spec signals otherwise (more than one person committing, or the client already runs Greptile). |
 | Who is on it | the Linear project's members | Lorenzo and whoever else the spec names; both members always, even a contract with one worker (`docs/tracker.md` § Where things are). |
 
@@ -76,9 +76,15 @@ node tooling/client-repo-starter/new-client-repo.mjs \
 
 Read its own output rather than assuming what it did: it prints what it wrote, what it
 left alone, and any further checklist item that still needs a person or a token scope
-this session does not have. A retrofit (`--target-dir`, no `--create-repo`) lands as a
-branch and a pull request on that repository, reviewed like any other change (README §
-Retrofitting): this skill never pushes straight to that repository's own `main`.
+this session does not have.
+
+A retrofit (`--target-dir`, no `--create-repo`) only writes files into that checkout;
+the script does not branch or open anything on its own. Before running it this way,
+put the checkout on a branch first (a worktree, when that repository's own
+conventions ask for one, otherwise a plain branch), never `main`. After the script
+writes, commit and open a pull request there with that repository's own commit and PR
+conventions (README § Retrofitting), reviewed like any other change: this skill never
+pushes straight to that repository's own `main`.
 
 ## Step 3: what stays a human's click
 
