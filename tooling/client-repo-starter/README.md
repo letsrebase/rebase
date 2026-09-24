@@ -145,6 +145,31 @@ change into an already-retrofitted repository is the same by-hand fold as the pi
 own `WARP.md` merge above, not a second run of the script, and it lands as its own
 small PR on that repository, reviewed the same way.
 
+## CI: the shared self-hosted runner pool
+
+Every private client repository is eligible for `private-clients`, the shared
+self-hosted Actions runner pool documented in `docs/ci-runner-pool.md`; a hosted
+GitHub Actions runner bills the org's own plan, and `letsrebase/point` already hit
+that plan's payment block once. `new-client-repo.mjs` scopes the repository into
+the runner group automatically, in both the `--create-repo` and the retrofit path,
+the moment the repository exists on GitHub; it prints whether that step actually
+ran or has to be done by hand later (no `admin:org` scope on the token, or the
+repository does not exist on GitHub yet).
+
+What the script does not do: write the repository's own CI workflow. That is
+contract-specific (a Node stack, a Python one, both, a different service mix
+entirely), so there is no CI template in `template/`. Once one exists, its jobs use
+`runs-on: [self-hosted, linux, x64]` rather than `ubuntu-latest`; `docs/ci-runner-pool.md`
+carries what changes on a self-hosted host that a hosted runner's isolated VM hides,
+most importantly a service container's host port (three runner instances share one
+Docker daemon, so a fixed `5432:5432` collides the moment two Postgres-backed jobs
+land at once, where `letsrebase/point`'s own `ci.yml` is the worked example of the
+dynamic-port fix) and that a published port has to bind to loopback, not every
+interface, since UFW does not stop Docker's own `iptables` rules. That shared
+Docker daemon is also why the pool has no isolation between two clients' jobs
+today (`docs/ci-runner-pool.md` § Known limitation): accepted while `letsrebase/point`
+is the only repository on it, not a boundary to lean on once a second one joins.
+
 ## Configurable per contract
 
 Two knobs the script takes, because not every contract carries the same weight:
