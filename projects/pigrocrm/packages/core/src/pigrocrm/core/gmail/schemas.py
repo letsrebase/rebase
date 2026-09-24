@@ -277,12 +277,34 @@ class EmailDraftUpdate(BaseModel):
     attachment_version_ids: list[UUID] | None = None
 
 
+class EmailDraftAttachment(BaseModel):
+    """One file the send will attach, named the way the recipient will see it.
+
+    `filename` is built by the same function the send composes with
+    (`attach.attachment_filename`), so the name a person reads before pressing Invia is
+    the name that leaves. `None` means the version id no longer resolves to a file the
+    send could attach -- the send would refuse it -- and the interface says so rather
+    than printing an id nobody can read.
+    """
+
+    version_id: UUID
+    filename: str | None
+    dimensione: int | None
+
+
 class EmailDraftRead(BaseModel):
-    """Every column of `EmailDraft`.
+    """Every column of `EmailDraft`, and the attachments by name.
 
     `send_state`, `sent_gmail_message_id` and `message_id_header` are on the way out and
     never on the way in: they are facts about what happened, and a Create schema that
     accepted them would let a caller declare a message sent that never left.
+
+    `attachments` is the one field that is not a column. `attachment_version_ids` is what
+    the row stores, and an id tells the person reviewing a draft nothing about what their
+    client is about to receive (REB-415). It is required rather than defaulted, and the
+    row is never validated straight into this model: `drafts.read_drafts` is the one
+    builder, so a response that forgot to name the files fails instead of claiming there
+    are none.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -307,6 +329,7 @@ class EmailDraftRead(BaseModel):
     payment_reminder_id: UUID | None
     created_at: datetime
     updated_at: datetime
+    attachments: list[EmailDraftAttachment]
 
 
 class EmailDraftListQuery(BaseModel):

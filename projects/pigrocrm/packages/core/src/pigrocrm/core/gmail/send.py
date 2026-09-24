@@ -50,6 +50,7 @@ from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.gmail.account import GoogleAccountService
 from pigrocrm.core.gmail.attach import resolve_attachments
 from pigrocrm.core.gmail.crypto import unseal
+from pigrocrm.core.gmail.drafts import read_draft
 from pigrocrm.core.gmail.errors import GoogleCallFailed
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, GoogleAccount
 from pigrocrm.core.gmail.query import GMAIL_SEND_URL, messages_list_url, rfc822msgid_query
@@ -294,7 +295,7 @@ class EmailSendService:
             # draft that was never sent has no outcome to look up, and re-adopting a
             # message for one already `inviato` is what would make this method
             # non-idempotent.
-            return EmailDraftRead.model_validate(draft)
+            return read_draft(self.session, draft)
 
         attempted = draft.send_attempted_at or datetime.now(UTC)
         inside_grace = datetime.now(UTC) - attempted < timedelta(
@@ -307,7 +308,7 @@ class EmailSendService:
             # to record its own outcome. Past the window it is an abandoned claim -- a
             # process that died between the claim and the record -- and that is an
             # unknown outcome like any other, so it falls through.
-            return EmailDraftRead.model_validate(draft)
+            return read_draft(self.session, draft)
 
         account = self.accounts.usable(
             # `gmail.readonly`, not `gmail.send`: the lookup is `users.messages.list`,
@@ -341,12 +342,12 @@ class EmailSendService:
 
         if inside_grace:
             # "We do not know yet" is a true answer. A resend is not.
-            return EmailDraftRead.model_validate(draft)
+            return read_draft(self.session, draft)
 
         draft.send_state = "fallito"
         draft.last_error = _NOT_SENT
         self.session.commit()
-        return EmailDraftRead.model_validate(draft)
+        return read_draft(self.session, draft)
 
     def reconcile_all(self, account_id: UUID, actor: Actor) -> int:
         """Every draft **of this mailbox** whose outcome is unknown, and how many of them
@@ -587,7 +588,7 @@ class EmailSendService:
             },
         )
         self.session.commit()
-        return EmailDraftRead.model_validate(row)
+        return read_draft(self.session, row)
 
     def _outbound_row(
         self, account: GoogleAccount, draft: EmailDraft, gmail_id: str, thread_id: str

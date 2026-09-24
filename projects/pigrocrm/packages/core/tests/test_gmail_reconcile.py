@@ -155,6 +155,9 @@ def test_reconciliation_finds_it_by_our_own_message_id_and_adopts_gmails(
     assert read.send_state == "inviato"
     assert read.sent_gmail_message_id
     assert read.last_error is None
+    # The answer the Email tab's «Verifica» reads is built like every other draft read
+    # (REB-415), attachments named and all.
+    assert read.attachments == []
     outbound = (
         db_session.execute(select(GmailMessage).where(GmailMessage.direction == "outbound"))
         .scalars()

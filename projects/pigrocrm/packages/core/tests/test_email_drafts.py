@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
+from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail import drafts as drafts_module
 from pigrocrm.core.gmail.drafts import EmailDraftService
@@ -384,6 +385,52 @@ def test_list_returns_the_drafts_of_one_entity_and_filters_by_state(
         actor_for(account),
     )
     assert [item.id for item in only_drafts.items] == [mine.id]
+
+
+def test_every_read_names_the_attachments_the_send_will_carry(db_session: Session) -> None:
+    """REB-415: the Email tab shows a draft to the person who is about to send it, and an
+    attachment shown as a version id tells them nothing about what their client will
+    receive. `get`, `list` and the create that hands the row back all name the file the
+    way the send will (`attach.attachment_filename`), in the order the draft keeps."""
+    account = connected_account(db_session)
+    customer = _customer(db_session)
+    document = Document(customer_id=customer.id, tipo="offerta", titolo="Offerta Q1")
+    db_session.add(document)
+    db_session.flush()
+    versions = [
+        DocumentVersion(
+            document_id=document.id,
+            numero=numero,
+            storage_key=f"acme/offerta-v{numero}-{uuid4().hex}.pdf",
+            content_type="application/pdf",
+            dimensione=1024 * numero,
+            hash_sha256="0" * 64,
+        )
+        for numero in (1, 2)
+    ]
+    db_session.add_all(versions)
+    db_session.flush()
+    service = _service(db_session)
+
+    created = service.create(
+        _payload(customer, attachment_version_ids=[versions[1].id, versions[0].id]),
+        actor_for(account),
+    )
+    listed = service.list(
+        EmailDraftListQuery(entity_type="customer", entity_id=customer.id), actor_for(account)
+    ).items[0]
+    read = service.get(created.id, actor_for(account))
+
+    for draft in (created, listed, read):
+        assert [a.filename for a in draft.attachments] == [
+            "offerta-q1-v2.pdf",
+            "offerta-q1-v1.pdf",
+        ]
+        assert [a.version_id for a in draft.attachments] == draft.attachment_version_ids
+        assert [a.dimensione for a in draft.attachments] == [2048, 1024]
+
+    plain = service.create(_payload(customer), actor_for(account))
+    assert plain.attachments == []
 
 
 def test_list_is_the_last_method_defined_on_the_service() -> None:
