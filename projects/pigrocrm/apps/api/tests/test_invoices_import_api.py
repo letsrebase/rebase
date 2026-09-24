@@ -167,7 +167,6 @@ def test_a_caller_cannot_hand_declare_importata_da_as_fatturapa(
     assert response.status_code == 422, response.text
 
 
-
 def test_a_collaborator_cannot_import(logged_in: TestClient, customer: dict[str, Any]) -> None:
     """`collaborator_client` is deliberately not used here: it shares its cookie jar
     with `logged_in`, and `customer` needs `logged_in` -- combining the two would leave
