@@ -121,11 +121,21 @@ add the rate-limiting a Tailscale gate made unnecessary there.
 
 ## Repository side, once a repository joins the pool
 
-`letsrebase/point` still runs its committed `ci.yml` on `ubuntu-latest`: adding it
-to the runner group made the pool reachable, it did not switch the repository's
-own workflow over. Switching is `runs-on: [self-hosted, linux, x64]` in that
-repository's own `.github/workflows/ci.yml`, a decision for whoever owns that
-repository's CI (Ivan, for `point`), not something this document does for them.
-Every future client repository scaffolded by `tooling/client-repo-starter/` keeps
-`runs-on: ubuntu-latest` until it is added to `private-clients` and its own
-workflow is switched, the same two-step process.
+`letsrebase/point`'s own `ci.yml` moved to `runs-on: [self-hosted, linux, x64]` on all
+four jobs (`letsrebase/point#67`), the worked example for what changes on a shared
+host that a hosted runner's isolated VM used to hide: a service container's fixed
+host port (`5432:5432` for Postgres) collides the moment two Postgres-backed jobs
+land on different runners at once, since all three runners share one Docker daemon;
+moved to a dynamic host port, resolved through `job.services.postgres.ports` at
+runtime. `actions/setup-python` also stopped working: it only ships prebuilt Pythons
+for the OS versions in GitHub's own manifest, which does not include this pool's
+Debian 13, so it moved to `astral-sh/setup-uv` (`point`'s own `apps/api` already
+carries a `uv.lock`), whose Python builds are portable across host distros.
+
+Scoping a repository into `private-clients` is now automatic: `new-client-repo.mjs`
+does it the moment the repository exists on GitHub, in both the `--create-repo` and
+the retrofit path, and prints whether it actually ran (it needs `admin:org` on the
+`gh` token and the repository to exist first). Writing the workflow file itself
+stays a per-repository decision, since the stack varies by contract;
+`tooling/client-repo-starter/README.md` § CI: the shared self-hosted runner pool
+carries the checklist.

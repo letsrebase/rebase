@@ -220,6 +220,44 @@ if (args.createRepo) {
   console.log(`Created https://github.com/${args.org}/${args.repo} and pushed the scaffold.`);
 }
 
+// ---- add the repository to the shared self-hosted runner pool ----------
+// Every private client repository is eligible for private-clients (see
+// docs/ci-runner-pool.md); this is the automatic half of that integration,
+// scoping the repository into the runner group so its own CI workflow can
+// move to runs-on: [self-hosted, linux, x64] whenever it is written.
+
+function ghJson(cmdArgs) {
+  return JSON.parse(execFileSync("gh", cmdArgs, { encoding: "utf8" }));
+}
+
+function addToRunnerPool(org, repo) {
+  let groupId;
+  try {
+    const groups = ghJson(["api", `orgs/${org}/actions/runner-groups`]).runner_groups;
+    const group = groups.find((g) => g.name === "private-clients");
+    if (!group) {
+      console.log("No 'private-clients' runner group found on this org; skipping pool provisioning (see docs/ci-runner-pool.md).");
+      return false;
+    }
+    groupId = group.id;
+  } catch {
+    console.log("Could not query the org's runner groups (no admin:org scope on this token?); skipping pool provisioning.");
+    return false;
+  }
+  let repoId;
+  try {
+    repoId = ghJson(["api", `repos/${org}/${repo}`]).id;
+  } catch {
+    console.log(`${org}/${repo} is not on GitHub yet; add it to the private-clients runner group once it is (docs/ci-runner-pool.md).`);
+    return false;
+  }
+  execFileSync("gh", ["api", "-X", "PUT", `orgs/${org}/actions/runner-groups/${groupId}/repositories/${repoId}`]);
+  console.log(`Added ${org}/${repo} to the private-clients runner group: its own CI workflow can use runs-on: [self-hosted, linux, x64] whenever it is written.`);
+  return true;
+}
+
+const runnerPoolReady = addToRunnerPool(args.org, args.repo);
+
 // ---- the checklist this script cannot do for you ------------------------
 
 console.log(`
@@ -238,4 +276,8 @@ Next, by hand or with an agent holding the linear-rebase MCP server:
    workspace is on the Free plan (AGENTS.md § Tracker: Linear § Known limitation):
    they will see rebase's own internal roadmap too, not just this team.
 4. Point them at the repository's own AGENTS.md.
+5. Once this repository has its own CI workflow, set runs-on: [self-hosted, linux, x64]
+   on its jobs; ${runnerPoolReady
+     ? `${args.org}/${args.repo} is already scoped into the private-clients runner group, so the workflow file is the only remaining step.`
+     : `it still needs to be scoped into the private-clients runner group first (docs/ci-runner-pool.md) -- not done automatically this run, see the note above.`}
 `);
