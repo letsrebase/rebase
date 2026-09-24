@@ -313,6 +313,8 @@ function retrofitRemoteMatches(dir, org, repo) {
   return new RegExp(`[:/]${org}/${repo}(\\.git)?$`).test(remote);
 }
 
+const runnerPoolReady = addToRunnerPool(args.org, args.repo);
+
 // ---- the checklist this script cannot do for you ------------------------
 
 console.log(`
