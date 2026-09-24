@@ -5177,6 +5177,27 @@ export interface components {
             /** Netto Proiettato */
             netto_proiettato?: string | null;
         };
+        /**
+         * EmailDraftAttachment
+         * @description One file the send will attach, named the way the recipient will see it.
+         *
+         *     `filename` is built by the same function the send composes with
+         *     (`attach.attachment_filename`), so the name a person reads before pressing Invia is
+         *     the name that leaves. `None` means the version id no longer resolves to a file the
+         *     send could attach -- the send would refuse it -- and the interface says so rather
+         *     than printing an id nobody can read.
+         */
+        EmailDraftAttachment: {
+            /**
+             * Version Id
+             * Format: uuid
+             */
+            version_id: string;
+            /** Filename */
+            filename: string | null;
+            /** Dimensione */
+            dimensione: number | null;
+        };
         /** EmailDraftCreate */
         EmailDraftCreate: {
             /**
@@ -5217,11 +5238,18 @@ export interface components {
         };
         /**
          * EmailDraftRead
-         * @description Every column of `EmailDraft`.
+         * @description Every column of `EmailDraft`, and the attachments by name.
          *
          *     `send_state`, `sent_gmail_message_id` and `message_id_header` are on the way out and
          *     never on the way in: they are facts about what happened, and a Create schema that
          *     accepted them would let a caller declare a message sent that never left.
+         *
+         *     `attachments` is the one field that is not a column. `attachment_version_ids` is what
+         *     the row stores, and an id tells the person reviewing a draft nothing about what their
+         *     client is about to receive (REB-415). It is required rather than defaulted, and the
+         *     row is never validated straight into this model: `drafts.read_drafts` is the one
+         *     builder, so a response that forgot to name the files fails instead of claiming there
+         *     are none.
          */
         EmailDraftRead: {
             /**
@@ -5275,6 +5303,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Attachments */
+            attachments: components["schemas"]["EmailDraftAttachment"][];
         };
         /** EmailDraftUpdate */
         EmailDraftUpdate: {
@@ -28097,6 +28127,7 @@ export interface operations {
                 entity_type?: ("customer" | "person" | "deal") | null;
                 entity_id?: string | null;
                 send_state?: ("bozza" | "in_invio" | "inviato" | "incerto" | "fallito") | null;
+                unsent?: boolean;
                 limit?: number;
             };
             header?: never;

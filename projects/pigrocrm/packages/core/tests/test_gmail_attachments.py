@@ -9,7 +9,7 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import ALLOWED_CONTENT_TYPES
 from pigrocrm.core.errors import NotFound, ValidationFailed
-from pigrocrm.core.gmail.attach import resolve_attachments
+from pigrocrm.core.gmail.attach import describe_attachments, resolve_attachments
 from pigrocrm.core.storage.local import LocalFileStorage
 
 MB = 1024 * 1024
@@ -279,3 +279,55 @@ def test_the_version_ids_are_uuids_and_the_order_is_the_caller_s(
     ids: list[UUID] = [second.id, first.id]
     attachments = resolve_attachments(db_session, storage, ids, max_bytes=20 * MB)
     assert [a.content for a in attachments] == [b"2", b"1"]
+
+
+# --- naming without reading (REB-415) -----------------------------------------------
+
+
+def test_a_draft_names_each_attachment_exactly_as_the_send_will_and_reads_no_byte(
+    db_session: Session, storage: LocalFileStorage, documento: Document
+) -> None:
+    """The Email tab shows a draft's attachments from `describe_attachments`, and the
+    person presses Invia on what they read there. A name that differed from the one
+    `resolve_attachments` puts in the MIME part would be a review of a file that is not
+    the one leaving. Naming reads no byte, which is structural: it takes no storage, so a
+    list of fifty drafts cannot pull fifty PDFs out of the backend to print their names."""
+    pdf = make_version(db_session, documento, numero=2, dimensione=len(PDF))
+    docx = make_version(db_session, documento, numero=3, dimensione=4, content_type=DOCX)
+    storage.put(pdf.storage_key, PDF, pdf.content_type)
+    storage.put(docx.storage_key, b"PK\x03\x04", DOCX)
+
+    named = describe_attachments(db_session, [pdf.id, docx.id])
+    sent = resolve_attachments(db_session, storage, [pdf.id, docx.id], max_bytes=20 * MB)
+
+    assert [named[pdf.id].filename, named[docx.id].filename] == [a.filename for a in sent]
+    assert named[pdf.id].filename == "offerta-citta-q1-2026-v2.pdf"
+    assert named[pdf.id].dimensione == len(PDF)
+
+
+def test_an_id_that_no_longer_resolves_is_named_as_missing_rather_than_dropped(
+    db_session: Session,
+) -> None:
+    """A draft that silently lost an attachment on screen would be sent carrying one the
+    person never saw, or refused for one they cannot find. So every id asked for gets an
+    answer, and the missing one says it has no file."""
+    missing = uuid4()
+
+    named = describe_attachments(db_session, [missing])
+
+    assert named[missing].filename is None
+    assert named[missing].dimensione is None
+
+
+def test_a_type_the_send_would_refuse_has_no_name_either(
+    db_session: Session, documento: Document
+) -> None:
+    version = make_version(
+        db_session, documento, numero=1, dimensione=4, content_type="application/x-msdownload"
+    )
+
+    assert describe_attachments(db_session, [version.id])[version.id].filename is None
+
+
+def test_naming_nothing_asks_the_database_nothing(db_session: Session) -> None:
+    assert describe_attachments(db_session, []) == {}

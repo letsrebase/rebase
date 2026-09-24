@@ -90,10 +90,15 @@ def list_drafts(
     entity_type: Annotated[Literal["customer", "person", "deal"] | None, Query()] = None,
     entity_id: Annotated[UUID | None, Query()] = None,
     send_state: Annotated[SendState | None, Query()] = None,
+    unsent: Annotated[bool, Query()] = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> EmailDraftPage:
     query = EmailDraftListQuery(
-        entity_type=entity_type, entity_id=entity_id, send_state=send_state, limit=limit
+        entity_type=entity_type,
+        entity_id=entity_id,
+        send_state=send_state,
+        unsent=unsent,
+        limit=limit,
     )
     return _drafts(session, settings).list(query, actor)
 
