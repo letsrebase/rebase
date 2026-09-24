@@ -357,10 +357,26 @@ class MatchService:
         these transactions can never deadlock on each other. The counter's own row lock is
         held on purpose through the letter's render, for gapless numbering (see
         `test_a_render_that_fails_takes_no_number_and_leaves_nothing_behind`) -- nobody
-        may move the render or the number-taking earlier to "speed this up"."""
+        may move the render or the number-taking earlier to "speed this up".
+
+        `data.id`, when given, makes this call idempotent (REB-406): a retry after the
+        response is lost (the wizard sends the same client-generated id with both «Salva
+        come bozza» and «Invia per la firma») returns the match already written rather
+        than creating a second one with another letter number. The same id already used
+        by another freelancer's match is a 409 -- writing under it would silently steal
+        someone else's row."""
         renderer = self._renderer()
         try:
             self.lock_freelancer(freelancer_id)
+            if data.id is not None:
+                existing = self.session.get(Match, data.id, populate_existing=True)
+                if existing is not None:
+                    if existing.freelancer_id != freelancer_id:
+                        raise InvalidState(
+                            "Questo id di match appartiene già a un altro freelance."
+                        )
+                    self.session.rollback()
+                    return self.get(existing.id)
             freelancer, user = self._freelancer(freelancer_id)
             company, _referente = self._matchable_company(data.company_id, lock=True)
             fiscal = self._fiscal(freelancer.id)
@@ -387,6 +403,7 @@ class MatchService:
                     # holds the freelancer's row lock `write_framework` assumes.
                     documents.append(self.write_framework(freelancer.id, admin_id))
             match = Match(
+                **({"id": data.id} if data.id is not None else {}),
                 freelancer_id=freelancer.id,
                 company_id=company.id,
                 cliente_ragione_sociale=data.cliente.cliente_ragione_sociale,

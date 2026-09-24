@@ -433,6 +433,41 @@ describe('«Crea match» in five steps (REB-387)', () => {
     expect(tries).toBe(2)
   })
 
+  it('sends the same match id again when the create response is lost on a retry (REB-406)', async () => {
+    let creates = 0
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': pdf,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=quadro': pdf,
+      'POST /api/hub/freelancers/f1/matches': () => {
+        creates += 1
+        // The first attempt's response never arrives (a network drop, not a status
+        // code): the mutation's promise rejects exactly as a real `fetch` would.
+        if (creates === 1) throw new Error('rete assente')
+        return { id: 'm1' }
+      },
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(await screen.findByRole('button', { name: 'Genera l’anteprima' }))
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Salva come bozza' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva come bozza' }))
+    expect(await screen.findByText('pagina contratti')).toBeInTheDocument()
+
+    const creates_calls = spy.mock.calls.filter(
+      ([url, init]) => url === '/api/hub/freelancers/f1/matches' && init?.method === 'POST',
+    )
+    expect(creates_calls).toHaveLength(2)
+    const [first, second] = creates_calls.map(([, init]) => JSON.parse(String(init!.body)))
+    expect(first.id).toBeTruthy()
+    expect(second.id).toBe(first.id)
+  })
+
   it('stays on the preview and points at «Match e contratti» when the signing mail did not leave (REB-406)', async () => {
     const spy = routeFetch({
       'GET /api/hub/freelancers/f1': PERSON,

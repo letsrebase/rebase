@@ -7,7 +7,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fakes_contracts import FailingRenderer, FakeRenderer
@@ -286,6 +286,55 @@ def test_an_unsent_framework_from_an_earlier_draft_is_replaced_not_duplicated(
     entries = AdminActionService(clean).timeline("match", second.id)
     created = next(a for a in entries if a.kind == "match_created")
     assert created.payload["quadri_annullati"] == [str(stale.id)]
+
+
+# ---- the idempotent id (REB-406) --------------------------------------------------------
+
+
+def test_a_repeated_create_with_the_same_id_returns_the_match_already_written(
+    clean: Session,
+) -> None:
+    """A retry after the server's response is lost must not write a second match with
+    another letter number: the same client-generated id, sent again, returns the match
+    already written rather than creating anything."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    given_id = uuid4()
+    body = _body(company_id).model_copy(update={"id": given_id})
+
+    first = service.create(freelancer_id, body, admin_id)
+    second = service.create(freelancer_id, body, admin_id)
+
+    assert first.id == second.id == given_id
+    assert first.lettera.numero == second.lettera.numero
+    assert len(_documents(clean, freelancer_id, "lettera")) == 1
+    assert [a.kind for a in AdminActionService(clean).timeline("match", first.id)] == [
+        "match_created"
+    ]
+
+
+def test_a_repeated_id_already_used_by_another_freelancer_is_refused(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    given_id = uuid4()
+    service.create(freelancer_id, _body(company_id).model_copy(update={"id": given_id}), admin_id)
+
+    other_freelancer_id = _second_card(clean)
+    _fiscal(clean, other_freelancer_id, admin_id)
+    other_company_id = _request(clean, nome_azienda="Bianchi Srl", figura_richiesta="Designer")
+    other_body = _body(other_company_id).model_copy(update={"id": given_id})
+
+    with pytest.raises(InvalidState, match="un altro freelance"):
+        service.create(other_freelancer_id, other_body, admin_id)
+    assert len(_documents(clean, other_freelancer_id, "lettera")) == 0
+
+
+def test_create_with_no_id_still_writes_a_fresh_match_each_time(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    first = service.create(freelancer_id, _body(company_id), admin_id)
+    second = service.create(freelancer_id, _body(company_id), admin_id)
+    assert first.id != second.id
 
 
 def test_a_stale_draft_framework_that_never_left_stays_hidden_from_the_page(

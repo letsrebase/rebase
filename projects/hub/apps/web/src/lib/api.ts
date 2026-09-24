@@ -645,7 +645,11 @@ export interface Cliente {
 }
 export type ClienteDraft = { [K in keyof Cliente]: string | null }
 
+/** `id` is optional and client-generated (REB-406): one per wizard run, sent with both
+ *  «Salva come bozza» and «Invia per la firma», so a retry after the response is lost
+ *  writes nothing new -- the server returns the match already written under it. */
 export interface MatchCreate {
+  id?: string
   company_id: string
   cliente: Cliente
   lettera: Lettera

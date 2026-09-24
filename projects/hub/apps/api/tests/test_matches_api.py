@@ -194,6 +194,54 @@ def test_an_admin_matches_a_card_with_a_request_and_downloads_both_pdfs(
     assert signed.status_code == 404
 
 
+def test_a_repeated_create_with_the_same_id_writes_the_match_once(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    """REB-406: the wizard's own retry after a lost response sends the same
+    client-generated id again with «Salva come bozza» or «Invia per la firma», and gets
+    the match already written back, never a second one with another letter number."""
+    freelancer_id, company_id = _ready(client, sender)
+    given_id = "01234567-89ab-7cde-8123-456789abcdef"
+    body = {"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
+
+    first = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=body)
+    second = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=body)
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["id"] == second.json()["id"] == given_id
+    assert first.json()["lettera"]["numero"] == second.json()["lettera"]["numero"]
+    page = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()
+    assert len(page["matches"]) == 1
+
+
+def test_the_same_id_used_by_another_freelancers_match_is_a_409(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    given_id = "01234567-89ab-7cde-8123-456789abcdef"
+    created = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    )
+    assert created.status_code == 201, created.text
+
+    _apply_member(client, "grace@studio.it")
+    other_freelancer_id = str(client.get("/api/hub/freelancers").json()["items"][0]["id"])
+    assert (
+        client.put(f"/api/hub/freelancers/{other_freelancer_id}/fiscal", json=FISCAL).status_code
+        == 200
+    )
+
+    refused = client.post(
+        f"/api/hub/freelancers/{other_freelancer_id}/matches",
+        json={"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    )
+
+    assert refused.status_code == 409, refused.text
+    assert client.get(f"/api/hub/freelancers/{other_freelancer_id}/matches").json()["matches"] == []
+
+
 def test_the_preview_renders_a_document_without_saving_or_numbering_it(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:

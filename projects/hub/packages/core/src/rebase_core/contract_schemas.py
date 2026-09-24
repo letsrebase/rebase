@@ -285,10 +285,16 @@ class LetteraFields(LetteraDraft):
 
 class MatchCreate(BaseModel):
     """Steps 1, 3 and 4 of «Crea match». The tax data of step 2 are saved by their own
-    route when the admin leaves that step, and read back from `freelancer_fiscal`."""
+    route when the admin leaves that step, and read back from `freelancer_fiscal`.
+
+    `id` is optional and client-generated (REB-406): one per wizard run, sent with both
+    «Salva come bozza» and «Invia per la firma», so a retry after the response is lost
+    writes nothing new -- `MatchService.create` reads it back and returns the match
+    already written."""
 
     model_config = ConfigDict(extra="forbid")
 
+    id: UUID | None = None
     company_id: UUID
     cliente: ClienteData
     lettera: LetteraFields

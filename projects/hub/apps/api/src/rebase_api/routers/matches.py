@@ -126,7 +126,9 @@ def create_match(
 ) -> MatchRead:
     """«Salva come bozza»: the draft match with its numbered letter and, when needed,
     the framework agreement. 422 naming `fiscale` without tax data, `company_id` for a
-    closed request."""
+    closed request. `payload.id`, when given, makes a retry idempotent (REB-406): the
+    match already written under it comes back instead of a second one, and the same id
+    already used by another freelancer's match is a 409."""
     return _writing(session, settings, renderer).create(freelancer_id, payload, admin.id)
 
 

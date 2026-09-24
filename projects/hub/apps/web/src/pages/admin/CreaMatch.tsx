@@ -387,6 +387,13 @@ export function AdminCreaMatch() {
   const { id } = useParams({ from: '/signedIn/admin/freelance/$id/match/new' })
   const navigate = useNavigate()
   const person = useQuery({ queryKey: ['freelancer', id], queryFn: () => admin.freelancer(id) })
+  // One id per wizard run (REB-406): mounting this page is starting one over, so a
+  // fresh id here is all «reset when the wizard starts over» asks for -- this page
+  // always navigates away once a match is written, never resets mid-mount. Sent with
+  // both «Salva come bozza» and «Invia per la firma», so a retry after the response is
+  // lost (a network drop, not the 503 `sendNow` already recovers from with `created`)
+  // writes nothing new: the server returns the match already written under it.
+  const [matchId] = useState(() => crypto.randomUUID())
   const [step, setStep] = useState(0)
   const [company, setCompany] = useState<Company | null>(null)
   const [prefillFor, setPrefillFor] = useState<string | null>(null)
@@ -403,7 +410,9 @@ export function AdminCreaMatch() {
   }, [previews])
 
   const payload = (): MatchCreate | null =>
-    company ? { company_id: company.id, cliente: toCliente(cliente), lettera: toLettera(lettera) } : null
+    company
+      ? { id: matchId, company_id: company.id, cliente: toCliente(cliente), lettera: toLettera(lettera) }
+      : null
   // What the page shows now. A prefill or a preview can land after the admin has moved
   // on: picked another company, left the step, changed what the preview was made from.
   // Such a response is dropped rather than let it fill the forms with another company's
