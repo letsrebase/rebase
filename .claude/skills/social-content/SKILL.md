@@ -126,11 +126,10 @@ posts can check the two agree.
    README and go on. Numbers come from Ivan or from a query with its date
    (`posthog-analytics` skill); an unknown number is asked for, not invented, and the
    plan says which ones are missing.
-2. **The folder.** A directory of its own for the deliverable (Ivan keeps the published
-   ones on his Desktop, one folder each: `rebase-<topic>-carousel`): copy the template
-   there as `carosello-<topic>.html`, copy `shared/brand/fonts/outfit-variable-latin.woff2`
-   beside it, and write a `README.md` that lists the slides, the sources of every number,
-   and what was left out on purpose.
+2. **The folder.** A directory of its own for the deliverable, one per topic
+   (`rebase-<topic>-carousel`): copy the template there as `carosello-<topic>.html`, copy
+   `shared/brand/fonts/outfit-variable-latin.woff2` beside it, and write a `README.md`
+   that lists the slides, the sources of every number, and what was left out on purpose.
 3. **Edit the slides** in that copy, and its `<title>`: the template's three slides are
    a cover, a dark content slide and a close; add the middle ones from the classes in the
    file (`rows`, `tiles`, `bars`, `cards`, `mock`, `source`, `cta`).
