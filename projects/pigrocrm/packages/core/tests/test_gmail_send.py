@@ -112,6 +112,42 @@ def test_a_successful_send_records_the_message_and_the_timeline_entry(
     assert "gmail.messaggio_inviato" in kinds
 
 
+def test_the_sent_draft_names_the_file_that_left_with_it(
+    db_session: Session, tmp_path: Path
+) -> None:
+    """REB-415: the Email tab shows a draft's attachments by name before «Invia», and the
+    send's own answer is built the same way. The name it reports is the name in the MIME
+    part that actually left, which is the whole point of reading one before pressing."""
+    account = connected_account(db_session)
+    customer = _customer(db_session)
+    document = Document(customer_id=customer.id, tipo="offerta", titolo="Offerta Q1")
+    db_session.add(document)
+    db_session.flush()
+    pdf = b"%PDF-1.7\nfinto\n"
+    version = DocumentVersion(
+        document_id=document.id,
+        numero=2,
+        storage_key=f"acme/offerta-{uuid4().hex}.pdf",
+        content_type="application/pdf",
+        dimensione=len(pdf),
+        hash_sha256="0" * 64,
+    )
+    db_session.add(version)
+    db_session.flush()
+    storage = LocalFileStorage(tmp_path)
+    storage.put(version.storage_key, pdf, "application/pdf")
+    draft = _draft(db_session, account, customer, attachment_version_ids=[version.id])
+    db_session.commit()
+    fake = FakeGmail()
+
+    read = send_service(db_session, fake, storage=storage).send(draft.id, actor_for(account))
+    db_session.commit()
+
+    assert read.send_state == "inviato"
+    assert [a.filename for a in read.attachments] == ["offerta-q1-v2.pdf"]
+    assert 'filename="offerta-q1-v2.pdf"' in _sent_raw(fake)
+
+
 def test_the_message_that_left_carries_our_own_message_id(db_session: Session) -> None:
     account = connected_account(db_session)
     draft = _draft(db_session, account)

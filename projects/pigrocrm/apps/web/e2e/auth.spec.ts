@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { logout } from './helpers'
+import { loginAsAdmin, logout } from './helpers'
 
 // Seeded by apps/web/scripts/e2e-setup.sh -- an admin, deliberately, so later specs
 // in this same run (e2e/crm.spec.ts, e2e/custom-fields.spec.ts, e2e/kanban.spec.ts)
@@ -53,4 +53,49 @@ test('a correct login reaches the dashboard and logout returns to login', async 
   // 2026-09-08 -- see `helpers.ts::logout`. This spec spent thirty seconds waiting for a
   // button by that name and then failed, on every run, for a month.
   await logout(page)
+})
+
+test('the shell scrolls inside main only, not the whole document (REB-418)', async ({ page }) => {
+  // The get-started page is long enough (four steps, each with a screen and a prompt)
+  // to expose a leak that a shorter page hides: before the fix, `main` had no CSS
+  // containing block, so the `sr-only` "Fatto: "/"Da fare: " prefix the page puts on
+  // every step -- a plain `position: absolute` with no explicit `top` -- fell back to
+  // its static position against the page itself, escaping `main`'s `overflow-y-auto`
+  // and inflating `<html>`'s real height. The visible symptom was the whole document
+  // scrolling, the sidebar dragged along with it, instead of only `main`.
+  await loginAsAdmin(page)
+  await page.goto('/app/get-started')
+  await expect(page.getByRole('heading', { name: 'Porta dentro il tuo lavoro' })).toBeVisible()
+
+  const before = await page.evaluate(() => {
+    const main = document.querySelector('main')!
+    return {
+      docOverflow: document.documentElement.scrollHeight - window.innerHeight,
+      // The page has to genuinely be taller than the viewport for this test to mean
+      // anything: a `main` with nothing to scroll would pass the assertions below for
+      // the wrong reason, the exact gap Greptile's review caught (REB-418).
+      mainOverflow: main.scrollHeight - main.clientHeight,
+    }
+  })
+  expect(before.docOverflow).toBe(0)
+  expect(before.mainOverflow).toBeGreaterThan(0)
+
+  // `main` is the one scroller: scrolling it all the way down has to actually move its
+  // content, reaching the last of the four steps, while the document itself and the
+  // sidebar stay exactly where they are.
+  const asideTopBefore = await page.evaluate(
+    () => document.querySelector('aside')!.getBoundingClientRect().top,
+  )
+  const after = await page.evaluate(() => {
+    const main = document.querySelector('main')!
+    main.scrollTop = main.scrollHeight
+    return { mainScrollTop: main.scrollTop, windowScrollY: window.scrollY }
+  })
+  expect(after.mainScrollTop).toBeGreaterThan(0)
+  expect(after.windowScrollY).toBe(0)
+  await expect(page.getByRole('heading', { name: 'Oppure a mano' })).toBeVisible()
+  const asideTopAfter = await page.evaluate(
+    () => document.querySelector('aside')!.getBoundingClientRect().top,
+  )
+  expect(asideTopAfter).toBe(asideTopBefore)
 })

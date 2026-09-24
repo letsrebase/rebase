@@ -1,9 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { toast } from '@rebase/ui/sonner'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EmailTab } from './EmailTab'
+import type { EmailDraftRead } from './draftQueries'
 import type { GmailMessageRead } from './queries'
 import { api } from '@/lib/api'
+import type { Role } from '@/lib/permissions'
 
 // `api` is an openapi-fetch client built at import time, so it is mocked as a module
 // (the shape GmailPanel.test.tsx established); stubbing `globalThis.fetch` would never
@@ -11,7 +15,18 @@ import { api } from '@/lib/api'
 // to nothing.
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
-  return { ...actual, api: { GET: vi.fn() } }
+  return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), DELETE: vi.fn() } }
+})
+vi.mock('@rebase/ui/sonner', () => ({
+  toast: { success: vi.fn(), message: vi.fn() },
+}))
+// REB-415: each press on a draft asks `useCan` for its service's own string. The real
+// table answers here, for the role the test sets, so a row that drifted from the core
+// fails in this file as well as in `test/permissions.test.ts`.
+const mockAuth = vi.hoisted(() => ({ role: 'admin' as Role }))
+vi.mock('@/lib/auth', async () => {
+  const { can } = await import('@/lib/permissions')
+  return { useCan: (action: string) => can(mockAuth.role, action) }
 })
 
 function ok(data: unknown) {
@@ -46,6 +61,61 @@ function message(overrides: Partial<GmailMessageRead> = {}): GmailMessageRead {
   }
 }
 
+const DRAFT_ID = '00000000-0000-7000-8000-0000000000d1'
+const VERSION_ID = '00000000-0000-7000-8000-0000000000a1'
+const SEND_SCOPE = 'https://www.googleapis.com/auth/gmail.send'
+
+/** A draft as the assistant leaves it. Anodyne for the same reason as `message`. */
+function draft(overrides: Partial<EmailDraftRead> = {}): EmailDraftRead {
+  return {
+    id: DRAFT_ID,
+    entity_type: 'customer',
+    entity_id: ENTITY_ID,
+    google_account_id: null,
+    to_addresses: ['ada@acme.it'],
+    cc_addresses: [],
+    subject: 'Offerta rivista',
+    body_markdown: 'Gentile Ada,\n\necco la proposta.',
+    attachment_version_ids: [],
+    attachments: [],
+    message_id_header: '<a.1@crm.example.it>',
+    in_reply_to_message_id: null,
+    send_state: 'bozza',
+    send_attempted_at: null,
+    last_error: null,
+    sent_gmail_message_id: null,
+    payment_reminder_id: null,
+    created_at: '2026-08-20T09:00:00Z',
+    updated_at: '2026-08-20T09:00:00Z',
+    ...overrides,
+  }
+}
+
+function drafts(...items: EmailDraftRead[]) {
+  return ok({ items, total: items.length })
+}
+
+/** The person's own mailbox, as `GET /api/gmail/account` reports it. */
+function health(overrides: { missing_scopes?: string[] } = {}) {
+  return ok({
+    account: {
+      id: 'acc-1',
+      email_address: 'io@example.it',
+      scopes_granted: [SEND_SCOPE],
+      status: 'active',
+      consent_expires_at: null,
+      last_error: null,
+      last_error_at: null,
+      last_sync_at: null,
+    },
+    banner: null,
+    banner_text: null,
+    missing_scopes: [],
+    configured: true,
+    ...overrides,
+  })
+}
+
 function renderTab() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -56,15 +126,30 @@ function renderTab() {
 }
 
 /**
- * Routes the one read the tab makes. Anything else is a defect: since 2026-09-09 the
- * tab is read-only, so a second request -- the drafts it used to list -- means the
- * composer has crept back in.
+ * Routes the three reads the tab makes: the correspondence, the drafts that have not left
+ * (REB-415), and the person's own mailbox, which a draft reads for «Da» and for whether
+ * it can send at all. Anything else is a defect.
+ *
+ * `drafts` may be a function, read on every request, so a test can change what the server
+ * holds after a press and watch the tab read it again -- which is how every outcome of a
+ * send reaches the screen.
  */
-function respond(args: { messages?: unknown } = {}) {
+function respond(
+  args: { messages?: unknown; drafts?: unknown | (() => unknown); account?: unknown } = {},
+) {
   vi.mocked(api.GET).mockImplementation(((path: string) => {
     if (path === '/api/gmail/messages') return Promise.resolve(args.messages ?? ok([]))
+    if (path === '/api/email-drafts') {
+      const current = typeof args.drafts === 'function' ? args.drafts() : args.drafts
+      return Promise.resolve(current ?? drafts())
+    }
+    if (path === '/api/gmail/account') return Promise.resolve(args.account ?? health())
     throw new Error(`unexpected GET ${path}`)
   }) as never)
+}
+
+function postPaths(): string[] {
+  return vi.mocked(api.POST).mock.calls.map((call) => call[0] as string)
 }
 
 function messagesCall() {
@@ -72,7 +157,17 @@ function messagesCall() {
 }
 
 beforeEach(() => {
+  mockAuth.role = 'admin'
   vi.mocked(api.GET).mockReset()
+  vi.mocked(api.POST).mockReset()
+  vi.mocked(api.DELETE).mockReset()
+  vi.mocked(toast.success).mockReset()
+  vi.mocked(toast.message).mockReset()
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 describe('EmailTab', () => {
@@ -84,8 +179,12 @@ describe('EmailTab', () => {
     expect(messagesCall()?.[1]).toMatchObject({
       params: { query: { entity_type: 'customer', entity_id: ENTITY_ID } },
     })
-    // And nothing on the read is a Gmail search string: it reaches the CRM's own rows.
-    expect(vi.mocked(api.GET).mock.calls.map((call) => call[0])).toEqual(['/api/gmail/messages'])
+    // And nothing on either read is a Gmail search string: both reach the CRM's own rows.
+    await waitFor(() =>
+      expect(new Set(vi.mocked(api.GET).mock.calls.map((call) => call[0]))).toEqual(
+        new Set(['/api/gmail/messages', '/api/email-drafts']),
+      ),
+    )
   })
 
   it('groups messages by thread and shows the direction', async () => {
@@ -185,7 +284,7 @@ describe('EmailTab', () => {
    * two-line email; saying which one it is costs a sentence.
    */
   it('shows the snippet, labelled as such, when no body was archived', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok([message({ body_text: '', snippet: 'Anteprima' })]))
+    respond({ messages: ok([message({ body_text: '', snippet: 'Anteprima' })]) })
     renderTab()
 
     expect(await screen.findByText('Anteprima')).toBeInTheDocument()
@@ -214,21 +313,507 @@ describe('EmailTab', () => {
     expect(save).toHaveAttribute('title', 'In arrivo')
   })
 
-  // --- read-only, by decision ------------------------------------------------------------
+  // --- the drafts that have not left, and «Invia» (REB-415) ---------------------------
 
   /**
-   * Writing an email left this tab on 2026-09-09: the agent drafts and sends over MCP,
-   * and the payment reminder keeps its own screen. What a person looks for here is what
-   * was actually said, so there is no «Scrivi», no list of drafts, and no second read
-   * for them -- `respond` above throws on any request but the correspondence.
+   * The person reads exactly what will leave before pressing anything: to, cc, subject,
+   * the body as the plain text it is sent as, and each attachment by the file name the
+   * recipient will see. A sent draft is not listed: it is in the correspondence now.
    */
-  it('offers no way to write an email, and reads nothing but the correspondence', async () => {
-    respond({ messages: ok([message()]) })
+  it('lists each unsent draft whole, above the correspondence', async () => {
+    respond({
+      messages: ok([message()]),
+      drafts: drafts(
+        draft({
+          cc_addresses: ['amministrazione@acme.it'],
+          attachment_version_ids: [VERSION_ID],
+          attachments: [
+            { version_id: VERSION_ID, filename: 'offerta-q1-v2.pdf', dimensione: 184_320 },
+          ],
+        }),
+        draft({ id: 'sent', subject: 'Già partita', send_state: 'inviato' }),
+      ),
+    })
+    renderTab()
+
+    const card = await screen.findByRole('article', { name: 'Offerta rivista' })
+    expect(within(card).getByText('ada@acme.it')).toBeInTheDocument()
+    expect(within(card).getByText('amministrazione@acme.it')).toBeInTheDocument()
+    // «Da» is the person's own mailbox, read from the health row the shell already keeps.
+    expect(await within(card).findByText('io@example.it')).toBeInTheDocument()
+    expect(within(card).getByLabelText('Testo')).toHaveTextContent('Gentile Ada, ecco la proposta.')
+    expect(within(card).getByText(/offerta-q1-v2\.pdf · 180 KB/)).toBeInTheDocument()
+    expect(within(card).getByText('Bozza')).toBeInTheDocument()
+    expect(screen.queryByText('Già partita')).not.toBeInTheDocument()
+
+    // Above the correspondence, never inside it: an unsent draft is not part of the
+    // conversation the client has seen.
+    const heading = screen.getByRole('heading', { name: 'Corrispondenza' })
+    expect(card.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The server leaves the sent ones out (`unsent`), so a page of them can never push an
+    // older unsent draft off the list.
+    expect(vi.mocked(api.GET).mock.calls.find((call) => call[0] === '/api/email-drafts')?.[1])
+      .toMatchObject({
+        params: { query: { entity_type: 'customer', entity_id: ENTITY_ID, unsent: true } },
+      })
+  })
+
+  it('asks before sending, and sends nothing when the person steps back', async () => {
+    respond({ drafts: drafts(draft()) })
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Inviare questa email?' })
+    expect(dialog).toHaveTextContent('non si può richiamare')
+    await waitFor(() => expect(dialog).toHaveTextContent('io@example.it'))
+    expect(dialog).toHaveTextContent('ada@acme.it')
+    expect(api.POST).not.toHaveBeenCalled()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Annulla' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(api.POST).not.toHaveBeenCalled()
+  })
+
+  it('sends on the confirmation, says so, and the draft leaves the list', async () => {
+    let onServer: EmailDraftRead[] = [draft()]
+    respond({ drafts: () => drafts(...onServer) })
+    vi.mocked(api.POST).mockImplementation((() => {
+      onServer = [draft({ send_state: 'inviato' })]
+      return Promise.resolve(ok(draft({ send_state: 'inviato' })))
+    }) as never)
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('Email inviata: la trovi nella corrispondenza.'),
+    )
+    expect(api.POST).toHaveBeenCalledWith('/api/email-drafts/{draft_id}/send', {
+      params: { path: { draft_id: DRAFT_ID } },
+    })
+    await waitFor(() =>
+      expect(screen.queryByRole('article', { name: 'Offerta rivista' })).not.toBeInTheDocument(),
+    )
+  })
+
+  it('sends once and only once, so a double click cannot spend twice', async () => {
+    respond({ drafts: drafts(draft()) })
+    // Never settles: the second click has to be refused by the card itself, not by the
+    // mutation happening to still be in flight when it arrives.
+    vi.mocked(api.POST).mockReturnValue(new Promise(() => {}) as never)
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+    // Two synchronous events, with no render between them: the button is not disabled
+    // yet when the second one lands, so only the card's own guard can refuse it.
+    const confirm = screen.getByRole('button', { name: 'Invia ora' })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+
+    // The mutation starts its request a tick later, so wait for the first and then give
+    // a second one every chance to follow.
+    await waitFor(() => expect(api.POST).toHaveBeenCalled())
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(api.POST).toHaveBeenCalledTimes(1)
+  })
+
+  /**
+   * While the send is in flight nothing else on the card can be pressed, and the dialog
+   * cannot be dismissed: «Annulla» then «Elimina» is the natural panic move, and it would
+   * race the send the person just confirmed.
+   */
+  it('holds the card still while the send is in flight', async () => {
+    respond({ drafts: drafts(draft()) })
+    vi.mocked(api.POST).mockReturnValue(new Promise(() => {}) as never)
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Inviare questa email?' })
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Annulla' })).toBeDisabled(),
+    )
+    await userEvent.keyboard('{Escape}')
+    expect(screen.getByRole('dialog', { name: 'Inviare questa email?' })).toBeInTheDocument()
+    const card = screen.getByRole('article', { name: 'Offerta rivista', hidden: true })
+    expect(within(card).getByRole('button', { name: 'Elimina', hidden: true })).toBeDisabled()
+  })
+
+  /**
+   * No answer at all is not a refusal: the request may have reached the API and the API
+   * may have sent. The banner must not say «Riprova»; it says how to tell, from the row
+   * that is read again, whether the draft left.
+   */
+  it('never tells the person to retry a send that got no answer', async () => {
+    let reads = 0
+    respond({
+      drafts: () => {
+        reads += 1
+        return drafts(draft())
+      },
+    })
+    vi.mocked(api.POST).mockResolvedValue(failed({ detail: 'Gateway Timeout' }, 504))
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('non sappiamo se sia partita')
+    expect(alert).not.toHaveTextContent(/riprova/i)
+    // What «Bozza» proves is said only of the row read after the attempt, never of the
+    // one cached before the press.
+    await waitFor(() => expect(reads).toBeGreaterThan(1))
+    await waitFor(() => expect(alert).toHaveTextContent('stato qui sopra è stato riletto'))
+    expect(screen.getByRole('button', { name: 'Invia' })).toBeEnabled()
+  })
+
+  /**
+   * Another draft's outcome writes into the same cached list (`patchCachedDraft`). That is
+   * not a read of this draft, and must not lift the wait: this draft's «Bozza» is still the
+   * one from before its own unanswered press.
+   */
+  it('does not take another draft\'s outcome for a re-read of this one', async () => {
+    const pendingReads: ((value: unknown) => void)[] = []
+    let reads = 0
+    respond({
+      drafts: () => {
+        reads += 1
+        if (reads === 1)
+          return drafts(draft(), draft({ id: 'other', subject: 'Altra bozza' }))
+        return new Promise((resolve) => pendingReads.push(resolve))
+      },
+    })
+    vi.mocked(api.POST).mockImplementation(((_path: string, init: never) => {
+      const id = (init as { params: { path: { draft_id: string } } }).params.path.draft_id
+      if (id === DRAFT_ID) return Promise.resolve(failed({ detail: 'Gateway Timeout' }, 504))
+      return Promise.resolve(ok(draft({ id, subject: 'Altra bozza', send_state: 'inviato' })))
+    }) as never)
+    renderTab()
+
+    const first = await screen.findByRole('article', { name: 'Offerta rivista' })
+    await userEvent.click(within(first).getByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+    expect(await within(first).findByRole('alert')).toHaveTextContent('Sto rileggendo')
+
+    const other = screen.getByRole('article', { name: 'Altra bozza' })
+    await userEvent.click(within(other).getByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('article', { name: 'Altra bozza' })).not.toBeInTheDocument(),
+    )
+
+    expect(within(first).getByRole('button', { name: 'Invia' })).toBeDisabled()
+    expect(within(first).getByRole('alert')).toHaveTextContent('Sto rileggendo')
+
+    for (const answer of pendingReads) answer(drafts(draft()))
+    await waitFor(() =>
+      expect(within(first).getByRole('button', { name: 'Invia' })).toBeEnabled(),
+    )
+  })
+
+  it('keeps «Invia» off until the draft has been read again after an unanswered send', async () => {
+    let answer: (value: unknown) => void = () => {}
+    let reads = 0
+    respond({
+      drafts: () => {
+        reads += 1
+        // The first read is the tab opening; the one after the failed press hangs, so
+        // the card is caught with only the row from before the press.
+        return reads === 1 ? drafts(draft()) : new Promise((resolve) => (answer = resolve))
+      },
+    })
+    vi.mocked(api.POST).mockResolvedValue(failed({ detail: 'Gateway Timeout' }, 504))
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sto rileggendo')
+    expect(screen.getByRole('button', { name: 'Invia' })).toBeDisabled()
+
+    answer(drafts(draft()))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Invia' })).toBeEnabled())
+    expect(screen.getByRole('alert')).toHaveTextContent('stato qui sopra è stato riletto')
+  })
+
+  /**
+   * Gmail refused: nothing left, and the server says so on the row (`fallito`, with its
+   * own sentence). The card reads the row again and shows that, with «Invia» still there
+   * because the draft is intact -- and no second banner repeating it.
+   */
+  it('shows a refused send from the row, and offers «Invia» again', async () => {
+    let onServer: EmailDraftRead[] = [draft()]
+    respond({ drafts: () => drafts(...onServer) })
+    vi.mocked(api.POST).mockImplementation((() => {
+      onServer = [
+        draft({
+          send_state: 'fallito',
+          last_error: 'Gmail ha rifiutato il messaggio: la bozza è intatta, correggila e riprova.',
+        }),
+      ]
+      return Promise.resolve(
+        failed(
+          {
+            code: 'conflict',
+            detail: 'email_draft: Gmail ha rifiutato il messaggio',
+            reason: 'Gmail ha rifiutato il messaggio',
+            send_state: 'fallito',
+          },
+          409,
+        ),
+      )
+    }) as never)
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+
+    expect(await screen.findByText('Invio non riuscito')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Gmail ha rifiutato il messaggio')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Invia' })).toBeEnabled()
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
+  /** A refusal that did not touch the draft (no mailbox, a role, a network failure) is
+   *  a banner in the person's language, never the log line `email_draft: ...`. */
+  it('names a refusal that left the draft as it was', async () => {
+    respond({ drafts: drafts(draft()) })
+    vi.mocked(api.POST).mockResolvedValue(
+      failed(
+        {
+          code: 'conflict',
+          detail: 'google_account: nessuna casella Google collegata',
+          reason: 'nessuna casella Google collegata',
+        },
+        409,
+      ),
+    )
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^Nessuna casella Google collegata$/)
+    expect(screen.getByText('Bozza')).toBeInTheDocument()
+  })
+
+  /**
+   * Gmail did not answer. The row is `incerto`, and the card must never call it
+   * «inviata»: it says «esito da verificare», offers «Verifica», and offers no «Invia»
+   * and no "riprova" -- the send has no idempotency key, so a second press is a second
+   * email.
+   */
+  it('turns an unanswered send into «Esito da verificare», with no send again', async () => {
+    let onServer: EmailDraftRead[] = [draft()]
+    respond({ drafts: () => drafts(...onServer) })
+    vi.mocked(api.POST).mockImplementation((() => {
+      onServer = [draft({ send_state: 'incerto', last_error: 'Gmail non ha risposto.' })]
+      return Promise.resolve(
+        failed(
+          {
+            code: 'conflict',
+            detail: "email_draft: esito dell'invio da verificare: Gmail non ha risposto",
+            reason: "esito dell'invio da verificare: Gmail non ha risposto",
+            send_state: 'incerto',
+          },
+          409,
+        ),
+      )
+    }) as never)
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+
+    expect(await screen.findByText('Esito da verificare')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Verifica' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Invia' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /riprova/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/inviata/i)).not.toBeInTheDocument()
+    expect(postPaths()).toEqual(['/api/email-drafts/{draft_id}/send'])
+  })
+
+  it('verifies by asking Gmail, and never by posting the send again', async () => {
+    let onServer: EmailDraftRead[] = [draft({ send_state: 'incerto' })]
+    respond({ drafts: () => drafts(...onServer) })
+    vi.mocked(api.POST).mockImplementation((() => {
+      onServer = [draft({ send_state: 'inviato' })]
+      return Promise.resolve(ok(draft({ send_state: 'inviato' })))
+    }) as never)
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Verifica' }))
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        'L’email risulta partita: la trovi nella corrispondenza.',
+      ),
+    )
+    expect(postPaths()).toEqual(['/api/email-drafts/{draft_id}/reconcile'])
+    await waitFor(() =>
+      expect(screen.queryByText('Esito da verificare')).not.toBeInTheDocument(),
+    )
+  })
+
+  it('says «not yet» when Gmail cannot confirm it yet, and still offers no send', async () => {
+    respond({ drafts: drafts(draft({ send_state: 'incerto' })) })
+    vi.mocked(api.POST).mockResolvedValue(ok(draft({ send_state: 'incerto' })))
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Verifica' }))
+
+    await waitFor(() => expect(toast.message).toHaveBeenCalled())
+    expect(vi.mocked(toast.message).mock.calls[0]?.[0]).toMatch(/senza rinviarla/)
+    expect(screen.queryByRole('button', { name: 'Invia' })).not.toBeInTheDocument()
+  })
+
+  /**
+   * `in_invio` is where a send whose request died after the claim is left. Without a
+   * way out it would read «Invio in corso» forever; «Verifica» is that way, and it is
+   * safe, since `reconcile` answers the draft unchanged while it may still be in flight.
+   */
+  it('offers «Verifica», and no send or delete, for a draft stuck in flight', async () => {
+    respond({ drafts: drafts(draft({ send_state: 'in_invio' })) })
+    renderTab()
+
+    expect(await screen.findByText('Invio in corso')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Verifica' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Invia' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Elimina' })).not.toBeInTheDocument()
+  })
+
+  it('keeps «Invia» off for an attachment the send would refuse, and says so', async () => {
+    respond({
+      drafts: drafts(
+        draft({
+          attachment_version_ids: [VERSION_ID],
+          attachments: [{ version_id: VERSION_ID, filename: null, dimensione: null }],
+        }),
+      ),
+    })
+    renderTab()
+
+    expect(await screen.findByText(/Allegato non inviabile/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Invia' })).toBeDisabled()
+    expect(screen.getByText(/Un allegato non si può più inviare/)).toBeInTheDocument()
+  })
+
+  it('names a refused delete and reads the draft again', async () => {
+    respond({ drafts: drafts(draft()) })
+    vi.mocked(api.DELETE).mockResolvedValue(
+      failed(
+        {
+          code: 'conflict',
+          detail: 'email_draft: questa email è già inviata o in invio: duplicala per modificarla',
+          reason: 'questa email è già inviata o in invio: duplicala per modificarla',
+          send_state: 'in_invio',
+        },
+        409,
+      ),
+    )
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Elimina' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/^Questa email è già inviata/)
+    await waitFor(() =>
+      expect(
+        vi.mocked(api.GET).mock.calls.filter((call) => call[0] === '/api/email-drafts'),
+      ).toHaveLength(2),
+    )
+    expect(toast.success).not.toHaveBeenCalled()
+  })
+
+  it('deletes a draft after asking, and not when the person says no', async () => {
+    respond({ drafts: drafts(draft()) })
+    vi.mocked(api.DELETE).mockResolvedValue(ok(undefined))
+    vi.mocked(window.confirm).mockReturnValueOnce(false)
+    renderTab()
+
+    const remove = await screen.findByRole('button', { name: 'Elimina' })
+    await userEvent.click(remove)
+    expect(api.DELETE).not.toHaveBeenCalled()
+
+    await userEvent.click(remove)
+
+    await waitFor(() =>
+      expect(api.DELETE).toHaveBeenCalledWith('/api/email-drafts/{draft_id}', {
+        params: { path: { draft_id: DRAFT_ID } },
+      }),
+    )
+    expect(window.confirm).toHaveBeenLastCalledWith(expect.stringMatching(/Eliminare questa bozza/))
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Bozza eliminata'))
+  })
+
+  /**
+   * REB-294's rule on this tab: a readonly person reads the draft whole and is offered
+   * nothing to press, since the send, the verification and the delete all answer 403 to
+   * that role (`require_write` in `gmail/send.py` and `gmail/drafts.py`).
+   */
+  it('shows a readonly person the draft and no button that the server would refuse', async () => {
+    mockAuth.role = 'readonly'
+    respond({
+      drafts: drafts(draft(), draft({ id: 'unsure', subject: 'Esito', send_state: 'incerto' })),
+    })
+    renderTab()
+
+    expect(await screen.findByRole('article', { name: 'Offerta rivista' })).toBeInTheDocument()
+    expect(screen.getByRole('article', { name: 'Esito' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Invia' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Verifica' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Elimina' })).not.toBeInTheDocument()
+  })
+
+  it('lets a collaboratore send, verify and delete, as the server does', async () => {
+    mockAuth.role = 'collaboratore'
+    respond({
+      drafts: drafts(draft(), draft({ id: 'unsure', subject: 'Esito', send_state: 'incerto' })),
+    })
+    renderTab()
+
+    expect(await screen.findByRole('button', { name: 'Invia' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Verifica' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Elimina' })).toBeInTheDocument()
+  })
+
+  it('keeps «Invia» off, and says why, for a mailbox connected without sending', async () => {
+    respond({ drafts: drafts(draft()), account: health({ missing_scopes: [SEND_SCOPE] }) })
+    renderTab()
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Invia' })).toBeDisabled())
+    expect(screen.getByText(/senza il permesso di invio/)).toBeInTheDocument()
+  })
+
+  /**
+   * `draft_email` never attaches anything, so an assistant that writes «in allegato
+   * l'offerta» produces a draft that promises a file it does not carry. A warning, not a
+   * refusal: the text is the person's to judge.
+   */
+  it('warns when the text promises an attachment that is not there', async () => {
+    respond({ drafts: drafts(draft({ body_markdown: "Gentile Ada,\n\nin allegato l'offerta." })) })
+    renderTab()
+
+    expect(await screen.findByText(/parla di un allegato/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Invia' })).toBeEnabled()
+  })
+
+  it('keeps showing the correspondence when the drafts read fails', async () => {
+    // Two reads, two claims. A drafts read that failed must not take down the thread the
+    // person actually came for.
+    respond({
+      messages: ok([message()]),
+      drafts: failed({ detail: 'bozze non raggiungibili' }, 503),
+    })
     renderTab()
 
     expect(await screen.findByText('Rinnovo')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Scrivi' })).not.toBeInTheDocument()
-    const paths = vi.mocked(api.GET).mock.calls.map((call) => call[0])
-    expect(new Set(paths)).toEqual(new Set(['/api/gmail/messages']))
+    expect(await screen.findByRole('alert')).toHaveTextContent('bozze non raggiungibili')
   })
 })

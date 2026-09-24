@@ -11,12 +11,14 @@ the whole of spec 13 criterion 11. Gmail refuses above 25 MB, and its refusal ar
 mid-upload as a message nobody can act on; ours arrives before the first byte leaves the
 backend, and it says what the attachments weigh and what the limit is.
 
-Nothing here logs, and nothing that leaves this module names a document title or a
+Nothing here logs, and no error that leaves this module names a document title or a
 storage key: a title is usually a client's name and a key is a path into the backend.
 The caller already knows which version ids it passed, which is all an error needs to say.
+The one place a name does leave is `describe_attachments`, on purpose: it is the draft's
+own read, for the person about to send it, and the name is the one the recipient gets.
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from uuid import UUID
 
 from sqlalchemy import select
@@ -27,11 +29,64 @@ from pigrocrm.core.documents.schemas import ALLOWED_CONTENT_TYPES
 from pigrocrm.core.documents.service import slugify_folder
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.gmail.rfc822 import OutgoingAttachment
+from pigrocrm.core.gmail.schemas import EmailDraftAttachment
 from pigrocrm.core.storage.base import DocumentStorage
 
 ENTITY = "email_draft"
 FIELD = "attachment_version_ids"
 _MB = 1024 * 1024
+
+
+def attachment_filename(document: Document, version: DocumentVersion) -> str | None:
+    """The name a version travels under, or `None` when its type is not one we attach.
+
+    The same three pieces `DocumentService.download` assembles, and for the same reason:
+    the title is user input on its way into a MIME header, so it is slugified, and the
+    extension comes from the recorded type rather than being assumed to be `.pdf`. One
+    function for the send and for the draft's read (`describe_attachments`), so the name
+    a person reviews is the name that leaves.
+    """
+    extension = ALLOWED_CONTENT_TYPES.get(version.content_type)
+    if extension is None:
+        return None
+    return f"{slugify_folder(document.titolo)}-v{version.numero}{extension}"
+
+
+def describe_attachments(
+    session: Session, version_ids: Iterable[UUID]
+) -> dict[UUID, EmailDraftAttachment]:
+    """What each version id would attach, named, without reading a byte.
+
+    One query for however many drafts are being read, so the Email tab's list costs the
+    same whether it shows one draft or fifty. Every id asked for gets an answer: one that
+    no longer resolves, or whose type the send would refuse, comes back with no filename
+    rather than being dropped, because a draft that silently lost an attachment on screen
+    would be sent carrying one the person never saw -- or refused for one they cannot
+    find.
+    """
+    wanted = set(version_ids)
+    if not wanted:
+        return {}
+    rows = session.execute(
+        select(DocumentVersion, Document)
+        .join(Document, Document.id == DocumentVersion.document_id)
+        .where(DocumentVersion.id.in_(wanted))
+    ).all()
+    named = {
+        version.id: EmailDraftAttachment(
+            version_id=version.id,
+            filename=attachment_filename(document, version),
+            dimensione=version.dimensione,
+        )
+        for version, document in rows
+    }
+    return {
+        version_id: named.get(
+            version_id,
+            EmailDraftAttachment(version_id=version_id, filename=None, dimensione=None),
+        )
+        for version_id in wanted
+    }
 
 
 def _refuse_total(total: int, max_bytes: int) -> None:
@@ -88,8 +143,8 @@ def resolve_attachments(
     resolved: list[OutgoingAttachment] = []
     total = 0
     for version, document in rows:
-        extension = ALLOWED_CONTENT_TYPES.get(version.content_type)
-        if extension is None:
+        filename = attachment_filename(document, version)
+        if filename is None:
             # The allowlist is the authority in both directions. A row carrying a type it
             # does not contain has no extension we can honestly give the file, and
             # guessing one is how an executable arrives looking like a document.
@@ -109,15 +164,7 @@ def resolve_attachments(
             _refuse_total(total, max_bytes)
 
         resolved.append(
-            OutgoingAttachment(
-                # The same three pieces `DocumentService.download` assembles, and for the
-                # same reason: the title is user input on its way into a MIME header, so
-                # it is slugified, and the extension comes from the recorded type rather
-                # than being assumed to be `.pdf`.
-                filename=f"{slugify_folder(document.titolo)}-v{version.numero}{extension}",
-                mime=version.content_type,
-                content=content,
-            )
+            OutgoingAttachment(filename=filename, mime=version.content_type, content=content)
         )
 
     return tuple(resolved)

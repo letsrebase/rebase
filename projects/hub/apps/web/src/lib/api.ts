@@ -357,6 +357,14 @@ export interface LoginRead {
   cognome: string
   email: string
   logged_at: string
+  /** The campaign the login page was opened from (REB-426); `null` when it had none. */
+  origine: string | null
+  utm_source: string | null
+  utm_medium: string | null
+  utm_campaign: string | null
+  utm_content: string | null
+  utm_term: string | null
+  utm_id: string | null
 }
 
 /** One row of `talenti` (REB-282/283): every freelancer card and every bare sign-up
@@ -928,8 +936,13 @@ export interface CompanyUpdate {
 }
 
 export const member = {
-  /** 202 whether the address is known or not; the page says one thing in both cases. */
-  requestLink: (email: string) => request<{ ok: true }>('/api/hub/auth/link', json({ email })),
+  /** 202 whether the address is known or not; the page says one thing in both cases.
+   *  `utm` is the campaign the login page was opened from (REB-426), left out when empty. */
+  requestLink: (email: string, utm: Utm = {}) =>
+    request<{ ok: true }>(
+      '/api/hub/auth/link',
+      json(Object.keys(utm).length ? { email, utm } : { email }),
+    ),
   enter: (token: string) => request<Me>('/api/hub/auth/enter', json({ token })),
   me: () => request<Me>('/api/hub/me'),
   update: (data: MemberUpdate) =>

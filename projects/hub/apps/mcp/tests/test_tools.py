@@ -360,6 +360,44 @@ async def test_login_stats_reads_an_empty_hub_and_a_card_carries_its_count(
     _wipe(factory)
 
 
+async def test_login_stats_says_which_campaign_each_login_came_from(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-426: a login that started from a tracked link carries its campaign, one that
+    did not carries `None`, in the same keys the wizards' rows use."""
+    from rebase_core.models import Freelancer, Login
+
+    freelancer_id = _seed_freelancer(factory)
+    session = factory()
+    try:
+        card = session.get(Freelancer, UUID(freelancer_id))
+        assert card is not None
+        session.add(Login(user_id=card.user_id, logged_at=datetime(2026, 9, 24, 9, tzinfo=UTC)))
+        session.add(
+            Login(
+                user_id=card.user_id,
+                logged_at=datetime(2026, 9, 25, 9, tzinfo=UTC),
+                utm_source="email",
+                utm_campaign="outreach-2026-09-r2",
+                utm_content="cv",
+                utm_term="11425b70",
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        recenti = _payload(await client.call_tool("login_stats", {}))["recenti"]
+        assert [row["utm_campaign"] for row in recenti] == ["outreach-2026-09-r2", None]
+        assert (recenti[0]["utm_source"], recenti[0]["utm_content"], recenti[0]["utm_term"]) == (
+            "email",
+            "cv",
+            "11425b70",
+        )
+        assert recenti[1]["utm_term"] is None and recenti[1]["origine"] is None
+    _wipe(factory)
+
+
 async def test_the_cv_is_read_as_text_and_a_card_without_one_answers_a_sentence(
     factory: sessionmaker[Session],
 ) -> None:

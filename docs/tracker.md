@@ -215,8 +215,8 @@ issue id on purpose, so Linear's automation stays out of it and the cards move b
 hand: each to `In Progress` when its run starts, each to `Done` with the merge, with
 the closing evidence in its own comment. The PR body lists the cards it lands. A card
 outside an open milestone keeps its own branch and PR, and so do the two mechanisms
-that verify a merged PR per card: the unattended pickup loop, and the Sencare repos,
-whose staging pipeline reads one Jira key per commit.
+that verify a merged PR per card: the unattended pickup loop, and any client repo
+whose staging pipeline reads one tracker key per commit.
 
 **When your PR is open.** Comment the PR URL on the issue. The PR links itself to the
 card within seconds, and since 2026-09-16 the team's automation moves the state too

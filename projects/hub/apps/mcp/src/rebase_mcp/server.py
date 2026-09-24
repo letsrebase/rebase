@@ -629,8 +629,11 @@ def build_server(
         """Chi è entrato nella sua area e quando: `totale` gli accessi con il link via
         email, `membri` le persone diverse dietro, `membri_totali` quante hanno una
         scheda, `ultimi_7_giorni` gli accessi dell'ultima settimana e `recenti` gli
-        ultimi con nome ed email. Ogni scheda letta da `get_talento` e da `get_freelancer`
-        porta anche `accessi` e `ultimo_accesso`."""
+        ultimi con nome ed email. Ogni accesso in `recenti` dice anche da dove è partito:
+        `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `utm_id` e
+        `origine`, letti dall'indirizzo della pagina di accesso (il link di una mail di
+        contatto li porta), `null` quando la pagina non ne aveva. Ogni scheda letta da
+        `get_talento` e da `get_freelancer` porta anche `accessi` e `ultimo_accesso`."""
         return _run(lambda s: LoginService(s).stats())
 
     hub = urlsplit(settings.hub_url) if settings is not None else None

@@ -21,6 +21,7 @@ value. A draft is somebody's unsent private correspondence, which is if anything
 sensitive than the mail that has already gone.
 """
 
+from collections.abc import Sequence
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -34,6 +35,7 @@ from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import DocumentVersion
 from pigrocrm.core.emitter.models import EmitterProfile
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.gmail.attach import describe_attachments
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage
 from pigrocrm.core.gmail.rfc822 import new_message_id
 from pigrocrm.core.gmail.schemas import (
@@ -65,6 +67,39 @@ _ENTITY_TABLES: dict[str, type[Customer] | type[Person] | type[Deal]] = {
     "person": Person,
     "deal": Deal,
 }
+
+# Every field of the read model that is a column of the row, which is all of them but
+# the attachments by name. Derived rather than listed, so a column added to both the
+# model and `EmailDraftRead` is read without anybody remembering to add it here too.
+_COLUMNS = tuple(name for name in EmailDraftRead.model_fields if name != "attachments")
+
+
+def read_drafts(session: Session, rows: Sequence[EmailDraft]) -> list[EmailDraftRead]:
+    """The rows as the API answers them, each attachment named as it will leave.
+
+    The one builder of `EmailDraftRead`, for this service and for the send path alike
+    (REB-415): the Email tab renders the draft a person is about to send from this, and a
+    draft read back after a send or a verification must name its files the same way the
+    list did, or the row would appear to lose its attachments at the press. One query
+    for every attachment of every row, however many rows there are.
+    """
+    named = describe_attachments(
+        session, (UUID(str(value)) for row in rows for value in row.attachment_version_ids)
+    )
+    return [
+        EmailDraftRead.model_validate(
+            {
+                **{name: getattr(row, name) for name in _COLUMNS},
+                "attachments": [named[UUID(str(value))] for value in row.attachment_version_ids],
+            }
+        )
+        for row in rows
+    ]
+
+
+def read_draft(session: Session, row: EmailDraft) -> EmailDraftRead:
+    return read_drafts(session, [row])[0]
+
 
 # The honest value for an installation with neither a public URL nor a website. It is a
 # reserved TLD (RFC 2606), so a Message-ID built on it can never collide with a real
@@ -171,7 +206,7 @@ class EmailDraftService:
         # Committed here, not left to the caller: "the draft is durable" is a claim about
         # what survives the request dying, and a row that is only flushed does not.
         self.session.commit()
-        return EmailDraftRead.model_validate(draft)
+        return read_draft(self.session, draft)
 
     def update(self, draft_id: UUID, data: EmailDraftUpdate, actor: Actor) -> EmailDraftRead:
         actor.require_write("update_email_draft")
@@ -201,10 +236,10 @@ class EmailDraftService:
             draft.send_state = "bozza"
             draft.last_error = None
         self.session.commit()
-        return EmailDraftRead.model_validate(draft)
+        return read_draft(self.session, draft)
 
     def get(self, draft_id: UUID, actor: Actor) -> EmailDraftRead:
-        return EmailDraftRead.model_validate(self._get(draft_id))
+        return read_draft(self.session, self._get(draft_id))
 
     def delete(self, draft_id: UUID, actor: Actor) -> None:
         """A hard delete, unlike every CRM entity: an unsent draft the user discarded is
@@ -237,6 +272,8 @@ class EmailDraftService:
             conditions.append(EmailDraft.entity_id == query.entity_id)
         if query.send_state is not None:
             conditions.append(EmailDraft.send_state == query.send_state)
+        if query.unsent:
+            conditions.append(EmailDraft.send_state != "inviato")
 
         total = self.session.execute(
             select(func.count()).select_from(EmailDraft).where(*conditions)
@@ -251,6 +288,4 @@ class EmailDraftService:
             .scalars()
             .all()
         )
-        return EmailDraftPage(
-            items=[EmailDraftRead.model_validate(row) for row in rows], total=total
-        )
+        return EmailDraftPage(items=read_drafts(self.session, rows), total=total)

@@ -23,7 +23,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from rebase_core.models import Freelancer, Login, User
+from rebase_core.models import ATTRIBUTION_COLUMNS, Freelancer, Login, User
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 from rebase_core.schemas import LoginRead, LoginStats
 from rebase_core.search import matches_any, similarity_score
@@ -91,17 +91,7 @@ class LoginService:
             membri=membri,
             membri_totali=membri_totali,
             ultimi_7_giorni=ultimi,
-            recenti=[
-                LoginRead(
-                    id=row[0].id,
-                    user_id=row[0].user_id,
-                    nome=row[1].nome,
-                    cognome=row[1].cognome,
-                    email=row[1].email,
-                    logged_at=row[0].logged_at,
-                )
-                for row in page_rows
-            ],
+            recenti=[_read(row[0], row[1]) for row in page_rows],
             next_cursor=next_cursor,
         )
 
@@ -116,14 +106,17 @@ class LoginService:
             .order_by(Login.logged_at.desc(), Login.id.desc())
             .limit(limit)
         ).all()
-        return [
-            LoginRead(
-                id=login.id,
-                user_id=login.user_id,
-                nome=person.nome,
-                cognome=person.cognome,
-                email=person.email,
-                logged_at=login.logged_at,
-            )
-            for login, person in rows
-        ]
+        return [_read(login, person) for login, person in rows]
+
+
+def _read(login: Login, person: User) -> LoginRead:
+    """One row as both lists show it, the campaign it came from included (REB-426)."""
+    return LoginRead(
+        id=login.id,
+        user_id=login.user_id,
+        nome=person.nome,
+        cognome=person.cognome,
+        email=person.email,
+        logged_at=login.logged_at,
+        **{column: getattr(login, column) for column in ATTRIBUTION_COLUMNS},
+    )

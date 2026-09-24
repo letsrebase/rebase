@@ -637,9 +637,14 @@ class MemberLookup(BaseModel):
 
 
 class LinkRequest(BaseModel):
+    """The address to send a link to, and since REB-426 the attribution the login page
+    arrived with, in the wizards' own shape and bounds: optional, and never a reason for
+    the answer to differ between a known address and an unknown one."""
+
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr
+    utm: SignupUtm | None = None
 
 
 class EnterRequest(BaseModel):
@@ -925,7 +930,9 @@ class GuideDownloadRead(BaseModel):
 
 
 class LoginRead(BaseModel):
-    """One login, with the member's name for the admin's list (ORB-158)."""
+    """One login, with the member's name for the admin's list (ORB-158), and since
+    REB-426 the campaign the login page was opened from, `None` for a login that
+    started anywhere else."""
 
     id: UUID
     user_id: UUID
@@ -933,6 +940,13 @@ class LoginRead(BaseModel):
     cognome: str
     email: str
     logged_at: datetime
+    origine: str | None = None
+    utm_source: str | None = None
+    utm_medium: str | None = None
+    utm_campaign: str | None = None
+    utm_content: str | None = None
+    utm_term: str | None = None
+    utm_id: str | None = None
 
 
 class LoginStats(BaseModel):

@@ -16,13 +16,14 @@
  *
  * Actions the core guards but the table does not list are *not* failures: the table
  * lists what a named control on a screen consults, and the core guards more than the
- * web offers (restore endpoints, email drafts, the timer rename). What the table may
- * never hold is an action the core does not name.
+ * web offers (restore endpoints, creating or editing an email draft, the timer rename).
+ * What the table may never hold is an action the core does not name.
  *
- * The core's two indirect strings (`_SETTINGS_ACTION`, `_ROOTS_ACTION`) resolve here
- * the way ruff resolves nothing: by reading the constant's own assignment in the file
- * that guards with it. Their values are Italian on purpose (they surface inside a
- * sentence), and they are keys here too, so the two sides stay one fact.
+ * The core's indirect strings (`_SETTINGS_ACTION`, `_ROOTS_ACTION`, and since REB-415
+ * the send's `_SEND_ACTION` and `_RECONCILE_ACTION`) resolve here the way ruff resolves
+ * nothing: by reading the constant's own assignment in the file that guards with it.
+ * Their values are Italian on purpose (they surface inside a sentence), and they are
+ * keys here too, so the two sides stay one fact.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'

@@ -1,5 +1,6 @@
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { EmailThread } from './EmailThread'
+import { PendingDrafts } from './PendingDrafts'
 import { useGmailMessages, type GmailEntityType, type GmailMessageRead } from './queries'
 
 /** The most recent instant in a thread. Computed rather than read off the last element:
@@ -31,13 +32,30 @@ function byThread(messages: GmailMessageRead[]): [string, GmailMessageRead[]][] 
  * and that customer's live deals, so the three tabs are three questions to one endpoint
  * rather than three different features.
  *
- * Read-only since 2026-09-09, at Ivan's request: the «Scrivi» button and the list of
- * unsent drafts left this tab, and later the same day the composer left the web app
- * altogether with the Solleciti page. Writing an email is the agent's job (`draft_email`
- * over MCP). What this tab shows is what actually went back and forth, nothing that has
- * not left yet.
+ * Writing an email is the assistant's job (`draft_email` over MCP), and it never sends.
+ * The tab was read-only from 2026-09-09 to 2026-09-24; since REB-415 it lists the
+ * drafts that have not left above the correspondence (`PendingDrafts`), each one whole
+ * and with the «Invia» a person presses after reading it. There is still no composer:
+ * the drafts come from the assistant, the person reviews and sends.
  */
 export function EmailTab({
+  entityType,
+  entityId,
+}: {
+  entityType: GmailEntityType
+  entityId: string
+}) {
+  return (
+    <div className="space-y-6">
+      <PendingDrafts entityType={entityType} entityId={entityId} />
+      <Correspondence entityType={entityType} entityId={entityId} />
+    </div>
+  )
+}
+
+/** What actually went back and forth. Its own component, so a failed read here and a
+ *  failed read of the drafts above are two banners and neither hides the other. */
+function Correspondence({
   entityType,
   entityId,
 }: {
@@ -56,7 +74,7 @@ export function EmailTab({
     return <p className="text-muted-foreground">Caricamento…</p>
 
   return (
-    <div className="space-y-6">
+    <section className="space-y-6">
       <h3 className="text-sm font-medium text-muted-foreground">Corrispondenza</h3>
 
       {messages.data.length === 0 ? (
@@ -69,6 +87,6 @@ export function EmailTab({
           <EmailThread key={threadId} messages={thread} />
         ))
       )}
-    </div>
+    </section>
   )
 }

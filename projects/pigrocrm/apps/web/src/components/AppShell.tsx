@@ -548,11 +548,22 @@ export function AppShell({ children }: { children: ReactNode }) {
           border of its own. The 12px grid-ground margin and the `lg:border` were copied
           from the hub's panel and read as a card scrolling on its own inside the page
           (REB-328, Lorenzo 2026-09-22: «full width dalla sidebar fino alla fine della
-          pagina e senza margini»). `<main>` is the one scroller of the application,
-          which the root's `overflow-hidden` guarantees; the pages carry their own
-          padding (`PageHeader`'s `px-8`). Below `lg` nothing changes: the inset was
-          already zero there. */}
-      <main className="min-w-0 flex-1 overflow-y-auto bg-card">{children}</main>
+          pagina e senza margini»). `<main>` is the one scroller of the application: the
+          root's `overflow-hidden` clips anything in normal flow to it, and the pages
+          carry their own padding (`PageHeader`'s `px-8`). Below `lg` nothing changes:
+          the inset was already zero there.
+
+          `relative` gives `<main>` its own containing block (REB-418): without one, a
+          plain `position: absolute` descendant with no explicit `top` -- the `sr-only`
+          "Fatto: "/"Da fare: " prefix `GetStartedPage` puts on every step of «Primi
+          passi», and the next one nobody notices until a page is long enough to expose
+          it -- is *not* in that normal flow, so the root's `overflow-hidden` does not
+          reach it: it falls back to its static position against the *initial*
+          containing block instead, escaping this `overflow-y-auto` box entirely and
+          inflating `<html>`'s real height, which drags the sidebar into the document's
+          own scroll. Confirmed live on the get-started page, whose four steps are long
+          enough to expose it. */}
+      <main className="relative min-w-0 flex-1 overflow-y-auto bg-card">{children}</main>
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
