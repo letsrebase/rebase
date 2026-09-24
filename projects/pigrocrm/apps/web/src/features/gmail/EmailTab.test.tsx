@@ -467,9 +467,53 @@ describe('EmailTab', () => {
     expect(alert).not.toHaveTextContent(/riprova/i)
     // What «Bozza» proves is said only of the row read after the attempt, never of the
     // one cached before the press.
-    await waitFor(() => expect(reads).toBe(2))
+    await waitFor(() => expect(reads).toBeGreaterThan(1))
     await waitFor(() => expect(alert).toHaveTextContent('stato qui sopra è stato riletto'))
     expect(screen.getByRole('button', { name: 'Invia' })).toBeEnabled()
+  })
+
+  /**
+   * Another draft's outcome writes into the same cached list (`patchCachedDraft`). That is
+   * not a read of this draft, and must not lift the wait: this draft's «Bozza» is still the
+   * one from before its own unanswered press.
+   */
+  it('does not take another draft\'s outcome for a re-read of this one', async () => {
+    const pendingReads: ((value: unknown) => void)[] = []
+    let reads = 0
+    respond({
+      drafts: () => {
+        reads += 1
+        if (reads === 1)
+          return drafts(draft(), draft({ id: 'other', subject: 'Altra bozza' }))
+        return new Promise((resolve) => pendingReads.push(resolve))
+      },
+    })
+    vi.mocked(api.POST).mockImplementation(((_path: string, init: never) => {
+      const id = (init as { params: { path: { draft_id: string } } }).params.path.draft_id
+      if (id === DRAFT_ID) return Promise.resolve(failed({ detail: 'Gateway Timeout' }, 504))
+      return Promise.resolve(ok(draft({ id, subject: 'Altra bozza', send_state: 'inviato' })))
+    }) as never)
+    renderTab()
+
+    const first = await screen.findByRole('article', { name: 'Offerta rivista' })
+    await userEvent.click(within(first).getByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+    expect(await within(first).findByRole('alert')).toHaveTextContent('Sto rileggendo')
+
+    const other = screen.getByRole('article', { name: 'Altra bozza' })
+    await userEvent.click(within(other).getByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('article', { name: 'Altra bozza' })).not.toBeInTheDocument(),
+    )
+
+    expect(within(first).getByRole('button', { name: 'Invia' })).toBeDisabled()
+    expect(within(first).getByRole('alert')).toHaveTextContent('Sto rileggendo')
+
+    for (const answer of pendingReads) answer(drafts(draft()))
+    await waitFor(() =>
+      expect(within(first).getByRole('button', { name: 'Invia' })).toBeEnabled(),
+    )
   })
 
   it('keeps «Invia» off until the draft has been read again after an unanswered send', async () => {

@@ -16,7 +16,9 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { toProblem } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import {
+  draftKeys,
   isSendable,
+  lastReadStarted,
   patchCachedDraft,
   useDeleteDraft,
   useDraftsForEntity,
@@ -103,7 +105,7 @@ export function PendingDrafts({
         </p>
       </div>
       {pending.map((draft) => (
-        <DraftCard key={draft.id} draft={draft} readAt={drafts.dataUpdatedAt} />
+        <DraftCard key={draft.id} draft={draft} readSeq={drafts.data?.readSeq ?? 0} />
       ))}
     </section>
   )
@@ -111,11 +113,11 @@ export function PendingDrafts({
 
 function DraftCard({
   draft,
-  readAt,
+  readSeq,
 }: {
   draft: EmailDraftRead
-  /** When the list this row comes from was last read from the server, in ms. */
-  readAt: number
+  /** Which server read this row comes from (`DraftList`). */
+  readSeq: number
 }) {
   // REB-294: one check per button, each against the string its own service passes to
   // `require_write` (`gmail/send.py`, `gmail/drafts.py`). A readonly person reads the
@@ -129,11 +131,12 @@ function DraftCard({
   const reconcile = useReconcileDraft()
   const remove = useDeleteDraft()
   const [confirming, setConfirming] = useState(false)
-  // When a send came back with no answer at all. Until the list has been read again after
-  // it, the row on screen is the one from before the press and says nothing about what
-  // happened, so «Invia» stays off and the banner says it is still finding out.
-  const [unknownAt, setUnknownAt] = useState<number | null>(null)
-  const rereading = unknownAt !== null && readAt < unknownAt
+  // The last list read that had started when a send came back with no answer at all.
+  // Until a read numbered above it lands, the row on screen may be the one from before the
+  // press and says nothing about what happened, so «Invia» stays off and the banner says
+  // it is still finding out.
+  const [unknownAfter, setUnknownAfter] = useState<number | null>(null)
+  const rereading = unknownAfter !== null && readSeq <= unknownAfter
   const attachmentsId = useId()
   // Synchronous, unlike `isPending`: two clicks dispatched before React re-renders both
   // read a `disabled` that is still false, and a flag read from the closure would be too.
@@ -165,7 +168,7 @@ function DraftCard({
     sendingOnce.current = true
     reconcile.reset()
     remove.reset()
-    setUnknownAt(null)
+    setUnknownAfter(null)
     send.mutate(draft.id, {
       onSuccess: (sent) => {
         setConfirming(false)
@@ -178,7 +181,14 @@ function DraftCard({
       // read as though nothing had happened.
       onError: (error) => {
         setConfirming(false)
-        if (sendOutcomeUnknown(error)) setUnknownAt(Date.now())
+        if (sendOutcomeUnknown(error)) {
+          // The read count first, then a read that starts after it: the refetch the hook
+          // already began is at or below the count and does not settle the question.
+          setUnknownAfter(lastReadStarted())
+          void queryClient.invalidateQueries({
+            queryKey: draftKeys.forEntity(draft.entity_type, draft.entity_id),
+          })
+        }
         const moved = toProblem(error).send_state
         if (typeof moved === 'string')
           patchCachedDraft(queryClient, draft, { send_state: moved as SendState })

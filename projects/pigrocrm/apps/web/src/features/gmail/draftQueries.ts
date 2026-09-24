@@ -6,6 +6,24 @@ import { gmailKeys, type GmailEntityType } from './queries'
 export type EmailDraftRead = components['schemas']['EmailDraftRead']
 export type EmailDraftAttachment = components['schemas']['EmailDraftAttachment']
 export type EmailDraftPage = components['schemas']['EmailDraftPage']
+/**
+ * The page as the tab holds it: the server's answer, and which read it was, numbered when
+ * the request *started*. Kept in the data rather than read off the query's
+ * `dataUpdatedAt`, which `patchCachedDraft` moves too: a local write about one draft is
+ * not a read of the others, and a card waiting to learn what happened to its own
+ * unanswered send must not take it for one. A counter rather than a clock, so two reads
+ * in the same millisecond are still two.
+ */
+export type DraftList = EmailDraftPage & { readSeq: number }
+
+let readsStarted = 0
+
+/** The number of the last list read that has started. A card that records it when its
+ *  send fails, and asks for a new read right after, knows that only a page numbered
+ *  above it was read after the failure. */
+export function lastReadStarted(): number {
+  return readsStarted
+}
 export type SendState = EmailDraftRead['send_state']
 
 /**
@@ -51,8 +69,11 @@ const IN_FLIGHT_POLL_MS = 10_000
 export function useDraftsForEntity(args: { entityType: GmailEntityType; entityId: string }) {
   return useQuery({
     queryKey: draftKeys.forEntity(args.entityType, args.entityId),
-    queryFn: () =>
-      unwrap(
+    queryFn: async (): Promise<DraftList> => {
+      // Numbered before the request leaves: a read that was already in flight when a send
+      // failed may carry the row from before the claim, and must not count as a re-read.
+      const readSeq = ++readsStarted
+      const page = await unwrap(
         api.GET('/api/email-drafts', {
           params: {
             query: {
@@ -63,7 +84,9 @@ export function useDraftsForEntity(args: { entityType: GmailEntityType; entityId
             },
           },
         }),
-      ),
+      )
+      return { ...page, readSeq }
+    },
     refetchInterval: (query) =>
       query.state.data?.items.some((draft) => draft.send_state === 'in_invio')
         ? IN_FLIGHT_POLL_MS
@@ -86,7 +109,7 @@ export function patchCachedDraft(
   draft: Pick<EmailDraftRead, 'id' | 'entity_type' | 'entity_id'>,
   patch: Partial<EmailDraftRead>,
 ) {
-  queryClient.setQueryData<EmailDraftPage>(
+  queryClient.setQueryData<DraftList>(
     draftKeys.forEntity(draft.entity_type, draft.entity_id),
     (page) =>
       page && {
