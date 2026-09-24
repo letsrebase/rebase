@@ -56,9 +56,10 @@ one per commit, and never "working on it".
 **Project updates.** Post one on the contract's Linear project whenever something
 happened that the issue list alone would not show: a milestone slipped, a health
 change (`onTrack`, `atRisk`, `offTrack`), a decision taken, a release shipped.
-`save_status_update` with `type: "project"` and the project id in a field called
-`project` (both are easy to get wrong once: omitting `type` fails validation, and
-`projectId` fails too even though the id is right there). Three sentences at most, in
+`save_status_update` with `type: "project"`, the project id in a field called
+`project`, and a `health` value (each is easy to get wrong once: omitting `type` or
+`health` fails validation, and `projectId` fails too even though the id is right
+there). Three sentences at most, in
 the `linear-content` skill's shape when your harness reads it: what moved, the health
 and why, the next visible thing. An update that only restates the board is noise, but
 skipping one when the board alone would mislead whoever reads only the update is the
