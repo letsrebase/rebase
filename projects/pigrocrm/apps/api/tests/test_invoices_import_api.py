@@ -148,6 +148,25 @@ def test_an_admin_imports_and_sees_the_undeclared_gaps(
     assert xml.json()["code"] == "not_found"
 
 
+def test_a_caller_cannot_hand_declare_importata_da_as_fatturapa(
+    logged_in: TestClient,
+    customer: dict[str, Any],
+    fiscal_profile: dict[str, Any],
+    emitter: dict[str, Any],
+) -> None:
+    """`InvoiceImport.importata_da` stays fixed to `Literal["esterno"]` (REB-368,
+    design §5 item 4/§7 item 6): a caller on this hand-declare door has parsed no
+    document and holds no `xml_document_id`, so letting it claim `"fatturapa"` would
+    be an unbacked claim the invoice list's own badge would then repeat dishonestly.
+    Only `InvoiceService.confirm_import` (which has actually parsed a document) can
+    set that value, through `import_issued`'s own keyword-only parameter -- never
+    through this schema."""
+    body = _body(customer["id"], 1, "2026-05-05")
+    body["importata_da"] = "fatturapa"
+    response = logged_in.post("/api/invoices/import", json=body)
+    assert response.status_code == 422, response.text
+
+
 def test_a_collaborator_cannot_import(logged_in: TestClient, customer: dict[str, Any]) -> None:
     """`collaborator_client` is deliberately not used here: it shares its cookie jar
     with `logged_in`, and `customer` needs `logged_in` -- combining the two would leave

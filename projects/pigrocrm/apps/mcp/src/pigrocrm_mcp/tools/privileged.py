@@ -178,9 +178,13 @@ def register(
     @mcp.tool()
     @guard
     def export_invoice_xml(invoice_id: str) -> dict[str, Any]:
-        """Produce l'XML FatturaPA di una fattura emessa e lo archivia.
+        """Produce l'XML FatturaPA di una fattura emessa e lo archivia -- o, per una
+        fattura importata da un file FatturaPA con un solo documento sorgente, restituisce
+        l'identificativo dell'originale gia' archiviato (hash verificato), mai una
+        ricostruzione. Rifiuta ancora, invariato, per una fattura importata a mano o per
+        una emessa in blocco da piu' fatture (nessun originale su cui puntare).
 
-        Al primo export fissa `xml_hash_sha256`, che il sistema promette di non
+        Al primo export nativo fissa `xml_hash_sha256`, che il sistema promette di non
         cambiare più: rigenerazioni successive devono produrre gli stessi byte.
         """
         return (

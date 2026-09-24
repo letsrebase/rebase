@@ -129,9 +129,12 @@ export function buildInvoiceColumns(
     {
       header: 'Stato',
       id: 'stato',
-      // Without the «importata» pill (ORB-130): in a register where most rows came from
-      // the previous system the word explains nothing a reader of the list can act on.
-      // The detail page keeps it, as the reason its XML actions are missing.
+      // `importata={false}` suppresses only the uninformative «importata» pill an
+      // "esterno" row would otherwise get (ORB-130: in a register where most rows came
+      // from the previous system the word explains nothing a reader of the list can act
+      // on -- the detail page keeps it, as the reason its XML actions are missing). A
+      // "fatturapa" row's own badge ignores the flag and still shows here: it names a
+      // fact the list can act on (design 2026-09-23 §5 item 4/§7 item 6).
       cell: ({ row }) => <InvoiceStateBadge invoice={row.original} importata={false} />,
     },
     {

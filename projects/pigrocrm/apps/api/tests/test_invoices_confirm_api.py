@@ -100,7 +100,9 @@ def test_confirming_a_fresh_document_writes_the_register_and_a_second_confirm_is
     assert row["outcome"] == "imported"
     assert row["fattura"]["numero"] == 6
     assert row["fattura"]["customer_id"] == customer["id"]
-    assert row["fattura"]["importata_da"] == "esterno"
+    # REB-368: a document this CRM parsed itself gets "fatturapa", not InvoiceImport's
+    # own hand-declared "esterno" default.
+    assert row["fattura"]["importata_da"] == "fatturapa"
     assert row["fattura"]["xml_document_id"] == document_id
     assert row["fattura"]["xml_hash_sha256"] == hashlib.sha256(_fixture(CONSULENZA)).hexdigest()
 

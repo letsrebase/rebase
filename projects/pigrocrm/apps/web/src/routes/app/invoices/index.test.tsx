@@ -276,6 +276,21 @@ describe('the invoice list', () => {
     expect(screen.queryByText(/^importata$/i)).toBeNull()
   })
 
+  /** REB-368: unlike the "esterno" pill the list still suppresses (assertion above,
+   *  ORB-130), a "fatturapa" row's own badge names a fact the list can act on -- the
+   *  original file is on record and downloadable -- so it shows here too. A space
+   *  with both import kinds therefore reads two distinct badges across its rows: the
+   *  generic one on the detail page only, the honest "FatturaPA" one right here. */
+  it('shows the fatturapa row its own distinct badge, mixed with an esterno row', async () => {
+    mockInvoices([
+      invoice({ id: 'f-esterno', numero: 5, importata_da: 'esterno' }),
+      invoice({ id: 'f-fatturapa', numero: 8, importata_da: 'fatturapa' }),
+    ])
+    renderList()
+    expect(await screen.findByText('FatturaPA')).toBeInTheDocument()
+    expect(screen.queryByText(/^importata$/i)).toBeNull()
+  })
+
   it('says which period each invoice is about, beside its date (ORB-126)', async () => {
     mockInvoices([
       invoice({

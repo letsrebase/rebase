@@ -595,4 +595,26 @@ describe('InvoiceStateBadge', () => {
     expect(screen.getByText(/^importata$/i)).toBeInTheDocument()
     expect(screen.queryByText(/qualcosaltro/i)).toBeNull()
   })
+
+  // REB-368: the two import kinds get two distinct, honest badges -- "esterno" names
+  // no source (assertion above), "fatturapa" names the transmission standard itself,
+  // because unlike a hand-typed "esterno" row this one's original file is on record
+  // and `export_xml` can hand it back.
+  it('shows a distinct "FatturaPA" badge for a fatturapa-imported invoice', () => {
+    const imported = { ...ISSUED, importata_da: 'fatturapa' } as Invoice
+    wrap(<InvoiceStateBadge invoice={imported} />)
+    expect(screen.getByText('FatturaPA')).toBeInTheDocument()
+    expect(screen.queryByText(/^importata$/i)).toBeNull()
+  })
+
+  /** Unlike the "esterno" pill (test above), the "fatturapa" badge ignores the list's
+   *  own suppression flag: a bulk "esterno" migration explains nothing most rows can
+   *  act on (ORB-130), but a "fatturapa" row names a fact the list can act on -- the
+   *  original file is on record and downloadable. */
+  it('keeps the "FatturaPA" badge even where the list suppresses the generic one', () => {
+    const imported = { ...ISSUED, importata_da: 'fatturapa' } as Invoice
+    wrap(<InvoiceStateBadge invoice={imported} importata={false} />)
+    expect(screen.getByText('Emessa')).toBeInTheDocument()
+    expect(screen.getByText('FatturaPA')).toBeInTheDocument()
+  })
 })
