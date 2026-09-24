@@ -23,7 +23,7 @@ dependencies = [
   # test_architecture.py's allowlist is built from this list precisely so that an
   # undeclared import fails rather than works by accident. Pinned to the version
   # `uv.lock` already resolves, so this adds a promise and not a new download.
-  "cryptography==50.0.0",
+  "cryptography==50.0.1",
   "uuid-utils==0.17.0",
   "lxml==6.1.2",
   # Only `zoneinfo.ZoneInfo("Europe/Rome")` needs this, and only because
