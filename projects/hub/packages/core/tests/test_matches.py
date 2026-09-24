@@ -249,7 +249,7 @@ def test_the_framework_prints_the_freelancer_and_rebases_signer_and_leaves_the_s
 def test_with_an_active_framework_only_the_letter_is_written_and_it_cites_the_signature_date(
     clean: Session,
 ) -> None:
-    """Review Focus 3: 23:30 UTC on 30 September is 1 October in Rome."""
+    """23:30 UTC on 30 September is 1 October in Rome."""
     admin_id, freelancer_id, company_id = _setup(clean)
     _framework(clean, freelancer_id, admin_id, signed_at=datetime(2026, 9, 30, 23, 30, tzinfo=UTC))
     renderer = FakeRenderer()
@@ -362,7 +362,7 @@ def test_the_prefill_suggests_from_the_request_the_card_and_rebases_defaults(
 
 
 def test_a_card_without_a_day_rate_prefills_no_fee_and_the_letter_needs_one(clean: Session) -> None:
-    """Review Focus 2: a card drafted from a signup has no rate yet."""
+    """A card drafted from a signup has no rate yet."""
     admin_id, freelancer_id, company_id = _setup(clean)
     card = clean.get(Freelancer, freelancer_id)
     assert card is not None
@@ -483,7 +483,7 @@ def test_the_contracts_page_reads_the_active_framework_its_dates_and_the_matches
 
 
 def test_a_match_stays_on_the_page_after_its_request_is_deleted(clean: Session) -> None:
-    """Review Focus 4: a soft-deleted request still names the match that came from it."""
+    """A soft-deleted request still names the match that came from it."""
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
     match = service.create(freelancer_id, _body(company_id), admin_id)
