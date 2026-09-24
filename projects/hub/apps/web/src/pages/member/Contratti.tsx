@@ -4,7 +4,7 @@ import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { member, type MemberContract } from '@/lib/api'
 import { whatOf } from '@/lib/contracts'
-import { MEMBER_DOCUMENT_STATE_LABELS, formatDate } from '@/lib/format'
+import { formatDate, memberDocumentStateLabel } from '@/lib/format'
 
 function Actions({ document }: { document: MemberContract }) {
   // «Firma» wants «il contratto quadro» / «la lettera n. X», its direct object; the
@@ -42,7 +42,7 @@ function Framework({ quadro }: { quadro: MemberContract }) {
     <div className="space-y-3 border bg-card p-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <p className="font-medium">Contratto quadro</p>
-        <Badge variant="pill">{MEMBER_DOCUMENT_STATE_LABELS[quadro.stato] ?? quadro.stato}</Badge>
+        <Badge variant="pill">{memberDocumentStateLabel('quadro', quadro.stato)}</Badge>
       </div>
       {quadro.attivo && quadro.signed_at && quadro.rinnovo && quadro.ultimo_giorno_disdetta && (
         <p className="text-muted-foreground">
@@ -65,7 +65,7 @@ function Letter({ lettera }: { lettera: MemberContract }) {
     <li className="space-y-2 border bg-card p-4 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <p className="font-medium">Lettera di incarico n. {lettera.numero}</p>
-        <Badge variant="pill">{MEMBER_DOCUMENT_STATE_LABELS[lettera.stato] ?? lettera.stato}</Badge>
+        <Badge variant="pill">{memberDocumentStateLabel('lettera', lettera.stato)}</Badge>
       </div>
       <p className="text-muted-foreground">{[lettera.cliente, period].filter(Boolean).join(', ')}</p>
       <Actions document={lettera} />

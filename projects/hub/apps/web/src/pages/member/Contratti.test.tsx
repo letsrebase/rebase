@@ -55,11 +55,18 @@ describe('«Contratti» in the member area (REB-392)', () => {
       'href',
       'https://firma.letsrebase.com/sign/abc',
     )
-    expect(screen.getByText('Da firmare')).toBeInTheDocument()
+    expect(screen.getByText('Inviato')).toBeInTheDocument()
     const letter = screen.getByText('Lettera di incarico n. 2026-001').closest('li')!
     expect(within(letter).getByText('Parte dopo la firma del contratto quadro')).toBeInTheDocument()
     expect(within(letter).getByText('ACME S.r.l., dal 1° ottobre 2026 al 29 gennaio 2027')).toBeInTheDocument()
     expect(within(letter).queryByRole('link')).toBeNull()
+  })
+
+  it('agrees in gender with the document: a letter is «Inviata», the framework agreement «Inviato»', async () => {
+    mount({ quadro: QUADRO, lettere: [{ ...LETTERA, stato: 'inviato', signing_url: 'https://firma.letsrebase.com/sign/def' }] })
+    expect(await screen.findByText('Inviato')).toBeInTheDocument()
+    const letter = screen.getByText('Lettera di incarico n. 2026-001').closest('li')!
+    expect(within(letter).getByText('Inviata')).toBeInTheDocument()
   })
 
   it('offers the signed copy and the framework agreement’s dates once signed, and no link to sign', async () => {
