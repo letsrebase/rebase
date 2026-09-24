@@ -168,11 +168,12 @@ updates:
   # arrives here is a major; one PR for all of them, since they are read together.
   # The deploy workflows run on `workflow_run`, which only ever runs the version on
   # main, so a bump there is proven by the first deploy after the merge. What they
-  # share with CI, the `changed-paths` artifact (`upload-artifact` in ci.yml, on push
-  # only, and `download-artifact` in each deploy), fails open: a verdict a deploy
-  # cannot read deploys the preview instead of skipping it and says so in its log
-  # («no verdict from CI run ...»). A broken bump of that pair costs extra previews,
-  # never a missed one, and production, which deploys on a tag, never reads it.
+  # share with CI is the `changed-paths` artifact (`upload-artifact` in ci.yml, on
+  # push only, and `download-artifact` in each deploy). A broken download fails open:
+  # the deploy cannot read the verdict, deploys the preview instead of skipping it and
+  # says so in its log («no verdict from CI run ...»); production never downloads it.
+  # A broken upload fails the `changes` job on every push, a release tag included, so
+  # CI goes red and neither a preview nor a release deploys until it is fixed.
   - package-ecosystem: github-actions
     directory: /
     schedule:
