@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '@rebase/ui/button'
 import { Checkbox } from '@rebase/ui/checkbox'
 import { cn } from '@rebase/ui/cn'
@@ -53,6 +53,11 @@ function useDebounce<T>(value: T, delayMs: number): T {
     return () => clearTimeout(timer)
   }, [value, delayMs])
   return debounced
+}
+
+function revoke(previews: Previews) {
+  URL.revokeObjectURL(previews.lettera)
+  if (previews.quadro) URL.revokeObjectURL(previews.quadro)
 }
 
 function failureOf(error: unknown, fallback: string): Failure | null {
@@ -358,15 +363,25 @@ export function AdminCreaMatch() {
   // A preview is a blob in this tab's memory: let it go once replaced, or with the page.
   useEffect(() => {
     if (!previews) return
-    return () => {
-      URL.revokeObjectURL(previews.lettera)
-      if (previews.quadro) URL.revokeObjectURL(previews.quadro)
-    }
+    return () => revoke(previews)
   }, [previews])
+
+  const payload = (): MatchCreate | null =>
+    company ? { company_id: company.id, cliente: toCliente(cliente), lettera: toLettera(lettera) } : null
+  // What the page shows now. A prefill or a preview can land after the admin has moved
+  // on: picked another company, left the step, changed what the preview was made from.
+  // Such a response is dropped rather than let it fill the forms with another company's
+  // details or jump to an outdated preview (Greptile 4092036036).
+  const shown = useRef({ company: null as string | null, step: 0, request: '' })
+  const request = JSON.stringify(payload())
+  useLayoutEffect(() => {
+    shown.current = { company: company?.id ?? null, step, request }
+  })
 
   const loadPrefill = useMutation({
     mutationFn: (companyId: string) => admin.matchPrefill(id, companyId),
     onSuccess: (data, companyId) => {
+      if (shown.current.step !== 0 || shown.current.company !== companyId) return
       setPrefill(data)
       setPrefillFor(companyId)
       setFiscal(draftFromFiscal(data.fiscale))
@@ -385,7 +400,11 @@ export function AdminCreaMatch() {
       const quadro = prefill?.quadro_necessario ? await admin.matchPreview(id, payload, 'quadro') : null
       return { lettera: URL.createObjectURL(letter), quadro: quadro ? URL.createObjectURL(quadro) : null }
     },
-    onSuccess: (made) => {
+    onSuccess: (made, sent) => {
+      if (shown.current.step !== 3 || shown.current.request !== JSON.stringify(sent)) {
+        revoke(made)
+        return
+      }
       setPreviews(made)
       setStep(4)
     },
@@ -395,8 +414,6 @@ export function AdminCreaMatch() {
     onSuccess: () => void navigate({ to: '/admin/freelance/$id/contracts', params: { id } }),
   })
 
-  const payload = (): MatchCreate | null =>
-    company ? { company_id: company.id, cliente: toCliente(cliente), lettera: toLettera(lettera) } : null
   const fiscalFailure = failureOf(saveFiscal.error, 'Non riesco a salvare i dati fiscali.')
   const letterFailure = failureOf(generate.error, 'Non riesco a generare l’anteprima.')
   const name = person.data ? `${person.data.nome} ${person.data.cognome}` : ''

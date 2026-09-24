@@ -19,15 +19,25 @@ function answer(status: number, body: unknown) {
 
 type Handler = unknown
 /** Routes by `"<method> <url>"`; a handler may be a function of the request and may
- *  answer a whole `Response` (the previews are PDFs, not JSON). */
+ *  answer a whole `Response` (the previews are PDFs, not JSON), or a promise of either
+ *  (a response the test holds back and lets land later). */
 function routeFetch(handlers: Record<string, Handler>) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const key = `${init?.method ?? 'GET'} ${String(input)}`
     if (!(key in handlers)) throw new Error(`unhandled fetch in this test: ${key}`)
     const handler = handlers[key]
-    const body = typeof handler === 'function' ? (handler as (init?: RequestInit) => unknown)(init) : handler
+    const body = await (typeof handler === 'function' ? (handler as (init?: RequestInit) => unknown)(init) : handler)
     return body instanceof Response ? body : answer(200, body)
   })
+}
+
+/** A response the test answers when it chooses, to land one out of order. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
 }
 
 const pdf = () => new Response('%PDF-1.7 anteprima', { status: 200, headers: { 'Content-Type': 'application/pdf' } })
@@ -269,5 +279,60 @@ describe('«Crea match» in five steps (REB-387)', () => {
     expect(await screen.findByLabelText('Codice fiscale')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Freelance -> Cliente
     expect(await screen.findByLabelText('Ragione sociale del cliente')).toHaveValue('Verdi Snc')
+  })
+
+  it('drops a prefill that lands after the admin picked another company (Greptile 4092036036)', async () => {
+    const OPEN2 = { ...OPEN, id: 'c9', nome_azienda: 'Verdi Snc', referente: 'Luca Verdi' }
+    const late = deferred<Response>()
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 2, items: [OPEN, OPEN2], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': () => late.promise,
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c9': {
+        ...prefill('900.00'),
+        cliente: { cliente_ragione_sociale: 'Verdi Snc', cliente_piva: null, cliente_sede: null },
+      },
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+    })
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: /Rossi Studio/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await userEvent.click(screen.getByRole('button', { name: /Verdi Snc/ }))
+    late.resolve(answer(200, prefill('450.00')))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Avanti' })).toBeEnabled())
+    expect(screen.getByText('1. Azienda')).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByRole('button', { name: /Verdi Snc/ })).toHaveAttribute('aria-pressed', 'true')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByLabelText('Codice fiscale')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Freelance -> Cliente
+    expect(await screen.findByLabelText('Ragione sociale del cliente')).toHaveValue('Verdi Snc')
+  })
+
+  it('drops a preview that lands after the admin went back and changed the client (Greptile 4092036036)', async () => {
+    const late = deferred<Response>()
+    let letters = 0
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': { ...prefill('450.00'), quadro_necessario: false, lettera_in_attesa: false },
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': () => (++letters === 1 ? late.promise : pdf()),
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(await screen.findByRole('button', { name: 'Genera l’anteprima' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Indietro' })) // Lettera -> Cliente
+    const sede = await screen.findByLabelText('Sede del cliente')
+    await userEvent.clear(sede)
+    await userEvent.type(sede, 'Torino')
+    late.resolve(pdf())
+
+    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:anteprima-1'))
+    expect(screen.getByText('3. Cliente')).toHaveAttribute('aria-current', 'step')
+    expect(screen.queryByRole('button', { name: 'Salva come bozza' })).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Cliente -> Lettera
+    await userEvent.click(await screen.findByRole('button', { name: 'Genera l’anteprima' }))
+    expect(await screen.findByRole('link', { name: 'Apri la lettera di incarico' })).toHaveAttribute('href', 'blob:anteprima-2')
   })
 })
