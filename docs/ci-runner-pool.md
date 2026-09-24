@@ -102,11 +102,11 @@ add the rate-limiting a Tailscale gate made unnecessary there.
    (`actions.runner.letsrebase.ci-runner-{1,2,3}.service`, user `ci`, one
    `actions-runner*` directory each), labels `self-hosted, linux, x64`. Verified
    picking up and completing real jobs, including three at once.
+9. Ivan's SSH public key (`ivan-sala@macbook runnergitlab-rebase`) added to the
+   `ci` user's `authorized_keys`, alongside the devbox and Mac keys.
 
 **Not done, deliberate follow-ups rather than gaps in what exists today:**
 
-- **Ivan's SSH public key.** Needed from Lorenzo before Ivan has admin access to
-  this box; the devbox and Mac keys are in place, his is not yet.
 - **Ephemeral mode.** The runner is a standard persistent systemd service, not
   `--ephemeral`: it cleans its own workspace between jobs (the runner's default
   behaviour) but does not deregister and rotate credentials after each one. Worth
