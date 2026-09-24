@@ -94,6 +94,25 @@ describe('/login', () => {
     )
   })
 
+  it('does not pin a campaign the tab remembers from elsewhere on a bare login', async () => {
+    // A wizard opened from an ad leaves its campaign in the tab (`rememberUtm`); the
+    // thanks page then links a bare /login. That login came from no campaign.
+    window.sessionStorage.setItem('orbiters.utm', 'utm_source=linkedin&utm_campaign=ads')
+    window.sessionStorage.setItem('orbiters.da', 'home')
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => Promise.resolve(answer(202, { ok: true })))
+    mount()
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Email'), 'ada@studio.it')
+    await user.click(screen.getByRole('button', { name: 'Mandami il link' }))
+    await screen.findByText(/Se sei dentro, ti abbiamo scritto/)
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/hub/auth/link',
+      expect.objectContaining({ body: JSON.stringify({ email: 'ada@studio.it' }) }),
+    )
+  })
+
   it('shows the API sentence when the mail is not active yet', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(503, { detail: "L'accesso via email non è ancora attivo. Riprova più avanti." }),

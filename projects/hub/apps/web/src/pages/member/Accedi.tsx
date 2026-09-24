@@ -5,12 +5,12 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { ApiError } from '@/lib/api'
 import { useRequestLink } from '@/lib/me'
-import { resolveAttribution } from '@/lib/utm'
+import { ownAttribution } from '@/lib/utm'
 
 /** The way in: an address, a link by mail, no password. The page says the same thing
- *  whether the address is known or not, as the API does. The campaign the page was
- *  opened from goes with the address, so the login it leads to says which mail or ad
- *  brought the person back (REB-426), the same attribution the wizards send. */
+ *  whether the address is known or not, as the API does. The campaign in this page's own
+ *  URL goes with the address, so the login it leads to says which mail brought the
+ *  person back (REB-426); a campaign the tab remembers from another page does not. */
 export function Accedi() {
   const requestLink = useRequestLink()
   const searchStr = useLocation({ select: (location) => location.searchStr })
@@ -21,7 +21,7 @@ export function Accedi() {
   function submit(event: FormEvent) {
     event.preventDefault()
     setError(null)
-    requestLink.mutate({ email: email.trim(), utm: resolveAttribution(searchStr) }, {
+    requestLink.mutate({ email: email.trim(), utm: ownAttribution(searchStr) }, {
       onSuccess: () => setSent(true),
       onError: (failure) =>
         setError(
