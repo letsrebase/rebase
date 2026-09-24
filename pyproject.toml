@@ -42,7 +42,7 @@ dev = [
   "pytest-xdist==3.8.0",
   "testcontainers[postgres]==4.15.0",
   "httpx==0.28.1",
-  "ruff==0.16.1",
+  "ruff==0.16.8",
   "mypy==2.3.0",
   "lxml-stubs==0.5.1",
   # openpyxl ships no inline types, so under `strict` every `from openpyxl import ...`
