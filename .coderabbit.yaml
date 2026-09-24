@@ -102,12 +102,15 @@ reviews:
           `projects/<project>/packages/core/migrations/versions/`; pass
           otherwise. For each project with added migrations, take the
           highest-numbered file in that directory on the base branch as it is
-          when this check runs. Pass when the lowest added four-digit prefix is
-          exactly one more than that file's, no added prefix is already taken on
-          the base branch, and each added file's `down_revision` is the
-          `revision` of the file numbered just before it (the first added one
-          points at the base branch's highest). Otherwise fail, naming the prefix
-          that collides or the `down_revision` that should change.
+          when this check runs; when there is none, the project's chain starts
+          at `0001`. Pass when the added four-digit prefixes are distinct and
+          consecutive, the lowest is exactly one more than that file's (or is
+          `0001` with `down_revision = None` when there is none), no added
+          prefix is already taken on the base branch, and each added file's
+          `down_revision` is the `revision` of the file numbered just before it
+          (the first added one points at the base branch's highest). Otherwise
+          fail, naming the prefix that collides or the `down_revision` that
+          should change.
 
   path_instructions:
     - path: "projects/*/docs/superpowers/**"
