@@ -30,8 +30,10 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
-    # 10 reviews an hour for the whole org, and Dependabot opens its PRs together
-    # (REB-434). `@coderabbitai review` on one of them still asks for a review.
+    # Ten included reviews an hour, and Dependabot opens its PRs a dozen at a time
+    # (REB-434, #369 to #380). The PR loop asks for the review with
+    # `@coderabbitai review` when one is picked up to merge (.claude/skills/pr-creation,
+    # step 3), one PR at a time.
     ignore_usernames:
       - dependabot[bot]
 
@@ -174,6 +176,13 @@ reviews:
         Italian strings are assertions on product copy.
 
 knowledge_base:
+  # The card behind a PR (`Linear: REB-N.`, the branch name) is what the linked-issue
+  # checks read. The repository is public, so what they quote from a card lands in a
+  # public PR comment: Ivan accepted that on 2026-09-25. Only the team's own cards.
+  linear:
+    usage: enabled
+    team_keys:
+      - REB
   code_guidelines:
     enabled: true
     # The first two are defaults already. They stay listed because the docs say
@@ -190,3 +199,9 @@ knowledge_base:
 chat:
   auto_reply: true
   art: false
+  # A card here is filed by the linear-ticket skill, with its title shape, its two
+  # labels, an assignee and the neighbour scan; one filed from a PR comment has none.
+  integrations:
+    linear:
+      usage: disabled
+

@@ -226,10 +226,11 @@ lands. On a milestone's draft PR none of that fires (§ Which PR): the URL goes 
 card the PR lists, and each card moves by hand at its run's start and at the merge. So
 the evidence that would have closed the card goes in a comment before or right after
 the merge, not in a state change you make. From here to the merge the card keeps
-following the PR: the review's findings and what you did with them, Greptile's findings
-on each push and whether each was fixed or answered (the PR merges only when its last
-review leaves nothing open and its score reads 5/5), a CI run that went red and why, a
-push that changed what the PR is. One line each is enough, and silence is not.
+following the PR: the review's findings and what you did with them, Greptile's and
+CodeRabbit's findings on each push, CodeRabbit's verdicts on Greptile's, and whether each
+was fixed or answered (the PR merges only when neither reviewer's last pass leaves
+anything open and Greptile's score reads 5/5), a CI run that went red and why, a push
+that changed what the PR is. One line each is enough, and silence is not.
 
 **When you finish.** `Done` means verified on the surface the issue is about, and the
 comment that closes it says how. A green CI check closes a CI issue. A deploy issue

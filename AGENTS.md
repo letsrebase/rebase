@@ -224,8 +224,10 @@ tested on a branch and is proven on the trunk instead.
   on Monday mornings as `.github/dependabot.yml` schedules them, a security update the
   day its advisory lands; both are bumps and nothing else, titled `chore(deps): ...`,
   `chore(deps-dev): ...` or `ci(deps): ...`. One merges on the gate every PR here
-  merges on (green `ci`, the Greptile loop of `.claude/skills/pr-creation/`, a merge
-  commit), and two things are invisible to that gate. The images are built on the
+  merges on (green `ci`, the Greptile and CodeRabbit loop of
+  `.claude/skills/pr-creation/`, a merge commit), with one difference: CodeRabbit
+  skips Dependabot by itself, so whoever picks the PR up asks for its review with
+  `@coderabbitai review`. Two things are invisible to that gate. The images are built on the
   trunk, not on the PR, so a bump to a Dockerfile, a compose file or a lock is proven
   by preflight's image checks or by the trunk run before the preview deploys. And a PR
   that changes `pnpm-lock.yaml` leaves the pnpm store hash in `flake.nix` stale: the

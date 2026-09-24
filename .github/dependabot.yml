@@ -9,9 +9,10 @@
 #
 # What a Dependabot PR is here, and what it is not (docs/design/DECISIONS.md,
 # 2026-09-24): the one kind of pull request with no Linear card behind it, merged on the
-# same gate as any other (green `ci`, Greptile's last review clean). A PR that needs
-# code changes to go green is not fixed on the bot's branch: it is closed, and the
-# upgrade gets a card and a branch of its own.
+# same gate as any other (green `ci`, Greptile's and CodeRabbit's last reviews clean;
+# CodeRabbit skips Dependabot by itself and is asked with `@coderabbitai review`). A PR
+# that needs code changes to go green is not fixed on the bot's branch: it is closed,
+# and the upgrade gets a card and a branch of its own.
 #
 # Every entry shares three choices:
 #   - Monday at 06:00 in Rome, so the week's PRs are there when the week starts.
