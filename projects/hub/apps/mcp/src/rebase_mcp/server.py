@@ -35,7 +35,7 @@ from rebase_core.errors import DomainError, NotFound
 from rebase_core.freelancers import LEAD_STATE, FreelancerService
 from rebase_core.http import HttpCall
 from rebase_core.logins import LoginService
-from rebase_core.matches import MatchService
+from rebase_core.matches import ENTITY, MatchService, require_live_freelancer
 from rebase_core.models import Freelancer, Signup, User
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
@@ -673,6 +673,10 @@ def build_server(
         try:
             service = MatchService(session)
             match = service.get(UUID(match_id))
+            # A soft-deleted freelancer's match reads as «match not found», the answer
+            # the admin API already gives (REB-417): checked here, right after `get`,
+            # rather than let `for_freelancer` refuse with the freelancer's own message.
+            require_live_freelancer(session, match.freelancer_id, ENTITY, UUID(match_id))
             quadro = service.for_freelancer(match.freelancer_id).quadro
             body = match.model_dump(mode="json")
             body["quadro"] = quadro.model_dump(mode="json") if quadro is not None else None

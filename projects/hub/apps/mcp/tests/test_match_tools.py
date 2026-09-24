@@ -150,3 +150,20 @@ async def test_get_match_answers_the_letter_and_the_framework_with_links(
         assert missing.is_error
     finally:
         _wipe(factory)
+
+
+async def test_get_match_of_a_soft_deleted_freelancer_answers_the_matchs_own_message(
+    factory: sessionmaker[Session],
+) -> None:
+    """The admin API answers this same case with `match {id} non trovato`
+    (`_require_live_freelancer` in `routers/matches.py`); the MCP tool used to answer
+    with the freelancer's own not-found message instead, from `for_freelancer` (REB-417)."""
+    card, match = _seed(factory)
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            await client.call_tool("delete_freelancer", {"freelancer_id": card})
+            refused = await client.call_tool("get_match", {"match_id": match})
+        assert refused.is_error
+        assert f"match {match} non trovato" in refused.content[0].text
+    finally:
+        _wipe(factory)

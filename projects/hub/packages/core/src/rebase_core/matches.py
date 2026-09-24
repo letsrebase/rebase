@@ -73,6 +73,21 @@ LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
 
 
+def require_live_freelancer(
+    session: Session, freelancer_id: UUID, entity: str, identifier: UUID
+) -> None:
+    """A match or a document of a soft-deleted freelancer is gone, the same way
+    `MatchService.get`, `for_freelancer` and `_freelancer` already treat it: the caller
+    names its own entity and identifier (a match id, a document id) so the refusal
+    answers the thing that was actually asked for, not the freelancer underneath it. Used
+    by both the admin API (`routers/matches.py`) and the admin MCP server, since a
+    soft-deleted freelancer's match must read as «match not found» wherever it is asked
+    from (REB-417)."""
+    freelancer = session.get(Freelancer, freelancer_id)
+    if freelancer is None or freelancer.deleted_at is not None:
+        raise NotFound(entity, identifier)
+
+
 def issued_by_rebase(day: date) -> str:
     """What rebase's signature blank prints, since rebase does not sign (spec § 1c)."""
     return f"Documento emesso da rebase il {italian_date(day)}"

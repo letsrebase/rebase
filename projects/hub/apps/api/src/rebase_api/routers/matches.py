@@ -32,8 +32,14 @@ from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
 from rebase_core.errors import NotFound
 from rebase_core.fiscal import FiscalService
-from rebase_core.matches import ENTITY, LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX, MatchService
-from rebase_core.models import ContractDocument, Freelancer, Match
+from rebase_core.matches import (
+    ENTITY,
+    LIST_LIMIT_DEFAULT,
+    LIST_LIMIT_MAX,
+    MatchService,
+    require_live_freelancer,
+)
+from rebase_core.models import ContractDocument, Match
 from rebase_core.search import SEARCH_MAX_LENGTH
 
 router = APIRouter(prefix="/api/hub", tags=["hub-admin"])
@@ -53,24 +59,13 @@ def _writing(session: Session, settings: Settings, renderer: Renderer) -> MatchS
     return MatchService(session, renderer, signer_data(settings.signer_json))
 
 
-def _require_live_freelancer(
-    session: Session, freelancer_id: UUID, entity: str, identifier: UUID
-) -> None:
-    """A match or a document of a soft-deleted freelancer is gone from the admin area,
-    the same way `for_freelancer` already treats it in the core: `MatchService.get` and
-    `document_pdf` read no further than the row itself, so the route enforces it here."""
-    freelancer = session.get(Freelancer, freelancer_id)
-    if freelancer is None or freelancer.deleted_at is not None:
-        raise NotFound(entity, identifier)
-
-
 def _document_guard(session: Session, document_id: UUID) -> ContractDocument:
     """404 when the document itself is gone or its freelancer is soft-deleted, exactly as
     `download_contract` already checks it, before a signing action reaches the service."""
     document = session.get(ContractDocument, document_id)
     if document is None:
         raise NotFound(DOCUMENT_ENTITY, document_id)
-    _require_live_freelancer(session, document.freelancer_id, DOCUMENT_ENTITY, document_id)
+    require_live_freelancer(session, document.freelancer_id, DOCUMENT_ENTITY, document_id)
     return document
 
 
@@ -154,7 +149,7 @@ def list_matches(
 @router.get("/matches/{match_id}", response_model=MatchRead)
 def get_match(_: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
     match = MatchService(session).get(match_id)
-    _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
     return match
 
 
@@ -167,7 +162,7 @@ def cancel_match(
     match = session.get(Match, match_id)
     if match is None:
         raise NotFound(ENTITY, match_id)
-    _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
     return signing(session).cancel_match(match_id, admin.id)
 
 
@@ -176,7 +171,7 @@ def close_match(admin: AdminDep, session: SessionDep, match_id: UUID) -> MatchRe
     match = session.get(Match, match_id)
     if match is None:
         raise NotFound(ENTITY, match_id)
-    _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
     return MatchService(session).close(match_id, admin.id)
 
 
@@ -191,7 +186,7 @@ def send_match(
     match = session.get(Match, match_id)
     if match is None:
         raise NotFound(ENTITY, match_id)
-    _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
     return signing(session).send_match(match_id, admin.id)
 
 
@@ -243,7 +238,7 @@ def download_contract(
     document = session.get(ContractDocument, document_id)
     if document is None:
         raise NotFound(DOCUMENT_ENTITY, document_id)
-    _require_live_freelancer(session, document.freelancer_id, DOCUMENT_ENTITY, document_id)
+    require_live_freelancer(session, document.freelancer_id, DOCUMENT_ENTITY, document_id)
     try:
         pdf = MatchService(session).document_pdf(document_id, signed=firmato)
     except NotFound as exc:
