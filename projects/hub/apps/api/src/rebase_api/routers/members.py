@@ -87,7 +87,7 @@ def request_link(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "L'accesso via email non è ancora attivo. Riprova più avanti.",
         )
-    mail = UserService(session, settings).request_link(payload.email)
+    mail = UserService(session, settings).request_link(payload.email, utm=payload.utm)
     if mail is not None:
         background.add_task(_send, sender, mail)
     return Ack()
