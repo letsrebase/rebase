@@ -139,7 +139,7 @@ const GREPTILE_BLOCK = args.greptile
       "  gh api repos/" + args.org + "/" + args.repo + "/issues/<n>/comments \\",
       "      --jq '.[] | select(.user.login == \"greptile-apps[bot]\") | .body'; } \\",
       "  | grep -oE 'Confidence Score: [0-9]/5' | tail -n 1",
-      "if [ \"$(echo \"$run\" | cut -f1)\" = success ]; then echo \"check run passes on $sha\"",
+      "if [ \"$(echo \"$run\" | head -n1 | cut -f1)\" = success ]; then echo \"check run passes on $sha\"",
       "elif [ -z \"$run\" ] && [ -n \"$rid\" ]; then echo \"no check run for $sha, only a review: judge from the score and findings above\"",
       "else echo \"check run does not pass on $sha yet\"; fi",
       "```",
