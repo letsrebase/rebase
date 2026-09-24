@@ -8,8 +8,10 @@ rebase-owned account. Alias `ci-runner` on both devbox and the Mac
 back to if a workflow there ever asked for `self-hosted`, has zero runners
 registered, so that path fails closed rather than silently reaching this box.
 Verified end to end 2026-09-24: a throwaway `push`-triggered workflow on a `point`
-branch ran on `ci-runner-1`, confirmed Docker and the `ci` user, then the branch was
-deleted.
+branch ran on `ci-runner-1`, confirmed Docker and the `ci` user; a second, 3-way
+matrix workflow then confirmed all three runners picking up concurrent jobs at
+once (`ci-runner-1`, `ci-runner-2`, `ci-runner-3`, same timestamp). Both branches
+were deleted after.
 
 A private, rebase-managed client repository bills hosted-runner minutes on the org's
 GitHub plan; `letsrebase/point` already hit a payment failure that blocked every job
@@ -45,13 +47,16 @@ image builds and a Postgres-backed Python corpus job. None of it needs pre-bakin
 onto the host: `actions/setup-node` and `actions/setup-python` download toolchains
 at job time, so the real requirement is outbound internet, not a golden image.
 
-Running with **one runner instance for now** rather than the 2-4 originally
-planned: concurrency is runner count, not machine size, and 7.8GB does not
-comfortably hold two concurrent Postgres-backed jobs plus Docker image builds at
-once. Watch the queue once more than one private repository is on the pool; a
-Netcup resize (more vCPU/RAM on the same disk) is the straightforward path if jobs
-start waiting, cheaper to do later than to have over-provisioned today against
-workloads that do not exist yet.
+Running **three runner instances** (`ci-runner-1` through `-3`), confirmed picking
+up genuinely concurrent jobs (a 3-way matrix workflow landed one job per runner,
+same timestamp). Three, not the full four vCPUs, on purpose: leaves the host a
+core of its own for sshd, fail2ban and Docker's own overhead rather than running
+every vCPU inside a job. 7.8GB across three Postgres-backed jobs plus any Docker
+builds is still tight, the swap backstop (zram plus the swapfile) absorbs a spike
+rather than an OOM kill, but sustained heavy concurrent load will show as slower
+jobs before it shows as failures. Watch the queue once more than one private
+repository is on the pool; a Netcup resize (more vCPU/RAM on the same disk) is the
+straightforward path if jobs start waiting rather than just running slower.
 
 ## Access: public SSH, key-only, every team member, no Tailscale
 
@@ -81,9 +86,10 @@ add the rate-limiting a Tailscale gate made unnecessary there.
 4. UFW: default deny incoming, `22/tcp` open publicly, default allow outgoing.
    `fail2ban` on `sshd` (5 attempts / 10 minutes, 1 hour ban), the layer prodbox
    does not need and this box does since the port is internet-facing.
-5. `zram` (`ram/2`, zstd) + a 4G static swapfile, `vm.swappiness=100`: 7.9GB of
-   swap total against 7.8GB of RAM, the same shape as prodbox's layout scaled to
-   this box's smaller memory.
+5. `zram` (`ram/2`, lz4, confirmed active via `zramctl`: `/dev/zram0`, priority
+   100) plus a 4G static swapfile (priority -2, fallback once zram fills) and
+   `vm.swappiness=100`: 7.9GB of swap total against 7.8GB of RAM, the same shape
+   as prodbox's layout scaled to this box's smaller memory.
 6. SSH aliases on devbox and on the Mac, the same shape as the existing `prodbox`
    alias on both (`~/.ssh/config`): `Host ci-runner`, `HostName 62.83.33.29`,
    `User ci`, `IdentityFile ~/.ssh/id_ed25519`. Verified working from both.
@@ -92,9 +98,10 @@ add the rate-limiting a Tailscale gate made unnecessary there.
    added to it by mistake: GitHub refuses a public repository in a group with this
    set), scoped to `letsrebase/point`. Adding a repository to the group is the
    whole integration step for a future client.
-8. One runner registered and running as a systemd service
-   (`actions.runner.letsrebase.ci-runner-1.service`, user `ci`), labels
-   `self-hosted, linux, x64`. Verified picking up and completing a real job.
+8. Three runners registered and running as systemd services
+   (`actions.runner.letsrebase.ci-runner-{1,2,3}.service`, user `ci`, one
+   `actions-runner*` directory each), labels `self-hosted, linux, x64`. Verified
+   picking up and completing real jobs, including three at once.
 
 **Not done, deliberate follow-ups rather than gaps in what exists today:**
 
@@ -106,7 +113,8 @@ add the rate-limiting a Tailscale gate made unnecessary there.
   doing once a second private repository is on the pool and the job mix is less
   predictable; the mechanism is a wrapper that mints a fresh registration token
   and reconfigures after every job, not a flag alone.
-- **A second runner instance.** Deferred with the sizing note above.
+- **A fourth runner instance**, if the queue backs up before a resize is worth
+  doing; deferred with the sizing note above.
 - **A cron-driven Docker prune**, the same shape as prodbox's own disk-hygiene
   rule (`prodbox-deploy` § Disk is the shared resource): nothing here prunes
   itself yet, and image/build-cache bytes grow with every job.
