@@ -310,7 +310,8 @@ function retrofitRemoteMatches(dir, org, repo) {
   } catch {
     return false;
   }
-  return new RegExp(`[:/]${org}/${repo}(\\.git)?$`).test(remote);
+  const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`[:/]${escapeRegex(org)}/${escapeRegex(repo)}(\\.git)?$`).test(remote);
 }
 
 const runnerPoolReady = addToRunnerPool(args.org, args.repo);
