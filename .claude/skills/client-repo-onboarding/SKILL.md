@@ -86,6 +86,14 @@ writes, commit and open a pull request there with that repository's own commit a
 conventions (README § Retrofitting), reviewed like any other change: this skill never
 pushes straight to that repository's own `main`.
 
+A retrofit onto a repository that already carries its own `AGENTS.md` from an earlier
+contract (the second-contract case the repository field above sends here) skips that
+file without `--force`, and the file still names the first contract as the current
+Linear project, in its own Tracker: Linear section. Update that line by hand in the
+same pull request, the same fold-in the README already describes for other template
+changes onto an existing file: never leave a second contract's agents reading the
+first contract's project name.
+
 ## Step 3: what stays a human's click
 
 Named above already, and none of it reachable from here, either because no API reaches
