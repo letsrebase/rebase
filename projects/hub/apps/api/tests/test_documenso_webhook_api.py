@@ -215,9 +215,9 @@ def test_a_malformed_signer_setting_does_not_stop_a_refusal_from_cancelling_its_
     api_session: Session,
 ) -> None:
     """REB-391: `REBASE_SIGNER_JSON` parses lazily, only on a path that typesets a
-    document (Task 2's REB-406 fix round 1, I1); neither `apply` nor a cancellation's
-    `finish` ever reaches one, so a value malformed on this environment must not stop a
-    refusal from cancelling its document."""
+    document (REB-406); neither `apply` nor a cancellation's `finish` ever reaches one,
+    so a value malformed on this environment must not stop a refusal from cancelling
+    its document."""
     _match, envelope = _sent(client, sender, api_session)
     broken = Settings(  # type: ignore[call-arg]
         _env_file=None,
@@ -246,7 +246,7 @@ def test_an_exception_inside_apply_is_swallowed_into_a_200(
     api_session: Session,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Fix round 1, M3: the webhook answers 200 for everything past the secret check, so
+    """REB-391: the webhook answers 200 for everything past the secret check, so
     Documenso never retries an event the hub already has -- even one `apply` itself
     fails on (a `NotFound`, a database error). The failure is logged, naming the
     envelope, and left for «Aggiorna stato» to recover."""

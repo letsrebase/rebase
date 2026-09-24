@@ -84,7 +84,7 @@ def documenso_webhook(
     except Exception:
         # `apply`'s own failure (a NotFound, a DB error) must not surface past the
         # webhook: the secret's owner reads no stack trace, and recovery is «Aggiorna
-        # stato» (fix round 1, M3).
+        # stato» (REB-391).
         session.rollback()
         _log.exception("applying the webhook for envelope %s failed", payload.payload.envelope_id)
         return Ack()

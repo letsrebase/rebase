@@ -159,7 +159,7 @@ def test_the_first_send_hands_documenso_the_framework_and_the_letter_waits(
     assert envelope.payload["recipients"][0]["email"] == "ada@studio.it"
     assert renderer.signing[-1] is True
     # The blanks Documenso's fields come from are read off the signing copy, the same
-    # one just typeset (REB-406 fix round 1, M4).
+    # one just typeset (REB-406).
     assert renderer.blanks_signing[-1] is True
     [mail] = sender.sent
     assert (mail.to, mail.subject) == ("ada@studio.it", "Da firmare: contratto quadro rebase")
@@ -210,7 +210,7 @@ def test_with_an_active_framework_the_letter_leaves_and_cites_its_signature(
     assert [mail.subject for mail in sender.sent] == [
         f"Da firmare: lettera di incarico n. {letter.numero}"
     ]
-    # Spec § 1h, proven on the sent copy itself (REB-406 fix round 1, M3): what rebase
+    # Spec § 1h, proven on the sent copy itself (REB-406): what rebase
     # agreed with the client (the request's 777.77 a day) reaches neither the data
     # handed to the renderer nor the mail that tells the freelancer to sign.
     document, data = renderer.calls[-1]
@@ -287,7 +287,7 @@ def test_a_draft_text_never_leaves(clean: Session) -> None:
     with pytest.raises(InvalidState, match="ancora una bozza") as caught:
         _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
 
-    # The way out is named too (REB-406 fix round 1, M6).
+    # The way out is named too (REB-406).
     assert "REBASE_CONTRACTS_ALLOW_DRAFT" in caught.value.message
     assert fake.calls == [] and sender.sent == []
     assert _matches(clean, renderer).get(match.id).stato == "bozza"
@@ -492,7 +492,7 @@ def test_a_crea_match_racing_a_send_waits_for_it_and_does_not_annul_the_framewor
 
 
 def test_a_malformed_signer_setting_does_not_break_construction_or_a_read(clean: Session) -> None:
-    """REB-406 fix round 1, I1 (a): a malformed REBASE_SIGNER_JSON must not turn every
+    """REB-406: a malformed REBASE_SIGNER_JSON must not turn every
     `SigningDep` route into a 503, only the one that actually typesets. Building the
     service, and a plain read through it, must both work."""
     admin_id, freelancer_id, company_id = _setup(clean)
@@ -514,7 +514,7 @@ def test_a_malformed_signer_setting_does_not_break_construction_or_a_read(clean:
 
 
 def test_a_malformed_signer_setting_503s_only_the_send_it_breaks(clean: Session) -> None:
-    """REB-406 fix round 1, I1 (b): parsed lazily, so the refusal names the setting only
+    """REB-406: parsed lazily, so the refusal names the setting only
     once a document is actually about to be typeset -- Documenso is never even called."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
@@ -540,7 +540,7 @@ def test_a_malformed_signer_setting_503s_only_the_send_it_breaks(clean: Session)
 def test_an_empty_signer_setting_still_refuses_to_send_with_blank_signer_fields(
     clean: Session,
 ) -> None:
-    """REB-406 fix round 1, I1 (c): the lazy path (`signer_json=""`, the default) 503s
+    """REB-406: the lazy path (`signer_json=""`, the default) 503s
     exactly as the eager one already did (`test_without_rebases_signer_nothing_leaves`,
     an explicit `signer={}`) -- it never sends a document with blank signer fields."""
     admin_id, freelancer_id, company_id = _setup(clean)
@@ -566,7 +566,7 @@ def test_an_empty_signer_setting_still_refuses_to_send_with_blank_signer_fields(
 def test_a_refused_distribute_cancels_the_orphaned_envelope(
     clean: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """REB-406 fix round 1, M11: `get` succeeds (the envelope already exists on
+    """REB-406: `get` succeeds (the envelope already exists on
     Documenso, as after a real create) and this test then moves it to `PENDING` itself,
     simulating Documenso having processed the distribute server-side even though the
     client's own parsing of the answer fails -- `FakeDocumenso.cancel` (probe § 4: only
@@ -629,7 +629,7 @@ def _envelope_of(document: ContractDocument) -> str:
 def _try_lock_nowait(session: Session, document_id: UUID) -> bool:
     """`True` when `document_id` could be locked immediately, `False` when another
     transaction already holds it (`FOR UPDATE NOWAIT`): the proof that a caller has, or
-    has not, taken this row yet (fix round 1, I1)."""
+    has not, taken this row yet (REB-391)."""
     try:
         session.execute(
             select(ContractDocument.id)
@@ -705,7 +705,7 @@ def test_a_second_delivery_waits_for_the_first_and_changes_nothing(
 def test_apply_locks_the_freelancer_row_before_the_document(
     hub_engine: Engine, clean: Session
 ) -> None:
-    """Fix round 1, I1(a): a deterministic proof of `apply`'s lock order, not one left to
+    """REB-391: a deterministic proof of `apply`'s lock order, not one left to
     thread scheduling. A gate session holds the freelancer's row; `apply` runs in its own
     thread and must block there -- proven not just by staying alive, but by a fourth
     session managing to lock the letter's own document row with `FOR UPDATE NOWAIT`
@@ -755,7 +755,7 @@ def test_apply_locks_the_freelancer_row_before_the_document(
 def test_finish_releases_a_waiting_letter_only_after_locking_the_freelancer_row(
     hub_engine: Engine, clean: Session
 ) -> None:
-    """Fix round 1, I1(b): the same gate proof for `finish` -> `_send_waiting`. A
+    """REB-391: the same gate proof for `finish` -> `_send_waiting`. A
     framework just signed, its letter still waiting: while another session holds the
     freelancer's row, the letter's own row is still free to a `FOR UPDATE NOWAIT` probe
     (proving `_send_waiting` has not reached it yet); releasing the gate lets it go, and
@@ -802,7 +802,7 @@ def test_finish_releases_a_waiting_letter_only_after_locking_the_freelancer_row(
 def test_a_letters_webhook_and_a_resend_of_its_match_never_deadlock(
     apply_first: bool, hub_engine: Engine, clean: Session
 ) -> None:
-    """Fix round 1, I1(c): `apply`'s lock order now matches `send_match`'s (freelancer,
+    """REB-391: `apply`'s lock order now matches `send_match`'s (freelancer,
     match, document/letter), so the two never deadlock -- forced deterministically, in
     both orders, behind one gate on the freelancer's row, rather than left to thread
     scheduling."""
@@ -1022,7 +1022,7 @@ def test_a_cancellation_on_documenso_cancels_and_a_late_event_is_ignored(clean: 
 
 
 def test_a_release_with_no_mail_sender_leaves_the_letters_waiting(clean: Session) -> None:
-    """Fix round 1, M4: `send_match` refuses up front without a mail sender, so a release
+    """REB-391: `send_match` refuses up front without a mail sender, so a release
     must not dispatch a letter to Documenso that nobody could then be told about. The
     sender is checked before Documenso is touched, not after."""
     admin_id, freelancer_id, company_id = _setup(clean)
@@ -1044,7 +1044,7 @@ def test_a_release_with_no_mail_sender_leaves_the_letters_waiting(clean: Session
 def test_two_concurrent_finishes_download_and_mail_the_signed_copy_once(
     hub_engine: Engine, clean: Session
 ) -> None:
-    """Fix round 1, M5: the webhook's own `finish` and an admin's «Aggiorna stato»
+    """REB-391: the webhook's own `finish` and an admin's «Aggiorna stato»
     refresh can overlap on the same freshly signed document. `_store_signed_copy`'s row
     lock serialises them: exactly one download, and exactly one pair of signed-copy
     mails (to the freelancer and to rebase), however many callers race for it."""

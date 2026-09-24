@@ -94,7 +94,7 @@ class FakeDocumenso:
     def sign(self, envelope_id: str, at: datetime) -> None:
         """The signer's own `signedAt`; `completedAt` a few minutes later, as Documenso's
         own envelope timestamp actually is (probe § 4) -- kept apart from `signedAt` on
-        purpose (fix round 1, M6), so a test that reads the wrong one notices."""
+        purpose (REB-391), so a test that reads the wrong one notices."""
         envelope = self.envelopes[envelope_id]
         envelope.status = "COMPLETED"
         envelope.signed_at = at

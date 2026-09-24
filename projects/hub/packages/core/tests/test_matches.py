@@ -527,7 +527,7 @@ def test_a_document_downloads_as_its_own_pdf_and_a_missing_signed_copy_is_not_fo
 def test_two_admins_matching_the_same_freelancer_at_once_never_leave_two_open_frameworks(
     monkeypatch: pytest.MonkeyPatch, hub_engine: Engine, clean: Session
 ) -> None:
-    """Review fix round 1: two real `create()` calls, on two sessions, for the same
+    """REB-406: two real `create()` calls, on two sessions, for the same
     freelancer -- the shape of `test_two_letters_taken_at_once_get_two_numbers`, but for
     the framework agreement rather than the letter counter.
 

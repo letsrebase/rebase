@@ -450,9 +450,9 @@ export function AdminCreaMatch() {
   // «Invia per la firma» writes the match first, once: after a refusal the draft exists,
   // and the next click sends that one rather than writing another with a new number.
   const [created, setCreated] = useState<Match | null>(null)
-  // I2 (fix round 1): a refused mail (`mail_inviata: false`) stays on step 5 with the
-  // report's own sentence and a link onward, so the admin sees it rather than land on
-  // «Match e contratti» none the wiser that the freelancer never got the link.
+  // REB-406: a refused mail (`mail_inviata: false`) stays on step 5 with the report's
+  // own sentence and a link onward, so the admin sees it rather than land on «Match e
+  // contratti» none the wiser that the freelancer never got the link.
   const [sentMessage, setSentMessage] = useState<string | null>(null)
   const sendNow = useMutation({
     mutationFn: async (payload: MatchCreate) => {

@@ -31,8 +31,8 @@ class FakeRenderer:
     draft: bool = True
     # Whether each `render` asked for the copy that goes out for signature.
     signing: list[bool] = field(default_factory=list)
-    # Whether each `signature_blanks` asked for the signing copy's layout (REB-406 fix
-    # round 1, M4): `_dispatch` reads the blanks from the same copy it typeset.
+    # Whether each `signature_blanks` asked for the signing copy's layout (REB-406):
+    # `_dispatch` reads the blanks from the same copy it typeset.
     blanks_signing: list[bool] = field(default_factory=list)
 
     def render(

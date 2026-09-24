@@ -433,7 +433,7 @@ describe('«Crea match» in five steps (REB-387)', () => {
     expect(tries).toBe(2)
   })
 
-  it('stays on the preview and points at «Match e contratti» when the signing mail did not leave (REB-406 fix round 1, I2)', async () => {
+  it('stays on the preview and points at «Match e contratti» when the signing mail did not leave (REB-406)', async () => {
     routeFetch({
       'GET /api/hub/freelancers/f1': PERSON,
       'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },

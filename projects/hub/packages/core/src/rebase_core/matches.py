@@ -380,10 +380,9 @@ class MatchService:
                     ):
                         stale.stato = "annullato"
                         stale_ids.append(stale.id)
-                    # REB-406 fix round 1, M10: the same write `write_framework` makes
-                    # for a match whose letter waits on a cancelled or refused one --
-                    # `create` already holds the freelancer's row lock `write_framework`
-                    # assumes.
+                    # REB-406: the same write `write_framework` makes for a match whose
+                    # letter waits on a cancelled or refused one -- `create` already
+                    # holds the freelancer's row lock `write_framework` assumes.
                     documents.append(self.write_framework(freelancer.id, admin_id))
             match = Match(
                 freelancer_id=freelancer.id,
@@ -525,8 +524,7 @@ class MatchService:
         """A letter's own fields that must always be today's, not the draft's: the
         framework agreement's signature date, the freelancer's name and VAT number.
         Shared by `_lettera_data` (`create`) and `data_for_sending` (a send), so a
-        field added to one cannot print stale data on the other (REB-406 fix round 1,
-        M9)."""
+        field added to one cannot print stale data on the other (REB-406)."""
         return {
             "data-contratto-quadro": italian_date(signed) if signed is not None else None,
             "professionista-nome": _full_name(user),
@@ -605,8 +603,8 @@ class MatchService:
         """A new framework agreement, added and flushed and not committed: written by
         `create` for a fresh draft, and by `SigningService._framework_to_send` for a
         match whose letter waits on one that was cancelled or refused, sent in the same
-        transaction (REB-406 fix round 1, M10: one write, two callers). The caller must
-        already hold the freelancer's row lock (REB-406 fix round 1, M8)."""
+        transaction (REB-406: one write, two callers). The caller must already hold the
+        freelancer's row lock (REB-406)."""
         renderer = self._renderer()
         freelancer, user = self._freelancer(freelancer_id)
         fiscal = self._fiscal(freelancer.id)

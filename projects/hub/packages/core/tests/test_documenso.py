@@ -202,7 +202,7 @@ def test_the_webhooks_outcome_is_the_signers_never_the_cancellations() -> None:
     fake.sign(signed, SIGNED_AT)
     fake.reject(refused, "Il compenso non è quello concordato")
     client.cancel(cancelled, "Annullato da rebase.")
-    # `completedAt` is a few minutes after `signedAt` (fix round 1, M6): the outcome must
+    # `completedAt` is a few minutes after `signedAt` (REB-391): the outcome must
     # come from the signer's own timestamp, never the envelope's.
     assert fake.envelopes[signed].completed_at != SIGNED_AT
     assert _outcome(fake, signed, "DOCUMENT_COMPLETED") == Outcome(

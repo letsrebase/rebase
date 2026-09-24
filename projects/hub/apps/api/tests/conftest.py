@@ -53,8 +53,8 @@ def client(api_session: Session) -> Iterator[TestClient]:
 @pytest.fixture
 def sender(client: TestClient) -> Iterator[RecordingSender]:
     """The one mailbox every module in this directory overrides `get_sender` with
-    (REB-406 fix round 1, M7): one fixture, so a test file names it as a parameter
-    without also importing it (which ruff flags as a redefinition, `F811`)."""
+    (REB-406): one fixture, so a test file names it as a parameter without also
+    importing it (which ruff flags as a redefinition, `F811`)."""
     recording = RecordingSender()
     client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
     yield recording

@@ -105,9 +105,9 @@ def test_a_malformed_signer_setting_503s_the_send_naming_it(
     renderer: FakeRenderer,
     documenso: FakeDocumenso,
 ) -> None:
-    """Left over from Task 2's review: `REBASE_SIGNER_JSON` parses lazily, only where a
-    document is about to be typeset (REB-406 fix round 1, I1), and the send is exactly
-    that path -- a malformed value 503s it, naming the setting."""
+    """REB-406: `REBASE_SIGNER_JSON` parses lazily, only where a document is about to
+    be typeset, and the send is exactly that path -- a malformed value 503s it, naming
+    the setting."""
     match = draft_match(client, sender)
     client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[attr-defined,call-arg]
         _env_file=None, signer_json="{not json", contracts_mail=CONTRACTS_MAIL
@@ -157,12 +157,12 @@ def test_a_soft_deleted_freelancers_match_cannot_be_sent(
     documenso: FakeDocumenso,
     api_session: Session,
 ) -> None:
-    """REB-406 controller ruling: the send route checks `_require_live_freelancer`
-    exactly as `cancel_match` already does, before calling the service. REB-406 fix
-    round 1, M1: the service itself would eventually answer a NotFound too (once
-    `_dispatch` reads the freelancer), so the exact sentence -- naming the match, the
-    guard's own entity, not the freelancer -- is what proves the guard, not the
-    service's own lookup, is what actually stopped this."""
+    """REB-406: the send route checks `require_live_freelancer` exactly as
+    `cancel_match` already does, before calling the service; the service itself would
+    eventually answer a NotFound too (once `_dispatch` reads the freelancer), so the
+    exact sentence -- naming the match, the guard's own entity, not the freelancer --
+    is what proves the guard, not the service's own lookup, is what actually stopped
+    this."""
     match = draft_match(client, sender)
     api_session.execute(
         text("UPDATE freelancers SET deleted_at = now() WHERE id = :id"),

@@ -166,7 +166,7 @@ class SigningService:
         `_framework_to_send`), never here: this constructor runs for every `SigningDep`
         route (a future cancel, refresh or the webhook among them), and a malformed
         value must 503 only the send it breaks, not a route that never reaches a
-        renderer (REB-406 fix round 1, I1)."""
+        renderer (REB-406)."""
         self.session = session
         self.renderer = renderer
         self.documenso = documenso
@@ -264,8 +264,8 @@ class SigningService:
         inside the caller's transaction: nothing here commits, so a refusal at any step
         leaves the document as it was. The caller must already hold the freelancer's row
         lock. If `get` or `distribute` fails after `create` already left an envelope on
-        Documenso, a best-effort cancel follows it (`_cancel_orphan`, REB-406 fix round
-        1, M11), so a retried send does not pile up drafts under the same externalId."""
+        Documenso, a best-effort cancel follows it (`_cancel_orphan`, REB-406), so a retried
+        send does not pile up drafts under the same externalId."""
         self._signer()
         renderer, documenso = self._renderer(), self._documenso()
         name = DOCUMENT_BY_KIND[document.kind]
@@ -308,7 +308,7 @@ class SigningService:
         Documenso: a best-effort cancel, so a retried send does not pile up drafts under
         the same externalId. A failure of this cancel (a still-draft envelope refuses
         one, probe § 4) is logged and never raised over the failure the admin already
-        sees (REB-406 fix round 1, M11)."""
+        sees (REB-406)."""
         try:
             documenso.cancel(envelope_id, "invio non completato: annullo l'envelope orfano")
         except Exception:
@@ -441,7 +441,7 @@ class SigningService:
 
         `send_match` refuses up front without a mail sender (`_sender`), so a release
         must not dispatch a letter to Documenso either when nobody could then be told
-        about it (fix round 1, M4): checked before any letter is even read."""
+        about it (REB-391): checked before any letter is even read."""
         if self.sender is None:
             _log.warning(
                 "no mail sender: the letters waiting on framework agreement %s stay waiting",
@@ -702,7 +702,7 @@ class SigningService:
         """`REBASE_SIGNER_JSON`, parsed once and cached, and only from here: the two
         paths that typeset (`_dispatch`, `_framework_to_send`) call this before they
         read `self.matches.signer`, so a malformed value 503s the send it actually
-        breaks and nothing else (REB-406 fix round 1, I1)."""
+        breaks and nothing else (REB-406)."""
         if self._signer_cache is None:
             self._signer_cache = signer_data(self._signer_json)
             self.matches.signer = self._signer_cache
@@ -711,7 +711,7 @@ class SigningService:
     def _lock_freelancer(self, freelancer_id: UUID) -> None:
         """The freelancer's row, locked until this transaction ends: every other lock
         below (`_lock`, `_lock_match`, `_lock_letter`) and `MatchService.write_framework`
-        assume the caller already took this one first (REB-406 fix round 1, M8)."""
+        assume the caller already took this one first (REB-406)."""
         self.session.execute(
             select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
         )

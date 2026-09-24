@@ -1,9 +1,9 @@
 """What «Crea match» leaves behind, over HTTP, for the signing tests (REB-387 phase 3):
 an admin signed in, a card, a request, the tax data and a draft match. Reuses
 `test_matches_api.py`'s own constants and route helpers rather than copying them
-(REB-406 fix round 1, M7): `enter` is `test_matches_api._login_as`, the one copy of
-that recipe, and `draft_match` builds on `_ready` instead of redoing it. Tasks 3 and 5
-import this module too."""
+(REB-406): `enter` is `test_matches_api._login_as`, the one copy of that recipe, and
+`draft_match` builds on `_ready` instead of redoing it. The signing, webhook and
+member-contract tests import this module too."""
 
 from typing import Any
 

@@ -136,7 +136,7 @@ def get_signing_factory(
     `build` runs for every route behind `SigningDep` (a future cancel, refresh, resend
     or the webhook among them), so parsing it here would 503 all of them on a malformed
     value. `SigningService` itself parses it once, lazily, only where a document is
-    about to be typeset (REB-406 fix round 1, I1)."""
+    about to be typeset (REB-406)."""
 
     def build(session: Session) -> SigningService:
         return SigningService(
