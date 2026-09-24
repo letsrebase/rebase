@@ -9,7 +9,7 @@ import {
 } from '@tanstack/react-router'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Accedi } from './Accedi'
 
 function answer(status: number, body: unknown) {
@@ -19,13 +19,13 @@ function answer(status: number, body: unknown) {
   })
 }
 
-function mount() {
+function mount(entry = '/login') {
   const root = createRootRoute({ component: () => <Outlet /> })
   const login = createRoute({ getParentRoute: () => root, path: '/login', component: Accedi })
   const freelance = createRoute({ getParentRoute: () => root, path: '/freelance', component: () => <h1>Wizard</h1> })
   const router = createRouter({
     routeTree: root.addChildren([login, freelance]),
-    history: createMemoryHistory({ initialEntries: ['/login'] }),
+    history: createMemoryHistory({ initialEntries: [entry] }),
   })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -34,6 +34,9 @@ function mount() {
   )
 }
 
+// The page remembers a campaign for the tab (`rememberUtm`), and jsdom keeps session
+// storage across the tests of one file: each test starts from a tab that saw nothing.
+beforeEach(() => window.sessionStorage.clear())
 afterEach(() => vi.restoreAllMocks())
 
 describe('/login', () => {
@@ -60,6 +63,34 @@ describe('/login', () => {
     await user.click(screen.getByRole('button', { name: 'Mandami il link' }))
     expect((await screen.findByText(/Se sei dentro, ti abbiamo scritto/)).textContent).toBe(
       sentence.textContent,
+    )
+  })
+
+  it('sends the campaign the page was opened from with the address', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => Promise.resolve(answer(202, { ok: true })))
+    const utm = 'utm_source=email&utm_medium=outreach&utm_campaign=outreach-2026-09-r2'
+    mount(`/login?${utm}&utm_content=cv&utm_term=11425b70`)
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Email'), 'ada@studio.it')
+    await user.click(screen.getByRole('button', { name: 'Mandami il link' }))
+    await screen.findByText(/Se sei dentro, ti abbiamo scritto/)
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/hub/auth/link',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          email: 'ada@studio.it',
+          utm: {
+            utm_source: 'email',
+            utm_medium: 'outreach',
+            utm_campaign: 'outreach-2026-09-r2',
+            utm_content: 'cv',
+            utm_term: '11425b70',
+          },
+        }),
+      }),
     )
   })
 

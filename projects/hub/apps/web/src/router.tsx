@@ -129,11 +129,14 @@ const thanksRedirect = createRoute({
   },
 })
 const login = createRoute({ getParentRoute: () => publicLayout, path: '/login', component: Accedi })
+// Outreach mails link `/accedi?utm_...` (REB-426), and the login page sends that query
+// string with the address so the login records which mail it came from: the redirect
+// carries it across, the way `companiesRedirect` does for the wizard.
 const loginRedirect = createRoute({
   getParentRoute: () => publicLayout,
   path: '/accedi',
   beforeLoad: () => {
-    throw redirect({ to: '/login' })
+    throw redirect({ to: '/login', search: true })
   },
 })
 const verify = createRoute({
@@ -374,7 +377,8 @@ const adminAgentsRedirect = createRoute({
   },
 })
 
-const routeTree = root.addChildren([
+// Exported for the tests that drive the real tree (`router.test.tsx`), never for the app.
+export const routeTree = root.addChildren([
   bareLayout.addChildren([chooser]),
   publicLayout.addChildren([
     freelance,
