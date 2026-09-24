@@ -19,7 +19,7 @@ COPY shared/brand ./shared/brand
 COPY projects/website ./projects/website
 RUN pnpm --filter website build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.29-alpine
 COPY --from=build /app/projects/website/dist /usr/share/nginx/html
 COPY projects/website/deploy/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

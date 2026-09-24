@@ -107,7 +107,7 @@ updates:
   # (`COPY --from=ghcr.io/astral-sh/uv:...`) is not read at all: it moves by hand,
   # with the `version:` that `setup-uv` is given in `_python-gate.yml` and `ci.yml`.
   # An nginx PR is read against `projects/pigrocrm/deploy/nginx/spa.conf`, which
-  # names `nginx:1.27-alpine` as the build its realip module was confirmed in.
+  # names the nginx build its realip module was last confirmed in (`nginx -V`).
   - package-ecosystem: docker
     directories:
       - /projects/pigrocrm
