@@ -8,7 +8,9 @@ its framework agreement once its match was sent. A draft match, and a document
 cancelled before it left, are the admin's business. The signing link is shown only
 while the document waits for the signature: its path is the signer's token. A
 cancelled document's page still opens on Documenso and fails only at the click, so the
-state shown here is what tells the person not to sign it.
+state shown here is what tells the person not to sign it. `quadri_precedenti` keeps
+every earlier framework agreement that was signed visible under the current one: a
+notice, or a newer framework replacing it, moves it there rather than off the page.
 """
 
 from collections.abc import Callable
@@ -84,10 +86,17 @@ class MemberContractService:
             _read(document, None, today) for document, _ in visible if document.kind == QUADRO
         ]
         quadro = next((q for q in quadri if q.attivo), None) or (quadri[0] if quadri else None)
+        # Every other framework agreement that was signed (REB-392): a notice, or a
+        # newer one taking over as `quadro`, must not make its own signed copy
+        # disappear from the page, only move it down here. Newest first, same as
+        # `quadri` already is.
+        quadri_precedenti = [
+            q for q in quadri if q.ha_pdf_firmato and (quadro is None or q.id != quadro.id)
+        ]
         lettere = [
             _read(document, match, today) for document, match in visible if document.kind == LETTERA
         ]
-        return MemberContracts(quadro=quadro, lettere=lettere)
+        return MemberContracts(quadro=quadro, quadri_precedenti=quadri_precedenti, lettere=lettere)
 
     def signed_pdf(self, user_id: UUID, document_id: UUID) -> ContractPdf:
         freelancer = MemberService(self.session).require_card(user_id)

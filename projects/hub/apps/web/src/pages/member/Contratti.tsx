@@ -55,6 +55,29 @@ function Framework({ quadro }: { quadro: MemberContract }) {
   )
 }
 
+/** «Contratti quadro precedenti» (REB-392): every earlier framework agreement that was
+ *  signed, under the current one -- a notice, or a newer framework replacing it, must
+ *  not make its own signed copy disappear from the page. */
+function PreviousFrameworks({ quadri }: { quadri: MemberContract[] }) {
+  if (quadri.length === 0) return null
+  return (
+    <div className="space-y-2 border bg-card p-4 text-sm">
+      <p className="font-medium">Contratti quadro precedenti</p>
+      <ul className="space-y-2">
+        {quadri.map((quadro) => (
+          <li key={quadro.id} className="flex flex-wrap items-center gap-2">
+            <Badge variant="pill">{memberDocumentStateLabel('quadro', quadro.stato)}</Badge>
+            {quadro.signed_at && (
+              <span className="text-muted-foreground">Firmato il {formatDate(quadro.signed_at)}</span>
+            )}
+            <Actions document={quadro} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function Letter({ lettera }: { lettera: MemberContract }) {
   const period = lettera.inizio
     ? lettera.fine
@@ -74,14 +97,16 @@ function Letter({ lettera }: { lettera: MemberContract }) {
 }
 
 /** «Contratti» in the member area (REB-392): the framework agreement's state and dates,
- *  then each letter with its client and dates. A document that waits for the signature
- *  has «Firma il documento», which opens the signing site; a signed one offers its copy.
- *  A cancelled one says so here, since the signing site still opens it and only fails
- *  at the click. */
+ *  every earlier signed one underneath it, then each letter with its client and dates.
+ *  A document that waits for the signature has «Firma il documento», which opens the
+ *  signing site; a signed one offers its copy. A cancelled one says so here, since the
+ *  signing site still opens it and only fails at the click. */
 export function MemberContratti() {
   const contracts = useQuery({ queryKey: ['me', 'contracts'], queryFn: () => member.contracts() })
   const data = contracts.data
-  const signed = data ? [data.quadro, ...data.lettere].some((document) => document?.ha_pdf_firmato) : false
+  const signed = data
+    ? [data.quadro, ...data.quadri_precedenti, ...data.lettere].some((document) => document?.ha_pdf_firmato)
+    : false
   return (
     <section aria-labelledby="me-contratti" className="space-y-3">
       <h2 id="me-contratti" className="text-lg font-semibold tracking-tight">
@@ -98,6 +123,7 @@ export function MemberContratti() {
       ) : (
         <>
           {data.quadro && <Framework quadro={data.quadro} />}
+          <PreviousFrameworks quadri={data.quadri_precedenti} />
           {data.lettere.length > 0 && (
             <ul className="space-y-3">
               {data.lettere.map((lettera) => (

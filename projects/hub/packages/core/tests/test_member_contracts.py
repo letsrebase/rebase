@@ -71,6 +71,7 @@ def test_the_freelancer_sees_what_reached_them_and_the_link_to_sign(clean: Sessi
     )
     assert lettera.inizio == "1° ottobre 2026"
     assert lettera.signing_url is None
+    assert mine.quadri_precedenti == []
 
 
 def test_a_draft_match_shows_nothing(clean: Session) -> None:
@@ -130,6 +131,47 @@ def test_a_cancelled_document_says_so_and_offers_no_link(clean: Session) -> None
 
     assert mine.quadro is not None
     assert (mine.quadro.stato, mine.quadro.signing_url) == ("annullato", None)
+
+
+def test_a_notice_moves_the_signed_framework_under_the_new_one_instead_of_hiding_it(
+    clean: Session,
+) -> None:
+    """REB-392: a notice on the first framework agreement, then a second match writes
+    and signs a new one. The person still sees the first, signed copy and all -- moved
+    under the current one, not gone."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    first_match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    signing = _signing(clean, renderer, fake, sender)
+    signing.send_match(first_match.id, admin_id)
+    first_envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(first_envelope, SIGNED_AT)
+    first_signed = signing.apply(_webhook(fake, first_envelope, "DOCUMENT_COMPLETED"))
+    assert first_signed is not None
+    signing.finish(first_signed)
+    first_quadro = _framework_of(clean, freelancer_id)
+    signing.record_notice(first_quadro.id, admin_id)
+
+    second_match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    signing.send_match(second_match.id, admin_id)
+    second_envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    second_signed_at = SIGNED_AT.replace(month=11)
+    fake.sign(second_envelope, second_signed_at)
+    second_signed = signing.apply(_webhook(fake, second_envelope, "DOCUMENT_COMPLETED"))
+    assert second_signed is not None
+    signing.finish(second_signed)
+    second_quadro = _framework_of(clean, freelancer_id)
+    assert second_quadro.id != first_quadro.id
+
+    mine = _service(clean).for_user(_user_of(clean, freelancer_id))
+
+    assert mine.quadro is not None and mine.quadro.id == second_quadro.id
+    [previous] = mine.quadri_precedenti
+    assert previous.id == first_quadro.id
+    assert previous.stato == "disdetto"
+    assert previous.ha_pdf_firmato is True
+    copy = _service(clean).signed_pdf(_user_of(clean, freelancer_id), first_quadro.id)
+    assert copy.content == fake.signed_pdf(first_envelope)
 
 
 def test_someone_elses_document_and_an_unsigned_copy_are_not_found(clean: Session) -> None:

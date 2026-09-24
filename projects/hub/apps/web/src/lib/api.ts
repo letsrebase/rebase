@@ -591,8 +591,12 @@ export interface MemberContract {
   ultimo_giorno_disdetta: string | null
 }
 
+/** `quadri_precedenti` (REB-392): the freelancer's other framework agreements that were
+ *  signed, newest first, excluding the one in `quadro` -- a notice, or a newer one
+ *  replacing it, moves the older one here rather than off the page. */
 export interface MemberContracts {
   quadro: MemberContract | null
+  quadri_precedenti: MemberContract[]
   lettere: MemberContract[]
 }
 

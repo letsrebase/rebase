@@ -444,7 +444,11 @@ class MemberContract(BaseModel):
 
 class MemberContracts(BaseModel):
     """«Contratti»: the framework agreement (the active one, else the newest that reached
-    the person), and the letters newest first."""
+    the person), the letters newest first, and `quadri_precedenti` (REB-392): the
+    freelancer's other framework agreements that were signed, newest first, excluding
+    the one in `quadro` -- a notice, or a newer one replacing it, must not make an
+    earlier signed copy disappear from the page."""
 
     quadro: MemberContract | None
+    quadri_precedenti: list[MemberContract] = Field(default_factory=list)
     lettere: list[MemberContract]

@@ -24,7 +24,7 @@ function answer(status: number, body: unknown) {
   })
 }
 
-const NO_CONTRACTS = { quadro: null, lettere: [] }
+const NO_CONTRACTS = { quadro: null, quadri_precedenti: [], lettere: [] }
 
 /** `/me` answers `profile`; a card's page also reads its contracts (REB-392). A fresh
  *  Response per call, since a body can be read once. */
@@ -387,6 +387,7 @@ describe('/me, «Contratti» (REB-392: on a card, never on a company-only profil
         rinnovo: null,
         ultimo_giorno_disdetta: null,
       },
+      quadri_precedenti: [],
       lettere: [],
     })
     mount()
