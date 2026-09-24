@@ -59,7 +59,7 @@ dev = [
   # a woff2 cannot be opened at all. Also a runtime dependency of `rebase-core` since
   # REB-387, which typesets the contracts in the API; listed here too for the guide's
   # script.
-  "fonttools[woff]==4.62.0",
+  "fonttools[woff]==4.65.0",
 ]
 
 # Both tables below name one project's paths explicitly, and grow by a few lines per

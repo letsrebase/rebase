@@ -21,7 +21,7 @@ dependencies = [
   # The contracts are typeset at request time (REB-387): Typst reads neither woff2 nor
   # a variable axis, so fontTools instances the brand's Outfit. `[woff]` brings brotli.
   # The same pin as the root dev group, which the guide's build already uses.
-  "fonttools[woff]==4.62.0",
+  "fonttools[woff]==4.65.0",
 ]
 
 [project.scripts]
