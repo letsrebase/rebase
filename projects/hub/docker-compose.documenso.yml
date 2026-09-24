@@ -1,0 +1,74 @@
+# Documenso, the site where a freelancer signs rebase's contracts (REB-387, REB-393), in
+# the `rebase` compose project beside the hub. A file of its own, which only production's
+# `.env` loads:
+#
+#     COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml
+#
+# Compose interpolates the required variables of every service of every file it reads,
+# profiles or not, so these services in docker-compose.yml would fail the preview's deploy
+# and CI's image build, neither of which runs Documenso. The preview signs on this same
+# instance through a Documenso user of its own (probe § 8).
+#
+# The image is the one phase 1 probed, pinned by tag and digest
+# (docs/superpowers/specs/2026-09-23-documenso-probe.md § 1). Its uploaded and sealed PDFs
+# live in its own Postgres (`NEXT_PUBLIC_UPLOAD_TRANSPORT=database`), so the data to back
+# up is REBASE_DOCUMENSO_DATA_DIR and nothing else. About 630 MiB of memory once warm,
+# 80 MiB for its Postgres.
+services:
+  documenso-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: documenso
+      POSTGRES_PASSWORD: ${DOCUMENSO_DB_PASSWORD:?set it in .env, openssl rand -hex 24}
+      POSTGRES_DB: documenso
+    # On the host, outside Docker and outside the repository, like the hub's own data. No
+    # default, for the reason docker-compose.yml gives for REBASE_DATA_DIR.
+    volumes:
+      - ${REBASE_DOCUMENSO_DATA_DIR:?set it in .env, to its own directory outside the repository}:/var/lib/postgresql/data
+    # No published port: only Documenso reads it, over the compose network.
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U documenso']
+      interval: 5s
+      retries: 10
+
+  documenso:
+    image: documenso/documenso:v2.18.0@sha256:126976b9e3be54193e1a3be8d22130af1913aaa894c550b98870a2cc4c422650
+    restart: unless-stopped
+    depends_on:
+      documenso-db:
+        condition: service_healthy
+    environment:
+      # The names are the tag's own `.env.example`, as the probe checked them (§ 2).
+      NEXTAUTH_SECRET: ${DOCUMENSO_NEXTAUTH_SECRET:?set it in .env, openssl rand -hex 32}
+      NEXT_PRIVATE_ENCRYPTION_KEY: ${DOCUMENSO_ENCRYPTION_KEY:?set it in .env, openssl rand -hex 32}
+      NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY: ${DOCUMENSO_ENCRYPTION_SECONDARY_KEY:?set it in .env, openssl rand -hex 32}
+      NEXT_PUBLIC_WEBAPP_URL: ${DOCUMENSO_PUBLIC_URL:-https://firma.letsrebase.com}
+      # The container's own address, for its background jobs (probe § 2).
+      NEXT_PRIVATE_INTERNAL_WEBAPP_URL: http://localhost:3000
+      NEXT_PRIVATE_DATABASE_URL: postgresql://documenso:${DOCUMENSO_DB_PASSWORD}@documenso-db:5432/documenso
+      NEXT_PRIVATE_DIRECT_DATABASE_URL: postgresql://documenso:${DOCUMENSO_DB_PASSWORD}@documenso-db:5432/documenso
+      NEXT_PUBLIC_UPLOAD_TRANSPORT: database
+      # The seal: a self-signed PKCS#12, made on the host (AGENTS.md), as one line of
+      # base64. Valid, and marked "issuer not trusted" by PDF readers until a certificate
+      # on Adobe's trust list is bought.
+      NEXT_PRIVATE_SIGNING_TRANSPORT: local
+      NEXT_PRIVATE_SIGNING_PASSPHRASE: ${DOCUMENSO_SIGNING_PASSPHRASE:?set it in .env}
+      NEXT_PRIVATE_SIGNING_LOCAL_FILE_CONTENTS: ${DOCUMENSO_SIGNING_CERT_BASE64:?set it in .env, the .p12 as base64}
+      # Documenso's own account mails only (a confirmation, a password reset): every
+      # signing mail is the hub's. Through Resend, with the hub's own key.
+      NEXT_PRIVATE_SMTP_TRANSPORT: resend
+      NEXT_PRIVATE_RESEND_API_KEY: ${REBASE_RESEND_API_KEY:?Documenso mails through the hub's Resend key}
+      NEXT_PRIVATE_SMTP_FROM_NAME: rebase
+      NEXT_PRIVATE_SMTP_FROM_ADDRESS: ${DOCUMENSO_MAIL_FROM:-ciao@letsrebase.com}
+      # Nobody opens an account on the public instance. The rollout opens it for the
+      # minutes the two environments' users take, then closes it again.
+      NEXT_PUBLIC_DISABLE_SIGNUP: ${DOCUMENSO_DISABLE_SIGNUP:-true}
+      # Production's webhook is `http://api:8000/...`, a name that resolves to a private
+      # address: Documenso refuses to call it unless the name is listed (probe § 5).
+      NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS: ${DOCUMENSO_WEBHOOK_BYPASS_HOSTS:-api}
+      DOCUMENSO_DISABLE_TELEMETRY: 'true'
+    ports:
+      # Loopback only: the host's nginx serves it as firma.letsrebase.com
+      # (deploy/firma.letsrebase.conf).
+      - '${REBASE_DOCUMENSO_PORT:-127.0.0.1:8090}:3000'

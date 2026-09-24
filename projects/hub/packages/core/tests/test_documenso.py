@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import pytest
 from fakes_documenso import BASE, TOKEN, FakeDocumenso
 
+from rebase_core.cli import documenso_check
 from rebase_core.config import Settings
 from rebase_core.contracts.fields import ContractFailed
 from rebase_core.contracts.render import SignatureBlank
@@ -239,3 +240,20 @@ def test_no_url_or_no_token_means_no_client() -> None:
     both = Settings(_env_file=None, documenso_url=BASE, documenso_api_token=TOKEN)  # type: ignore[call-arg]
     assert isinstance(client_from_settings(both), DocumensoClient)
     assert Settings(_env_file=None).contracts_mail == "ciao@letsrebase.com"  # type: ignore[call-arg]
+
+
+def test_the_check_says_whether_this_environment_reaches_documenso_with_its_token(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`rebase documenso-check`, run inside the api container after the settings change
+    (REB-393): one page of the team's envelopes, read and dropped."""
+    fake = FakeDocumenso()
+    both = Settings(_env_file=None, documenso_url=BASE, documenso_api_token=TOKEN)  # type: ignore[call-arg]
+    assert documenso_check(both, http=fake) == 0
+    assert fake.calls == [("GET", "/envelope")]
+    assert "accetta il token" in capsys.readouterr().out
+    wrong = Settings(_env_file=None, documenso_url=BASE, documenso_api_token="api_sbagliato")  # type: ignore[call-arg]
+    assert documenso_check(wrong, http=fake) == 1
+    assert "Invalid session or API token" in capsys.readouterr().err
+    assert documenso_check(Settings(_env_file=None), http=fake) == 1  # type: ignore[call-arg]
+    assert "la firma è spenta" in capsys.readouterr().err

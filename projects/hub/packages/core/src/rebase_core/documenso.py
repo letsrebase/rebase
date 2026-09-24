@@ -242,6 +242,11 @@ class DocumensoClient:
         if answer.get("success") is not True:
             raise DocumensoFailed(UNREADABLE, f"cancel answered {answer!r}")
 
+    def ping(self) -> None:
+        """One page of the team's envelopes, read and dropped: whether the instance
+        answers and the token opens it (`rebase documenso-check`, REB-393)."""
+        self._call("GET", "/envelope")
+
     def _call(
         self, method: str, path: str, body: bytes = b"", content_type: str | None = None
     ) -> tuple[int, bytes]:
@@ -275,11 +280,16 @@ class DocumensoClient:
         return parsed
 
 
-def client_from_settings(settings: Settings) -> DocumensoClient | None:
-    """`None` without a URL or a token: signing is off on this environment, and says so."""
+def client_from_settings(
+    settings: Settings, http: HttpCall | None = None
+) -> DocumensoClient | None:
+    """`None` without a URL or a token: signing is off on this environment, and says so.
+    `http` is the seam, for the check command's test."""
     if not settings.documenso_url or not settings.documenso_api_token:
         return None
-    return DocumensoClient(settings.documenso_url, settings.documenso_api_token)
+    return DocumensoClient(
+        settings.documenso_url, settings.documenso_api_token, http or urllib_download_call
+    )
 
 
 # ---- what an envelope's outcome is --------------------------------------------------------

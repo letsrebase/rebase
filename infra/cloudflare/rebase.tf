@@ -135,3 +135,16 @@ resource "cloudflare_dns_record" "rebase_links_cname" {
   proxied  = false
   comment  = "Resend click tracking subdomain (REB-315)"
 }
+
+# Documenso, the contracts' signing site (REB-393): the same Hetzner origin, whose nginx
+# proxies it to the hub's production compose project on 127.0.0.1:8090.
+resource "cloudflare_dns_record" "rebase_firma_a" {
+  provider = cloudflare.rebase
+  zone_id  = local.rebase_zone_id
+  name     = "firma.letsrebase.com"
+  type     = "A"
+  content  = "204.168.255.175"
+  ttl      = 1
+  proxied  = false
+  comment  = "Documenso, the contracts' signing site (REB-393)"
+}

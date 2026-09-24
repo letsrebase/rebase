@@ -140,6 +140,8 @@ class FakeDocumenso:
         if operation in self.failures:
             status, message = self.failures.pop(operation)
             return status, _error(message, status)
+        if operation == "list":
+            return 200, json.dumps({"data": [], "count": len(self.envelopes)}).encode()
         if operation == "create":
             return self._create(headers, body)
         if operation == "distribute":
@@ -160,6 +162,8 @@ class FakeDocumenso:
             "/envelope/cancel",
         ):
             return path.rsplit("/", 1)[-1]
+        if method == "GET" and path == "/envelope":
+            return "list"
         if method == "GET" and path.startswith("/envelope/item/") and path.endswith("/download"):
             return "download"
         if method == "GET" and path.startswith("/envelope/"):

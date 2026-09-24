@@ -40,9 +40,9 @@ deliveries' own background tasks among them -- does everything once; a lost back
 task or a restart between steps leaves whichever of the two mail columns is unset, which
 the next `finish` reads as still to do for that recipient alone (REB-391).
 
-`sweep` is the recovery `rebase contracts-sweep` runs, meant every ten minutes once
-production schedules it with the Documenso rollout: `finish` again, for every document a
-webhook or an admin's «Aggiorna stato» never reached.
+`sweep` is the recovery `rebase contracts-sweep` runs, every ten minutes on production and
+the preview alike, from the `sweep` service in `docker-compose.yml` (REB-393): `finish`
+again, for every document a webhook or an admin's «Aggiorna stato» never reached.
 
 The recovery actions are the admin's: «Aggiorna stato» (`refresh`) for the event
 Documenso gave up on, «Reinvia email» (`resend_mail`), «Annulla» on a framework agreement

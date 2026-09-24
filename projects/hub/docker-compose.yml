@@ -96,6 +96,28 @@ services:
     ports:
       - '${REBASE_MCP_PORT:-127.0.0.1:8088}:8001'
 
+  sweep:
+    # `rebase contracts-sweep` (REB-391), scheduled here rather than by the host, so both
+    # stacks carry their own schedule (REB-393): a loop, never a one-shot, because
+    # `_deploy-compose.yml` fails a deploy on any container that is not `running`. Sleeps
+    # first so the api's `alembic upgrade head` (Dockerfile.api) has already run.
+    # `init: true` so the loop stops on SIGTERM instead of costing every deploy's 10 s
+    # kill timeout. Harmless on an environment with no Documenso settings: `finish`
+    # swallows `SigningUnavailable`. Read with `docker logs rebase-sweep-1` (production)
+    # or `rebase-preview-sweep-1` (preview).
+    build:
+      context: ../..
+      dockerfile: projects/hub/Dockerfile.api
+    restart: unless-stopped
+    init: true
+    command: ['sh', '-c', 'while :; do sleep 600; uv run --no-sync rebase contracts-sweep; done']
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment: *api-environment
+
   web:
     build:
       context: ../..
