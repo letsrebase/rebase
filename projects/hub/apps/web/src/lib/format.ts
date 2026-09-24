@@ -65,19 +65,21 @@ export const DOCUMENT_STATE_LABELS: Record<string, string> = {
 
 /** REB-392: a contract's state in the freelancer's own words, gendered to the document:
  *  the framework agreement (`il contratto quadro`) is masculine, a letter (`la lettera`)
- *  feminine. `disdetto`/`disdetta` never actually reaches a letter (only a framework
- *  agreement can be, `ck_contract_documents_notice_for_quadro`), kept here only so a
- *  stray value still reads as a sentence rather than the raw state. */
+ *  feminine. `inviato` keeps «Da firmare» for both: gender-neutral, and it tells the
+ *  member what to do rather than just naming the state. `disdetto`/`disdetta` never
+ *  actually reaches a letter (only a framework agreement can be,
+ *  `ck_contract_documents_notice_for_quadro`), kept here only so a stray value still
+ *  reads as a sentence rather than the raw state. */
 export const MEMBER_FRAMEWORK_STATE_LABELS: Record<string, string> = {
   in_attesa: 'Parte dopo la firma del contratto quadro',
-  inviato: 'Inviato',
+  inviato: 'Da firmare',
   firmato: 'Firmato',
   annullato: 'Annullato: non va più firmato',
   disdetto: 'Disdetto',
 }
 export const MEMBER_LETTER_STATE_LABELS: Record<string, string> = {
   in_attesa: 'Parte dopo la firma del contratto quadro',
-  inviato: 'Inviata',
+  inviato: 'Da firmare',
   firmato: 'Firmata',
   annullato: 'Annullata: non va più firmata',
   disdetto: 'Disdetta',

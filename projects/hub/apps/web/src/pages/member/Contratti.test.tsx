@@ -55,18 +55,21 @@ describe('«Contratti» in the member area (REB-392)', () => {
       'href',
       'https://firma.letsrebase.com/sign/abc',
     )
-    expect(screen.getByText('Inviato')).toBeInTheDocument()
+    expect(screen.getByText('Da firmare')).toBeInTheDocument()
     const letter = screen.getByText('Lettera di incarico n. 2026-001').closest('li')!
     expect(within(letter).getByText('Parte dopo la firma del contratto quadro')).toBeInTheDocument()
     expect(within(letter).getByText('ACME S.r.l., dal 1° ottobre 2026 al 29 gennaio 2027')).toBeInTheDocument()
     expect(within(letter).queryByRole('link')).toBeNull()
   })
 
-  it('agrees in gender with the document: a letter is «Inviata», the framework agreement «Inviato»', async () => {
-    mount({ quadro: QUADRO, lettere: [{ ...LETTERA, stato: 'inviato', signing_url: 'https://firma.letsrebase.com/sign/def' }] })
-    expect(await screen.findByText('Inviato')).toBeInTheDocument()
+  it('agrees in gender with the document: a letter is «Firmata», the framework agreement «Firmato»', async () => {
+    mount({
+      quadro: { ...QUADRO, stato: 'firmato', signing_url: null, ha_pdf_firmato: true },
+      lettere: [{ ...LETTERA, stato: 'firmato', signing_url: null, ha_pdf_firmato: true }],
+    })
+    expect(await screen.findByText('Firmato')).toBeInTheDocument()
     const letter = screen.getByText('Lettera di incarico n. 2026-001').closest('li')!
-    expect(within(letter).getByText('Inviata')).toBeInTheDocument()
+    expect(within(letter).getByText('Firmata')).toBeInTheDocument()
   })
 
   it('offers the signed copy and the framework agreement’s dates once signed, and no link to sign', async () => {
