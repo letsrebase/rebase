@@ -87,10 +87,17 @@ it once before their first card, not to learn how the rule was arrived at.
 
 ## Doing the setup
 
+If your harness reads `.claude/skills/`, use `client-repo-onboarding`: it reads the
+engagement's spec document (asking for it, or for the fields it is missing), does the
+Linear calls below itself, and runs the script. What follows is that same procedure by
+hand — read it either way, since it is also what a harness with no skill mechanism
+falls back to.
+
 For a genuinely new repository:
 
-1. **Create the Linear structures**, by hand or with an agent that has the
-   `linear-rebase` MCP server (or the workspace's own hosted MCP, or the web app):
+1. **Create the Linear structures**, by hand, or let `client-repo-onboarding` do it
+   from a spec document instead (`linear-rebase` MCP server, the workspace's own
+   hosted MCP, or the web app):
    this client's own team, if it does not exist yet — Linear's MCP surface has no
    team-creation call, so this one step is always a human clicking "New team" in
    `linear.app/letsrebase` settings, once per client, on the Free plan's second and
@@ -129,6 +136,14 @@ since folding real prose is not a mechanical merge a script should attempt. The
 retrofit lands as a branch and a pull request like any other change, reviewed before
 it merges, not pushed straight to `main` on a repository someone else is actively
 committing to.
+
+That additive rule cuts the other way once a repository already carries its own
+`AGENTS.md`: a later change to `template/AGENTS.md` (a new rule, like this PR's
+project-update paragraph) does not reach that repository just because the script
+runs again, since an existing file is skipped without `--force`. Carrying a template
+change into an already-retrofitted repository is the same by-hand fold as the pilot's
+own `WARP.md` merge above, not a second run of the script, and it lands as its own
+small PR on that repository, reviewed the same way.
 
 ## Configurable per contract
 
