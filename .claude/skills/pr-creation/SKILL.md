@@ -272,21 +272,22 @@ gh pr create --body-file pr-body.md \
    description» switch in app.greptile.com, PR Summaries: on, it is written into the
    PR's own description between `<!-- greptile_comment -->` markers, which is where
    #266 and #267 read `4/5` and merged anyway; off, since 2026-09-22, it is a
-   conversation comment by the bot. The read below covers both. A run shows on the
-   commit as the `Greptile Review` check run: `success` with a count (`1 files
-   reviewed, 0 comments added.`) at 5/5, `failure` under 5/5 (`The review scored 4/5,
-   below the 5/5 this repository requires`, #367), which does not block the merge. When
-   it raised findings, it also leaves a review by the bot with an empty body that owns
-   them. Greptile's replies in its own threads are reviews as well, with no finding of
-   their own, so the run's review is the one that owns a top-level comment on that sha.
-   The completed check run is the signal; the review can land a few seconds before or
-   after it (#268):
+   conversation comment by the bot, which says why the score is what it is. The score of
+   a given sha is read from that sha's own `Greptile Review` check run, never from the
+   summary, which may still be the last round's: `success` is 5/5 (the check's
+   threshold, set in app.greptile.com, Status Checks), `failure` is under it, with
+   `Confidence N/5` in its title (`Confidence 2/5`, #388's first commit), and does not
+   block the merge. When the run raised findings, it also leaves a review by the bot
+   with an empty body that owns them. Greptile's replies in its own threads are reviews
+   as well, with no finding of their own, so the run's review is the one that owns a
+   top-level comment on that sha. The completed check run is the signal; the review can
+   land a few seconds before or after it (#268):
 
    ```bash
    sha=$(git rev-parse HEAD)
    for i in $(seq 20); do   # ten minutes, then the @greptileai nudge below
      run=$(gh api "repos/letsrebase/rebase/commits/$sha/check-runs" \
-         --jq '.check_runs[] | select(.name == "Greptile Review" and .status == "completed") | .conclusion + ": " + .output.summary')
+         --jq '.check_runs[] | select(.name == "Greptile Review" and .status == "completed") | .conclusion + " | " + .output.title + " | " + .output.summary')
      [ -n "$run" ] && break; sleep 30
    done
    echo "$run"
@@ -297,19 +298,15 @@ gh pr create --body-file pr-body.md \
    done
    [ -n "$rid" ] && gh api --paginate "repos/letsrebase/rebase/pulls/<n>/comments?per_page=100" \
        --jq ".[] | select(.pull_request_review_id == $rid and .in_reply_to_id == null) | \"\(.id) \(.path):\(.line // .original_line) \(.body)\""
-   { gh pr view <n> --json body -q .body
-     gh api repos/letsrebase/rebase/issues/<n>/comments \
-         --jq '.[] | select(.user.login == "greptile-apps[bot]") | .body'; } \
-       | grep -oE 'Confidence Score: [0-9]/5' | tail -n 1
    ```
 
    On #367's first commit `rid` is the review that owns the three findings; on its
-   second it is empty: that run raised nothing, and the only Greptile review on that sha
-   is a reply in a thread. The last command reads the score from the PR description and
-   from the bot's comments, whichever the switch fills; on #267 it prints `Confidence
-   Score: 4/5`. Nothing printed after a completed run means the summary is not there
-   yet, not a score of zero: read again before you go on. A score under 5/5 with no new
-   finding means an earlier thread is still open (§ d). A review with a body and no
+   second it is empty: that run raised nothing (`success`, `0 comments added`), and the
+   only Greptile review on that sha is a reply in a thread. A `failure` run with an
+   empty `rid` is either an earlier thread still open, which keeps the score down (§ d;
+   the open-threads command there shows it), or a review that has not landed: with no
+   open Greptile thread, read again after a minute, then comment `@greptileai`. Nothing
+   on the check run until it completes is not a score. A review with a body and no
    inline comment is Greptile not reviewing (#259 and #260, `Your trial has ended`; its
    reviews here have an empty body): say so on the card and tell the person before you
    merge. Ten minutes with no completed run on the head sha: `gh pr comment <n> --body
@@ -337,28 +334,36 @@ gh pr create --body-file pr-body.md \
    for i in $(seq 20); do   # ten minutes, then @coderabbitai review
      st=$(gh api "repos/letsrebase/rebase/commits/$sha/statuses" \
          --jq '[.[] | select(.context == "CodeRabbit")][0].description // ""')
-     case "$st" in "Review completed"|"Review skipped"*) break;; esac; sleep 30
+     [ "$st" = "Review completed" ] && break; sleep 30
    done
    echo "$st"
-   crid=$(gh api repos/letsrebase/rebase/pulls/<n>/reviews \
+   for i in $(seq 12); do   # the summary of this sha, not the last round's
+     summary=$(gh api --paginate "repos/letsrebase/rebase/issues/<n>/comments?per_page=100" \
+         --jq '.[] | select(.user.login == "coderabbitai[bot]" and (.body | test("summarize by coderabbit.ai"))) | .body')
+     echo "$summary" | grep -q "\"coveredCommitId\":\"$sha\"" && break; sleep 10
+   done
+   crid=$(gh api --paginate "repos/letsrebase/rebase/pulls/<n>/reviews?per_page=100" \
        --jq ".[] | select(.user.login == \"coderabbitai[bot]\" and .commit_id == \"$sha\" and (.body | test(\"Actionable comments posted\"))) | .id" | tail -n 1)
    [ -n "$crid" ] && gh api repos/letsrebase/rebase/pulls/<n>/reviews/$crid --jq .body
    [ -n "$crid" ] && gh api --paginate "repos/letsrebase/rebase/pulls/<n>/comments?per_page=100" \
        --jq ".[] | select(.pull_request_review_id == $crid and .in_reply_to_id == null) | \"\(.id) \(.path):\(.line // .original_line) \(.body)\""
-   gh api repos/letsrebase/rebase/issues/<n>/comments \
-       --jq '.[] | select(.user.login == "coderabbitai[bot]" and (.body | test("summarize by coderabbit.ai"))) | .body' \
-     | sed -n '/Merge Risk/p;/pre_merge_checks_walkthrough_start/,/Passed checks/p'
+   echo "$summary" | sed -n '/Merge Risk/p;/pre_merge_checks_walkthrough_start/,/Passed checks/p'
    ```
 
+   The summary is edited in place on every round, so it is read only once its
+   `final_review_risk_coverage` marker names this sha (`"coveredCommitId":"<sha>"`);
+   then a missing `crid` means the round raised nothing, not that the review is late.
    The last command prints the `Merge Risk` line, the checks' header and, when a check
-   failed, its table; on #363 that is the `Docstring Coverage` warning. `Review
-   skipped` on a Dependabot PR is the `@coderabbitai review` above; on a draft, the loop
-   waits for `gh pr ready`. Ten minutes with no status on the head sha, or a summary
-   saying the reviews are paused (it pauses itself after five reviewed commits on one
-   PR, to spare the hourly allowance): `gh pr comment <n> --body '@coderabbitai review'`,
-   which reviews the head once and leaves the pause in place, and wait again. When it
-   answers that it is rate limited instead of reviewing, wait for the window it names
-   and ask again, and say so on the card.
+   failed, its table; on #363 that is the `Docstring Coverage` warning. The wait keys on
+   `Review completed` alone: a `Review skipped: ...` status stays on the sha until a
+   requested review starts. After ten minutes, read `$st`: `author ignored by
+   configuration` on a Dependabot PR is the `@coderabbitai review` above, not posted or
+   not picked up yet; `draft pull request` means the loop waits for `gh pr ready`; no
+   status, or a summary saying the reviews are paused (it pauses itself after five
+   reviewed commits on one PR, to spare the hourly allowance), is `gh pr comment <n>
+   --body '@coderabbitai review'`, which reviews the head once and leaves the pause in
+   place, and the wait again. When it answers that it is rate limited instead of
+   reviewing, wait for the window it names and ask again, and say so on the card.
 
    **c. CodeRabbit against Greptile.** It comes after CodeRabbit's own review on
    purpose: its own findings are not shaped by Greptile's, and then it checks Greptile's
@@ -376,31 +381,35 @@ gh pr create --body-file pr-body.md \
    { echo "@coderabbitai Adversarial pass on Greptile's review of $short. You have reviewed this commit on your own; now act as Greptile's adversary. For each item below, check the claim against the code at $short yourself and answer **confirmed**, **refuted** or **partly**, with the evidence: file and line, or the script you ran and what it printed. Do not take Greptile's reasoning or mine on trust, and do not agree to be agreeable: a finding that does not hold is refuted, and an answer of mine that does not hold is wrong. Then list any defect in this diff that neither review raised. Start your reply with the line \`Adversarial verdict on $short\`, then one line per item, then the misses."
      echo; echo "Greptile's findings on $short:"
      [ -n "$rid" ] && gh api --paginate "repos/letsrebase/rebase/pulls/<n>/comments?per_page=100" \
-         --jq ".[] | select(.pull_request_review_id == $rid and .in_reply_to_id == null) | \"- \(.html_url) \(.path):\(.line // .original_line) \(.body | gsub(\"<[^>]*>\"; \"\") | split(\"\n\n\") | map(gsub(\"^\\\\s+|\\\\s+$\"; \"\")) | map(select(length > 0)) | .[0:2] | join(\" \"))\""
+         --jq ".[] | select(.pull_request_review_id == $rid and .in_reply_to_id == null) | \"- \(.html_url) \(.path):\(.line // .original_line) \(.body | split(\"<details>\")[0] | gsub(\"<[^>]*>\"; \"\") | gsub(\"\\\\s+\"; \" \"))\""
    } > adversary.md
    ```
 
-   Each line carries the finding's link, its `path:line`, its title and the claim
-   itself (on #367's first commit, three lines). Then add by hand, under `Greptile
+   Each line carries the finding's link, its `path:line` and the whole finding up to
+   Greptile's own fix prompt (on #367's first commit, three lines). Then add by hand, under `Greptile
    findings I answered since the last pass:`, one line per answer: the thread's link and
    the answer in a sentence. When Greptile raised nothing new and there is no new answer,
    there is no pass. Post it and wait for the reply, a new comment by the bot that
    opens with the line it was asked for:
 
    ```bash
-   since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+   short=$(git rev-parse --short=9 HEAD); since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
    gh pr comment <n> --body-file adversary.md
-   for i in $(seq 40); do   # twenty minutes: #367's one chat reply took nine and a half
+   for i in $(seq 40); do   # twenty minutes; #388's verdict took two and a half
      verdict=$(gh api --paginate "repos/letsrebase/rebase/issues/<n>/comments?per_page=100" \
-         --jq ".[] | select(.user.login == \"coderabbitai[bot]\" and .created_at >= \"$since\" and (.body | contains(\"Adversarial verdict on $short\"))) | .body")
+         --jq ".[] | select(.user.login == \"coderabbitai[bot]\" and .created_at >= \"$since\" and any(.body | split(\"\n\")[]; test(\"^\\\\s*Adversarial verdict on $short\\\\s*$\"))) | .body")
      [ -n "$verdict" ] && break; sleep 30
    done
    printf '%s\n' "$verdict"
    ```
 
-   Twenty minutes with no verdict: post the same comment once more and wait again;
-   still nothing, say so on the card and tell the person before you merge, as with a
-   Greptile that does not review.
+   The verdict line is matched as a line of its own, wherever it sits: on #388 the reply
+   opened with a tip and CodeRabbit's analysis before `Adversarial verdict on
+   bd6747fe9`, and a quote of the request (`> ...`) does not match. Read it through:
+   every item listed has a verdict; one without is asked for again in a reply to the
+   verdict. Twenty minutes with no verdict: post the same comment once more and wait
+   again; still nothing, say so on the card and tell the person before you merge, as
+   with a Greptile that does not review.
 
    **d. What each finding and verdict does.** Every finding, from either reviewer, is
    either **fixed**, in a commit that names it, or **answered** with the reason the code
@@ -438,12 +447,13 @@ gh pr create --body-file pr-body.md \
    here, without `[bot]`):
 
    ```bash
-   gh api graphql -F o=letsrebase -F r=rebase -F n=<n> -f query='query($o:String!,$r:String!,$n:Int!){ repository(owner:$o,name:$r){ pullRequest(number:$n){ reviewThreads(first:100){ nodes{ isResolved comments(first:1){ nodes{ author{login} url } } } } } } }' \
-     --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) | "\(.comments.nodes[0].author.login) \(.comments.nodes[0].url)"'
+   gh api graphql --paginate -f query='query($endCursor: String) { repository(owner: "letsrebase", name: "rebase") { pullRequest(number: <n>) { reviewThreads(first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { isResolved comments(first: 1) { nodes { author { login } url } } } } } } }' \
+     --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) | "\(.comments.nodes[0].author.login) \(.comments.nodes[0].url)"' \
+     || echo "thread query failed: the gate is not met"
    ```
 
    **The loop ends** on the sha that will merge when: Greptile's run on it raised nothing
-   new and the score reads 5/5; CodeRabbit's status on it reads `Review completed`, its
+   new and its check run is `success`; CodeRabbit's status on it reads `Review completed`, its
    review of it raised nothing new and none of its pre-merge checks failed without an
    answer; the command above prints nothing; every verdict of the last adversarial pass
    was acted on; and no `**Decision for the lead**` is open. What the loop did goes on the
