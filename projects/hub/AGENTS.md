@@ -177,9 +177,10 @@ forgets it fails the stack instead of mounting an empty directory.
 
 Ports, loopback only, from the table in `docs/adding-a-project.md` §7: production api
 8084, web 8085, Postgres 55435; preview 8086, 8087, 55436. The public paths are `/hub/`
-(web) and `/api/hub/` + `/api/orbiters/signups` (api), proxied to production by the host
-vhost that lives in `projects/website/deploy/letsrebase.conf`; nothing proxies the
-preview, which is reached on the host only. The member area's mail needs
+(web) and `/api/hub/` + `/api/orbiters/signups` (api): `projects/website/deploy/letsrebase.conf`
+proxies them to production on the host vhost, and `projects/website/deploy/preview.letsrebase.conf`
+proxies the same paths to the preview stack (127.0.0.1:8086 for its api), which is why
+the preview's Documenso webhook reaches it too. The member area's mail needs
 `REBASE_RESEND_API_KEY` and `REBASE_MAIL_FROM` in the host `.env`; without the key
 `/hub/login` answers 503 with a sentence. A preview stack that gets a key must also set
 `REBASE_HUB_URL` to its own address, or every link it mints points at production.

@@ -724,13 +724,14 @@ openssl pkcs12 -export -inkey "$work/key.pem" -passin "pass:$pass" -in "$work/ce
   echo '# Open only until the two Documenso users exist (Step 7), then true.'
   echo 'DOCUMENSO_DISABLE_SIGNUP=false'
 } >> /opt/hub/.env
+cp /opt/hub/.env "/root/backups/hub-env-$(date +%F)-with-documenso"
 shred -u "$work/key.pem" "$work/cert.pem" "$work/cert.p12"
 rmdir "$work"
 grep -c '^DOCUMENSO_' /opt/hub/.env
 SH
 ```
 
-Expected: `8` (the eight `DOCUMENSO_*` lines; the two `REBASE_DOCUMENSO_*` ones start differently), and nothing printed of any value. The encryption keys can never change once Documenso has stored anything with them: the backup under `/root/backups` is the copy.
+Expected: `8` (the eight `DOCUMENSO_*` lines; the two `REBASE_DOCUMENSO_*` ones start differently), and nothing printed of any value. The encryption keys can never change once Documenso has stored anything with them: the second backup under `/root/backups` (the `...-with-documenso` one, taken right after they were written) is the copy of the keys; the first, `...-before-documenso`, stays the rollback point.
 
 - [ ] **Step 6: Ivan asks for the tag: Documenso starts**
 

@@ -650,10 +650,11 @@ def build_server(
     @mcp.tool()
     def list_matches(freelancer_id: str) -> dict[str, Any]:
         """I match e i contratti di un freelance, per id della scheda, come li mostra la
-        pagina «Match e contratti»: `quadro` è il contratto quadro (quello attivo, o
-        l'ultimo partito per la firma anche se poi annullato o rifiutato; una bozza mai
-        partita non conta) con stato, data di firma, prossimo rinnovo, ultimo giorno
-        per la disdetta e versione del testo; `quadri` li elenca tutti; `matches` sono i
+        pagina «Match e contratti»: `quadro` è il contratto quadro (quello attivo,
+        altrimenti l'ultimo ancora da inviare o partito per la firma, anche se poi
+        annullato o rifiutato; una bozza annullata prima di partire non conta) con
+        stato, data di firma, prossimo rinnovo, ultimo giorno per la disdetta e
+        versione del testo; `quadri` li elenca tutti; `matches` sono i
         match dal più recente, ognuno con l'azienda, lo stato e la lettera di incarico
         con il suo numero. Ogni documento porta `pdf_url`, il link al PDF da aprire con
         l'accesso admin: mai i byte, mai i dati fiscali. Solo lettura: i match si creano
