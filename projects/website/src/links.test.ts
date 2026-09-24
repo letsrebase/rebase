@@ -68,7 +68,16 @@ function idsOn(page: string): Set<string> {
  *  suite's fixtures use, and a link to it on a page is a fixture that leaked into
  *  the markup (ORB-116, after ORB-97 on the hub). */
 // `www.linkedin.com` since ORB-151: the four voices link to their public profiles.
-const EXTERNAL_HOSTS = ['github.com', 'pigro.letsrebase.com', 'openai.com', 'posthog.com', 'humancraft.tech', 'www.linkedin.com']
+// `developers.google.com` since REB-410: the privacy page links Google's User Data Policy.
+const EXTERNAL_HOSTS = [
+  'github.com',
+  'pigro.letsrebase.com',
+  'openai.com',
+  'posthog.com',
+  'humancraft.tech',
+  'www.linkedin.com',
+  'developers.google.com',
+]
 
 function checkExternal(href: string): string | undefined {
   let url: URL

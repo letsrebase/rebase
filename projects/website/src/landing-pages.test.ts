@@ -52,9 +52,19 @@ describe.each(PAGES)('%s', (name) => {
     // checked on its own two lines below rather than against the allowlist here; only
     // that exact value is exempt, not every same-origin absolute URL.
     const canonical = page.match(/<link\b[^>]*\brel="canonical"[^>]*\bhref="([^"]*)"/)?.[1]
+    // REB-410: the Gmail and Drive section links the Google API Services User Data
+    // Policy, which Google's verification requires. Allowed as an `<a href>` the reader
+    // clicks and nothing else: the same host as a `src`, or as a `<link>`, still fails
+    // the allowlist below.
+    const googlePolicyLinks = new Set(
+      [...page.matchAll(/<a\b[^>]*\bhref="(https:\/\/developers\.google\.com\/[^"]*)"/g)].map(
+        (anchor) => anchor[1]!,
+      ),
+    )
     for (const match of page.matchAll(/(?:href|src)="(https?:\/\/[^"]+)"/g)) {
       const url = match[1]!
       if (url === canonical) continue
+      if (googlePolicyLinks.has(url) && !page.includes(`src="${url}"`)) continue
       // An href the reader clicks -- the repository, the hosted signup, or OpenAI's
       // own privacy policy, which the cookie section has to point at -- is fine; a
       // subresource is not. `humancraft.tech` is in the list because Italian law
@@ -334,6 +344,25 @@ describe('privacy.html', () => {
     ]) {
       expect(page.toLowerCase()).toContain(claim.toLowerCase())
     }
+  })
+
+  it('says what the customer proposals read, and that they store nothing', () => {
+    // REB-223 reads the owner's sent mail to propose customers, which the first text
+    // ruled out («non elenca la tua casella»). The Google review compares the policy
+    // with what the app does (REB-410), so the two move together.
+    for (const claim of ['hai scritto tu', 'mittente', 'non l\'oggetto', 'non salva nulla']) {
+      expect(page.toLowerCase()).toContain(claim.toLowerCase())
+    }
+    expect(page).not.toContain('non elenca la tua casella')
+  })
+
+  it('names both Drive scopes and the Limited Use commitment', () => {
+    // The verification of a restricted scope asks the policy for the exact scopes and
+    // for the User Data Policy's Limited Use statement, linked (REB-410).
+    expect(page).toContain('https://www.googleapis.com/auth/drive.readonly')
+    expect(page).toContain('https://www.googleapis.com/auth/drive.file')
+    expect(page).toContain('https://developers.google.com/terms/api-services-user-data-policy')
+    expect(page).toContain('Limited Use')
   })
 
   it('names the scopes it deliberately does not ask for', () => {
