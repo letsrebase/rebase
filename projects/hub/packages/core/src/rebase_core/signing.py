@@ -23,12 +23,13 @@ Documenso gets its answer long before its ten seconds (probe § 5), and a
 second delivery of the same event, which can arrive while the first is still running,
 waits on the lock and finds nothing left to do. `finish` runs after that commit, in the
 webhook's background task or under «Aggiorna stato»: the sealed copy downloaded and
-stored, the two mails (the freelancer's and rebase's) sent once `signed_copy_mailed_at`
-records, then, for a framework agreement, the letters that waited for it typeset with
-its signature date and sent. Each step checks under the document's own row lock whether
-it is still to do, so running `finish` twice does everything once; a lost background
-task or a restart between steps leaves `signed_copy_mailed_at` unset, which the next
-`finish` reads as still to do (REB-391).
+stored, the two mails (the freelancer's and rebase's) sent, each recorded on its own
+once accepted (`signed_copy_to_freelancer_at`, `signed_copy_to_rebase_at`), then, for a
+framework agreement, the letters that waited for it typeset with its signature date and
+sent. Each step checks under the document's own row lock whether it is still to do, so
+running `finish` twice does everything once; a lost background task or a restart
+between steps leaves whichever of the two columns is unset, which the next `finish`
+reads as still to do for that recipient alone (REB-391).
 
 `sweep` is the recovery `rebase contracts-sweep` runs, meant every ten minutes once
 production schedules it with the Documenso rollout: `finish` again, for every document a
@@ -56,6 +57,7 @@ from rebase_core.contracts.render import Renderer, text_version
 from rebase_core.documenso import (
     COMPLETED,
     REJECTED,
+    UNREACHABLE,
     DocumensoClient,
     Outcome,
     fields_from_blanks,
@@ -327,12 +329,18 @@ class SigningService:
     def _cancel_envelope(self, envelope_id: str, reason: str) -> None:
         """«Annulla», on a document or on a match's letter: Documenso refuses to cancel
         an envelope that is no longer `PENDING` (already completed, rejected or
-        cancelled there, probe § 4), typically a webhook the hub missed. Its own English
-        sentence is not fit for an admin, so it becomes an Italian one that points at
-        the way out; the row this call is inside stays untouched either way."""
+        cancelled there, probe § 4), typically a webhook the hub missed. That refusal's
+        own English sentence is not fit for an admin, so it becomes an Italian one that
+        points at the way out; the row this call is inside stays untouched either way.
+        Documenso not answering at all is a different failure and keeps its own
+        sentence unchanged: it says nothing about the document's state, and translating
+        it to `CANCEL_REFUSED` would tell the admin it might already be signed when
+        Documenso is merely down (REB-391)."""
         try:
             self._documenso().cancel(envelope_id, reason)
         except DocumensoFailed as exc:
+            if exc.message == UNREACHABLE:
+                raise
             raise DocumensoFailed(CANCEL_REFUSED, exc.message) from exc
 
     def _mail_signing_request(self, document: ContractDocument) -> bool:
@@ -430,15 +438,16 @@ class SigningService:
 
     def _to_finish(self) -> list[UUID]:
         """Every document a sweep must run `finish` on: a signature or a notice whose
-        sealed copy is missing or not yet mailed, and every active framework agreement
-        that still has a letter `in_attesa` on a match `in_firma` (a release `finish`
-        itself missed, or never ran for). `finish` is idempotent either way, so the two
-        sets are simply run together."""
+        sealed copy is missing or not yet mailed to either recipient, and every active
+        framework agreement that still has a letter `in_attesa` on a match `in_firma` (a
+        release `finish` itself missed, or never ran for). `finish` is idempotent either
+        way, so the two sets are simply run together."""
         unfinished_signatures = select(ContractDocument.id).where(
             ContractDocument.stato.in_(("firmato", "disdetto")),
             or_(
                 ContractDocument.signed_pdf.is_(None),
-                ContractDocument.signed_copy_mailed_at.is_(None),
+                ContractDocument.signed_copy_to_freelancer_at.is_(None),
+                ContractDocument.signed_copy_to_rebase_at.is_(None),
             ),
         )
         waiting_letter = aliased(ContractDocument)
@@ -481,17 +490,28 @@ class SigningService:
         return document
 
     def _mail_signed_copy_once(self, document_id: UUID) -> None:
-        """The signed-copy mails (the freelancer's and rebase's, both with the sealed
-        copy), sent at most once: locked under the document's own row, same as
-        `_store_signed_copy`, so two concurrent `finish` calls mail once. Nothing to
-        mail yet (no stored copy) or already mailed leaves the row untouched;
-        `signed_copy_mailed_at` is set only once both mails are accepted, under the same
-        lock, so a partial failure (one recipient accepted, the other refused) is
-        retried whole on the next `finish`, which may then repeat the accepted
-        recipient's mail once more -- the record is the whole pair going out, not each
-        half (REB-391)."""
+        """The signed-copy mails, the freelancer's and rebase's, each sent at most once
+        and recorded on its own: one recipient's provider refusing forever must not
+        keep the other from ever getting theirs again once `finish` runs next (REB-391)."""
+        self._mail_signed_copy_to(document_id, to_freelancer=True)
+        self._mail_signed_copy_to(document_id, to_freelancer=False)
+
+    def _mail_signed_copy_to(self, document_id: UUID, *, to_freelancer: bool) -> None:
+        """One recipient's own signed-copy mail, locked under the document's own row,
+        same as `_store_signed_copy`, so two concurrent `finish` calls mail this
+        recipient once. Nothing to mail yet (no stored copy) or this recipient already
+        mailed leaves the row untouched; their own column
+        (`signed_copy_to_freelancer_at` or `signed_copy_to_rebase_at`) is set, and
+        committed, only once their mail is accepted, still under this lock, so a refusal
+        is retried on the next `finish` without repeating the other recipient's mail,
+        already accepted and recorded under its own column (REB-391)."""
         document = self._lock(document_id)
-        if document.signed_pdf is None or document.signed_copy_mailed_at is not None:
+        mailed_at = (
+            document.signed_copy_to_freelancer_at
+            if to_freelancer
+            else document.signed_copy_to_rebase_at
+        )
+        if document.signed_pdf is None or mailed_at is not None:
             self.session.rollback()
             return
         if self.sender is None:
@@ -503,27 +523,29 @@ class SigningService:
         user = self._owner(document.freelancer_id)
         pdf = self.matches.document_pdf(document.id, signed=True)
         attachment = Attachment(filename=pdf.filename, content=pdf.content)
-        accepted = True
-        for to, for_rebase in ((user.email, False), (self.contracts_mail, True)):
-            mail = signed_copy_mail(
-                to,
-                kind=document.kind,
-                numero=document.numero,
-                attachment=attachment,
-                nome=user.nome,
-                cognome=user.cognome,
-                for_rebase=for_rebase,
+        to = user.email if to_freelancer else self.contracts_mail
+        mail = signed_copy_mail(
+            to,
+            kind=document.kind,
+            numero=document.numero,
+            attachment=attachment,
+            nome=user.nome,
+            cognome=user.cognome,
+            for_rebase=not to_freelancer,
+        )
+        if not self.sender.send(mail):
+            _log.warning(
+                "the signed copy of document %s was refused by the provider (%s)",
+                document.id,
+                "freelancer" if to_freelancer else "rebase",
             )
-            if not self.sender.send(mail):
-                _log.warning(
-                    "the signed copy of document %s was refused by the provider", document.id
-                )
-                accepted = False
-        if accepted:
-            document.signed_copy_mailed_at = self.now()
-            self.session.commit()
-        else:
             self.session.rollback()
+            return
+        if to_freelancer:
+            document.signed_copy_to_freelancer_at = self.now()
+        else:
+            document.signed_copy_to_rebase_at = self.now()
+        self.session.commit()
 
     def _release_letters(self, framework: ContractDocument) -> None:
         """The letters that waited for this framework agreement (spec § 1e), each in a

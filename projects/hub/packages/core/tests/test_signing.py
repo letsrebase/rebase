@@ -21,7 +21,7 @@ from rebase_core.contract_schemas import FiscalData, MatchRead, SendReport
 from rebase_core.contracts.fields import ContractFailed, Value
 from rebase_core.contracts.render import Renderer
 from rebase_core.db import session_factory
-from rebase_core.documenso import Outcome, WebhookBody, outcome_from_webhook
+from rebase_core.documenso import UNREACHABLE, Outcome, WebhookBody, outcome_from_webhook
 from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
 from rebase_core.fiscal import FiscalService
 from rebase_core.mail import EmailSender, Mail, RecordingSender
@@ -44,6 +44,19 @@ class RefusingSender:
     def send(self, mail: Mail) -> bool:
         self.sent.append(mail)
         return False
+
+
+class RefusingRecipientSender:
+    """A provider that turns away mail to one address forever and accepts every other,
+    and keeps what it was asked to send."""
+
+    def __init__(self, refuses: str) -> None:
+        self.refuses = refuses
+        self.sent: list[Mail] = []
+
+    def send(self, mail: Mail) -> bool:
+        self.sent.append(mail)
+        return mail.to != self.refuses
 
 
 def _fiscal(
@@ -1073,9 +1086,9 @@ def test_a_release_with_no_mail_sender_leaves_the_letters_waiting(clean: Session
 def test_a_refused_signed_copy_mail_is_retried_by_the_next_finish_and_then_not_again(
     clean: Session,
 ) -> None:
-    """REB-391: the download succeeded, both signed-copy mails were refused.
-    `signed_copy_mailed_at` stays unset, so the next `finish` -- with a sender that now
-    works -- sends the pair again; a third `finish` after that sends nothing more."""
+    """REB-391: the download succeeded, both signed-copy mails were refused. Neither
+    column is set, so the next `finish` -- with a sender that now works -- sends the
+    pair again; a third `finish` after that sends nothing more."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
     refusing = RefusingSender()
@@ -1090,7 +1103,7 @@ def test_a_refused_signed_copy_mail_is_retried_by_the_next_finish_and_then_not_a
 
     quadro = _framework_of(clean, freelancer_id)
     assert quadro.signed_pdf == fake.signed_pdf(envelope)
-    assert quadro.signed_copy_mailed_at is None
+    assert (quadro.signed_copy_to_freelancer_at, quadro.signed_copy_to_rebase_at) == (None, None)
     first_attempt = [mail for mail in refusing.sent if mail.attachments]
     assert len(first_attempt) == 2
 
@@ -1099,7 +1112,7 @@ def test_a_refused_signed_copy_mail_is_retried_by_the_next_finish_and_then_not_a
     working_signing.finish(signed)
 
     quadro = _framework_of(clean, freelancer_id)
-    assert quadro.signed_copy_mailed_at == NOW
+    assert (quadro.signed_copy_to_freelancer_at, quadro.signed_copy_to_rebase_at) == (NOW, NOW)
     downloads = [call for call in fake.calls if call[1].endswith("/download?version=signed")]
     assert len(downloads) == 1
     retried = [mail for mail in recording.sent if mail.attachments]
@@ -1111,6 +1124,64 @@ def test_a_refused_signed_copy_mail_is_retried_by_the_next_finish_and_then_not_a
     working_signing.finish(signed)
 
     assert [mail for mail in recording.sent if mail.attachments] == retried
+
+
+def test_one_recipient_refusing_forever_does_not_stop_the_others_mail(clean: Session) -> None:
+    """REB-391: the freelancer's provider keeps rejecting their mail; rebase's own
+    address is still mailed, exactly once, on the first `finish` that succeeds for it,
+    and never mailed again however many times a later sweep retries the freelancer's."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    sender = RefusingRecipientSender("ada@studio.it")
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+
+    signing.finish(signed)
+    signing.finish(signed)
+    signing.finish(signed)
+
+    quadro = _framework_of(clean, freelancer_id)
+    assert quadro.signed_copy_to_freelancer_at is None
+    assert quadro.signed_copy_to_rebase_at == NOW
+    to_rebase = [mail for mail in sender.sent if mail.to == CONTRACTS_MAIL and mail.attachments]
+    assert len(to_rebase) == 1
+    to_freelancer = [
+        mail for mail in sender.sent if mail.to == "ada@studio.it" and mail.attachments
+    ]
+    assert len(to_freelancer) == 3
+
+
+def test_the_retry_mails_only_the_recipient_that_had_failed(clean: Session) -> None:
+    """REB-391: once the freelancer's provider starts accepting mail again, the next
+    `finish` mails them alone -- rebase already got theirs, and must not get a second
+    copy just because the freelancer's kept failing."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    refusing = RefusingRecipientSender("ada@studio.it")
+    _sent(clean, renderer, fake, refusing, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    refused_signing = _signing(clean, renderer, fake, refusing)
+    signed = refused_signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    refused_signing.finish(signed)
+    quadro = _framework_of(clean, freelancer_id)
+    assert quadro.signed_copy_to_freelancer_at is None
+    assert quadro.signed_copy_to_rebase_at == NOW
+
+    recording = RecordingSender()
+    working_signing = _signing(clean, renderer, fake, recording)
+    working_signing.finish(signed)
+
+    retried = [mail for mail in recording.sent if mail.attachments]
+    assert [mail.to for mail in retried] == ["ada@studio.it"]
+    quadro = _framework_of(clean, freelancer_id)
+    assert quadro.signed_copy_to_freelancer_at == NOW
+    assert quadro.signed_copy_to_rebase_at == NOW
 
 
 def test_two_concurrent_finishes_download_and_mail_the_signed_copy_once(
@@ -1165,6 +1236,7 @@ def test_two_concurrent_finishes_download_and_mail_the_signed_copy_once(
     assert len(downloads) == 1
     copies = [mail for mail in sender.sent[before:] if mail.attachments]
     assert len(copies) == 2
+    assert (letter.signed_copy_to_freelancer_at, letter.signed_copy_to_rebase_at) == (NOW, NOW)
 
 
 # ---- the sweep (REB-391) ------------------------------------------------------------------
@@ -1193,7 +1265,7 @@ def test_sweep_finishes_a_signature_a_crashed_background_task_left_undone(
     assert touched == 1
     quadro = _framework_of(clean, freelancer_id)
     assert quadro.signed_pdf == fake.signed_pdf(envelope)
-    assert quadro.signed_copy_mailed_at == NOW
+    assert (quadro.signed_copy_to_freelancer_at, quadro.signed_copy_to_rebase_at) == (NOW, NOW)
     assert _letter_of(clean, match.id).stato == "inviato"
 
 
@@ -1215,7 +1287,8 @@ def test_sweep_releases_a_waiting_letter_of_an_already_finished_framework(
     assert signed is not None
     signing.finish(signed)
     quadro = _framework_of(clean, freelancer_id)
-    assert (quadro.signed_pdf, quadro.signed_copy_mailed_at) == (fake.signed_pdf(envelope), NOW)
+    assert quadro.signed_pdf == fake.signed_pdf(envelope)
+    assert (quadro.signed_copy_to_freelancer_at, quadro.signed_copy_to_rebase_at) == (NOW, NOW)
     # A letter `in_attesa` on a match `in_firma`, its framework agreement already active:
     # the exact row shape `_release_letters` looks for, forged directly (as
     # `test_a_letter_whose_framework_was_refused_gets_a_new_one_when_its_match_is_sent`
@@ -1389,6 +1462,26 @@ def test_a_cancel_documenso_refuses_leaves_the_document_as_it_was(clean: Session
             _framework_of(clean, freelancer_id).id, admin_id
         )
     assert "Only pending documents can be cancelled" in raised.value.detail
+    assert _framework_of(clean, freelancer_id).stato == "inviato"
+
+
+def test_a_cancel_when_documenso_is_unreachable_keeps_its_own_sentence(clean: Session) -> None:
+    """REB-391: Documenso not answering at all is not the same as Documenso refusing to
+    cancel an already-completed envelope. Translating it to `CANCEL_REFUSED` would tell
+    the admin the document might already be signed, when it is merely that Documenso is
+    down; its own «riprova tra qualche minuto» sentence must reach the admin unchanged,
+    and the document stays as it was either way."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    fake.down("cancel")
+
+    with pytest.raises(DocumensoFailed) as raised:
+        _signing(clean, renderer, fake, sender).cancel_document(
+            _framework_of(clean, freelancer_id).id, admin_id
+        )
+
+    assert raised.value.message == UNREACHABLE
     assert _framework_of(clean, freelancer_id).stato == "inviato"
 
 

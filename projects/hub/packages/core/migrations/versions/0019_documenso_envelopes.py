@@ -9,9 +9,10 @@ it once after the create and keeps it beside `documenso_id`: the two are set tog
 not at all. `cancel_reason` says why a document became `annullato`: the freelancer
 refused it on the signing site, with their reason, Documenso cancelled it, or an admin
 did. `documenso_id` becomes unique, because the webhook finds its document by it.
-`signed_copy_mailed_at` is set only once both signed-copy mails (the freelancer's and
-rebase's) are accepted, so a restart or a refused mail leaves it `NULL` for the next
-`finish` to retry rather than skip (REB-391).
+`signed_copy_to_freelancer_at` and `signed_copy_to_rebase_at` are each set only once
+that recipient's own signed-copy mail is accepted, so a restart or a refused mail
+leaves that one `NULL` for the next `finish` to retry, without repeating a mail the
+other recipient already got (REB-391).
 
 Conditional like every migration of this package: a retried deploy passes over what the
 previous attempt already added. The check constraint is added through a `pg_constraint`
@@ -30,7 +31,9 @@ depends_on: str | Sequence[str] | None = None
 _STATEMENTS = (
     "ALTER TABLE contract_documents ADD COLUMN IF NOT EXISTS documenso_item_id VARCHAR(100)",
     "ALTER TABLE contract_documents ADD COLUMN IF NOT EXISTS cancel_reason VARCHAR(500)",
-    "ALTER TABLE contract_documents ADD COLUMN IF NOT EXISTS signed_copy_mailed_at TIMESTAMPTZ",
+    "ALTER TABLE contract_documents ADD COLUMN IF NOT EXISTS signed_copy_to_freelancer_at "
+    "TIMESTAMPTZ",
+    "ALTER TABLE contract_documents ADD COLUMN IF NOT EXISTS signed_copy_to_rebase_at TIMESTAMPTZ",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_contract_documents_documenso_id "
     "ON contract_documents (documenso_id)",
     "DO $$ BEGIN "
@@ -52,7 +55,8 @@ def downgrade() -> None:
         "ALTER TABLE contract_documents DROP CONSTRAINT IF EXISTS "
         "ck_contract_documents_envelope_item",
         "DROP INDEX IF EXISTS uq_contract_documents_documenso_id",
-        "ALTER TABLE contract_documents DROP COLUMN IF EXISTS signed_copy_mailed_at",
+        "ALTER TABLE contract_documents DROP COLUMN IF EXISTS signed_copy_to_rebase_at",
+        "ALTER TABLE contract_documents DROP COLUMN IF EXISTS signed_copy_to_freelancer_at",
         "ALTER TABLE contract_documents DROP COLUMN IF EXISTS cancel_reason",
         "ALTER TABLE contract_documents DROP COLUMN IF EXISTS documenso_item_id",
     ):
