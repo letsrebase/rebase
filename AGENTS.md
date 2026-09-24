@@ -1,9 +1,9 @@
-# AGENTS.md — working in the rebase monorepo
+# AGENTS.md: working in the rebase monorepo
 
 Orientation for agents and for humans. Read this before touching anything at the
 root. Facts that are true of one project only live in that project's own
 `projects/<name>/AGENTS.md`, which is the file you should also read when you work
-there — both Claude Code and omp load the nearest one.
+there; both Claude Code and omp load the nearest one.
 
 ## What this repository is
 
@@ -43,7 +43,7 @@ make impossible.
 
 - **Python**: `pyproject.toml` at the root is the uv workspace. Its `members` list
   names every package one by one rather than globbing, because `projects/*/apps/*`
-  also matches `apps/web` — a Vite app with no `pyproject.toml` — and uv refuses to
+  also matches `apps/web` (a Vite app with no `pyproject.toml`) and uv refuses to
   start on a member without one.
 - **Node**: `pnpm-workspace.yaml` globs, because pnpm ignores a directory with no
   `package.json`. Its `catalog:` block is the single source of truth for
@@ -82,11 +82,11 @@ nothing when you are not. Narrow to one project by passing its paths as argument
 
 ## Verification: three tiers, and where each check lives
 
-1. **Local, before the PR exists** — `.github/preflight.json`. Everything expensive:
+1. **Local, before the PR exists**: `.github/preflight.json`. Everything expensive:
    the full Python suite, Playwright, the images. `preflight --list` prints what your
    diff selects before you trust it; `preflight --install-hook` runs it on push.
-2. **`pull_request`** — one cheap gate per project, scoped by `dorny/paths-filter`.
-3. **`push` to `main`** — the heavy tier (the corpus, the images), scoped by the
+2. **`pull_request`**: one cheap gate per project, scoped by `dorny/paths-filter`.
+3. **`push` to `main`**: the heavy tier (the corpus, the images), scoped by the
    same filters. It was unconditional until 2026-09-09, when the measurement said
    1,564 hosted minutes in eight days against a 2,000/month allowance on a private
    repository. The repository went public 2026-09-10 and hosted minutes are free now,
@@ -102,7 +102,7 @@ nothing when you are not. Narrow to one project by passing its paths as argument
    putting it on the critical path of a merge; it costs no separate mechanism, since a
    `schedule` event carries no `before` either and falls into the same fallback. The
    `changes` job also publishes its verdict as the `changed-paths` artifact, which is
-   what each deploy reads instead of recomputing the same paths for itself — the
+   what each deploy reads instead of recomputing the same paths for itself; the
    schedule run skips publishing it, since `deploy-*.yml`'s `workflow_run` guard
    already requires `github.event.workflow_run.event == 'push'` and a scheduled run's
    event never satisfies it, so nothing reads for a nightly run anyway.

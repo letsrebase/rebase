@@ -14,7 +14,7 @@ Read it once per session. This skill is the sequence of calls and the traps. Con
 Read with whatever Linear MCP server your session has, or fall back to the web app
 (`AGENTS.md` § Tracker: Linear). Before any write: `list_projects` or `list_issues`
 with `team: "{{LINEAR_TEAM}}"`, and check the team that comes back really is
-**{{LINEAR_TEAM}}** (`{{LINEAR_PREFIX}}-`) — more than one Linear workspace can be
+**{{LINEAR_TEAM}}** (`{{LINEAR_PREFIX}}-`): more than one Linear workspace can be
 enrolled in a session, and filing this repository's work on the wrong board is the
 failure mode an empty or surprising result usually means, not an empty tracker. Then
 `get_user` with `query: "me"`, and keep the `id` it returns, not the display name: it
@@ -37,7 +37,7 @@ field before clicking "Create issue"; open the issue afterwards and read the fie
 back. The branch is the slug of that page's URL after `{{LINEAR_PREFIX}}-N/`,
 prefixed `<you>/`. Relations and comments go on by hand; never type multi-line text
 in the quick-add box, Enter submits and the rest runs as keyboard shortcuts on the
-issue. If neither surface is reachable, the card is not filed and the work waits —
+issue. If neither surface is reachable, the card is not filed and the work waits:
 say so to whoever you are working with, do not start without one.
 
 ## Finding before filing, and whether it is yours to take
@@ -47,10 +47,10 @@ problem>"`, then again with the relevant `area:*` label. Ask for `assigneeId`,
 `createdById`, `statusType` and `labels` in `fields`: an issue that exists is not
 automatically an issue that is available.
 
-- `assigneeId` is you: yours — use it, move it, comment on it.
+- `assigneeId` is you: yours. Use it, move it, comment on it.
 - `assigneeId` is somebody else, or `statusType` is `started` under their name:
   theirs. Leave every field alone; comment only if you have something useful, and
-  pick other work. Being asked for it by name does not make it yours — if it should
+  pick other work. Being asked for it by name does not make it yours: if it should
   be, its owner reassigns it and you proceed from there.
 - No `assigneeId`: it belongs to whoever filed it (`createdById`).
 - Labelled `parallel`, with no `assigneeId` and not `started`: whoever is free may
@@ -71,7 +71,7 @@ with `fields: ["id", "title", "status", "statusType", "labels", "project",
    `In Progress` and `In Review` together), then `state: "unstarted"` (`Todo`), then
    `state: "backlog"`. One `state` per call, `limit` raised past the default 50.
 2. **The surface, by name.** `list_issues` with `query:` one noun of what you are
-   about to touch — the screen, the route, the table, the file's stem — one call per
+   about to touch (the screen, the route, the table, the file's stem), one call per
    noun. `query` ranks, it does not filter: read the first handful and stop where the
    titles stop being about your surface.
 3. **The project**, when the area is the wrong lens (a shared package, a change that
@@ -92,7 +92,7 @@ What comes back is read, not counted:
   no trace cannot be told from one that did not happen.
 
 The links and the paragraph go in the same `save_issue` call that files the card or
-moves it to `In Progress` — never a second call after.
+moves it to `In Progress`: never a second call after.
 
 ## Filing: one `save_issue` call
 
@@ -103,15 +103,15 @@ wrong.
 |---|---|
 | `team` | `"{{LINEAR_TEAM}}"` |
 | `project` | the project id, from `list_projects`. Project names get renamed; a lookup by an old name fails with "Could not find project". |
-| `milestone` | the milestone id from `list_milestones(project)`, when the contract has milestones yet. Accepted and not echoed back — trust `list_milestones` for progress, not the response. `projectMilestone` (the name the read side uses) is silently ignored on write, like `labelIds`. |
+| `milestone` | the milestone id from `list_milestones(project)`, when the contract has milestones yet. Accepted and not echoed back: trust `list_milestones` for progress, not the response. `projectMilestone` (the name the read side uses) is silently ignored on write, like `labelIds`. |
 | `title` | starts with a verb, names the work, under 80 characters, per `linear-content`. |
 | `description` | per `linear-content`. Real newlines, never `\n` escapes. |
-| `addLabels` | exactly two: one `type` label, one `area:*` label, both by name. `addLabels`, never `labels` (which replaces the whole set). The id-based fields (`labelIds`, `addLabelIds`) answer success and apply nothing — names, not ids. A second label from the same group is silently dropped; `list_issue_labels` with `includeGroups: true` is the source when unsure of the exact names on this board. |
+| `addLabels` | exactly two: one `type` label, one `area:*` label, both by name. `addLabels`, never `labels` (which replaces the whole set). The id-based fields (`labelIds`, `addLabelIds`) answer success and apply nothing: names, not ids. A second label from the same group is silently dropped; `list_issue_labels` with `includeGroups: true` is the source when unsure of the exact names on this board. |
 | `priority` | 1 Urgent, 2 High, 3 Medium, 4 Low. A field, never a label. |
 | `estimate` | the team's points, when the team uses them. |
 | `assignee` | never omitted. `"me"` when you do the work now, the person who will otherwise. An empty assignee reads as free. |
 | `state` | `"In Progress"` when you start now; otherwise the default. |
-| `relatedTo`, `blocks`, `blockedBy`, `duplicateOf` | what the neighbour scan found: three arrays of ids you have read, or one id for `duplicateOf`. Arrays are append-only — undo with `removeRelatedTo`, `removeBlocks`, `removeBlockedBy`; `duplicateOf: null` clears it. |
+| `relatedTo`, `blocks`, `blockedBy`, `duplicateOf` | what the neighbour scan found: three arrays of ids you have read, or one id for `duplicateOf`. Arrays are append-only: undo with `removeRelatedTo`, `removeBlocks`, `removeBlockedBy`; `duplicateOf: null` clears it. |
 
 Label names are case-insensitive workspace-wide and a retired label keeps its name.
 
@@ -120,7 +120,7 @@ Label names are case-insensitive workspace-wide and a retired label keeps its na
 - `In Progress` goes with `assignee: "me"` in the same call, only on a card that is
   already yours. On a card you found rather than filed, the **Adjacent** paragraph
   and the relations go in that same call, appended with
-  `patch: [{ "op": "append", "text": "\n\n**Adjacent.** ..." }]` — `save_issue`
+  `patch: [{ "op": "append", "text": "\n\n**Adjacent.** ..." }]`: `save_issue`
   rejects `description` and `patch` together, so a full rewrite that also needs to
   append is one `description` string with the addition already folded in.
 - When the PR opens, comment the PR URL. If this Linear team has the GitHub
@@ -128,12 +128,12 @@ Label names are case-insensitive workspace-wide and a retired label keeps its na
   the state for you; if not, move it by hand at each step. From the PR to the merge
   the card keeps following it: the review's findings, a red CI run and its cause, a
   push that reshaped the PR.
-- The closing comment (`Evidence:` — run ids, sha, what you exercised and what came
+- The closing comment (`Evidence:` with run ids, sha, what you exercised and what came
   back) is written before or right after the merge. A card closed with no evidence
   under it is a card closed by a robot, not by you.
 - Won't-do is `Canceled` (one `l`), with the reason.
 
-`save_issue` accepts `state`; `get_issue` echoes it as `status` — same field.
+`save_issue` accepts `state`; `get_issue` echoes it as `status`, same field.
 `save_issue` overwrites `assignee` with whatever you send, with no compare-and-set:
 reading the owner first is the only guard against clobbering somebody else's claim.
 
@@ -150,7 +150,7 @@ it", and not a step a reader could infer from the previous comment.
 
 `save_status_update` with `type: "project"`, the project id, a `health` (`onTrack`,
 `atRisk`, `offTrack`) and a body per `linear-content`. Post one when the board alone
-would mislead a reader — a milestone slipped, a decision taken, a release shipped —
+would mislead a reader (a milestone slipped, a decision taken, a release shipped),
 never one that only restates the issue list.
 
 `save_milestone` wants `project` on every call, an update included: sending only
@@ -161,5 +161,5 @@ one sentence starting `Closes when`.
 ## References in code and commits
 
 `{{LINEAR_PREFIX}}-N` in a commit body or a comment is a pointer to an issue you have
-read — never invent one. The branch is the issue's `gitBranchName`, read from
+read: never invent one. The branch is the issue's `gitBranchName`, read from
 `get_issue`, not typed by hand.

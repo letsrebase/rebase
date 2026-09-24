@@ -30,11 +30,11 @@ next `plan` proposes to undo it.
 
 **A record that already exists in the panel**: the resource block, an
 `import` block in the matching `*-imports.tf` naming its id (`GET
-/zones/{zone}/dns_records` against that zone's token returns it), then `plan` — no
+/zones/{zone}/dns_records` against that zone's token returns it), then `plan`: no
 changes is the proof the import is correct, before the first `apply`.
 
 **Before committing either**: the resource count and the import count for a zone
-must match, once every record in it already exists in the panel —
+must match, once every record in it already exists in the panel:
 `grep -c '^resource "cloudflare_dns_record"' rebase.tf` against
 `grep -c '^  to ' rebase-imports.tf` (the same pair for `orbiters.tf` /
 `orbiters-imports.tf`). `terraform plan` does not fail on a resource with no
