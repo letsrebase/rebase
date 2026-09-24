@@ -263,6 +263,7 @@ class MatchService:
             )
             active = active_framework(self.session, freelancer.id)
             documents: list[ContractDocument] = []
+            stale_ids: list[UUID] = []
             if active is None:
                 pending = pending_framework(self.session, freelancer.id)
                 if pending is None or pending.stato != "inviato":
@@ -276,6 +277,7 @@ class MatchService:
                         )
                     ):
                         stale.stato = "annullato"
+                        stale_ids.append(stale.id)
                     documents.append(
                         self._document(
                             renderer,
@@ -322,7 +324,12 @@ class MatchService:
             match.id,
             "match_created",
             admin_id,
-            {"company_id": company.id, "numero": numero, "documenti": [d.id for d in documents]},
+            {
+                "company_id": company.id,
+                "numero": numero,
+                "documenti": [d.id for d in documents],
+                "quadri_annullati": stale_ids,
+            },
         )
         return self.get(match.id)
 

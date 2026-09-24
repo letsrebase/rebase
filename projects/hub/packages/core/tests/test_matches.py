@@ -270,11 +270,15 @@ def test_an_unsent_framework_from_an_earlier_draft_is_replaced_not_duplicated(
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
     service.create(freelancer_id, _body(company_id), admin_id)
-    service.create(freelancer_id, _body(company_id), admin_id)
-    assert [d.stato for d in _documents(clean, freelancer_id, "quadro")] == [
+    second = service.create(freelancer_id, _body(company_id), admin_id)
+    stale, current = _documents(clean, freelancer_id, "quadro")
+    assert [stale.stato, current.stato] == [
         "annullato",
         "generato",
     ]
+    entries = AdminActionService(clean).timeline("match", second.id)
+    created = next(a for a in entries if a.kind == "match_created")
+    assert created.payload["quadri_annullati"] == [str(stale.id)]
 
 
 def test_a_framework_already_out_for_signature_is_waited_for_not_replaced(clean: Session) -> None:
