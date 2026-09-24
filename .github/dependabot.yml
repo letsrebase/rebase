@@ -1,8 +1,11 @@
 # Weekly version updates for everything this repository pins, one entry per ecosystem.
 #
 # Security updates are a repository setting, not this file, and they are on: an alert
-# opens its PR at once, whatever the schedule and the cooldown below say. This file
-# decides the rest, the ordinary drift of versions nobody has a reason to hold back.
+# opens its PR at once, whatever the schedule and the cooldown below say. The `ignore`
+# rules do apply to them, and of those only the `@types/node` major could ever hold
+# one back: Docker and Compose images get no security updates at all, and the uv
+# workspace members are not published anywhere. This file decides the rest, the
+# ordinary drift of versions nobody has a reason to hold back.
 #
 # What a Dependabot PR is here, and what it is not (docs/design/DECISIONS.md,
 # 2026-09-24): the one kind of pull request with no Linear card behind it, merged on the
