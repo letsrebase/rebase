@@ -116,7 +116,7 @@ jobs:
       website_deploy: ${{ steps.filter.outputs.website_deploy }}
       hub_deploy: ${{ steps.filter.outputs.hub_deploy }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: github.event_name != 'pull_request'
         with:
           # The filter diffs locally on a push, and a shallow clone would make every
@@ -152,7 +152,7 @@ jobs:
       # Underscores, never dashes: `needs.changes.outputs.pigrocrm-web` is invalid
       # expression syntax and the run dies in seconds with no job started, which
       # reads as a broken workflow rather than as a typo.
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         if: steps.base.outputs.all != 'true'
         with:
@@ -338,7 +338,7 @@ jobs:
           JSON
           cat changed-paths.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: github.event_name == 'push'
         with:
           name: changed-paths
@@ -464,17 +464,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           version: '0.9.24'
           enable-cache: true
@@ -584,7 +584,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build both images from the repository root context
         working-directory: projects/pigrocrm
         # The compose file's own build definitions, so this proves the same context
@@ -608,7 +608,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build the image from the repository root context
         working-directory: projects/website
         # Through compose rather than `docker build`, so this proves the same context
@@ -623,7 +623,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build both images from the repository root context
         working-directory: projects/hub
         # Through compose, so this proves the same context and the same files the
