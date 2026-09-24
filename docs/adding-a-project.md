@@ -136,6 +136,15 @@ drifted copy is a project that stops deploying. It happened the other way round
 before 2026-09-09, when each deploy carried its own grep and PigroCRM's had lost
 `shared/brand`.
 
+**`.github/dependabot.yml` learns about the project in two places.** Its Python
+packages' names join the `uv` entry's `ignore` list, since Dependabot can otherwise look
+a workspace member up on PyPI and "update" it to a stranger's package of the same name.
+And a project with a Dockerfile adds its directory under the `docker` entry, and under
+`docker-compose` too when its compose file runs an image as published (PostgreSQL,
+today). Its Node packages need nothing: they depend on each other through
+`workspace:*`, which Dependabot leaves alone, and the `npm` entry reads the root
+workspace the project joined in section 2.
+
 ## 6. Preflight
 
 Add the project's expensive checks to `.github/preflight.json`, with `when` globs

@@ -220,6 +220,21 @@ tested on a branch and is proven on the trunk instead.
   still passes. `Closes #297` goes on that line only when merging that pull request
   really finishes the whole roadmap point, which on a milestone's draft PR means
   waiting for the card that finishes it.
+- **A Dependabot pull request is the one PR without a card.** Version updates arrive
+  on Monday mornings as `.github/dependabot.yml` schedules them, a security update the
+  day its advisory lands; both are bumps and nothing else, titled `chore(deps): ...`,
+  `chore(deps-dev): ...` or `ci(deps): ...`. One merges on the gate every PR here
+  merges on (green `ci`, the Greptile loop of `.claude/skills/pr-creation/`, a merge
+  commit), and two things are invisible to that gate. The images are built on the
+  trunk, not on the PR, so a bump to a Dockerfile, a compose file or a lock is proven
+  by preflight's image checks or by the trunk run before the preview deploys. And a PR
+  that changes `pnpm-lock.yaml` leaves the pnpm store hash in `flake.nix` stale: the
+  new one (`nix build .#packages.x86_64-linux.pigrocrm-web` fails naming it) goes onto
+  the bot's branch as a commit of its own, last, since Dependabot stops rebasing a
+  branch once another commit is pushed to it. A bump that needs a code change is
+  closed, and the upgrade gets a card and its own branch; when it is one package of a
+  group, `@dependabot ignore <name>` on the group PR drops it instead, and that card
+  also lifts the ignore (`docs/design/DECISIONS.md`, 2026-09-24).
 - Four levels, in order. An **initiative** is a product and is permanent: four
   exist today (`Website`, `Hub`, `PigroCRM`, `Monorepo`). A **project** is a
   release, or a body of work with an end, and it closes when it ships. A **project
