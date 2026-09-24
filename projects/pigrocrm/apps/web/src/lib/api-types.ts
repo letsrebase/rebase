@@ -28127,6 +28127,7 @@ export interface operations {
                 entity_type?: ("customer" | "person" | "deal") | null;
                 entity_id?: string | null;
                 send_state?: ("bozza" | "in_invio" | "inviato" | "incerto" | "fallito") | null;
+                unsent?: boolean;
                 limit?: number;
             };
             header?: never;

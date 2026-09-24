@@ -27,7 +27,8 @@ import {
   type SendState,
 } from './draftQueries'
 import {
-  SEND_OUTCOME_UNKNOWN,
+  SEND_OUTCOME_UNKNOWN_REREAD,
+  SEND_OUTCOME_UNKNOWN_REREADING,
   STATE_HEADING,
   STATE_HELP,
   draftCannotLeave,
@@ -86,6 +87,8 @@ export function PendingDrafts({
   if (drafts.isError) return <QueryErrorBanner error={drafts.error} />
   // Nothing while pending, rather than «Caricamento…»: the correspondence below has its
   // own, and two spinners for one tab read as two different things going wrong.
+  // The server already leaves the sent ones out (`unsent`); a row the cache was just told
+  // is `inviato` (`patchCachedDraft`) leaves the card here, before the list is read again.
   const pending = (drafts.data?.items ?? []).filter((draft) => draft.send_state !== 'inviato')
   if (pending.length === 0) return null
 
@@ -100,13 +103,20 @@ export function PendingDrafts({
         </p>
       </div>
       {pending.map((draft) => (
-        <DraftCard key={draft.id} draft={draft} />
+        <DraftCard key={draft.id} draft={draft} readAt={drafts.dataUpdatedAt} />
       ))}
     </section>
   )
 }
 
-function DraftCard({ draft }: { draft: EmailDraftRead }) {
+function DraftCard({
+  draft,
+  readAt,
+}: {
+  draft: EmailDraftRead
+  /** When the list this row comes from was last read from the server, in ms. */
+  readAt: number
+}) {
   // REB-294: one check per button, each against the string its own service passes to
   // `require_write` (`gmail/send.py`, `gmail/drafts.py`). A readonly person reads the
   // draft and is offered nothing to press.
@@ -119,6 +129,11 @@ function DraftCard({ draft }: { draft: EmailDraftRead }) {
   const reconcile = useReconcileDraft()
   const remove = useDeleteDraft()
   const [confirming, setConfirming] = useState(false)
+  // When a send came back with no answer at all. Until the list has been read again after
+  // it, the row on screen is the one from before the press and says nothing about what
+  // happened, so «Invia» stays off and the banner says it is still finding out.
+  const [unknownAt, setUnknownAt] = useState<number | null>(null)
+  const rereading = unknownAt !== null && readAt < unknownAt
   const attachmentsId = useId()
   // Synchronous, unlike `isPending`: two clicks dispatched before React re-renders both
   // read a `disabled` that is still false, and a flag read from the closure would be too.
@@ -136,7 +151,7 @@ function DraftCard({ draft }: { draft: EmailDraftRead }) {
   // and `reconcile` resolves it exactly as it resolves `incerto` (and answers it
   // unchanged while it may still be in flight).
   const verifiable = state === 'incerto' || state === 'in_invio'
-  const busy = send.isPending || reconcile.isPending || remove.isPending
+  const busy = send.isPending || reconcile.isPending || remove.isPending || rereading
   const from = health.data?.account?.email_address ?? null
   const blocked = draftCannotLeave(draft.attachments) ?? mailboxCannotSend(health.data)
   const missingAttachment = promisesAnAttachmentItDoesNotHave({
@@ -150,6 +165,7 @@ function DraftCard({ draft }: { draft: EmailDraftRead }) {
     sendingOnce.current = true
     reconcile.reset()
     remove.reset()
+    setUnknownAt(null)
     send.mutate(draft.id, {
       onSuccess: (sent) => {
         setConfirming(false)
@@ -162,6 +178,7 @@ function DraftCard({ draft }: { draft: EmailDraftRead }) {
       // read as though nothing had happened.
       onError: (error) => {
         setConfirming(false)
+        if (sendOutcomeUnknown(error)) setUnknownAt(Date.now())
         const moved = toProblem(error).send_state
         if (typeof moved === 'string')
           patchCachedDraft(queryClient, draft, { send_state: moved as SendState })
@@ -256,7 +273,11 @@ function DraftCard({ draft }: { draft: EmailDraftRead }) {
 
       {send.isError && !failureMovedTheDraft(send.error) ? (
         <p role="alert" className={ALERT}>
-          {sendOutcomeUnknown(send.error) ? SEND_OUTCOME_UNKNOWN : outcomeSentence(send.error)}
+          {!sendOutcomeUnknown(send.error)
+            ? outcomeSentence(send.error)
+            : rereading
+              ? SEND_OUTCOME_UNKNOWN_REREADING
+              : SEND_OUTCOME_UNKNOWN_REREAD}
         </p>
       ) : null}
       {reconcile.isError ? (

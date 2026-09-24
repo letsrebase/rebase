@@ -386,6 +386,25 @@ def test_list_returns_the_drafts_of_one_entity_and_filters_by_state(
     )
     assert [item.id for item in only_drafts.items] == [mine.id]
 
+    # REB-415: what the Email tab asks for. Every state but `inviato`, counted the same
+    # way, so a page of sent drafts can never push an unsent one out of the list.
+    uncertain = service.create(_payload(customer, subject="Incerta"), actor_for(account))
+    service.repo_draft(uncertain.id).send_state = "incerto"
+    db_session.flush()
+    unsent = service.list(
+        EmailDraftListQuery(entity_type="customer", entity_id=customer.id, unsent=True, limit=1),
+        actor_for(account),
+    )
+    assert unsent.total == 2
+    unsent_ids = {
+        item.id
+        for item in service.list(
+            EmailDraftListQuery(entity_type="customer", entity_id=customer.id, unsent=True),
+            actor_for(account),
+        ).items
+    }
+    assert unsent_ids == {mine.id, uncertain.id}
+
 
 def test_every_read_names_the_attachments_the_send_will_carry(db_session: Session) -> None:
     """REB-415: the Email tab shows a draft to the person who is about to send it, and an

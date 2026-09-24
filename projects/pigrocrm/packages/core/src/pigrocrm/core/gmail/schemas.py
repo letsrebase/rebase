@@ -338,6 +338,11 @@ class EmailDraftListQuery(BaseModel):
     entity_type: Literal["customer", "person", "deal"] | None = None
     entity_id: UUID | None = None
     send_state: SendState | None = None
+    # Everything but `inviato`: the drafts a person still has to act on (REB-415). A
+    # flag rather than a second `send_state`, because the Email tab wants four states
+    # at once, and a sent draft only accumulates -- asking for every state and dropping
+    # the sent ones afterwards lets enough of them push an unsent one off the page.
+    unsent: bool = False
     limit: int = Field(default=50, ge=1, le=200)
 
 

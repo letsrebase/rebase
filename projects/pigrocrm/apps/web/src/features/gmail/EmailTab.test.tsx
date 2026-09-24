@@ -350,8 +350,12 @@ describe('EmailTab', () => {
     // conversation the client has seen.
     const heading = screen.getByRole('heading', { name: 'Corrispondenza' })
     expect(card.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // The server leaves the sent ones out (`unsent`), so a page of them can never push an
+    // older unsent draft off the list.
     expect(vi.mocked(api.GET).mock.calls.find((call) => call[0] === '/api/email-drafts')?.[1])
-      .toMatchObject({ params: { query: { entity_type: 'customer', entity_id: ENTITY_ID } } })
+      .toMatchObject({
+        params: { query: { entity_type: 'customer', entity_id: ENTITY_ID, unsent: true } },
+      })
   })
 
   it('asks before sending, and sends nothing when the person steps back', async () => {
@@ -445,7 +449,13 @@ describe('EmailTab', () => {
    * that is read again, whether the draft left.
    */
   it('never tells the person to retry a send that got no answer', async () => {
-    respond({ drafts: drafts(draft()) })
+    let reads = 0
+    respond({
+      drafts: () => {
+        reads += 1
+        return drafts(draft())
+      },
+    })
     vi.mocked(api.POST).mockResolvedValue(failed({ detail: 'Gateway Timeout' }, 504))
     renderTab()
 
@@ -455,6 +465,36 @@ describe('EmailTab', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('non sappiamo se sia partita')
     expect(alert).not.toHaveTextContent(/riprova/i)
+    // What «Bozza» proves is said only of the row read after the attempt, never of the
+    // one cached before the press.
+    await waitFor(() => expect(reads).toBe(2))
+    await waitFor(() => expect(alert).toHaveTextContent('stato qui sopra è stato riletto'))
+    expect(screen.getByRole('button', { name: 'Invia' })).toBeEnabled()
+  })
+
+  it('keeps «Invia» off until the draft has been read again after an unanswered send', async () => {
+    let answer: (value: unknown) => void = () => {}
+    let reads = 0
+    respond({
+      drafts: () => {
+        reads += 1
+        // The first read is the tab opening; the one after the failed press hangs, so
+        // the card is caught with only the row from before the press.
+        return reads === 1 ? drafts(draft()) : new Promise((resolve) => (answer = resolve))
+      },
+    })
+    vi.mocked(api.POST).mockResolvedValue(failed({ detail: 'Gateway Timeout' }, 504))
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sto rileggendo')
+    expect(screen.getByRole('button', { name: 'Invia' })).toBeDisabled()
+
+    answer(drafts(draft()))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Invia' })).toBeEnabled())
+    expect(screen.getByRole('alert')).toHaveTextContent('stato qui sopra è stato riletto')
   })
 
   /**

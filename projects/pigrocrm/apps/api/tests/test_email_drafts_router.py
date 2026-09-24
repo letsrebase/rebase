@@ -159,6 +159,9 @@ def test_a_draft_is_created_read_listed_edited_and_discarded(
     listed = logged_in.get(DRAFTS, params={"entity_id": customer_id}).json()
     assert [item["id"] for item in listed["items"]] == [draft_id]
     assert listed["total"] == 1
+    # The Email tab's own read (REB-415): a draft that has not left is in it.
+    unsent = logged_in.get(DRAFTS, params={"entity_id": customer_id, "unsent": "true"}).json()
+    assert [item["id"] for item in unsent["items"]] == [draft_id]
 
     patched = logged_in.patch(f"{DRAFTS}/{draft_id}", json={"subject": "Offerta rivista"})
     assert patched.status_code == 200, patched.text

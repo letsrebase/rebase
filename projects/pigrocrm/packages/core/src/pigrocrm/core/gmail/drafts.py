@@ -272,6 +272,8 @@ class EmailDraftService:
             conditions.append(EmailDraft.entity_id == query.entity_id)
         if query.send_state is not None:
             conditions.append(EmailDraft.send_state == query.send_state)
+        if query.unsent:
+            conditions.append(EmailDraft.send_state != "inviato")
 
         total = self.session.execute(
             select(func.count()).select_from(EmailDraft).where(*conditions)

@@ -138,12 +138,19 @@ export function sendOutcomeUnknown(error: unknown): boolean {
   return problem.code === 'unknown' || problem.code === 'http_error' || problem.status >= 500
 }
 
-/** What the card says instead. True as written: the claim is committed before Gmail is
- *  called (`gmail/send.py`), so a draft that still reads «Bozza» once the list is read
- *  again never reached Gmail. */
-export const SEND_OUTCOME_UNKNOWN =
-  'Nessuna risposta dal server: non sappiamo se sia partita. Se la bozza qui sopra risulta ' +
-  'ancora «Bozza», non è partita; altrimenti usa «Verifica».'
+/**
+ * What the card says instead, in two steps, because the second one is only true of a row
+ * read *after* the failure. The claim is committed before Gmail is called
+ * (`gmail/send.py`), so a draft that the server still calls «Bozza» once the list has
+ * been read again never reached Gmail; the row cached from before the press proves
+ * nothing, and until the re-read lands «Invia» stays off (`PendingDrafts`).
+ */
+export const SEND_OUTCOME_UNKNOWN_REREADING =
+  'Nessuna risposta dal server: non sappiamo se sia partita. Sto rileggendo lo stato ' +
+  'della bozza: aspetta prima di decidere.'
+export const SEND_OUTCOME_UNKNOWN_REREAD =
+  'Nessuna risposta dal server: non sappiamo se sia partita. Lo stato qui sopra è stato ' +
+  'riletto dopo il tentativo: se dice ancora «Bozza» non è partita, altrimenti usa «Verifica».'
 
 /**
  * Whether a failed send already changed the draft on the server. A refused or unanswered

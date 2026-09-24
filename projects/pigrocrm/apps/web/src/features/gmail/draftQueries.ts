@@ -40,13 +40,13 @@ export const draftKeys = {
 const IN_FLIGHT_POLL_MS = 10_000
 
 /**
- * Every draft filed against one entity, newest first. What the Email tab reads to show
- * the drafts that have not left above the correspondence that has.
+ * The drafts filed against one entity that have not left, newest first: what the Email
+ * tab shows above the correspondence that has.
  *
- * The API's ceiling rather than its default of 50: the list carries the sent drafts too
- * (there is one filter per state and no "not sent"), and sent drafts only accumulate, so
- * on a customer with a long history the default would push an old unsent one off the
- * page without a word.
+ * `unsent` is the server's filter and not a client-side one on purpose: sent drafts only
+ * accumulate, and asking for every state then dropping the sent ones let a page of them
+ * push an older unsent draft off the list without a word. The API's ceiling, 200, is a
+ * number of drafts still waiting on a person, which no entity comes near.
  */
 export function useDraftsForEntity(args: { entityType: GmailEntityType; entityId: string }) {
   return useQuery({
@@ -55,7 +55,12 @@ export function useDraftsForEntity(args: { entityType: GmailEntityType; entityId
       unwrap(
         api.GET('/api/email-drafts', {
           params: {
-            query: { entity_type: args.entityType, entity_id: args.entityId, limit: 200 },
+            query: {
+              entity_type: args.entityType,
+              entity_id: args.entityId,
+              unsent: true,
+              limit: 200,
+            },
           },
         }),
       ),
