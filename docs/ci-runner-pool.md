@@ -21,7 +21,7 @@ down and then ignoring.
 ## Who does what
 
 Lorenzo provisions the VPS himself, on a rebase-owned hosting account rather than his
-personal one (his call, 2026-09-24), that step is not in this document. Everything
+personal one (his call, 2026-09-24). That step is not in this document. Everything
 from first SSH onward is REB-422.
 
 ## Sizing
