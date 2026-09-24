@@ -289,12 +289,29 @@ function addToRunnerPool(org, repo) {
     console.log(`${org}/${repo} is not on GitHub yet; add it to the private-clients runner group once it is (docs/ci-runner-pool.md).`);
     return false;
   }
-  execFileSync("gh", ["api", "-X", "PUT", `orgs/${org}/actions/runner-groups/${groupId}/repositories/${repoId}`]);
+  if (!args.createRepo && !retrofitRemoteMatches(targetDir, org, repo)) {
+    console.log(`${targetDir}'s own git remote does not point at ${org}/${repo}; skipping pool provisioning rather than scoping the wrong repository (check --org/--repo against the checkout's remote, then add it by hand if this was intentional).`);
+    return false;
+  }
+  try {
+    execFileSync("gh", ["api", "-X", "PUT", `orgs/${org}/actions/runner-groups/${groupId}/repositories/${repoId}`]);
+  } catch (err) {
+    console.log(`Could not add ${org}/${repo} to the private-clients runner group (${err.message}); scope it by hand (docs/ci-runner-pool.md).`);
+    return false;
+  }
   console.log(`Added ${org}/${repo} to the private-clients runner group: its own CI workflow can use runs-on: [self-hosted, linux, x64] whenever it is written.`);
   return true;
 }
 
-const runnerPoolReady = addToRunnerPool(args.org, args.repo);
+function retrofitRemoteMatches(dir, org, repo) {
+  let remote;
+  try {
+    remote = execFileSync("git", ["-C", dir, "remote", "get-url", "origin"], { encoding: "utf8" }).trim();
+  } catch {
+    return false;
+  }
+  return new RegExp(`[:/]${org}/${repo}(\\.git)?$`).test(remote);
+}
 
 // ---- the checklist this script cannot do for you ------------------------
 

@@ -161,10 +161,14 @@ contract-specific (a Node stack, a Python one, both, a different service mix
 entirely), so there is no CI template in `template/`. Once one exists, its jobs use
 `runs-on: [self-hosted, linux, x64]` rather than `ubuntu-latest`; `docs/ci-runner-pool.md`
 carries what changes on a self-hosted host that a hosted runner's isolated VM hides,
-most importantly a service container's host port: three runner instances share one
+most importantly a service container's host port (three runner instances share one
 Docker daemon, so a fixed `5432:5432` collides the moment two Postgres-backed jobs
 land at once, where `letsrebase/point`'s own `ci.yml` is the worked example of the
-dynamic-port fix.
+dynamic-port fix) and that a published port has to bind to loopback, not every
+interface, since UFW does not stop Docker's own `iptables` rules. That shared
+Docker daemon is also why the pool has no isolation between two clients' jobs
+today (`docs/ci-runner-pool.md` § Known limitation): accepted while `letsrebase/point`
+is the only repository on it, not a boundary to lean on once a second one joins.
 
 ## Configurable per contract
 

@@ -44,14 +44,17 @@ vCPU / 16-32GB this document originally called for. Point's CI runs a Postgres
 service container plus Node and Python toolchains per job; `rebase`'s own CI (not
 on this pool, but the same shape if a future client repo needs it) adds Docker
 image builds and a Postgres-backed Python corpus job. None of it needs pre-baking
-onto the host: `actions/setup-node` and `actions/setup-python` download toolchains
-at job time, so the real requirement is outbound internet, not a golden image.
+onto the host: `actions/setup-node` downloads its toolchain at job time, so the
+real requirement is outbound internet, not a golden image. `actions/setup-python`
+is the one exception, below.
 
 Running **three runner instances** (`ci-runner-1` through `-3`), confirmed picking
 up genuinely concurrent jobs (a 3-way matrix workflow landed one job per runner,
-same timestamp). Three, not the full four vCPUs, on purpose: leaves the host a
-core of its own for sshd, fail2ban and Docker's own overhead rather than running
-every vCPU inside a job. 7.8GB across three Postgres-backed jobs plus any Docker
+same timestamp). Three, not the full four vCPUs, so a runaway job cannot claim
+every vCPU the host has: nothing enforces that as a hard reservation today (no
+`CPUQuota` or `AllowedCPUs` on the runner units or their parent slice), so this is
+headroom by convention, not a guarantee, until one is configured. 7.8GB across
+three Postgres-backed jobs plus any Docker
 builds is still tight, the swap backstop (zram plus the swapfile) absorbs a spike
 rather than an OOM kill, but sustained heavy concurrent load will show as slower
 jobs before it shows as failures. Watch the queue once more than one private
@@ -130,6 +133,44 @@ add the rate-limiting a Tailscale gate made unnecessary there.
   and reconfigures after every job, not a flag alone.
 - **A fourth runner instance**, if the queue backs up before a resize is worth
   doing; deferred with the sizing note above.
+
+**Known limitation, on purpose, for now: no isolation between clients on the same
+pool.** All three runners share one Docker daemon and run as the same `ci` user,
+who has passwordless sudo. A workflow file in any enrolled repository runs
+arbitrary code as that user: a compromised dependency or a malicious change from
+a collaborator with write access can read or interfere with another job's
+workspace, containers, images and build cache on the same host, `sudo` aside, and
+deregistration between jobs (the ephemeral-mode item above) would not change that,
+since the Docker state itself persists across repositories regardless. This is not
+a gap to patch quietly: it needs its own compute, or at minimum its own Docker
+daemon, per client trust domain, and that is real infrastructure work, not a
+documentation fix. Accepted today because exactly one client, `letsrebase/point`,
+is on the pool, so there is no second client's job to isolate from; revisit before
+a second private repository with a different trust owner joins, not after.
+
+**A CI-published container port must bind to loopback, not every interface.**
+UFW's default-deny on `22/tcp` does not stop Docker: Docker inserts its own
+`iptables` rules ahead of UFW's chain, so a service container published as
+`5432:5432` (all interfaces) reaches the public internet regardless of what UFW
+says, the same trap `prodbox-deploy` already documents for a hand-run container.
+`letsrebase/point`'s dynamic-port fix above solves the port-collision problem
+between concurrent jobs; it does not by itself bind to loopback. A future
+workflow's service container should publish `127.0.0.1:<port>:<container-port>`
+(or the dynamic-port equivalent bound to loopback), never a bare host port.
+
+**The registration-token wrapper the ephemeral-mode item above still needs**
+should use a GitHub App installation token, not a personal access token: a PAT is
+tied to whoever created it, so if that person's account or token access changes,
+the wrapper stops minting registration tokens and no replacement runner can
+register. A GitHub App's installation token is not tied to one person's account.
+
+**`runs-on: [self-hosted, linux, x64]` resolves within the runner groups a
+repository can see, not across the whole org.** `private-clients` is the only
+group configured for `visibility: selected`, and the Default group has zero
+runners registered (confirmed above), so a repository not explicitly added to
+`private-clients` has no self-hosted runner to fall back to at all; the generic
+labels cannot accidentally route a job to a different pool because there is no
+other pool a selected repository can reach.
 
 ## Repository side, once a repository joins the pool
 
