@@ -18,15 +18,25 @@ function answer(status: number, body: unknown) {
 }
 
 /** `lists.test.tsx`'s router of fetches, plus a handler that may be a function of the
- *  request, so one test can answer a GET differently after a POST. */
+ *  request, so one test can answer a GET differently after a POST, and may itself
+ *  answer a promise the test resolves later (`deferred`), to catch a button mid-request. */
 function routeFetch(handlers: Record<string, unknown>) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const key = `${init?.method ?? 'GET'} ${String(input)}`
     if (!(key in handlers)) throw new Error(`unhandled fetch in this test: ${key}`)
     const handler = handlers[key]
-    const body = typeof handler === 'function' ? (handler as (init?: RequestInit) => unknown)(init) : handler
+    const body = await (typeof handler === 'function' ? (handler as (init?: RequestInit) => unknown)(init) : handler)
     return body instanceof Response ? body : answer(200, body)
   })
+}
+
+/** A response the test answers when it chooses, to catch a button mid-request. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
 }
 
 const PERSON = { id: 'f1', nome: 'Ada', cognome: 'Lovelace', email: 'ada@studio.it' }
@@ -368,6 +378,12 @@ describe('«Match e contratti» (REB-387)', () => {
       expect(spy).toHaveBeenCalledWith('/api/hub/contract-documents/d1/cancel', expect.objectContaining({ method: 'POST' })),
     )
     expect(await screen.findByText('Annullato da rebase.')).toBeInTheDocument()
+    // Spec § 6: an `annullato` framework agreement stays on the page with its reason,
+    // but none of the dates a signature would have given it.
+    const section = screen.getByRole('region', { name: 'Contratto quadro' })
+    expect(within(section).queryByText('Firmato il')).toBeNull()
+    expect(within(section).queryByText('Prossimo rinnovo')).toBeNull()
+    expect(within(section).queryByText('Ultimo giorno per la disdetta')).toBeNull()
   })
 
   it('records a notice on an active framework agreement after asking', async () => {
@@ -436,5 +452,24 @@ describe('«Match e contratti» (REB-387)', () => {
     expect(within(section).getByText(`Inviato il ${formatDate(OUT.sent_at)}`)).toBeInTheDocument()
     const row = (await screen.findByText('Rossi Studio')).closest('tr')!
     expect(within(row).getByText(`Inviato il ${formatDate('2026-09-24T08:00:00Z')}`)).toBeInTheDocument()
+  })
+
+  it('shows «Aggiorna stato» in progress while it reads Documenso, as «Crea match» does for its own buttons (REB-407)', async () => {
+    const late = deferred<Response>()
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, quadro: OUT, quadri: [OUT] },
+      'POST /api/hub/contract-documents/d1/refresh': () => late.promise,
+    })
+    mount('/admin/freelance/f1/contracts')
+    const button = await screen.findByRole('button', { name: 'Aggiorna stato del contratto quadro' })
+    await userEvent.click(button)
+
+    expect(await screen.findByText('Aggiorno…')).toBeInTheDocument()
+    expect(button).toBeDisabled()
+
+    late.resolve(answer(200, OUT))
+    expect(await screen.findByText('Stato letto da Documenso.')).toBeInTheDocument()
+    expect(screen.getByText('Aggiorna stato')).toBeInTheDocument()
   })
 })

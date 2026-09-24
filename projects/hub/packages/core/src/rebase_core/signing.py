@@ -105,6 +105,10 @@ REFUSED_ON_SITE = "Rifiutato dal freelance sul sito di firma."
 CANCELLED_ON_DOCUMENSO = "Annullato su Documenso."
 CANCELLED_BY_REBASE = "Annullato da rebase."
 CANCELLED_WITH_MATCH = "Annullato da rebase con il suo match."
+CANCEL_REFUSED = (
+    "Documenso non annulla questo documento: forse è già stato firmato, rifiutato o "
+    "annullato. Premi «Aggiorna stato» e riprova."
+)
 
 
 def _cancel_reason(outcome: Outcome) -> str:
@@ -312,6 +316,17 @@ class SigningService:
             documenso.cancel(envelope_id, "invio non completato: annullo l'envelope orfano")
         except Exception:
             _log.warning("could not cancel the orphaned envelope %s", envelope_id, exc_info=True)
+
+    def _cancel_envelope(self, envelope_id: str, reason: str) -> None:
+        """«Annulla», on a document or on a match's letter: Documenso refuses to cancel
+        an envelope that is no longer `PENDING` (already completed, rejected or
+        cancelled there, probe § 4), typically a webhook the hub missed. Its own English
+        sentence is not fit for an admin, so it becomes an Italian one that points at
+        the way out; the row this call is inside stays untouched either way."""
+        try:
+            self._documenso().cancel(envelope_id, reason)
+        except DocumensoFailed as exc:
+            raise DocumensoFailed(CANCEL_REFUSED, exc.message) from exc
 
     def _mail_signing_request(self, document: ContractDocument) -> bool:
         """After the commit: a refused mail leaves the document `inviato`, and says so."""
@@ -580,7 +595,7 @@ class SigningService:
                 )
             was_sent = document.stato == "inviato"
             if was_sent and document.documenso_id is not None:
-                self._documenso().cancel(document.documenso_id, CANCELLED_BY_REBASE)
+                self._cancel_envelope(document.documenso_id, CANCELLED_BY_REBASE)
             document.stato = "annullato"
             document.cancel_reason = CANCELLED_BY_REBASE
             self.session.commit()
@@ -626,7 +641,7 @@ class SigningService:
             for letter in letters:
                 if letter.stato == "inviato":
                     if letter.documenso_id is not None:
-                        self._documenso().cancel(letter.documenso_id, CANCELLED_BY_REBASE)
+                        self._cancel_envelope(letter.documenso_id, CANCELLED_BY_REBASE)
                     mailed.append(letter)
                 letter.stato = "annullato"
                 letter.cancel_reason = CANCELLED_WITH_MATCH

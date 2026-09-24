@@ -220,8 +220,12 @@ class MatchService:
             .order_by(ContractDocument.created_at.desc(), ContractDocument.id.desc())
         )
         quadri = [document_read(document, today, current) for document in frameworks]
+        # The active one when there is one (unchanged); else the newest framework that
+        # actually left, whatever its state now: an `annullato` one is hidden only when
+        # it never left (`sent_at` is `None`, a stale draft «Crea match» replaced, spec
+        # § 6), never when a refusal or a cancellation turned a sent one `annullato`.
         shown = next((q for q in quadri if q.attivo), None) or next(
-            (q for q in quadri if q.stato != "annullato"), None
+            (q for q in quadri if q.stato != "annullato" or q.sent_at is not None), None
         )
         rows = self.session.execute(
             select(Match, Company)

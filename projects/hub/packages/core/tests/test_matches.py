@@ -288,6 +288,24 @@ def test_an_unsent_framework_from_an_earlier_draft_is_replaced_not_duplicated(
     assert created.payload["quadri_annullati"] == [str(stale.id)]
 
 
+def test_a_stale_draft_framework_that_never_left_stays_hidden_from_the_page(
+    clean: Session,
+) -> None:
+    """The phase 2 case (spec § 6): the `generato` framework a second «Crea match»
+    replaces never left for signature (`sent_at` stays `None`), so it stays hidden once
+    `annullato`; the page shows the current one instead."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    service.create(freelancer_id, _body(company_id), admin_id)
+    service.create(freelancer_id, _body(company_id), admin_id)
+    stale, current = _documents(clean, freelancer_id, "quadro")
+    assert (stale.stato, stale.sent_at) == ("annullato", None)
+
+    quadro = service.for_freelancer(freelancer_id).quadro
+
+    assert quadro is not None and quadro.id == current.id
+
+
 def test_a_framework_already_out_for_signature_is_waited_for_not_replaced(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     _framework(clean, freelancer_id, admin_id, stato="inviato", signed_at=None)

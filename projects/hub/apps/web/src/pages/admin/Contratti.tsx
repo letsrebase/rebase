@@ -90,15 +90,21 @@ function DocumentLinks({ document }: { document: ContractDocument }) {
 function SigningActions({
   document,
   busy,
+  refreshingId,
+  resendingId,
   onRefresh,
   onResend,
 }: {
   document: ContractDocument
   busy: boolean
+  refreshingId: string | null
+  resendingId: string | null
   onRefresh: (document: ContractDocument) => void
   onResend: (document: ContractDocument) => void
 }) {
   const what = whatOf(document)
+  const refreshing = refreshingId === document.id
+  const resending = resendingId === document.id
   const refreshable =
     document.stato === 'inviato' ||
     (document.stato === 'firmato' && (document.kind === 'quadro' || !document.ha_pdf_firmato))
@@ -113,7 +119,7 @@ function SigningActions({
           aria-label={`Reinvia email ${what}`}
           onClick={() => onResend(document)}
         >
-          Reinvia email
+          {resending ? 'Reinvio…' : 'Reinvia email'}
         </Button>
       )}
       {refreshable && (
@@ -125,7 +131,7 @@ function SigningActions({
           aria-label={`Aggiorna stato ${what}`}
           onClick={() => onRefresh(document)}
         >
-          Aggiorna stato
+          {refreshing ? 'Aggiorno…' : 'Aggiorna stato'}
         </Button>
       )}
     </>
@@ -173,6 +179,8 @@ function Confirm({
 function FrameworkSection({
   quadro,
   busy,
+  refreshingId,
+  resendingId,
   onRefresh,
   onResend,
   onCancel,
@@ -181,6 +189,8 @@ function FrameworkSection({
 }: {
   quadro: ContractDocument | null
   busy: boolean
+  refreshingId: string | null
+  resendingId: string | null
   onRefresh: (document: ContractDocument) => void
   onResend: (document: ContractDocument) => void
   onCancel: () => void
@@ -208,11 +218,15 @@ function FrameworkSection({
             </span>
           </Row>
           {quadro.cancel_reason && <Row label="Perché">{quadro.cancel_reason}</Row>}
-          <Row label="Firmato il">{quadro.signed_at ? formatDate(quadro.signed_at) : 'non ancora'}</Row>
-          <Row label="Prossimo rinnovo">{quadro.rinnovo ? formatDate(quadro.rinnovo) : 'dopo la firma'}</Row>
-          <Row label="Ultimo giorno per la disdetta">
-            {quadro.ultimo_giorno_disdetta ? formatDate(quadro.ultimo_giorno_disdetta) : 'dopo la firma'}
-          </Row>
+          {quadro.stato !== 'annullato' && (
+            <>
+              <Row label="Firmato il">{quadro.signed_at ? formatDate(quadro.signed_at) : 'non ancora'}</Row>
+              <Row label="Prossimo rinnovo">{quadro.rinnovo ? formatDate(quadro.rinnovo) : 'dopo la firma'}</Row>
+              <Row label="Ultimo giorno per la disdetta">
+                {quadro.ultimo_giorno_disdetta ? formatDate(quadro.ultimo_giorno_disdetta) : 'dopo la firma'}
+              </Row>
+            </>
+          )}
           <Row label="Versione del testo">
             <span className="flex flex-wrap items-center gap-2">
               <span>{quadro.text_version}</span>
@@ -225,7 +239,14 @@ function FrameworkSection({
           {quadro.stato !== 'annullato' && quadro.stato !== 'disdetto' && (
             <Row label="Azioni">
               <span className="flex flex-wrap gap-2">
-                <SigningActions document={quadro} busy={busy} onRefresh={onRefresh} onResend={onResend} />
+                <SigningActions
+                  document={quadro}
+                  busy={busy}
+                  refreshingId={refreshingId}
+                  resendingId={resendingId}
+                  onRefresh={onRefresh}
+                  onResend={onResend}
+                />
                 {(quadro.stato === 'generato' || quadro.stato === 'inviato') && (
                   <Button
                     type="button"
@@ -304,6 +325,9 @@ function FiscalSection({ freelancerId, fiscale, onSaved }: { freelancerId: strin
 function MatchesSection({
   matches,
   busy,
+  sendingId,
+  refreshingId,
+  resendingId,
   canSend,
   onSend,
   onRefresh,
@@ -314,6 +338,9 @@ function MatchesSection({
 }: {
   matches: Match[]
   busy: boolean
+  sendingId: string | null
+  refreshingId: string | null
+  resendingId: string | null
   canSend: (match: Match) => boolean
   onSend: (match: Match) => void
   onRefresh: (document: ContractDocument) => void
@@ -374,10 +401,17 @@ function MatchesSection({
                           aria-label={`Invia per la firma il match con ${match.nome_azienda}`}
                           onClick={() => onSend(match)}
                         >
-                          Invia per la firma
+                          {sendingId === match.id ? 'Invio…' : 'Invia per la firma'}
                         </Button>
                       )}
-                      <SigningActions document={match.lettera} busy={busy} onRefresh={onRefresh} onResend={onResend} />
+                      <SigningActions
+                        document={match.lettera}
+                        busy={busy}
+                        refreshingId={refreshingId}
+                        resendingId={resendingId}
+                        onRefresh={onRefresh}
+                        onResend={onResend}
+                      />
                       {(match.stato === 'bozza' || match.stato === 'in_firma') && (
                         <Button
                           type="button"
@@ -499,6 +533,12 @@ export function AdminContratti() {
   const onResend = (section: 'quadro' | 'match') => (document: ContractDocument) => {
     resend.mutate(document.id, starting(section))
   }
+  // Which row's button shows an in-progress label, next to `busy`'s blanket disable
+  // (REB-407): the id of the document or match the pending mutation was called with,
+  // or `null` when nothing of that kind is in flight.
+  const sendingId = send.isPending ? (send.variables ?? null) : null
+  const refreshingId = update.isPending ? (update.variables ?? null) : null
+  const resendingId = resend.isPending ? (resend.variables ?? null) : null
   return (
     <>
       <Header title={name ? `Match e contratti · ${name}` : 'Match e contratti'}>
@@ -511,6 +551,8 @@ export function AdminContratti() {
       <FrameworkSection
         quadro={quadro}
         busy={busy}
+        refreshingId={refreshingId}
+        resendingId={resendingId}
         onRefresh={onRefresh('quadro')}
         onResend={onResend('quadro')}
         onCancel={() => setConfirmingQuadro('annulla')}
@@ -526,6 +568,9 @@ export function AdminContratti() {
       <MatchesSection
         matches={data.matches}
         busy={busy}
+        sendingId={sendingId}
+        refreshingId={refreshingId}
+        resendingId={resendingId}
         canSend={canSend}
         onSend={(match) => send.mutate(match.id, starting('match'))}
         onRefresh={onRefresh('match')}

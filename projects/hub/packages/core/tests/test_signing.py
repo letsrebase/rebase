@@ -1261,14 +1261,39 @@ def test_cancelling_a_framework_out_for_signature_cancels_its_envelope_first(
 
 def test_a_cancel_documenso_refuses_leaves_the_document_as_it_was(clean: Session) -> None:
     """The freelancer signed a moment before the admin pressed «Annulla»: Documenso
-    cancels only a `PENDING` envelope, and the hub changes nothing."""
+    cancels only a `PENDING` envelope, so the hub reads an Italian sentence pointing at
+    «Aggiorna stato» rather than Documenso's own English one, and changes nothing."""
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     admin_id, freelancer_id, _match, _envelope = _signed_framework(clean, renderer, fake, sender)
-    with pytest.raises(DocumensoFailed, match="Only pending documents can be cancelled"):
+    with pytest.raises(DocumensoFailed, match="«Aggiorna stato»") as raised:
         _signing(clean, renderer, fake, sender).cancel_document(
             _framework_of(clean, freelancer_id).id, admin_id
         )
+    assert "Only pending documents can be cancelled" in raised.value.detail
     assert _framework_of(clean, freelancer_id).stato == "inviato"
+
+
+def test_cancelling_a_matchs_letter_documenso_refuses_leaves_it_as_it_was(
+    clean: Session,
+) -> None:
+    """The same translation on the other cancel path: a letter Documenso will not
+    cancel any more keeps its Italian sentence, and the match stays untouched."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_letter_of(clean, match.id))
+    fake.sign(envelope, SIGNED_AT)
+
+    with pytest.raises(DocumensoFailed, match="«Aggiorna stato»") as raised:
+        _signing(clean, renderer, fake, sender).cancel_match(match.id, admin_id)
+
+    assert "Only pending documents can be cancelled" in raised.value.detail
+    assert _letter_of(clean, match.id).stato == "inviato"
+    assert [a.kind for a in AdminActionService(clean).timeline("match", match.id)] == [
+        "documents_sent",
+        "match_created",
+    ]
 
 
 def test_a_letter_is_cancelled_with_its_match_not_alone(clean: Session) -> None:

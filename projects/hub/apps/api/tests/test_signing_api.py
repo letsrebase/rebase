@@ -221,6 +221,13 @@ def test_resend_refresh_and_cancel_a_framework_out_for_signature(
     letter = client.get(f"/api/hub/matches/{match['id']}").json()["lettera"]
     assert client.post(f"/api/hub/contract-documents/{letter['id']}/cancel").status_code == 409
 
+    # Spec § 6: «Annulla» on a sent framework agreement leaves it shown, not hidden.
+    page = client.get(f"/api/hub/freelancers/{match['freelancer_id']}/matches").json()
+    assert (page["quadro"]["stato"], page["quadro"]["cancel_reason"]) == (
+        "annullato",
+        "Annullato da rebase.",
+    )
+
 
 def test_refresh_recovers_a_signature_and_the_match_can_then_be_cancelled(
     client: TestClient,

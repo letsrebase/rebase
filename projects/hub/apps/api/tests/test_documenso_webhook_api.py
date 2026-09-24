@@ -181,11 +181,18 @@ def test_a_refusal_cancels_the_document_and_says_why(
     documenso: FakeDocumenso,
     api_session: Session,
 ) -> None:
-    _match, envelope = _sent(client, sender, api_session)
+    match, envelope = _sent(client, sender, api_session)
     documenso.reject(envelope, "Il domicilio è sbagliato")
     assert _deliver(client, documenso.webhook(envelope, "DOCUMENT_REJECTED")).status_code == 200
     quadro = _document(api_session, "quadro")
     assert (quadro.stato, quadro.cancel_reason) == (
+        "annullato",
+        "Rifiutato dal freelance: Il domicilio è sbagliato",
+    )
+    # Spec § 6: a refused framework agreement is still shown on «Match e contratti»,
+    # not hidden as a stale draft would be.
+    page = client.get(f"/api/hub/freelancers/{match['freelancer_id']}/matches").json()
+    assert (page["quadro"]["stato"], page["quadro"]["cancel_reason"]) == (
         "annullato",
         "Rifiutato dal freelance: Il domicilio è sbagliato",
     )
