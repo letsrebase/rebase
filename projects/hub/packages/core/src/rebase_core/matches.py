@@ -161,7 +161,7 @@ class MatchService:
         previous = self.session.scalars(
             select(Match)
             .join(Company, Company.id == Match.company_id)
-            .where(Company.user_id == company.user_id)
+            .where(Company.user_id == company.user_id, Match.stato != "annullato")
             .order_by(Match.created_at.desc(), Match.id.desc())
             .limit(1)
         ).first()

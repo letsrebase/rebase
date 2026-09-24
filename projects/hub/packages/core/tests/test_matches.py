@@ -385,6 +385,20 @@ def test_the_client_data_come_back_from_the_same_company_users_last_match(clean:
     )
 
 
+def test_a_cancelled_matchs_client_is_never_prefilled(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    match = _service(clean).create(freelancer_id, _body(company_id), admin_id)
+    _service(clean).cancel(match.id, admin_id)
+    # The same referente files a second request: another row, the same user.
+    second = _request(clean, nome_azienda="ACME", figura_richiesta="Frontend developer")
+    cliente = _service(clean).prefill(freelancer_id, second).cliente
+    assert (cliente.cliente_ragione_sociale, cliente.cliente_piva, cliente.cliente_sede) == (
+        "ACME",
+        None,
+        None,
+    )
+
+
 def test_a_closed_request_can_be_neither_previewed_nor_matched(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     CompanyService(clean).set_status(company_id, StatusChange(stato="chiuso"))
