@@ -866,6 +866,52 @@ def test_the_match_list_paginates_with_a_total(clean: Session) -> None:
     assert [item.id for item in second_page.items] == newest_first[2:]
 
 
+def test_the_match_list_shows_a_match_with_two_letters_once_with_its_current_letter(
+    clean: Session,
+) -> None:
+    """Greptile 4092036056: the schema lets a match have more than one letter (phase 3
+    regenerates a waiting one on the framework's signature). The list must still show
+    the match once, count it once, and carry the letter `get` and `for_freelancer` call
+    its own: the newest."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    match = service.create(freelancer_id, _body(company_id), admin_id)
+    newer = service.create(freelancer_id, _body(company_id), admin_id)
+    waiting = clean.get(ContractDocument, match.lettera.id)
+    assert waiting is not None
+    waiting.stato = "annullato"
+    clean.add(
+        ContractDocument(
+            kind="lettera",
+            freelancer_id=freelancer_id,
+            match_id=match.id,
+            numero="2026-003",
+            text_version=waiting.text_version,
+            testo_bozza=False,
+            data={**waiting.data, "data-inizio": "2 novembre 2026"},
+            pdf=b"%PDF-regenerated",
+            stato="generato",
+            created_by=admin_id,
+        )
+    )
+    clean.commit()
+
+    page = service.list_all(stato=None, q=None, limit=100, offset=0)
+    assert page.totale == 2
+    assert [item.id for item in page.items] == [newer.id, match.id]
+    row = page.items[1]
+    assert (row.lettera_numero, row.lettera_stato, row.lettera_data_inizio) == (
+        "2026-003",
+        "generato",
+        "2 novembre 2026",
+    )
+    assert service.get(match.id).lettera.numero == row.lettera_numero
+
+    first_page = service.list_all(stato=None, q=None, limit=1, offset=0)
+    second_page = service.list_all(stato=None, q=None, limit=1, offset=1)
+    assert [item.id for item in first_page.items + second_page.items] == [newer.id, match.id]
+
+
 def test_the_match_list_row_carries_no_tax_field_and_no_budget() -> None:
     fields = set(MatchListItem.model_fields)
     assert not any("budget" in name for name in fields)

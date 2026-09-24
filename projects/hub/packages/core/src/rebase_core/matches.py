@@ -136,11 +136,13 @@ class MatchService:
     ) -> MatchList:
         """«Match» (REB-413): every match the admin area lists, newest first, one query
         for the freelancer, the company, the creating admin and the letter -- no N+1.
-        A soft-deleted request still names the match that came from it, the same as
-        `get`; a soft-deleted freelancer's match is gone, the same as `for_freelancer`.
-        `stato` is one of `MATCH_STATES` or a `ValidationFailed` naming the field, the
-        same shape a 422 elsewhere in this module already takes. Neither
-        `budget_giornaliero` nor a tax field is read here."""
+        The letter is the match's newest, the one `get` and `for_freelancer` call its own:
+        a match that has more than one (a waiting letter regenerated on the framework's
+        signature) is still one row, counted once. A soft-deleted request still names the
+        match that came from it, the same as `get`; a soft-deleted freelancer's match is
+        gone, the same as `for_freelancer`. `stato` is one of `MATCH_STATES` or a
+        `ValidationFailed` naming the field, the same shape a 422 elsewhere in this module
+        already takes. Neither `budget_giornaliero` nor a tax field is read here."""
         if stato is not None and stato not in MATCH_STATES:
             raise ValidationFailed(ENTITY, "stato", "stato sconosciuto")
         limit = max(1, min(limit, LIST_LIMIT_MAX))
@@ -148,16 +150,22 @@ class MatchService:
 
         freelancer_user = aliased(User)
         admin_user = aliased(User)
+        newer = aliased(ContractDocument)
+        current_letter = (
+            select(newer.id)
+            .where(newer.match_id == Match.id, newer.kind == LETTERA)
+            .order_by(newer.created_at.desc(), newer.id.desc())
+            .limit(1)
+            .correlate(Match)
+            .scalar_subquery()
+        )
         base = (
             select(Match, Company, freelancer_user, admin_user, ContractDocument)
             .join(Company, Company.id == Match.company_id)
             .join(Freelancer, Freelancer.id == Match.freelancer_id)
             .join(freelancer_user, freelancer_user.id == Freelancer.user_id)
             .join(admin_user, admin_user.id == Match.created_by)
-            .outerjoin(
-                ContractDocument,
-                (ContractDocument.match_id == Match.id) & (ContractDocument.kind == LETTERA),
-            )
+            .outerjoin(ContractDocument, ContractDocument.id == current_letter)
             .where(Freelancer.deleted_at.is_(None))
         )
         if stato is not None:
