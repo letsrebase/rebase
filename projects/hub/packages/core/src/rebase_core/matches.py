@@ -14,6 +14,8 @@ The company's `budget_giornaliero` is read nowhere in this module: what rebase a
 with the client never reaches a freelancer's document (spec § 1h).
 """
 
+import hashlib
+import json
 from collections.abc import Callable, Mapping
 from datetime import date
 from uuid import UUID
@@ -104,6 +106,14 @@ def luogo_suggestion(remoto: str, giorni_presenza: int | None) -> str:
 
 def _full_name(user: User) -> str:
     return f"{user.nome} {user.cognome}".strip()
+
+
+def _request_fingerprint(data: MatchCreate) -> str:
+    """The SHA-256 of `data` as `create` actually reads it (REB-406): `id` names the
+    match, it is not part of what a retry must match again, so it is excluded. Sorted
+    keys make the digest the same however Python happened to build the model."""
+    canonical = json.dumps(data.model_dump(mode="json", exclude={"id"}), sort_keys=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 class MatchService:
@@ -364,8 +374,14 @@ class MatchService:
         come bozza» and «Invia per la firma») returns the match already written rather
         than creating a second one with another letter number. The same id already used
         by another freelancer's match is a 409 -- writing under it would silently steal
-        someone else's row."""
+        someone else's row. The retry must also carry the same request: a SHA-256 of it
+        (`_request_fingerprint`) is stored on every match this writes, and a same id with
+        a changed one -- an admin who corrected the company or the letter before retrying
+        -- is a 409 too, never the stale match returned as if nothing had changed; a
+        match with no fingerprint stored (written before this check existed) is treated
+        the same as a mismatch, since there is nothing to compare it against."""
         renderer = self._renderer()
+        fingerprint = _request_fingerprint(data)
         try:
             self.lock_freelancer(freelancer_id)
             if data.id is not None:
@@ -374,6 +390,11 @@ class MatchService:
                     if existing.freelancer_id != freelancer_id:
                         raise InvalidState(
                             "Questo id di match appartiene già a un altro freelance."
+                        )
+                    if existing.request_fingerprint != fingerprint:
+                        raise InvalidState(
+                            "Questo match è già stato salvato con dati diversi: aprilo da "
+                            "«Match e contratti» e controllalo prima di inviarlo."
                         )
                     self.session.rollback()
                     return self.get(existing.id)
@@ -411,6 +432,7 @@ class MatchService:
                 cliente_sede=data.cliente.cliente_sede,
                 stato="bozza",
                 created_by=admin_id,
+                request_fingerprint=fingerprint,
             )
             self.session.add(match)
             self.session.flush()

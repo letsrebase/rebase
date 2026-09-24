@@ -395,6 +395,11 @@ class Match(Base, PrimaryKeyMixin, TimestampMixin):
     stato: Mapped[str] = mapped_column(String(20), nullable=False, default="bozza")
     created_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # The SHA-256 of the request this match was written from (REB-406): a retry of the
+    # same client-generated id compares against it, so changed data is a 409 instead of
+    # silently handing back the stale match. `NULL` for a match written before this
+    # column existed, which a retry must treat the same as a mismatch.
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64), default=None)
 
     __table_args__ = (
         Index("ix_matches_freelancer_created", "freelancer_id", "created_at"),

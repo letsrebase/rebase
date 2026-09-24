@@ -504,4 +504,31 @@ describe('«Crea match» in five steps (REB-387)', () => {
     const sends = spy.mock.calls.filter(([url]) => url === '/api/hub/matches/m1/send')
     expect(sends).toHaveLength(1)
   })
+
+  it('shows the server’s conflict with a link to «Match e contratti» and sends nothing when a retry changed the data (REB-406)', async () => {
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': pdf,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=quadro': pdf,
+      'POST /api/hub/freelancers/f1/matches': () =>
+        answer(409, {
+          detail:
+            'Questo match è già stato salvato con dati diversi: aprilo da «Match e contratti» e controllalo prima di inviarlo.',
+        }),
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(await screen.findByRole('button', { name: 'Genera l’anteprima' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Questo match è già stato salvato con dati diversi')
+    const link = screen.getByRole('link', { name: 'Vai a Match e contratti' })
+    expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/contracts$/)
+    expect(screen.queryByText('pagina contratti')).toBeNull()
+    expect(spy.mock.calls.some(([url]) => String(url).includes('/matches/m1/send'))).toBe(false)
+  })
 })

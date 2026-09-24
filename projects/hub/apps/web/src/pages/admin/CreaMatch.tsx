@@ -45,6 +45,9 @@ interface Previews {
 interface Failure {
   message: string
   fields: string[]
+  // A 409: the server refused the write for what the row already holds, not for what
+  // the admin typed, so the failure points at the row instead of a field (REB-406).
+  conflict: boolean
 }
 
 function useDebounce<T>(value: T, delayMs: number): T {
@@ -63,8 +66,8 @@ function revoke(previews: Previews) {
 
 function failureOf(error: unknown, fallback: string): Failure | null {
   if (!error) return null
-  if (error instanceof ApiError) return { message: error.message, fields: error.fields }
-  return { message: fallback, fields: [] }
+  if (error instanceof ApiError) return { message: error.message, fields: error.fields, conflict: error.status === 409 }
+  return { message: fallback, fields: [], conflict: false }
 }
 
 function StepFooter({
@@ -358,9 +361,20 @@ function PreviewStep({
         </Button>
       </div>
       {failure && (
-        <p role="alert" className="text-sm text-destructive">
-          {failure.message}
-        </p>
+        <div role="alert" className="space-y-1 text-sm text-destructive">
+          <p>{failure.message}</p>
+          {/* A 409 names a row already saved differently, never a field on this page
+           *  (REB-406): the way onward is the row itself, in «Match e contratti». */}
+          {failure.conflict && (
+            <Link
+              to="/admin/freelance/$id/contracts"
+              params={{ id: freelancerId }}
+              className="underline underline-offset-2"
+            >
+              Vai a Match e contratti
+            </Link>
+          )}
+        </div>
       )}
       {sentMessage && (
         <div role="status" className="space-y-1 text-sm">

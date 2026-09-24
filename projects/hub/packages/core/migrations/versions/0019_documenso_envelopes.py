@@ -14,9 +14,14 @@ that recipient's own signed-copy mail is accepted, so a restart or a refused mai
 leaves that one `NULL` for the next `finish` to retry, without repeating a mail the
 other recipient already got (REB-391).
 
+It also carries `matches.request_fingerprint` (REB-406): the SHA-256 of the request a
+draft was written from, so a retry of «Crea match» with the same client-generated id but
+changed data is refused instead of silently handed back the stale match.
+
 Conditional like every migration of this package: a retried deploy passes over what the
-previous attempt already added. The check constraint is added through a `pg_constraint`
-guard, since `ADD CONSTRAINT` has no `IF NOT EXISTS`.
+previous attempt already added, never run outside a throwaway test database. The check
+constraint is added through a `pg_constraint` guard, since `ADD CONSTRAINT` has no
+`IF NOT EXISTS`.
 """
 
 from collections.abc import Sequence
@@ -34,6 +39,7 @@ _STATEMENTS = (
     "ALTER TABLE contract_documents ADD COLUMN IF NOT EXISTS signed_copy_to_freelancer_at "
     "TIMESTAMPTZ",
     "ALTER TABLE contract_documents ADD COLUMN IF NOT EXISTS signed_copy_to_rebase_at TIMESTAMPTZ",
+    "ALTER TABLE matches ADD COLUMN IF NOT EXISTS request_fingerprint VARCHAR(64)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_contract_documents_documenso_id "
     "ON contract_documents (documenso_id)",
     "DO $$ BEGIN "
@@ -55,6 +61,7 @@ def downgrade() -> None:
         "ALTER TABLE contract_documents DROP CONSTRAINT IF EXISTS "
         "ck_contract_documents_envelope_item",
         "DROP INDEX IF EXISTS uq_contract_documents_documenso_id",
+        "ALTER TABLE matches DROP COLUMN IF EXISTS request_fingerprint",
         "ALTER TABLE contract_documents DROP COLUMN IF EXISTS signed_copy_to_rebase_at",
         "ALTER TABLE contract_documents DROP COLUMN IF EXISTS signed_copy_to_freelancer_at",
         "ALTER TABLE contract_documents DROP COLUMN IF EXISTS cancel_reason",

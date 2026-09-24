@@ -242,6 +242,29 @@ def test_the_same_id_used_by_another_freelancers_match_is_a_409(
     assert client.get(f"/api/hub/freelancers/{other_freelancer_id}/matches").json()["matches"] == []
 
 
+def test_a_repeated_create_with_the_same_id_and_changed_data_is_a_409(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    """REB-406: a retry that corrects the letter or the client before sending it again
+    must not be handed back the stale match under cover of the idempotent id -- the
+    request no longer matches what was saved, so this is a 409, not a 201."""
+    freelancer_id, company_id = _ready(client, sender)
+    given_id = "01234567-89ab-7cde-8123-456789abcdef"
+    body = {"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
+
+    first = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=body)
+    assert first.status_code == 201, first.text
+
+    changed = {**body, "lettera": {**LETTERA, "ruolo": "Un altro ruolo"}}
+    refused = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=changed)
+
+    assert refused.status_code == 409, refused.text
+    assert "dati diversi" in refused.json()["detail"]
+    assert "Match e contratti" in refused.json()["detail"]
+    page = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()
+    assert len(page["matches"]) == 1
+
+
 def test_the_preview_renders_a_document_without_saving_or_numbering_it(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:

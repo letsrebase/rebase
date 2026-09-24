@@ -329,6 +329,45 @@ def test_a_repeated_id_already_used_by_another_freelancer_is_refused(clean: Sess
     assert len(_documents(clean, other_freelancer_id, "lettera")) == 0
 
 
+def test_a_repeated_id_with_changed_data_is_refused_not_returned(clean: Session) -> None:
+    """An admin who corrects the letter before retrying (a lost response, a second
+    click) must not get the uncorrected match silently handed back: the request no
+    longer matches the fingerprint stored on it, so this is a 409, and nothing changes
+    on the row already written."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    given_id = uuid4()
+    body = _body(company_id).model_copy(update={"id": given_id})
+    first = service.create(freelancer_id, body, admin_id)
+
+    changed = body.model_copy(
+        update={"lettera": body.lettera.model_copy(update={"ruolo": "Un altro ruolo"})}
+    )
+    with pytest.raises(InvalidState, match="dati diversi"):
+        service.create(freelancer_id, changed, admin_id)
+
+    assert len(_documents(clean, freelancer_id, "lettera")) == 1
+    assert service.get(first.id).lettera.numero == first.lettera.numero
+
+
+def test_a_repeated_id_with_no_fingerprint_stored_is_refused(clean: Session) -> None:
+    """A match written before this fingerprint existed has `NULL` where the retry's
+    digest would be compared against: nothing to match, so this is a 409 too, the same
+    as a changed request -- never treated as a match by coincidence."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    given_id = uuid4()
+    body = _body(company_id).model_copy(update={"id": given_id})
+    service.create(freelancer_id, body, admin_id)
+    written = clean.get(Match, given_id)
+    assert written is not None
+    written.request_fingerprint = None
+    clean.commit()
+
+    with pytest.raises(InvalidState, match="dati diversi"):
+        service.create(freelancer_id, body, admin_id)
+
+
 def test_create_with_no_id_still_writes_a_fresh_match_each_time(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
