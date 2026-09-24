@@ -1,0 +1,189 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit's review of this repository. It only sets what differs from what the
+# org settings in app.coderabbit.ai already give every repository: with
+# `inheritance: true`, a key this file leaves out keeps the org value, and one it
+# sets wins. `@coderabbitai configuration` on any PR prints the resolved result and
+# where each value came from.
+#
+# CodeRabbit reads every AGENTS.md and CLAUDE.md as review guidelines. The path
+# instructions below restate the few rules from them a review most often needs, next
+# to the files they are about, and add what no test catches. A check CI already runs
+# (the api-types job, the guide PDF lock, the warehouse contract, the MCP surface
+# tests, test_compose_environment.py) is not repeated here. REB-435.
+
+language: en-US
+inheritance: true
+tone_instructions: >-
+  Plain, direct English. Lead with the concrete failure (input, state, wrong
+  result), then the smallest fix. No praise or filler. Italian UI copy, MCP
+  descriptions and «quoted» Italian are intentional, never a finding.
+
+reviews:
+  profile: chill
+  # The PR body is the author's: the template's sections, then `Linear: REB-N.` as
+  # its last line (.claude/skills/pr-creation). Appended to the body, the summary
+  # lands after that line and is rewritten on every push.
+  high_level_summary_in_walkthrough: true
+  in_progress_fortune: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    # 10 reviews an hour for the whole org, and Dependabot opens its PRs together
+    # (REB-434). `@coderabbitai review` on one of them still asks for a review.
+    ignore_usernames:
+      - dependabot[bot]
+
+  # Lock files are already out by default. The filters also shape CodeRabbit's
+  # sparse checkout, so only a file nobody needs as context goes here.
+  path_filters:
+    # 1.2 MB generated from the API's OpenAPI schema; the `pigrocrm-api-types` CI
+    # job already fails when it is stale.
+    - "!projects/pigrocrm/apps/web/src/lib/api-types.ts"
+
+  finishing_touches:
+    docstrings:
+      enabled: false
+
+  pre_merge_checks:
+    # Nothing here asks for docstrings on every function: a comment says why, and
+    # the code says what. The check warned on 7 of the 13 PRs it ran on from #352
+    # to #366, and none of them added one.
+    docstrings:
+      mode: "off"
+    # Skipped on every run so far ("CodeRabbit's high-level summary is enabled")
+    # and blind to the final `Linear:` line: the custom check below is the
+    # template, that line included.
+    description:
+      mode: "off"
+    # The skill also caps the title at 72 characters. A model counts characters
+    # badly near a limit, so the length is left to a person here.
+    title:
+      mode: warning
+      requirements: >-
+        Conventional Commits, as .claude/skills/pr-creation § Title says:
+        `type(scope): subject`. `type` is one of feat, fix, refactor, perf, test,
+        docs, ci, chore, style, revert. `scope` is present, lowercase, and names
+        the project, app or package the change lands in, such as web, api, core,
+        mcp, hub, website, brand, ci, repo, tooling, infra, ui; two are separated
+        by a comma. The subject starts with a lowercase letter, has no Title Case
+        and no trailing period. Length and grammatical mood are not judged by
+        this check.
+    custom_checks:
+      - name: PR body follows the template
+        mode: warning
+        instructions: >-
+          Read the PR description, leaving out every block a bot generated: text
+          between `<!-- This is an auto-generated comment` and `<!-- end of
+          auto-generated comment` markers, and text between `<!--
+          greptile_comment -->` and `<!-- /greptile_comment -->`. Pass when what
+          remains contains the headings `## What this changes`, `## How I
+          verified it` and `## Screenshots and video`, in that order, and its last
+          non-empty line is exactly `Linear: REB-<number>.` or `Linear: milestone
+          <name> (REB-<number>, REB-<number>, ...)`. Otherwise fail, naming each
+          missing heading or quoting the last line. Pass without checking when
+          the PR was opened by a bot account.
+      - name: No em dashes in added English prose
+        mode: warning
+        instructions: >-
+          Fail when an em dash (U+2014) appears in the PR title, in the PR
+          description outside the bot-generated blocks, or on a line this PR adds
+          to a Markdown file, a code comment or a docstring. Lines the PR does not
+          add never count. Italian prose never counts: the existing Italian
+          design records under `projects/pigrocrm/docs/superpowers/`, Italian
+          quoted in «guillemets», and strings the product shows to its users (UI
+          copy, error messages, MCP descriptions, document templates). When
+          failing, list each file and line.
+      - name: Migration continues the base branch chain
+        mode: warning
+        instructions: >-
+          Applies only when the PR adds a file under
+          `projects/<project>/packages/core/migrations/versions/`; pass
+          otherwise. For each project with added migrations, take the
+          highest-numbered file in that directory on the base branch as it is
+          when this check runs. Pass when the lowest added four-digit prefix is
+          exactly one more than that file's, no added prefix is already taken on
+          the base branch, and each added file's `down_revision` is the
+          `revision` of the file numbered just before it (the first added one
+          points at the base branch's highest). Otherwise fail, naming the prefix
+          that collides or the `down_revision` that should change.
+
+  path_instructions:
+    - path: "projects/*/docs/superpowers/**"
+      instructions: >-
+        Dated design records (specs and plans). The existing Italian ones under
+        projects/pigrocrm are never translated or rewritten; a record added from
+        now on, there included, is written in English (root AGENTS.md,
+        Conventions). Make no comment on the wording of an existing record. Do
+        review a plan's operational steps: the commands, their order, a backup
+        taken before a destructive step and not after, and no secret echoed,
+        logged or committed.
+    - path: "projects/*/packages/core/migrations/versions/**"
+      instructions: >-
+        Alembic. Check that `downgrade` reverses `upgrade`. In projects/hub, a
+        migration that may run on the database the hub inherited from PigroCRM
+        stays conditional (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT
+        EXISTS`), as 0001 explains. In projects/pigrocrm, every space is a
+        database of its own, migrated when the API starts: the same migration runs
+        on the root installation, on spaces created months ago and on empty ones,
+        so flag a data migration that assumes rows exist or that only the root
+        has.
+    - path: "projects/hub/packages/core/src/rebase_core/config.py"
+      instructions: >-
+        A new or renamed `REBASE_*` setting must also appear in
+        `projects/hub/.env.example` and in the `x-api-environment` list of
+        `projects/hub/docker-compose.yml`, unless its comment says compose
+        deliberately does not forward it (as `cookie_secure`'s does). That list
+        is explicit and no test holds the hub to it, so a variable missing there
+        never reaches the container and the setting silently keeps its default
+        in production.
+    - path: "projects/*/apps/mcp/**"
+      instructions: >-
+        Tool, prompt and resource descriptions are what an assistant reads out to
+        an Italian user: Italian is correct there and is not a finding. Tools call
+        the same core services the API does; flag logic that exists only in the
+        MCP layer.
+    - path: "projects/*/apps/web/src/**"
+      instructions: >-
+        UI copy, validation and error messages are Italian on purpose and are not
+        findings. Code, comments and test names are English.
+    - path: ".github/workflows/**"
+      instructions: >-
+        `ci` is the only required status: a new job must be in the `needs` of the
+        `ci` aggregate job, or a red run of it cannot block a merge. Never a
+        `paths` filter under `on:`: a workflow that does not run reports no
+        context and the PR cannot merge. A job that `needs` a job which can be
+        skipped must use a status-check function in its `if` (`!cancelled() &&`),
+        or it is skipped too while `ci` reports green. A caller of a reusable
+        deploy workflow passes `secrets: inherit`. A `workflow_run` deploy checks
+        out `github.event.workflow_run.head_sha`, never `github.sha`. A check that
+        stops running on `pull_request` must appear in `.github/preflight.json`.
+    - path: ".github/preflight.json"
+      instructions: >-
+        Flag a glob widened or narrowed only so that a check stops selecting the
+        PR's own diff: a wrong check is fixed, not routed around.
+    - path: "projects/pigrocrm/**/tests/**/*.py"
+      instructions: >-
+        This suite runs under `pytest -n auto --dist loadfile`: flag state shared
+        across test files (module globals, files on disk, environment variables
+        left set) and tests that only pass in a given order. Assertions on
+        Italian strings are assertions on product copy.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    # The first two are defaults already. They stay listed because the docs say
+    # both that a custom list adds to the defaults and that it replaces them.
+    # A plain glob applies to its own directory tree, so DECISIONS.md needs
+    # `applyTo` to reach the code.
+    filePatterns:
+      - "**/AGENTS.md"
+      - "**/CLAUDE.md"
+      - "CONTRIBUTING.md"
+      - files: "docs/design/DECISIONS.md"
+        applyTo: "**"
+
+chat:
+  auto_reply: true
+  art: false
