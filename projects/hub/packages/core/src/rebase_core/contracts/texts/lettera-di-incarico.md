@@ -1,9 +1,9 @@
 ---
 title: Lettera di incarico
 subtitle: "n. {{numero}}, secondo il Contratto quadro firmato il {{data-contratto-quadro}}"
-version: "0.1"
-date: 23 settembre 2026
-status: draft
+version: "1.0"
+date: 24 settembre 2026
+status: final
 ---
 
 Tra **{{rebase-ragione-sociale}}** («**rebase**») e **{{professionista-nome}}**, partita

@@ -9,7 +9,8 @@ rebase il ...», spec § 5) and the labels under the signing blanks left undrawn
 gets the PDF with the freelancer as its one signer (`rebase_core.documenso`), and the hub
 mails the link itself, one mail per document. A text that says `status: draft` never
 leaves (spec § 1f), unless `allow_draft` is true, which only the preview's `.env` sets
-through `REBASE_CONTRACTS_ALLOW_DRAFT`. If Documenso refuses or does not answer, the
+through `REBASE_CONTRACTS_ALLOW_DRAFT`; with both texts `status: final` the preview
+leaves it false too, kept for the next draft. If Documenso refuses or does not answer, the
 transaction rolls back and nothing is marked sent; if only the mail fails, the document
 is `inviato` and the report says so, for «Reinvia email».
 

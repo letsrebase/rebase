@@ -12,7 +12,8 @@ apart from the apps because it is prose reviewed on its own terms, not markup or
   typesets them at request time and the API image carries only `packages/`:
   `contratto-quadro.md` is signed once and holds every rule; `lettera-di-incarico.md` is
   signed per engagement and holds the client, the work, the dates and the numbers.
-  Italian for the same reason. A draft, see [The contracts](#the-contracts) below.
+  Italian for the same reason. Final since 2026-09-24, see [The contracts](#the-contracts)
+  below.
 
 ## How a file here becomes something a member downloads
 
@@ -83,14 +84,20 @@ can print a term that article 7.1 and law 81/2017 forbid.
 `packages/core/tests/test_contract_pdf.py` checks. Real data names a real person and a
 real client: keep it outside the repository or in a `*.local.json`, which git ignores.
 
-### Open before the first signature
+### Settled on 2026-09-24, and what stays open
 
-The highlighted proposals, and what the text cannot settle on its own. Decided by Ivan on
-2026-09-23: the payment default (30 days from the end of the invoice's month, 7.1), the
-freelancer is paid whether or not the client has paid and rebase aligns the client's
-terms to that (7.2), the social security surcharge is inside the fee (5.5), the 15% of
-12.2, and the framework agreement lasting 12 months and renewing itself unless either side
-gives notice 30 days before the end (9.1, approved specifically as a tacit renewal).
+The highlighted proposals are gone: both texts are `status: final` at version 1.0.
+Decided by Ivan on 2026-09-23: the payment default (30 days from the end of the invoice's
+month, 7.1), the freelancer is paid whether or not the client has paid and rebase aligns
+the client's terms to that (7.2), the social security surcharge is inside the fee (5.5),
+the 15% of 12.2, and the framework agreement lasting 12 months and renewing itself unless
+either side gives notice 30 days before the end (9.1, approved specifically as a tacit
+renewal). On 2026-09-24 Ivan accepted the framework agreement's remaining seven proposals
+as written, unchanged (REB-430): seven working days to answer a contested Rendiconto
+(6.2), ten working days after delivery when no contestation arrives (6.3), 30 days'
+notice per engagement (10.1), two working days' notice during the opening check (10.3),
+up to two paid handover days (10.4), three years of confidentiality after the last
+engagement (13.3), and Milan as the exclusive court (18.3).
 
 - **Non-circumvention** (12): it covers every company rebase introduces, not only the
   ones an engagement came from, for twelve months from the introduction or the last
@@ -107,6 +114,14 @@ gives notice 30 days before the end (9.1, approved specifically as a tacit renew
   up to two paid handover days (10.3, 10.4).
 - **Confidentiality** lasts three years after the last engagement (13.3). **Court**: Milan,
   to match the SRL's registered seat (18.3).
+
+Still open, before the first real signature (spec § 11):
+
+- **The separate written approval**: a click in the member area is a simple electronic
+  signature. It records consent, but a court may not accept it as the separate written
+  approval that articles 1341 and 1342 of the civil code ask for the onerous clauses.
+  REB-339 should ask for that approval as its own step, and an advanced signature (a
+  one-time code) for the framework agreement is worth weighing.
 - **Autonomy, as the text and in practice** (4.2): the freelancer works alone and in
   person for a client who coordinates the work, which is the pattern article 2 of
   legislative decree 81/2015 reclassifies as employment when the client sets the hours
@@ -114,11 +129,6 @@ gives notice 30 days before the end (9.1, approved specifically as a tacit renew
   wording of article 409 of the civil procedure code; a labour lawyer should read this
   before the SRL signs, and if a relationship ever counted as a coordinated collaboration
   the exclusive court of 18.3 would not hold (article 413 of the same code).
-- **Signing in the member area**: a click is a simple electronic signature. It records
-  consent, but a court may not accept it as the separate written approval that articles
-  1341 and 1342 of the civil code ask for the onerous clauses. REB-339 should ask for that
-  approval as its own step, and an advanced signature (a one-time code) for the framework
-  agreement is worth weighing.
 - **The company contract** (roadmap #286) has to give rebase what this one promises:
   client payment terms that let rebase pay the freelancer at 30 days from the end of the
   month, rights on the work passing on payment, a notice from the client at least as long

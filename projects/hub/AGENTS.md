@@ -108,7 +108,8 @@ stato» on «Match e contratti» reads the envelope and applies it, and an admin
 on a document that has waited for its signature longer than expected. Without
 `REBASE_DOCUMENSO_URL` and `REBASE_DOCUMENSO_API_TOKEN` signing answers 503, and a text
 whose front matter says `status: draft` never leaves unless `REBASE_CONTRACTS_ALLOW_DRAFT`
-is true, which only the preview's `.env` sets. Documenso reaches `api` only if
+is true; only the preview's `.env` sets it, and even there it stays false while both
+texts are `status: final`, ready again for the next draft. Documenso reaches `api` only if
 `NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS` lists it (probe § 5); the secret travels in
 clear, so the webhook URL stays on the compose network or is HTTPS.
 

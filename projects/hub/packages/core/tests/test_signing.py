@@ -13,7 +13,16 @@ from fakes_documenso import FakeDocumenso
 from sqlalchemy import Engine, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
-from test_matches import SIGNER, TABLES, TODAY, _body, _documents, _framework, _setup
+from test_matches import (
+    QUADRO_VERSION,
+    SIGNER,
+    TABLES,
+    TODAY,
+    _body,
+    _documents,
+    _framework,
+    _setup,
+)
 
 from rebase_core import signing as signing_module
 from rebase_core.audit import AdminActionService
@@ -132,7 +141,7 @@ def _active_framework(
     document = ContractDocument(
         kind="quadro",
         freelancer_id=freelancer_id,
-        text_version="0.1",
+        text_version=QUADRO_VERSION,
         testo_bozza=False,
         data={},
         pdf=b"%PDF-quadro",
@@ -164,7 +173,7 @@ def test_the_first_send_hands_documenso_the_framework_and_the_letter_waits(
     assert (quadro.sent_at, quadro.sent_by) == (NOW, admin_id)
     assert envelope.payload["title"] == "Contratto quadro rebase"
     assert envelope.payload["externalId"] == str(quadro.id)
-    assert envelope.filename == "contratto-quadro-v0.1.pdf"
+    assert envelope.filename == f"contratto-quadro-v{QUADRO_VERSION}.pdf"
     assert envelope.payload["meta"]["distributionMethod"] == "NONE"
     assert not any(envelope.payload["meta"]["emailSettings"].values())
     fields = envelope.payload["recipients"][0]["fields"]
@@ -900,7 +909,7 @@ def test_finish_downloads_and_mails_the_signed_copy_once(clean: Session) -> None
         (CONTRACTS_MAIL, "Firmato da Ada Lovelace: contratto quadro rebase"),
     ]
     assert all(
-        mail.attachments[0].filename == "contratto-quadro-v0.1-firmato.pdf"
+        mail.attachments[0].filename == f"contratto-quadro-v{QUADRO_VERSION}-firmato.pdf"
         and mail.attachments[0].content == quadro.signed_pdf
         for mail in copies
     )

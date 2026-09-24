@@ -27,6 +27,7 @@ from rebase_core.contract_schemas import (
 )
 from rebase_core.contracts.fields import FIELD, TERM, ContractFailed, Value
 from rebase_core.contracts.render import Rendered, Renderer, text_path
+from rebase_core.contracts.render import text_version as current_text_version
 from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
@@ -37,6 +38,9 @@ from rebase_core.schemas import CompanyCreate, FreelancerCreate, StatusChange
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 TODAY = date(2026, 9, 23)
+# The framework agreement's version today, read once from the real text so a future
+# version bump does not silently make `_framework`'s default a stale literal.
+QUADRO_VERSION = current_text_version("contratto-quadro")
 # Fiction, like the public example: rebase's own fields as the setting would carry them.
 SIGNER: dict[str, Value] = {
     "rebase-sede": "Milano",
@@ -166,7 +170,7 @@ def _framework(
     stato: str = "firmato",
     signed_at: datetime | None = datetime(2026, 10, 1, 9, 0, tzinfo=UTC),
     notice_at: datetime | None = None,
-    text_version: str = "0.1",
+    text_version: str = QUADRO_VERSION,
 ) -> ContractDocument:
     """A framework agreement as phase 3 will leave one: only a signature makes these."""
     document = ContractDocument(
@@ -211,7 +215,7 @@ def test_the_first_match_writes_the_framework_agreement_and_a_letter_that_waits_
         None,
         None,
     )
-    assert (quadro.text_version, quadro.testo_bozza) == ("0.1", True)
+    assert (quadro.text_version, quadro.testo_bozza) == (QUADRO_VERSION, True)
     assert (lettera.kind, lettera.match_id) == ("lettera", match.id)
     assert lettera.data["data-contratto-quadro"] is None
     assert [document for document, _ in renderer.calls] == [
@@ -625,7 +629,7 @@ def test_a_document_downloads_as_its_own_pdf_and_a_missing_signed_copy_is_not_fo
     pdf = service.document_pdf(match.lettera.id)
     assert (pdf.filename, pdf.content[:5]) == ("lettera-di-incarico-2026-001.pdf", b"%PDF-")
     quadro = _documents(clean, freelancer_id, "quadro")[0]
-    assert service.document_pdf(quadro.id).filename == "contratto-quadro-v0.1.pdf"
+    assert service.document_pdf(quadro.id).filename == f"contratto-quadro-v{QUADRO_VERSION}.pdf"
     with pytest.raises(NotFound):
         service.document_pdf(match.lettera.id, signed=True)
 
