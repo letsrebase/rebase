@@ -22,8 +22,16 @@ from rebase_core.admin_tokens import AdminList, AdminRead
 from rebase_core.config import Settings
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.mail import Mail, magic_link_mail
-from rebase_core.models import USER_ROLES, Login, MagicLinkToken, User, UserSession
+from rebase_core.models import (
+    ATTRIBUTION_COLUMNS,
+    USER_ROLES,
+    Login,
+    MagicLinkToken,
+    User,
+    UserSession,
+)
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
+from rebase_core.schemas import SignupUtm
 from rebase_core.search import matches_any, similarity_score
 
 ENTITY = "user"
@@ -200,13 +208,18 @@ class UserService:
 
     # ---- the way in ----------------------------------------------------------------
 
-    def request_link(self, email: str, note: str | None = None) -> Mail | None:
+    def request_link(
+        self, email: str, note: str | None = None, utm: SignupUtm | None = None
+    ) -> Mail | None:
         """The mail to send, or `None` when nobody with that address exists, or when
         the address already holds a live link younger than a minute (REB-100): no new
         token, no mail, the same silence a caller sees either way -- the throttle is
         per address, not per client, and sits beside the per-client bucket `spend_one`
         already charges in the router. Sweeps the person's spent and expired tokens
-        first: nothing needs a cron."""
+        first: nothing needs a cron.
+
+        `utm` is what the login page's URL said (REB-426), kept on the token for the
+        `Login` it will open; an empty one is no attribution at all."""
         assert self.settings is not None
         row = self.by_email(email)
         if row is None:
@@ -229,11 +242,13 @@ class UserService:
         if recent is not None:
             return None
         raw = secrets.token_urlsafe(32)
+        attribution = utm.model_dump() if utm is not None and not utm.is_empty() else {}
         self.session.add(
             MagicLinkToken(
                 user_id=row.id,
                 token_hash=_hash(raw),
                 expires_at=now + timedelta(minutes=self.settings.magic_link_minutes),
+                **attribution,
             )
         )
         self.session.commit()
@@ -274,7 +289,14 @@ class UserService:
         )
         # The login itself, kept after the session is gone (ORB-158): same commit, so a
         # session never exists without its login and a login never without its session.
-        self.session.add(Login(user_id=row.id, logged_at=now))
+        # It carries the campaign the link was asked from, off the token (REB-426).
+        self.session.add(
+            Login(
+                user_id=row.id,
+                logged_at=now,
+                **{column: getattr(token, column) for column in ATTRIBUTION_COLUMNS},
+            )
+        )
         self.session.commit()
         return row, raw_session
 
