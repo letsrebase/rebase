@@ -248,3 +248,77 @@ def test_migration_0017_can_run_again_and_roll_back() -> None:
             diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
             assert diff == [], diff
         engine.dispose()
+
+
+def test_an_envelope_belongs_to_one_document_and_keeps_its_item(hub_engine: Engine) -> None:
+    """REB-387 phase 3: the webhook finds its document by the envelope's id, so an
+    envelope is one document's; and the item the sealed copy is downloaded by is stored
+    with it or not at all."""
+    with hub_engine.connect() as connection:
+        outer = connection.begin()
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (id, email, nome, cognome, role, attivo) VALUES "
+                "(gen_random_uuid(), 'ck-envelopes@studio.it', 'A', 'B', 'admin', true) "
+                "RETURNING id"
+            )
+        ).scalar()
+        freelancer_id = connection.execute(
+            text(
+                "INSERT INTO freelancers (id, user_id, links, stato, compilata_da) VALUES "
+                "(gen_random_uuid(), :user_id, '[]', 'nuovo', 'persona') RETURNING id"
+            ),
+            {"user_id": user_id},
+        ).scalar()
+
+        def _document(envelope: str | None, item: str | None) -> None:
+            connection.execute(
+                text(
+                    "INSERT INTO contract_documents (id, kind, freelancer_id, text_version, "
+                    "testo_bozza, data, pdf, stato, documenso_id, documenso_item_id, "
+                    "created_by) VALUES (gen_random_uuid(), 'quadro', :freelancer_id, '0.1', "
+                    "false, '{}', :pdf, 'inviato', :envelope, :item, :user_id)"
+                ),
+                {
+                    "freelancer_id": freelancer_id,
+                    "pdf": b"%PDF-",
+                    "envelope": envelope,
+                    "item": item,
+                    "user_id": user_id,
+                },
+            )
+
+        for envelope, item in (("envelope_1", None), (None, "envelope_item_1")):
+            with pytest.raises(IntegrityError), connection.begin_nested():
+                _document(envelope, item)
+        with connection.begin_nested():
+            _document("envelope_1", "envelope_item_1")
+            _document(None, None)
+            _document(None, None)
+        with pytest.raises(IntegrityError), connection.begin_nested():
+            _document("envelope_1", "envelope_item_2")
+        outer.rollback()
+
+
+def test_migration_0018_can_run_again_and_roll_back() -> None:
+    """A retried deploy runs 0018's statements over columns that already exist, and the
+    downgrade leaves 0017's schema: both must work, and the result must be the models'."""
+    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+        url = container.get_connection_url()
+        upgrade_to_head(url)
+        config = Config(str(INI_PATH))
+        config.set_main_option("sqlalchemy.url", url)
+        command.downgrade(config, "0017")
+        command.upgrade(config, "head")
+        engine = create_engine(url, future=True)
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE alembic_version SET version_num = '0017'"))
+        command.upgrade(config, "head")
+        with engine.connect() as connection:
+            assert (
+                connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+                == head_revision()
+            )
+            diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
+            assert diff == [], diff
+        engine.dispose()

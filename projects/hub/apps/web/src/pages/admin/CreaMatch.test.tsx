@@ -175,10 +175,7 @@ describe('«Crea match» in five steps (REB-387)', () => {
     expect(await screen.findByRole('link', { name: 'Apri la lettera di incarico' })).toHaveAttribute('href', 'blob:anteprima-1')
     expect(screen.getByRole('link', { name: 'Apri il contratto quadro' })).toHaveAttribute('href', 'blob:anteprima-2')
     expect(screen.getByText(/partirà per primo il contratto quadro/)).toBeInTheDocument()
-    const send = screen.getByRole('button', { name: 'Invia per la firma' })
-    expect(send).toBeDisabled()
-    await userEvent.hover(send.parentElement!)
-    expect((await screen.findAllByText('Arriva con la firma elettronica')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Invia per la firma' })).toBeEnabled()
     expect(document.body.textContent).not.toMatch(/777\.77/)
 
     await userEvent.click(screen.getByRole('button', { name: 'Salva come bozza' }))
@@ -360,5 +357,36 @@ describe('«Crea match» in five steps (REB-387)', () => {
     expect(await screen.findByLabelText('Codice fiscale')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Freelance -> Cliente
     expect(await screen.findByLabelText('Ragione sociale del cliente')).toHaveValue('Neri Spa')
+  })
+
+  it('writes the match and sends it in one click, and after a refusal sends that same match again', async () => {
+    let tries = 0
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': pdf,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=quadro': pdf,
+      'POST /api/hub/freelancers/f1/matches': { id: 'm1' },
+      'POST /api/hub/matches/m1/send': () =>
+        ++tries === 1
+          ? answer(503, { detail: 'La firma elettronica non è attiva su questo ambiente.' })
+          : { match: { id: 'm1' }, inviato: 'quadro', mail_inviata: true },
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(await screen.findByRole('button', { name: 'Genera l’anteprima' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('non è attiva')
+    expect(alert).toHaveTextContent('La bozza è salvata')
+    await userEvent.click(screen.getByRole('button', { name: 'Invia per la firma' }))
+    expect(await screen.findByText('pagina contratti')).toBeInTheDocument()
+    const creates = spy.mock.calls.filter(
+      ([url, init]) => url === '/api/hub/freelancers/f1/matches' && init?.method === 'POST',
+    )
+    expect(creates).toHaveLength(1)
+    expect(tries).toBe(2)
   })
 })

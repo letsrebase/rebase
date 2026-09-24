@@ -1,7 +1,7 @@
 """One engine per process, one session per request."""
 
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -11,12 +11,15 @@ from sqlalchemy.orm import Session, sessionmaker
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.analytics import Tracker, tracker_from_settings
 from rebase_core.config import Settings, get_settings
+from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.db import create_engine_from_settings, session_factory
+from rebase_core.documenso import DocumensoClient, client_from_settings
 from rebase_core.http import HttpCall, urllib_call
 from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.members import MemberService
 from rebase_core.schemas import MeRead
+from rebase_core.signing import SigningService
 from rebase_core.users import UserService
 
 MEMBER_COOKIE = "orbiters_user"
@@ -111,3 +114,41 @@ def get_renderer() -> Renderer:
 
 
 RendererDep = Annotated[Renderer, Depends(get_renderer)]
+
+
+def get_documenso(settings: SettingsDep) -> DocumensoClient | None:
+    """This environment's Documenso client (REB-387), or `None` when signing is off: the
+    send answers 503 with a sentence, as the member area does without a mail key."""
+    return client_from_settings(settings)
+
+
+DocumensoDep = Annotated[DocumensoClient | None, Depends(get_documenso)]
+
+SigningFactory = Callable[[Session], SigningService]
+
+
+def get_signing_factory(
+    settings: SettingsDep, renderer: RendererDep, documenso: DocumensoDep, sender: SenderDep
+) -> SigningFactory:
+    """`SigningService` as this environment configures it, for any session: the
+    request's own, or the one a background task opens for itself (the webhook's).
+    `REBASE_SIGNER_JSON` is read inside `build`, not here: this factory itself runs on
+    every request a signing route takes, and a malformed value must not turn a route
+    that never typesets (a future cancel or webhook) into a 503 (REB-406 controller
+    ruling)."""
+
+    def build(session: Session) -> SigningService:
+        return SigningService(
+            session,
+            renderer=renderer,
+            documenso=documenso,
+            sender=sender,
+            signer=signer_data(settings.signer_json),
+            contracts_mail=settings.contracts_mail,
+            allow_draft=settings.contracts_allow_draft,
+        )
+
+    return build
+
+
+SigningDep = Annotated[SigningFactory, Depends(get_signing_factory)]

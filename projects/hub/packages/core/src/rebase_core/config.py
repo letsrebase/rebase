@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     documenso_webhook_secret: str = ""
     # Where rebase's own copy of every signed contract is mailed.
     contracts_mail: str = "ciao@letsrebase.com"
+    # A text still `status: draft` never leaves for signature (spec § 1f), except on the
+    # preview, whose own `.env` sets this true so a text still being drafted can still be
+    # sent end to end without waiting for it to lose its `draft` status.
+    contracts_allow_draft: bool = False
 
 
 @lru_cache(maxsize=1)

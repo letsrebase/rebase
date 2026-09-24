@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -18,7 +19,15 @@ from rebase_api.routers import (
 )
 from rebase_core import analytics
 from rebase_core.contracts.fields import ContractFailed
-from rebase_core.errors import DomainError, NotFound, ValidationFailed
+from rebase_core.errors import (
+    DocumensoFailed,
+    DomainError,
+    NotFound,
+    SigningUnavailable,
+    ValidationFailed,
+)
+
+_log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -32,7 +41,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse:
     """A domain error is a sentence and a status, never a stack trace. `NotFound` is a
     404, `ValidationFailed` a 422 in FastAPI's own shape so a form can point at the
-    field, `ContractFailed` a 503, anything else a 409."""
+    field, `ContractFailed` a 503, `DocumensoFailed` a 502, `SigningUnavailable` a 503,
+    anything else a 409."""
     assert isinstance(exc, DomainError)
     if isinstance(exc, NotFound):
         return JSONResponse({"detail": exc.message}, status_code=404)
@@ -53,6 +63,13 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
         # A contract that could not be typeset is the server's failure, not the
         # request's: pandoc missing, a template that no longer compiles, a malformed
         # REBASE_SIGNER_JSON. A sentence, and a status that says so.
+        return JSONResponse({"detail": exc.message}, status_code=503)
+    if isinstance(exc, DocumensoFailed):
+        # The signing site refused or did not answer: a gateway's failure, in its words
+        # and never its stack trace, which only the log keeps.
+        _log.warning("documenso refused a call: %s", exc.detail)
+        return JSONResponse({"detail": exc.message}, status_code=502)
+    if isinstance(exc, SigningUnavailable):
         return JSONResponse({"detail": exc.message}, status_code=503)
     return JSONResponse({"detail": exc.message}, status_code=409)
 

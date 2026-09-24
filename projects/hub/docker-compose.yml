@@ -33,6 +33,9 @@ x-api-environment: &api-environment
   REBASE_DOCUMENSO_API_TOKEN: ${REBASE_DOCUMENSO_API_TOKEN:-}
   REBASE_DOCUMENSO_WEBHOOK_SECRET: ${REBASE_DOCUMENSO_WEBHOOK_SECRET:-}
   REBASE_CONTRACTS_MAIL: ${REBASE_CONTRACTS_MAIL:-ciao@letsrebase.com}
+  # A draft text never leaves for signature; only the preview sets this true. Not an
+  # empty default: a bool field fails at start-up on an empty value.
+  REBASE_CONTRACTS_ALLOW_DRAFT: ${REBASE_CONTRACTS_ALLOW_DRAFT:-false}
 
 services:
   db:

@@ -8,8 +8,7 @@ import { cn } from '@rebase/ui/cn'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@rebase/ui/tooltip'
-import { admin, ApiError, type Company, type FiscalData, type MatchCreate, type MatchPrefill } from '@/lib/api'
+import { admin, ApiError, type Company, type FiscalData, type Match, type MatchCreate, type MatchPrefill } from '@/lib/api'
 import {
   CLIENTE_EMPTY,
   FISCAL_EMPTY,
@@ -298,14 +297,20 @@ function PreviewStep({
   prefill,
   onBack,
   onSave,
+  onSend,
   saving,
+  sending,
+  locked,
   failure,
 }: {
   previews: Previews
   prefill: MatchPrefill
   onBack: () => void
   onSave: () => void
+  onSend: () => void
   saving: boolean
+  sending: boolean
+  locked: boolean
   failure: Failure | null
 }) {
   const order = prefill.quadro_necessario
@@ -330,26 +335,20 @@ function PreviewStep({
         )}
       </ul>
       <p className="text-sm">{order}</p>
-      <p className="text-sm text-muted-foreground">Per ora si salva una bozza: nulla viene inviato.</p>
+      <p className="text-sm text-muted-foreground">
+        «Salva come bozza» non manda nulla a nessuno; «Invia per la firma» manda al freelance una mail per il documento
+        che parte.
+      </p>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="outline" onClick={onBack}>
+        <Button type="button" variant="outline" onClick={onBack} disabled={saving || sending || locked}>
           Indietro
         </Button>
-        <Button type="button" onClick={onSave} disabled={saving}>
+        <Button type="button" variant="outline" onClick={onSave} disabled={saving || sending}>
           {saving ? 'Salvo…' : 'Salva come bozza'}
         </Button>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span tabIndex={0} className="inline-flex">
-                <Button type="button" disabled>
-                  Invia per la firma
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Arriva con la firma elettronica</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <Button type="button" onClick={onSend} disabled={saving || sending}>
+          {sending ? 'Invio…' : 'Invia per la firma'}
+        </Button>
       </div>
       {failure && (
         <p role="alert" className="text-sm text-destructive">
@@ -360,11 +359,11 @@ function PreviewStep({
   )
 }
 
-/** «Crea match» (REB-387, phase 2): five steps from a card to a draft match with its
- *  documents. The tax data are saved when the admin leaves step 2; step 5 shows previews
- *  that nothing stores; «Salva come bozza» writes the match and takes the letter's
- *  number. «Invia per la firma» arrives with the electronic signature (phase 3). The
- *  company's `budget_giornaliero` is never shown or sent from this page (spec § 1h). */
+/** «Crea match» (REB-387): five steps from a card to a draft match with its documents.
+ *  The tax data are saved when the admin leaves step 2; step 5 shows previews that
+ *  nothing stores; «Salva come bozza» writes the match and takes the letter's number.
+ *  «Invia per la firma» writes the match once and sends it (REB-390). The company's
+ *  `budget_giornaliero` is never shown or sent from this page (spec § 1h). */
 export function AdminCreaMatch() {
   const { id } = useParams({ from: '/signedIn/admin/freelance/$id/match/new' })
   const navigate = useNavigate()
@@ -431,6 +430,23 @@ export function AdminCreaMatch() {
     mutationFn: (payload: MatchCreate) => admin.createMatch(id, payload),
     onSuccess: () => void navigate({ to: '/admin/freelance/$id/contracts', params: { id } }),
   })
+  // «Invia per la firma» writes the match first, once: after a refusal the draft exists,
+  // and the next click sends that one rather than writing another with a new number.
+  const [created, setCreated] = useState<Match | null>(null)
+  const sendNow = useMutation({
+    mutationFn: async (payload: MatchCreate) => {
+      const match = created ?? (await admin.createMatch(id, payload))
+      setCreated(match)
+      return admin.sendMatch(match.id)
+    },
+    onSuccess: () => void navigate({ to: '/admin/freelance/$id/contracts', params: { id } }),
+  })
+  const sendFailure = failureOf(sendNow.error, 'Non riesco a inviare per la firma.')
+  const previewFailure =
+    failureOf(save.error, 'Non riesco a salvare la bozza.') ??
+    (sendFailure && created
+      ? { ...sendFailure, message: `${sendFailure.message} La bozza è salvata: la trovi in «Match e contratti».` }
+      : sendFailure)
 
   const fiscalFailure = failureOf(saveFiscal.error, 'Non riesco a salvare i dati fiscali.')
   const letterFailure = failureOf(generate.error, 'Non riesco a generare l’anteprima.')
@@ -521,11 +537,18 @@ export function AdminCreaMatch() {
               setStep(3)
             }}
             onSave={() => {
+              if (created) return void navigate({ to: '/admin/freelance/$id/contracts', params: { id } })
               const body = payload()
               if (body) save.mutate(body)
             }}
+            onSend={() => {
+              const body = payload()
+              if (body) sendNow.mutate(body)
+            }}
             saving={save.isPending}
-            failure={failureOf(save.error, 'Non riesco a salvare la bozza.')}
+            sending={sendNow.isPending}
+            locked={created !== null}
+            failure={previewFailure}
           />
         )}
       </div>

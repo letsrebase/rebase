@@ -1,0 +1,310 @@
+"""Signing: a match's documents go out through Documenso and come back signed (REB-387,
+phase 3).
+
+`send_match` is «Invia per la firma». At most one document leaves at a time: the
+framework agreement when the freelancer has none active (the letter waits for it,
+`in_attesa`, spec § 1e), else the letter. A document is typeset again as it leaves, with
+the parties as they are today, the day it leaves in rebase's blank («Documento emesso da
+rebase il ...», spec § 5) and the labels under the signing blanks left undrawn; Documenso
+gets the PDF with the freelancer as its one signer (`rebase_core.documenso`), and the hub
+mails the link itself, one mail per document. A text that says `status: draft` never
+leaves (spec § 1f), unless `allow_draft` is true, which only the preview's `.env` sets
+through `REBASE_CONTRACTS_ALLOW_DRAFT`. If Documenso refuses or does not answer, the
+transaction rolls back and nothing is marked sent; if only the mail fails, the document
+is `inviato` and the report says so, for «Reinvia email».
+
+Every write locks the freelancer's row first, as `MatchService.create` and
+`FiscalService.save` already do, then the match, then its document, because two admins,
+the webhook and «Aggiorna stato» can reach the same freelancer's documents at once.
+"""
+
+import logging
+from collections.abc import Callable, Mapping
+from datetime import date, datetime
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from rebase_core.audit import AdminActionService, utcnow
+from rebase_core.config import Settings
+from rebase_core.contract_schemas import SendReport
+from rebase_core.contracts.fields import ContractFailed, Value
+from rebase_core.contracts.render import Renderer
+from rebase_core.documenso import DocumensoClient, fields_from_blanks
+from rebase_core.errors import InvalidState, NotFound, SigningUnavailable
+from rebase_core.framework import active_framework, pending_framework, rome_today
+from rebase_core.mail import EmailSender, document_name, signing_request_mail
+from rebase_core.matches import DOCUMENT_BY_KIND, ENTITY, LETTERA, QUADRO, MatchService, _full_name
+from rebase_core.models import ContractDocument, Freelancer, Match, User
+
+_log = logging.getLogger(__name__)
+
+FREELANCER = "freelancer"
+DEFAULT_CONTRACTS_MAIL = str(Settings.model_fields["contracts_mail"].default)
+# What a document must print once it leaves: rebase's, the freelancer's and the client's
+# data, and the fields the hub fills itself. What may stay blank is what the signing site
+# fills (the signature, the date) and the engagement's optional lines.
+MUST_PRINT_PREFIXES = ("rebase-", "professionista-", "cliente-")
+MUST_PRINT = frozenset({"numero", "data-contratto-quadro", "luogo-firma", "firma-rebase"})
+_ALLOW_DRAFT_NOTE = " Su un ambiente di prova lo permette REBASE_CONTRACTS_ALLOW_DRAFT."
+DRAFT_REFUSED = {
+    QUADRO: (
+        "Il testo del contratto quadro è ancora una bozza (status: draft): si genera e si "
+        "salva, ma non parte per la firma." + _ALLOW_DRAFT_NOTE
+    ),
+    LETTERA: (
+        "Il testo della lettera di incarico è ancora una bozza (status: draft): si genera "
+        "e si salva, ma non parte per la firma." + _ALLOW_DRAFT_NOTE
+    ),
+}
+NO_DOCUMENSO = (
+    "La firma elettronica non è attiva su questo ambiente: mancano l'indirizzo o il token "
+    "di Documenso."
+)
+NO_SENDER = (
+    "L'invio delle email non è attivo su questo ambiente: il link per firmare non "
+    "arriverebbe a nessuno."
+)
+
+
+def _filename(document: ContractDocument, version: str) -> str:
+    """The name Documenso keeps and seals as `<name>_signed.pdf` (probe § 4)."""
+    if document.kind == LETTERA:
+        return f"lettera-di-incarico-{document.numero}.pdf"
+    return f"contratto-quadro-v{version}.pdf"
+
+
+def _refuse_blanks(blank: list[str]) -> None:
+    """A document that would leave with a party's data missing is refused, naming it: the
+    signer's gaps are this environment's setting (a 503), any other gap the match's."""
+    unfilled = [key for key in blank if key.startswith(MUST_PRINT_PREFIXES) or key in MUST_PRINT]
+    signer = [key for key in unfilled if key.startswith("rebase-")]
+    if signer:
+        raise SigningUnavailable(
+            f"Mancano i dati di chi firma per rebase ({', '.join(signer)}): vanno in "
+            "REBASE_SIGNER_JSON prima di inviare."
+        )
+    if unfilled:
+        raise InvalidState(
+            f"Il documento lascerebbe in bianco {', '.join(unfilled)}: completali prima di "
+            "inviarlo."
+        )
+
+
+class SigningService:
+    def __init__(
+        self,
+        session: Session,
+        *,
+        renderer: Renderer | None = None,
+        documenso: DocumensoClient | None = None,
+        sender: EmailSender | None = None,
+        signer: Mapping[str, Value] | None = None,
+        contracts_mail: str = DEFAULT_CONTRACTS_MAIL,
+        allow_draft: bool = False,
+        today: Callable[[], date] = rome_today,
+        now: Callable[[], datetime] = utcnow,
+    ) -> None:
+        """Each collaborator is needed only by the steps that use it: a webhook that
+        cancels a document needs no renderer, a draft's cancellation no Documenso."""
+        self.session = session
+        self.renderer = renderer
+        self.documenso = documenso
+        self.sender = sender
+        self.contracts_mail = contracts_mail
+        self.allow_draft = allow_draft
+        self.today = today
+        self.now = now
+        self.matches = MatchService(session, renderer, signer, today)
+
+    # ---- «Invia per la firma» ---------------------------------------------------------
+
+    def send_match(self, match_id: UUID, admin_id: UUID) -> SendReport:
+        renderer = self._renderer()
+        self._documenso()
+        self._sender()
+        leaving: ContractDocument | None = None
+        try:
+            freelancer_id = self.session.scalar(
+                select(Match.freelancer_id).where(Match.id == match_id)
+            )
+            if freelancer_id is None:
+                raise NotFound(ENTITY, match_id)
+            # The freelancer's row first, as `MatchService.create` already does, so
+            # «Crea match» racing this send waits for it rather than reading a framework
+            # this send is about to dispatch as still merely `generato`.
+            self.session.execute(
+                select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
+            )
+            match = self._lock_match(match_id)
+            if match.stato not in ("bozza", "in_firma"):
+                raise InvalidState(
+                    f"Si invia per la firma solo un match in bozza o in firma: questo è "
+                    f"{match.stato}.",
+                    stato=match.stato,
+                )
+            letter = self._lock_letter(match.id)
+            if letter is None or letter.stato not in ("generato", "in_attesa"):
+                raise InvalidState(
+                    "La lettera di questo match è già partita, firmata o annullata: non c'è "
+                    "nulla da inviare."
+                )
+            active = active_framework(self.session, match.freelancer_id)
+            if not self.allow_draft:
+                for kind in (LETTERA,) if active is not None else (QUADRO, LETTERA):
+                    if renderer.is_draft(DOCUMENT_BY_KIND[kind]):
+                        raise InvalidState(DRAFT_REFUSED[kind])
+            if active is not None:
+                leaving = letter
+                self._dispatch(letter, active, admin_id)
+            else:
+                letter.stato = "in_attesa"
+                leaving = self._framework_to_send(match.freelancer_id, admin_id)
+                if leaving is not None:
+                    self._dispatch(leaving, None, admin_id)
+            match.stato = "in_firma"
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        sent_kind = leaving.kind if leaving is not None else None
+        sent_id = leaving.id if leaving is not None else None
+        mailed = self._mail_signing_request(leaving) if leaving is not None else None
+        AdminActionService(self.session).record(
+            ENTITY,
+            match_id,
+            "documents_sent",
+            admin_id,
+            {"documento": sent_id, "kind": sent_kind, "mail": mailed},
+        )
+        return SendReport(match=self.matches.get(match_id), inviato=sent_kind, mail_inviata=mailed)
+
+    def _framework_to_send(self, freelancer_id: UUID, admin_id: UUID) -> ContractDocument | None:
+        """The framework agreement a waiting letter needs, locked: none when one is out for
+        signature already (the letter leaves after it), the one generated for a draft,
+        else a new one, written now because the last was cancelled or refused."""
+        pending = pending_framework(self.session, freelancer_id)
+        if pending is None:
+            return self.matches.write_framework(freelancer_id, admin_id)
+        framework = self._lock(pending.id)
+        if framework.stato == "inviato":
+            return None
+        if framework.stato == "generato":
+            return framework
+        raise InvalidState(
+            "Il contratto quadro è cambiato mentre lo inviavi: ricarica la pagina e riprova."
+        )
+
+    def _dispatch(
+        self, document: ContractDocument, framework: ContractDocument | None, sent_by: UUID
+    ) -> None:
+        """Typeset `document` as it leaves, hand it to Documenso and record the envelope,
+        inside the caller's transaction: nothing here commits, so a refusal at any step
+        leaves the document as it was."""
+        renderer, documenso = self._renderer(), self._documenso()
+        name = DOCUMENT_BY_KIND[document.kind]
+        data = self.matches.data_for_sending(document, self.today(), framework)
+        rendered = renderer.render(name, data, signing=True)
+        if rendered.draft and not self.allow_draft:
+            raise InvalidState(DRAFT_REFUSED[document.kind])
+        _refuse_blanks(rendered.blank)
+        fields = fields_from_blanks(renderer.signature_blanks(name, data, signing=True))
+        user = self._owner(document.freelancer_id)
+        title = document_name(document.kind, document.numero)
+        envelope_id = documenso.create(
+            title=title[0].upper() + title[1:],
+            external_id=str(document.id),
+            filename=_filename(document, rendered.version),
+            pdf=rendered.pdf,
+            signer_email=user.email,
+            signer_name=_full_name(user),
+            fields=fields,
+        )
+        envelope = documenso.get(envelope_id)
+        signing_url = documenso.distribute(envelope_id)
+        document.data = dict(data)
+        document.pdf = rendered.pdf
+        document.text_version = rendered.version
+        document.testo_bozza = rendered.draft
+        document.documenso_id = envelope_id
+        document.documenso_item_id = envelope.item_id
+        document.signing_url = signing_url
+        document.stato = "inviato"
+        document.sent_at = self.now()
+        document.sent_by = sent_by
+
+    def _mail_signing_request(self, document: ContractDocument) -> bool:
+        """After the commit: a refused mail leaves the document `inviato`, and says so."""
+        if document.signing_url is None or self.sender is None:
+            return False
+        user = self._owner(document.freelancer_id)
+        mail = signing_request_mail(
+            user.email, user.nome, document.kind, document.numero, document.signing_url
+        )
+        if not self.sender.send(mail):
+            _log.warning("the signing mail of document %s was refused by the provider", document.id)
+            return False
+        return True
+
+    # ---- plumbing ----------------------------------------------------------------------
+
+    def _lock(self, document_id: UUID) -> ContractDocument:
+        """The document, row-locked until this transaction ends, and read again from the
+        database rather than from the session's memory: another transaction may have
+        moved it while this one waited."""
+        document = self.session.scalars(
+            select(ContractDocument)
+            .where(ContractDocument.id == document_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).first()
+        if document is None:
+            raise NotFound("documento", document_id)
+        return document
+
+    def _lock_match(self, match_id: UUID) -> Match:
+        match = self.session.scalars(
+            select(Match)
+            .where(Match.id == match_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).first()
+        if match is None:
+            raise NotFound(ENTITY, match_id)
+        return match
+
+    def _lock_letter(self, match_id: UUID) -> ContractDocument | None:
+        return self.session.scalars(
+            select(ContractDocument)
+            .where(ContractDocument.match_id == match_id)
+            .order_by(ContractDocument.created_at.desc(), ContractDocument.id.desc())
+            .limit(1)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).first()
+
+    def _owner(self, freelancer_id: UUID) -> User:
+        user = self.session.scalar(
+            select(User)
+            .join(Freelancer, Freelancer.user_id == User.id)
+            .where(Freelancer.id == freelancer_id)
+        )
+        if user is None:
+            raise NotFound("freelancer", freelancer_id)
+        return user
+
+    def _renderer(self) -> Renderer:
+        if self.renderer is None:
+            raise ContractFailed("no renderer was handed to SigningService")
+        return self.renderer
+
+    def _documenso(self) -> DocumensoClient:
+        if self.documenso is None:
+            raise SigningUnavailable(NO_DOCUMENSO)
+        return self.documenso
+
+    def _sender(self) -> EmailSender:
+        if self.sender is None:
+            raise SigningUnavailable(NO_SENDER)
+        return self.sender

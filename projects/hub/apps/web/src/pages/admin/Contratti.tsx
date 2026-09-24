@@ -16,7 +16,7 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, ApiError, type ContractDocument, type Fiscal, type FiscalData, type Match } from '@/lib/api'
-import { draftFromFiscal, toFiscalData, type FiscalDraft } from '@/lib/contracts'
+import { draftFromFiscal, sendReportMessage, toFiscalData, type FiscalDraft } from '@/lib/contracts'
 import { DOCUMENT_STATE_LABELS, MATCH_STATE_LABELS, formatDate } from '@/lib/format'
 import { Empty, Header, Row } from './lists'
 
@@ -161,12 +161,16 @@ function FiscalSection({ freelancerId, fiscale, onSaved }: { freelancerId: strin
 function MatchesSection({
   matches,
   busy,
+  canSend,
+  onSend,
   onCancel,
   onClose,
   error,
 }: {
   matches: Match[]
   busy: boolean
+  canSend: (match: Match) => boolean
+  onSend: (match: Match) => void
   onCancel: (match: Match) => void
   onClose: (match: Match) => void
   error: string | null
@@ -208,6 +212,18 @@ function MatchesSection({
                     <DocumentLinks document={match.lettera} />
                   </TableCell>
                   <TableCell className="text-right">
+                    {canSend(match) && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="mr-2"
+                        disabled={busy}
+                        aria-label={`Invia per la firma il match con ${match.nome_azienda}`}
+                        onClick={() => onSend(match)}
+                      >
+                        Invia per la firma
+                      </Button>
+                    )}
                     {match.stato === 'bozza' && (
                       <Button
                         type="button"
@@ -248,9 +264,9 @@ function MatchesSection({
   )
 }
 
-/** «Match e contratti» (REB-387, phase 2): the framework agreement with its dates, the
- *  tax data, and every match with its letter. No signing action yet: sending, resending,
- *  refreshing and recording a notice arrive with the electronic signature (phase 3). */
+/** «Match e contratti» (REB-387): the framework agreement with its dates, the tax data,
+ *  and every match with its letter; «Invia per la firma» on a match that has a document
+ *  to send (REB-390). */
 export function AdminContratti() {
   const { id } = useParams({ from: '/signedIn/admin/freelance/$id/contracts' })
   const client = useQueryClient()
@@ -260,18 +276,32 @@ export function AdminContratti() {
   const cancel = useMutation({ mutationFn: (matchId: string) => admin.cancelMatch(matchId), onSuccess: refresh })
   const close = useMutation({ mutationFn: (matchId: string) => admin.closeMatch(matchId), onSuccess: refresh })
   const [confirming, setConfirming] = useState<Match | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const send = useMutation({
+    mutationFn: (matchId: string) => admin.sendMatch(matchId),
+    onSuccess: (report) => {
+      setMessage(sendReportMessage(report))
+      refresh()
+    },
+  })
 
   if (contracts.isError) return <Empty>Non riesco a leggere i contratti di questa persona.</Empty>
   if (contracts.isPending) return <Empty>Caricamento…</Empty>
   const data = contracts.data
   const name = person.data ? `${person.data.nome} ${person.data.cognome}` : ''
-  const actionError = cancel.error ?? close.error
+  const actionError = send.error ?? cancel.error ?? close.error
   const actionFailure =
     actionError instanceof ApiError
       ? actionError.message
       : actionError
         ? 'Non riesco a completare l’operazione.'
         : null
+  // A draft leaves on request; a match in signature only when its letter still waits and
+  // no framework agreement is out for signature to carry it (a cancelled or refused one,
+  // or a signed one whose release failed).
+  const canSend = (match: Match) =>
+    match.stato === 'bozza' ||
+    (match.stato === 'in_firma' && match.lettera.stato === 'in_attesa' && data.quadro?.stato !== 'inviato')
   return (
     <>
       <Header title={name ? `Match e contratti · ${name}` : 'Match e contratti'}>
@@ -283,9 +313,19 @@ export function AdminContratti() {
       </Header>
       <FrameworkSection quadro={data.quadro} />
       <FiscalSection freelancerId={id} fiscale={data.fiscale} onSaved={refresh} />
+      {message && (
+        <p role="status" className="px-6 pb-3 text-sm">
+          {message}
+        </p>
+      )}
       <MatchesSection
         matches={data.matches}
-        busy={cancel.isPending || close.isPending}
+        busy={send.isPending || cancel.isPending || close.isPending}
+        canSend={canSend}
+        onSend={(match) => {
+          setMessage(null)
+          send.mutate(match.id)
+        }}
         onCancel={setConfirming}
         onClose={(match) => close.mutate(match.id)}
         error={actionFailure}

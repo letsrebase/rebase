@@ -3,7 +3,7 @@
  * takes typed values, and these helpers are the one place the two meet. Kept out of the
  * page files, which export components only (`react-refresh/only-export-components`).
  */
-import { LETTERA_TEXT_KEYS, type Cliente, type ClienteDraft, type Fiscal, type FiscalData, type Lettera, type LetteraDraft, type LetteraTextKey } from './api'
+import { LETTERA_TEXT_KEYS, type Cliente, type ClienteDraft, type Fiscal, type FiscalData, type Lettera, type LetteraDraft, type LetteraTextKey, type SendReport } from './api'
 
 export type FiscalDraft = Record<keyof FiscalData, string>
 
@@ -167,3 +167,15 @@ export const LETTERA_MULTILINE: ReadonlySet<LetteraFieldKey> = new Set<LetteraFi
   'dati_finalita',
   'altre_condizioni',
 ])
+
+/** The sentence the pages show after «Invia per la firma» (REB-390). */
+export function sendReportMessage(report: SendReport): string {
+  const numero = report.match.lettera.numero
+  const sent =
+    report.inviato === 'quadro'
+      ? `Partito il contratto quadro: la lettera n. ${numero} partirà da sola dopo la sua firma.`
+      : report.inviato === 'lettera'
+        ? `Partita la lettera di incarico n. ${numero}.`
+        : `La lettera n. ${numero} aspetta il contratto quadro già in firma e partirà da sola dopo.`
+  return report.mail_inviata === false ? `${sent} La mail però non è partita: usa «Reinvia email».` : sent
+}

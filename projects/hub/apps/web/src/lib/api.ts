@@ -552,6 +552,15 @@ export interface FreelancerContracts {
   fiscale: Fiscal | null
 }
 
+/** What «Invia per la firma» did (REB-390): the document that left now, none when the
+ *  letter waits for a framework agreement already out for signature, and whether its
+ *  mail left too. */
+export interface SendReport {
+  match: Match
+  inviato: 'quadro' | 'lettera' | null
+  mail_inviata: boolean | null
+}
+
 /** The letter's text fields, in the order `lettera-di-incarico.md` asks for them and the
  *  server's `LETTERA_TEXT_FIELDS` lists them. */
 export const LETTERA_TEXT_KEYS = [
@@ -788,6 +797,8 @@ export const admin = {
     request<Match>(`/api/hub/freelancers/${freelancerId}/matches`, json(payload)),
   cancelMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/cancel`, { method: 'POST' }),
   closeMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/close`, { method: 'POST' }),
+  /** «Invia per la firma» (REB-390): the document that can leave now goes to Documenso. */
+  sendMatch: (matchId: string) => request<SendReport>(`/api/hub/matches/${matchId}/send`, { method: 'POST' }),
   /** A plain href, like `cvUrl`: the route answers an attachment behind the cookie. */
   contractPdfUrl: (documentId: string, firmato = false) =>
     `/api/hub/contract-documents/${documentId}/pdf${firmato ? '?firmato=true' : ''}`,

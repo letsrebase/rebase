@@ -2,10 +2,10 @@
 
 An admin pairs a freelancer card with a company request; the hub writes the letter of
 engagement and, when the freelancer has no active framework agreement, the framework
-agreement too, and both PDFs are downloadable from here. Nothing leaves the hub yet:
-sending for signature arrives with Documenso (phase 3). The routes sit under `/api/hub/`
-beside the rest of the admin area. A contract that cannot be typeset is a 503 with a
-sentence (`main.domain_error_handler`).
+agreement too, and both PDFs are downloadable from here. «Invia per la firma» sends a
+match's documents through Documenso (`rebase_core.signing`, phase 3). The routes sit
+under `/api/hub/` beside the rest of the admin area. A contract that cannot be typeset
+is a 503 with a sentence (`main.domain_error_handler`).
 """
 
 from typing import Annotated, Literal
@@ -14,7 +14,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import AdminDep, RendererDep, SessionDep, SettingsDep
+from rebase_api.deps import AdminDep, RendererDep, SessionDep, SettingsDep, SigningDep
 from rebase_api.downloads import pdf_response
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import (
@@ -25,6 +25,7 @@ from rebase_core.contract_schemas import (
     MatchList,
     MatchPrefill,
     MatchRead,
+    SendReport,
 )
 from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
@@ -162,6 +163,21 @@ def close_match(admin: AdminDep, session: SessionDep, match_id: UUID) -> MatchRe
         raise NotFound(ENTITY, match_id)
     _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
     return MatchService(session).close(match_id, admin.id)
+
+
+@router.post("/matches/{match_id}/send", response_model=SendReport)
+def send_match(
+    admin: AdminDep, session: SessionDep, signing: SigningDep, match_id: UUID
+) -> SendReport:
+    """«Invia per la firma»: the document that can leave now goes to Documenso and the
+    freelancer gets its mail; a letter whose framework agreement is not signed yet waits
+    for it. 503 when this environment cannot sign, 502 when Documenso refuses, 409 for a
+    draft text or a match with nothing left to send."""
+    match = session.get(Match, match_id)
+    if match is None:
+        raise NotFound(ENTITY, match_id)
+    _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    return signing(session).send_match(match_id, admin.id)
 
 
 @router.get("/contract-documents/{document_id}/pdf")

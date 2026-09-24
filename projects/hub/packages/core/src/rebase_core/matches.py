@@ -533,6 +533,51 @@ class MatchService:
             created_by=admin_id,
         )
 
+    # ---- phase 3: the copy that leaves ---------------------------------------------------
+
+    def data_for_sending(
+        self, document: ContractDocument, today: date, framework: ContractDocument | None
+    ) -> dict[str, Value]:
+        """The fields `document` prints when it goes out for signature (REB-387 phase 3):
+        the engagement as the admin wrote it, the parties as they are today (the tax data
+        and the name saved since the draft, rebase's signer as the setting says now), the
+        day it leaves in rebase's blank, and for a letter the date its framework
+        agreement was signed, in Rome."""
+        freelancer, user = self._freelancer(document.freelancer_id)
+        fiscal = self._fiscal(freelancer.id)
+        if document.kind == QUADRO:
+            return self._quadro_data(user, fiscal, today)
+        signed = signed_on(framework) if framework is not None else None
+        return {
+            **document.data,
+            **self._rebase_fields(),
+            "data-contratto-quadro": italian_date(signed) if signed is not None else None,
+            "professionista-nome": _full_name(user),
+            "professionista-piva": fiscal.partita_iva,
+            **self._signing_fields(today),
+        }
+
+    def write_framework(self, freelancer_id: UUID, admin_id: UUID) -> ContractDocument:
+        """A new framework agreement, added and flushed and not committed, for a match
+        whose letter waits on one that was cancelled or refused: «Invia per la firma»
+        writes it and sends it in one transaction (REB-387 phase 3)."""
+        renderer = self._renderer()
+        freelancer, user = self._freelancer(freelancer_id)
+        fiscal = self._fiscal(freelancer.id)
+        document = self._document(
+            renderer,
+            QUADRO,
+            self._quadro_data(user, fiscal, self.today()),
+            freelancer.id,
+            None,
+            None,
+            "generato",
+            admin_id,
+        )
+        self.session.add(document)
+        self.session.flush()
+        return document
+
     # ---- lookups -----------------------------------------------------------------------
 
     def _match_read(self, match: Match, company: Company, letter: ContractDocument) -> MatchRead:

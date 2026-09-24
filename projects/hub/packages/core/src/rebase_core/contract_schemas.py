@@ -365,3 +365,13 @@ class MatchList(BaseModel):
 
     totale: int
     items: list[MatchListItem]
+
+
+class SendReport(BaseModel):
+    """What «Invia per la firma» did (REB-387 phase 3): the match as it is now, the kind
+    of the document that left (`quadro`, `lettera`, or none when the letter waits for a
+    framework agreement already out for signature), and whether its mail left too."""
+
+    match: MatchRead
+    inviato: str | None
+    mail_inviata: bool | None
