@@ -10,7 +10,7 @@ Documenso would POST to the webhook (`webhook`)."""
 import email
 import json
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from email.message import Message
 from typing import Any
 from urllib.parse import urlsplit
@@ -92,8 +92,13 @@ class FakeDocumenso:
         self.outages.add(operation)
 
     def sign(self, envelope_id: str, at: datetime) -> None:
+        """The signer's own `signedAt`; `completedAt` a few minutes later, as Documenso's
+        own envelope timestamp actually is (probe § 4) -- kept apart from `signedAt` on
+        purpose (fix round 1, M6), so a test that reads the wrong one notices."""
         envelope = self.envelopes[envelope_id]
-        envelope.status, envelope.signed_at, envelope.completed_at = "COMPLETED", at, at
+        envelope.status = "COMPLETED"
+        envelope.signed_at = at
+        envelope.completed_at = at + timedelta(minutes=3)
 
     def reject(self, envelope_id: str, reason: str) -> None:
         envelope = self.envelopes[envelope_id]

@@ -8,9 +8,10 @@ check is a dependency, so it runs before the body is validated.
 
 The answer is fast on purpose. Documenso gives up on a delivery after ten seconds and
 retries at once, three times within about 160 ms, then never again (probe § 5): the
-route only locks the document, moves it and commits (`SigningService.apply`), and the
-slow part (the sealed copy's download, the two mails, the letters a framework agreement
-releases) runs after the response, in a session of its own (`SigningService.finish`).
+route only locks the freelancer's row, its match and the document, in that order, moves
+the document and commits (`SigningService.apply`), and the slow part (the sealed copy's
+download, the two mails, the letters a framework agreement releases) runs after the
+response, in a session of its own (`SigningService.finish`).
 Every well-formed delivery is answered 200, handled or not, so Documenso never retries
 an event the hub chose to ignore. A delivery the hub missed entirely is recovered by
 «Aggiorna stato».
@@ -78,7 +79,15 @@ def documenso_webhook(
     outcome = outcome_from_webhook(payload)
     if outcome is None:
         return Ack()
-    signed = signing(session).apply(outcome)
+    try:
+        signed = signing(session).apply(outcome)
+    except Exception:
+        # `apply`'s own failure (a NotFound, a DB error) must not surface past the
+        # webhook: the secret's owner reads no stack trace, and recovery is «Aggiorna
+        # stato» (fix round 1, M3).
+        session.rollback()
+        _log.exception("applying the webhook for envelope %s failed", payload.payload.envelope_id)
+        return Ack()
     if signed is not None:
         background.add_task(_finish, open_session, signing, signed)
     return Ack()

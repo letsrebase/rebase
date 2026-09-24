@@ -11,6 +11,7 @@ import pytest
 from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
 from sqlalchemy import Engine, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 from test_matches import SIGNER, TABLES, TODAY, _body, _documents, _framework, _setup
 
@@ -25,7 +26,7 @@ from rebase_core.errors import DocumensoFailed, InvalidState, SigningUnavailable
 from rebase_core.fiscal import FiscalService
 from rebase_core.mail import EmailSender, Mail, RecordingSender
 from rebase_core.matches import MatchService
-from rebase_core.models import ContractDocument, Match
+from rebase_core.models import ContractDocument, Freelancer, Match
 from rebase_core.signing import SigningService
 
 # 23:30 UTC on 30 September is already 1 October in Rome.
@@ -596,7 +597,7 @@ def test_a_refused_distribute_cancels_the_orphaned_envelope(
     assert envelope.status == "CANCELLED"
 
 
-# ---- the webhook (Task 3, REB-391) -----------------------------------------------------
+# ---- the webhook (REB-391) --------------------------------------------------------------
 
 
 def _sent(
@@ -623,6 +624,22 @@ def _webhook(fake: FakeDocumenso, envelope_id: str, event: str) -> Outcome:
 def _envelope_of(document: ContractDocument) -> str:
     assert document.documenso_id is not None
     return document.documenso_id
+
+
+def _try_lock_nowait(session: Session, document_id: UUID) -> bool:
+    """`True` when `document_id` could be locked immediately, `False` when another
+    transaction already holds it (`FOR UPDATE NOWAIT`): the proof that a caller has, or
+    has not, taken this row yet (fix round 1, I1)."""
+    try:
+        session.execute(
+            select(ContractDocument.id)
+            .where(ContractDocument.id == document_id)
+            .with_for_update(nowait=True)
+        )
+        return True
+    except OperationalError:
+        session.rollback()
+        return False
 
 
 def test_a_completion_signs_the_document_with_the_signers_date_and_calls_nobody(
@@ -685,13 +702,110 @@ def test_a_second_delivery_waits_for_the_first_and_changes_nothing(
     assert results == [None]
 
 
-def test_a_letters_webhook_and_a_resend_of_its_match_do_not_deadlock(
+def test_apply_locks_the_freelancer_row_before_the_document(
     hub_engine: Engine, clean: Session
 ) -> None:
-    """Amendment 4: `apply`'s lock order (freelancer, match, document) now matches
-    `send_match`'s (freelancer, match, letter), so a webhook delivery for a letter and a
-    resend of the same match, run at once, only ever wait on each other's locks -- they
-    never deadlock, whichever of the two reaches the freelancer's row first."""
+    """Fix round 1, I1(a): a deterministic proof of `apply`'s lock order, not one left to
+    thread scheduling. A gate session holds the freelancer's row; `apply` runs in its own
+    thread and must block there -- proven not just by staying alive, but by a fourth
+    session managing to lock the letter's own document row with `FOR UPDATE NOWAIT`
+    while the gate holds: if `apply` had taken the document first (the old order), that
+    NOWAIT probe would fail. Releasing the gate lets `apply` finish: the letter signs and
+    its match turns active."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
+    letter = _letter_of(clean, match.id)
+    envelope = _envelope_of(letter)
+    fake.sign(envelope, SIGNED_AT)
+    outcome = _webhook(fake, envelope, "DOCUMENT_COMPLETED")
+    factory = session_factory(hub_engine)
+    gate, worker_session, probe = factory(), factory(), factory()
+    results: list[UUID | None] = []
+
+    def run_apply() -> None:
+        results.append(_signing(worker_session, renderer, fake, sender).apply(outcome))
+
+    try:
+        gate.execute(select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update())
+        worker = threading.Thread(target=run_apply)
+        worker.start()
+        worker.join(timeout=0.5)
+        assert worker.is_alive(), "apply did not wait on the freelancer's row"
+        # apply must not have locked the document yet: a NOWAIT probe on it succeeds.
+        assert _try_lock_nowait(probe, letter.id), (
+            "apply already held the document's row before the freelancer's"
+        )
+        probe.rollback()
+        gate.commit()
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+    finally:
+        gate.close()
+        worker_session.close()
+        probe.close()
+    assert results == [letter.id]
+    clean.expire_all()
+    assert _letter_of(clean, match.id).stato == "firmato"
+    assert clean.get(Match, match.id).stato == "attivo"  # type: ignore[union-attr]
+
+
+def test_finish_releases_a_waiting_letter_only_after_locking_the_freelancer_row(
+    hub_engine: Engine, clean: Session
+) -> None:
+    """Fix round 1, I1(b): the same gate proof for `finish` -> `_send_waiting`. A
+    framework just signed, its letter still waiting: while another session holds the
+    freelancer's row, the letter's own row is still free to a `FOR UPDATE NOWAIT` probe
+    (proving `_send_waiting` has not reached it yet); releasing the gate lets it go, and
+    the letter leaves."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    letter = _letter_of(clean, match.id)
+    factory = session_factory(hub_engine)
+    gate, worker_session, probe = factory(), factory(), factory()
+
+    def run_finish() -> None:
+        _signing(worker_session, renderer, fake, sender).finish(signed)
+
+    try:
+        gate.execute(select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update())
+        worker = threading.Thread(target=run_finish)
+        worker.start()
+        worker.join(timeout=0.5)
+        assert worker.is_alive(), (
+            "finish did not wait on the freelancer's row before releasing the letter"
+        )
+        assert _try_lock_nowait(probe, letter.id), (
+            "_send_waiting already held the letter's row before the freelancer's"
+        )
+        probe.rollback()
+        gate.commit()
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+    finally:
+        gate.close()
+        worker_session.close()
+        probe.close()
+    clean.expire_all()
+    assert _letter_of(clean, match.id).stato == "inviato"
+
+
+@pytest.mark.parametrize("apply_first", [True, False])
+def test_a_letters_webhook_and_a_resend_of_its_match_never_deadlock(
+    apply_first: bool, hub_engine: Engine, clean: Session
+) -> None:
+    """Fix round 1, I1(c): `apply`'s lock order now matches `send_match`'s (freelancer,
+    match, document/letter), so the two never deadlock -- forced deterministically, in
+    both orders, behind one gate on the freelancer's row, rather than left to thread
+    scheduling."""
     admin_id, freelancer_id, company_id = _setup(clean)
     _active_framework(clean, freelancer_id, admin_id)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
@@ -701,7 +815,7 @@ def test_a_letters_webhook_and_a_resend_of_its_match_do_not_deadlock(
     fake.sign(envelope, SIGNED_AT)
     outcome = _webhook(fake, envelope, "DOCUMENT_COMPLETED")
     factory = session_factory(hub_engine)
-    webhook_session, resend_session = factory(), factory()
+    gate, webhook_session, resend_session = factory(), factory(), factory()
     errors: list[BaseException] = []
     results: dict[str, object] = {}
 
@@ -719,24 +833,28 @@ def test_a_letters_webhook_and_a_resend_of_its_match_do_not_deadlock(
         except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
             errors.append(exc)
 
+    first_fn, second_fn = (deliver, resend) if apply_first else (resend, deliver)
     try:
-        webhook_worker = threading.Thread(target=deliver)
-        resend_worker = threading.Thread(target=resend)
-        webhook_worker.start()
-        resend_worker.start()
-        webhook_worker.join(timeout=5)
-        resend_worker.join(timeout=5)
-        assert not webhook_worker.is_alive(), "the webhook delivery never finished"
-        assert not resend_worker.is_alive(), "the resend never finished"
+        gate.execute(select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update())
+        first_worker = threading.Thread(target=first_fn)
+        first_worker.start()
+        first_worker.join(timeout=0.5)
+        assert first_worker.is_alive(), "the first operation did not wait on the freelancer's row"
+        second_worker = threading.Thread(target=second_fn)
+        second_worker.start()
+        second_worker.join(timeout=0.5)
+        assert second_worker.is_alive(), "the second operation did not wait on the freelancer's row"
+        gate.commit()
+        first_worker.join(timeout=5)
+        second_worker.join(timeout=5)
+        assert not first_worker.is_alive() and not second_worker.is_alive()
     finally:
+        gate.close()
         webhook_session.close()
         resend_session.close()
     assert not errors, errors
     # The letter was already `inviato` before either thread ran: a resend of a match
-    # already out for signature always finds nothing left to send, in either order --
-    # the exact sentence depends on whether it lands before or after the signature
-    # (the match's own state or the letter's), so only the domain error itself is
-    # asserted here.
+    # already out for signature always finds nothing left to send, in either order.
     assert isinstance(results.get("resend"), InvalidState)
 
 
@@ -901,3 +1019,77 @@ def test_a_cancellation_on_documenso_cancels_and_a_late_event_is_ignored(clean: 
     assert signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED")) is None
     assert _framework_of(clean, freelancer_id).stato == "annullato"
     assert signing.apply(Outcome("envelope_sconosciuto", "completed", SIGNED_AT)) is None
+
+
+def test_a_release_with_no_mail_sender_leaves_the_letters_waiting(clean: Session) -> None:
+    """Fix round 1, M4: `send_match` refuses up front without a mail sender, so a release
+    must not dispatch a letter to Documenso that nobody could then be told about. The
+    sender is checked before Documenso is touched, not after."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    match = _sent(clean, renderer, fake, RecordingSender(), freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, RecordingSender())
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    envelopes_before = len(fake.envelopes)
+
+    _signing(clean, renderer, fake, None).finish(signed)
+
+    assert _letter_of(clean, match.id).stato == "in_attesa"
+    assert len(fake.envelopes) == envelopes_before
+
+
+def test_two_concurrent_finishes_download_and_mail_the_signed_copy_once(
+    hub_engine: Engine, clean: Session
+) -> None:
+    """Fix round 1, M5: the webhook's own `finish` and an admin's «Aggiorna stato»
+    refresh can overlap on the same freshly signed document. `_store_signed_copy`'s row
+    lock serialises them: exactly one download, and exactly one pair of signed-copy
+    mails (to the freelancer and to rebase), however many callers race for it."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
+    envelope = _envelope_of(_letter_of(clean, match.id))
+    fake.sign(envelope, SIGNED_AT)
+    signed = _signing(clean, renderer, fake, sender).apply(
+        _webhook(fake, envelope, "DOCUMENT_COMPLETED")
+    )
+    assert signed is not None
+    factory = session_factory(hub_engine)
+    gate, first_session, second_session = factory(), factory(), factory()
+    before = len(sender.sent)
+
+    def call_finish(session: Session) -> None:
+        _signing(session, renderer, fake, sender).finish(signed)
+
+    try:
+        gate.execute(
+            select(ContractDocument.id).where(ContractDocument.id == signed).with_for_update()
+        )
+        first = threading.Thread(target=call_finish, args=(first_session,))
+        second = threading.Thread(target=call_finish, args=(second_session,))
+        first.start()
+        first.join(timeout=0.5)
+        assert first.is_alive(), "the first finish did not wait on the document row"
+        second.start()
+        second.join(timeout=0.5)
+        assert second.is_alive(), "the second finish did not wait on the document row"
+        gate.commit()
+        first.join(timeout=5)
+        second.join(timeout=5)
+        assert not first.is_alive() and not second.is_alive()
+    finally:
+        gate.close()
+        first_session.close()
+        second_session.close()
+    clean.expire_all()
+    letter = _letter_of(clean, match.id)
+    assert letter.signed_pdf == fake.signed_pdf(envelope)
+    downloads = [call for call in fake.calls if call[1].endswith("/download?version=signed")]
+    assert len(downloads) == 1
+    copies = [mail for mail in sender.sent[before:] if mail.attachments]
+    assert len(copies) == 2

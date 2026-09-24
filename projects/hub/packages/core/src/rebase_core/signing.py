@@ -17,8 +17,9 @@ Every write locks the freelancer's row first, as `MatchService.create` and
 `FiscalService.save` already do, then the match, then its document, because two admins,
 the webhook and «Aggiorna stato» can reach the same freelancer's documents at once.
 
-The webhook's side is `apply` and `finish`. `apply` only locks the document, moves it
-and commits, so Documenso gets its answer long before its ten seconds (probe § 5), and a
+The webhook's side is `apply` and `finish`. `apply` locks the freelancer's row, its match
+(when it has one) and the document, in that order, moves the document and commits, so
+Documenso gets its answer long before its ten seconds (probe § 5), and a
 second delivery of the same event, which can arrive while the first is still running,
 waits on the lock and finds nothing left to do. `finish` runs after that commit, in the
 webhook's background task or under «Aggiorna stato»: the sealed copy downloaded, stored
@@ -370,10 +371,9 @@ class SigningService:
     def _store_signed_copy(self, document_id: UUID) -> ContractDocument | None:
         """The download happens under the row's lock, so two callers download once: the
         second waits, then finds the copy stored. `None` when there is nothing to store.
-        The freelancer's row is deliberately not locked here (amendment 3, out of the
-        global order): this method holds one row lock and makes a network call (the
-        download), so it cannot join a lock cycle, and taking the freelancer's row too
-        would block «Crea match» for that freelancer for as long as Documenso takes."""
+        The freelancer's row is deliberately not locked here, out of the global order
+        (REB-391): a network call under one row lock cannot join a lock cycle, and adding
+        the freelancer's row would block «Crea match» for as long as Documenso takes."""
         document = self._lock(document_id)
         if (
             document.stato not in ("firmato", "disdetto")
@@ -416,7 +416,17 @@ class SigningService:
         """The letters that waited for this framework agreement (spec § 1e), each in a
         transaction of its own and mailed after its commit: a Documenso refusal leaves
         that letter waiting for the next `finish` and lets the others go. Only matches an
-        admin sent (`in_firma`); a draft's letter leaves when its match is sent."""
+        admin sent (`in_firma`); a draft's letter leaves when its match is sent.
+
+        `send_match` refuses up front without a mail sender (`_sender`), so a release
+        must not dispatch a letter to Documenso either when nobody could then be told
+        about it (fix round 1, M4): checked before any letter is even read."""
+        if self.sender is None:
+            _log.warning(
+                "no mail sender: the letters waiting on framework agreement %s stay waiting",
+                framework.id,
+            )
+            return
         waiting = list(
             self.session.execute(
                 select(ContractDocument.id, ContractDocument.match_id)

@@ -3,10 +3,12 @@ answer, and the slow part (the sealed copy, the two mails, the released letter) 
 in a session of its own."""
 
 import json
-from collections.abc import Iterator
+import logging
+from collections.abc import Callable, Iterator
 from contextlib import nullcontext
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
@@ -17,8 +19,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_documenso, get_renderer, get_session_opener
+from rebase_api.deps import get_documenso, get_renderer, get_session_opener, get_signing_factory
 from rebase_core.config import Settings, get_settings
+from rebase_core.documenso import Outcome
+from rebase_core.errors import NotFound
 from rebase_core.mail import RecordingSender
 from rebase_core.models import ContractDocument, User
 
@@ -210,7 +214,7 @@ def test_a_malformed_signer_setting_does_not_stop_a_refusal_from_cancelling_its_
     documenso: FakeDocumenso,
     api_session: Session,
 ) -> None:
-    """Amendment 1: `REBASE_SIGNER_JSON` parses lazily, only on a path that typesets a
+    """REB-391: `REBASE_SIGNER_JSON` parses lazily, only on a path that typesets a
     document (Task 2's REB-406 fix round 1, I1); neither `apply` nor a cancellation's
     `finish` ever reaches one, so a value malformed on this environment must not stop a
     refusal from cancelling its document."""
@@ -232,3 +236,37 @@ def test_a_malformed_signer_setting_does_not_stop_a_refusal_from_cancelling_its_
         "annullato",
         "Rifiutato dal freelance: Il domicilio non è raggiungibile",
     )
+
+
+def test_an_exception_inside_apply_is_swallowed_into_a_200(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    documenso: FakeDocumenso,
+    api_session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Fix round 1, M3: the webhook answers 200 for everything past the secret check, so
+    Documenso never retries an event the hub already has -- even one `apply` itself
+    fails on (a `NotFound`, a database error). The failure is logged, naming the
+    envelope, and left for «Aggiorna stato» to recover."""
+    # `api_engine`'s `upgrade_to_head` runs Alembic's own `env.py`, whose `fileConfig`
+    # disables every logger not in `alembic.ini`'s own `[loggers]` list -- this module's
+    # among them (the same trap `test_member_api.py` documents). Undo it here so
+    # `caplog` can see what this test is about.
+    logging.getLogger("rebase_api.routers.documenso").disabled = False
+    _match, envelope = _sent(client, sender, api_session)
+
+    class RaisingSigning:
+        def apply(self, outcome: Outcome) -> UUID | None:
+            raise NotFound("documento", envelope)
+
+    broken: Callable[[Session], RaisingSigning] = lambda session: RaisingSigning()  # noqa: E731
+    client.app.dependency_overrides[get_signing_factory] = lambda: broken  # type: ignore[attr-defined]
+
+    with caplog.at_level(logging.ERROR):
+        answered = _deliver(client, documenso.webhook(envelope, "DOCUMENT_COMPLETED"))
+
+    assert answered.status_code == 200 and answered.json() == {"ok": True}
+    assert any(envelope in record.getMessage() for record in caplog.records)
+    assert _document(api_session, "quadro").stato == "inviato"
