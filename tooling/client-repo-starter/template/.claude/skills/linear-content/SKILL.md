@@ -1,6 +1,6 @@
 ---
 name: linear-content
-description: Use when writing anything that lands on Linear for this repository: an issue title and body, a comment, a closing comment, a project description, a project status update. The shape, the language and what never goes in, so every card reads the same way. Triggers whenever save_issue, save_comment, save_project or save_status_update is about to be called.
+description: "Use when writing anything that lands on Linear for this repository: an issue title and body, a comment, a closing comment, a project description, a project status update. The shape, the language and what never goes in, so every card reads the same way. Triggers whenever save_issue, save_comment, save_project or save_status_update is about to be called."
 ---
 
 # Writing on Linear
