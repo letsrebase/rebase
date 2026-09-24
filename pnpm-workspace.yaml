@@ -29,23 +29,23 @@ packages:
 catalog:
   '@axe-core/playwright': ^4.13.0
   '@eslint/js': ^9.39.1
-  '@playwright/test': 1.62.1
-  '@testing-library/jest-dom': ^7.0.0
-  '@testing-library/react': ^16.3.2
-  '@testing-library/user-event': ^14.6.3
-  '@types/node': ^24.10.1
-  '@types/react': ^19.2.5
-  '@types/react-dom': ^19.2.3
+  '@playwright/test': 1.63.0
+  '@testing-library/jest-dom': ^7.0.1
+  '@testing-library/react': ^16.3.3
+  '@testing-library/user-event': ^14.6.7
+  '@types/node': ^24.13.5
+  '@types/react': ^19.3.0
+  '@types/react-dom': ^19.3.0
   '@vitejs/plugin-react': ^5.1.1
   eslint: ^9.39.1
   eslint-plugin-react-hooks: ^7.0.1
-  eslint-plugin-react-refresh: ^0.4.24
+  eslint-plugin-react-refresh: ^0.5.7
   globals: ^16.5.0
-  jsdom: ^30.0.1
+  jsdom: ^30.1.0
   openapi-typescript: 7.13.0
   typescript: '5.9'
-  typescript-eslint: ^8.46.4
-  vite: ^8.2.0
+  typescript-eslint: ^8.70.0
+  vite: ^8.3.0
   vitest: ^4.1.10
 
 # esbuild compiles a native binary in its install script. Without this it is skipped,
