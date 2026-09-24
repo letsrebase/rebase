@@ -19,10 +19,10 @@ whatever the client already runs; nothing here applies to it.
 
 ## The model
 
-- **One Linear workspace**, `letsrebase` — the same one `letsrebase/rebase` uses.
-- **One Linear team for client work**, `Delivery` (`DEL-N`), separate from `rebase`
-  (the team is rebase's own product work and stays that way). A Free-plan workspace
-  gets two teams; this is the second and last one until the plan changes.
+- **One Linear team per client**, separate from `rebase` (the product team) and from
+  every other client's team. A Free-plan workspace gets two teams total, so today
+  that is `rebase` plus one client team at a time; a second client's team waits for a
+  Business-plan upgrade rather than sharing a team with the first.
 - **Initiative = macroprogetto.** A product or a client relationship that outlives
   any single contract. Permanent, the same way `Website` or `PigroCRM` is permanent
   in the product team.
@@ -46,13 +46,15 @@ Full reasoning and the alternatives considered: `docs/design/DECISIONS.md`,
 ## The known gap, until the plan changes
 
 Linear's Free plan has no guest role and no private teams: every invited member is
-an Admin and sees every team in the workspace, `rebase`'s own product work included,
-and every other client's `Delivery` project. There is no technical boundary today
-between one freelancer and another client's work in the same workspace. Decided
-2026-09-24: accepted for now, revisited the day a Business-plan upgrade is worth its
-per-seat cost. Until then, the repository's own `AGENTS.md` tells every freelancer
-the boundary is a courtesy, not an enforced one, and the setup checklist below says
-the same to the person doing the inviting.
+an Admin and sees every team in the workspace, `rebase`'s own product work included.
+A client's own team keeps that client's initiatives and projects out of another
+client's board, so there is no cross-client leak under this model, only a leak into
+`rebase`'s own internal roadmap — and only while the Free plan's two-team cap keeps
+at most one client team open at a time (`docs/design/DECISIONS.md`, 2026-09-24).
+Decided 2026-09-24: accepted for now, revisited the day a Business-plan upgrade is
+worth its per-seat cost. Until then, the repository's own `AGENTS.md` tells every
+freelancer the boundary is a courtesy, not an enforced one, and the setup checklist
+below says the same to the person doing the inviting.
 
 ## What is in `template/`
 
@@ -89,18 +91,20 @@ For a genuinely new repository:
 
 1. **Create the Linear structures**, by hand or with an agent that has the
    `linear-rebase` MCP server (or the workspace's own hosted MCP, or the web app):
-   the `Delivery` team, if it does not exist yet — Linear's MCP surface has no
+   this client's own team, if it does not exist yet — Linear's MCP surface has no
    team-creation call, so this one step is always a human clicking "New team" in
-   `linear.app/letsrebase` settings, once, ever, on the Free plan's second slot;
-   then the initiative (if the macroprogetto is new) and the first project (the
-   contract), with `save_project`, the same fields `docs/tracker.md` uses for the
-   product team: a lead, both members if more than one of us is involved, an outcome
-   name that is a verb and the work it does.
+   `linear.app/letsrebase` settings, once per client, on the Free plan's second and
+   last team slot (check no other client already holds it; a second client's team
+   needs a Business-plan upgrade first); then the initiative (if the macroprogetto is
+   new) and the first project (the contract), with `save_project`, the same fields
+   `docs/tracker.md` uses for the product team: a lead, both members if more than one
+   of us is involved, an outcome name that is a verb and the work it does.
 2. **Run the script**:
    ```bash
    node tooling/client-repo-starter/new-client-repo.mjs \
      --repo point --org letsrebase \
      --project-name POINT --one-liner "padel and tennis session recording platform" \
+     --linear-team Point --linear-prefix POINT \
      --initiative "POINT" --linear-project "MVP delivery" \
      --create-repo --worktree --no-greptile
    ```

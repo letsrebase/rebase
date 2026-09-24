@@ -68,10 +68,15 @@ is worse than no PR at all.
 
 **Known limitation, on purpose, for now.** This workspace is on Linear's Free plan:
 no guest role, no private teams, so every invited member is an Admin and can see
-every team, including `rebase`'s own product work, and every other client's
-`Delivery` contracts. Stay inside `{{LINEAR_TEAM}}` / `{{LINEAR_PROJECT}}` even
-though the tool does not stop you from reading further: that boundary is a courtesy
-today, not an enforced one, and nothing seen outside it is repeated or acted on.
+every team in the workspace, `rebase`'s own product work included. This repository
+has its own Linear team, `{{LINEAR_TEAM}}`, not a team shared with another client, so
+that separation is real; what is not yet real is a technical wall stopping anyone
+from reading past it, since Free plan has no guest role to scope a member to one
+team, and the plan's two-team cap means a second client's team cannot exist
+alongside this one until a Business-plan upgrade happens, so today the only thing
+actually reachable past this contract is `rebase`'s own internal roadmap. Stay
+inside `{{LINEAR_TEAM}}` / `{{LINEAR_PROJECT}}` regardless of what the tool lets you
+read.
 
 ## Commits
 

@@ -7,6 +7,7 @@
 //   node tooling/client-repo-starter/new-client-repo.mjs \
 //     --repo point --org letsrebase \
 //     --project-name POINT --one-liner "padel and tennis session recording platform" \
+//     --linear-team Point --linear-prefix POINT \
 //     --initiative POINT --linear-project "MVP delivery" \
 //     --create-repo --worktree --no-greptile
 //
@@ -14,7 +15,12 @@
 //   node tooling/client-repo-starter/new-client-repo.mjs \
 //     --repo point --target-dir ../point \
 //     --project-name POINT --one-liner "..." \
+//     --linear-team Point --linear-prefix POINT \
 //     --initiative POINT --linear-project "MVP delivery"
+//
+// --linear-team names the Linear team this client gets on its own (one team per
+// client, never shared): on the Free plan there is only one such slot alongside
+// "rebase" itself, so check no other client already holds it first.
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
@@ -62,14 +68,15 @@ const args = parseArgs(process.argv.slice(2));
 if (!args.repo) fail("--repo is required");
 if (!args.projectName) fail("--project-name is required");
 if (!args.oneLiner) fail("--one-liner is required");
+if (!args.linearTeam) fail("--linear-team is required (one Linear team per client, never a shared default)");
+if (!args.linearPrefix) fail("--linear-prefix is required");
 if (!args.initiative) fail("--initiative is required");
 if (!args.linearProject) fail("--linear-project is required");
 if (args.createRepo && args.targetDir) fail("--create-repo and --target-dir are mutually exclusive");
 if (!args.createRepo && !args.targetDir) fail("give --target-dir (retrofit) or --create-repo (new repository)");
 
 args.org = args.org || "letsrebase";
-args.linearTeam = args.linearTeam || "Delivery";
-args.linearPrefix = (args.linearPrefix || "DEL").toUpperCase();
+args.linearPrefix = args.linearPrefix.toUpperCase();
 
 const targetDir = args.createRepo ? join(process.cwd(), args.repo) : args.targetDir;
 
@@ -220,14 +227,15 @@ Next, by hand or with an agent holding the linear-rebase MCP server:
 
 1. If the "${args.linearTeam}" Linear team does not exist yet in linear.app/letsrebase,
    create it (Settings -> Teams -> New team). Linear's MCP surface has no
-   team-creation call. This is the only step that is ever needed more than once
-   per macroprogetto, on the Free plan's second and last team slot.
+   team-creation call. Once per client, never shared: check no other client already
+   holds the Free plan's second and last team slot before creating a new one -- a
+   second client's team needs a Business-plan upgrade first.
 2. Create (or confirm) the "${args.initiative}" initiative and the "${args.linearProject}"
    project inside team "${args.linearTeam}", with a lead and every member involved
    (save_project). Add the first milestone(s) if the contract's phases are known.
 3. Invite the freelancer: GitHub collaborator on ${args.org}/${args.repo}, Linear
    member on linear.app/letsrebase. Tell them, in the same message, that this
    workspace is on the Free plan (AGENTS.md § Tracker: Linear § Known limitation):
-   they will see every team, not just this one.
+   they will see rebase's own internal roadmap too, not just this team.
 4. Point them at the repository's own AGENTS.md.
 `);
