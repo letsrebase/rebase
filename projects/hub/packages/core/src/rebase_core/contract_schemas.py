@@ -330,3 +330,38 @@ class ContractPdf(BaseModel):
 
     filename: str
     content: bytes
+
+
+class MatchListItem(BaseModel):
+    """One row of the admin's «Match» list (REB-413): everything the table shows and
+    nothing else -- no tax field of the freelancer's and no `budget_giornaliero` of the
+    request's. `lettera_data_inizio`/`lettera_data_fine` are the letter's own
+    `data-inizio`/`data-fine` exactly as it printed them (`italian_date`, already a
+    finished sentence), not re-formatted here. The four `lettera_*` fields are `None`
+    together, only were a match ever to have no letter at all -- `create` always
+    writes one, so this is the list staying honest about a shape `get` does not need
+    to allow for."""
+
+    id: UUID
+    freelancer_id: UUID
+    freelancer_nome: str
+    freelancer_cognome: str
+    freelancer_email: str
+    nome_azienda: str
+    figura_richiesta: str
+    stato: str
+    lettera_numero: str | None
+    lettera_stato: str | None
+    lettera_data_inizio: str | None
+    lettera_data_fine: str | None
+    created_at: datetime
+    created_by_nome: str
+    created_by_email: str
+
+
+class MatchList(BaseModel):
+    """Newest first (REB-413). `totale` counts every match the filters select, the
+    whole list, not just the page returned."""
+
+    totale: int
+    items: list[MatchListItem]

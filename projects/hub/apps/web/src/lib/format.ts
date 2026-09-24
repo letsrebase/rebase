@@ -44,6 +44,8 @@ export const STATE_LABELS: Record<string, string> = {
   chiuso: 'Chiuso',
 }
 
+/** REB-413: the state chips on the «Match» list, in the order the brief gives them. */
+export const MATCH_STATES = ['bozza', 'in_firma', 'attivo', 'concluso', 'annullato'] as const
 /** REB-387: what a match and a contract document are, in the admin's words. */
 export const MATCH_STATE_LABELS: Record<string, string> = {
   bozza: 'Bozza',

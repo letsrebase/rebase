@@ -8,10 +8,10 @@ beside the rest of the admin area. A contract that cannot be typeset is a 503 wi
 sentence (`main.domain_error_handler`).
 """
 
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import AdminDep, RendererDep, SessionDep, SettingsDep
@@ -22,6 +22,7 @@ from rebase_core.contract_schemas import (
     FiscalRead,
     FreelancerContracts,
     MatchCreate,
+    MatchList,
     MatchPrefill,
     MatchRead,
 )
@@ -29,13 +30,19 @@ from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
 from rebase_core.errors import NotFound
 from rebase_core.fiscal import FiscalService
-from rebase_core.matches import ENTITY, MatchService
+from rebase_core.matches import ENTITY, LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX, MatchService
 from rebase_core.models import ContractDocument, Freelancer, Match
+from rebase_core.search import SEARCH_MAX_LENGTH
 
 router = APIRouter(prefix="/api/hub", tags=["hub-admin"])
 
 DOCUMENT_ENTITY = "documento"
 NO_SIGNED_COPY = "Questo documento non ha ancora una copia firmata."
+
+Limit = Annotated[int, Query(ge=1, le=LIST_LIMIT_MAX)]
+Offset = Annotated[int, Query(ge=0)]
+SearchQ = Annotated[str | None, Query(max_length=SEARCH_MAX_LENGTH)]
+Stato = Annotated[str | None, Query(max_length=20)]
 
 
 def _writing(session: Session, settings: Settings, renderer: Renderer) -> MatchService:
@@ -114,6 +121,22 @@ def create_match(
     the framework agreement. 422 naming `fiscale` without tax data, `company_id` for a
     closed request."""
     return _writing(session, settings, renderer).create(freelancer_id, payload, admin.id)
+
+
+@router.get("/matches", response_model=MatchList)
+def list_matches(
+    _: AdminDep,
+    session: SessionDep,
+    stato: Stato = None,
+    q: SearchQ = None,
+    limit: Limit = LIST_LIMIT_DEFAULT,
+    offset: Offset = 0,
+) -> MatchList:
+    """«Match» (REB-413): every match, newest first. Declared before
+    `GET /matches/{match_id}` -- FastAPI matches routes in the order they are
+    registered, and a static path must come first or `/matches/{match_id}` would
+    swallow it. 422 naming `stato` for an unknown state."""
+    return MatchService(session).list_all(stato=stato, q=q, limit=limit, offset=offset)
 
 
 @router.get("/matches/{match_id}", response_model=MatchRead)

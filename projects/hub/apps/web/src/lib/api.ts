@@ -506,6 +506,42 @@ export interface Match {
   lettera: ContractDocument
 }
 
+/** One row of the admin's «Match» list (REB-413): never a tax field and never
+ *  `budget_giornaliero`, the same rule `Match` and `ContractDocument` already keep.
+ *  `lettera_*` is `null` together, only were a match somehow to have no letter. */
+export interface MatchListItem {
+  id: string
+  freelancer_id: string
+  freelancer_nome: string
+  freelancer_cognome: string
+  freelancer_email: string
+  nome_azienda: string
+  figura_richiesta: string
+  stato: MatchStato
+  lettera_numero: string | null
+  lettera_stato: DocumentStato | null
+  lettera_data_inizio: string | null
+  lettera_data_fine: string | null
+  created_at: string
+  created_by_nome: string
+  created_by_email: string
+}
+
+/** `GET /api/hub/matches`'s shape (REB-413): newest first, `totale` counting every
+ *  row the filters select, not just the page returned. */
+export interface MatchList {
+  totale: number
+  items: MatchListItem[]
+}
+
+/** What `GET /api/hub/matches` takes beside `limit`/`offset` (REB-413): `stato` one of
+ *  `MatchStato`, `q` matching the freelancer's name, surname or email and the
+ *  company's name. */
+export interface MatchesFilters {
+  stato?: string
+  q?: string
+}
+
 /** «Match e contratti»: the framework agreement at the top, every one of them, the
  *  matches newest first, and the tax data the page edits. */
 export interface FreelancerContracts {
@@ -725,6 +761,11 @@ export const admin = {
    *  request, which the caller already reads through its own detail query. */
   revertAction: (kind: CommentKind, id: string, actionId: string) =>
     request<unknown>(`/api/hub/${kind}/${id}/audit/${actionId}/revert`, { method: 'POST' }),
+  /** «Match» (REB-413): every match in the admin area, newest first. */
+  matches: (filters: MatchesFilters & { limit?: number; offset?: number } = {}) => {
+    const qs = filterQuery(filters)
+    return request<MatchList>(`/api/hub/matches${qs ? `?${qs}` : ''}`)
+  },
   /** A freelancer's matches and contracts (REB-387). */
   contracts: (freelancerId: string) =>
     request<FreelancerContracts>(`/api/hub/freelancers/${freelancerId}/matches`),

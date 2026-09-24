@@ -141,6 +141,7 @@ def test_without_the_cookie_every_match_route_is_a_401(client: TestClient, admin
         ("GET", f"/api/hub/freelancers/{MISSING}/matches/prefill?company_id={MISSING}"),
         ("POST", f"/api/hub/freelancers/{MISSING}/matches/preview"),
         ("POST", f"/api/hub/freelancers/{MISSING}/matches"),
+        ("GET", "/api/hub/matches"),
         ("GET", f"/api/hub/matches/{MISSING}"),
         ("POST", f"/api/hub/matches/{MISSING}/cancel"),
         ("POST", f"/api/hub/matches/{MISSING}/close"),
@@ -308,6 +309,83 @@ def test_a_render_that_fails_is_a_503_with_a_sentence(
     assert created.status_code == 503
     assert created.json()["detail"].startswith("La generazione del contratto non è riuscita")
     assert client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()["matches"] == []
+
+
+def _apply_member(client: TestClient, email: str) -> None:
+    response = client.post(
+        "/api/hub/freelancers",
+        data={
+            "nome": "Bob",
+            "cognome": "Ross",
+            "email": email,
+            "tariffa_giornaliera": "300",
+            "posizione": "Designer",
+            "remoto": "remoto",
+        },
+        files={"cv": ("Bob CV.pdf", PDF, "application/pdf")},
+    )
+    assert response.status_code == 201, response.text
+
+
+def _login_as(client: TestClient, sender: RecordingSender, email: str) -> None:
+    assert client.post("/api/hub/auth/link", json={"email": email}).status_code == 202
+    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    assert match
+    assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
+
+
+def test_without_the_cookie_the_match_list_is_a_401(client: TestClient, admin: None) -> None:
+    assert client.get("/api/hub/matches").status_code == 401
+
+
+def test_a_signed_in_member_hitting_the_match_list_is_403_not_401(
+    client: TestClient, admin: None, sender: RecordingSender
+) -> None:
+    _apply_member(client, "bob@studio.it")
+    _login_as(client, sender, "bob@studio.it")
+    assert client.get("/api/hub/matches").status_code == 403
+
+
+def test_the_match_list_answers_200_with_filters_and_carries_no_budget_or_tax_field(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    created = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    )
+    assert created.status_code == 201, created.text
+    match = created.json()
+
+    listed = client.get("/api/hub/matches")
+    assert listed.status_code == 200, listed.text
+    body = listed.json()
+    assert body["totale"] == 1
+    assert [item["id"] for item in body["items"]] == [match["id"]]
+    row = body["items"][0]
+    assert row["nome_azienda"] == "ACME Srl"
+    assert row["lettera_numero"] == match["lettera"]["numero"]
+    assert BUDGET not in listed.text
+    assert not any(key in row for key in ("codice_fiscale", "partita_iva", "domicilio", "pec"))
+
+    by_state = client.get("/api/hub/matches", params={"stato": "bozza"})
+    assert by_state.status_code == 200
+    assert by_state.json()["totale"] == 1
+    by_wrong_state = client.get("/api/hub/matches", params={"stato": "attivo"})
+    assert by_wrong_state.json()["totale"] == 0
+
+    by_search = client.get("/api/hub/matches", params={"q": "ACME"})
+    assert [item["id"] for item in by_search.json()["items"]] == [match["id"]]
+    by_missing_search = client.get("/api/hub/matches", params={"q": "nessuno"})
+    assert by_missing_search.json()["items"] == []
+
+
+def test_the_match_list_422s_on_an_unknown_state(
+    client: TestClient, admin: None, sender: RecordingSender
+) -> None:
+    _login(client, sender)
+    refused = client.get("/api/hub/matches", params={"stato": "chissà"})
+    assert refused.status_code == 422
 
 
 def test_a_malformed_signer_setting_is_a_503_not_a_crash(

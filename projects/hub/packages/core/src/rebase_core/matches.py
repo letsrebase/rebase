@@ -18,8 +18,8 @@ from collections.abc import Callable, Mapping
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, aliased
 
 from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.contract_schemas import (
@@ -28,6 +28,8 @@ from rebase_core.contract_schemas import (
     FreelancerContracts,
     LetteraDraft,
     MatchCreate,
+    MatchList,
+    MatchListItem,
     MatchPrefill,
     MatchRead,
 )
@@ -50,7 +52,16 @@ from rebase_core.framework import (
     rome_today,
     signed_on,
 )
-from rebase_core.models import Company, ContractDocument, Freelancer, FreelancerFiscal, Match, User
+from rebase_core.models import (
+    MATCH_STATES,
+    Company,
+    ContractDocument,
+    Freelancer,
+    FreelancerFiscal,
+    Match,
+    User,
+)
+from rebase_core.search import matches_any
 
 ENTITY = "match"
 QUADRO, LETTERA = "quadro", "lettera"
@@ -58,6 +69,8 @@ DOCUMENT_BY_KIND = {QUADRO: "contratto-quadro", LETTERA: "lettera-di-incarico"}
 SIGNED_ELECTRONICALLY = "firmato elettronicamente"
 PEC_MISSING = "non indicata"
 DAY_RATE = "a giornata"
+LIST_LIMIT_DEFAULT = 100
+LIST_LIMIT_MAX = 500
 
 
 def issued_by_rebase(day: date) -> str:
@@ -112,6 +125,68 @@ class MatchService:
         if letter is None:
             raise NotFound("lettera", match_id)
         return self._match_read(row[0], row[1], letter)
+
+    def list_all(
+        self,
+        *,
+        stato: str | None,
+        q: str | None,
+        limit: int = LIST_LIMIT_DEFAULT,
+        offset: int = 0,
+    ) -> MatchList:
+        """«Match» (REB-413): every match the admin area lists, newest first, one query
+        for the freelancer, the company, the creating admin and the letter -- no N+1.
+        A soft-deleted request still names the match that came from it, the same as
+        `get`; a soft-deleted freelancer's match is gone, the same as `for_freelancer`.
+        `stato` is one of `MATCH_STATES` or a `ValidationFailed` naming the field, the
+        same shape a 422 elsewhere in this module already takes. Neither
+        `budget_giornaliero` nor a tax field is read here."""
+        if stato is not None and stato not in MATCH_STATES:
+            raise ValidationFailed(ENTITY, "stato", "stato sconosciuto")
+        limit = max(1, min(limit, LIST_LIMIT_MAX))
+        offset = max(0, offset)
+
+        freelancer_user = aliased(User)
+        admin_user = aliased(User)
+        base = (
+            select(Match, Company, freelancer_user, admin_user, ContractDocument)
+            .join(Company, Company.id == Match.company_id)
+            .join(Freelancer, Freelancer.id == Match.freelancer_id)
+            .join(freelancer_user, freelancer_user.id == Freelancer.user_id)
+            .join(admin_user, admin_user.id == Match.created_by)
+            .outerjoin(
+                ContractDocument,
+                (ContractDocument.match_id == Match.id) & (ContractDocument.kind == LETTERA),
+            )
+            .where(Freelancer.deleted_at.is_(None))
+        )
+        if stato is not None:
+            base = base.where(Match.stato == stato)
+        term = (q or "").strip()
+        if term:
+            base = base.where(
+                matches_any(
+                    (
+                        freelancer_user.nome,
+                        freelancer_user.cognome,
+                        freelancer_user.email,
+                        Company.nome_azienda,
+                    ),
+                    term,
+                )
+            )
+
+        totale = self.session.scalar(select(func.count()).select_from(base.subquery())) or 0
+        rows = self.session.execute(
+            base.order_by(Match.created_at.desc(), Match.id.desc()).limit(limit).offset(offset)
+        ).all()
+        return MatchList(
+            totale=totale,
+            items=[
+                self._list_item(match, company, freelancer, admin, letter)
+                for match, company, freelancer, admin, letter in rows
+            ],
+        )
 
     def for_freelancer(self, freelancer_id: UUID) -> FreelancerContracts:
         self._freelancer(freelancer_id)
@@ -464,6 +539,32 @@ class MatchService:
             cancelled_at=match.cancelled_at,
             updated_at=match.updated_at,
             lettera=document_read(letter, self.today(), text_version(DOCUMENT_BY_KIND[QUADRO])),
+        )
+
+    def _list_item(
+        self,
+        match: Match,
+        company: Company,
+        freelancer_user: User,
+        admin_user: User,
+        letter: ContractDocument | None,
+    ) -> MatchListItem:
+        return MatchListItem(
+            id=match.id,
+            freelancer_id=match.freelancer_id,
+            freelancer_nome=freelancer_user.nome,
+            freelancer_cognome=freelancer_user.cognome,
+            freelancer_email=freelancer_user.email,
+            nome_azienda=company.nome_azienda,
+            figura_richiesta=company.figura_richiesta,
+            stato=match.stato,
+            lettera_numero=letter.numero if letter is not None else None,
+            lettera_stato=letter.stato if letter is not None else None,
+            lettera_data_inizio=letter.data.get("data-inizio") if letter is not None else None,
+            lettera_data_fine=letter.data.get("data-fine") if letter is not None else None,
+            created_at=match.created_at,
+            created_by_nome=_full_name(admin_user),
+            created_by_email=admin_user.email,
         )
 
     def _renderer(self) -> Renderer:

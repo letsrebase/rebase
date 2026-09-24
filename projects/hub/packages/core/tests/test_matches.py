@@ -17,7 +17,13 @@ from sqlalchemy.orm import Session
 from rebase_core import matches as matches_module
 from rebase_core.audit import AdminActionService
 from rebase_core.companies import CompanyService
-from rebase_core.contract_schemas import ClienteData, FiscalData, LetteraFields, MatchCreate
+from rebase_core.contract_schemas import (
+    ClienteData,
+    FiscalData,
+    LetteraFields,
+    MatchCreate,
+    MatchListItem,
+)
 from rebase_core.contracts.fields import FIELD, TERM, ContractFailed, Value
 from rebase_core.contracts.render import Renderer, text_path
 from rebase_core.db import session_factory
@@ -596,3 +602,143 @@ def test_two_admins_matching_the_same_freelancer_at_once_never_leave_two_open_fr
     finally:
         first.close()
         second.close()
+
+
+# ---- the admin's «Match» list (REB-413) -------------------------------------------------
+
+
+def _second_card(session: Session, **change: object) -> UUID:
+    payload: dict[str, object] = {
+        "nome": "Grace",
+        "cognome": "Hopper",
+        "email": "grace@studio.it",
+        "tariffa_giornaliera": Decimal("500"),
+        "posizione": "Frontend developer",
+        "remoto": "remoto",
+    }
+    payload.update(change)
+    row, _ = FreelancerService(session).apply(
+        FreelancerCreate(**payload),  # type: ignore[arg-type]
+        PDF,
+        "cv.pdf",
+        "application/pdf",
+    )
+    return row.id
+
+
+def test_the_match_list_is_newest_first_with_its_letter_and_period(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean, today=date(2026, 12, 1))
+    first = service.create(freelancer_id, _body(company_id), admin_id)
+    second = service.create(freelancer_id, _body(company_id), admin_id)
+    page = service.list_all(stato=None, q=None, limit=100, offset=0)
+    assert page.totale == 2
+    assert [item.id for item in page.items] == [second.id, first.id]
+    row = page.items[0]
+    assert row.freelancer_id == freelancer_id
+    assert (row.freelancer_nome, row.freelancer_cognome, row.freelancer_email) == (
+        "Ada",
+        "Lovelace",
+        "ada@studio.it",
+    )
+    assert (row.nome_azienda, row.figura_richiesta) == ("ACME Srl", "Backend developer")
+    assert row.stato == "bozza"
+    assert (row.lettera_numero, row.lettera_stato) == (second.lettera.numero, second.lettera.stato)
+    assert row.lettera_data_inizio == "1° ottobre 2026"
+    assert row.lettera_data_fine is None
+    assert row.created_by_nome == "Ivan"
+    assert row.created_by_email == "ivan@rebase.it"
+
+
+def test_the_match_list_filters_by_state_and_refuses_an_unknown_one(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    cancelled = service.create(freelancer_id, _body(company_id), admin_id)
+    service.cancel(cancelled.id, admin_id)
+    draft = service.create(freelancer_id, _body(company_id), admin_id)
+
+    page = service.list_all(stato="bozza", q=None, limit=100, offset=0)
+    assert [item.id for item in page.items] == [draft.id]
+    assert page.totale == 1
+
+    with pytest.raises(ValidationFailed) as refused:
+        service.list_all(stato="chissà", q=None, limit=100, offset=0)
+    assert refused.value.details["field"] == "stato"
+
+
+def test_the_match_list_search_matches_the_freelancer_and_the_company(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    service.create(freelancer_id, _body(company_id), admin_id)
+
+    other_freelancer_id = _second_card(clean)
+    _fiscal(clean, other_freelancer_id, admin_id)
+    other_company_id = _request(clean, nome_azienda="Bianchi Srl", figura_richiesta="Designer")
+    service.create(
+        other_freelancer_id,
+        MatchCreate(
+            company_id=other_company_id,
+            cliente=ClienteData(
+                cliente_ragione_sociale="Bianchi", cliente_piva="09876543210", cliente_sede="Roma"
+            ),
+            lettera=LetteraFields(
+                ruolo="Designer",
+                attivita="Il design del prodotto.",
+                data_inizio=date(2026, 10, 1),
+                compenso=Decimal("500"),
+                giorni_pagamento=30,
+                fine_mese=True,
+            ),
+        ),
+        admin_id,
+    )
+
+    by_surname = service.list_all(stato=None, q="lovelace", limit=100, offset=0)
+    assert [item.freelancer_email for item in by_surname.items] == ["ada@studio.it"]
+
+    by_email = service.list_all(stato=None, q="GRACE@studio.it", limit=100, offset=0)
+    assert [item.freelancer_email for item in by_email.items] == ["grace@studio.it"]
+
+    by_company = service.list_all(stato=None, q="bianchi", limit=100, offset=0)
+    assert [item.nome_azienda for item in by_company.items] == ["Bianchi Srl"]
+
+
+def test_the_match_list_still_names_a_soft_deleted_requests_company(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    match = service.create(freelancer_id, _body(company_id), admin_id)
+    CompanyService(clean).soft_delete(company_id, admin_id)
+
+    page = service.list_all(stato=None, q=None, limit=100, offset=0)
+    assert [(item.id, item.nome_azienda) for item in page.items] == [(match.id, "ACME Srl")]
+
+
+def test_the_match_list_hides_a_soft_deleted_freelancers_match(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    service.create(freelancer_id, _body(company_id), admin_id)
+    FreelancerService(clean).soft_delete(freelancer_id, admin_id)
+
+    page = service.list_all(stato=None, q=None, limit=100, offset=0)
+    assert page.items == []
+    assert page.totale == 0
+
+
+def test_the_match_list_paginates_with_a_total(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean, today=date(2026, 12, 1))
+    ids = [service.create(freelancer_id, _body(company_id), admin_id).id for _ in range(3)]
+    newest_first = list(reversed(ids))
+
+    first_page = service.list_all(stato=None, q=None, limit=2, offset=0)
+    assert first_page.totale == 3
+    assert [item.id for item in first_page.items] == newest_first[:2]
+
+    second_page = service.list_all(stato=None, q=None, limit=2, offset=2)
+    assert [item.id for item in second_page.items] == newest_first[2:]
+
+
+def test_the_match_list_row_carries_no_tax_field_and_no_budget() -> None:
+    fields = set(MatchListItem.model_fields)
+    assert not any("budget" in name for name in fields)
+    assert fields.isdisjoint({"codice_fiscale", "partita_iva", "domicilio", "pec"})

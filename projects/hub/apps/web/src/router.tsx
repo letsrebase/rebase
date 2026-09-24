@@ -5,7 +5,7 @@ import {
   createRouter,
   redirect,
 } from '@tanstack/react-router'
-import type { CompaniesFilters, Remoto, TalentiFilters } from '@/lib/api'
+import type { CompaniesFilters, MatchesFilters, Remoto, TalentiFilters } from '@/lib/api'
 import { Shell } from '@/components/Shell'
 import { Chooser } from '@/pages/Chooser'
 import { CompanyWizard } from '@/pages/CompanyWizard'
@@ -19,6 +19,7 @@ import { AdminGuida } from '@/pages/admin/Guida'
 import { AdminPigro } from '@/pages/admin/Pigro'
 import { AdminContratti } from '@/pages/admin/Contratti'
 import { AdminCreaMatch } from '@/pages/admin/CreaMatch'
+import { AdminMatches } from '@/pages/admin/Matches'
 import { Thanks } from '@/pages/Thanks'
 import {
   AdminCompanies,
@@ -290,6 +291,17 @@ const adminFreelanceRedirect = createRoute({
     throw redirect({ to: '/admin/talent' })
   },
 })
+// REB-413: the last addition to the milestone, listing every match the other four
+// admin pages create (Task 5-8) rather than any one card's or request's own.
+const adminMatches = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/matches',
+  component: AdminMatches,
+  validateSearch: (search: Record<string, unknown>): MatchesFilters => ({
+    stato: strParam(search.stato),
+    q: strParam(search.q),
+  }),
+})
 const adminCompanies = createRoute({
   getParentRoute: () => adminArea,
   path: '/companies',
@@ -389,6 +401,7 @@ const routeTree = root.addChildren([
       adminFreelanceContracts,
       adminFreelanceMatchNew,
       adminFreelanceRedirect,
+      adminMatches,
       adminCompanies,
       adminCompaniesRedirect,
       adminCompaniesDetail,
