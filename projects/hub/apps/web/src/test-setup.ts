@@ -1,6 +1,16 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, configure } from '@testing-library/react'
 import { afterEach } from 'vitest'
+
+// Testing Library's own `findBy*`/`waitFor` default (1000ms) is unrelated to vitest's
+// `testTimeout` (20s, this file's own `vite.config.ts`): it is how long a query keeps
+// retrying before it reports "unable to find", and on this machine, under the full
+// `pnpm --filter hub test` run (~35 files in parallel, load average in the double or
+// triple digits on 10 cores), the first render after a mocked `fetch` regularly takes
+// longer than that to commit. That is not a broken page, just a starved CPU: the same
+// pages render fine alone. Raised well past the worst full-run timings seen so far
+// (REB-409), staying comfortably under `testTimeout` so a genuine hang still fails.
+configure({ asyncUtilTimeout: 10_000 })
 
 afterEach(() => cleanup())
 
