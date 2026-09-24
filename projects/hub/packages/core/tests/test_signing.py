@@ -20,11 +20,12 @@ from rebase_core.contract_schemas import FiscalData, MatchRead, SendReport
 from rebase_core.contracts.fields import ContractFailed, Value
 from rebase_core.contracts.render import Renderer
 from rebase_core.db import session_factory
+from rebase_core.documenso import Outcome, WebhookBody, outcome_from_webhook
 from rebase_core.errors import DocumensoFailed, InvalidState, SigningUnavailable
 from rebase_core.fiscal import FiscalService
 from rebase_core.mail import EmailSender, Mail, RecordingSender
 from rebase_core.matches import MatchService
-from rebase_core.models import ContractDocument
+from rebase_core.models import ContractDocument, Match
 from rebase_core.signing import SigningService
 
 # 23:30 UTC on 30 September is already 1 October in Rome.
@@ -108,6 +109,26 @@ def _draft(
     session: Session, renderer: Renderer, freelancer_id: UUID, company_id: UUID, admin_id: UUID
 ) -> MatchRead:
     return _matches(session, renderer).create(freelancer_id, _body(company_id), admin_id)
+
+
+def _active_framework(
+    session: Session, freelancer_id: UUID, admin_id: UUID, signed_at: datetime = SIGNED_AT
+) -> ContractDocument:
+    """A framework agreement as a signature leaves one."""
+    document = ContractDocument(
+        kind="quadro",
+        freelancer_id=freelancer_id,
+        text_version="0.1",
+        testo_bozza=False,
+        data={},
+        pdf=b"%PDF-quadro",
+        stato="firmato",
+        signed_at=signed_at,
+        created_by=admin_id,
+    )
+    session.add(document)
+    session.commit()
+    return document
 
 
 def test_the_first_send_hands_documenso_the_framework_and_the_letter_waits(
@@ -573,3 +594,310 @@ def test_a_refused_distribute_cancels_the_orphaned_envelope(
     )
     [envelope] = fake.envelopes.values()
     assert envelope.status == "CANCELLED"
+
+
+# ---- the webhook (Task 3, REB-391) -----------------------------------------------------
+
+
+def _sent(
+    session: Session,
+    renderer: FakeRenderer,
+    fake: FakeDocumenso,
+    sender: RecordingSender,
+    freelancer_id: UUID,
+    company_id: UUID,
+    admin_id: UUID,
+) -> MatchRead:
+    """A draft match, sent: its framework agreement `inviato`, its letter waiting."""
+    match = _draft(session, renderer, freelancer_id, company_id, admin_id)
+    _signing(session, renderer, fake, sender).send_match(match.id, admin_id)
+    return match
+
+
+def _webhook(fake: FakeDocumenso, envelope_id: str, event: str) -> Outcome:
+    outcome = outcome_from_webhook(WebhookBody.model_validate(fake.webhook(envelope_id, event)))
+    assert outcome is not None
+    return outcome
+
+
+def _envelope_of(document: ContractDocument) -> str:
+    assert document.documenso_id is not None
+    return document.documenso_id
+
+
+def test_a_completion_signs_the_document_with_the_signers_date_and_calls_nobody(
+    clean: Session,
+) -> None:
+    """The webhook's transaction moves the row and nothing else: Documenso gets its
+    answer before any download or mail (probe § 11.2)."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    calls, mails = len(fake.calls), len(sender.sent)
+
+    signed = _signing(clean, renderer, fake, sender).apply(
+        _webhook(fake, envelope, "DOCUMENT_COMPLETED")
+    )
+
+    quadro = _framework_of(clean, freelancer_id)
+    assert signed == quadro.id
+    assert (quadro.stato, quadro.signed_at, quadro.signed_pdf) == ("firmato", SIGNED_AT, None)
+    assert (len(fake.calls), len(sender.sent)) == (calls, mails)
+
+
+def test_a_second_delivery_waits_for_the_first_and_changes_nothing(
+    hub_engine: Engine, clean: Session
+) -> None:
+    """Review Focus 1: Documenso retries at once, and even while a slow first delivery is
+    still running (probe § 5). The second waits on the row, then finds it signed."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    framework = _framework_of(clean, freelancer_id)
+    envelope = _envelope_of(framework)
+    fake.sign(envelope, SIGNED_AT)
+    outcome = _webhook(fake, envelope, "DOCUMENT_COMPLETED")
+    factory = session_factory(hub_engine)
+    first, second = factory(), factory()
+    results: list[UUID | None] = []
+
+    def deliver_again() -> None:
+        results.append(_signing(second, renderer, fake, sender).apply(outcome))
+
+    try:
+        # The first delivery, caught holding the row with its transition not committed.
+        held = first.scalars(
+            select(ContractDocument).where(ContractDocument.id == framework.id).with_for_update()
+        ).one()
+        worker = threading.Thread(target=deliver_again)
+        worker.start()
+        worker.join(timeout=0.5)
+        assert worker.is_alive(), "the second delivery did not wait for the first one's lock"
+        held.stato, held.signed_at = "firmato", SIGNED_AT
+        first.commit()
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+    finally:
+        first.close()
+        second.close()
+    assert results == [None]
+
+
+def test_a_letters_webhook_and_a_resend_of_its_match_do_not_deadlock(
+    hub_engine: Engine, clean: Session
+) -> None:
+    """Amendment 4: `apply`'s lock order (freelancer, match, document) now matches
+    `send_match`'s (freelancer, match, letter), so a webhook delivery for a letter and a
+    resend of the same match, run at once, only ever wait on each other's locks -- they
+    never deadlock, whichever of the two reaches the freelancer's row first."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
+    envelope = _envelope_of(_letter_of(clean, match.id))
+    fake.sign(envelope, SIGNED_AT)
+    outcome = _webhook(fake, envelope, "DOCUMENT_COMPLETED")
+    factory = session_factory(hub_engine)
+    webhook_session, resend_session = factory(), factory()
+    errors: list[BaseException] = []
+    results: dict[str, object] = {}
+
+    def deliver() -> None:
+        try:
+            results["apply"] = _signing(webhook_session, renderer, fake, sender).apply(outcome)
+        except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
+            errors.append(exc)
+
+    def resend() -> None:
+        try:
+            _signing(resend_session, renderer, fake, sender).send_match(match.id, admin_id)
+        except InvalidState as exc:
+            results["resend"] = exc
+        except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
+            errors.append(exc)
+
+    try:
+        webhook_worker = threading.Thread(target=deliver)
+        resend_worker = threading.Thread(target=resend)
+        webhook_worker.start()
+        resend_worker.start()
+        webhook_worker.join(timeout=5)
+        resend_worker.join(timeout=5)
+        assert not webhook_worker.is_alive(), "the webhook delivery never finished"
+        assert not resend_worker.is_alive(), "the resend never finished"
+    finally:
+        webhook_session.close()
+        resend_session.close()
+    assert not errors, errors
+    # The letter was already `inviato` before either thread ran: a resend of a match
+    # already out for signature always finds nothing left to send, in either order --
+    # the exact sentence depends on whether it lands before or after the signature
+    # (the match's own state or the letter's), so only the domain error itself is
+    # asserted here.
+    assert isinstance(results.get("resend"), InvalidState)
+
+
+def test_finish_downloads_and_mails_the_signed_copy_once(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    before = len(sender.sent)
+
+    signing.finish(signed)
+    signing.finish(signed)
+
+    quadro = _framework_of(clean, freelancer_id)
+    assert quadro.signed_pdf == fake.signed_pdf(envelope)
+    downloads = [call for call in fake.calls if call[1].endswith("/download?version=signed")]
+    assert len(downloads) == 1
+    copies = [mail for mail in sender.sent[before:] if mail.attachments]
+    assert [(mail.to, mail.subject) for mail in copies] == [
+        ("ada@studio.it", "Firmato: contratto quadro rebase"),
+        (CONTRACTS_MAIL, "Firmato da Ada Lovelace: contratto quadro rebase"),
+    ]
+    assert all(
+        mail.attachments[0].filename == "contratto-quadro-v0.1-firmato.pdf"
+        and mail.attachments[0].content == quadro.signed_pdf
+        for mail in copies
+    )
+
+
+def test_a_download_that_fails_is_done_by_the_next_finish(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    fake.fail("download", 500, "Internal server error")
+
+    signing.finish(signed)
+    assert _framework_of(clean, freelancer_id).signed_pdf is None
+
+    signing.finish(signed)
+    assert _framework_of(clean, freelancer_id).signed_pdf == fake.signed_pdf(envelope)
+
+
+def test_a_framework_signed_late_at_night_releases_its_letter_with_the_rome_date(
+    clean: Session,
+) -> None:
+    """Review Focus 2: signed at 23:30 UTC on 30 September, which is 1 October in Rome.
+    The letter that waited leaves on its own, citing that date, mailed as its own."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender, today=date(2026, 10, 1))
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+
+    signing.finish(signed)
+
+    letter = _letter_of(clean, match.id)
+    assert letter.stato == "inviato"
+    assert letter.data["data-contratto-quadro"] == "1° ottobre 2026"
+    assert letter.data["firma-rebase"] == "Documento emesso da rebase il 1° ottobre 2026"
+    assert letter.sent_by == admin_id
+    assert sender.sent[-1].subject == f"Da firmare: lettera di incarico n. {letter.numero}"
+    assert len(fake.envelopes) == 2
+
+
+def test_a_release_documenso_refuses_waits_for_the_next_finish(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    fake.fail("create", 500, "Internal server error")
+
+    signing.finish(signed)
+    assert _letter_of(clean, match.id).stato == "in_attesa"
+
+    signing.finish(signed)
+    assert _letter_of(clean, match.id).stato == "inviato"
+
+
+def test_a_draft_matchs_letter_is_not_released(clean: Session) -> None:
+    """Only a match an admin sent is released; a draft's letter leaves with its match."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    sent = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    draft = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+
+    signing.finish(signed)
+
+    assert _letter_of(clean, sent.id).stato == "inviato"
+    assert _letter_of(clean, draft.id).stato == "in_attesa"
+
+
+def test_a_signed_letter_turns_its_match_active(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_letter_of(clean, match.id))
+    fake.sign(envelope, SIGNED_AT)
+
+    _signing(clean, renderer, fake, sender).apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+
+    clean.expire_all()
+    assert clean.get(Match, match.id).stato == "attivo"  # type: ignore[union-attr]
+    assert _letter_of(clean, match.id).stato == "firmato"
+
+
+def test_a_refused_document_is_cancelled_with_the_freelancers_reason(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.reject(envelope, "La PEC indicata non è la mia")
+
+    signed = _signing(clean, renderer, fake, sender).apply(
+        _webhook(fake, envelope, "DOCUMENT_REJECTED")
+    )
+
+    quadro = _framework_of(clean, freelancer_id)
+    assert signed is None
+    assert (quadro.stato, quadro.cancel_reason) == (
+        "annullato",
+        "Rifiutato dal freelance: La PEC indicata non è la mia",
+    )
+    # The letter keeps waiting: «Invia per la firma» on its match writes a new framework.
+    assert _letter_of(clean, match.id).stato == "in_attesa"
+
+
+def test_a_cancellation_on_documenso_cancels_and_a_late_event_is_ignored(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.client().cancel(envelope, "Annullato a mano.")
+    signing = _signing(clean, renderer, fake, sender)
+
+    assert signing.apply(_webhook(fake, envelope, "DOCUMENT_CANCELLED")) is None
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.stato, quadro.cancel_reason) == ("annullato", "Annullato su Documenso.")
+    # An envelope already cancelled, or one the hub never recorded, moves nothing.
+    fake.sign(envelope, SIGNED_AT)
+    assert signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED")) is None
+    assert _framework_of(clean, freelancer_id).stato == "annullato"
+    assert signing.apply(Outcome("envelope_sconosciuto", "completed", SIGNED_AT)) is None

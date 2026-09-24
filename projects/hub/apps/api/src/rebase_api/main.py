@@ -10,6 +10,7 @@ from rebase_api.deps import SessionDep
 from rebase_api.routers import (
     admin,
     companies,
+    documenso,
     freelancers,
     matches,
     members,
@@ -82,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(companies.router)
     app.include_router(admin.router)
     app.include_router(matches.router)
+    app.include_router(documenso.router)
     app.include_router(members.router)
     app.include_router(pigro.router)
     app.include_router(tokens.router)

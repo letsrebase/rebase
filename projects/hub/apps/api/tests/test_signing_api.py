@@ -95,6 +95,28 @@ def test_without_documenso_the_send_says_signing_is_off(
     assert client.get(f"/api/hub/matches/{match['id']}").json()["stato"] == "bozza"
 
 
+def test_a_malformed_signer_setting_503s_the_send_naming_it(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    renderer: FakeRenderer,
+    documenso: FakeDocumenso,
+) -> None:
+    """Left over from Task 2's review: `REBASE_SIGNER_JSON` parses lazily, only where a
+    document is about to be typeset (REB-406 fix round 1, I1), and the send is exactly
+    that path -- a malformed value 503s it, naming the setting."""
+    match = draft_match(client, sender)
+    client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[attr-defined,call-arg]
+        _env_file=None, signer_json="{not json", contracts_mail=CONTRACTS_MAIL
+    )
+
+    answered = client.post(f"/api/hub/matches/{match['id']}/send")
+
+    assert answered.status_code == 503
+    assert "REBASE_SIGNER_JSON" in answered.json()["detail"]
+    assert client.get(f"/api/hub/matches/{match['id']}").json()["stato"] == "bozza"
+
+
 def test_a_draft_text_never_leaves(
     client: TestClient, admin: None, sender: RecordingSender, documenso: FakeDocumenso
 ) -> None:

@@ -16,6 +16,15 @@ is `inviato` and the report says so, for «Reinvia email».
 Every write locks the freelancer's row first, as `MatchService.create` and
 `FiscalService.save` already do, then the match, then its document, because two admins,
 the webhook and «Aggiorna stato» can reach the same freelancer's documents at once.
+
+The webhook's side is `apply` and `finish`. `apply` only locks the document, moves it
+and commits, so Documenso gets its answer long before its ten seconds (probe § 5), and a
+second delivery of the same event, which can arrive while the first is still running,
+waits on the lock and finds nothing left to do. `finish` runs after that commit, in the
+webhook's background task or under «Aggiorna stato»: the sealed copy downloaded, stored
+and mailed to both parties once, then, for a framework agreement, the letters that
+waited for it typeset with its signature date and sent. Each step checks under the lock
+whether it is still to do, so running `finish` twice does everything once.
 """
 
 import logging
@@ -31,12 +40,18 @@ from rebase_core.config import Settings
 from rebase_core.contract_schemas import SendReport
 from rebase_core.contracts.fields import ContractFailed, Value, signer_data
 from rebase_core.contracts.render import Renderer
-from rebase_core.documenso import DocumensoClient, fields_from_blanks
-from rebase_core.errors import InvalidState, NotFound, SigningUnavailable
-from rebase_core.framework import active_framework, pending_framework, rome_today
-from rebase_core.mail import EmailSender, document_name, signing_request_mail
+from rebase_core.documenso import COMPLETED, REJECTED, DocumensoClient, Outcome, fields_from_blanks
+from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
+from rebase_core.framework import active_framework, is_active, pending_framework, rome_today
+from rebase_core.mail import (
+    Attachment,
+    EmailSender,
+    document_name,
+    signed_copy_mail,
+    signing_request_mail,
+)
 from rebase_core.matches import DOCUMENT_BY_KIND, ENTITY, LETTERA, QUADRO, MatchService, _full_name
-from rebase_core.models import ContractDocument, Freelancer, Match, User
+from rebase_core.models import CANCEL_REASON_MAX_LENGTH, ContractDocument, Freelancer, Match, User
 
 _log = logging.getLogger(__name__)
 
@@ -66,6 +81,18 @@ NO_SENDER = (
     "L'invio delle email non è attivo su questo ambiente: il link per firmare non "
     "arriverebbe a nessuno."
 )
+REFUSED_ON_SITE = "Rifiutato dal freelance sul sito di firma."
+CANCELLED_ON_DOCUMENSO = "Annullato su Documenso."
+
+
+def _cancel_reason(outcome: Outcome) -> str:
+    """Why a document the webhook cancels is `annullato`, as the page shows it."""
+    if outcome.kind == REJECTED:
+        reason = (outcome.reason or "").strip()
+        if not reason:
+            return REFUSED_ON_SITE
+        return f"Rifiutato dal freelance: {reason}"[:CANCEL_REASON_MAX_LENGTH]
+    return CANCELLED_ON_DOCUMENSO
 
 
 def _filename(document: ContractDocument, version: str) -> str:
@@ -277,6 +304,178 @@ class SigningService:
             _log.warning("the signing mail of document %s was refused by the provider", document.id)
             return False
         return True
+
+    # ---- the webhook -------------------------------------------------------------------
+
+    def apply(self, outcome: Outcome) -> UUID | None:
+        """One envelope's outcome, applied once (probe § 11.2). The document is found by
+        its envelope with no lock; then the freelancer's row, its match (when it has
+        one) and the document itself are locked in that order, the global rule (freelancer,
+        match, document), because a letter's webhook can race a `send_match` or a cancel
+        of the same match. Its state is re-checked once every lock is held, in case
+        anything moved while this delivery waited: only a document still `inviato`
+        moves, and an unknown envelope (the other environment's, or one the hub never
+        recorded) and a document already signed or cancelled are acknowledged and left
+        alone. No call leaves this method. Returns the id of a document that has just
+        been signed, for `finish` after the commit; `None` otherwise."""
+        found = self.session.execute(
+            select(
+                ContractDocument.id, ContractDocument.freelancer_id, ContractDocument.match_id
+            ).where(ContractDocument.documenso_id == outcome.envelope_id)
+        ).first()
+        if found is None:
+            self.session.rollback()
+            return None
+        document_id, freelancer_id, match_id = found
+        self._lock_freelancer(freelancer_id)
+        match = self._lock_match(match_id) if match_id is not None else None
+        document = self._lock(document_id)
+        if document.stato != "inviato":
+            self.session.rollback()
+            return None
+        signed: UUID | None = None
+        if outcome.kind == COMPLETED:
+            document.stato = "firmato"
+            # The signer's own date; the moment the hub heard of it only if Documenso
+            # said nothing, which a completed envelope never does.
+            document.signed_at = outcome.signed_at or self.now()
+            if match is not None and match.stato == "in_firma":
+                match.stato = "attivo"
+            signed = document.id
+        else:
+            document.stato = "annullato"
+            document.cancel_reason = _cancel_reason(outcome)
+        self.session.commit()
+        return signed
+
+    def finish(self, document_id: UUID) -> None:
+        """What a signature leaves to do once it is committed, each step idempotent: the
+        sealed copy downloaded, stored and mailed once; for an active framework agreement,
+        the letters that waited for it released. A step that fails is logged and left for
+        the next call (the next «Aggiorna stato»); the others still run."""
+        try:
+            stored = self._store_signed_copy(document_id)
+        except (DocumensoFailed, SigningUnavailable, NotFound):
+            self.session.rollback()
+            _log.warning(
+                "the signed copy of document %s is not stored yet", document_id, exc_info=True
+            )
+            stored = None
+        if stored is not None:
+            self._mail_signed_copy(stored)
+        document = self.session.get(ContractDocument, document_id, populate_existing=True)
+        if document is not None and is_active(document):
+            self._release_letters(document)
+
+    def _store_signed_copy(self, document_id: UUID) -> ContractDocument | None:
+        """The download happens under the row's lock, so two callers download once: the
+        second waits, then finds the copy stored. `None` when there is nothing to store.
+        The freelancer's row is deliberately not locked here (amendment 3, out of the
+        global order): this method holds one row lock and makes a network call (the
+        download), so it cannot join a lock cycle, and taking the freelancer's row too
+        would block «Crea match» for that freelancer for as long as Documenso takes."""
+        document = self._lock(document_id)
+        if (
+            document.stato not in ("firmato", "disdetto")
+            or document.signed_pdf is not None
+            or document.documenso_item_id is None
+        ):
+            self.session.rollback()
+            return None
+        document.signed_pdf = self._documenso().download_signed(document.documenso_item_id)
+        self.session.commit()
+        return document
+
+    def _mail_signed_copy(self, document: ContractDocument) -> None:
+        """To the freelancer and to rebase's contracts address, each with the sealed copy.
+        A refusal is logged: the copy stays on «Match e contratti» and in «Contratti»."""
+        if self.sender is None:
+            _log.warning(
+                "no mail sender: the signed copy of document %s was not mailed", document.id
+            )
+            return
+        user = self._owner(document.freelancer_id)
+        pdf = self.matches.document_pdf(document.id, signed=True)
+        attachment = Attachment(filename=pdf.filename, content=pdf.content)
+        for to, for_rebase in ((user.email, False), (self.contracts_mail, True)):
+            mail = signed_copy_mail(
+                to,
+                kind=document.kind,
+                numero=document.numero,
+                attachment=attachment,
+                nome=user.nome,
+                cognome=user.cognome,
+                for_rebase=for_rebase,
+            )
+            if not self.sender.send(mail):
+                _log.warning(
+                    "the signed copy of document %s was refused by the provider", document.id
+                )
+
+    def _release_letters(self, framework: ContractDocument) -> None:
+        """The letters that waited for this framework agreement (spec § 1e), each in a
+        transaction of its own and mailed after its commit: a Documenso refusal leaves
+        that letter waiting for the next `finish` and lets the others go. Only matches an
+        admin sent (`in_firma`); a draft's letter leaves when its match is sent."""
+        waiting = list(
+            self.session.execute(
+                select(ContractDocument.id, ContractDocument.match_id)
+                .join(Match, Match.id == ContractDocument.match_id)
+                .where(
+                    ContractDocument.kind == LETTERA,
+                    ContractDocument.freelancer_id == framework.freelancer_id,
+                    ContractDocument.stato == "in_attesa",
+                    Match.stato == "in_firma",
+                )
+                .order_by(ContractDocument.created_at, ContractDocument.id)
+            )
+        )
+        framework_id = framework.id
+        sent_by = framework.sent_by or framework.created_by
+        freelancer_id = framework.freelancer_id
+        self.session.rollback()
+        for letter_id, match_id in waiting:
+            try:
+                letter = self._send_waiting(
+                    letter_id, match_id, framework_id, freelancer_id, sent_by
+                )
+            except (ContractFailed, DocumensoFailed, InvalidState, NotFound, SigningUnavailable):
+                self.session.rollback()
+                _log.warning(
+                    "letter %s keeps waiting: its release failed", letter_id, exc_info=True
+                )
+                continue
+            if letter is not None:
+                self._mail_signing_request(letter)
+
+    def _send_waiting(
+        self,
+        letter_id: UUID,
+        match_id: UUID,
+        framework_id: UUID,
+        freelancer_id: UUID,
+        sent_by: UUID,
+    ) -> ContractDocument | None:
+        """The same lock order as `apply` (global rule): the freelancer's row, the
+        letter's match, then the letter itself; the framework agreement is only read,
+        never locked, since nothing here writes it."""
+        self._lock_freelancer(freelancer_id)
+        match = self._lock_match(match_id)
+        letter = self._lock(letter_id)
+        framework = self.session.get(ContractDocument, framework_id, populate_existing=True)
+        if (
+            letter.stato != "in_attesa"
+            or match.stato != "in_firma"
+            or framework is None
+            or not is_active(framework)
+        ):
+            self.session.rollback()
+            return None
+        if not self.allow_draft and self._renderer().is_draft(DOCUMENT_BY_KIND[LETTERA]):
+            raise InvalidState(DRAFT_REFUSED[LETTERA])
+        self._dispatch(letter, framework, sent_by)
+        self.session.commit()
+        return letter
 
     # ---- plumbing ----------------------------------------------------------------------
 

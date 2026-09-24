@@ -2,6 +2,7 @@
 
 import threading
 from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, closing
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -152,3 +153,15 @@ def get_signing_factory(
 
 
 SigningDep = Annotated[SigningFactory, Depends(get_signing_factory)]
+
+SessionOpener = Callable[[], AbstractContextManager[Session]]
+
+
+def get_session_opener() -> SessionOpener:
+    """A session for work that runs after the response (REB-387's webhook): a background
+    task must not borrow the request's session, which its dependency closes."""
+    factory = _get_session_factory()
+    return lambda: closing(factory())
+
+
+SessionOpenerDep = Annotated[SessionOpener, Depends(get_session_opener)]

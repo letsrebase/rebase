@@ -91,6 +91,24 @@ contracts-check` typesets both texts from fiction and says whether a machine can
 `hub-image` preflight check and CI's image job run it inside the built image. Who signs
 for rebase comes from `REBASE_SIGNER_JSON` in the host `.env`, never from the repository.
 
+## Contracts are signed on Documenso
+
+Since REB-387 phase 3 «Invia per la firma» sends a match's documents through Documenso
+(`rebase_core.signing`, `rebase_core.documenso`), and the hub mails the signing link
+itself: Documenso sends no mail of its own. Documenso calls back
+`POST /api/hub/documenso/webhook` with `X-Documenso-Secret` equal to
+`REBASE_DOCUMENSO_WEBHOOK_SECRET`; production's webhook points at
+`http://api:8000/api/hub/documenso/webhook` inside the compose network, preview's at
+`https://preview.letsrebase.com/api/hub/documenso/webhook`. Documenso retries a failed
+delivery only at once, so an event lost while the API restarts stays lost: «Aggiorna
+stato» on «Match e contratti» reads the envelope and applies it, and an admin presses it
+on a document that has waited for its signature longer than expected. Without
+`REBASE_DOCUMENSO_URL` and `REBASE_DOCUMENSO_API_TOKEN` signing answers 503, and a text
+whose front matter says `status: draft` never leaves unless `REBASE_CONTRACTS_ALLOW_DRAFT`
+is true, which only the preview's `.env` sets. Documenso reaches `api` only if
+`NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS` lists it (probe § 5); the secret travels in
+clear, so the webhook URL stays on the compose network or is HTTPS.
+
 ## Running it
 
 From the repository root:
