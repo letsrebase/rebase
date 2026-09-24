@@ -300,19 +300,19 @@ def test_an_envelope_belongs_to_one_document_and_keeps_its_item(hub_engine: Engi
         outer.rollback()
 
 
-def test_migration_0018_can_run_again_and_roll_back() -> None:
-    """A retried deploy runs 0018's statements over columns that already exist, and the
-    downgrade leaves 0017's schema: both must work, and the result must be the models'."""
+def test_migration_0019_can_run_again_and_roll_back() -> None:
+    """A retried deploy runs 0019's statements over columns that already exist, and the
+    downgrade leaves 0018's schema: both must work, and the result must be the models'."""
     with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
         url = container.get_connection_url()
         upgrade_to_head(url)
         config = Config(str(INI_PATH))
         config.set_main_option("sqlalchemy.url", url)
-        command.downgrade(config, "0017")
+        command.downgrade(config, "0018")
         command.upgrade(config, "head")
         engine = create_engine(url, future=True)
         with engine.begin() as connection:
-            connection.execute(text("UPDATE alembic_version SET version_num = '0017'"))
+            connection.execute(text("UPDATE alembic_version SET version_num = '0018'"))
         command.upgrade(config, "head")
         with engine.connect() as connection:
             assert (

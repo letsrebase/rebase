@@ -1,7 +1,7 @@
 """contract_documents: the envelope item Documenso seals, and why a document was cancelled
 
-Revision ID: 0018
-Revises: 0017
+Revision ID: 0019
+Revises: 0018
 
 REB-387, phase 3. Documenso answers a create with the envelope's id only, and the sealed
 copy is downloaded by the envelope *item*'s id (probe § 4 and § 11.7), so the hub reads
@@ -22,8 +22,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0018"
-down_revision: str | Sequence[str] | None = "0017"
+revision: str = "0019"
+down_revision: str | Sequence[str] | None = "0018"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
