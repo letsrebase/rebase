@@ -22,10 +22,17 @@ The webhook's side is `apply` and `finish`. `apply` locks the freelancer's row, 
 Documenso gets its answer long before its ten seconds (probe § 5), and a
 second delivery of the same event, which can arrive while the first is still running,
 waits on the lock and finds nothing left to do. `finish` runs after that commit, in the
-webhook's background task or under «Aggiorna stato»: the sealed copy downloaded, stored
-and mailed to both parties once, then, for a framework agreement, the letters that
-waited for it typeset with its signature date and sent. Each step checks under the lock
-whether it is still to do, so running `finish` twice does everything once.
+webhook's background task or under «Aggiorna stato»: the sealed copy downloaded and
+stored, the two mails (the freelancer's and rebase's) sent once `signed_copy_mailed_at`
+records, then, for a framework agreement, the letters that waited for it typeset with
+its signature date and sent. Each step checks under the document's own row lock whether
+it is still to do, so running `finish` twice does everything once; a lost background
+task or a restart between steps leaves `signed_copy_mailed_at` unset, which the next
+`finish` reads as still to do (REB-391).
+
+`sweep` is the recovery `rebase contracts-sweep` runs, meant every ten minutes once
+production schedules it with the Documenso rollout: `finish` again, for every document a
+webhook or an admin's «Aggiorna stato» never reached.
 
 The recovery actions are the admin's: «Aggiorna stato» (`refresh`) for the event
 Documenso gave up on, «Reinvia email» (`resend_mail`), «Annulla» on a framework agreement
@@ -38,8 +45,8 @@ from collections.abc import Callable, Mapping
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import exists, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.config import Settings
@@ -386,22 +393,74 @@ class SigningService:
 
     def finish(self, document_id: UUID) -> None:
         """What a signature leaves to do once it is committed, each step idempotent: the
-        sealed copy downloaded, stored and mailed once; for an active framework agreement,
-        the letters that waited for it released. A step that fails is logged and left for
-        the next call (the next «Aggiorna stato»); the others still run."""
+        sealed copy downloaded and stored; the signed-copy mails sent, once; for an
+        active framework agreement, the letters that waited for it released. A step
+        that fails is logged and left for the next call (the next «Aggiorna stato», or
+        `sweep`); the others still run."""
         try:
-            stored = self._store_signed_copy(document_id)
+            self._store_signed_copy(document_id)
         except (DocumensoFailed, SigningUnavailable, NotFound):
             self.session.rollback()
             _log.warning(
                 "the signed copy of document %s is not stored yet", document_id, exc_info=True
             )
-            stored = None
-        if stored is not None:
-            self._mail_signed_copy(stored)
+        self._mail_signed_copy_once(document_id)
         document = self.session.get(ContractDocument, document_id, populate_existing=True)
         if document is not None and is_active(document):
             self._release_letters(document)
+
+    def sweep(self) -> int:
+        """`rebase contracts-sweep` (REB-391): redoes what a lost background task or a
+        restart left behind, for every document `finish` still has something to do for.
+        Each document runs in its own transaction, through `finish` itself, so the two
+        steps stay exactly as idempotent as the webhook's own recovery; a failure is
+        logged and the next document is still tried. Returns how many it touched."""
+        touched = 0
+        for document_id in self._to_finish():
+            try:
+                self.finish(document_id)
+            except Exception:
+                self.session.rollback()
+                _log.warning(
+                    "contracts-sweep: document %s could not be finished", document_id, exc_info=True
+                )
+                continue
+            touched += 1
+        return touched
+
+    def _to_finish(self) -> list[UUID]:
+        """Every document a sweep must run `finish` on: a signature or a notice whose
+        sealed copy is missing or not yet mailed, and every active framework agreement
+        that still has a letter `in_attesa` on a match `in_firma` (a release `finish`
+        itself missed, or never ran for). `finish` is idempotent either way, so the two
+        sets are simply run together."""
+        unfinished_signatures = select(ContractDocument.id).where(
+            ContractDocument.stato.in_(("firmato", "disdetto")),
+            or_(
+                ContractDocument.signed_pdf.is_(None),
+                ContractDocument.signed_copy_mailed_at.is_(None),
+            ),
+        )
+        waiting_letter = aliased(ContractDocument)
+        frameworks_with_waiting_letters = select(ContractDocument.id).where(
+            ContractDocument.kind == QUADRO,
+            ContractDocument.stato == "firmato",
+            ContractDocument.notice_at.is_(None),
+            exists(
+                select(1)
+                .select_from(waiting_letter)
+                .join(Match, Match.id == waiting_letter.match_id)
+                .where(
+                    waiting_letter.kind == LETTERA,
+                    waiting_letter.stato == "in_attesa",
+                    waiting_letter.freelancer_id == ContractDocument.freelancer_id,
+                    Match.stato == "in_firma",
+                )
+            ),
+        )
+        ids = set(self.session.scalars(unfinished_signatures).all())
+        ids.update(self.session.scalars(frameworks_with_waiting_letters).all())
+        return sorted(ids, key=str)
 
     def _store_signed_copy(self, document_id: UUID) -> ContractDocument | None:
         """The download happens under the row's lock, so two callers download once: the
@@ -421,10 +480,22 @@ class SigningService:
         self.session.commit()
         return document
 
-    def _mail_signed_copy(self, document: ContractDocument) -> None:
-        """To the freelancer and to rebase's contracts address, each with the sealed copy.
-        A refusal is logged: the copy stays on «Match e contratti» and in «Contratti»."""
+    def _mail_signed_copy_once(self, document_id: UUID) -> None:
+        """The signed-copy mails (the freelancer's and rebase's, both with the sealed
+        copy), sent at most once: locked under the document's own row, same as
+        `_store_signed_copy`, so two concurrent `finish` calls mail once. Nothing to
+        mail yet (no stored copy) or already mailed leaves the row untouched;
+        `signed_copy_mailed_at` is set only once both mails are accepted, under the same
+        lock, so a partial failure (one recipient accepted, the other refused) is
+        retried whole on the next `finish`, which may then repeat the accepted
+        recipient's mail once more -- the record is the whole pair going out, not each
+        half (REB-391)."""
+        document = self._lock(document_id)
+        if document.signed_pdf is None or document.signed_copy_mailed_at is not None:
+            self.session.rollback()
+            return
         if self.sender is None:
+            self.session.rollback()
             _log.warning(
                 "no mail sender: the signed copy of document %s was not mailed", document.id
             )
@@ -432,6 +503,7 @@ class SigningService:
         user = self._owner(document.freelancer_id)
         pdf = self.matches.document_pdf(document.id, signed=True)
         attachment = Attachment(filename=pdf.filename, content=pdf.content)
+        accepted = True
         for to, for_rebase in ((user.email, False), (self.contracts_mail, True)):
             mail = signed_copy_mail(
                 to,
@@ -446,6 +518,12 @@ class SigningService:
                 _log.warning(
                     "the signed copy of document %s was refused by the provider", document.id
                 )
+                accepted = False
+        if accepted:
+            document.signed_copy_mailed_at = self.now()
+            self.session.commit()
+        else:
+            self.session.rollback()
 
     def _release_letters(self, framework: ContractDocument) -> None:
         """The letters that waited for this framework agreement (spec § 1e), each in a

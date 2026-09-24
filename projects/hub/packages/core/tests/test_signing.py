@@ -1070,6 +1070,49 @@ def test_a_release_with_no_mail_sender_leaves_the_letters_waiting(clean: Session
     assert len(fake.envelopes) == envelopes_before
 
 
+def test_a_refused_signed_copy_mail_is_retried_by_the_next_finish_and_then_not_again(
+    clean: Session,
+) -> None:
+    """REB-391: the download succeeded, both signed-copy mails were refused.
+    `signed_copy_mailed_at` stays unset, so the next `finish` -- with a sender that now
+    works -- sends the pair again; a third `finish` after that sends nothing more."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    refusing = RefusingSender()
+    _sent(clean, renderer, fake, refusing, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    refused_signing = _signing(clean, renderer, fake, refusing)
+    signed = refused_signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+
+    refused_signing.finish(signed)
+
+    quadro = _framework_of(clean, freelancer_id)
+    assert quadro.signed_pdf == fake.signed_pdf(envelope)
+    assert quadro.signed_copy_mailed_at is None
+    first_attempt = [mail for mail in refusing.sent if mail.attachments]
+    assert len(first_attempt) == 2
+
+    recording = RecordingSender()
+    working_signing = _signing(clean, renderer, fake, recording)
+    working_signing.finish(signed)
+
+    quadro = _framework_of(clean, freelancer_id)
+    assert quadro.signed_copy_mailed_at == NOW
+    downloads = [call for call in fake.calls if call[1].endswith("/download?version=signed")]
+    assert len(downloads) == 1
+    retried = [mail for mail in recording.sent if mail.attachments]
+    assert [(mail.to, mail.subject) for mail in retried] == [
+        ("ada@studio.it", "Firmato: contratto quadro rebase"),
+        (CONTRACTS_MAIL, "Firmato da Ada Lovelace: contratto quadro rebase"),
+    ]
+
+    working_signing.finish(signed)
+
+    assert [mail for mail in recording.sent if mail.attachments] == retried
+
+
 def test_two_concurrent_finishes_download_and_mail_the_signed_copy_once(
     hub_engine: Engine, clean: Session
 ) -> None:
@@ -1122,6 +1165,82 @@ def test_two_concurrent_finishes_download_and_mail_the_signed_copy_once(
     assert len(downloads) == 1
     copies = [mail for mail in sender.sent[before:] if mail.attachments]
     assert len(copies) == 2
+
+
+# ---- the sweep (REB-391) ------------------------------------------------------------------
+
+
+def test_sweep_finishes_a_signature_a_crashed_background_task_left_undone(
+    clean: Session,
+) -> None:
+    """The webhook's own `apply` committed `firmato`; its background `finish` never ran
+    (the process died first). `sweep` finds the document through `_to_finish` and runs
+    `finish` on it: the sealed copy stored and mailed, and the letter that waited for
+    this framework agreement released."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    assert _framework_of(clean, freelancer_id).signed_pdf is None
+    assert _letter_of(clean, match.id).stato == "in_attesa"
+
+    touched = signing.sweep()
+
+    assert touched == 1
+    quadro = _framework_of(clean, freelancer_id)
+    assert quadro.signed_pdf == fake.signed_pdf(envelope)
+    assert quadro.signed_copy_mailed_at == NOW
+    assert _letter_of(clean, match.id).stato == "inviato"
+
+
+def test_sweep_releases_a_waiting_letter_of_an_already_finished_framework(
+    clean: Session,
+) -> None:
+    """The framework agreement's own copy is already stored and mailed (`finish` ran for
+    it already); only the release of a letter that started waiting afterwards was lost
+    -- the shape a release `finish` itself retries
+    (`test_a_release_documenso_refuses_waits_for_the_next_finish`) never even ran for,
+    because nothing ever called `finish` on this framework agreement again."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    signing.finish(signed)
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.signed_pdf, quadro.signed_copy_mailed_at) == (fake.signed_pdf(envelope), NOW)
+    # A letter `in_attesa` on a match `in_firma`, its framework agreement already active:
+    # the exact row shape `_release_letters` looks for, forged directly (as
+    # `test_a_letter_whose_framework_was_refused_gets_a_new_one_when_its_match_is_sent`
+    # forges its own scenario) rather than reached through a second real send, which
+    # would dispatch it immediately since the framework is active by then.
+    second = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    second_letter = _letter_of(clean, second.id)
+    second_letter.stato = "in_attesa"
+    second_match = clean.get(Match, second.id)
+    assert second_match is not None
+    second_match.stato = "in_firma"
+    clean.commit()
+
+    touched = signing.sweep()
+
+    assert touched == 1
+    assert _letter_of(clean, second.id).stato == "inviato"
+
+
+def test_sweep_with_nothing_left_to_do_returns_zero(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+
+    assert _signing(clean, renderer, fake, sender).sweep() == 0
 
 
 # ---- the recovery actions (REB-407) ------------------------------------------------------

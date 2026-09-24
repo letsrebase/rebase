@@ -11,13 +11,21 @@ from sqlalchemy.orm import Session
 from rebase_core.admin_tokens import DEFAULT_NAME, AdminTokenService
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.fields import ContractFailed, Value, merge_data
-from rebase_core.contracts.render import DOCUMENTS, company_defaults, render, signature_blanks
+from rebase_core.contracts.render import (
+    DOCUMENTS,
+    ContractRenderer,
+    company_defaults,
+    render,
+    signature_blanks,
+)
 from rebase_core.conversions import pixel_from_settings
 from rebase_core.db import create_engine_from_settings, session_factory
+from rebase_core.documenso import client_from_settings
 from rebase_core.errors import DomainError
 from rebase_core.freelancers import freelancer_read
 from rebase_core.mail import CardSummary, EmailSender, sender_from_settings, welcome_mail
 from rebase_core.models import USER_ROLES, Freelancer, Signup, User
+from rebase_core.signing import SigningService
 from rebase_core.users import UserService
 
 
@@ -146,6 +154,33 @@ def contracts_check() -> int:
     return 0
 
 
+def contracts_sweep() -> int:
+    """`rebase contracts-sweep`: redoes what a lost background task or a restart left
+    behind (REB-391).
+
+    Runs `SigningService.sweep()` with this environment's own collaborators -- the same
+    ones `SigningDep` builds for a request, gathered here by hand since this command has
+    no request to build one from. Meant to run in production every ten minutes, to be
+    scheduled with the Documenso rollout."""
+    settings = get_settings()
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        signing = SigningService(
+            session,
+            renderer=ContractRenderer(),
+            documenso=client_from_settings(settings),
+            sender=sender_from_settings(settings),
+            signer_json=settings.signer_json,
+            contracts_mail=settings.contracts_mail,
+            allow_draft=settings.contracts_allow_draft,
+        )
+        touched = signing.sweep()
+    finally:
+        session.close()
+    print(f"{touched} documenti aggiornati")
+    return 0
+
+
 def send_welcome(
     session: Session, settings: Settings, sender: EmailSender, emails: Sequence[str] | None
 ) -> list[tuple[str, str]]:
@@ -252,6 +287,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "contracts-check",
         help="Compone i due contratti con pandoc e Typst: questa macchina li sa generare?",
     )
+    sub.add_parser(
+        "contracts-sweep",
+        help="Rifà quanto un riavvio o una mail rifiutata hanno lasciato indietro",
+    )
     token = sub.add_parser(
         "createtoken", help="Crea un token personale di un amministratore, per un agente"
     )
@@ -275,6 +314,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return conversions_check()
     if args.command == "contracts-check":
         return contracts_check()
+    if args.command == "contracts-sweep":
+        return contracts_sweep()
     if args.command == "createtoken":
         return createtoken(args.email, args.nome)
     if args.command == "setrole":

@@ -112,6 +112,13 @@ is true, which only the preview's `.env` sets. Documenso reaches `api` only if
 `NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS` lists it (probe § 5); the secret travels in
 clear, so the webhook URL stays on the compose network or is HTTPS.
 
+The webhook's own follow-up (the sealed copy's download and mails, a framework
+agreement's waiting letters) runs in the background, after the response: a restart
+between the webhook's commit and that background task leaves it undone. `rebase
+contracts-sweep` redoes anything a restart, or a mail the provider refused, left behind,
+and production runs it every ten minutes (the schedule itself is to be scheduled with the
+Documenso rollout).
+
 ## Running it
 
 From the repository root:

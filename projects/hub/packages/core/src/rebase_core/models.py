@@ -429,6 +429,12 @@ class ContractDocument(Base, PrimaryKeyMixin, TimestampMixin):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     signed_pdf: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    # Set only once both signed-copy mails (the freelancer's and rebase's) are accepted,
+    # so a restart or a refused mail leaves this `NULL` for the next `finish` to retry
+    # rather than skip (REB-391).
+    signed_copy_mailed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
     notice_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     cancel_reason: Mapped[str | None] = mapped_column(
         String(CANCEL_REASON_MAX_LENGTH), default=None
