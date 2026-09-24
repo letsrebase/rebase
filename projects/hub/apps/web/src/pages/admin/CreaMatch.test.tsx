@@ -209,6 +209,49 @@ describe('«Crea match» in five steps (REB-387)', () => {
     expect(screen.queryByRole('button', { name: 'Salva come bozza' })).toBeNull()
   })
 
+  it('names the end date the server refused for ending before the start (REB-412)', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': () =>
+        answer(422, {
+          detail: [{ loc: ['body', 'lettera', 'data_fine'], msg: "la fine prevista viene prima dell'inizio" }],
+        }),
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(screen.getByRole('button', { name: 'Genera l’anteprima' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent("la fine prevista viene prima dell'inizio")
+    expect(screen.getByLabelText('Fine prevista')).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('names the payment term the server refused past 30 days from month end (REB-412)', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': () =>
+        answer(422, {
+          detail: [
+            {
+              loc: ['body', 'lettera', 'giorni_pagamento'],
+              msg: 'contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)',
+            },
+          ],
+        }),
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(screen.getByRole('button', { name: 'Genera l’anteprima' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)',
+    )
+    expect(screen.getByLabelText('Giorni di pagamento')).toHaveAttribute('aria-invalid', 'true')
+  })
+
   it('goes back from the preview to the letter and forgets the stale preview', async () => {
     routeFetch({
       'GET /api/hub/freelancers/f1': PERSON,

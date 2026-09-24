@@ -253,6 +253,39 @@ def test_a_closed_request_and_a_fee_the_law_refuses_are_422s_on_their_field(
     assert closed.json()["detail"][0]["loc"] == ["body", "company_id"]
 
 
+def test_an_end_date_before_the_start_names_data_fine(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    backwards = {**LETTERA, "data_fine": "2026-09-01"}
+    refused = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": backwards},
+    )
+    assert refused.status_code == 422
+    detail = refused.json()["detail"][0]
+    assert detail["loc"][-1] == "data_fine"
+    assert detail["msg"] == "la fine prevista viene prima dell'inizio"
+
+
+def test_a_payment_term_past_thirty_days_from_month_end_names_giorni_pagamento(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    over = {**LETTERA, "giorni_pagamento": 45, "fine_mese": True}
+    refused = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": over},
+    )
+    assert refused.status_code == 422
+    detail = refused.json()["detail"][0]
+    assert detail["loc"][-1] == "giorni_pagamento"
+    assert (
+        detail["msg"]
+        == "contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)"
+    )
+
+
 def test_a_draft_is_cancelled_once_and_only_an_active_match_closes(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:

@@ -14,7 +14,16 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
+from pydantic_core import InitErrorDetails, PydanticCustomError, ValidationError
 
 from rebase_core.contracts.fields import DAYS_LIMIT, DAYS_LIMIT_MONTH_END, Value, italian_date
 from rebase_core.models import (
@@ -223,13 +232,38 @@ class LetteraFields(LetteraDraft):
     giorni_pagamento: int = Field(ge=1, le=DAYS_LIMIT)
     fine_mese: bool
 
+    @field_validator("data_fine", mode="after")
+    @classmethod
+    def _end_not_before_start(cls, value: date | None, info: ValidationInfo) -> date | None:
+        """`data_inizio` is declared before `data_fine`, so it is already in `info.data`
+        by the time this runs: the error can name `data_fine`, the field an admin
+        actually filled in, instead of the whole letter."""
+        start = info.data.get("data_inizio")
+        if value is not None and start is not None and value < start:
+            raise PydanticCustomError("date_order", "la fine prevista viene prima dell'inizio")
+        return value
+
     @model_validator(mode="after")
-    def _dates_and_term(self) -> "LetteraFields":
-        if self.data_fine is not None and self.data_fine < self.data_inizio:
-            raise ValueError("la fine prevista viene prima dell'inizio")
+    def _payment_term_within_the_law(self) -> "LetteraFields":
+        """`fine_mese` is declared after `giorni_pagamento`, so a `field_validator` on
+        `giorni_pagamento` cannot read it yet; this stays a model-level check, but
+        raises a `ValidationError` built with an explicit `loc` so it still names
+        `giorni_pagamento`, the field the law (81/2017) actually limits, rather than
+        the whole letter."""
         if self.fine_mese and self.giorni_pagamento > DAYS_LIMIT_MONTH_END:
-            raise ValueError(
-                "contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)"
+            raise ValidationError.from_exception_data(
+                type(self).__name__,
+                [
+                    InitErrorDetails(
+                        type=PydanticCustomError(
+                            "payment_term",
+                            "contati da fine mese, i giorni di pagamento sono al massimo 30 "
+                            "(legge 81/2017)",
+                        ),
+                        loc=("giorni_pagamento",),
+                        input=self.giorni_pagamento,
+                    )
+                ],
             )
         return self
 
