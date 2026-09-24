@@ -175,10 +175,7 @@ describe('«Crea match» in five steps (REB-387)', () => {
     expect(await screen.findByRole('link', { name: 'Apri la lettera di incarico' })).toHaveAttribute('href', 'blob:anteprima-1')
     expect(screen.getByRole('link', { name: 'Apri il contratto quadro' })).toHaveAttribute('href', 'blob:anteprima-2')
     expect(screen.getByText(/partirà per primo il contratto quadro/)).toBeInTheDocument()
-    const send = screen.getByRole('button', { name: 'Invia per la firma' })
-    expect(send).toBeDisabled()
-    await userEvent.hover(send.parentElement!)
-    expect((await screen.findAllByText('Arriva con la firma elettronica')).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: 'Invia per la firma' })).toBeEnabled()
     expect(document.body.textContent).not.toMatch(/777\.77/)
 
     await userEvent.click(screen.getByRole('button', { name: 'Salva come bozza' }))
@@ -210,6 +207,49 @@ describe('«Crea match» in five steps (REB-387)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Input should be greater than or equal to 1')
     expect(screen.getByLabelText('Compenso, IVA esclusa (€)')).toHaveAttribute('aria-invalid', 'true')
     expect(screen.queryByRole('button', { name: 'Salva come bozza' })).toBeNull()
+  })
+
+  it('names the end date the server refused for ending before the start (REB-412)', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': () =>
+        answer(422, {
+          detail: [{ loc: ['body', 'lettera', 'data_fine'], msg: "la fine prevista viene prima dell'inizio" }],
+        }),
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(screen.getByRole('button', { name: 'Genera l’anteprima' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent("la fine prevista viene prima dell'inizio")
+    expect(screen.getByLabelText('Fine prevista')).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('names the payment term the server refused past 30 days from month end (REB-412)', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': () =>
+        answer(422, {
+          detail: [
+            {
+              loc: ['body', 'lettera', 'giorni_pagamento'],
+              msg: 'contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)',
+            },
+          ],
+        }),
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(screen.getByRole('button', { name: 'Genera l’anteprima' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)',
+    )
+    expect(screen.getByLabelText('Giorni di pagamento')).toHaveAttribute('aria-invalid', 'true')
   })
 
   it('goes back from the preview to the letter and forgets the stale preview', async () => {
@@ -360,5 +400,135 @@ describe('«Crea match» in five steps (REB-387)', () => {
     expect(await screen.findByLabelText('Codice fiscale')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Freelance -> Cliente
     expect(await screen.findByLabelText('Ragione sociale del cliente')).toHaveValue('Neri Spa')
+  })
+
+  it('writes the match and sends it in one click, and after a refusal sends that same match again', async () => {
+    let tries = 0
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': pdf,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=quadro': pdf,
+      'POST /api/hub/freelancers/f1/matches': { id: 'm1' },
+      'POST /api/hub/matches/m1/send': () =>
+        ++tries === 1
+          ? answer(503, { detail: 'La firma elettronica non è attiva su questo ambiente.' })
+          : { match: { id: 'm1' }, inviato: 'quadro', mail_inviata: true },
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(await screen.findByRole('button', { name: 'Genera l’anteprima' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('non è attiva')
+    expect(alert).toHaveTextContent('La bozza è salvata')
+    await userEvent.click(screen.getByRole('button', { name: 'Invia per la firma' }))
+    expect(await screen.findByText('pagina contratti')).toBeInTheDocument()
+    const creates = spy.mock.calls.filter(
+      ([url, init]) => url === '/api/hub/freelancers/f1/matches' && init?.method === 'POST',
+    )
+    expect(creates).toHaveLength(1)
+    expect(tries).toBe(2)
+  })
+
+  it('sends the same match id again when the create response is lost on a retry (REB-406)', async () => {
+    let creates = 0
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': pdf,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=quadro': pdf,
+      'POST /api/hub/freelancers/f1/matches': () => {
+        creates += 1
+        // The first attempt's response never arrives (a network drop, not a status
+        // code): the mutation's promise rejects exactly as a real `fetch` would.
+        if (creates === 1) throw new Error('rete assente')
+        return { id: 'm1' }
+      },
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(await screen.findByRole('button', { name: 'Genera l’anteprima' }))
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Salva come bozza' }))
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva come bozza' }))
+    expect(await screen.findByText('pagina contratti')).toBeInTheDocument()
+
+    const creates_calls = spy.mock.calls.filter(
+      ([url, init]) => url === '/api/hub/freelancers/f1/matches' && init?.method === 'POST',
+    )
+    expect(creates_calls).toHaveLength(2)
+    const [first, second] = creates_calls.map(([, init]) => JSON.parse(String(init!.body)))
+    expect(first.id).toBeTruthy()
+    expect(second.id).toBe(first.id)
+  })
+
+  it('stays on the preview and points at «Match e contratti» when the signing mail did not leave (REB-406)', async () => {
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': pdf,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=quadro': pdf,
+      'POST /api/hub/freelancers/f1/matches': { id: 'm1' },
+      'POST /api/hub/matches/m1/send': {
+        match: { id: 'm1', lettera: { numero: '2026-001' } },
+        inviato: 'quadro',
+        mail_inviata: false,
+      },
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(await screen.findByRole('button', { name: 'Genera l’anteprima' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma' }))
+
+    expect(
+      await screen.findByText(
+        'Partito il contratto quadro: la lettera n. 2026-001 partirà da sola dopo la sua firma. La mail però non è partita: usa «Reinvia email».',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('pagina contratti')).toBeNull()
+    const link = screen.getByRole('link', { name: 'Vai a Match e contratti' })
+    expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/contracts$/)
+
+    // A report already showing means this send already happened once: the button stays
+    // disabled so a second click cannot send it again.
+    const sendButton = screen.getByRole('button', { name: 'Invia per la firma' })
+    expect(sendButton).toBeDisabled()
+    const sends = spy.mock.calls.filter(([url]) => url === '/api/hub/matches/m1/send')
+    expect(sends).toHaveLength(1)
+  })
+
+  it('shows the server’s conflict with a link to «Match e contratti» and sends nothing when a retry changed the data (REB-406)', async () => {
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/companies?limit=50': { totale: 1, items: [OPEN], per_stato: {}, next_cursor: null },
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c1': prefill('450.00'),
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=lettera': pdf,
+      'POST /api/hub/freelancers/f1/matches/preview?documento=quadro': pdf,
+      'POST /api/hub/freelancers/f1/matches': () =>
+        answer(409, {
+          detail:
+            'Questo match è già stato salvato con dati diversi: aprilo da «Match e contratti» e controllalo prima di inviarlo.',
+        }),
+    })
+    mount()
+    await throughTheFirstThreeSteps()
+    await userEvent.click(await screen.findByRole('button', { name: 'Genera l’anteprima' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma' }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Questo match è già stato salvato con dati diversi')
+    const link = screen.getByRole('link', { name: 'Vai a Match e contratti' })
+    expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/contracts$/)
+    expect(screen.queryByText('pagina contratti')).toBeNull()
+    expect(spy.mock.calls.some(([url]) => String(url).includes('/matches/m1/send'))).toBe(false)
   })
 })

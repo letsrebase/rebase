@@ -28,6 +28,11 @@ NETWORK_ERROR_STATUS = 599
 # bytes this process allocates.
 MAX_BODY_BYTES = 1_048_576
 
+# The sealed contracts the Documenso client downloads (REB-387) run to a few hundred
+# kilobytes, and a long framework agreement with Documenso's certificate page must never
+# meet the cap above: that client reads through `urllib_download_call`, capped here.
+MAX_DOWNLOAD_BYTES = 16 * 1_048_576
+
 # (method, url, headers, body) -> (status, body). Narrower than the Gmail seam on
 # purpose: there is no retry here, so a `Retry-After` would have nothing to inform.
 HttpCall = Callable[[str, str, dict[str, str], bytes], tuple[int, bytes]]
@@ -55,6 +60,20 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 _OPENER = urllib.request.build_opener(_NoRedirect)
 
 
+def _open(
+    method: str, url: str, headers: dict[str, str], body: bytes, cap: int
+) -> tuple[int, bytes]:
+    sent = {"User-Agent": USER_AGENT, **headers}
+    # `None` rather than `b""` for a bodiless request: with `data=b""` urllib writes
+    # `Content-Length: 0` and a form content type on a GET, which some proxies refuse.
+    request = urllib.request.Request(url, data=body or None, headers=sent, method=method)
+    try:
+        with _OPENER.open(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+            return int(response.status), response.read(cap + 1)
+    except urllib.error.HTTPError as error:
+        return int(error.code), error.read(cap + 1)
+
+
 def urllib_call(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
     """`urllib`, no dependency.
 
@@ -63,12 +82,12 @@ def urllib_call(method: str, url: str, headers: dict[str, str], body: bytes) -> 
     and "OpenAI accepted it" through one path. The body is read up to one byte past the
     cap, so the caller can tell "too long" from "exactly the cap".
     """
-    sent = {"User-Agent": USER_AGENT, **headers}
-    # `None` rather than `b""` for a bodiless request: with `data=b""` urllib writes
-    # `Content-Length: 0` and a form content type on a GET, which some proxies refuse.
-    request = urllib.request.Request(url, data=body or None, headers=sent, method=method)
-    try:
-        with _OPENER.open(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
-            return int(response.status), response.read(MAX_BODY_BYTES + 1)
-    except urllib.error.HTTPError as error:
-        return int(error.code), error.read(MAX_BODY_BYTES + 1)
+    return _open(method, url, headers, body, MAX_BODY_BYTES)
+
+
+def urllib_download_call(
+    method: str, url: str, headers: dict[str, str], body: bytes
+) -> tuple[int, bytes]:
+    """`urllib_call` with room for a file: the Documenso client's seam (REB-387), whose
+    downloads are sealed PDFs rather than a few fields of JSON."""
+    return _open(method, url, headers, body, MAX_DOWNLOAD_BYTES)

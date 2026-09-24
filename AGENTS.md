@@ -1,9 +1,9 @@
-# AGENTS.md — working in the rebase monorepo
+# AGENTS.md: working in the rebase monorepo
 
 Orientation for agents and for humans. Read this before touching anything at the
 root. Facts that are true of one project only live in that project's own
 `projects/<name>/AGENTS.md`, which is the file you should also read when you work
-there — both Claude Code and omp load the nearest one.
+there; both Claude Code and omp load the nearest one.
 
 ## What this repository is
 
@@ -43,7 +43,7 @@ make impossible.
 
 - **Python**: `pyproject.toml` at the root is the uv workspace. Its `members` list
   names every package one by one rather than globbing, because `projects/*/apps/*`
-  also matches `apps/web` — a Vite app with no `pyproject.toml` — and uv refuses to
+  also matches `apps/web` (a Vite app with no `pyproject.toml`) and uv refuses to
   start on a member without one.
 - **Node**: `pnpm-workspace.yaml` globs, because pnpm ignores a directory with no
   `package.json`. Its `catalog:` block is the single source of truth for
@@ -82,11 +82,11 @@ nothing when you are not. Narrow to one project by passing its paths as argument
 
 ## Verification: three tiers, and where each check lives
 
-1. **Local, before the PR exists** — `.github/preflight.json`. Everything expensive:
+1. **Local, before the PR exists**: `.github/preflight.json`. Everything expensive:
    the full Python suite, Playwright, the images. `preflight --list` prints what your
    diff selects before you trust it; `preflight --install-hook` runs it on push.
-2. **`pull_request`** — one cheap gate per project, scoped by `dorny/paths-filter`.
-3. **`push` to `main`** — the heavy tier (the corpus, the images), scoped by the
+2. **`pull_request`**: one cheap gate per project, scoped by `dorny/paths-filter`.
+3. **`push` to `main`**: the heavy tier (the corpus, the images), scoped by the
    same filters. It was unconditional until 2026-09-09, when the measurement said
    1,564 hosted minutes in eight days against a 2,000/month allowance on a private
    repository. The repository went public 2026-09-10 and hosted minutes are free now,
@@ -102,7 +102,7 @@ nothing when you are not. Narrow to one project by passing its paths as argument
    putting it on the critical path of a merge; it costs no separate mechanism, since a
    `schedule` event carries no `before` either and falls into the same fallback. The
    `changes` job also publishes its verdict as the `changed-paths` artifact, which is
-   what each deploy reads instead of recomputing the same paths for itself — the
+   what each deploy reads instead of recomputing the same paths for itself; the
    schedule run skips publishing it, since `deploy-*.yml`'s `workflow_run` guard
    already requires `github.event.workflow_run.event == 'push'` and a scheduled run's
    event never satisfies it, so nothing reads for a nightly run anyway.
@@ -220,6 +220,21 @@ tested on a branch and is proven on the trunk instead.
   still passes. `Closes #297` goes on that line only when merging that pull request
   really finishes the whole roadmap point, which on a milestone's draft PR means
   waiting for the card that finishes it.
+- **A Dependabot pull request is the one PR without a card.** Version updates arrive
+  on Monday mornings as `.github/dependabot.yml` schedules them, a security update the
+  day its advisory lands; both are bumps and nothing else, titled `chore(deps): ...`,
+  `chore(deps-dev): ...` or `ci(deps): ...`. One merges on the gate every PR here
+  merges on (green `ci`, the Greptile loop of `.claude/skills/pr-creation/`, a merge
+  commit), and two things are invisible to that gate. The images are built on the
+  trunk, not on the PR, so a bump to a Dockerfile, a compose file or a lock is proven
+  by preflight's image checks or by the trunk run before the preview deploys. And a PR
+  that changes `pnpm-lock.yaml` leaves the pnpm store hash in `flake.nix` stale: the
+  new one (`nix build .#packages.x86_64-linux.pigrocrm-web` fails naming it) goes onto
+  the bot's branch as a commit of its own, last, since Dependabot stops rebasing a
+  branch once another commit is pushed to it. A bump that needs a code change is
+  closed, and the upgrade gets a card and its own branch; when it is one package of a
+  group, `@dependabot ignore <name>` on the group PR drops it instead, and that card
+  also lifts the ignore (`docs/design/DECISIONS.md`, 2026-09-24).
 - Four levels, in order. An **initiative** is a product and is permanent: four
   exist today (`Website`, `Hub`, `PigroCRM`, `Monorepo`). A **project** is a
   release, or a body of work with an end, and it closes when it ships. A **project

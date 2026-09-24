@@ -2,10 +2,10 @@
 
 An admin pairs a freelancer card with a company request; the hub writes the letter of
 engagement and, when the freelancer has no active framework agreement, the framework
-agreement too, and both PDFs are downloadable from here. Nothing leaves the hub yet:
-sending for signature arrives with Documenso (phase 3). The routes sit under `/api/hub/`
-beside the rest of the admin area. A contract that cannot be typeset is a 503 with a
-sentence (`main.domain_error_handler`).
+agreement too, and both PDFs are downloadable from here. «Invia per la firma» sends a
+match's documents through Documenso (`rebase_core.signing`, phase 3). The routes sit
+under `/api/hub/` beside the rest of the admin area. A contract that cannot be typeset
+is a 503 with a sentence (`main.domain_error_handler`).
 """
 
 from typing import Annotated, Literal
@@ -14,10 +14,11 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import AdminDep, RendererDep, SessionDep, SettingsDep
+from rebase_api.deps import AdminDep, RendererDep, SessionDep, SettingsDep, SigningDep
 from rebase_api.downloads import pdf_response
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import (
+    ContractDocumentRead,
     FiscalData,
     FiscalRead,
     FreelancerContracts,
@@ -25,13 +26,20 @@ from rebase_core.contract_schemas import (
     MatchList,
     MatchPrefill,
     MatchRead,
+    SendReport,
 )
 from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
 from rebase_core.errors import NotFound
 from rebase_core.fiscal import FiscalService
-from rebase_core.matches import ENTITY, LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX, MatchService
-from rebase_core.models import ContractDocument, Freelancer, Match
+from rebase_core.matches import (
+    ENTITY,
+    LIST_LIMIT_DEFAULT,
+    LIST_LIMIT_MAX,
+    MatchService,
+    require_live_freelancer,
+)
+from rebase_core.models import ContractDocument, Match
 from rebase_core.search import SEARCH_MAX_LENGTH
 
 router = APIRouter(prefix="/api/hub", tags=["hub-admin"])
@@ -51,15 +59,14 @@ def _writing(session: Session, settings: Settings, renderer: Renderer) -> MatchS
     return MatchService(session, renderer, signer_data(settings.signer_json))
 
 
-def _require_live_freelancer(
-    session: Session, freelancer_id: UUID, entity: str, identifier: UUID
-) -> None:
-    """A match or a document of a soft-deleted freelancer is gone from the admin area,
-    the same way `for_freelancer` already treats it in the core: `MatchService.get` and
-    `document_pdf` read no further than the row itself, so the route enforces it here."""
-    freelancer = session.get(Freelancer, freelancer_id)
-    if freelancer is None or freelancer.deleted_at is not None:
-        raise NotFound(entity, identifier)
+def _document_guard(session: Session, document_id: UUID) -> ContractDocument:
+    """404 when the document itself is gone or its freelancer is soft-deleted, before a
+    signing action -- or `download_contract` -- reaches the service."""
+    document = session.get(ContractDocument, document_id)
+    if document is None:
+        raise NotFound(DOCUMENT_ENTITY, document_id)
+    require_live_freelancer(session, document.freelancer_id, DOCUMENT_ENTITY, document_id)
+    return document
 
 
 @router.get("/freelancers/{freelancer_id}/fiscal", response_model=FiscalRead | None)
@@ -119,7 +126,9 @@ def create_match(
 ) -> MatchRead:
     """«Salva come bozza»: the draft match with its numbered letter and, when needed,
     the framework agreement. 422 naming `fiscale` without tax data, `company_id` for a
-    closed request."""
+    closed request. `payload.id`, when given, makes a retry idempotent (REB-406): the
+    match already written under it comes back instead of a second one, and the same id
+    already used by another freelancer's match is a 409."""
     return _writing(session, settings, renderer).create(freelancer_id, payload, admin.id)
 
 
@@ -142,17 +151,21 @@ def list_matches(
 @router.get("/matches/{match_id}", response_model=MatchRead)
 def get_match(_: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
     match = MatchService(session).get(match_id)
-    _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
     return match
 
 
 @router.post("/matches/{match_id}/cancel", response_model=MatchRead)
-def cancel_match(admin: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
+def cancel_match(
+    admin: AdminDep, session: SessionDep, signing: SigningDep, match_id: UUID
+) -> MatchRead:
+    """A draft; or a match in signature, whose letter's envelope is cancelled on
+    Documenso too (REB-407)."""
     match = session.get(Match, match_id)
     if match is None:
         raise NotFound(ENTITY, match_id)
-    _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
-    return MatchService(session).cancel(match_id, admin.id)
+    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    return signing(session).cancel_match(match_id, admin.id)
 
 
 @router.post("/matches/{match_id}/close", response_model=MatchRead)
@@ -160,8 +173,60 @@ def close_match(admin: AdminDep, session: SessionDep, match_id: UUID) -> MatchRe
     match = session.get(Match, match_id)
     if match is None:
         raise NotFound(ENTITY, match_id)
-    _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
     return MatchService(session).close(match_id, admin.id)
+
+
+@router.post("/matches/{match_id}/send", response_model=SendReport)
+def send_match(
+    admin: AdminDep, session: SessionDep, signing: SigningDep, match_id: UUID
+) -> SendReport:
+    """«Invia per la firma»: the document that can leave now goes to Documenso and the
+    freelancer gets its mail; a letter whose framework agreement is not signed yet waits
+    for it. 503 when this environment cannot sign, 502 when Documenso refuses, 409 for a
+    draft text or a match with nothing left to send."""
+    match = session.get(Match, match_id)
+    if match is None:
+        raise NotFound(ENTITY, match_id)
+    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    return signing(session).send_match(match_id, admin.id)
+
+
+@router.post("/contract-documents/{document_id}/refresh", response_model=ContractDocumentRead)
+def refresh_contract(
+    _: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
+) -> ContractDocumentRead:
+    """«Aggiorna stato»: what Documenso says about the envelope, applied as the webhook
+    would, and whatever a signature still leaves to do (REB-407)."""
+    _document_guard(session, document_id)
+    return signing(session).refresh(document_id)
+
+
+@router.post("/contract-documents/{document_id}/resend", response_model=ContractDocumentRead)
+def resend_contract(
+    admin: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
+) -> ContractDocumentRead:
+    """«Reinvia email»: the signing mail again, for a document still waiting."""
+    _document_guard(session, document_id)
+    return signing(session).resend_mail(document_id, admin.id)
+
+
+@router.post("/contract-documents/{document_id}/cancel", response_model=ContractDocumentRead)
+def cancel_contract(
+    admin: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
+) -> ContractDocumentRead:
+    """«Annulla» on a framework agreement not signed yet; a letter goes with its match."""
+    _document_guard(session, document_id)
+    return signing(session).cancel_document(document_id, admin.id)
+
+
+@router.post("/contract-documents/{document_id}/notice", response_model=ContractDocumentRead)
+def record_contract_notice(
+    admin: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
+) -> ContractDocumentRead:
+    """«Registra disdetta» on an active framework agreement."""
+    _document_guard(session, document_id)
+    return signing(session).record_notice(document_id, admin.id)
 
 
 @router.get("/contract-documents/{document_id}/pdf")
@@ -172,10 +237,7 @@ def download_contract(
     `firmato=true`, there is no signed copy yet -- in plain Italian, since the core's
     own sentence for that last case ("documento firmato ... non trovato") reads oddly
     to an admin."""
-    document = session.get(ContractDocument, document_id)
-    if document is None:
-        raise NotFound(DOCUMENT_ENTITY, document_id)
-    _require_live_freelancer(session, document.freelancer_id, DOCUMENT_ENTITY, document_id)
+    _document_guard(session, document_id)
     try:
         pdf = MatchService(session).document_pdf(document_id, signed=firmato)
     except NotFound as exc:

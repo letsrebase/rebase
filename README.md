@@ -6,9 +6,9 @@ The monorepo for rebase's products.
 
 | Project | What it is | Stack |
 |---|---|---|
-| [`projects/pigrocrm`](projects/pigrocrm) | PigroCRM — an AI-first CRM for Italian freelancers, consultants and small startups. Everything the web UI can do is also reachable over REST and over MCP. | Python · FastAPI · SQLAlchemy · PostgreSQL · React · Vite |
-| [`projects/website`](projects/website) | letsrebase.com — the public site: the rebase community page, the pages the product signs itself with, and the signup form. Static pages, deliberately no framework. | HTML · CSS · Vite |
-| [`projects/hub`](projects/hub/README.md) | The rebase hub, at letsrebase.com/hub — the freelancer and company signup wizards, and the admin area that reads them. | Python · FastAPI · SQLAlchemy · PostgreSQL · React · Vite |
+| [`projects/pigrocrm`](projects/pigrocrm) | PigroCRM, an AI-first CRM for Italian freelancers, consultants and small startups. Everything the web UI can do is also reachable over REST and over MCP. | Python · FastAPI · SQLAlchemy · PostgreSQL · React · Vite |
+| [`projects/website`](projects/website) | letsrebase.com, the public site: the rebase community page, the pages the product signs itself with, and the signup form. Static pages, deliberately no framework. | HTML · CSS · Vite |
+| [`projects/hub`](projects/hub/README.md) | The rebase hub, at letsrebase.com/hub: the freelancer and company signup wizards, and the admin area that reads them. | Python · FastAPI · SQLAlchemy · PostgreSQL · React · Vite |
 | [`shared/brand`](shared/brand) | The palette, the typeface and the four-tile mark, read by both surfaces so there is one source and no copy. | CSS |
 
 ## Getting started

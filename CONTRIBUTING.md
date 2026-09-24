@@ -28,7 +28,7 @@ but Docker (see the README).
    preflight             # run them
    ```
    `preflight --install-hook` wires it into `git push`. Expect that push to take
-   minutes rather than seconds — that is the expensive tier doing its job before the
+   minutes rather than seconds: that is the expensive tier doing its job before the
    pull request exists, rather than after it.
 4. Open a pull request. CI runs a cheap, change-scoped gate on it; the full suite runs
    on the trunk after the merge.
@@ -61,7 +61,7 @@ fix(web): the sidebar is as tall as the window, not the page
 ```
 
 No em dashes, no emoji, no "not just X but Y", and **never an AI co-author trailer**.
-The subject says what changed and, where it is not obvious, the body says why — the
+The subject says what changed and, where it is not obvious, the body says why: the
 reason is the part nobody can reconstruct later.
 
 ## What review looks for

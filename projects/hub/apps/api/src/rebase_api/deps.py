@@ -1,7 +1,8 @@
 """One engine per process, one session per request."""
 
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, closing
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -13,10 +14,12 @@ from rebase_core.analytics import Tracker, tracker_from_settings
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.db import create_engine_from_settings, session_factory
+from rebase_core.documenso import DocumensoClient, client_from_settings
 from rebase_core.http import HttpCall, urllib_call
 from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.members import MemberService
 from rebase_core.schemas import MeRead
+from rebase_core.signing import SigningService
 from rebase_core.users import UserService
 
 MEMBER_COOKIE = "orbiters_user"
@@ -111,3 +114,54 @@ def get_renderer() -> Renderer:
 
 
 RendererDep = Annotated[Renderer, Depends(get_renderer)]
+
+
+def get_documenso(settings: SettingsDep) -> DocumensoClient | None:
+    """This environment's Documenso client (REB-387), or `None` when signing is off: the
+    send answers 503 with a sentence, as the member area does without a mail key."""
+    return client_from_settings(settings)
+
+
+DocumensoDep = Annotated[DocumensoClient | None, Depends(get_documenso)]
+
+SigningFactory = Callable[[Session], SigningService]
+
+
+def get_signing_factory(
+    settings: SettingsDep, renderer: RendererDep, documenso: DocumensoDep, sender: SenderDep
+) -> SigningFactory:
+    """`SigningService` as this environment configures it, for any session: the
+    request's own, or the one a background task opens for itself (the webhook's).
+    `REBASE_SIGNER_JSON` is handed to `SigningService` as the raw setting, unparsed:
+    `build` runs for every route behind `SigningDep` (a future cancel, refresh, resend
+    or the webhook among them), so parsing it here would 503 all of them on a malformed
+    value. `SigningService` itself parses it once, lazily, only where a document is
+    about to be typeset (REB-406)."""
+
+    def build(session: Session) -> SigningService:
+        return SigningService(
+            session,
+            renderer=renderer,
+            documenso=documenso,
+            sender=sender,
+            signer_json=settings.signer_json,
+            contracts_mail=settings.contracts_mail,
+            allow_draft=settings.contracts_allow_draft,
+        )
+
+    return build
+
+
+SigningDep = Annotated[SigningFactory, Depends(get_signing_factory)]
+
+SessionOpener = Callable[[], AbstractContextManager[Session]]
+
+
+def get_session_opener() -> SessionOpener:
+    """A session for work that runs after the response (REB-387's webhook): a background
+    task must not borrow the request's session, which its dependency closes."""
+    factory = _get_session_factory()
+    return lambda: closing(factory())
+
+
+SessionOpenerDep = Annotated[SessionOpener, Depends(get_session_opener)]

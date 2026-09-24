@@ -24,7 +24,7 @@ COPY shared/ui ./shared/ui
 COPY projects/pigrocrm/apps/web ./projects/pigrocrm/apps/web
 RUN pnpm --filter web build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.29-alpine
 # The SPA and nothing else. Until 2026-09-09 this image also carried the public site
 # at the document root, because the two shared an origin; the site is its own project
 # and its own deployable now (`projects/website`), letsrebase.com points at that

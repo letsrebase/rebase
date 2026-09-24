@@ -1,0 +1,191 @@
+# Weekly version updates for everything this repository pins, one entry per ecosystem.
+#
+# Security updates are a repository setting, not this file, and they are on: an alert
+# opens its PR at once, whatever the schedule and the cooldown below say. The `ignore`
+# rules do apply to them, and of those only the `@types/node` major could ever hold
+# one back: Docker and Compose images get no security updates at all, and the uv
+# workspace members are not published anywhere. This file decides the rest, the
+# ordinary drift of versions nobody has a reason to hold back.
+#
+# What a Dependabot PR is here, and what it is not (docs/design/DECISIONS.md,
+# 2026-09-24): the one kind of pull request with no Linear card behind it, merged on the
+# same gate as any other (green `ci`, Greptile's last review clean). A PR that needs
+# code changes to go green is not fixed on the bot's branch: it is closed, and the
+# upgrade gets a card and a branch of its own.
+#
+# Every entry shares three choices:
+#   - Monday at 06:00 in Rome, so the week's PRs are there when the week starts.
+#   - A seven-day cooldown on version updates. A release that is broken or malicious is
+#     usually yanked within days, and waiting a week costs nothing a security update
+#     (which ignores the cooldown) does not already cover.
+#   - Conventional Commit titles, as AGENTS.md asks of every commit: `chore(deps): ...`
+#     and `chore(deps-dev): ...` for the packages, `ci(deps): ...` for the Actions.
+
+version: 2
+
+updates:
+  # One pnpm workspace at the root, so one entry: Dependabot reads pnpm-workspace.yaml,
+  # updates the `catalog:` there and each package's own package.json, and rewrites the
+  # single pnpm-lock.yaml.
+  #
+  # Every PR from this entry changes pnpm-lock.yaml, which moves the pnpm store hash in
+  # flake.nix (`fetchPnpmDeps`). Nix has no hosted CI (DECISIONS.md, 2026-09-22), so
+  # nothing on the PR notices: the hash goes onto the bot's branch by hand before the
+  # merge (AGENTS.md, Conventions). That is why minor and patch updates arrive as one
+  # PR a week rather than one per package.
+  #
+  # The updater reads dependencies and the catalog, never `packageManager`: pnpm's own
+  # version moves by hand, together with the three Dockerfiles' `corepack prepare`
+  # lines, since a different pnpm than the one that wrote the lockfile is how
+  # `--frozen-lockfile` silently stops meaning frozen.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Rome
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm-minor-and-patch:
+        applies-to: version-updates
+        update-types: [minor, patch]
+    ignore:
+      # The Node types' major is chosen in the catalog by hand (`^24` today, while the
+      # images and CI run Node 22), so a new one is a decision, not a weekly bump.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
+
+  # One uv workspace at the root, whose members pin exactly (`==`) and often pin the
+  # same library twice (SQLAlchemy, pydantic, pypdf, posthog in both cores).
+  #
+  # No group, on purpose. A grouped uv update in a workspace still rewrites unrelated
+  # pins in a member's pyproject.toml without relocking them (dependabot-core#15786,
+  # open in September 2026), and `uv sync --frozen` would have installed the old lock
+  # and reported green. `_python-gate.yml` syncs with `--locked` since this file
+  # exists, so such a PR fails there now, but not producing it is cheaper still.
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Rome
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    ignore:
+      # The workspace's own members. Dependabot can look them up on PyPI as if they
+      # were published packages and "update" one to a stranger's release of the same
+      # name (dependabot-core#14004). A new project's Python packages join this list
+      # (docs/adding-a-project.md, section 5).
+      - dependency-name: pigrocrm-core
+      - dependency-name: pigrocrm-api
+      - dependency-name: pigrocrm-mcp
+      - dependency-name: rebase-core
+      - dependency-name: rebase-api
+      - dependency-name: rebase-mcp
+
+  # The base images of every Dockerfile. The updater reads only the directories
+  # listed, not their subdirectories, so a project that ships an image adds every
+  # directory holding one of its Dockerfiles (docs/adding-a-project.md, section 5).
+  #
+  # Images are built on the trunk and in preflight, never on a pull request (ci.yml,
+  # tier 3), so a PR from this entry goes green without its image having been built.
+  # The trunk run builds it before the preview deploys, and a red one blocks that
+  # deploy; preflight's image checks are the way to know before the merge.
+  #
+  # Only nginx moves today. The updater reads `FROM` lines and keeps a tag's
+  # precision, so `3.13-slim-bookworm` is only ever offered a Python minor and
+  # `22-bookworm-slim` a Node major, both ignored below, and the uv binary
+  # (`COPY --from=ghcr.io/astral-sh/uv:...`) is not read at all: it moves by hand,
+  # with the `version:` that `setup-uv` is given in `_python-gate.yml` and `ci.yml`.
+  # An nginx PR is read against `projects/pigrocrm/deploy/nginx/spa.conf`, which
+  # names the nginx build its realip module was last confirmed in (`nginx -V`).
+  - package-ecosystem: docker
+    directories:
+      - /projects/pigrocrm
+      - /projects/hub
+      - /projects/website
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Rome
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # One PR per image across every Dockerfile, so the three nginx stages move
+      # together instead of in three PRs that each leave the others behind.
+      docker-images:
+        group-by: dependency-name
+        patterns: ['*']
+    ignore:
+      # The Python minor is also `.python-version`, `requires-python`, mypy's
+      # `python_version`, ruff's `target-version` and the flake's interpreter.
+      - dependency-name: python
+        update-types: [version-update:semver-minor, version-update:semver-major]
+      # The Node major is also `setup-node` in `_node-gate.yml` and `ci.yml`,
+      # `engines` in the root package.json and the flake's `nodejs_22`.
+      - dependency-name: node
+        update-types: [version-update:semver-major]
+
+  # The images the compose files run as published. Today this opens nothing: the only
+  # one is `postgres:17-alpine`, which is only ever offered the next major. It is here
+  # so the next image a compose file runs is covered, and so the PostgreSQL rule is
+  # written where the bot reads it.
+  - package-ecosystem: docker-compose
+    directories:
+      - /projects/pigrocrm
+      - /projects/hub
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Rome
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope
+    ignore:
+      # A PostgreSQL major cannot open the data directory the previous one wrote: it is
+      # a dump and restore (or pg_upgrade) of production, planned on its own card, and
+      # never a version string changed by a bot.
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]
+
+  # The Actions every workflow uses. They are pinned by major tag (`@v4`), so what
+  # arrives here is a major; one PR for all of them, since they are read together.
+  # The deploy workflows run on `workflow_run`, which only ever runs the version on
+  # main, so a bump there is proven by the first deploy after the merge. What they
+  # share with CI is the `changed-paths` artifact (`upload-artifact` in ci.yml, on
+  # push only, and `download-artifact` in each deploy). A broken download fails open:
+  # the deploy cannot read the verdict, deploys the preview instead of skipping it and
+  # says so in its log («no verdict from CI run ...»); production never downloads it.
+  # A broken upload fails the `changes` job on every push, a release tag included, so
+  # CI goes red and neither a preview nor a release deploys until it is fixed.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: Europe/Rome
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      github-actions:
+        patterns: ['*']

@@ -4,6 +4,7 @@ The network is the only thing faked, as in `test_conversions.py`: the URL, the h
 the JSON and the failure classification run for real.
 """
 
+import base64
 import json
 
 import pytest
@@ -11,12 +12,16 @@ import pytest
 from rebase_core.config import Settings
 from rebase_core.mail import (
     RESEND_URL,
+    Attachment,
     CardSummary,
     Mail,
     RecordingSender,
     ResendSender,
     magic_link_mail,
     sender_from_settings,
+    signed_copy_mail,
+    signing_cancelled_mail,
+    signing_request_mail,
     welcome_mail,
 )
 
@@ -239,3 +244,117 @@ def test_the_welcome_mail_escapes_the_persons_words_and_refuses_an_unknown_kind(
     assert "<b>x</b>" not in mail.html and "&lt;b&gt;x&lt;/b&gt;" in mail.html
     with pytest.raises(ValueError):
         welcome_mail("ada@studio.it", "Ada", ACCEDI, kind="boh")
+
+
+def test_resend_sends_each_attachment_as_base64_with_its_name() -> None:
+    """REB-387: the signed contracts leave as attachments. Resend takes each file as
+    base64 in the JSON body; a mail with none sends no `attachments` key at all."""
+    http = FakeHttp()
+    attachment = Attachment("lettera-di-incarico-2026-001-firmato.pdf", b"%PDF-1.7 firmato")
+    mail = Mail(to="ada@studio.it", subject="x", text="y", attachments=(attachment,))
+    assert ResendSender(KEY, FROM, http=http).send(mail) is True
+    body = json.loads(http.calls[0][3])
+    assert body["attachments"] == [
+        {
+            "filename": "lettera-di-incarico-2026-001-firmato.pdf",
+            "content": base64.b64encode(b"%PDF-1.7 firmato").decode("ascii"),
+        }
+    ]
+    plain = Mail(to="ada@studio.it", subject="x", text="y")
+    assert ResendSender(KEY, FROM, http=http).send(plain) is True
+    assert "attachments" not in json.loads(http.calls[1][3])
+
+
+def test_the_signing_mail_names_the_document_and_carries_the_one_link() -> None:
+    """Spec § 6: one mail per document, the subject naming it, one button. Documenso
+    sends nothing itself, so this mail is the only way the link reaches the person."""
+    url = "https://firma.letsrebase.com/sign/abc123"
+    quadro = signing_request_mail("ada@studio.it", "Ada", "quadro", None, url)
+    lettera = signing_request_mail("ada@studio.it", "Ada", "lettera", "2026-001", url)
+    assert quadro.subject == "Da firmare: contratto quadro rebase"
+    assert lettera.subject == "Da firmare: lettera di incarico n. 2026-001"
+    for mail in (quadro, lettera):
+        assert mail.to == "ada@studio.it"
+        assert mail.text.startswith("Ciao Ada,")
+        assert url in mail.text
+        assert mail.html is not None
+        # The button's href, and the bare URL as href and as text for blocked buttons.
+        assert mail.html.count(url) == 3
+        assert "Firma il documento" in mail.html
+        assert mail.attachments == ()
+    assert "dodici mesi" in quadro.text
+    assert "lettera di incarico n. 2026-001" in lettera.text
+    hostile = signing_request_mail(
+        "ada@studio.it", "<b>Ada</b>", "quadro", None, 'https://x.it/?t="><script>'
+    )
+    assert hostile.html is not None
+    assert "<script>" not in hostile.html and "<b>Ada" not in hostile.html
+
+
+def test_the_cancellation_mail_names_the_document_and_carries_no_button() -> None:
+    """REB-407: the freelancer's own notice that a document already sent will not be
+    signed. Unlike `signing_request_mail`, there is no link left to give them."""
+    quadro = signing_cancelled_mail("ada@studio.it", "Ada", "quadro", None)
+    lettera = signing_cancelled_mail("ada@studio.it", "Ada", "lettera", "2026-001")
+    assert quadro.subject == "Contratto quadro rebase annullato"
+    assert lettera.subject == "Lettera di incarico n. 2026-001 annullata"
+    for mail in (quadro, lettera):
+        assert mail.to == "ada@studio.it"
+        assert mail.text.startswith("Ciao Ada,")
+        assert "annullato noi di rebase" in mail.text
+        assert mail.html is not None
+        assert "Firma il documento" not in mail.html
+        assert mail.attachments == ()
+    hostile = signing_cancelled_mail("ada@studio.it", "<b>Ada</b>", "quadro", None)
+    assert hostile.html is not None and "<b>Ada" not in hostile.html
+
+
+def test_the_signed_copy_travels_as_an_attachment_to_both_parties() -> None:
+    """Spec § 6: the sealed PDF to the freelancer and to rebase's contracts address. Its
+    last page is Documenso's certificate, in English (probe § 7): the mail says so."""
+    attachment = Attachment("lettera-di-incarico-2026-001-firmato.pdf", b"%PDF-1.7 firmato")
+    mine = signed_copy_mail(
+        "ada@studio.it",
+        kind="lettera",
+        numero="2026-001",
+        attachment=attachment,
+        nome="Ada",
+        cognome="Lovelace",
+    )
+    ours = signed_copy_mail(
+        "ciao@letsrebase.com",
+        kind="lettera",
+        numero="2026-001",
+        attachment=attachment,
+        nome="Ada",
+        cognome="Lovelace",
+        for_rebase=True,
+    )
+    assert mine.subject == "Firmata: lettera di incarico n. 2026-001"
+    assert ours.subject == "Firmata da Ada Lovelace: lettera di incarico n. 2026-001"
+    assert mine.attachments == ours.attachments == (attachment,)
+    assert mine.text.startswith("Ciao Ada,") and ours.text.startswith("Ciao,")
+    assert "Ada Lovelace ha firmato la lettera di incarico n. 2026-001" in ours.text
+    for mail in (mine, ours):
+        assert "certificato della firma elettronica" in mail.text
+        assert mail.html is not None
+    quadro = signed_copy_mail(
+        "ada@studio.it",
+        kind="quadro",
+        numero=None,
+        attachment=attachment,
+        nome="Ada",
+        cognome="Lovelace",
+    )
+    assert quadro.subject == "Firmato: contratto quadro rebase"
+    assert "hai firmato il contratto quadro rebase" in quadro.text
+    hostile = signed_copy_mail(
+        "ciao@letsrebase.com",
+        kind="quadro",
+        numero=None,
+        attachment=attachment,
+        nome="Ada",
+        cognome="<script>",
+        for_rebase=True,
+    )
+    assert hostile.html is not None and "<script>" not in hostile.html

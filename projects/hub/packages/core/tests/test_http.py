@@ -8,7 +8,13 @@ from typing import Any
 import pytest
 
 import rebase_core.http as http_module
-from rebase_core.http import MAX_BODY_BYTES, USER_AGENT, urllib_call
+from rebase_core.http import (
+    MAX_BODY_BYTES,
+    MAX_DOWNLOAD_BYTES,
+    USER_AGENT,
+    urllib_call,
+    urllib_download_call,
+)
 
 
 class _Response:
@@ -154,3 +160,51 @@ def test_the_body_is_capped_so_a_wrong_endpoint_cannot_choose_the_allocation(
     status, body = urllib_call("GET", oversized_server, {}, b"")
     assert status == 200
     assert len(body) == MAX_BODY_BYTES + 1
+
+
+def test_a_download_reads_past_the_json_cap_and_keeps_a_cap_of_its_own(
+    oversized_server: str,
+) -> None:
+    """The sealed PDFs the Documenso client downloads (REB-387) are larger than any JSON
+    the hub reads: the download seam takes the whole body the JSON seam would cut, and
+    is still capped, one byte past its own limit."""
+    status, body = urllib_download_call("GET", oversized_server, {}, b"")
+    assert status == 200
+    assert len(body) == MAX_BODY_BYTES + 1000
+    assert MAX_DOWNLOAD_BYTES > MAX_BODY_BYTES
+
+
+class _TooBigForDownload(BaseHTTPRequestHandler):
+    """Answers every request with a body past the download seam's own cap."""
+
+    def do_GET(self) -> None:  # noqa: N802
+        payload = b"x" * (MAX_DOWNLOAD_BYTES + 1000)
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+        return
+
+
+@pytest.fixture
+def oversized_download_server() -> Iterator[str]:
+    server = HTTPServer(("127.0.0.1", 0), _TooBigForDownload)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_the_download_seam_stops_at_its_own_cap_past_the_json_ones(
+    oversized_download_server: str,
+) -> None:
+    """The download seam's own cap is `MAX_DOWNLOAD_BYTES`, not the JSON seam's: a body
+    past it is still read only one byte past `MAX_DOWNLOAD_BYTES` (correction 1)."""
+    status, body = urllib_download_call("GET", oversized_download_server, {}, b"")
+    assert status == 200
+    assert len(body) == MAX_DOWNLOAD_BYTES + 1

@@ -3,7 +3,7 @@
 rebase, the freelance community, as a product of its own: the signup form the
 community site collects, the freelancer and company wizards, and the admin area that
 reads them. Served at `letsrebase.com/hub/`. Split out of PigroCRM on 2026-09-09 so
-the two products change independently — its own settings (`REBASE_*`), its own
+the two products change independently: its own settings (`REBASE_*`), its own
 Postgres, its own Alembic history, its own API and MCP server. Nothing here imports
 PigroCRM, and PigroCRM imports nothing from here.
 
@@ -15,14 +15,14 @@ Read it before changing the shape of anything here; this file does not restate i
 
 Three public flows and the admin area behind them:
 
-- `/hub/` — the chooser: «Sono un freelance» / «Cerco persone per un progetto».
-- `/hub/freelance` — the freelancer wizard, ending at `/hub/thanks`. The CV is a step
+- `/hub/`: the chooser, «Sono un freelance» / «Cerco persone per un progetto».
+- `/hub/freelance`: the freelancer wizard, ending at `/hub/thanks`. The CV is a step
   of it and an optional one: a card without a PDF is stored, reads «da completare»,
   and the person adds the file from `/hub/me` whenever they have it.
-- `/hub/companies` — the company wizard.
+- `/hub/companies`: the company wizard.
 - `/hub/login` and `/hub/me`: a freelancer gets back in with a magic link by mail, to
   see or change what they sent.
-- `/hub/admin/*` — the freelancer, company and signup lists — reached by the same
+- `/hub/admin/*`: the freelancer, company and signup lists, reached by the same
   magic-link session as `/hub/me` (`/hub/login`), open only when the signed-in
   person's role is `admin`. The first admin is granted with `rebase setrole` (below);
   the next ones with one click from «Amministratori» inside the area, no form, no
@@ -99,7 +99,7 @@ Loopback only, production values (`docs/adding-a-project.md` §7 has preview's):
 
 `.env.example` lists every variable the compose file needs: `POSTGRES_*`,
 `REBASE_DATABASE_URL`, the ports above, the ChatGPT Ads pair, and
-`REBASE_DATA_DIR` — Postgres' data directory, outside the repository, with no
+`REBASE_DATA_DIR`: Postgres' data directory, outside the repository, with no
 default in `docker-compose.yml`, so a `.env` that forgets it fails the stack rather
 than mounting an empty one. The `.env` itself is never in the repository. Locally it
 is `projects/hub/.env`, beside the compose file. On a server it is
@@ -187,7 +187,7 @@ green deploy means Postgres is up and migrated, not only that uvicorn answered.
 
 ## Status
 
-Shipped: `hub-v0.1.0` is deployed. What is still open — CV retention, the privacy
+Shipped: `hub-v0.1.0` is deployed. What is still open (CV retention, the privacy
 paragraph the wizard has to link before the CV step, whether the signup-listing MCP
-tool moves out of PigroCRM's server — and the decisions taken with Ivan are in
+tool moves out of PigroCRM's server) and the decisions taken with Ivan are in
 [`docs/superpowers/specs/`](docs/superpowers/specs/).

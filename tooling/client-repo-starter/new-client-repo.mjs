@@ -83,8 +83,8 @@ const targetDir = args.createRepo ? join(process.cwd(), args.repo) : args.target
 // ---- placeholder values -----------------------------------------------
 
 const WORKTREE_POLICY = args.worktree
-  ? "work in a git worktree of its own (`git worktree add -b <branch> ../<repo>-<name> origin/main`), never directly in the shared checkout — more than one person can be committing to this repository at once, and a worktree is what keeps your commit yours."
-  : "a plain branch checkout is fine here (`git checkout -b <branch> origin/main`); this contract has one person committing at a time, so nothing needs a worktree's isolation — revisit if that changes.";
+  ? "work in a git worktree of its own (`git worktree add -b <branch> ../<repo>-<name> origin/main`), never directly in the shared checkout: more than one person can be committing to this repository at once, and a worktree is what keeps your commit yours."
+  : "a plain branch checkout is fine here (`git checkout -b <branch> origin/main`); this contract has one person committing at a time, so nothing needs a worktree's isolation: revisit if that changes.";
 
 const WORKTREE_BLOCK = args.worktree
   ? [
@@ -104,7 +104,7 @@ const WORKTREE_BLOCK = args.worktree
   : [
       "4. **A plain branch checkout is fine here**: `git checkout -b <branch> origin/main`.",
       "   This contract has one person committing at a time, so nothing needs a",
-      "   worktree's isolation — revisit if that changes.",
+      "   worktree's isolation: revisit if that changes.",
     ].join("\n");
 
 const REVIEW_GATE_POLICY = args.greptile
@@ -115,13 +115,51 @@ const GREPTILE_BLOCK = args.greptile
   ? [
       "",
       "**Then iterate on Greptile until it scores full marks.** It reviews the PR once",
-      "it is open: inline findings with a severity badge, and a summary with a",
-      "confidence score, on the PR's description or as a bot comment depending on the",
-      "repository's own Greptile setting. Read both. Each finding is either **fixed**,",
-      "in a commit that names it, or **answered**, with a reply on its thread. Push,",
-      "wait for the re-review, and repeat until the review of the sha that will merge",
-      "raises nothing new and the score reads full marks. The PR does not merge before",
-      "that.",
+      "it is open: inline findings with a severity badge, and a summary headed",
+      "`Confidence Score: N/5`, on the PR's own description or as a bot comment,",
+      "depending on this repository's Greptile setting (PR Summaries, in",
+      "app.greptile.com). Read both. A run shows on the commit as the `Greptile",
+      "Review` check run, and, when there are findings, as a review by the bot too;",
+      "a clean run can leave only the check run, and a run can leave only the",
+      "review, so wait for either, as a background job next to the CI watch:",
+      "",
+      "```bash",
+      "sha=$(git rev-parse HEAD)",
+      "for i in $(seq 20); do   # ten minutes, then the @greptileai nudge below",
+      "  run=$(gh api \"repos/" + args.org + "/" + args.repo + "/commits/$sha/check-runs\" \\",
+      "      --jq '.check_runs[] | select(.name == \"Greptile Review\" and .status == \"completed\" and (.conclusion == \"success\" or .conclusion == \"failure\")) | \"\\(.conclusion)\\t\\(.output.summary)\"')",
+      "  rid=$(gh api repos/" + args.org + "/" + args.repo + "/pulls/<n>/reviews \\",
+      "      --jq \".[] | select(.user.login == \\\"greptile-apps[bot]\\\" and .commit_id == \\\"$sha\\\") | .id\" | tail -n 1)",
+      "  [ -n \"$run$rid\" ] && break; sleep 30",
+      "done",
+      "[ -n \"$rid\" ] && gh api repos/" + args.org + "/" + args.repo + "/pulls/<n>/comments \\",
+      "    --jq \".[] | select(.pull_request_review_id == $rid and .in_reply_to_id == null) | \\\"\\(.id) \\(.path):\\(.line // .original_line) \\(.body)\\\"\"",
+      "echo \"$run\" | cut -f2-",
+      "{ gh pr view <n> --json body -q .body",
+      "  gh api repos/" + args.org + "/" + args.repo + "/issues/<n>/comments \\",
+      "      --jq '.[] | select(.user.login == \"greptile-apps[bot]\") | .body'; } \\",
+      "  | grep -oE 'Confidence Score: [0-9]/5' | tail -n 1",
+      "if [ \"$(echo \"$run\" | head -n1 | cut -f1)\" = success ]; then echo \"check run passes on $sha\"",
+      "elif [ -z \"$run\" ] && [ -n \"$rid\" ]; then echo \"no check run for $sha, only a review: judge from the score and findings above\"",
+      "else echo \"check run does not pass on $sha yet\"; fi",
+      "```",
+      "",
+      "Nothing printed after a completed run means it is not there yet: read again",
+      "before going on. Each finding is either **fixed**, in a commit that names it, or",
+      "**answered**, with a reply on its thread (`gh api",
+      "repos/" + args.org + "/" + args.repo + "/pulls/<n>/comments/<id>/replies -F body=@file`: never `-f`",
+      "with a backtick in the body, since bash reads it as a command substitution). An",
+      "answered finding still counts against the score until the thread is resolved (`gh api",
+      "graphql -f query='mutation { resolveReviewThread(input:{threadId:\"<id>\"}) {",
+      "thread { isResolved } } }'`, the id from the PR's `reviewThreads`) and",
+      "`@greptileai` is commented once after. After a fix, push, wait for the run on",
+      "the new sha, read again: the check run's own `conclusion` decides it when a check",
+      "run exists (the same signal the merge gate itself reads, sha-scoped, so a push",
+      "can't leave it stale); the score line above is what to judge from on the rarer",
+      "run that leaves only a review with no check run. The loop ends when the check run",
+      "on the sha that will merge reads `success`, or, on a review-only run, when the",
+      "score reads full marks. Ten minutes with no run on the head sha: comment",
+      "`@greptileai` once, which re-triggers it, and wait again.",
     ].join("\n")
   : "";
 

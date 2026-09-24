@@ -24,5 +24,5 @@ than about the repository.
 **Context discipline.** Read `projects/<name>/AGENTS.md` for the project you are in
 before its source. The design record for PigroCRM is
 `projects/pigrocrm/docs/superpowers/specs/`, in Italian, and it is the reason a piece
-of code looks the way it does — read the spec before rewriting something that seems
+of code looks the way it does: read the spec before rewriting something that seems
 odd.

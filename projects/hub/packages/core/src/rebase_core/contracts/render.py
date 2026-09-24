@@ -72,16 +72,39 @@ class SignatureBlank:
 
 
 class Renderer(Protocol):
-    """The seam the services take, so a test hands `FakeRenderer` and needs no binary."""
+    """The seam the services take, so a test hands `FakeRenderer` and needs no binary.
 
-    def render(self, document: str, data: Mapping[str, Value]) -> Rendered: ...
+    `signing` asks for the copy that goes out for signature (REB-387 phase 3): the same
+    page, with the labels under the blanks the signing site fills laid out and not drawn,
+    since they show through the signature and the date (probe § 11.9). `is_draft` says
+    whether the text in the package today is `status: draft`, which never leaves."""
+
+    def render(
+        self, document: str, data: Mapping[str, Value], *, signing: bool = False
+    ) -> Rendered: ...
+
+    def signature_blanks(
+        self, document: str, data: Mapping[str, Value], *, signing: bool = False
+    ) -> list[SignatureBlank]: ...
+
+    def is_draft(self, document: str) -> bool: ...
 
 
 class ContractRenderer:
     """The production renderer: pandoc and Typst on this machine."""
 
-    def render(self, document: str, data: Mapping[str, Value]) -> Rendered:
-        return render(document, data)
+    def render(
+        self, document: str, data: Mapping[str, Value], *, signing: bool = False
+    ) -> Rendered:
+        return render(document, data, signing=signing)
+
+    def signature_blanks(
+        self, document: str, data: Mapping[str, Value], *, signing: bool = False
+    ) -> list[SignatureBlank]:
+        return signature_blanks(document, data, signing=signing)
+
+    def is_draft(self, document: str) -> bool:
+        return text_is_draft(document)
 
 
 def text_path(document: str) -> Path:
@@ -97,6 +120,12 @@ def text_version(document: str) -> str:
     if not version:
         raise ContractFailed(f"{source.name}: the front matter says no `version`")
     return version
+
+
+def text_is_draft(document: str) -> bool:
+    """Whether the text in the package today says `status: draft` (spec § 1f)."""
+    source = text_path(document)
+    return is_draft(source.read_text(encoding="utf-8"), source.name)
 
 
 def company_defaults() -> dict[str, Value]:
@@ -119,7 +148,7 @@ def _typst_world(workdir: Path) -> list[str]:
 
 
 def _typst_source(
-    document: str, data: Mapping[str, Value], workdir: Path
+    document: str, data: Mapping[str, Value], workdir: Path, signing: bool = False
 ) -> tuple[Path, list[str], str, bool]:
     """pandoc's Typst with every field filled and every proposal marked: the path, the
     fields left blank, the text's version and whether it is a draft."""
@@ -142,6 +171,7 @@ def _typst_source(
             "--wrap=preserve",
             *(f"--variable={name}:{value.lstrip('#')}" for name, value in palette().items()),
             f"--variable=draft:{'true' if draft else 'false'}",
+            f"--variable=forsigning:{'true' if signing else 'false'}",
             "--output",
             str(intermediate),
             str(source),
@@ -157,10 +187,10 @@ def _typst_source(
     return intermediate, blank, version, draft
 
 
-def render(document: str, data: Mapping[str, Value]) -> Rendered:
+def render(document: str, data: Mapping[str, Value], signing: bool = False) -> Rendered:
     workdir = Path(tempfile.mkdtemp(prefix="rebase-contract-"))
     try:
-        intermediate, blank, version, draft = _typst_source(document, data, workdir)
+        intermediate, blank, version, draft = _typst_source(document, data, workdir, signing)
         output = workdir / f"{document}.pdf"
         compiled = _run(
             [
@@ -184,10 +214,12 @@ def render(document: str, data: Mapping[str, Value]) -> Rendered:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
-def signature_blanks(document: str, data: Mapping[str, Value]) -> list[SignatureBlank]:
+def signature_blanks(
+    document: str, data: Mapping[str, Value], signing: bool = False
+) -> list[SignatureBlank]:
     workdir = Path(tempfile.mkdtemp(prefix="rebase-contract-"))
     try:
-        intermediate, _blank, _version, _draft = _typst_source(document, data, workdir)
+        intermediate, _blank, _version, _draft = _typst_source(document, data, workdir, signing)
         queried = _run(
             [
                 "typst",

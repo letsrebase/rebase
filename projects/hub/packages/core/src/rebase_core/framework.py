@@ -57,6 +57,18 @@ def is_active(document: ContractDocument) -> bool:
     return document.kind == QUADRO and document.stato == "firmato" and document.notice_at is None
 
 
+def framework_dates(
+    document: ContractDocument, today: date
+) -> tuple[bool, date | None, date | None]:
+    """`(attivo, rinnovo, ultimo_giorno_disdetta)`: the one arithmetic the admin's
+    `document_read` and the member area's own read (REB-392) share, so a change to the
+    twelve months' math lands once."""
+    active = is_active(document)
+    signed = signed_on(document)
+    renewal = next_renewal(signed, today) if active and signed is not None else None
+    return active, renewal, last_notice_day(renewal) if renewal is not None else None
+
+
 def active_framework(session: Session, freelancer_id: UUID) -> ContractDocument | None:
     return session.scalars(
         select(ContractDocument)
@@ -109,9 +121,7 @@ def next_letter_number(session: Session, year: int) -> str:
 def document_read(
     document: ContractDocument, today: date, current_version: str
 ) -> ContractDocumentRead:
-    active = is_active(document)
-    signed = signed_on(document)
-    renewal = next_renewal(signed, today) if active and signed is not None else None
+    active, renewal, last_notice = framework_dates(document, today)
     return ContractDocumentRead(
         id=document.id,
         kind=document.kind,
@@ -126,9 +136,10 @@ def document_read(
         sent_at=document.sent_at,
         signed_at=document.signed_at,
         notice_at=document.notice_at,
+        cancel_reason=document.cancel_reason,
         ha_pdf_firmato=document.signed_pdf is not None,
         attivo=active,
         rinnovo=renewal,
-        ultimo_giorno_disdetta=last_notice_day(renewal) if renewal is not None else None,
+        ultimo_giorno_disdetta=last_notice,
         nuova_versione=document.kind == QUADRO and document.text_version != current_version,
     )

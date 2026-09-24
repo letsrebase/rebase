@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_renderer, get_sender
+from rebase_api.deps import get_renderer
 from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
 from rebase_core.models import User
@@ -51,13 +51,6 @@ TABLES = (
     "users",
     "signups",
 )
-
-
-@pytest.fixture
-def sender(client: TestClient) -> Iterator[RecordingSender]:
-    recording = RecordingSender()
-    client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
-    yield recording
 
 
 @pytest.fixture
@@ -201,6 +194,77 @@ def test_an_admin_matches_a_card_with_a_request_and_downloads_both_pdfs(
     assert signed.status_code == 404
 
 
+def test_a_repeated_create_with_the_same_id_writes_the_match_once(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    """REB-406: the wizard's own retry after a lost response sends the same
+    client-generated id again with «Salva come bozza» or «Invia per la firma», and gets
+    the match already written back, never a second one with another letter number."""
+    freelancer_id, company_id = _ready(client, sender)
+    given_id = "01234567-89ab-7cde-8123-456789abcdef"
+    body = {"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
+
+    first = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=body)
+    second = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=body)
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["id"] == second.json()["id"] == given_id
+    assert first.json()["lettera"]["numero"] == second.json()["lettera"]["numero"]
+    page = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()
+    assert len(page["matches"]) == 1
+
+
+def test_the_same_id_used_by_another_freelancers_match_is_a_409(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    given_id = "01234567-89ab-7cde-8123-456789abcdef"
+    created = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    )
+    assert created.status_code == 201, created.text
+
+    _apply_member(client, "grace@studio.it")
+    other_freelancer_id = str(client.get("/api/hub/freelancers").json()["items"][0]["id"])
+    assert (
+        client.put(f"/api/hub/freelancers/{other_freelancer_id}/fiscal", json=FISCAL).status_code
+        == 200
+    )
+
+    refused = client.post(
+        f"/api/hub/freelancers/{other_freelancer_id}/matches",
+        json={"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    )
+
+    assert refused.status_code == 409, refused.text
+    assert client.get(f"/api/hub/freelancers/{other_freelancer_id}/matches").json()["matches"] == []
+
+
+def test_a_repeated_create_with_the_same_id_and_changed_data_is_a_409(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    """REB-406: a retry that corrects the letter or the client before sending it again
+    must not be handed back the stale match under cover of the idempotent id -- the
+    request no longer matches what was saved, so this is a 409, not a 201."""
+    freelancer_id, company_id = _ready(client, sender)
+    given_id = "01234567-89ab-7cde-8123-456789abcdef"
+    body = {"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
+
+    first = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=body)
+    assert first.status_code == 201, first.text
+
+    changed = {**body, "lettera": {**LETTERA, "ruolo": "Un altro ruolo"}}
+    refused = client.post(f"/api/hub/freelancers/{freelancer_id}/matches", json=changed)
+
+    assert refused.status_code == 409, refused.text
+    assert "dati diversi" in refused.json()["detail"]
+    assert "Match e contratti" in refused.json()["detail"]
+    page = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()
+    assert len(page["matches"]) == 1
+
+
 def test_the_preview_renders_a_document_without_saving_or_numbering_it(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
@@ -258,6 +322,39 @@ def test_a_closed_request_and_a_fee_the_law_refuses_are_422s_on_their_field(
     )
     assert closed.status_code == 422
     assert closed.json()["detail"][0]["loc"] == ["body", "company_id"]
+
+
+def test_an_end_date_before_the_start_names_data_fine(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    backwards = {**LETTERA, "data_fine": "2026-09-01"}
+    refused = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": backwards},
+    )
+    assert refused.status_code == 422
+    detail = refused.json()["detail"][0]
+    assert detail["loc"][-1] == "data_fine"
+    assert detail["msg"] == "la fine prevista viene prima dell'inizio"
+
+
+def test_a_payment_term_past_thirty_days_from_month_end_names_giorni_pagamento(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    over = {**LETTERA, "giorni_pagamento": 45, "fine_mese": True}
+    refused = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": over},
+    )
+    assert refused.status_code == 422
+    detail = refused.json()["detail"][0]
+    assert detail["loc"][-1] == "giorni_pagamento"
+    assert (
+        detail["msg"]
+        == "contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)"
+    )
 
 
 def test_a_draft_is_cancelled_once_and_only_an_active_match_closes(

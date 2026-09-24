@@ -10,6 +10,7 @@ import {
   type MemberUpdate,
 } from './api'
 import { linkedinFieldValue, linkedinProfile } from './linkedin'
+import type { Utm } from './utm'
 
 /** REB-279: `lib/auth.tsx`'s `useAdmin` and `lib/member.tsx`'s `useMember` merge into
  *  `useMe`, and their two logouts merge into one `useLogout`, both backed by the one
@@ -37,7 +38,9 @@ export function useMe() {
 }
 
 export function useRequestLink() {
-  return useMutation({ mutationFn: (email: string) => member.requestLink(email) })
+  return useMutation({
+    mutationFn: ({ email, utm }: { email: string; utm?: Utm }) => member.requestLink(email, utm),
+  })
 }
 
 export function useEnter() {

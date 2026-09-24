@@ -14,7 +14,16 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
+from pydantic_core import InitErrorDetails, PydanticCustomError, ValidationError
 
 from rebase_core.contracts.fields import DAYS_LIMIT, DAYS_LIMIT_MONTH_END, Value, italian_date
 from rebase_core.models import (
@@ -223,13 +232,38 @@ class LetteraFields(LetteraDraft):
     giorni_pagamento: int = Field(ge=1, le=DAYS_LIMIT)
     fine_mese: bool
 
+    @field_validator("data_fine", mode="after")
+    @classmethod
+    def _end_not_before_start(cls, value: date | None, info: ValidationInfo) -> date | None:
+        """`data_inizio` is declared before `data_fine`, so it is already in `info.data`
+        by the time this runs: the error can name `data_fine`, the field an admin
+        actually filled in, instead of the whole letter."""
+        start = info.data.get("data_inizio")
+        if value is not None and start is not None and value < start:
+            raise PydanticCustomError("date_order", "la fine prevista viene prima dell'inizio")
+        return value
+
     @model_validator(mode="after")
-    def _dates_and_term(self) -> "LetteraFields":
-        if self.data_fine is not None and self.data_fine < self.data_inizio:
-            raise ValueError("la fine prevista viene prima dell'inizio")
+    def _payment_term_within_the_law(self) -> "LetteraFields":
+        """`fine_mese` is declared after `giorni_pagamento`, so a `field_validator` on
+        `giorni_pagamento` cannot read it yet; this stays a model-level check, but
+        raises a `ValidationError` built with an explicit `loc` so it still names
+        `giorni_pagamento`, the field the law (81/2017) actually limits, rather than
+        the whole letter."""
         if self.fine_mese and self.giorni_pagamento > DAYS_LIMIT_MONTH_END:
-            raise ValueError(
-                "contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)"
+            raise ValidationError.from_exception_data(
+                type(self).__name__,
+                [
+                    InitErrorDetails(
+                        type=PydanticCustomError(
+                            "payment_term",
+                            "contati da fine mese, i giorni di pagamento sono al massimo 30 "
+                            "(legge 81/2017)",
+                        ),
+                        loc=("giorni_pagamento",),
+                        input=self.giorni_pagamento,
+                    )
+                ],
             )
         return self
 
@@ -251,10 +285,16 @@ class LetteraFields(LetteraDraft):
 
 class MatchCreate(BaseModel):
     """Steps 1, 3 and 4 of «Crea match». The tax data of step 2 are saved by their own
-    route when the admin leaves that step, and read back from `freelancer_fiscal`."""
+    route when the admin leaves that step, and read back from `freelancer_fiscal`.
+
+    `id` is optional and client-generated (REB-406): one per wizard run, sent with both
+    «Salva come bozza» and «Invia per la firma», so a retry after the response is lost
+    writes nothing new -- `MatchService.create` reads it back and returns the match
+    already written."""
 
     model_config = ConfigDict(extra="forbid")
 
+    id: UUID | None = None
     company_id: UUID
     cliente: ClienteData
     lettera: LetteraFields
@@ -277,6 +317,9 @@ class ContractDocumentRead(BaseModel):
     sent_at: datetime | None
     signed_at: datetime | None
     notice_at: datetime | None
+    # Why it became `annullato`: the freelancer's own reason when they refused it, or who
+    # cancelled it (REB-407).
+    cancel_reason: str | None
     ha_pdf_firmato: bool
     attivo: bool
     rinnovo: date | None
@@ -365,3 +408,47 @@ class MatchList(BaseModel):
 
     totale: int
     items: list[MatchListItem]
+
+
+class SendReport(BaseModel):
+    """What «Invia per la firma» did (REB-387 phase 3): the match as it is now, the kind
+    of the document that left (`quadro`, `lettera`, or none when the letter waits for a
+    framework agreement already out for signature), and whether its mail left too."""
+
+    match: MatchRead
+    inviato: str | None
+    mail_inviata: bool | None
+
+
+class MemberContract(BaseModel):
+    """A contract as its freelancer reads it in «Contratti» (REB-392): never the PDF's
+    bytes and never `data`. `cliente` and the two dates are a letter's, as the letter
+    prints them; `signing_url` is there only while the document waits for the
+    signature, since its path is the signer's token."""
+
+    id: UUID
+    kind: str
+    numero: str | None
+    stato: str
+    cliente: str | None
+    inizio: str | None
+    fine: str | None
+    sent_at: datetime | None
+    signed_at: datetime | None
+    signing_url: str | None
+    ha_pdf_firmato: bool
+    attivo: bool
+    rinnovo: date | None
+    ultimo_giorno_disdetta: date | None
+
+
+class MemberContracts(BaseModel):
+    """«Contratti»: the framework agreement (the active one, else the newest that reached
+    the person), the letters newest first, and `quadri_precedenti` (REB-392): the
+    freelancer's other framework agreements that were signed, newest first, excluding
+    the one in `quadro` -- a notice, or a newer one replacing it, must not make an
+    earlier signed copy disappear from the page."""
+
+    quadro: MemberContract | None
+    quadri_precedenti: list[MemberContract] = Field(default_factory=list)
+    lettere: list[MemberContract]

@@ -17,7 +17,7 @@ the files are right and this skill has a bug.
    answers a team other than **{{LINEAR_TEAM}}**, is not a reason to go on without
    one: file it from the web app (`linear-ticket` § When no Linear tool is in the
    session), or stop and say so. Yours means what `AGENTS.md` § Tracker: Linear
-   says — assigned to you, unassigned and filed by you, or labelled `parallel` and
+   says: assigned to you, unassigned and filed by you, or labelled `parallel` and
    unclaimed.
 2. **Its neighbours have been read, and the card is `In Progress` with the result on
    it.** Before the first file changes, per `linear-ticket` § The neighbours. One
@@ -51,7 +51,7 @@ type(scope): what is true now
 
 `type` is one of `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `ci`, `chore`,
 `style`, `revert`. After the colon the first word is lowercase, nothing is in Title
-Case, and the verb is present tense — what the reader gets, not what you did to the
+Case, and the verb is present tense: what the reader gets, not what you did to the
 files.
 
 ## Body
@@ -83,7 +83,7 @@ or the video cannot be captured, say so and why. This section is never deleted.>
 ```
 
 The last line of the body, after everything else: `Linear: {{LINEAR_PREFIX}}-N.`
-Read the id from the board in this session, on a card that is yours. No placeholder —
+Read the id from the board in this session, on a card that is yours. No placeholder:
 "not filed yet", "TBD", "the id belongs here before this merges" are each a PR opened
 without its card; when the card cannot be read or filed at all, the PR waits and the
 person hears why.
@@ -96,7 +96,7 @@ Check the file you are about to send before you send it:
 tail -n 1 pr-body.md | grep -Eq '^Linear: {{LINEAR_PREFIX}}-[0-9]+\.$' || echo "no card, no PR"
 ```
 
-**Read your own diff against `main` before opening the PR for review**, not after —
+**Read your own diff against `main` before opening the PR for review**, not after:
 the point where a reviewer, human or a fresh dispatched agent, catches something is
 before CI runs on the sha that will merge rather than after, so a fix does not cost a
 second full cycle. Apply what you accept in the work commit (amend it, or squash a
@@ -111,7 +111,7 @@ gh pr create --body-file pr-body.md
 
 1. Comment the PR URL on the Linear card. If this team's GitHub integration and its
    pull-request automation are on, the PR opening and merging move the card's state
-   for you; if not, move it by hand — `In Progress` while the PR is open, `Done` on
+   for you; if not, move it by hand: `In Progress` while the PR is open, `Done` on
    the merge, with the evidence in a comment.
 2. **Wait for CI in the background**, never a foreground poll. A red run gets a line
    on the card when you see it, and the sha of the fix on the same comment when you

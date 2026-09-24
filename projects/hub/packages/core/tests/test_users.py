@@ -11,8 +11,9 @@ from sqlalchemy.orm import Session
 from rebase_core.config import Settings
 from rebase_core.errors import ValidationFailed
 from rebase_core.freelancers import FreelancerService
-from rebase_core.models import MagicLinkToken, User, UserSession
-from rebase_core.schemas import FreelancerCreate
+from rebase_core.logins import LoginService
+from rebase_core.models import Login, MagicLinkToken, User, UserSession
+from rebase_core.schemas import FreelancerCreate, SignupUtm
 from rebase_core.users import UserService
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
@@ -221,6 +222,64 @@ def test_a_link_opens_a_session_once_and_never_twice_for_a_card_or_a_bare_admin(
     assert bare_mail is not None
     bare_outcome = users.enter(_token_from(bare_mail.text))
     assert bare_outcome is not None and bare_outcome[0].id == bare.id
+
+
+def test_a_link_asked_from_a_tracked_page_puts_the_campaign_on_the_login(
+    users: UserService, hub_session: Session
+) -> None:
+    """REB-426: the attribution the login page arrived with travels on the token and
+    lands on the `logins` row the link opens, so an outreach mail's click is readable
+    per person with no cookie involved."""
+    _apply(hub_session)
+    utm = SignupUtm(
+        utm_source="email",
+        utm_medium="outreach",
+        utm_campaign="outreach-2026-09-r2",
+        utm_content="cv",
+        utm_term="11425b70",
+    )
+    mail = users.request_link("ada@studio.it", utm=utm)
+    assert mail is not None
+    token = hub_session.scalar(select(MagicLinkToken))
+    assert token is not None and token.utm_campaign == "outreach-2026-09-r2"
+
+    outcome = users.enter(_token_from(mail.text))
+    assert outcome is not None
+    login = hub_session.scalar(select(Login).where(Login.user_id == outcome[0].id))
+    assert login is not None
+    assert (login.utm_source, login.utm_medium, login.utm_campaign) == (
+        "email",
+        "outreach",
+        "outreach-2026-09-r2",
+    )
+    assert (login.utm_content, login.utm_term, login.utm_id, login.origine) == (
+        "cv",
+        "11425b70",
+        None,
+        None,
+    )
+
+    recent = LoginService(hub_session).stats().recenti[0]
+    assert recent.utm_campaign == "outreach-2026-09-r2"
+    assert recent.utm_term == "11425b70"
+    assert LoginService(hub_session).for_user(outcome[0].id)[0].utm_content == "cv"
+
+
+def test_a_link_asked_with_no_campaign_writes_a_login_with_none(
+    users: UserService, hub_session: Session
+) -> None:
+    _apply(hub_session)
+    for utm in (None, SignupUtm()):
+        mail = users.request_link("ada@studio.it", utm=utm)
+        assert mail is not None
+        outcome = users.enter(_token_from(mail.text))
+        assert outcome is not None
+    logins = hub_session.scalars(select(Login)).all()
+    assert len(logins) == 2
+    for login in logins:
+        assert login.utm_campaign is None and login.utm_source is None
+        assert login.origine is None
+    assert LoginService(hub_session).stats().recenti[0].utm_campaign is None
 
 
 def test_an_expired_link_opens_nothing_and_is_swept_by_the_next_request(

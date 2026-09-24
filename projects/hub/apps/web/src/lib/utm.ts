@@ -97,3 +97,12 @@ export function resolveAttribution(search: string): Utm {
   const origin = resolveOrigin(search)
   return { ...resolveUtm(search), ...(origin ? { origine: origin } : {}) }
 }
+
+/** What this URL says and nothing else: no campaign the tab remembers from an earlier
+ *  page, and nothing remembered for a later one. For a login (REB-426), which records the
+ *  link that opened the page; an application instead keeps the landing's campaign across
+ *  a detour, which is `resolveAttribution`. */
+export function ownAttribution(search: string): Utm {
+  const origin = readOrigin(search)
+  return { ...readUtm(search), ...(origin ? { origine: origin } : {}) }
+}

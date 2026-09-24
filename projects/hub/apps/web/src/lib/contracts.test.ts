@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { LETTERA_TEXT_KEYS, type LetteraDraft } from './api'
-import { LETTERA_EMPTY, LETTERA_GROUPS, LETTERA_LABELS, letteraForm, toCliente, toLettera } from './contracts'
+import {
+  cancelDescription,
+  LETTERA_EMPTY,
+  LETTERA_GROUPS,
+  LETTERA_LABELS,
+  letteraForm,
+  sendReportMessage,
+  toCliente,
+  toLettera,
+  whatOf,
+} from './contracts'
 
 describe('the letter form (REB-387)', () => {
   it('shows every field of the letter exactly once, in a group', () => {
@@ -43,5 +53,45 @@ describe('the letter form (REB-387)', () => {
       cliente_piva: '01234567890',
       cliente_sede: 'Milano',
     })
+  })
+})
+
+describe('sendReportMessage (REB-390)', () => {
+  const match = { lettera: { numero: '2026-001' } } as never
+  it('says which document left and which waits', () => {
+    expect(sendReportMessage({ match, inviato: 'quadro', mail_inviata: true })).toBe(
+      'Partito il contratto quadro: la lettera n. 2026-001 partirà da sola dopo la sua firma.',
+    )
+    expect(sendReportMessage({ match, inviato: 'lettera', mail_inviata: true })).toBe(
+      'Partita la lettera di incarico n. 2026-001.',
+    )
+    expect(sendReportMessage({ match, inviato: null, mail_inviata: null })).toBe(
+      'La lettera n. 2026-001 aspetta il contratto quadro già in firma e partirà da sola dopo.',
+    )
+  })
+  it('says when the mail did not leave, and what to do', () => {
+    expect(sendReportMessage({ match, inviato: 'lettera', mail_inviata: false })).toBe(
+      'Partita la lettera di incarico n. 2026-001. La mail però non è partita: usa «Reinvia email».',
+    )
+  })
+})
+
+describe('whatOf (REB-407)', () => {
+  it('names a framework agreement and a letter by its own number', () => {
+    expect(whatOf({ kind: 'quadro', numero: null } as never)).toBe('del contratto quadro')
+    expect(whatOf({ kind: 'lettera', numero: '2026-001' } as never)).toBe('della lettera n. 2026-001')
+  })
+})
+
+describe('cancelDescription (REB-407)', () => {
+  const match = { nome_azienda: 'Rossi Studio', lettera: { numero: '2026-001', stato: 'generato' } } as never
+  it('names the match and the letter, and that the framework agreement stays', () => {
+    expect(cancelDescription(match)).toBe(
+      'Il match con Rossi Studio e la lettera n. 2026-001 diventano annullati, e il numero non si riusa. Il contratto quadro resta com’è.',
+    )
+  })
+  it('warns that a letter already out for signature is cancelled on the signing site too', () => {
+    const sent = { nome_azienda: 'Rossi Studio', lettera: { numero: '2026-001', stato: 'inviato' } } as never
+    expect(cancelDescription(sent)).toContain('il link ricevuto dal freelance smette di funzionare')
   })
 })

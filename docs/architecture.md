@@ -36,8 +36,8 @@ project (see below).
 `docs/superpowers/notes/2026-08-20-gmail-message-id-verification.md` through
 `Path(__file__).parents[3]` and asserts on its Status line. That is not an accident
 to work around: it is a test holding a written verification to its word. Keeping the
-project's documentation inside the project is what makes that reference — and every
-other path inside the project — keep working when the project moves.
+project's documentation inside the project is what makes that reference (and every
+other path inside the project) keep working when the project moves.
 
 This was the property that made the migration safe. Almost every relative path in
 PigroCRM points *within* the project: `parents[3]` in the tests, `REPO_ROOT` in the
@@ -55,7 +55,7 @@ pins the build-and-test toolchain once for everybody.
 
 - **One version of a library for every project.** That is the deduplication, and it
   is also the constraint. A project that needs an incompatible pin has to leave the
-  workspace with a lock of its own — an exception with a written reason, not a
+  workspace with a lock of its own: an exception with a written reason, not a
   default.
 - **A Docker build context is the whole repository**, because the lockfile an image
   is pinned by lives at the root. `.dockerignore` at the root is what keeps that
@@ -74,11 +74,11 @@ pins the build-and-test toolchain once for everybody.
 `pytest`'s `testpaths` and `mypy`'s `files` are at the root and name every project's
 paths in full. Both resolve relative to the working directory, not to the file they
 are written in, so a per-project config file only does what it looks like it does
-when you happen to have `cd`'d into that project — and silently checks nothing when
+when you happen to have `cd`'d into that project, and silently checks nothing when
 you have not. Everything runs from the root; CI narrows to one project by passing
 that project's paths as arguments, which override both lists.
 
-`ruff` is genuinely hierarchical — it resolves the nearest config for each file — so
+`ruff` is genuinely hierarchical (it resolves the nearest config for each file), so
 it is the one tool that does get a per-project file, and the two nested
 `apps/*/ruff.toml` that enforce PigroCRM's core-must-not-import-an-adapter rule keep
 working untouched.

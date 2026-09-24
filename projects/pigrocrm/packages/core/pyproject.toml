@@ -6,8 +6,8 @@ dependencies = [
   "sqlalchemy==2.0.51",
   "alembic==1.19.0",
   "psycopg[binary]==3.3.4",
-  "pydantic==2.13.4",
-  "pydantic-settings==2.14.2",
+  "pydantic==2.13.5",
+  "pydantic-settings==2.15.0",
   "email-validator==2.3.0",
   "argon2-cffi==25.1.0",
   # The `crypto` extra pulls in `cryptography`, needed for the RS256 assertion a
@@ -15,7 +15,7 @@ dependencies = [
   # architecture test resolves this entry to the module root `jwt` through
   # DIST_TO_MODULE_OVERRIDES and strips the extra exactly as it already does for
   # `psycopg[binary]`, so no test change is needed.
-  "pyjwt[crypto]==2.13.0",
+  "pyjwt[crypto]==2.14.0",
   # Declared in its own right, and not left to ride in as `pyjwt[crypto]`'s transitive
   # edge: `gmail/crypto.py` imports `cryptography` directly for the AES-256-GCM that
   # seals `google_accounts.refresh_token_ciphertext`, and a transitive edge is not a
@@ -23,7 +23,7 @@ dependencies = [
   # test_architecture.py's allowlist is built from this list precisely so that an
   # undeclared import fails rather than works by accident. Pinned to the version
   # `uv.lock` already resolves, so this adds a promise and not a new download.
-  "cryptography==50.0.0",
+  "cryptography==50.0.1",
   "uuid-utils==0.17.0",
   "lxml==6.1.2",
   # Only `zoneinfo.ZoneInfo("Europe/Rome")` needs this, and only because

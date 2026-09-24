@@ -15,6 +15,9 @@ from rebase_core.contract_schemas import (
     LetteraFields,
     MatchCreate,
     MatchListItem,
+    MemberContract,
+    MemberContracts,
+    SendReport,
 )
 from rebase_core.contracts.fields import DAYS, FIELD, MONTH_END, TERM
 from rebase_core.contracts.render import text_path
@@ -100,5 +103,15 @@ def test_the_form_covers_every_field_of_the_letter_and_the_hub_fills_the_rest() 
 def test_nothing_in_the_flow_can_carry_the_client_budget() -> None:
     """Spec § 1h: what rebase agrees with the client never reaches a freelancer's
     document, so no model of this flow has a field it could travel in."""
-    for model in (FiscalData, ClienteData, LetteraDraft, LetteraFields, MatchCreate, MatchListItem):
+    for model in (
+        FiscalData,
+        ClienteData,
+        LetteraDraft,
+        LetteraFields,
+        MatchCreate,
+        MatchListItem,
+        SendReport,
+        MemberContract,
+        MemberContracts,
+    ):
         assert not any("budget" in name for name in model.model_fields), model
