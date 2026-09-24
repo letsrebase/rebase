@@ -268,7 +268,9 @@ def test_a_notice_is_recorded_on_an_active_framework_only(
     assert (noticed.json()["stato"], noticed.json()["attivo"]) == ("disdetto", False)
 
 
+@pytest.mark.parametrize("action", ["refresh", "resend", "cancel", "notice"])
 def test_a_soft_deleted_freelancers_document_actions_are_hidden(
+    action: str,
     client: TestClient,
     admin: None,
     sender: RecordingSender,
@@ -277,7 +279,7 @@ def test_a_soft_deleted_freelancers_document_actions_are_hidden(
     api_session: Session,
 ) -> None:
     """REB-407: the four `/contract-documents/{id}/...` routes guard exactly as
-    `download_contract` already does (`_require_live_freelancer`), before any of them
+    `download_contract` already does (`require_live_freelancer`), before any of them
     reaches the service, let alone Documenso."""
     _match, quadro = _sent(client, sender)
     api_session.execute(
@@ -287,9 +289,8 @@ def test_a_soft_deleted_freelancers_document_actions_are_hidden(
     api_session.commit()
     calls_before = len(documenso.calls)
 
-    for action in ("refresh", "resend", "cancel", "notice"):
-        answered = client.post(f"/api/hub/contract-documents/{quadro['id']}/{action}")
-        assert answered.status_code == 404, action
-        assert answered.json() == {"detail": f"documento {quadro['id']} non trovato"}, action
+    answered = client.post(f"/api/hub/contract-documents/{quadro['id']}/{action}")
 
+    assert answered.status_code == 404
+    assert answered.json() == {"detail": f"documento {quadro['id']} non trovato"}
     assert len(documenso.calls) == calls_before

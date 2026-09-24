@@ -235,10 +235,7 @@ def download_contract(
     `firmato=true`, there is no signed copy yet -- in plain Italian, since the core's
     own sentence for that last case ("documento firmato ... non trovato") reads oddly
     to an admin."""
-    document = session.get(ContractDocument, document_id)
-    if document is None:
-        raise NotFound(DOCUMENT_ENTITY, document_id)
-    require_live_freelancer(session, document.freelancer_id, DOCUMENT_ENTITY, document_id)
+    _document_guard(session, document_id)
     try:
         pdf = MatchService(session).document_pdf(document_id, signed=firmato)
     except NotFound as exc:

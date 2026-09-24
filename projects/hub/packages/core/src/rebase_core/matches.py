@@ -356,9 +356,7 @@ class MatchService:
         may move the render or the number-taking earlier to "speed this up"."""
         renderer = self._renderer()
         try:
-            self.session.execute(
-                select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
-            )
+            self.lock_freelancer(freelancer_id)
             freelancer, user = self._freelancer(freelancer_id)
             company, _referente = self._matchable_company(data.company_id, lock=True)
             fiscal = self._fiscal(freelancer.id)
@@ -437,13 +435,8 @@ class MatchService:
         lock order): a cancel racing a send for the same match must not read a stale
         `bozza` and overwrite a letter the send already put out for signature with
         `annullato` while its envelope is still live on Documenso."""
-        freelancer_id = self.session.scalar(select(Match.freelancer_id).where(Match.id == match_id))
-        if freelancer_id is None:
-            raise NotFound(ENTITY, match_id)
-        self.session.execute(
-            select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
-        )
-        match = self._lock_match(match_id)
+        self.lock_freelancer(self.match_freelancer(match_id))
+        match = self.lock_match(match_id)
         if match.stato != "bozza":
             self.session.rollback()
             raise InvalidState(
@@ -474,13 +467,8 @@ class MatchService:
         """The freelancer's row locks first, then the match, the same order `cancel`
         takes: a close racing a webhook that just turned this match `attivo` (or
         `concluso` again) must re-check its state under the lock, not before it."""
-        freelancer_id = self.session.scalar(select(Match.freelancer_id).where(Match.id == match_id))
-        if freelancer_id is None:
-            raise NotFound(ENTITY, match_id)
-        self.session.execute(
-            select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
-        )
-        match = self._lock_match(match_id)
+        self.lock_freelancer(self.match_freelancer(match_id))
+        match = self.lock_match(match_id)
         if match.stato != "attivo":
             self.session.rollback()
             raise InvalidState(
@@ -719,10 +707,31 @@ class MatchService:
             raise ValidationFailed(ENTITY, "fiscale", "mancano i dati fiscali del freelance")
         return row
 
-    def _lock_match(self, match_id: UUID) -> Match:
+    def match_freelancer(self, match_id: UUID) -> UUID:
+        """The freelancer a match belongs to, read with no lock of its own -- only to
+        know which row `lock_freelancer` must take next, the first step of the global
+        lock order every write in this module and in `SigningService` follows. Shared
+        by `cancel`, `close` and `SigningService`, which calls it through `self.matches`
+        rather than keep its own copy (REB-407)."""
+        freelancer_id = self.session.scalar(select(Match.freelancer_id).where(Match.id == match_id))
+        if freelancer_id is None:
+            raise NotFound(ENTITY, match_id)
+        return freelancer_id
+
+    def lock_freelancer(self, freelancer_id: UUID) -> None:
+        """The freelancer's row, locked until this transaction ends: the first step of
+        the global lock order, every other lock in this module and in `SigningService`
+        assumes the caller already took. Shared the same way `match_freelancer` is
+        (REB-407)."""
+        self.session.execute(
+            select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
+        )
+
+    def lock_match(self, match_id: UUID) -> Match:
         """The match, row-locked until this transaction ends, and read again from the
         database rather than from the session's memory. The caller must already hold
-        the freelancer's row lock, the global order."""
+        the freelancer's row lock, the global order. Shared the same way
+        `match_freelancer` is (REB-407)."""
         match = self.session.scalars(
             select(Match)
             .where(Match.id == match_id)

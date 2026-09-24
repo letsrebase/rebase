@@ -1131,6 +1131,27 @@ def test_refresh_applies_a_signature_the_webhook_never_delivered(clean: Session)
     assert _letter_of(clean, match.id).stato == "inviato"
 
 
+def test_refresh_of_a_firmato_document_with_no_stored_copy_downloads_and_stores_it(
+    clean: Session,
+) -> None:
+    """The recovery path when the process died between `apply` committing `firmato` and
+    its own background `finish` ever downloading the sealed copy: `refresh`'s own read
+    of the envelope changes nothing here (`apply` is a no-op on a document that is not
+    `inviato` any more), but `refresh` still calls `finish` unconditionally, which is
+    what actually stores the copy this time."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _admin_id, freelancer_id, _match, envelope = _signed_framework(clean, renderer, fake, sender)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    assert _framework_of(clean, freelancer_id).signed_pdf is None
+
+    read = signing.refresh(_framework_of(clean, freelancer_id).id)
+
+    assert (read.stato, read.ha_pdf_firmato) == ("firmato", True)
+    assert _framework_of(clean, freelancer_id).signed_pdf == fake.signed_pdf(envelope)
+
+
 def test_refresh_of_a_document_still_waiting_changes_nothing(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
@@ -1166,6 +1187,18 @@ def test_resend_mails_the_same_link_again_and_leaves_a_trace(clean: Session) -> 
     assert quadro.signing_url is not None and quadro.signing_url in again.text
     trail = AdminActionService(clean).timeline("freelancer", freelancer_id)
     assert trail[0].kind == "mail_resent"
+
+
+def test_resend_with_a_refusing_sender_raises_and_records_no_trail(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    _sent(clean, renderer, fake, RecordingSender(), freelancer_id, company_id, admin_id)
+    quadro = _framework_of(clean, freelancer_id)
+
+    with pytest.raises(SigningUnavailable, match="non è partita"):
+        _signing(clean, renderer, fake, RefusingSender()).resend_mail(quadro.id, admin_id)
+
+    assert AdminActionService(clean).timeline("freelancer", freelancer_id) == []
 
 
 def test_resend_refuses_a_document_that_is_not_waiting(clean: Session) -> None:
@@ -1294,10 +1327,12 @@ def test_a_refused_cancellation_mail_does_not_undo_the_cancel(clean: Session) ->
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
     _sent(clean, renderer, fake, RecordingSender(), freelancer_id, company_id, admin_id)
     quadro = _framework_of(clean, freelancer_id)
+    sender = RefusingSender()
 
-    read = _signing(clean, renderer, fake, RefusingSender()).cancel_document(quadro.id, admin_id)
+    read = _signing(clean, renderer, fake, sender).cancel_document(quadro.id, admin_id)
 
     assert read.stato == "annullato"
+    assert len(sender.sent) == 1
 
 
 def test_cancelling_a_match_mails_only_a_letter_that_had_already_left(clean: Session) -> None:
@@ -1328,8 +1363,9 @@ def test_cancelling_a_match_whose_letter_still_waits_mails_nobody(clean: Session
 # ---- the lock order (REB-407) -------------------------------------------------------------
 
 
+@pytest.mark.parametrize("send_first", [True, False])
 def test_a_send_and_a_cancel_of_the_same_draft_never_leave_a_letter_annulled_with_a_live_envelope(
-    hub_engine: Engine, clean: Session
+    send_first: bool, hub_engine: Engine, clean: Session
 ) -> None:
     """A send and a cancel of the same `bozza` match, at once, behind one gate on the
     freelancer's row: whichever wins commits first, and the other then sees its result,
@@ -1337,7 +1373,9 @@ def test_a_send_and_a_cancel_of_the_same_draft_never_leave_a_letter_annulled_wit
     nothing left to send, an `InvalidState`), or the send wins (and the cancel that
     follows finds the match `in_firma` and cancels its now-live envelope, `cancel_match`'s
     other branch) -- never a letter `annullato` in the hub whose envelope is still live
-    on Documenso.
+    on Documenso. `send_first` forces both orderings deterministically, behind the same
+    gate the other lock-order tests in this file use, rather than leaving it to thread
+    scheduling: without it, only one order was ever exercised.
 
     An active framework agreement is set up first, so the match's own letter, not the
     framework agreement, is what a send dispatches: the letter's own `documenso_id` then
@@ -1366,23 +1404,26 @@ def test_a_send_and_a_cancel_of_the_same_draft_never_leave_a_letter_annulled_wit
             results["cancel"] = _signing(
                 canceller_session, renderer, fake, RecordingSender()
             ).cancel_match(match.id, admin_id)
+        except InvalidState as exc:
+            results["cancel"] = exc
         except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
             errors.append(exc)
 
+    first_fn, second_fn = (send, cancel) if send_first else (cancel, send)
     try:
         gate.execute(select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update())
-        sender_worker = threading.Thread(target=send)
-        canceller_worker = threading.Thread(target=cancel)
-        sender_worker.start()
-        sender_worker.join(timeout=0.5)
-        assert sender_worker.is_alive(), "the send did not wait on the freelancer's row"
-        canceller_worker.start()
-        canceller_worker.join(timeout=0.5)
-        assert canceller_worker.is_alive(), "the cancel did not wait on the freelancer's row"
+        first_worker = threading.Thread(target=first_fn)
+        first_worker.start()
+        first_worker.join(timeout=0.5)
+        assert first_worker.is_alive(), "the first call did not wait on the freelancer's row"
+        second_worker = threading.Thread(target=second_fn)
+        second_worker.start()
+        second_worker.join(timeout=0.5)
+        assert second_worker.is_alive(), "the second call did not wait on the freelancer's row"
         gate.commit()
-        sender_worker.join(timeout=5)
-        canceller_worker.join(timeout=5)
-        assert not sender_worker.is_alive() and not canceller_worker.is_alive()
+        first_worker.join(timeout=5)
+        second_worker.join(timeout=5)
+        assert not first_worker.is_alive() and not second_worker.is_alive()
     finally:
         gate.close()
         sender_session.close()
@@ -1390,10 +1431,19 @@ def test_a_send_and_a_cancel_of_the_same_draft_never_leave_a_letter_annulled_wit
     assert not errors, errors
     clean.expire_all()
     letter = _letter_of(clean, match.id)
+    match_row = clean.get(Match, match.id)
+    assert match_row is not None
+    # Whichever order won, the cancel always finds a match it can cancel (`bozza` if it
+    # went first, `in_firma` if the send got there first): never its own `InvalidState`.
+    assert isinstance(results.get("cancel"), MatchRead)
+    assert results["cancel"].stato == "annullato"
+    assert (letter.stato, match_row.stato) == ("annullato", "annullato")
     if letter.documenso_id is None:
-        # the cancel won the race before any send ever created an envelope.
+        # the cancel won the race before any send ever created an envelope: the send
+        # that followed found nothing left to send.
         assert isinstance(results.get("send"), InvalidState)
-    elif letter.stato == "annullato":
-        # the send won the race, and the cancel that followed cancelled its live
-        # envelope rather than merely annulling the row.
+    else:
+        # the send won the race and created a live envelope; the cancel that followed
+        # cancelled it rather than merely annulling the row.
+        assert isinstance(results.get("send"), SendReport)
         assert fake.envelopes[letter.documenso_id].status == "CANCELLED"

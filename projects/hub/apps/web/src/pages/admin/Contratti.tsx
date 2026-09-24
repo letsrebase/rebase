@@ -177,6 +177,7 @@ function FrameworkSection({
   onResend,
   onCancel,
   onNotice,
+  error,
 }: {
   quadro: ContractDocument | null
   busy: boolean
@@ -184,6 +185,7 @@ function FrameworkSection({
   onResend: (document: ContractDocument) => void
   onCancel: () => void
   onNotice: () => void
+  error: string | null
 }) {
   return (
     <section aria-labelledby="contratti-quadro" className="space-y-3 px-6 py-6">
@@ -245,6 +247,11 @@ function FrameworkSection({
             </Row>
           )}
         </dl>
+      )}
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
       )}
     </section>
   )
@@ -422,12 +429,30 @@ export function AdminContratti() {
   const person = useQuery({ queryKey: ['freelancer', id], queryFn: () => admin.freelancer(id) })
   const contracts = useQuery({ queryKey: ['contracts', id], queryFn: () => admin.contracts(id) })
   const [message, setMessage] = useState<string | null>(null)
+  // The last action's own error, and which section it belongs to: an action starting
+  // clears it, whether it is the one that failed before or another one, so a stale
+  // error never sits next to a later action's success, and the framework agreement's
+  // own errors show under the framework section rather than under the matches table
+  // (REB-407).
+  const [actionFailure, setActionFailure] = useState<{ section: 'quadro' | 'match'; message: string } | null>(
+    null,
+  )
   const [confirming, setConfirming] = useState<Match | null>(null)
   const [confirmingQuadro, setConfirmingQuadro] = useState<'annulla' | 'disdetta' | null>(null)
   const refresh = () => void client.invalidateQueries({ queryKey: ['contracts', id] })
   const saying = (sentence: string) => () => {
     setMessage(sentence)
     refresh()
+  }
+  const fail = (section: 'quadro' | 'match') => (error: unknown) =>
+    setActionFailure({
+      section,
+      message: error instanceof ApiError ? error.message : 'Non riesco a completare l’operazione.',
+    })
+  const starting = (section: 'quadro' | 'match') => {
+    setMessage(null)
+    setActionFailure(null)
+    return { onError: fail(section) }
   }
   const send = useMutation({
     mutationFn: (matchId: string) => admin.sendMatch(matchId),
@@ -462,26 +487,17 @@ export function AdminContratti() {
   const quadro = data.quadro
   const name = person.data ? `${person.data.nome} ${person.data.cognome}` : ''
   const busy = actions.some((action) => action.isPending)
-  const actionError = actions.map((action) => action.error).find((error) => error !== null) ?? null
-  const actionFailure =
-    actionError instanceof ApiError
-      ? actionError.message
-      : actionError
-        ? 'Non riesco a completare l’operazione.'
-        : null
   // A draft leaves on request; a match in signature only when its letter still waits and
   // no framework agreement is out for signature to carry it (a cancelled or refused one,
   // or a signed one whose release failed).
   const canSend = (match: Match) =>
     match.stato === 'bozza' ||
     (match.stato === 'in_firma' && match.lettera.stato === 'in_attesa' && quadro?.stato !== 'inviato')
-  const onRefresh = (document: ContractDocument) => {
-    setMessage(null)
-    update.mutate(document.id)
+  const onRefresh = (section: 'quadro' | 'match') => (document: ContractDocument) => {
+    update.mutate(document.id, starting(section))
   }
-  const onResend = (document: ContractDocument) => {
-    setMessage(null)
-    resend.mutate(document.id)
+  const onResend = (section: 'quadro' | 'match') => (document: ContractDocument) => {
+    resend.mutate(document.id, starting(section))
   }
   return (
     <>
@@ -495,10 +511,11 @@ export function AdminContratti() {
       <FrameworkSection
         quadro={quadro}
         busy={busy}
-        onRefresh={onRefresh}
-        onResend={onResend}
+        onRefresh={onRefresh('quadro')}
+        onResend={onResend('quadro')}
         onCancel={() => setConfirmingQuadro('annulla')}
         onNotice={() => setConfirmingQuadro('disdetta')}
+        error={actionFailure?.section === 'quadro' ? actionFailure.message : null}
       />
       <FiscalSection freelancerId={id} fiscale={data.fiscale} onSaved={refresh} />
       {message && (
@@ -510,15 +527,12 @@ export function AdminContratti() {
         matches={data.matches}
         busy={busy}
         canSend={canSend}
-        onSend={(match) => {
-          setMessage(null)
-          send.mutate(match.id)
-        }}
-        onRefresh={onRefresh}
-        onResend={onResend}
+        onSend={(match) => send.mutate(match.id, starting('match'))}
+        onRefresh={onRefresh('match')}
+        onResend={onResend('match')}
         onCancel={setConfirming}
-        onClose={(match) => close.mutate(match.id)}
-        error={actionFailure}
+        onClose={(match) => close.mutate(match.id, starting('match'))}
+        error={actionFailure?.section === 'match' ? actionFailure.message : null}
       />
       <p className="px-6 pb-6">
         <Link to="/admin/freelance/$id" params={{ id }} className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline">
@@ -532,7 +546,7 @@ export function AdminContratti() {
         confirm={cancel.isPending ? 'Annullo…' : 'Annulla il match'}
         pending={cancel.isPending}
         onConfirm={() => {
-          if (confirming) cancel.mutate(confirming.id, { onSettled: () => setConfirming(null) })
+          if (confirming) cancel.mutate(confirming.id, { ...starting('match'), onSettled: () => setConfirming(null) })
         }}
         onClose={() => setConfirming(null)}
       />
@@ -543,7 +557,8 @@ export function AdminContratti() {
         confirm={cancelQuadro.isPending ? 'Annullo…' : 'Sì, annulla il contratto quadro'}
         pending={cancelQuadro.isPending}
         onConfirm={() => {
-          if (quadro) cancelQuadro.mutate(quadro.id, { onSettled: () => setConfirmingQuadro(null) })
+          if (quadro)
+            cancelQuadro.mutate(quadro.id, { ...starting('quadro'), onSettled: () => setConfirmingQuadro(null) })
         }}
         onClose={() => setConfirmingQuadro(null)}
       />
@@ -554,7 +569,7 @@ export function AdminContratti() {
         confirm={notice.isPending ? 'Registro…' : 'Sì, registra la disdetta'}
         pending={notice.isPending}
         onConfirm={() => {
-          if (quadro) notice.mutate(quadro.id, { onSettled: () => setConfirmingQuadro(null) })
+          if (quadro) notice.mutate(quadro.id, { ...starting('quadro'), onSettled: () => setConfirmingQuadro(null) })
         }}
         onClose={() => setConfirmingQuadro(null)}
       />

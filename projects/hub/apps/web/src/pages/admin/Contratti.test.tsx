@@ -293,6 +293,27 @@ describe('«Match e contratti» (REB-387)', () => {
     cancel_reason: null,
   }
 
+  it('drops a failed send’s stale alert once a different action on the framework agreement succeeds (REB-407)', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, quadro: OUT, quadri: [OUT] },
+      'POST /api/hub/matches/m1/send': () =>
+        answer(409, {
+          detail:
+            'Il testo della lettera di incarico è ancora una bozza (status: draft): si genera e si salva, ma non parte per la firma.',
+        }),
+      'POST /api/hub/contract-documents/d1/resend': OUT,
+    })
+    mount('/admin/freelance/f1/contracts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('ancora una bozza')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reinvia email del contratto quadro' }))
+
+    expect(await screen.findByText('Mail inviata di nuovo.')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
   it('resends the signing mail and refreshes a framework agreement out for signature (REB-407)', async () => {
     const spy = routeFetch({
       'GET /api/hub/freelancers/f1': PERSON,

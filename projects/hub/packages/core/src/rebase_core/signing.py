@@ -187,16 +187,12 @@ class SigningService:
         self._sender()
         leaving: ContractDocument | None = None
         try:
-            freelancer_id = self.session.scalar(
-                select(Match.freelancer_id).where(Match.id == match_id)
-            )
-            if freelancer_id is None:
-                raise NotFound(ENTITY, match_id)
+            freelancer_id = self.matches.match_freelancer(match_id)
             # The freelancer's row first, as `MatchService.create` already does, so
             # «Crea match» racing this send waits for it rather than reading a framework
             # this send is about to dispatch as still merely `generato`.
-            self._lock_freelancer(freelancer_id)
-            match = self._lock_match(match_id)
+            self.matches.lock_freelancer(freelancer_id)
+            match = self.matches.lock_match(match_id)
             if match.stato not in ("bozza", "in_firma"):
                 raise InvalidState(
                     f"Si invia per la firma solo un match in bozza o in firma: questo è "
@@ -349,8 +345,8 @@ class SigningService:
             self.session.rollback()
             return None
         document_id, freelancer_id, match_id = found
-        self._lock_freelancer(freelancer_id)
-        match = self._lock_match(match_id) if match_id is not None else None
+        self.matches.lock_freelancer(freelancer_id)
+        match = self.matches.lock_match(match_id) if match_id is not None else None
         document = self._lock(document_id)
         if document.stato != "inviato":
             self.session.rollback()
@@ -490,8 +486,8 @@ class SigningService:
         """The same lock order as `apply` (global rule): the freelancer's row, the
         letter's match, then the letter itself; the framework agreement is only read,
         never locked, since nothing here writes it."""
-        self._lock_freelancer(freelancer_id)
-        match = self._lock_match(match_id)
+        self.matches.lock_freelancer(freelancer_id)
+        match = self.matches.lock_match(match_id)
         letter = self._lock(letter_id)
         framework = self.session.get(ContractDocument, framework_id, populate_existing=True)
         if (
@@ -557,7 +553,7 @@ class SigningService:
         The freelancer's row locks first, the global order: its id is read here with no
         lock of its own (`_document`), only to know which row to take."""
         freelancer_id = self._document(document_id).freelancer_id
-        self._lock_freelancer(freelancer_id)
+        self.matches.lock_freelancer(freelancer_id)
         document = self._lock(document_id)
         was_sent = False
         try:
@@ -590,9 +586,9 @@ class SigningService:
         envelope when the letter is out for signature, so the link the freelancer got
         stops working, and tells them by mail. The framework agreement is the
         freelancer's, not the match's, and stays."""
-        freelancer_id = self._match_freelancer(match_id)
-        self._lock_freelancer(freelancer_id)
-        match = self._lock_match(match_id)
+        freelancer_id = self.matches.match_freelancer(match_id)
+        self.matches.lock_freelancer(freelancer_id)
+        match = self.matches.lock_match(match_id)
         if match.stato == "bozza":
             return self.matches.cancel(match_id, admin_id)
         letters: list[ContractDocument] = []
@@ -639,7 +635,7 @@ class SigningService:
         (spec § 1d). From now the freelancer has none active, and their next match writes
         a new one."""
         freelancer_id = self._document(document_id).freelancer_id
-        self._lock_freelancer(freelancer_id)
+        self.matches.lock_freelancer(freelancer_id)
         document = self._lock(document_id)
         if not is_active(document):
             self.session.rollback()
@@ -658,12 +654,6 @@ class SigningService:
         if document is None:
             raise NotFound("documento", document_id)
         return document
-
-    def _match_freelancer(self, match_id: UUID) -> UUID:
-        freelancer_id = self.session.scalar(select(Match.freelancer_id).where(Match.id == match_id))
-        if freelancer_id is None:
-            raise NotFound(ENTITY, match_id)
-        return freelancer_id
 
     def _read(self, document_id: UUID) -> ContractDocumentRead:
         return document_read(
@@ -708,19 +698,11 @@ class SigningService:
             self.matches.signer = self._signer_cache
         return self._signer_cache
 
-    def _lock_freelancer(self, freelancer_id: UUID) -> None:
-        """The freelancer's row, locked until this transaction ends: every other lock
-        below (`_lock`, `_lock_match`, `_lock_letter`) and `MatchService.write_framework`
-        assume the caller already took this one first (REB-406)."""
-        self.session.execute(
-            select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
-        )
-
     def _lock(self, document_id: UUID) -> ContractDocument:
         """The document, row-locked until this transaction ends, and read again from the
         database rather than from the session's memory: another transaction may have
         moved it while this one waited. The caller must already hold the freelancer's
-        row lock (`_lock_freelancer`)."""
+        row lock (`self.matches.lock_freelancer`)."""
         document = self.session.scalars(
             select(ContractDocument)
             .where(ContractDocument.id == document_id)
@@ -731,20 +713,9 @@ class SigningService:
             raise NotFound("documento", document_id)
         return document
 
-    def _lock_match(self, match_id: UUID) -> Match:
-        """The caller must already hold the freelancer's row lock (`_lock_freelancer`)."""
-        match = self.session.scalars(
-            select(Match)
-            .where(Match.id == match_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        ).first()
-        if match is None:
-            raise NotFound(ENTITY, match_id)
-        return match
-
     def _lock_letter(self, match_id: UUID) -> ContractDocument | None:
-        """The caller must already hold the freelancer's row lock (`_lock_freelancer`)."""
+        """The caller must already hold the freelancer's row lock
+        (`self.matches.lock_freelancer`)."""
         return self.session.scalars(
             select(ContractDocument)
             .where(ContractDocument.match_id == match_id)
