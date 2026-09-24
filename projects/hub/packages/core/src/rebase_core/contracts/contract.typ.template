@@ -7,10 +7,15 @@
 // filed, so the page is white with no grid, the body is in the full ink rather than the
 // quiet one, and the text is justified with Italian hyphenation.
 //
-// `build_contract_pdf.py` rewrites two markers in the body before Typst sees it: a field
-// becomes `field("label")` when it is blank and `value("text")` when the data fill it,
-// and a proposal still to be decided becomes `proposal[...]`. It also passes `draft`,
-// read from the front matter's `status`, as a Typst boolean.
+// `rebase_core.contracts.fields` rewrites two markers in the body before Typst sees it: a
+// field becomes `field("label")` when it is blank and `value("text")` when the data fill
+// it, and a proposal still to be decided becomes `proposal[...]`. `render.py` passes
+// `draft`, read from the front matter's `status`, as a Typst boolean.
+//
+// A blank somebody fills on the signing site (a signature, the date of signing) also
+// leaves a `metadata` labelled `<signature-blank>` with its page and box, in points from
+// the page's top-left corner, which `render.signature_blanks` reads back with
+// `typst query`.
 
 #let ink = rgb("$ink$")
 #let inkquiet = rgb("$inkquiet$")
@@ -32,16 +37,27 @@
 }
 
 // A blank to fill in: a rule with the field's name under the reader's pen. A signature
-// gets the room a pen needs above its rule.
+// gets the room a pen needs above its rule, and a blank the signing site fills carries a
+// `<signing-blank>` marker (its name and size, known at once) nested inside the box's own
+// frame rather than beside it. A signature's row sits in a table Typst measures for its
+// row height before the row is placed on a page: `here().position()` read at that point
+// would be the position of the measurement, not of the page the row lands on, so the
+// marker's own position is read only once, by the `context` after `$$body$$`, when the
+// whole document (and every table's row heights) is already laid out.
+#let signing(name) = name.starts-with("firma") or name == "data firma"
 #let field(name) = context {
   let signature = name.starts-with("firma")
   let label = text(size: 0.75em, fill: inkquiet, name)
-  box(
-    width: calc.max(measure(label).width + 6pt, if signature { 55mm } else { 30mm }),
-    stroke: (bottom: 0.6pt + inkquiet),
-    inset: (x: 2pt, top: if signature { 16pt } else { 0pt }, bottom: 1.5pt),
-    label,
-  )
+  let width = calc.max(measure(label).width + 6pt, if signature { 55mm } else { 30mm })
+  let stroke = (bottom: 0.6pt + inkquiet)
+  let inset = (x: 2pt, top: if signature { 16pt } else { 0pt }, bottom: 1.5pt)
+  if not signing(name) {
+    box(width: width, stroke: stroke, inset: inset, label)
+  } else {
+    let size = measure(box(width: width, stroke: stroke, inset: inset, label))
+    let mark = metadata((name: name, width: size.width.pt(), height: size.height.pt()))
+    box(width: width, stroke: stroke, inset: inset, [#mark<signing-blank>] + label)
+  }
 }
 #let value(it) = text(fill: ink, it)
 #let proposal(body) = highlight(fill: gold.lighten(45%), extent: 1pt, body)
@@ -123,3 +139,20 @@
 ]
 
 $body$
+
+// Every `<signing-blank>` marker, resolved into the `<signature-blank>` position
+// `render.signature_blanks` reads with `typst query`: by now the whole document,
+// including every table's row heights, is laid out, so `.location().position()` gives
+// the real page and point rather than a trial one.
+#context for it in query(<signing-blank>) {
+  let pos = it.location().position()
+  let value = it.value
+  [#metadata((
+    name: value.name,
+    page: pos.page,
+    x: pos.x.pt(),
+    y: pos.y.pt(),
+    width: value.width,
+    height: value.height,
+  ))<signature-blank>]
+}

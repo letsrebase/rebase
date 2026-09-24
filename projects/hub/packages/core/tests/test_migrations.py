@@ -1,15 +1,17 @@
 """Migration 0001 adopts the table PigroCRM's sidecar left behind, rows included."""
 
 import pytest
+from alembic import command
 from alembic.autogenerate import compare_metadata
+from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import IntegrityError
 from testcontainers.community.postgres import PostgresContainer
 
 import rebase_core.models  # noqa: F401
 from rebase_core.db import Base
-from rebase_core.migrate import head_revision, upgrade_to_head
+from rebase_core.migrate import INI_PATH, head_revision, upgrade_to_head
 
 
 def test_the_migrations_produce_exactly_the_models_schema(hub_engine: Engine) -> None:
@@ -101,6 +103,148 @@ def test_the_production_table_is_adopted_with_its_rows() -> None:
             version = connection.execute(text("SELECT version_num FROM alembic_version"))
             assert version.scalar() == head_revision()
             # And the result is the models' schema, on the adopted table as on a fresh one.
+            diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
+            assert diff == [], diff
+        engine.dispose()
+
+
+def test_the_contract_constraints_are_installed(hub_engine: Engine) -> None:
+    """REB-387: a framework agreement never hangs on a match and never takes a letter
+    number, a letter always does both, a number is taken once, and a notice is a
+    framework agreement's state alone. Real constraints, proven with raw inserts inside
+    one transaction rolled back at the end."""
+    with hub_engine.connect() as connection:
+        outer = connection.begin()
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (id, email, nome, cognome, role, attivo) VALUES "
+                "(gen_random_uuid(), 'ck-contracts@studio.it', 'A', 'B', 'admin', true) "
+                "RETURNING id"
+            )
+        ).scalar()
+        freelancer_id = connection.execute(
+            text(
+                "INSERT INTO freelancers (id, user_id, links, stato, compilata_da) VALUES "
+                "(gen_random_uuid(), :user_id, '[]', 'nuovo', 'persona') RETURNING id"
+            ),
+            {"user_id": user_id},
+        ).scalar()
+        company_id = connection.execute(
+            text(
+                "INSERT INTO companies (id, user_id, nome_azienda, figura_richiesta, progetto, "
+                "periodo_da, durata, budget_giornaliero, remoto, numero_risorse, stato) VALUES "
+                "(gen_random_uuid(), :user_id, 'ACME', 'Dev', 'Un progetto', '2026-10-01', "
+                "'3 mesi', 500, 'remoto', 1, 'nuovo') RETURNING id"
+            ),
+            {"user_id": user_id},
+        ).scalar()
+        match_id = connection.execute(
+            text(
+                "INSERT INTO matches (id, freelancer_id, company_id, cliente_ragione_sociale, "
+                "cliente_piva, cliente_sede, stato, created_by) VALUES (gen_random_uuid(), "
+                ":freelancer_id, :company_id, 'ACME S.r.l.', '01234567890', 'Milano', 'bozza', "
+                ":user_id) RETURNING id"
+            ),
+            {"freelancer_id": freelancer_id, "company_id": company_id, "user_id": user_id},
+        ).scalar()
+
+        def _document(kind: str, match: object, numero: str | None, stato: str) -> None:
+            connection.execute(
+                text(
+                    "INSERT INTO contract_documents (id, kind, freelancer_id, match_id, numero, "
+                    "text_version, testo_bozza, data, pdf, stato, created_by) VALUES "
+                    "(gen_random_uuid(), :kind, :freelancer_id, :match_id, :numero, '0.1', true, "
+                    "'{}', :pdf, :stato, :user_id)"
+                ),
+                {
+                    "kind": kind,
+                    "freelancer_id": freelancer_id,
+                    "match_id": match,
+                    "numero": numero,
+                    "pdf": b"%PDF-",
+                    "stato": stato,
+                    "user_id": user_id,
+                },
+            )
+
+        refused = (
+            ("quadro", match_id, None, "generato"),  # a framework hangs on no match
+            ("quadro", None, "2026-001", "generato"),  # and takes no number
+            ("lettera", match_id, None, "generato"),  # a letter always has a number
+            ("lettera", None, "2026-001", "generato"),  # and a match
+            ("lettera", match_id, "2026-001", "disdetto"),  # a notice is a framework's
+            ("quadro", None, None, "forse"),  # an unknown state
+            ("fattura", None, None, "generato"),  # an unknown kind
+        )
+        for kind, match, numero, stato in refused:
+            with pytest.raises(IntegrityError), connection.begin_nested():
+                _document(kind, match, numero, stato)
+
+        with connection.begin_nested():  # the valid shapes are accepted
+            _document("quadro", None, None, "generato")
+            _document("lettera", match_id, "2026-001", "in_attesa")
+        with pytest.raises(IntegrityError), connection.begin_nested():  # a number, once
+            _document("lettera", match_id, "2026-001", "generato")
+        with pytest.raises(IntegrityError), connection.begin_nested():  # one tax row per card
+            for _ in range(2):
+                connection.execute(
+                    text(
+                        "INSERT INTO freelancer_fiscal (id, freelancer_id, codice_fiscale, "
+                        "partita_iva, domicilio, updated_by) VALUES (gen_random_uuid(), "
+                        ":freelancer_id, 'LVLDAA85T50H501Z', '01234567890', 'Milano', :user_id)"
+                    ),
+                    {"freelancer_id": freelancer_id, "user_id": user_id},
+                )
+        outer.rollback()
+
+
+def test_migration_0017_can_run_again_and_roll_back() -> None:
+    """A retried deploy runs 0017's statements over tables that already exist, and the
+    downgrade leaves 0016's schema: both must work, and the result must still be the
+    models' schema. REB-387 controller ruling: also prove the downgrade actually drops
+    the four new tables, and the forced re-run actually recreates them, rather than
+    relying only on the final schema diff, which a partial downgrade could still pass."""
+    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+        url = container.get_connection_url()
+        upgrade_to_head(url)
+        config = Config(str(INI_PATH))
+        config.set_main_option("sqlalchemy.url", url)
+        engine = create_engine(url, future=True)
+        new_tables = {
+            "freelancer_fiscal",
+            "matches",
+            "contract_documents",
+            "contract_letter_counters",
+        }
+
+        def _existing_tables(connection: Connection) -> set[str]:
+            return set(
+                connection.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.tables "
+                        "WHERE table_schema = 'public' AND table_name = ANY(:names)"
+                    ),
+                    {"names": list(new_tables)},
+                ).scalars()
+            )
+
+        command.downgrade(config, "0016")
+        with engine.connect() as connection:
+            assert _existing_tables(connection) == set()
+
+        command.upgrade(config, "head")
+        with engine.connect() as connection:
+            assert _existing_tables(connection) == new_tables
+
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE alembic_version SET version_num = '0016'"))
+        command.upgrade(config, "head")
+        with engine.connect() as connection:
+            assert _existing_tables(connection) == new_tables
+            assert (
+                connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+                == head_revision()
+            )
             diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
             assert diff == [], diff
         engine.dispose()

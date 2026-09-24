@@ -333,6 +333,135 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     )
 
 
+# ---- matches and the contracts they write (REB-387) -------------------------------------
+
+MATCH_STATES = ("bozza", "in_firma", "attivo", "concluso", "annullato")
+CONTRACT_KINDS = ("quadro", "lettera")
+CONTRACT_STATES = ("generato", "in_attesa", "inviato", "firmato", "annullato", "disdetto")
+CODICE_FISCALE_MAX_LENGTH = 16
+PARTITA_IVA_MAX_LENGTH = 11
+DOMICILIO_MAX_LENGTH = 300
+PEC_MAX_LENGTH = 320
+# A client may be a foreign company, whose VAT number is not eleven Italian digits.
+CLIENTE_PIVA_MAX_LENGTH = 32
+SEDE_MAX_LENGTH = 300
+LETTER_NUMBER_MAX_LENGTH = 12
+TEXT_VERSION_MAX_LENGTH = 20
+DOCUMENSO_ID_MAX_LENGTH = 100
+
+
+class FreelancerFiscal(Base, PrimaryKeyMixin, TimestampMixin):
+    """A freelancer's tax data as the two contracts print them: one row per card
+    (`uq_freelancer_fiscal_freelancer_id`). A table of its own rather than columns on
+    `freelancers`, which PostHog's warehouse syncs whole (spec § 2); none of the four
+    tables of this section is synced. `updated_by` is the admin who saved them last."""
+
+    __tablename__ = "freelancer_fiscal"
+
+    freelancer_id: Mapped[UUID] = mapped_column(
+        ForeignKey("freelancers.id", ondelete="CASCADE"), nullable=False
+    )
+    codice_fiscale: Mapped[str] = mapped_column(String(CODICE_FISCALE_MAX_LENGTH), nullable=False)
+    partita_iva: Mapped[str] = mapped_column(String(PARTITA_IVA_MAX_LENGTH), nullable=False)
+    domicilio: Mapped[str] = mapped_column(String(DOMICILIO_MAX_LENGTH), nullable=False)
+    pec: Mapped[str | None] = mapped_column(String(PEC_MAX_LENGTH), default=None)
+    updated_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+
+    __table_args__ = (Index("uq_freelancer_fiscal_freelancer_id", "freelancer_id", unique=True),)
+
+
+class Match(Base, PrimaryKeyMixin, TimestampMixin):
+    """A freelancer card paired with a company request, and the client's legal data as
+    the letter prints them. `stato` is one of `MATCH_STATES`: `bozza` once the documents
+    are generated, `in_firma` and `attivo` with the signature (phase 3), `concluso` and
+    `annullato` by an admin."""
+
+    __tablename__ = "matches"
+
+    freelancer_id: Mapped[UUID] = mapped_column(ForeignKey("freelancers.id"), nullable=False)
+    company_id: Mapped[UUID] = mapped_column(ForeignKey("companies.id"), nullable=False, index=True)
+    cliente_ragione_sociale: Mapped[str] = mapped_column(String(AZIENDA_MAX_LENGTH), nullable=False)
+    cliente_piva: Mapped[str] = mapped_column(String(CLIENTE_PIVA_MAX_LENGTH), nullable=False)
+    cliente_sede: Mapped[str] = mapped_column(String(SEDE_MAX_LENGTH), nullable=False)
+    stato: Mapped[str] = mapped_column(String(20), nullable=False, default="bozza")
+    created_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+    __table_args__ = (
+        Index("ix_matches_freelancer_created", "freelancer_id", "created_at"),
+        CheckConstraint(
+            "stato IN ('bozza', 'in_firma', 'attivo', 'concluso', 'annullato')",
+            name="ck_matches_stato",
+        ),
+    )
+
+
+class ContractDocument(Base, PrimaryKeyMixin, TimestampMixin):
+    """One generated contract, its PDF in the row as the CV is (one place to delete
+    from). A framework agreement (`quadro`) belongs to the freelancer and hangs on no
+    match; a letter (`lettera`) belongs to a match and carries a `numero`, `YYYY-NNN`.
+    `data` is every field value the PDF printed, so a document can be regenerated the
+    same; `testo_bozza` says the text was still `status: draft`, a preview nothing may
+    send. The Documenso columns and `notice_at` are phase 3's."""
+
+    __tablename__ = "contract_documents"
+
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    freelancer_id: Mapped[UUID] = mapped_column(ForeignKey("freelancers.id"), nullable=False)
+    match_id: Mapped[UUID | None] = mapped_column(ForeignKey("matches.id"), default=None)
+    numero: Mapped[str | None] = mapped_column(String(LETTER_NUMBER_MAX_LENGTH), default=None)
+    text_version: Mapped[str] = mapped_column(String(TEXT_VERSION_MAX_LENGTH), nullable=False)
+    testo_bozza: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    pdf: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    stato: Mapped[str] = mapped_column(String(20), nullable=False)
+    documenso_id: Mapped[str | None] = mapped_column(String(DOCUMENSO_ID_MAX_LENGTH), default=None)
+    signing_url: Mapped[str | None] = mapped_column(Text, default=None)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    signed_pdf: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    notice_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    created_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    sent_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+
+    __table_args__ = (
+        Index("ix_contract_documents_freelancer", "freelancer_id", "kind", "created_at"),
+        Index("ix_contract_documents_match_id", "match_id"),
+        Index("uq_contract_documents_numero", "numero", unique=True),
+        CheckConstraint("kind IN ('quadro', 'lettera')", name="ck_contract_documents_kind"),
+        CheckConstraint(
+            "stato IN ('generato', 'in_attesa', 'inviato', 'firmato', 'annullato', 'disdetto')",
+            name="ck_contract_documents_stato",
+        ),
+        CheckConstraint(
+            "(kind = 'quadro') = (match_id IS NULL)",
+            name="ck_contract_documents_match_for_letters",
+        ),
+        CheckConstraint(
+            "(kind = 'lettera') = (numero IS NOT NULL)",
+            name="ck_contract_documents_numero_for_letters",
+        ),
+        CheckConstraint(
+            "stato <> 'disdetto' OR kind = 'quadro'",
+            name="ck_contract_documents_notice_for_quadro",
+        ),
+    )
+
+
+class LetterCounter(Base):
+    """The last letter number taken in a year: `2026-001`, `2026-002`, ... Bumped with
+    `INSERT ... ON CONFLICT DO UPDATE ... RETURNING` inside the transaction that writes
+    the letter (`rebase_core.framework.next_letter_number`), so two letters written at
+    once never share a number and a generation that fails leaves no gap."""
+
+    __tablename__ = "contract_letter_counters"
+
+    anno: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    ultimo: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (CheckConstraint("ultimo >= 1", name="ck_contract_letter_counters_positive"),)
+
+
 # ---- comments: what an admin or an assistant says about a row, over time ---------------
 
 COMMENT_ENTITY_TYPES = ("freelancer", "company")
@@ -366,14 +495,30 @@ class Comment(Base, PrimaryKeyMixin):
 
 # ---- what an admin overrode, cleared, deleted or restored, and when --------------------
 
-ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company")
+ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fiscal")
 # `overridden` covers both "set" and "clear" -- clearing is setting a field to its empty
 # value, and `rebase_core.audit.field_changes` records the same `changed`/`before`/`after`
 # shape either way. `cleared` is only for the one thing that shape must never carry: the
 # freelancer's CV, whose bytes are personal data that must not be duplicated into an audit
 # row (`FreelancerService.clear_cv`). `deleted`/`restored` are the whole story on their own,
 # with an empty payload.
-ADMIN_ACTION_KINDS = ("overridden", "cleared", "deleted", "restored")
+# REB-387 adds the matches' own kinds, on entity type `match` (phase 3 writes the last
+# four), and `fiscal_updated` on `freelancer_fiscal`, whose payload names the fields that
+# changed and never their values: a tax identifier is not copied into this table.
+ADMIN_ACTION_KINDS = (
+    "overridden",
+    "cleared",
+    "deleted",
+    "restored",
+    "match_created",
+    "match_cancelled",
+    "match_closed",
+    "fiscal_updated",
+    "documents_sent",
+    "document_cancelled",
+    "mail_resent",
+    "notice_recorded",
+)
 
 
 class AdminAction(Base, PrimaryKeyMixin):

@@ -55,6 +55,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T
 }
 
+/** A file the API answers, a preview PDF: the same error handling as `request`. */
+async function requestBlob(path: string, init: RequestInit = {}): Promise<Blob> {
+  const response = await fetch(path, { credentials: 'same-origin', ...init })
+  if (!response.ok) await fail(response)
+  return response.blob()
+}
+
 const json = (body: unknown): RequestInit => ({
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -442,6 +449,173 @@ export interface CompanyList {
   next_cursor: string | null
 }
 
+/** REB-387: a match's state, and a contract document's. */
+export type MatchStato = 'bozza' | 'in_firma' | 'attivo' | 'concluso' | 'annullato'
+export type DocumentStato = 'generato' | 'in_attesa' | 'inviato' | 'firmato' | 'annullato' | 'disdetto'
+
+/** A freelancer's tax data, as the two contracts print them. */
+export interface FiscalData {
+  codice_fiscale: string
+  partita_iva: string
+  domicilio: string
+  pec: string | null
+}
+
+export interface Fiscal extends FiscalData {
+  freelancer_id: string
+  updated_by: string
+  updated_at: string
+}
+
+/** A generated contract as the pages read it: never its bytes, which are a link. */
+export interface ContractDocument {
+  id: string
+  kind: 'quadro' | 'lettera'
+  freelancer_id: string
+  match_id: string | null
+  numero: string | null
+  text_version: string
+  testo_bozza: boolean
+  stato: DocumentStato
+  created_at: string
+  created_by: string
+  sent_at: string | null
+  signed_at: string | null
+  notice_at: string | null
+  ha_pdf_firmato: boolean
+  attivo: boolean
+  rinnovo: string | null
+  ultimo_giorno_disdetta: string | null
+  nuova_versione: boolean
+}
+
+export interface Match {
+  id: string
+  freelancer_id: string
+  company_id: string
+  nome_azienda: string
+  figura_richiesta: string
+  cliente_ragione_sociale: string
+  cliente_piva: string
+  cliente_sede: string
+  stato: MatchStato
+  created_at: string
+  created_by: string
+  cancelled_at: string | null
+  updated_at: string
+  lettera: ContractDocument
+}
+
+/** One row of the admin's «Match» list (REB-413): never a tax field and never
+ *  `budget_giornaliero`, the same rule `Match` and `ContractDocument` already keep.
+ *  `lettera_*` is `null` together, only were a match somehow to have no letter. */
+export interface MatchListItem {
+  id: string
+  freelancer_id: string
+  freelancer_nome: string
+  freelancer_cognome: string
+  freelancer_email: string
+  nome_azienda: string
+  figura_richiesta: string
+  stato: MatchStato
+  lettera_numero: string | null
+  lettera_stato: DocumentStato | null
+  lettera_data_inizio: string | null
+  lettera_data_fine: string | null
+  created_at: string
+  created_by_nome: string
+  created_by_email: string
+}
+
+/** `GET /api/hub/matches`'s shape (REB-413): newest first, `totale` counting every
+ *  row the filters select, not just the page returned. */
+export interface MatchList {
+  totale: number
+  items: MatchListItem[]
+}
+
+/** What `GET /api/hub/matches` takes beside `limit`/`offset` (REB-413): `stato` one of
+ *  `MatchStato`, `q` matching the freelancer's name, surname or email and the
+ *  company's name. */
+export interface MatchesFilters {
+  stato?: string
+  q?: string
+}
+
+/** «Match e contratti»: the framework agreement at the top, every one of them, the
+ *  matches newest first, and the tax data the page edits. */
+export interface FreelancerContracts {
+  freelancer_id: string
+  quadro: ContractDocument | null
+  quadri: ContractDocument[]
+  matches: Match[]
+  fiscale: Fiscal | null
+}
+
+/** The letter's text fields, in the order `lettera-di-incarico.md` asks for them and the
+ *  server's `LETTERA_TEXT_FIELDS` lists them. */
+export const LETTERA_TEXT_KEYS = [
+  'ruolo',
+  'attivita',
+  'risultati',
+  'accettazione',
+  'impegno',
+  'periodo_verifica',
+  'luogo',
+  'coordinamento',
+  'referente_cliente',
+  'referente_rebase',
+  'modalita',
+  'unita',
+  'lavoro_extra',
+  'spese',
+  'scadenze_fatturazione',
+  'dati_personali',
+  'dati_finalita',
+  'dati_categorie',
+  'dati_interessati',
+  'dati_autorizzazione',
+  'esclusiva',
+  'portfolio',
+  'assicurazione',
+  'altre_condizioni',
+  'rapporti_precedenti',
+] as const
+export type LetteraTextKey = (typeof LETTERA_TEXT_KEYS)[number]
+
+/** What `LetteraFields` takes: an empty text field is `null` and prints a blank line. */
+export type Lettera = Record<LetteraTextKey, string | null> & {
+  data_inizio: string
+  data_fine: string | null
+  compenso: string
+  giorni_pagamento: number
+  fine_mese: boolean
+  giorni_preavviso: number | null
+}
+export type LetteraDraft = { [K in keyof Lettera]: Lettera[K] | null }
+
+export interface Cliente {
+  cliente_ragione_sociale: string
+  cliente_piva: string
+  cliente_sede: string
+}
+export type ClienteDraft = { [K in keyof Cliente]: string | null }
+
+export interface MatchCreate {
+  company_id: string
+  cliente: Cliente
+  lettera: Lettera
+}
+
+export interface MatchPrefill {
+  fiscale: Fiscal | null
+  cliente: ClienteDraft
+  lettera: LetteraDraft
+  quadro_attivo: ContractDocument | null
+  quadro_necessario: boolean
+  lettera_in_attesa: boolean
+}
+
 /** Every value in `params` that is not `undefined` or `""`, as a query string: the two
  *  list endpoints below send exactly the filters an admin actually set, rather than
  *  the fixed `limit=500` that fetched everything in one page before REB-285/286 gave
@@ -587,6 +761,36 @@ export const admin = {
    *  request, which the caller already reads through its own detail query. */
   revertAction: (kind: CommentKind, id: string, actionId: string) =>
     request<unknown>(`/api/hub/${kind}/${id}/audit/${actionId}/revert`, { method: 'POST' }),
+  /** «Match» (REB-413): every match in the admin area, newest first. */
+  matches: (filters: MatchesFilters & { limit?: number; offset?: number } = {}) => {
+    const qs = filterQuery(filters)
+    return request<MatchList>(`/api/hub/matches${qs ? `?${qs}` : ''}`)
+  },
+  /** A freelancer's matches and contracts (REB-387). */
+  contracts: (freelancerId: string) =>
+    request<FreelancerContracts>(`/api/hub/freelancers/${freelancerId}/matches`),
+  fiscal: (freelancerId: string) => request<Fiscal | null>(`/api/hub/freelancers/${freelancerId}/fiscal`),
+  saveFiscal: (freelancerId: string, data: FiscalData) =>
+    request<Fiscal>(`/api/hub/freelancers/${freelancerId}/fiscal`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  matchPrefill: (freelancerId: string, companyId: string) =>
+    request<MatchPrefill>(
+      `/api/hub/freelancers/${freelancerId}/matches/prefill?company_id=${encodeURIComponent(companyId)}`,
+    ),
+  /** Step 5's preview: a PDF typeset now and saved nowhere. */
+  matchPreview: (freelancerId: string, payload: MatchCreate, documento: 'lettera' | 'quadro') =>
+    requestBlob(`/api/hub/freelancers/${freelancerId}/matches/preview?documento=${documento}`, json(payload)),
+  /** «Salva come bozza»: the draft match with its numbered letter. */
+  createMatch: (freelancerId: string, payload: MatchCreate) =>
+    request<Match>(`/api/hub/freelancers/${freelancerId}/matches`, json(payload)),
+  cancelMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/cancel`, { method: 'POST' }),
+  closeMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/close`, { method: 'POST' }),
+  /** A plain href, like `cvUrl`: the route answers an attachment behind the cookie. */
+  contractPdfUrl: (documentId: string, firmato = false) =>
+    `/api/hub/contract-documents/${documentId}/pdf${firmato ? '?firmato=true' : ''}`,
 }
 
 // ---- whoever is signed in --------------------------------------------------------------

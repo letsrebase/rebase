@@ -292,8 +292,8 @@ dall'articolo 3.3.
 12.4 Se il Professionista lavora con un'Azienda presentata senza passare da rebase e
 senza averlo detto, deve a rebase la percentuale dell'articolo 12.2 su tutti gli importi
 fatturati a quell'azienda nel periodo dell'articolo 12.1, più una penale pari a
-[[tre volte il Compenso medio mensile dell'ultimo Incarico presso quell'azienda, e
-comunque non inferiore a 5.000 euro]], salvo il maggior danno.
+tre volte il Compenso medio mensile dell'ultimo Incarico presso quell'azienda, e
+comunque non inferiore a 5.000 euro, salvo il maggior danno.
 
 12.5 A sua volta rebase, per tutta la durata del Contratto e nei 12 mesi successivi, non
 presenta ad altri membri i clienti che il Professionista le ha fatto conoscere, senza il

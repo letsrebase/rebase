@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { ArrowLeft, Download } from 'lucide-react'
+import { ArrowLeft, Download, MoreHorizontal } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -9,6 +9,12 @@ import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@rebase/ui/dropdown-menu'
 import {
   admin,
   ApiError,
@@ -23,6 +29,7 @@ import {
   type Talento,
   type TalentiFilters,
 } from '@/lib/api'
+import { SEARCH_DEBOUNCE_MS, isFilterActive, useDebounce } from '@/lib/adminList'
 import {
   COMPANY_STATES,
   FREELANCER_LIST_STATES,
@@ -38,20 +45,6 @@ import { cn } from '@rebase/ui/cn'
 import { AuditTrail } from './AuditTrail'
 import { Comments } from './Comments'
 import { CompanyOverrideDialog, FreelancerOverrideDialog, RecordLifecycle } from './Override'
-
-const SEARCH_DEBOUNCE_MS = 300
-
-/** Debounces a fast-changing value so a keystroke does not trigger a request until the
- *  admin stops typing for `delayMs` (REB-286): the search boxes on Talenti and Aziende
- *  both use this at 300ms. */
-function useDebounce<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delayMs)
-    return () => clearTimeout(timer)
-  }, [value, delayMs])
-  return debounced
-}
 
 const TONE: Record<string, string> = {
   nuovo: 'bg-[var(--color-royal-gold)]',
@@ -100,14 +93,18 @@ export function Header({ title, count, children }: { title: string; count?: numb
   )
 }
 
-function StateFilter({
+export function StateFilter({
   states,
   value,
   onChange,
+  labels = STATE_LABELS,
 }: {
   states: readonly string[]
   value: string | undefined
   onChange: (value: string | undefined) => void
+  /** Talenti and Aziende share `STATE_LABELS`; a list over a different vocabulary
+   *  (REB-413's own Match states) passes its own. */
+  labels?: Record<string, string>
 }) {
   return (
     <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtra per stato">
@@ -119,7 +116,7 @@ function StateFilter({
           variant={value === state ? 'default' : 'outline'}
           onClick={() => onChange(state)}
         >
-          {state ? STATE_LABELS[state] : 'Tutti'}
+          {state ? (labels[state] ?? state) : 'Tutti'}
         </Button>
       ))}
     </div>
@@ -138,7 +135,7 @@ function selectToBool(value: string): boolean | undefined {
   return value === 'si' ? true : value === 'no' ? false : undefined
 }
 
-function FilterField({
+export function FilterField({
   label,
   htmlFor,
   children,
@@ -155,21 +152,13 @@ function FilterField({
   )
 }
 
-/** «Nessun risultato per questi filtri» when a search or a filter narrowed an
- *  otherwise non-empty table down to nothing, the plain sentence when the table itself
- *  has nothing in it yet (REB-286): a zero from a filter and a zero from an empty
- *  table are different facts, and only one of them goes away by clearing something. */
-function isFilterActive(filters: Record<string, unknown>): boolean {
-  return Object.values(filters).some((value) => value !== undefined && value !== '')
-}
-
 /** The affordance under a truncated page (REB-286), reimplemented here from the CRM's
  *  `LoadMoreInvoices` (PR #179) since this app may not import PigroCRM: a button that
  *  walks `next_cursor` one page further, a count of what is already on screen, and an
  *  `IntersectionObserver` sentinel so scrolling to the end does what the button does.
  *  Guarded against a missing `IntersectionObserver` (jsdom in tests) rather than
  *  shipping a polyfill for an admin-only page. */
-function LoadMore({
+export function LoadMore({
   label,
   isFetchingMore,
   onLoadMore,
@@ -413,6 +402,7 @@ export function AdminTalenti() {
                     <TableHead>Stato</TableHead>
                     <TableHead>Provenienza</TableHead>
                     <TableHead className="text-right">Quando</TableHead>
+                    <TableHead className="w-12"><span className="sr-only">Azioni</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -451,7 +441,36 @@ function TalentoRow({ item }: { item: Talento }) {
       </TableCell>
       <TableCell className="text-muted-foreground">{item.origine}</TableCell>
       <TableCell className="text-right text-muted-foreground">{formatDate(item.created_at)}</TableCell>
+      <TableCell className="w-12 text-right">
+        {item.stato !== 'lead' && <TalentoMenu id={item.id} label={name || item.email} />}
+      </TableCell>
     </TableRow>
+  )
+}
+
+/** The row's own actions (REB-387), on a card only: a bare sign-up has no card to match
+ *  and no contract to read. The name keeps linking to the card. */
+function TalentoMenu({ id, label }: { id: string; label: string }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="ghost" size="icon-sm" aria-label={`Azioni per ${label}`}>
+          <MoreHorizontal aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem asChild>
+          <Link to="/admin/freelance/$id/match/new" params={{ id }}>
+            Crea match
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/admin/freelance/$id/contracts" params={{ id }}>
+            Match e contratti
+          </Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
@@ -893,6 +912,13 @@ export function AdminFreelancerDetail() {
             </>
           )}
           {f.deleted_at === null && (
+            <Button asChild variant="outline" size="sm">
+              <Link to="/admin/freelance/$id/contracts" params={{ id: f.id }}>
+                Match e contratti
+              </Link>
+            </Button>
+          )}
+          {f.deleted_at === null && (
             <Button type="button" variant="outline" size="sm" onClick={() => setOverrideOpen(true)}>
               Modifica scheda
             </Button>
@@ -995,7 +1021,7 @@ export function AdminFreelancerDetail() {
   )
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+export function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[10rem_1fr] gap-3 border-b pb-3 last:border-0">
       <dt className="text-muted-foreground">{label}</dt>

@@ -17,6 +17,7 @@ from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from mcp.server import MCPServer
@@ -34,6 +35,7 @@ from rebase_core.errors import DomainError, NotFound
 from rebase_core.freelancers import LEAD_STATE, FreelancerService
 from rebase_core.http import HttpCall
 from rebase_core.logins import LoginService
+from rebase_core.matches import MatchService
 from rebase_core.models import Freelancer, Signup, User
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
@@ -630,6 +632,58 @@ def build_server(
         ultimi con nome ed email. Ogni scheda letta da `get_talento` e da `get_freelancer`
         porta anche `accessi` e `ultimo_accesso`."""
         return _run(lambda s: LoginService(s).stats())
+
+    hub = urlsplit(settings.hub_url) if settings is not None else None
+    # The PDFs are links an admin opens with their own session, never bytes in an
+    # agent's context: the API's origin is the SPA's (`REBASE_HUB_URL`), or none at all.
+    api_origin = f"{hub.scheme}://{hub.netloc}" if hub is not None and hub.netloc else ""
+
+    def _document_links(document: dict[str, Any]) -> None:
+        path = f"/api/hub/contract-documents/{document['id']}/pdf"
+        document["pdf_url"] = f"{api_origin}{path}"
+        if document.get("ha_pdf_firmato"):
+            document["pdf_firmato_url"] = f"{api_origin}{path}?firmato=true"
+
+    @mcp.tool()
+    def list_matches(freelancer_id: str) -> dict[str, Any]:
+        """I match e i contratti di un freelance, per id della scheda, come li mostra la
+        pagina «Match e contratti»: `quadro` è il contratto quadro (quello attivo, o
+        l'ultimo non annullato) con stato, data di firma, prossimo rinnovo, ultimo giorno
+        per la disdetta e versione del testo; `quadri` li elenca tutti; `matches` sono i
+        match dal più recente, ognuno con l'azienda, lo stato e la lettera di incarico
+        con il suo numero. Ogni documento porta `pdf_url`, il link al PDF da aprire con
+        l'accesso admin: mai i byte, mai i dati fiscali. Solo lettura: i match si creano
+        dall'area admin."""
+        body = _run(lambda s: MatchService(s).for_freelancer(UUID(freelancer_id)))
+        body.pop("fiscale", None)
+        for document in (body["quadro"], *body["quadri"]):
+            if document is not None:
+                _document_links(document)
+        for match in body["matches"]:
+            _document_links(match["lettera"])
+        return body
+
+    @mcp.tool()
+    def get_match(match_id: str) -> dict[str, Any]:
+        """Un match, per id: l'azienda e la figura richiesta, i dati del cliente come li
+        stampa la lettera, lo stato (bozza, in_firma, attivo, concluso, annullato), la
+        lettera di incarico con numero e stato, e in `quadro` il contratto quadro del
+        freelance. Ogni documento porta `pdf_url`, mai i byte. Solo lettura."""
+        session = factory()
+        try:
+            service = MatchService(session)
+            match = service.get(UUID(match_id))
+            quadro = service.for_freelancer(match.freelancer_id).quadro
+            body = match.model_dump(mode="json")
+            body["quadro"] = quadro.model_dump(mode="json") if quadro is not None else None
+        except DomainError as exc:
+            raise ToolError(exc.message) from exc
+        finally:
+            session.close()
+        _document_links(body["lettera"])
+        if body["quadro"] is not None:
+            _document_links(body["quadro"])
+        return body
 
     def _run(call: Callable[[Session], BaseModel]) -> dict[str, Any]:
         """One session per call, closed whatever happened, and a domain error rendered

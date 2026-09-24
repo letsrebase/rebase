@@ -1,5 +1,16 @@
 import { Link } from '@tanstack/react-router'
-import { BookOpen, Boxes, Briefcase, Home, LogIn, LogOut, Plug, ShieldCheck, UserRound } from 'lucide-react'
+import {
+  BookOpen,
+  Boxes,
+  Briefcase,
+  Handshake,
+  Home,
+  LogIn,
+  LogOut,
+  Plug,
+  ShieldCheck,
+  UserRound,
+} from 'lucide-react'
 import { BrandMark } from '@/components/BrandMark'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
@@ -8,9 +19,12 @@ import { useLogout } from '@/lib/me'
 
 /** The admin pages (ORB-123 onward): «Developer e CTO» and «Iscrizioni», two
  *  overlapping views of the same people, are one entry, «Talenti», over the read
- *  model that merges them (REB-283); the rest keep their label, icon and path. */
+ *  model that merges them (REB-283); the rest keep their label, icon and path. «Match»
+ *  (REB-413) lists every match the milestone's other four admin pages create, between
+ *  the two lists it draws its rows from. */
 const ADMIN_NAV = [
   { to: '/admin/talent', label: 'Talenti', icon: UserRound },
+  { to: '/admin/matches', label: 'Match', icon: Handshake },
   { to: '/admin/companies', label: 'Aziende', icon: Briefcase },
   { to: '/admin/pigro', label: 'Istanze Pigro', icon: Boxes },
   { to: '/admin/guide', label: 'La guida', icon: BookOpen },
