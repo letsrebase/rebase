@@ -3,7 +3,8 @@ generates, never sent. Every test hands `FakeRenderer`: the real typesetting is
 `test_contract_render.py`'s."""
 
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -25,7 +26,7 @@ from rebase_core.contract_schemas import (
     MatchListItem,
 )
 from rebase_core.contracts.fields import FIELD, TERM, ContractFailed, Value
-from rebase_core.contracts.render import Renderer, text_path
+from rebase_core.contracts.render import Rendered, Renderer, text_path
 from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
@@ -602,6 +603,133 @@ def test_two_admins_matching_the_same_freelancer_at_once_never_leave_two_open_fr
     finally:
         first.close()
         second.close()
+
+
+@pytest.mark.parametrize("change", ["request_closed", "tax_data_corrected"])
+def test_a_create_waiting_for_the_freelancers_lock_reads_the_request_and_tax_data_after_it(
+    hub_engine: Engine, clean: Session, change: str
+) -> None:
+    """Greptile 4092036031: `create` used to read the tax data and check the request
+    before taking the freelancer's row lock, so what another admin committed while it
+    waited there -- a closed request, a corrected VAT number -- never reached it. Here
+    another transaction holds that lock (a tax-data save or another match does), the
+    creating session has already read both through a prefill, and the change commits
+    while `create` waits: it must refuse the closed request, or print the new tax
+    data."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    factory = session_factory(hub_engine)
+    holder, creator = factory(), factory()
+    outcome: list[object] = []
+    service = MatchService(creator, FakeRenderer(), SIGNER, today=lambda: TODAY)
+    service.prefill(freelancer_id, company_id)
+
+    def run() -> None:
+        try:
+            outcome.append(service.create(freelancer_id, _body(company_id), admin_id))
+        except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
+            outcome.append(exc)
+
+    worker = threading.Thread(target=run)
+    try:
+        holder.execute(
+            select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
+        )
+        worker.start()
+        worker.join(timeout=0.5)
+        assert worker.is_alive(), "create() did not wait for the freelancer's row lock"
+
+        # Each commits the holder's transaction, which releases the lock.
+        if change == "request_closed":
+            CompanyService(holder).set_status(company_id, StatusChange(stato="chiuso"))
+        else:
+            FiscalService(holder).save(
+                freelancer_id,
+                FiscalData(
+                    codice_fiscale="LVLDAA85T50H501Z",
+                    partita_iva="09876543210",
+                    domicilio="Corso Buenos Aires 2, Milano",
+                ),
+                admin_id,
+            )
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+
+        [result] = outcome
+        if change == "request_closed":
+            assert isinstance(result, ValidationFailed), result
+            assert result.details["field"] == "company_id"
+            assert clean.scalar(select(func.count()).select_from(Match)) == 0
+        else:
+            assert not isinstance(result, BaseException), result
+            quadro, lettera = _documents(clean, freelancer_id)
+            assert quadro.data["professionista-piva"] == "09876543210"
+            assert quadro.data["professionista-domicilio"] == "Corso Buenos Aires 2, Milano"
+            assert lettera.data["professionista-piva"] == "09876543210"
+    finally:
+        holder.close()
+        if worker.is_alive():
+            worker.join(timeout=5)
+        creator.close()
+
+
+def test_closing_a_request_while_its_match_is_typeset_waits_for_the_match(
+    hub_engine: Engine, clean: Session
+) -> None:
+    """Greptile 4092036031, the other half: the request is read under a shared lock
+    that lasts to the commit, so an admin closing it while `create` typesets waits, and
+    the draft is never saved for a request already closed."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    factory = session_factory(hub_engine)
+    creator, closer = factory(), factory()
+    rendering, release = threading.Event(), threading.Event()
+
+    @dataclass
+    class PausedRenderer(FakeRenderer):
+        def render(self, document: str, data: Mapping[str, Value]) -> Rendered:
+            if not rendering.is_set():
+                rendering.set()
+                assert release.wait(timeout=5), "the test never released the render"
+            return super().render(document, data)
+
+    errors: list[BaseException] = []
+
+    def create() -> None:
+        try:
+            MatchService(creator, PausedRenderer(), SIGNER, today=lambda: TODAY).create(
+                freelancer_id, _body(company_id), admin_id
+            )
+        except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
+            errors.append(exc)
+
+    def close() -> None:
+        try:
+            CompanyService(closer).set_status(company_id, StatusChange(stato="chiuso"))
+        except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
+            errors.append(exc)
+
+    creating, closing = threading.Thread(target=create), threading.Thread(target=close)
+    try:
+        creating.start()
+        assert rendering.wait(timeout=5), "create() never reached the render"
+
+        closing.start()
+        closing.join(timeout=0.5)
+        assert closing.is_alive(), "the request was closed while its match was being typeset"
+
+        release.set()
+        creating.join(timeout=5)
+        closing.join(timeout=5)
+        assert not creating.is_alive()
+        assert not closing.is_alive()
+        assert not errors, errors
+        assert clean.scalar(select(func.count()).select_from(Match)) == 1
+    finally:
+        release.set()
+        for worker in (creating, closing):
+            if worker.is_alive():
+                worker.join(timeout=5)
+        creator.close()
+        closer.close()
 
 
 # ---- the admin's «Match» list (REB-413) -------------------------------------------------

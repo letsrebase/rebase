@@ -320,22 +320,26 @@ class MatchService:
         come bozza») must not both read "no active framework" and both write a fresh
         `generato` one: the first statement of the transaction locks the freelancer's own
         row (`SELECT ... FOR UPDATE`), so the second waits here, before it reads
-        `active_framework`/`pending_framework`, for the first to commit or roll back. The
-        lock order is always the freelancer row first and only then the letter counter's
-        row (`next_letter_number`), so two of these transactions can never deadlock on each
-        other. The counter's own row lock is held on purpose through the letter's render,
-        for gapless numbering (see `test_a_render_that_fails_takes_no_number_and_leaves_
-        nothing_behind`) -- nobody may move the render or the number-taking earlier to
-        "speed this up"."""
+        `active_framework`/`pending_framework`, for the first to commit or roll back.
+        Everything the documents print is read after that lock, never before it: the card,
+        the tax data (`FiscalService.save` takes the same lock first, so they cannot change
+        until this commits) and the request, read under a shared lock (`FOR SHARE`) that
+        makes an admin closing it wait for this draft rather than have it saved for a
+        request already closed. The lock order is always the freelancer row, then the
+        request's, and only then the letter counter's row (`next_letter_number`), so two of
+        these transactions can never deadlock on each other. The counter's own row lock is
+        held on purpose through the letter's render, for gapless numbering (see
+        `test_a_render_that_fails_takes_no_number_and_leaves_nothing_behind`) -- nobody
+        may move the render or the number-taking earlier to "speed this up"."""
         renderer = self._renderer()
-        freelancer, user = self._freelancer(freelancer_id)
-        company, _referente = self._matchable_company(data.company_id)
-        fiscal = self._fiscal(freelancer.id)
-        today = self.today()
         try:
             self.session.execute(
-                select(Freelancer.id).where(Freelancer.id == freelancer.id).with_for_update()
+                select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
             )
+            freelancer, user = self._freelancer(freelancer_id)
+            company, _referente = self._matchable_company(data.company_id, lock=True)
+            fiscal = self._fiscal(freelancer.id)
+            today = self.today()
             active = active_framework(self.session, freelancer.id)
             documents: list[ContractDocument] = []
             stale_ids: list[UUID] = []
@@ -572,35 +576,47 @@ class MatchService:
             raise ContractFailed("no renderer was handed to MatchService")
         return self.renderer
 
+    # The lookups below read with `populate_existing`: the session keeps its objects across
+    # commits (`expire_on_commit=False`), so a card, a request or tax data it still holds
+    # from an earlier read would otherwise come back as they were then, not as `create`
+    # must see them under its lock.
+
     def _freelancer(self, freelancer_id: UUID) -> tuple[Freelancer, User]:
         row = self.session.execute(
             select(Freelancer, User)
             .join(User, User.id == Freelancer.user_id)
             .where(Freelancer.id == freelancer_id)
+            .execution_options(populate_existing=True)
         ).first()
         if row is None or row[0].deleted_at is not None:
             raise NotFound("freelancer", freelancer_id)
         return row[0], row[1]
 
-    def _company(self, company_id: UUID) -> tuple[Company, User]:
-        row = self.session.execute(
+    def _company(self, company_id: UUID, *, lock: bool = False) -> tuple[Company, User]:
+        stmt = (
             select(Company, User)
             .join(User, User.id == Company.user_id)
             .where(Company.id == company_id)
-        ).first()
+            .execution_options(populate_existing=True)
+        )
+        if lock:
+            stmt = stmt.with_for_update(read=True, of=Company)
+        row = self.session.execute(stmt).first()
         if row is None or row[0].deleted_at is not None:
             raise NotFound("company", company_id)
         return row[0], row[1]
 
-    def _matchable_company(self, company_id: UUID) -> tuple[Company, User]:
-        company, referente = self._company(company_id)
+    def _matchable_company(self, company_id: UUID, *, lock: bool = False) -> tuple[Company, User]:
+        company, referente = self._company(company_id, lock=lock)
         if company.stato == "chiuso":
             raise ValidationFailed(ENTITY, "company_id", "la richiesta è chiusa: riaprila prima")
         return company, referente
 
     def _fiscal(self, freelancer_id: UUID) -> FreelancerFiscal:
         row = self.session.scalar(
-            select(FreelancerFiscal).where(FreelancerFiscal.freelancer_id == freelancer_id)
+            select(FreelancerFiscal)
+            .where(FreelancerFiscal.freelancer_id == freelancer_id)
+            .execution_options(populate_existing=True)
         )
         if row is None:
             raise ValidationFailed(ENTITY, "fiscale", "mancano i dati fiscali del freelance")
