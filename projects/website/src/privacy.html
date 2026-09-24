@@ -45,7 +45,7 @@
     </header>
 
     <main class="wrap section">
-      <p class="kicker">Ultimo aggiornamento <time datetime="2026-09-12">12 settembre 2026</time></p>
+      <p class="kicker">Ultimo aggiornamento <time datetime="2026-09-24">24 settembre 2026</time></p>
       <h1 class="measure">Informativa sulla privacy</h1>
 
       <div class="measure" style="display: grid; gap: 1.25rem; margin-top: 2rem">
@@ -152,21 +152,28 @@
         <h2>L'accesso a Gmail</h2>
         <p>
           Se scegli di collegare una casella Gmail al tuo spazio, PigroCRM chiede a Google due
-          autorizzazioni <em>restricted</em>, e chiede esattamente queste:
+          autorizzazioni, e chiede esattamente queste:
         </p>
         <ul style="display: grid; gap: 0.75rem">
           <li>
-            <code>https://www.googleapis.com/auth/gmail.readonly</code> — per trovare e leggere
-            <strong>soltanto</strong> le conversazioni che riguardano gli
-            <strong>indirizzi email già presenti</strong> nella tua anagrafica di clienti e persone.
-            La selezione avviene lato Google, dentro la query: PigroCRM non elenca la tua casella e
-            non la scarica. Di conseguenza <strong>non leggiamo</strong> le newsletter, le ricevute,
+            <code>https://www.googleapis.com/auth/gmail.readonly</code> — per due cose, e
+            nient'altro. La prima: trovare e leggere <strong>soltanto</strong> le conversazioni
+            che riguardano gli <strong>indirizzi email già presenti</strong> nella tua anagrafica
+            di clienti e persone. La selezione avviene lato Google, dentro la query: per questo
+            PigroCRM non scarica la tua casella. Di conseguenza <strong>non leggiamo</strong> le newsletter, le ricevute,
             i messaggi personali, né alcun messaggio che non appartenga a una di quelle
             conversazioni. L'unica eccezione, dichiarata: quando un messaggio rilevante appartiene a
             una conversazione, la conversazione viene salvata intera, compresi eventuali
             partecipanti che non conosciamo, perché una conversazione letta a metà è peggio che non
             letta. Quegli indirizzi non entrano nell'anagrafica e non allargano le ricerche
-            successive.
+            successive. La seconda, solo quando la chiedi tu (dalla Home di uno spazio nuovo o da
+            «Proponi dalla casella» in Clienti): proporti i clienti da importare. PigroCRM elenca
+            le conversazioni in cui <strong>hai scritto tu</strong> negli ultimi dodici mesi, al
+            massimo le duecento più recenti, e di ciascuna legge <strong>solo</strong> mittente,
+            destinatari e data: non l'oggetto, non il corpo, non gli allegati. Raggruppa gli
+            indirizzi per dominio, lascia fuori il tuo, i provider di posta e le PEC, e ti mostra le
+            aziende con cui lavori. <strong>Non salva nulla</strong>: entrano in anagrafica solo i
+            clienti e le persone che spunti tu.
           </li>
           <li>
             <code>https://www.googleapis.com/auth/gmail.send</code> — per inviare, dalla tua casella,
@@ -186,9 +193,21 @@
 
         <h2>L'accesso a Google Drive</h2>
         <p>
-          Se colleghi Google Drive, PigroCRM legge solo le cartelle che gli indichi e scrive solo
-          nella cartella che scegli: lì finiscono i PDF che produce per te. Non elenca il resto del
-          tuo Drive e non lo scarica.
+          Se colleghi Google Drive, PigroCRM chiede
+          <code>https://www.googleapis.com/auth/drive.readonly</code> per leggere i file delle
+          cartelle che gli indichi, quando gli chiedi di importarne uno, e
+          <code>https://www.googleapis.com/auth/drive.file</code> per scrivere nella cartella che
+          scegli: lì finiscono i PDF che produce per te. Non elenca il resto del tuo Drive e non lo
+          scarica.
+        </p>
+        <p>
+          L'uso e il trasferimento ad altre applicazioni delle informazioni che PigroCRM riceve
+          dalle API di Google, per Gmail come per Google Drive, rispettano la
+          <a
+            class="quiet-link"
+            href="https://developers.google.com/terms/api-services-user-data-policy"
+            >Google API Services User Data Policy</a
+          >, compresi i requisiti di <em>Limited Use</em>.
         </p>
 
         <h2>Cosa non chiediamo</h2>

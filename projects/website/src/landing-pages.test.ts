@@ -68,8 +68,10 @@ describe.each(PAGES)('%s', (name) => {
       // `posthog.com` since ORB-183: the cookie section links PostHog's policy the way
       // it links OpenAI's. The SDK itself is on `i.posthog.com`, which is not here and
       // never will be: `pixel.test.ts` keeps it out of every page.
+      // `developers.google.com` since REB-410: the Gmail and Drive section links the
+      // Google API Services User Data Policy, which Google's verification requires.
       expect(url, 'external subresource').toMatch(
-        /^https:\/\/(?:github\.com|pigro\.letsrebase\.com|openai\.com|posthog\.com|humancraft\.tech|www\.linkedin\.com)\//,
+        /^https:\/\/(?:github\.com|pigro\.letsrebase\.com|openai\.com|posthog\.com|humancraft\.tech|www\.linkedin\.com|developers\.google\.com)\//,
       )
     }
     expect(page).not.toMatch(/fonts\.googleapis\.com|fonts\.gstatic\.com/)
@@ -334,6 +336,25 @@ describe('privacy.html', () => {
     ]) {
       expect(page.toLowerCase()).toContain(claim.toLowerCase())
     }
+  })
+
+  it('says what the customer proposals read, and that they store nothing', () => {
+    // REB-223 reads the owner's sent mail to propose customers, which the first text
+    // ruled out («non elenca la tua casella»). The Google review compares the policy
+    // with what the app does (REB-410), so the two move together.
+    for (const claim of ['hai scritto tu', 'mittente', 'non l\'oggetto', 'non salva nulla']) {
+      expect(page.toLowerCase()).toContain(claim.toLowerCase())
+    }
+    expect(page).not.toContain('non elenca la tua casella')
+  })
+
+  it('names both Drive scopes and the Limited Use commitment', () => {
+    // The verification of a restricted scope asks the policy for the exact scopes and
+    // for the User Data Policy's Limited Use statement, linked (REB-410).
+    expect(page).toContain('https://www.googleapis.com/auth/drive.readonly')
+    expect(page).toContain('https://www.googleapis.com/auth/drive.file')
+    expect(page).toContain('https://developers.google.com/terms/api-services-user-data-policy')
+    expect(page).toContain('Limited Use')
   })
 
   it('names the scopes it deliberately does not ask for', () => {
