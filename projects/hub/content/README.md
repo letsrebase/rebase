@@ -96,11 +96,11 @@ gives notice 30 days before the end (9.1, approved specifically as a tacit renew
   ones an engagement came from, for twelve months from the introduction or the last
   engagement. A company the freelancer declares within seven days as a client of the
   previous 24 months is exempt; going direct early means paying rebase 15% of what the
-  freelancer invoices that company until the twelve months end (decided). Hidden, it
-  costs the 15% plus a penalty; the €2,000 of the first draft was too low (Ivan), and the
-  proposal is three times the last engagement's average monthly fee, at least €5,000,
-  which scales with the engagement and gives a judge less reason to cut it under article
-  1384 of the civil code.
+  freelancer invoices that company until the twelve months end. Hidden, it costs the 15%
+  plus a penalty of three times the last engagement's average monthly fee, at least
+  €5,000, which scales with the engagement and gives a judge less reason to cut it under
+  article 1384 of the civil code (decided by Ivan on 2026-09-24, after he found the first
+  draft's €2,000 too low).
 - **Notice**: 30 days per engagement. When the client stops, rebase may close sooner
   only by paying the fee for the notice days that are missing, so the company contract
   has to give rebase at least that much notice (10.2). Two days during the opening check,
