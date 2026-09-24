@@ -18,7 +18,7 @@ COPY shared/ui ./shared/ui
 COPY projects/hub/apps/web ./projects/hub/apps/web
 RUN pnpm --filter hub build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.29-alpine
 COPY --from=build /app/projects/hub/apps/web/dist /usr/share/nginx/html/hub
 COPY projects/hub/deploy/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
