@@ -1,6 +1,6 @@
 ---
 name: linear-content
-description: Use when writing anything that lands on Linear for this repository — an issue title and body, a comment, a closing comment, a project description, a project status update. The shape, the language and what never goes in, so every card reads the same way. Triggers whenever save_issue, save_comment, save_project or save_status_update is about to be called.
+description: Use when writing anything that lands on Linear for this repository: an issue title and body, a comment, a closing comment, a project description, a project status update. The shape, the language and what never goes in, so every card reads the same way. Triggers whenever save_issue, save_comment, save_project or save_status_update is about to be called.
 ---
 
 # Writing on Linear
@@ -15,7 +15,7 @@ the PR, or a project document; the card indexes them.
 English, first person, plain words, the way you would say it to a colleague. No em
 dashes, no "not just X but Y", no emoji, no selling ("robust", "seamless",
 "powerful"). Real newlines, never `\n` escapes. Markdown headings are bold lead
-words, not `#` titles — a card is not a document.
+words, not `#` titles: a card is not a document.
 
 ## The title
 
@@ -76,7 +76,7 @@ evidence bullets on the closing comment. Each opens with a bold lead naming the 
 - **Review.** `**Review applied:** ...` How many findings, which changed the code
   (commit sha), which you left as they were and why.
 - **Closing.** `**Merged:** <url> (merge commit ...)` followed by `Evidence:` and a
-  bulleted list a reader can chase — run ids, test counts, the request you made and
+  bulleted list a reader can chase: run ids, test counts, the request you made and
   what came back, what you opened and saw. Then `Left open on purpose:` if anything
   is.
 
@@ -84,7 +84,7 @@ evidence bullets on the closing comment. Each opens with a bold lead naming the 
 
 The name is a verb and the work it does (`Let a member invite a colleague by
 email`). An outcome-only clause reads as a riddle to anyone who did not write it. No
-initiative prefix and no version number — the initiative field already says which
+initiative prefix and no version number: the initiative field already says which
 macroprogetto, and `vN` checks nothing. No state word either (`deployed`, `done`,
 `complete`): the status already says that, and a name that repeats it goes stale the
 moment the status moves.
@@ -93,7 +93,7 @@ A milestone carries the same shape; its description is one sentence starting `Cl
 when`, with the observable check.
 
 `save_project`: `summary` is one sentence stating the outcome (under 255 chars). The
-description is at most a short paragraph — what the contract covers, how it deploys,
+description is at most a short paragraph: what the contract covers, how it deploys,
 what is open now. The architecture and the design record live in the repository's
 own `AGENTS.md` and `docs/`; the description points at them in one line.
 
@@ -115,5 +115,5 @@ alone would mislead; skip it when it would only restate the issue list.
 Secrets, tokens, passwords, or where to find them beyond "ask the person who set it
 up". Personal data belonging to the client's own customers or users. Screenshots
 carrying real customer data. A claim a test did not make. A restated board. An issue
-filed after the work only to have a `Done` card — the commit is the record of
+filed after the work only to have a `Done` card: the commit is the record of
 finished work that needed no decision.

@@ -22,7 +22,7 @@ A library only this project uses stays in `projects/<name>/packages/`. It moves 
 
 ## 2. Wire it into the workspaces
 
-**Node** — nothing to do for the workspace itself: `pnpm-workspace.yaml` already
+**Node**, nothing to do for the workspace itself: `pnpm-workspace.yaml` already
 globs `projects/*/apps/*` and `projects/*/packages/*`. Do point every
 build-and-test dependency at the catalog:
 
@@ -32,10 +32,10 @@ build-and-test dependency at the catalog:
 
 If a version you need is not in the catalog yet, add it there rather than pinning it
 in the package. If you need a *different* version from the one in the catalog, say
-why in the package.json, in a comment on the line above — a second TypeScript major
+why in the package.json, in a comment on the line above: a second TypeScript major
 in this repository is a decision, not a detail.
 
-**Python** — two lists in the root `pyproject.toml`, and both are required:
+**Python**: two lists in the root `pyproject.toml`, and both are required:
 
 ```toml
 [tool.uv.workspace]
@@ -140,8 +140,8 @@ before 2026-09-09, when each deploy carried its own grep and PigroCRM's had lost
 
 Add the project's expensive checks to `.github/preflight.json`, with `when` globs
 scoped to `projects/<name>/**`. Mark `serial: true` anything that binds a fixed host
-port or a shared database — this box runs several agents at once and a port
-collision reads exactly like a failing test. Then run `preflight --list` and read
+port or a shared database (this box runs several agents at once and a port
+collision reads exactly like a failing test). Then run `preflight --list` and read
 which checks your diff actually selects, rather than assuming the globs are right.
 
 **Anything you took off the PR path has to appear here.** A heavy check in neither

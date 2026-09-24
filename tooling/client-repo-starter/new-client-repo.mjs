@@ -83,8 +83,8 @@ const targetDir = args.createRepo ? join(process.cwd(), args.repo) : args.target
 // ---- placeholder values -----------------------------------------------
 
 const WORKTREE_POLICY = args.worktree
-  ? "work in a git worktree of its own (`git worktree add -b <branch> ../<repo>-<name> origin/main`), never directly in the shared checkout — more than one person can be committing to this repository at once, and a worktree is what keeps your commit yours."
-  : "a plain branch checkout is fine here (`git checkout -b <branch> origin/main`); this contract has one person committing at a time, so nothing needs a worktree's isolation — revisit if that changes.";
+  ? "work in a git worktree of its own (`git worktree add -b <branch> ../<repo>-<name> origin/main`), never directly in the shared checkout: more than one person can be committing to this repository at once, and a worktree is what keeps your commit yours."
+  : "a plain branch checkout is fine here (`git checkout -b <branch> origin/main`); this contract has one person committing at a time, so nothing needs a worktree's isolation: revisit if that changes.";
 
 const WORKTREE_BLOCK = args.worktree
   ? [
@@ -104,7 +104,7 @@ const WORKTREE_BLOCK = args.worktree
   : [
       "4. **A plain branch checkout is fine here**: `git checkout -b <branch> origin/main`.",
       "   This contract has one person committing at a time, so nothing needs a",
-      "   worktree's isolation — revisit if that changes.",
+      "   worktree's isolation: revisit if that changes.",
     ].join("\n");
 
 const REVIEW_GATE_POLICY = args.greptile

@@ -1,4 +1,4 @@
-# AGENTS.md — working on the rebase hub
+# AGENTS.md: working on the rebase hub
 
 The root [`AGENTS.md`](../../AGENTS.md) covers the monorepo. This file is only about
 this project.
