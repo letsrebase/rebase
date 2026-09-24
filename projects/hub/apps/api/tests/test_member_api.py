@@ -14,7 +14,7 @@ from rebase_api.deps import get_sender
 from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.mail import Mail, RecordingSender
-from rebase_core.models import GuideDownload, User
+from rebase_core.models import GuideDownload, Login, User
 from rebase_core.perks import GUIDE_PATH
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
@@ -97,6 +97,58 @@ def _enter(
     entered = client.post("/api/hub/auth/enter", json={"token": match.group(1)})
     assert entered.status_code == 200, entered.text
     return entered.json(), entered
+
+
+def test_a_link_asked_with_a_campaign_writes_it_on_the_login(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    """REB-426: the login page sends the attribution it arrived with, and the login the
+    link opens carries it. The answer to the request itself does not change."""
+    _apply(client, "ada@studio.it")
+    utm = {
+        "utm_source": "email",
+        "utm_medium": "outreach",
+        "utm_campaign": "outreach-2026-09-r2",
+        "utm_content": "cv",
+        "utm_term": "11425b70",
+    }
+    known = client.post("/api/hub/auth/link", json={"email": "ada@studio.it", "utm": utm})
+    unknown = client.post("/api/hub/auth/link", json={"email": "nessuno@studio.it", "utm": utm})
+    assert known.status_code == unknown.status_code == 202
+    assert known.json() == unknown.json()
+    match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
+    assert match
+    assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
+
+    api_session.expire_all()
+    login = api_session.scalar(select(Login))
+    assert login is not None
+    assert (login.utm_campaign, login.utm_content, login.utm_term) == (
+        "outreach-2026-09-r2",
+        "cv",
+        "11425b70",
+    )
+
+
+def test_a_link_asked_without_a_campaign_writes_a_login_without_one(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    _apply(client, "ada@studio.it")
+    _enter(client, sender, "ada@studio.it")
+    api_session.expire_all()
+    login = api_session.scalar(select(Login))
+    assert login is not None and login.utm_campaign is None and login.utm_source is None
+
+
+def test_a_malformed_campaign_on_the_link_request_is_a_422(
+    client: TestClient, sender: RecordingSender, clean: None
+) -> None:
+    # The same bounds the wizards' `SignupUtm` holds, reused as it is: a key it does not
+    # know is ignored there too, so a stale page never loses a login over one.
+    for utm in ({"utm_campaign": "x" * 201}, {"origine": "Non Uno Slug"}):
+        response = client.post("/api/hub/auth/link", json={"email": "ada@studio.it", "utm": utm})
+        assert response.status_code == 422, (utm, response.text)
+    assert sender.sent == []
 
 
 def test_without_a_sender_the_link_request_is_a_503_sentence(
