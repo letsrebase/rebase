@@ -62,3 +62,12 @@ export const DOCUMENT_STATE_LABELS: Record<string, string> = {
   annullato: 'Annullato',
   disdetto: 'Disdetto',
 }
+
+/** REB-392: a contract's state in the freelancer's own words. */
+export const MEMBER_DOCUMENT_STATE_LABELS: Record<string, string> = {
+  in_attesa: 'Parte dopo la firma del contratto quadro',
+  inviato: 'Da firmare',
+  firmato: 'Firmato',
+  annullato: 'Annullato: non va più firmato',
+  disdetto: 'Disdetto',
+}

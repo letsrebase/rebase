@@ -15,6 +15,8 @@ from rebase_core.contract_schemas import (
     LetteraFields,
     MatchCreate,
     MatchListItem,
+    MemberContract,
+    MemberContracts,
     SendReport,
 )
 from rebase_core.contracts.fields import DAYS, FIELD, MONTH_END, TERM
@@ -109,5 +111,7 @@ def test_nothing_in_the_flow_can_carry_the_client_budget() -> None:
         MatchCreate,
         MatchListItem,
         SendReport,
+        MemberContract,
+        MemberContracts,
     ):
         assert not any("budget" in name for name in model.model_fields), model

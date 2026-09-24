@@ -378,3 +378,33 @@ class SendReport(BaseModel):
     match: MatchRead
     inviato: str | None
     mail_inviata: bool | None
+
+
+class MemberContract(BaseModel):
+    """A contract as its freelancer reads it in «Contratti» (REB-392): never the PDF's
+    bytes and never `data`. `cliente` and the two dates are a letter's, as the letter
+    prints them; `signing_url` is there only while the document waits for the
+    signature, since its path is the signer's token."""
+
+    id: UUID
+    kind: str
+    numero: str | None
+    stato: str
+    cliente: str | None
+    inizio: str | None
+    fine: str | None
+    sent_at: datetime | None
+    signed_at: datetime | None
+    signing_url: str | None
+    ha_pdf_firmato: bool
+    attivo: bool
+    rinnovo: date | None
+    ultimo_giorno_disdetta: date | None
+
+
+class MemberContracts(BaseModel):
+    """«Contratti»: the framework agreement (the active one, else the newest that reached
+    the person), and the letters newest first."""
+
+    quadro: MemberContract | None
+    lettere: list[MemberContract]

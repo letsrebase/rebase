@@ -13,6 +13,9 @@ door onto the same row: not an edit, a brand-new `Company` request, the company'
 name carried forward and everything else asked fresh -- a 404 for a referente with
 nothing to add to yet, the same as the `PATCH`.
 
+`GET /me/contracts` (REB-392) is the same discipline for the contracts: the caller's
+own, a 404 for anybody else's.
+
 `POST /auth/link`, `POST /auth/enter` and `PUT /me/cv` all spend from the public rate
 limit: the first two because they are unauthenticated by design, `PUT /me/cv` because
 FastAPI reads its multipart body while resolving parameters, before `MeDep` gets a
@@ -27,6 +30,7 @@ the address in the body, so no access log on either host writes it.
 import logging
 import secrets
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import (
     APIRouter,
@@ -41,9 +45,11 @@ from fastapi import (
 )
 
 from rebase_api.deps import MEMBER_COOKIE, MeDep, SenderDep, SessionDep, SettingsDep
-from rebase_api.downloads import cv_response, perk_response
+from rebase_api.downloads import cv_response, pdf_response, perk_response
 from rebase_api.ratelimit import spend_one
+from rebase_core.contract_schemas import MemberContracts
 from rebase_core.mail import EmailSender, Mail
+from rebase_core.member_contracts import MemberContractService
 from rebase_core.members import MemberService
 from rebase_core.models import CV_MAX_BYTES
 from rebase_core.perks import GUIDE_FILENAME, PerkService, guide_bytes
@@ -181,6 +187,23 @@ def my_guide(me: MeDep, session: SessionDep) -> Response:
     """
     PerkService(session).record_guide_download(me.id)
     return perk_response(guide_bytes(), GUIDE_FILENAME)
+
+
+@router.get("/me/contracts", response_model=MemberContracts)
+def my_contracts(me: MeDep, session: SessionDep) -> MemberContracts:
+    """«Contratti» (REB-392): the caller's own framework agreement and letters, read from
+    the session and never from the URL. A person with no card is a 404 named «scheda»,
+    as `/me/cv` is."""
+    return MemberContractService(session).for_user(me.id)
+
+
+@router.get("/me/contracts/{document_id}/pdf")
+def my_signed_contract(me: MeDep, session: SessionDep, document_id: UUID) -> Response:
+    """The signed copy of one of the caller's own documents. Someone else's document, and
+    one not signed yet, are the same 404 as a document that does not exist: a 403 would
+    say it exists."""
+    pdf = MemberContractService(session).signed_pdf(me.id, document_id)
+    return pdf_response(pdf.filename, pdf.content)
 
 
 @router.post("/members/lookup", response_model=MemberLookup)

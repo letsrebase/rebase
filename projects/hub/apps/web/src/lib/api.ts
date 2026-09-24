@@ -572,6 +572,30 @@ export interface SendReport {
   mail_inviata: boolean | null
 }
 
+/** A contract as its freelancer reads it in «Contratti» (REB-392): the signing link only
+ *  while the document waits for the signature. */
+export interface MemberContract {
+  id: string
+  kind: 'quadro' | 'lettera'
+  numero: string | null
+  stato: DocumentStato
+  cliente: string | null
+  inizio: string | null
+  fine: string | null
+  sent_at: string | null
+  signed_at: string | null
+  signing_url: string | null
+  ha_pdf_firmato: boolean
+  attivo: boolean
+  rinnovo: string | null
+  ultimo_giorno_disdetta: string | null
+}
+
+export interface MemberContracts {
+  quadro: MemberContract | null
+  lettere: MemberContract[]
+}
+
 /** The letter's text fields, in the order `lettera-di-incarico.md` asks for them and the
  *  server's `LETTERA_TEXT_FIELDS` lists them. */
 export const LETTERA_TEXT_KEYS = [
@@ -925,5 +949,9 @@ export const member = {
    *  route answers with an attachment, and a session cookie travels with a navigation
    *  the same way it travels with a request. */
   guideUrl: '/api/hub/me/guide',
+  /** «Contratti» (REB-392): the caller's own, from the session. */
+  contracts: () => request<MemberContracts>('/api/hub/me/contracts'),
+  /** A signed copy, a plain href like `cvUrl`: the route answers an attachment. */
+  contractPdfUrl: (documentId: string) => `/api/hub/me/contracts/${documentId}/pdf`,
   logout: () => request<void>('/api/hub/me/logout', { method: 'POST' }),
 }

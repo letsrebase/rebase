@@ -181,9 +181,11 @@ export const LETTERA_MULTILINE: ReadonlySet<LetteraFieldKey> = new Set<LetteraFi
 ])
 
 /** How a document is named in a button's label or a confirmation, the one place both
- *  `DocumentLinks` and the signing actions on «Match e contratti» name a document
- *  (REB-407): «del contratto quadro», «della lettera n. 2026-001». */
-export function whatOf(document: ContractDocument): string {
+ *  the admin's «Match e contratti» (REB-407) and the member area's «Contratti»
+ *  (REB-392) name a document: «del contratto quadro», «della lettera n. 2026-001».
+ *  Takes just the two fields a label needs, so a `MemberContract` names a document the
+ *  same way a `ContractDocument` does. */
+export function whatOf(document: Pick<ContractDocument, 'kind' | 'numero'>): string {
   return document.kind === 'quadro' ? 'del contratto quadro' : `della lettera n. ${document.numero}`
 }
 
