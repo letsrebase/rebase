@@ -279,6 +279,23 @@ def test_a_draft_is_cancelled_once_and_only_an_active_match_closes(
     assert "bozza" in again.json()["detail"]
 
 
+def test_a_soft_deleted_freelancer_hides_all_four_match_routes(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    match = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    ).json()
+    letter_id = match["lettera"]["id"]
+    assert client.delete(f"/api/hub/freelancers/{freelancer_id}").status_code == 200
+
+    assert client.get(f"/api/hub/matches/{match['id']}").status_code == 404
+    assert client.get(f"/api/hub/contract-documents/{letter_id}/pdf").status_code == 404
+    assert client.post(f"/api/hub/matches/{match['id']}/cancel").status_code == 404
+    assert client.post(f"/api/hub/matches/{match['id']}/close").status_code == 404
+
+
 def test_a_render_that_fails_is_a_503_with_a_sentence(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:

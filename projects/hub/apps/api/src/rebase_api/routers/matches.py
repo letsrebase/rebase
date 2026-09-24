@@ -30,7 +30,7 @@ from rebase_core.contracts.render import Renderer
 from rebase_core.errors import NotFound
 from rebase_core.fiscal import FiscalService
 from rebase_core.matches import ENTITY, MatchService
-from rebase_core.models import ContractDocument, Freelancer
+from rebase_core.models import ContractDocument, Freelancer, Match
 
 router = APIRouter(prefix="/api/hub", tags=["hub-admin"])
 
@@ -125,11 +125,19 @@ def get_match(_: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
 
 @router.post("/matches/{match_id}/cancel", response_model=MatchRead)
 def cancel_match(admin: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
+    match = session.get(Match, match_id)
+    if match is None:
+        raise NotFound(ENTITY, match_id)
+    _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
     return MatchService(session).cancel(match_id, admin.id)
 
 
 @router.post("/matches/{match_id}/close", response_model=MatchRead)
 def close_match(admin: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
+    match = session.get(Match, match_id)
+    if match is None:
+        raise NotFound(ENTITY, match_id)
+    _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
     return MatchService(session).close(match_id, admin.id)
 
 
