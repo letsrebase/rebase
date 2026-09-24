@@ -104,6 +104,21 @@ add the rate-limiting a Tailscale gate made unnecessary there.
    picking up and completing real jobs, including three at once.
 9. Ivan's SSH public key (`ivan-sala@macbook runnergitlab-rebase`) added to the
    `ci` user's `authorized_keys`, alongside the devbox and Mac keys.
+10. **`TMPDIR` on real disk, not the tmpfs `/tmp`.** Found 2026-09-24 the same day
+    the pool went live: `letsrebase/point`'s `api-tests` job failed twice with
+    `OSError: [Errno 28] No space left on device` on a `pip install`, while the
+    125G root disk sat at 12% used. `/tmp` here is a 3.9G RAM-backed `tmpfs`
+    (Debian's default), and a crashed install from an earlier job had left a
+    3.2G unpacked package behind in it, the same class of trap
+    `devbox-process-hygiene` already documents for the devbox itself. Fixed on
+    all three runners: `TMPDIR=/home/ci/.cache/tmp` (created on the root disk,
+    owned by `ci`) via a systemd drop-in on each
+    `actions.runner.letsrebase.ci-runner-{1,2,3}.service`, plus
+    `/etc/cron.daily/ci-runner-disk-hygiene`, which clears anything left in that
+    directory after a day and runs `docker system prune -af --filter
+    'until=24h'`. That cron also closes the Docker-prune follow-up below: no
+    rollback images live on this box the way they do on prodbox, so a plain
+    prune is safe here without prodbox's surgical per-app carve-out.
 
 **Not done, deliberate follow-ups rather than gaps in what exists today:**
 
@@ -115,9 +130,6 @@ add the rate-limiting a Tailscale gate made unnecessary there.
   and reconfigures after every job, not a flag alone.
 - **A fourth runner instance**, if the queue backs up before a resize is worth
   doing; deferred with the sizing note above.
-- **A cron-driven Docker prune**, the same shape as prodbox's own disk-hygiene
-  rule (`prodbox-deploy` § Disk is the shared resource): nothing here prunes
-  itself yet, and image/build-cache bytes grow with every job.
 
 ## Repository side, once a repository joins the pool
 
