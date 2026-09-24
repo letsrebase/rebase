@@ -52,9 +52,19 @@ describe.each(PAGES)('%s', (name) => {
     // checked on its own two lines below rather than against the allowlist here; only
     // that exact value is exempt, not every same-origin absolute URL.
     const canonical = page.match(/<link\b[^>]*\brel="canonical"[^>]*\bhref="([^"]*)"/)?.[1]
+    // REB-410: the Gmail and Drive section links the Google API Services User Data
+    // Policy, which Google's verification requires. Allowed as an `<a href>` the reader
+    // clicks and nothing else: the same host as a `src`, or as a `<link>`, still fails
+    // the allowlist below.
+    const googlePolicyLinks = new Set(
+      [...page.matchAll(/<a\b[^>]*\bhref="(https:\/\/developers\.google\.com\/[^"]*)"/g)].map(
+        (anchor) => anchor[1]!,
+      ),
+    )
     for (const match of page.matchAll(/(?:href|src)="(https?:\/\/[^"]+)"/g)) {
       const url = match[1]!
       if (url === canonical) continue
+      if (googlePolicyLinks.has(url) && !page.includes(`src="${url}"`)) continue
       // An href the reader clicks -- the repository, the hosted signup, or OpenAI's
       // own privacy policy, which the cookie section has to point at -- is fine; a
       // subresource is not. `humancraft.tech` is in the list because Italian law
@@ -68,10 +78,8 @@ describe.each(PAGES)('%s', (name) => {
       // `posthog.com` since ORB-183: the cookie section links PostHog's policy the way
       // it links OpenAI's. The SDK itself is on `i.posthog.com`, which is not here and
       // never will be: `pixel.test.ts` keeps it out of every page.
-      // `developers.google.com` since REB-410: the Gmail and Drive section links the
-      // Google API Services User Data Policy, which Google's verification requires.
       expect(url, 'external subresource').toMatch(
-        /^https:\/\/(?:github\.com|pigro\.letsrebase\.com|openai\.com|posthog\.com|humancraft\.tech|www\.linkedin\.com|developers\.google\.com)\//,
+        /^https:\/\/(?:github\.com|pigro\.letsrebase\.com|openai\.com|posthog\.com|humancraft\.tech|www\.linkedin\.com)\//,
       )
     }
     expect(page).not.toMatch(/fonts\.googleapis\.com|fonts\.gstatic\.com/)
