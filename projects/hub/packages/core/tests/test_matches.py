@@ -7,7 +7,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fakes_contracts import FailingRenderer, FakeRenderer
@@ -46,8 +46,8 @@ SIGNER: dict[str, Value] = {
     "rebase-pec": "rebase@pec.example",
     "rebase-rappresentante": "Nome Cognome",
 }
-# "signups" is here (Task 6's controller pre-flight scan) so `test_matches_api.py`'s own
-# fixture can clear the same tables in the same order: the two lists must not drift.
+# "signups" is here so `test_matches_api.py`'s own fixture can clear the same tables in
+# the same order: the two lists must not drift.
 TABLES = (
     "admin_actions",
     "contract_documents",
@@ -249,7 +249,7 @@ def test_the_framework_prints_the_freelancer_and_rebases_signer_and_leaves_the_s
 def test_with_an_active_framework_only_the_letter_is_written_and_it_cites_the_signature_date(
     clean: Session,
 ) -> None:
-    """Review Focus 3: 23:30 UTC on 30 September is 1 October in Rome."""
+    """23:30 UTC on 30 September is 1 October in Rome."""
     admin_id, freelancer_id, company_id = _setup(clean)
     _framework(clean, freelancer_id, admin_id, signed_at=datetime(2026, 9, 30, 23, 30, tzinfo=UTC))
     renderer = FakeRenderer()
@@ -286,6 +286,112 @@ def test_an_unsent_framework_from_an_earlier_draft_is_replaced_not_duplicated(
     entries = AdminActionService(clean).timeline("match", second.id)
     created = next(a for a in entries if a.kind == "match_created")
     assert created.payload["quadri_annullati"] == [str(stale.id)]
+
+
+# ---- the idempotent id (REB-406) --------------------------------------------------------
+
+
+def test_a_repeated_create_with_the_same_id_returns_the_match_already_written(
+    clean: Session,
+) -> None:
+    """A retry after the server's response is lost must not write a second match with
+    another letter number: the same client-generated id, sent again, returns the match
+    already written rather than creating anything."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    given_id = uuid4()
+    body = _body(company_id).model_copy(update={"id": given_id})
+
+    first = service.create(freelancer_id, body, admin_id)
+    second = service.create(freelancer_id, body, admin_id)
+
+    assert first.id == second.id == given_id
+    assert first.lettera.numero == second.lettera.numero
+    assert len(_documents(clean, freelancer_id, "lettera")) == 1
+    assert [a.kind for a in AdminActionService(clean).timeline("match", first.id)] == [
+        "match_created"
+    ]
+
+
+def test_a_repeated_id_already_used_by_another_freelancer_is_refused(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    given_id = uuid4()
+    service.create(freelancer_id, _body(company_id).model_copy(update={"id": given_id}), admin_id)
+
+    other_freelancer_id = _second_card(clean)
+    _fiscal(clean, other_freelancer_id, admin_id)
+    other_company_id = _request(clean, nome_azienda="Bianchi Srl", figura_richiesta="Designer")
+    other_body = _body(other_company_id).model_copy(update={"id": given_id})
+
+    with pytest.raises(InvalidState, match="un altro freelance"):
+        service.create(other_freelancer_id, other_body, admin_id)
+    assert len(_documents(clean, other_freelancer_id, "lettera")) == 0
+
+
+def test_a_repeated_id_with_changed_data_is_refused_not_returned(clean: Session) -> None:
+    """An admin who corrects the letter before retrying (a lost response, a second
+    click) must not get the uncorrected match silently handed back: the request no
+    longer matches the fingerprint stored on it, so this is a 409, and nothing changes
+    on the row already written."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    given_id = uuid4()
+    body = _body(company_id).model_copy(update={"id": given_id})
+    first = service.create(freelancer_id, body, admin_id)
+
+    changed = body.model_copy(
+        update={"lettera": body.lettera.model_copy(update={"ruolo": "Un altro ruolo"})}
+    )
+    with pytest.raises(InvalidState, match="dati diversi"):
+        service.create(freelancer_id, changed, admin_id)
+
+    assert len(_documents(clean, freelancer_id, "lettera")) == 1
+    assert service.get(first.id).lettera.numero == first.lettera.numero
+
+
+def test_a_repeated_id_with_no_fingerprint_stored_is_refused(clean: Session) -> None:
+    """A match written before this fingerprint existed has `NULL` where the retry's
+    digest would be compared against: nothing to match, so this is a 409 too, the same
+    as a changed request -- never treated as a match by coincidence."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    given_id = uuid4()
+    body = _body(company_id).model_copy(update={"id": given_id})
+    service.create(freelancer_id, body, admin_id)
+    written = clean.get(Match, given_id)
+    assert written is not None
+    written.request_fingerprint = None
+    clean.commit()
+
+    with pytest.raises(InvalidState, match="dati diversi"):
+        service.create(freelancer_id, body, admin_id)
+
+
+def test_create_with_no_id_still_writes_a_fresh_match_each_time(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    first = service.create(freelancer_id, _body(company_id), admin_id)
+    second = service.create(freelancer_id, _body(company_id), admin_id)
+    assert first.id != second.id
+
+
+def test_a_stale_draft_framework_that_never_left_stays_hidden_from_the_page(
+    clean: Session,
+) -> None:
+    """The phase 2 case (spec § 6): the `generato` framework a second «Crea match»
+    replaces never left for signature (`sent_at` stays `None`), so it stays hidden once
+    `annullato`; the page shows the current one instead."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    service.create(freelancer_id, _body(company_id), admin_id)
+    service.create(freelancer_id, _body(company_id), admin_id)
+    stale, current = _documents(clean, freelancer_id, "quadro")
+    assert (stale.stato, stale.sent_at) == ("annullato", None)
+
+    quadro = service.for_freelancer(freelancer_id).quadro
+
+    assert quadro is not None and quadro.id == current.id
 
 
 def test_a_framework_already_out_for_signature_is_waited_for_not_replaced(clean: Session) -> None:
@@ -362,7 +468,7 @@ def test_the_prefill_suggests_from_the_request_the_card_and_rebases_defaults(
 
 
 def test_a_card_without_a_day_rate_prefills_no_fee_and_the_letter_needs_one(clean: Session) -> None:
-    """Review Focus 2: a card drafted from a signup has no rate yet."""
+    """A card drafted from a signup has no rate yet."""
     admin_id, freelancer_id, company_id = _setup(clean)
     card = clean.get(Freelancer, freelancer_id)
     assert card is not None
@@ -483,7 +589,7 @@ def test_the_contracts_page_reads_the_active_framework_its_dates_and_the_matches
 
 
 def test_a_match_stays_on_the_page_after_its_request_is_deleted(clean: Session) -> None:
-    """Review Focus 4: a soft-deleted request still names the match that came from it."""
+    """A soft-deleted request still names the match that came from it."""
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
     match = service.create(freelancer_id, _body(company_id), admin_id)
@@ -527,7 +633,7 @@ def test_a_document_downloads_as_its_own_pdf_and_a_missing_signed_copy_is_not_fo
 def test_two_admins_matching_the_same_freelancer_at_once_never_leave_two_open_frameworks(
     monkeypatch: pytest.MonkeyPatch, hub_engine: Engine, clean: Session
 ) -> None:
-    """Review fix round 1: two real `create()` calls, on two sessions, for the same
+    """REB-399: two real `create()` calls, on two sessions, for the same
     freelancer -- the shape of `test_two_letters_taken_at_once_get_two_numbers`, but for
     the framework agreement rather than the letter counter.
 

@@ -6,11 +6,12 @@ from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 from testcontainers.community.postgres import PostgresContainer
 
-from rebase_api.deps import get_session
+from rebase_api.deps import get_sender, get_session
 from rebase_api.main import create_app
 from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.db import create_engine_from_settings, session_factory
+from rebase_core.mail import RecordingSender
 from rebase_core.migrate import upgrade_to_head
 
 
@@ -47,3 +48,13 @@ def client(api_session: Session) -> Iterator[TestClient]:
     reset_rate_limit()
     with TestClient(app, base_url="https://testserver") as test_client:
         yield test_client
+
+
+@pytest.fixture
+def sender(client: TestClient) -> Iterator[RecordingSender]:
+    """The one mailbox every module in this directory overrides `get_sender` with
+    (REB-406): one fixture, so a test file names it as a parameter without also
+    importing it (which ruff flags as a redefinition, `F811`)."""
+    recording = RecordingSender()
+    client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
+    yield recording

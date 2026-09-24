@@ -9,6 +9,9 @@ const KIND_LABELS: Record<AdminAction['kind'], string> = {
   cleared: 'CV rimosso',
   deleted: 'Eliminazione',
   restored: 'Ripristino',
+  mail_resent: 'Mail di firma reinviata',
+  document_cancelled: 'Contratto quadro annullato',
+  notice_recorded: 'Disdetta registrata',
 }
 
 const FIELD_LABELS: Record<string, string> = {

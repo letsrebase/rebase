@@ -91,6 +91,34 @@ contracts-check` typesets both texts from fiction and says whether a machine can
 `hub-image` preflight check and CI's image job run it inside the built image. Who signs
 for rebase comes from `REBASE_SIGNER_JSON` in the host `.env`, never from the repository.
 
+## Contracts are signed on Documenso
+
+Since REB-387 phase 3 «Invia per la firma» sends a match's documents through Documenso
+(`rebase_core.signing`, `rebase_core.documenso`), and the hub mails the signing link
+itself: Documenso sends no mail of its own. Documenso calls back
+`POST /api/hub/documenso/webhook` with `X-Documenso-Secret` equal to
+`REBASE_DOCUMENSO_WEBHOOK_SECRET`, which must be long and random (`openssl rand -hex
+32`): the route sits public behind `/api/hub/` with no rate limit, and the secret is the
+only thing standing between it and a forged signature event. Production's webhook points
+at
+`http://api:8000/api/hub/documenso/webhook` inside the compose network, preview's at
+`https://preview.letsrebase.com/api/hub/documenso/webhook`. Documenso retries a failed
+delivery only at once, so an event lost while the API restarts stays lost: «Aggiorna
+stato» on «Match e contratti» reads the envelope and applies it, and an admin presses it
+on a document that has waited for its signature longer than expected. Without
+`REBASE_DOCUMENSO_URL` and `REBASE_DOCUMENSO_API_TOKEN` signing answers 503, and a text
+whose front matter says `status: draft` never leaves unless `REBASE_CONTRACTS_ALLOW_DRAFT`
+is true, which only the preview's `.env` sets. Documenso reaches `api` only if
+`NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS` lists it (probe § 5); the secret travels in
+clear, so the webhook URL stays on the compose network or is HTTPS.
+
+The webhook's own follow-up (the sealed copy's download and mails, a framework
+agreement's waiting letters) runs in the background, after the response: a restart
+between the webhook's commit and that background task leaves it undone. `rebase
+contracts-sweep` redoes anything a restart, or a mail the provider refused, left behind,
+and production runs it every ten minutes (the schedule itself is to be scheduled with the
+Documenso rollout).
+
 ## Running it
 
 From the repository root:
@@ -149,9 +177,10 @@ forgets it fails the stack instead of mounting an empty directory.
 
 Ports, loopback only, from the table in `docs/adding-a-project.md` §7: production api
 8084, web 8085, Postgres 55435; preview 8086, 8087, 55436. The public paths are `/hub/`
-(web) and `/api/hub/` + `/api/orbiters/signups` (api), proxied to production by the host
-vhost that lives in `projects/website/deploy/letsrebase.conf`; nothing proxies the
-preview, which is reached on the host only. The member area's mail needs
+(web) and `/api/hub/` + `/api/orbiters/signups` (api): `projects/website/deploy/letsrebase.conf`
+proxies them to production on the host vhost, and `projects/website/deploy/preview.letsrebase.conf`
+proxies the same paths to the preview stack (127.0.0.1:8086 for its api), which is why
+the preview's Documenso webhook reaches it too. The member area's mail needs
 `REBASE_RESEND_API_KEY` and `REBASE_MAIL_FROM` in the host `.env`; without the key
 `/hub/login` answers 503 with a sentence. A preview stack that gets a key must also set
 `REBASE_HUB_URL` to its own address, or every link it mints points at production.

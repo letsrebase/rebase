@@ -24,6 +24,16 @@ function answer(status: number, body: unknown) {
   })
 }
 
+const NO_CONTRACTS = { quadro: null, quadri_precedenti: [], lettere: [] }
+
+/** `/me` answers `profile`; a card's page also reads its contracts (REB-392). A fresh
+ *  Response per call, since a body can be read once. */
+function meFetch(profile: unknown, contracts: unknown = NO_CONTRACTS) {
+  return vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(async (input) => answer(200, String(input) === '/api/hub/me/contracts' ? contracts : profile))
+}
+
 const PROFILE = {
   id: 'f1',
   nome: 'Ada',
@@ -185,7 +195,7 @@ afterEach(() => {
 
 describe('/me, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)', () => {
   it('shows the answers under the wizard’s questions, the CV and the two perks', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
+    meFetch(PROFILE)
     mount()
     // The name is both the heading and the answer to the first question.
     expect(await screen.findAllByText('Ada Lovelace')).not.toHaveLength(0)
@@ -210,7 +220,7 @@ describe('/me, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)'
   })
 
   it('gives both perk cards a growing description block, so a footer note cannot shift the button (REB-312)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
+    meFetch(PROFILE)
     mount()
     const pigrocrmButton = await screen.findByRole('link', { name: /Apri PigroCRM/ })
     const guideButton = screen.getByRole('link', { name: /Scarica la guida/ })
@@ -236,7 +246,7 @@ describe('/me, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)'
   })
 
   it('asks the person to complete a card the admin wrote, and shows no CV link', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, INCOMPLETE))
+    meFetch(INCOMPLETE)
     mount()
     const notice = await screen.findByRole('status')
     expect(notice).toHaveTextContent('La tua scheda è incompleta.')
@@ -248,7 +258,7 @@ describe('/me, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)'
   })
 
   it('counts the guide on the click and leaves the download to the link', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
+    meFetch(PROFILE)
     mount()
     const link = await screen.findByRole('link', { name: /Scarica la guida/ })
     // jsdom cannot navigate; stopping the default here does not stop React's own handler.
@@ -261,7 +271,7 @@ describe('/me, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)'
 
 describe('/me, no card (REB-279: a card-less admin reads name, email and role, not null fields)', () => {
   it('shows no wizard-shaped section, no Modifica link, and the role instead', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, CARDLESS_ADMIN))
+    meFetch(CARDLESS_ADMIN)
     mount()
     expect(await screen.findByRole('heading', { name: 'Ivan Fiore' })).toBeInTheDocument()
     expect(screen.getByText('ivan@rebase.it')).toBeInTheDocument()
@@ -280,7 +290,7 @@ describe('/me, no card (REB-279: a card-less admin reads name, email and role, n
   })
 
   it('shows the "Chi sei" fallback and no perks for a member with neither a card nor a request (REB-385)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, NOBODY))
+    meFetch(NOBODY)
     mount()
     expect(await screen.findByLabelText('Chi sei')).toBeInTheDocument()
     expect(screen.getByText('Membro')).toBeInTheDocument()
@@ -291,7 +301,7 @@ describe('/me, no card (REB-279: a card-less admin reads name, email and role, n
 
 describe('/me, a company request (REB-314: reads `ha_azienda` independently of `ha_scheda`)', () => {
   it('shows the project under the wizard’s own questions, with its own edit link', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, COMPANY_ONLY))
+    meFetch(COMPANY_ONLY)
     mount()
     expect(await screen.findByText('La tua richiesta più recente')).toBeInTheDocument()
     expect(
@@ -322,7 +332,7 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
   })
 
   it('renders alongside the freelancer card when a person has both (REB-314)', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, BOTH))
+    meFetch(BOTH)
     mount()
     expect(await screen.findByText('Come ti chiami?')).toBeInTheDocument()
     expect(screen.getByText('La tua richiesta più recente')).toBeInTheDocument()
@@ -344,16 +354,54 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
 
 describe('/me?negato=true (REB-279: AdminGuard bounces a signed-in non-admin here)', () => {
   it('shows a sentence instead of a blank screen or a raw refusal', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
+    meFetch(PROFILE)
     mount('/me?negato=true')
     const notice = await screen.findByRole('status')
     expect(notice).toHaveTextContent('riservata a chi amministra')
   })
 
   it('says nothing extra without the flag', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROFILE))
+    meFetch(PROFILE)
     mount('/me')
     await screen.findAllByText('Ada Lovelace')
     expect(screen.queryByRole('status')).toBeNull()
+  })
+})
+
+describe('/me, «Contratti» (REB-392: on a card, never on a company-only profile)', () => {
+  it('shows the section on a card, with what there is to sign', async () => {
+    meFetch(PROFILE, {
+      quadro: {
+        id: 'd1',
+        kind: 'quadro',
+        numero: null,
+        stato: 'inviato',
+        cliente: null,
+        inizio: null,
+        fine: null,
+        sent_at: '2026-09-23T10:00:00Z',
+        signed_at: null,
+        signing_url: 'https://firma.letsrebase.com/sign/abc',
+        ha_pdf_firmato: false,
+        attivo: false,
+        rinnovo: null,
+        ultimo_giorno_disdetta: null,
+      },
+      quadri_precedenti: [],
+      lettere: [],
+    })
+    mount()
+    expect(await screen.findByRole('heading', { name: 'Contratti' })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Firma il contratto quadro' })).toHaveAttribute(
+      'href',
+      'https://firma.letsrebase.com/sign/abc',
+    )
+  })
+
+  it('has no «Contratti» for a company-only profile', async () => {
+    meFetch(COMPANY_ONLY)
+    mount()
+    await screen.findByText('La tua richiesta più recente')
+    expect(screen.queryByRole('heading', { name: 'Contratti' })).toBeNull()
   })
 })

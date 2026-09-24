@@ -25,6 +25,11 @@
 
 #let draft = $draft$
 
+// The copy that goes out for signature (`render(..., signing=True)`): the labels under
+// the blanks the signing site fills are laid out and left undrawn, so the signature and
+// the date do not sit on them and every blank keeps its place (probe § 11.9).
+#let for-signing = $forsigning$
+
 // The four tiles of the mark, in the order `shared/brand/mark.ts` fixes.
 #let mark(size: 3pt) = {
   let tile(c) = rect(width: size, height: size, fill: c, stroke: none)
@@ -56,7 +61,8 @@
   } else {
     let size = measure(box(width: width, stroke: stroke, inset: inset, label))
     let mark = metadata((name: name, width: size.width.pt(), height: size.height.pt()))
-    box(width: width, stroke: stroke, inset: inset, [#mark<signing-blank>] + label)
+    let shown = if for-signing { hide(label) } else { label }
+    box(width: width, stroke: stroke, inset: inset, [#mark<signing-blank>] + shown)
   }
 }
 #let value(it) = text(fill: ink, it)

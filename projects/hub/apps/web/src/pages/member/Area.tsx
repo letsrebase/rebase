@@ -8,6 +8,7 @@ import { toApplication, toCompanyApplication, useMe } from '@/lib/me'
 import { GUIDE } from '@/lib/perks'
 import { COMPANY_FIELDS } from '@/pages/CompanyWizard'
 import { FREELANCER_FIELDS } from '@/pages/FreelancerWizard'
+import { MemberContratti } from '@/pages/member/Contratti'
 
 const PIGROCRM_URL = 'https://pigro.letsrebase.com/app/register'
 const ROLE_LABELS: Record<string, string> = { admin: 'Amministratore', member: 'Membro' }
@@ -26,6 +27,9 @@ const ROLE_LABELS: Record<string, string> = { admin: 'Amministratore', member: '
  *  means anything to a company that came here to find people (REB-385, Lorenzo
  *  2026-09-23). A person who is both a freelancer and a company referente still
  *  qualifies through the freelancer card, so both perks keep showing.
+ *
+ *  A card also gets «Contratti» (REB-392), which reads its own route and renders
+ *  nothing wizard-shaped.
  *
  *  The `negato` flag is set by `AdminGuard` when a signed-in non-admin is bounced off
  *  `/admin/*`: this is where they land, with a sentence saying why instead of a blank
@@ -123,6 +127,8 @@ export function Area() {
               </div>
             </dl>
           </section>
+
+          <MemberContratti />
         </>
       )}
 

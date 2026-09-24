@@ -14,6 +14,8 @@ The company's `budget_giornaliero` is read nowhere in this module: what rebase a
 with the client never reaches a freelancer's document (spec § 1h).
 """
 
+import hashlib
+import json
 from collections.abc import Callable, Mapping
 from datetime import date
 from uuid import UUID
@@ -73,6 +75,21 @@ LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
 
 
+def require_live_freelancer(
+    session: Session, freelancer_id: UUID, entity: str, identifier: UUID
+) -> None:
+    """`get` and `document_pdf` read no further than the row itself -- a match or a
+    document of a soft-deleted freelancer is not gone on its own, which is why this
+    guard exists: the caller enforces liveness, naming its own entity and identifier (a
+    match id, a document id) so the refusal answers the thing that was actually asked
+    for, not the freelancer underneath it. Used by both the admin API
+    (`routers/matches.py`) and the admin MCP server, since a soft-deleted freelancer's
+    match must read as «match not found» wherever it is asked from (REB-417)."""
+    freelancer = session.get(Freelancer, freelancer_id)
+    if freelancer is None or freelancer.deleted_at is not None:
+        raise NotFound(entity, identifier)
+
+
 def issued_by_rebase(day: date) -> str:
     """What rebase's signature blank prints, since rebase does not sign (spec § 1c)."""
     return f"Documento emesso da rebase il {italian_date(day)}"
@@ -89,6 +106,14 @@ def luogo_suggestion(remoto: str, giorni_presenza: int | None) -> str:
 
 def _full_name(user: User) -> str:
     return f"{user.nome} {user.cognome}".strip()
+
+
+def _request_fingerprint(data: MatchCreate) -> str:
+    """The SHA-256 of `data` as `create` actually reads it (REB-406): `id` names the
+    match, it is not part of what a retry must match again, so it is excluded. Sorted
+    keys make the digest the same however Python happened to build the model."""
+    canonical = json.dumps(data.model_dump(mode="json", exclude={"id"}), sort_keys=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 class MatchService:
@@ -205,8 +230,12 @@ class MatchService:
             .order_by(ContractDocument.created_at.desc(), ContractDocument.id.desc())
         )
         quadri = [document_read(document, today, current) for document in frameworks]
+        # The active one when there is one (unchanged); else the newest framework that
+        # actually left, whatever its state now: an `annullato` one is hidden only when
+        # it never left (`sent_at` is `None`, a stale draft «Crea match» replaced, spec
+        # § 6), never when a refusal or a cancellation turned a sent one `annullato`.
         shown = next((q for q in quadri if q.attivo), None) or next(
-            (q for q in quadri if q.stato != "annullato"), None
+            (q for q in quadri if q.stato != "annullato" or q.sent_at is not None), None
         )
         rows = self.session.execute(
             select(Match, Company)
@@ -338,12 +367,37 @@ class MatchService:
         these transactions can never deadlock on each other. The counter's own row lock is
         held on purpose through the letter's render, for gapless numbering (see
         `test_a_render_that_fails_takes_no_number_and_leaves_nothing_behind`) -- nobody
-        may move the render or the number-taking earlier to "speed this up"."""
+        may move the render or the number-taking earlier to "speed this up".
+
+        `data.id`, when given, makes this call idempotent (REB-406): a retry after the
+        response is lost (the wizard sends the same client-generated id with both «Salva
+        come bozza» and «Invia per la firma») returns the match already written rather
+        than creating a second one with another letter number. The same id already used
+        by another freelancer's match is a 409 -- writing under it would silently steal
+        someone else's row. The retry must also carry the same request: a SHA-256 of it
+        (`_request_fingerprint`) is stored on every match this writes, and a same id with
+        a changed one -- an admin who corrected the company or the letter before retrying
+        -- is a 409 too, never the stale match returned as if nothing had changed; a
+        match with no fingerprint stored (written before this check existed) is treated
+        the same as a mismatch, since there is nothing to compare it against."""
         renderer = self._renderer()
+        fingerprint = _request_fingerprint(data)
         try:
-            self.session.execute(
-                select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
-            )
+            self.lock_freelancer(freelancer_id)
+            if data.id is not None:
+                existing = self.session.get(Match, data.id, populate_existing=True)
+                if existing is not None:
+                    if existing.freelancer_id != freelancer_id:
+                        raise InvalidState(
+                            "Questo id di match appartiene già a un altro freelance."
+                        )
+                    if existing.request_fingerprint != fingerprint:
+                        raise InvalidState(
+                            "Questo match è già stato salvato con dati diversi: aprilo da "
+                            "«Match e contratti» e controllalo prima di inviarlo."
+                        )
+                    self.session.rollback()
+                    return self.get(existing.id)
             freelancer, user = self._freelancer(freelancer_id)
             company, _referente = self._matchable_company(data.company_id, lock=True)
             fiscal = self._fiscal(freelancer.id)
@@ -365,19 +419,12 @@ class MatchService:
                     ):
                         stale.stato = "annullato"
                         stale_ids.append(stale.id)
-                    documents.append(
-                        self._document(
-                            renderer,
-                            QUADRO,
-                            self._quadro_data(user, fiscal, today),
-                            freelancer.id,
-                            None,
-                            None,
-                            "generato",
-                            admin_id,
-                        )
-                    )
+                    # REB-406: the same write `write_framework` makes for a match whose
+                    # letter waits on a cancelled or refused one -- `create` already
+                    # holds the freelancer's row lock `write_framework` assumes.
+                    documents.append(self.write_framework(freelancer.id, admin_id))
             match = Match(
+                **({"id": data.id} if data.id is not None else {}),
                 freelancer_id=freelancer.id,
                 company_id=company.id,
                 cliente_ragione_sociale=data.cliente.cliente_ragione_sociale,
@@ -385,6 +432,7 @@ class MatchService:
                 cliente_sede=data.cliente.cliente_sede,
                 stato="bozza",
                 created_by=admin_id,
+                request_fingerprint=fingerprint,
             )
             self.session.add(match)
             self.session.flush()
@@ -422,19 +470,30 @@ class MatchService:
 
     def cancel(self, match_id: UUID, admin_id: UUID) -> MatchRead:
         """A draft and its letter become `annullato`; the framework agreement, which is
-        the freelancer's and not the match's, stays as it is. Phase 3 extends this to a
-        match in signature, which also has an envelope to cancel."""
-        match = self._match(match_id)
+        the freelancer's and not the match's, stays as it is. `SigningService.
+        cancel_match` extends this to a match in signature, which also has an envelope
+        to cancel.
+
+        The freelancer's row locks first, then the match, then its letters (the global
+        lock order): a cancel racing a send for the same match must not read a stale
+        `bozza` and overwrite a letter the send already put out for signature with
+        `annullato` while its envelope is still live on Documenso."""
+        self.lock_freelancer(self.match_freelancer(match_id))
+        match = self.lock_match(match_id)
         if match.stato != "bozza":
+            self.session.rollback()
             raise InvalidState(
                 f"Si annulla solo un match in bozza: questo è {match.stato}.", stato=match.stato
             )
         letters = list(
             self.session.scalars(
-                select(ContractDocument).where(
+                select(ContractDocument)
+                .where(
                     ContractDocument.match_id == match.id,
                     ContractDocument.stato.in_(("generato", "in_attesa")),
                 )
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
         )
         match.stato = "annullato"
@@ -448,8 +507,13 @@ class MatchService:
         return self.get(match.id)
 
     def close(self, match_id: UUID, admin_id: UUID) -> MatchRead:
-        match = self._match(match_id)
+        """The freelancer's row locks first, then the match, the same order `cancel`
+        takes: a close racing a webhook that just turned this match `attivo` (or
+        `concluso` again) must re-check its state under the lock, not before it."""
+        self.lock_freelancer(self.match_freelancer(match_id))
+        match = self.lock_match(match_id)
         if match.stato != "attivo":
+            self.session.rollback()
             raise InvalidState(
                 f"Si chiude solo un match attivo: questo è {match.stato}.", stato=match.stato
             )
@@ -485,6 +549,19 @@ class MatchService:
             **self._signing_fields(today),
         }
 
+    def _letter_party_fields(
+        self, user: User, fiscal: FreelancerFiscal, signed: date | None
+    ) -> dict[str, Value]:
+        """A letter's own fields that must always be today's, not the draft's: the
+        framework agreement's signature date, the freelancer's name and VAT number.
+        Shared by `_lettera_data` (`create`) and `data_for_sending` (a send), so a
+        field added to one cannot print stale data on the other (REB-406)."""
+        return {
+            "data-contratto-quadro": italian_date(signed) if signed is not None else None,
+            "professionista-nome": _full_name(user),
+            "professionista-piva": fiscal.partita_iva,
+        }
+
     def _lettera_data(
         self,
         user: User,
@@ -499,9 +576,7 @@ class MatchService:
             **self._rebase_fields(),
             **data.lettera.to_fields(),
             "numero": numero,
-            "data-contratto-quadro": italian_date(signed) if signed is not None else None,
-            "professionista-nome": _full_name(user),
-            "professionista-piva": fiscal.partita_iva,
+            **self._letter_party_fields(user, fiscal, signed),
             "cliente-ragione-sociale": data.cliente.cliente_ragione_sociale,
             "cliente-piva": data.cliente.cliente_piva,
             "cliente-sede": data.cliente.cliente_sede,
@@ -532,6 +607,51 @@ class MatchService:
             stato=stato,
             created_by=admin_id,
         )
+
+    # ---- phase 3: the copy that leaves ---------------------------------------------------
+
+    def data_for_sending(
+        self, document: ContractDocument, today: date, framework: ContractDocument | None
+    ) -> dict[str, Value]:
+        """The fields `document` prints when it goes out for signature (REB-387 phase 3):
+        the engagement as the admin wrote it, the parties as they are today (the tax data
+        and the name saved since the draft, rebase's signer as the setting says now), the
+        day it leaves in rebase's blank, and for a letter the date its framework
+        agreement was signed, in Rome."""
+        freelancer, user = self._freelancer(document.freelancer_id)
+        fiscal = self._fiscal(freelancer.id)
+        if document.kind == QUADRO:
+            return self._quadro_data(user, fiscal, today)
+        signed = signed_on(framework) if framework is not None else None
+        return {
+            **document.data,
+            **self._rebase_fields(),
+            **self._letter_party_fields(user, fiscal, signed),
+            **self._signing_fields(today),
+        }
+
+    def write_framework(self, freelancer_id: UUID, admin_id: UUID) -> ContractDocument:
+        """A new framework agreement, added and flushed and not committed: written by
+        `create` for a fresh draft, and by `SigningService._framework_to_send` for a
+        match whose letter waits on one that was cancelled or refused, sent in the same
+        transaction (REB-406: one write, two callers). The caller must already hold the
+        freelancer's row lock (REB-406)."""
+        renderer = self._renderer()
+        freelancer, user = self._freelancer(freelancer_id)
+        fiscal = self._fiscal(freelancer.id)
+        document = self._document(
+            renderer,
+            QUADRO,
+            self._quadro_data(user, fiscal, self.today()),
+            freelancer.id,
+            None,
+            None,
+            "generato",
+            admin_id,
+        )
+        self.session.add(document)
+        self.session.flush()
+        return document
 
     # ---- lookups -----------------------------------------------------------------------
 
@@ -630,8 +750,37 @@ class MatchService:
             raise ValidationFailed(ENTITY, "fiscale", "mancano i dati fiscali del freelance")
         return row
 
-    def _match(self, match_id: UUID) -> Match:
-        match = self.session.get(Match, match_id)
+    def match_freelancer(self, match_id: UUID) -> UUID:
+        """The freelancer a match belongs to, read with no lock of its own -- only to
+        know which row `lock_freelancer` must take next, the first step of the global
+        lock order every write in this module and in `SigningService` follows. Shared
+        by `cancel`, `close` and `SigningService`, which calls it through `self.matches`
+        rather than keep its own copy (REB-407)."""
+        freelancer_id = self.session.scalar(select(Match.freelancer_id).where(Match.id == match_id))
+        if freelancer_id is None:
+            raise NotFound(ENTITY, match_id)
+        return freelancer_id
+
+    def lock_freelancer(self, freelancer_id: UUID) -> None:
+        """The freelancer's row, locked until this transaction ends: the first step of
+        the global lock order, every other lock in this module and in `SigningService`
+        assumes the caller already took. Called by `create`, `cancel` and `close` in
+        this module, and by `SigningService` through `self.matches` (REB-407)."""
+        self.session.execute(
+            select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
+        )
+
+    def lock_match(self, match_id: UUID) -> Match:
+        """The match, row-locked until this transaction ends, and read again from the
+        database rather than from the session's memory. The caller must already hold
+        the freelancer's row lock, the global order. Shared the same way
+        `match_freelancer` is (REB-407)."""
+        match = self.session.scalars(
+            select(Match)
+            .where(Match.id == match_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).first()
         if match is None:
             raise NotFound(ENTITY, match_id)
         return match

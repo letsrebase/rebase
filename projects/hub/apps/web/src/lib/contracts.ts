@@ -3,7 +3,19 @@
  * takes typed values, and these helpers are the one place the two meet. Kept out of the
  * page files, which export components only (`react-refresh/only-export-components`).
  */
-import { LETTERA_TEXT_KEYS, type Cliente, type ClienteDraft, type Fiscal, type FiscalData, type Lettera, type LetteraDraft, type LetteraTextKey } from './api'
+import {
+  LETTERA_TEXT_KEYS,
+  type Cliente,
+  type ClienteDraft,
+  type ContractDocument,
+  type Fiscal,
+  type FiscalData,
+  type Lettera,
+  type LetteraDraft,
+  type LetteraTextKey,
+  type Match,
+  type SendReport,
+} from './api'
 
 export type FiscalDraft = Record<keyof FiscalData, string>
 
@@ -167,3 +179,36 @@ export const LETTERA_MULTILINE: ReadonlySet<LetteraFieldKey> = new Set<LetteraFi
   'dati_finalita',
   'altre_condizioni',
 ])
+
+/** How a document is named in a button's label or a confirmation, the one place both
+ *  the admin's «Match e contratti» (REB-407) and the member area's «Contratti»
+ *  (REB-392) name a document: «del contratto quadro», «della lettera n. 2026-001».
+ *  Takes just the two fields a label needs, so a `MemberContract` names a document the
+ *  same way a `ContractDocument` does. */
+export function whatOf(document: Pick<ContractDocument, 'kind' | 'numero'>): string {
+  return document.kind === 'quadro' ? 'del contratto quadro' : `della lettera n. ${document.numero}`
+}
+
+/** What «Annulla» on a match asks before it acts: the match and its letter's own
+ *  number become `annullato` for good, and, when the letter has already left, that
+ *  its envelope on the signing site is cancelled too and the freelancer's link stops
+ *  working (REB-407). The framework agreement is the freelancer's, not the match's,
+ *  and stays untouched either way. */
+export function cancelDescription(match: Match): string {
+  const base = `Il match con ${match.nome_azienda} e la lettera n. ${match.lettera.numero} diventano annullati, e il numero non si riusa. Il contratto quadro resta com’è.`
+  return match.lettera.stato === 'inviato'
+    ? `${base} La lettera è già partita: viene annullata anche sul sito di firma, e il link ricevuto dal freelance smette di funzionare.`
+    : base
+}
+
+/** The sentence the pages show after «Invia per la firma» (REB-390). */
+export function sendReportMessage(report: SendReport): string {
+  const numero = report.match.lettera.numero
+  const sent =
+    report.inviato === 'quadro'
+      ? `Partito il contratto quadro: la lettera n. ${numero} partirà da sola dopo la sua firma.`
+      : report.inviato === 'lettera'
+        ? `Partita la lettera di incarico n. ${numero}.`
+        : `La lettera n. ${numero} aspetta il contratto quadro già in firma e partirà da sola dopo.`
+  return report.mail_inviata === false ? `${sent} La mail però non è partita: usa «Reinvia email».` : sent
+}

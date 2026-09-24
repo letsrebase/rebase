@@ -265,7 +265,15 @@ export interface AdminAction {
   id: string
   entity_type: string
   entity_id: string
-  kind: 'overridden' | 'cleared' | 'deleted' | 'restored'
+  kind:
+    | 'overridden'
+    | 'cleared'
+    | 'deleted'
+    | 'restored'
+    /** A framework agreement's own actions (REB-407), recorded on entity `freelancer`. */
+    | 'mail_resent'
+    | 'document_cancelled'
+    | 'notice_recorded'
   admin_id: string
   admin_nome: string
   payload: {
@@ -490,6 +498,9 @@ export interface ContractDocument {
   sent_at: string | null
   signed_at: string | null
   notice_at: string | null
+  /** Why it was cancelled: the freelancer's own reason when they refused it, or who
+   *  cancelled it (REB-407). */
+  cancel_reason: string | null
   ha_pdf_firmato: boolean
   attivo: boolean
   rinnovo: string | null
@@ -560,6 +571,43 @@ export interface FreelancerContracts {
   fiscale: Fiscal | null
 }
 
+/** What «Invia per la firma» did (REB-390): the document that left now, none when the
+ *  letter waits for a framework agreement already out for signature, and whether its
+ *  mail left too. */
+export interface SendReport {
+  match: Match
+  inviato: 'quadro' | 'lettera' | null
+  mail_inviata: boolean | null
+}
+
+/** A contract as its freelancer reads it in «Contratti» (REB-392): the signing link only
+ *  while the document waits for the signature. */
+export interface MemberContract {
+  id: string
+  kind: 'quadro' | 'lettera'
+  numero: string | null
+  stato: DocumentStato
+  cliente: string | null
+  inizio: string | null
+  fine: string | null
+  sent_at: string | null
+  signed_at: string | null
+  signing_url: string | null
+  ha_pdf_firmato: boolean
+  attivo: boolean
+  rinnovo: string | null
+  ultimo_giorno_disdetta: string | null
+}
+
+/** `quadri_precedenti` (REB-392): the freelancer's other framework agreements that were
+ *  signed, newest first, excluding the one in `quadro` -- a notice, or a newer one
+ *  replacing it, moves the older one here rather than off the page. */
+export interface MemberContracts {
+  quadro: MemberContract | null
+  quadri_precedenti: MemberContract[]
+  lettere: MemberContract[]
+}
+
 /** The letter's text fields, in the order `lettera-di-incarico.md` asks for them and the
  *  server's `LETTERA_TEXT_FIELDS` lists them. */
 export const LETTERA_TEXT_KEYS = [
@@ -609,7 +657,11 @@ export interface Cliente {
 }
 export type ClienteDraft = { [K in keyof Cliente]: string | null }
 
+/** `id` is optional and client-generated (REB-406): one per wizard run, sent with both
+ *  «Salva come bozza» and «Invia per la firma», so a retry after the response is lost
+ *  writes nothing new -- the server returns the match already written under it. */
 export interface MatchCreate {
+  id?: string
   company_id: string
   cliente: Cliente
   lettera: Lettera
@@ -796,6 +848,20 @@ export const admin = {
     request<Match>(`/api/hub/freelancers/${freelancerId}/matches`, json(payload)),
   cancelMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/cancel`, { method: 'POST' }),
   closeMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/close`, { method: 'POST' }),
+  /** «Invia per la firma» (REB-390): the document that can leave now goes to Documenso. */
+  sendMatch: (matchId: string) => request<SendReport>(`/api/hub/matches/${matchId}/send`, { method: 'POST' }),
+  /** «Aggiorna stato» (REB-407): what Documenso says, applied as the webhook would. */
+  refreshDocument: (documentId: string) =>
+    request<ContractDocument>(`/api/hub/contract-documents/${documentId}/refresh`, { method: 'POST' }),
+  /** «Reinvia email»: the signing mail again, for a document still waiting. */
+  resendDocument: (documentId: string) =>
+    request<ContractDocument>(`/api/hub/contract-documents/${documentId}/resend`, { method: 'POST' }),
+  /** «Annulla» on a framework agreement not signed yet. */
+  cancelDocument: (documentId: string) =>
+    request<ContractDocument>(`/api/hub/contract-documents/${documentId}/cancel`, { method: 'POST' }),
+  /** «Registra disdetta» on an active framework agreement. */
+  recordNotice: (documentId: string) =>
+    request<ContractDocument>(`/api/hub/contract-documents/${documentId}/notice`, { method: 'POST' }),
   /** A plain href, like `cvUrl`: the route answers an attachment behind the cookie. */
   contractPdfUrl: (documentId: string, firmato = false) =>
     `/api/hub/contract-documents/${documentId}/pdf${firmato ? '?firmato=true' : ''}`,
@@ -904,5 +970,9 @@ export const member = {
    *  route answers with an attachment, and a session cookie travels with a navigation
    *  the same way it travels with a request. */
   guideUrl: '/api/hub/me/guide',
+  /** «Contratti» (REB-392): the caller's own, from the session. */
+  contracts: () => request<MemberContracts>('/api/hub/me/contracts'),
+  /** A signed copy, a plain href like `cvUrl`: the route answers an attachment. */
+  contractPdfUrl: (documentId: string) => `/api/hub/me/contracts/${documentId}/pdf`,
   logout: () => request<void>('/api/hub/me/logout', { method: 'POST' }),
 }

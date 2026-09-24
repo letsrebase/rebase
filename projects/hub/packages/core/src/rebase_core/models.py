@@ -354,6 +354,9 @@ SEDE_MAX_LENGTH = 300
 LETTER_NUMBER_MAX_LENGTH = 12
 TEXT_VERSION_MAX_LENGTH = 20
 DOCUMENSO_ID_MAX_LENGTH = 100
+# Why a document became `annullato`: the freelancer's own reason when they refused it on
+# the signing site, or who cancelled it (REB-387 phase 3).
+CANCEL_REASON_MAX_LENGTH = 500
 
 
 class FreelancerFiscal(Base, PrimaryKeyMixin, TimestampMixin):
@@ -392,6 +395,11 @@ class Match(Base, PrimaryKeyMixin, TimestampMixin):
     stato: Mapped[str] = mapped_column(String(20), nullable=False, default="bozza")
     created_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # The SHA-256 of the request this match was written from (REB-406): a retry of the
+    # same client-generated id compares against it, so changed data is a 409 instead of
+    # silently handing back the stale match. `NULL` for a match written before this
+    # column existed, which a retry must treat the same as a mismatch.
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64), default=None)
 
     __table_args__ = (
         Index("ix_matches_freelancer_created", "freelancer_id", "created_at"),
@@ -408,7 +416,8 @@ class ContractDocument(Base, PrimaryKeyMixin, TimestampMixin):
     match; a letter (`lettera`) belongs to a match and carries a `numero`, `YYYY-NNN`.
     `data` is every field value the PDF printed, so a document can be regenerated the
     same; `testo_bozza` says the text was still `status: draft`, a preview nothing may
-    send. The Documenso columns and `notice_at` are phase 3's."""
+    send. The Documenso columns, `notice_at` and `cancel_reason` are phase 3's: an
+    envelope and its item are stored together, and an envelope is one document's."""
 
     __tablename__ = "contract_documents"
 
@@ -422,11 +431,28 @@ class ContractDocument(Base, PrimaryKeyMixin, TimestampMixin):
     pdf: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     stato: Mapped[str] = mapped_column(String(20), nullable=False)
     documenso_id: Mapped[str | None] = mapped_column(String(DOCUMENSO_ID_MAX_LENGTH), default=None)
+    # The envelope *item* the sealed copy is downloaded by: the create answers only the
+    # envelope's id, so the hub reads this once, right after (probe § 4 and § 11.7).
+    documenso_item_id: Mapped[str | None] = mapped_column(
+        String(DOCUMENSO_ID_MAX_LENGTH), default=None
+    )
     signing_url: Mapped[str | None] = mapped_column(Text, default=None)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     signed_pdf: Mapped[bytes | None] = mapped_column(LargeBinary, default=None)
+    # Each set only once its own signed-copy mail is accepted, so a restart or a refused
+    # mail leaves that one `NULL` for the next `finish` to retry, without repeating a
+    # mail the other recipient already got (REB-391).
+    signed_copy_to_freelancer_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    signed_copy_to_rebase_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
     notice_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    cancel_reason: Mapped[str | None] = mapped_column(
+        String(CANCEL_REASON_MAX_LENGTH), default=None
+    )
     created_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     sent_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
 
@@ -450,6 +476,12 @@ class ContractDocument(Base, PrimaryKeyMixin, TimestampMixin):
         CheckConstraint(
             "stato <> 'disdetto' OR kind = 'quadro'",
             name="ck_contract_documents_notice_for_quadro",
+        ),
+        # The webhook finds its document by the envelope: one envelope, one document.
+        Index("uq_contract_documents_documenso_id", "documenso_id", unique=True),
+        CheckConstraint(
+            "(documenso_id IS NULL) = (documenso_item_id IS NULL)",
+            name="ck_contract_documents_envelope_item",
         ),
     )
 

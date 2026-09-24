@@ -35,7 +35,7 @@ from rebase_core.errors import DomainError, NotFound
 from rebase_core.freelancers import LEAD_STATE, FreelancerService
 from rebase_core.http import HttpCall
 from rebase_core.logins import LoginService
-from rebase_core.matches import MatchService
+from rebase_core.matches import ENTITY, MatchService, require_live_freelancer
 from rebase_core.models import Freelancer, Signup, User
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
@@ -650,9 +650,11 @@ def build_server(
     @mcp.tool()
     def list_matches(freelancer_id: str) -> dict[str, Any]:
         """I match e i contratti di un freelance, per id della scheda, come li mostra la
-        pagina «Match e contratti»: `quadro` è il contratto quadro (quello attivo, o
-        l'ultimo non annullato) con stato, data di firma, prossimo rinnovo, ultimo giorno
-        per la disdetta e versione del testo; `quadri` li elenca tutti; `matches` sono i
+        pagina «Match e contratti»: `quadro` è il contratto quadro (quello attivo,
+        altrimenti l'ultimo ancora da inviare o partito per la firma, anche se poi
+        annullato o rifiutato; una bozza annullata prima di partire non conta) con
+        stato, data di firma, prossimo rinnovo, ultimo giorno per la disdetta e
+        versione del testo; `quadri` li elenca tutti; `matches` sono i
         match dal più recente, ognuno con l'azienda, lo stato e la lettera di incarico
         con il suo numero. Ogni documento porta `pdf_url`, il link al PDF da aprire con
         l'accesso admin: mai i byte, mai i dati fiscali. Solo lettura: i match si creano
@@ -676,6 +678,10 @@ def build_server(
         try:
             service = MatchService(session)
             match = service.get(UUID(match_id))
+            # A soft-deleted freelancer's match reads as «match not found», the answer
+            # the admin API already gives (REB-417): checked here, right after `get`,
+            # rather than let `for_freelancer` refuse with the freelancer's own message.
+            require_live_freelancer(session, match.freelancer_id, ENTITY, UUID(match_id))
             quadro = service.for_freelancer(match.freelancer_id).quadro
             body = match.model_dump(mode="json")
             body["quadro"] = quadro.model_dump(mode="json") if quadro is not None else None

@@ -7,6 +7,8 @@ the markers, the template and the signature query against the real tools; every 
 test hands `FakeRenderer` instead.
 """
 
+import re
+import unicodedata
 from io import BytesIO
 from pathlib import Path
 
@@ -19,9 +21,11 @@ from rebase_core.contracts.render import (
     A4_HEIGHT_PT,
     A4_WIDTH_PT,
     DOCUMENTS,
+    ContractRenderer,
     company_defaults,
     render,
     signature_blanks,
+    text_is_draft,
     text_version,
 )
 
@@ -85,7 +89,7 @@ def test_a_blank_the_data_fill_is_not_marked() -> None:
 
 
 def test_a_value_full_of_typst_syntax_prints_as_text() -> None:
-    """Review Focus 5: a value is a Typst string, so markup inside it is inert, and it is
+    """A value is a Typst string, so markup inside it is inert, and it is
     inserted after the markers are counted, so a `[[` or a `{{...}}` in it is neither a
     proposal nor a field."""
     cliente = 'Rossi & "Figli" #1 $x$ *uno* _due_ <tre> @quattro \\ S.r.l.'
@@ -112,3 +116,31 @@ def test_the_contracts_check_command_typesets_both_texts(
     for document in DOCUMENTS:
         assert f"{document}: " in out
     assert out.count("spazi da firmare") == len(DOCUMENTS)
+
+
+def _words(pdf: bytes) -> str:
+    """The PDF's text with every space removed and every ligature undone, so a label is
+    found whatever pypdf does with the glyph runs of a small grey word."""
+    reader = PdfReader(BytesIO(pdf))
+    text = "".join(page.extract_text() or "" for page in reader.pages)
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", text))
+
+
+def test_the_copy_for_signing_leaves_the_signing_blanks_labels_undrawn() -> None:
+    """Probe § 11.9: the grey label under a blank the signing site fills shows through
+    the signature and the date. The copy that goes out lays it out and does not draw it,
+    so every blank stays exactly where the plain copy has it."""
+    data = _example()
+    plain = _words(render("lettera-di-incarico", data).pdf)
+    signing = _words(render("lettera-di-incarico", data, signing=True).pdf)
+    assert "firmaprofessionista" in plain and "datafirma" in plain
+    assert "firmaprofessionista" not in signing and "datafirma" not in signing
+    assert signature_blanks("lettera-di-incarico", data, signing=True) == signature_blanks(
+        "lettera-di-incarico", data
+    )
+
+
+def test_the_renderer_says_whether_a_text_is_a_draft_as_its_render_does() -> None:
+    for document in DOCUMENTS:
+        assert text_is_draft(document) is render(document, _example()).draft
+        assert ContractRenderer().is_draft(document) is text_is_draft(document)

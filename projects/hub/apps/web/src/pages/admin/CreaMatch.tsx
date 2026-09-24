@@ -8,8 +8,7 @@ import { cn } from '@rebase/ui/cn'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@rebase/ui/tooltip'
-import { admin, ApiError, type Company, type FiscalData, type MatchCreate, type MatchPrefill } from '@/lib/api'
+import { admin, ApiError, type Company, type FiscalData, type Match, type MatchCreate, type MatchPrefill } from '@/lib/api'
 import {
   CLIENTE_EMPTY,
   FISCAL_EMPTY,
@@ -21,6 +20,7 @@ import {
   clienteForm,
   draftFromFiscal,
   letteraForm,
+  sendReportMessage,
   toCliente,
   toFiscalData,
   toLettera,
@@ -45,6 +45,9 @@ interface Previews {
 interface Failure {
   message: string
   fields: string[]
+  // A 409: the server refused the write for what the row already holds, not for what
+  // the admin typed, so the failure points at the row instead of a field (REB-406).
+  conflict: boolean
 }
 
 function useDebounce<T>(value: T, delayMs: number): T {
@@ -63,8 +66,8 @@ function revoke(previews: Previews) {
 
 function failureOf(error: unknown, fallback: string): Failure | null {
   if (!error) return null
-  if (error instanceof ApiError) return { message: error.message, fields: error.fields }
-  return { message: fallback, fields: [] }
+  if (error instanceof ApiError) return { message: error.message, fields: error.fields, conflict: error.status === 409 }
+  return { message: fallback, fields: [], conflict: false }
 }
 
 function StepFooter({
@@ -298,15 +301,25 @@ function PreviewStep({
   prefill,
   onBack,
   onSave,
+  onSend,
   saving,
+  sending,
+  locked,
   failure,
+  sentMessage,
+  freelancerId,
 }: {
   previews: Previews
   prefill: MatchPrefill
   onBack: () => void
   onSave: () => void
+  onSend: () => void
   saving: boolean
+  sending: boolean
+  locked: boolean
   failure: Failure | null
+  sentMessage: string | null
+  freelancerId: string
 }) {
   const order = prefill.quadro_necessario
     ? 'Con la firma elettronica partirà per primo il contratto quadro; la lettera di incarico aspetterà la sua firma e partirà da sola subito dopo.'
@@ -330,45 +343,71 @@ function PreviewStep({
         )}
       </ul>
       <p className="text-sm">{order}</p>
-      <p className="text-sm text-muted-foreground">Per ora si salva una bozza: nulla viene inviato.</p>
+      <p className="text-sm text-muted-foreground">
+        «Salva come bozza» non manda nulla a nessuno; «Invia per la firma» manda al freelance una mail per il documento
+        che parte.
+      </p>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="outline" onClick={onBack}>
+        <Button type="button" variant="outline" onClick={onBack} disabled={saving || sending || locked}>
           Indietro
         </Button>
-        <Button type="button" onClick={onSave} disabled={saving}>
+        <Button type="button" variant="outline" onClick={onSave} disabled={saving || sending}>
           {saving ? 'Salvo…' : 'Salva come bozza'}
         </Button>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span tabIndex={0} className="inline-flex">
-                <Button type="button" disabled>
-                  Invia per la firma
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Arriva con la firma elettronica</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {/* A report already back (even a refusal's, `sentMessage`) means this send
+         *  already happened once: a second click must not send it again (REB-406). */}
+        <Button type="button" onClick={onSend} disabled={saving || sending || sentMessage !== null}>
+          {sending ? 'Invio…' : 'Invia per la firma'}
+        </Button>
       </div>
       {failure && (
-        <p role="alert" className="text-sm text-destructive">
-          {failure.message}
-        </p>
+        <div role="alert" className="space-y-1 text-sm text-destructive">
+          <p>{failure.message}</p>
+          {/* A 409 names a row already saved differently, never a field on this page
+           *  (REB-406): the way onward is the row itself, in «Match e contratti». */}
+          {failure.conflict && (
+            <Link
+              to="/admin/freelance/$id/contracts"
+              params={{ id: freelancerId }}
+              className="underline underline-offset-2"
+            >
+              Vai a Match e contratti
+            </Link>
+          )}
+        </div>
+      )}
+      {sentMessage && (
+        <div role="status" className="space-y-1 text-sm">
+          <p>{sentMessage}</p>
+          <Link
+            to="/admin/freelance/$id/contracts"
+            params={{ id: freelancerId }}
+            className="underline underline-offset-2"
+          >
+            Vai a Match e contratti
+          </Link>
+        </div>
       )}
     </div>
   )
 }
 
-/** «Crea match» (REB-387, phase 2): five steps from a card to a draft match with its
- *  documents. The tax data are saved when the admin leaves step 2; step 5 shows previews
- *  that nothing stores; «Salva come bozza» writes the match and takes the letter's
- *  number. «Invia per la firma» arrives with the electronic signature (phase 3). The
- *  company's `budget_giornaliero` is never shown or sent from this page (spec § 1h). */
+/** «Crea match» (REB-387): five steps from a card to a draft match with its documents.
+ *  The tax data are saved when the admin leaves step 2; step 5 shows previews that
+ *  nothing stores; «Salva come bozza» writes the match and takes the letter's number.
+ *  «Invia per la firma» writes the match once and sends it (REB-390). The company's
+ *  `budget_giornaliero` is never shown or sent from this page (spec § 1h). */
 export function AdminCreaMatch() {
   const { id } = useParams({ from: '/signedIn/admin/freelance/$id/match/new' })
   const navigate = useNavigate()
   const person = useQuery({ queryKey: ['freelancer', id], queryFn: () => admin.freelancer(id) })
+  // One id per wizard run (REB-406): mounting this page is starting one over, so a
+  // fresh id here is all «reset when the wizard starts over» asks for -- this page
+  // always navigates away once a match is written, never resets mid-mount. Sent with
+  // both «Salva come bozza» and «Invia per la firma», so a retry after the response is
+  // lost (a network drop, not the 503 `sendNow` already recovers from with `created`)
+  // writes nothing new: the server returns the match already written under it.
+  const [matchId] = useState(() => crypto.randomUUID())
   const [step, setStep] = useState(0)
   const [company, setCompany] = useState<Company | null>(null)
   const [prefillFor, setPrefillFor] = useState<string | null>(null)
@@ -385,7 +424,9 @@ export function AdminCreaMatch() {
   }, [previews])
 
   const payload = (): MatchCreate | null =>
-    company ? { company_id: company.id, cliente: toCliente(cliente), lettera: toLettera(lettera) } : null
+    company
+      ? { id: matchId, company_id: company.id, cliente: toCliente(cliente), lettera: toLettera(lettera) }
+      : null
   // What the page shows now. A prefill or a preview can land after the admin has moved
   // on: picked another company, left the step, changed what the preview was made from.
   // Such a response is dropped rather than let it fill the forms with another company's
@@ -431,6 +472,33 @@ export function AdminCreaMatch() {
     mutationFn: (payload: MatchCreate) => admin.createMatch(id, payload),
     onSuccess: () => void navigate({ to: '/admin/freelance/$id/contracts', params: { id } }),
   })
+  // «Invia per la firma» writes the match first, once: after a refusal the draft exists,
+  // and the next click sends that one rather than writing another with a new number.
+  const [created, setCreated] = useState<Match | null>(null)
+  // REB-406: a refused mail (`mail_inviata: false`) stays on step 5 with the report's
+  // own sentence and a link onward, so the admin sees it rather than land on «Match e
+  // contratti» none the wiser that the freelancer never got the link.
+  const [sentMessage, setSentMessage] = useState<string | null>(null)
+  const sendNow = useMutation({
+    mutationFn: async (payload: MatchCreate) => {
+      const match = created ?? (await admin.createMatch(id, payload))
+      setCreated(match)
+      return admin.sendMatch(match.id)
+    },
+    onSuccess: (report) => {
+      if (report.mail_inviata === false) {
+        setSentMessage(sendReportMessage(report))
+        return
+      }
+      void navigate({ to: '/admin/freelance/$id/contracts', params: { id } })
+    },
+  })
+  const sendFailure = failureOf(sendNow.error, 'Non riesco a inviare per la firma.')
+  const previewFailure =
+    failureOf(save.error, 'Non riesco a salvare la bozza.') ??
+    (sendFailure && created
+      ? { ...sendFailure, message: `${sendFailure.message} La bozza è salvata: la trovi in «Match e contratti».` }
+      : sendFailure)
 
   const fiscalFailure = failureOf(saveFiscal.error, 'Non riesco a salvare i dati fiscali.')
   const letterFailure = failureOf(generate.error, 'Non riesco a generare l’anteprima.')
@@ -521,11 +589,21 @@ export function AdminCreaMatch() {
               setStep(3)
             }}
             onSave={() => {
+              if (created) return void navigate({ to: '/admin/freelance/$id/contracts', params: { id } })
               const body = payload()
               if (body) save.mutate(body)
             }}
+            onSend={() => {
+              setSentMessage(null)
+              const body = payload()
+              if (body) sendNow.mutate(body)
+            }}
             saving={save.isPending}
-            failure={failureOf(save.error, 'Non riesco a salvare la bozza.')}
+            sending={sendNow.isPending}
+            locked={created !== null}
+            failure={previewFailure}
+            sentMessage={sentMessage}
+            freelancerId={id}
           />
         )}
       </div>

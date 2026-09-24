@@ -18,14 +18,25 @@ function answer(status: number, body: unknown) {
 }
 
 /** `lists.test.tsx`'s router of fetches, plus a handler that may be a function of the
- *  request, so one test can answer a GET differently after a POST. */
+ *  request, so one test can answer a GET differently after a POST, and may itself
+ *  answer a promise the test resolves later (`deferred`), to catch a button mid-request. */
 function routeFetch(handlers: Record<string, unknown>) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const key = `${init?.method ?? 'GET'} ${String(input)}`
     if (!(key in handlers)) throw new Error(`unhandled fetch in this test: ${key}`)
     const handler = handlers[key]
-    return answer(200, typeof handler === 'function' ? (handler as (init?: RequestInit) => unknown)(init) : handler)
+    const body = await (typeof handler === 'function' ? (handler as (init?: RequestInit) => unknown)(init) : handler)
+    return body instanceof Response ? body : answer(200, body)
   })
+}
+
+/** A response the test answers when it chooses, to catch a button mid-request. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
 }
 
 const PERSON = { id: 'f1', nome: 'Ada', cognome: 'Lovelace', email: 'ada@studio.it' }
@@ -145,8 +156,15 @@ describe('«Match e contratti» (REB-387)', () => {
       'href',
       '/api/hub/contract-documents/d1/pdf?firmato=true',
     )
-    // Phase 2 signs nothing: none of the signing actions is on the page yet.
-    expect(screen.queryByRole('button', { name: /firma|Reinvia|Aggiorna stato|disdetta/i })).toBeNull()
+    // A framework agreement never leaves on its own: it goes with a match, not with the
+    // framework section, so «Invia per la firma» sits on the match's own row instead
+    // (REB-406: scoped to the row, so a button that landed in the fiscal section or
+    // the header would still fail this).
+    expect(within(section).queryByRole('button', { name: /Invia per la firma/ })).toBeNull()
+    const row = screen.getByRole('row', { name: /Rossi Studio/ })
+    expect(
+      within(row).getByRole('button', { name: 'Invia per la firma il match con Rossi Studio' }),
+    ).toBeInTheDocument()
   })
 
   it('lists the matches with their letter and cancels a draft after asking', async () => {
@@ -225,5 +243,233 @@ describe('«Match e contratti» (REB-387)', () => {
     mount('/admin/freelance/f1/contracts')
     const link = await screen.findByRole('link', { name: 'Crea match' })
     expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/match\/new$/)
+  })
+
+  it('sends a draft match for signature and says what left (REB-390)', async () => {
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': PAGE,
+      'POST /api/hub/matches/m1/send': {
+        match: { ...MATCH, stato: 'in_firma', lettera: { ...LETTERA, stato: 'in_attesa' } },
+        inviato: 'quadro',
+        mail_inviata: true,
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio' }))
+    await waitFor(() => expect(spy).toHaveBeenCalledWith('/api/hub/matches/m1/send', expect.objectContaining({ method: 'POST' })))
+    expect(
+      await screen.findByText('Partito il contratto quadro: la lettera n. 2026-001 partirà da sola dopo la sua firma.'),
+    ).toBeInTheDocument()
+  })
+
+  it('offers no send for a letter that waits on a framework agreement already out for signature', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': {
+        ...PAGE,
+        quadro: { ...QUADRO, stato: 'inviato', attivo: false, signed_at: null },
+        matches: [{ ...MATCH, stato: 'in_firma', lettera: { ...LETTERA, stato: 'in_attesa' } }],
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    await screen.findByText('Rossi Studio')
+    expect(screen.queryByRole('button', { name: /Invia per la firma/ })).toBeNull()
+  })
+
+  it('shows the server’s sentence when a text is still a draft', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': PAGE,
+      'POST /api/hub/matches/m1/send': () =>
+        answer(409, {
+          detail:
+            'Il testo della lettera di incarico è ancora una bozza (status: draft): si genera e si salva, ma non parte per la firma.',
+        }),
+    })
+    mount('/admin/freelance/f1/contracts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('ancora una bozza')
+  })
+
+  const OUT = {
+    ...QUADRO,
+    stato: 'inviato',
+    attivo: false,
+    signed_at: null,
+    ha_pdf_firmato: false,
+    rinnovo: null,
+    ultimo_giorno_disdetta: null,
+    cancel_reason: null,
+  }
+
+  it('drops a failed send’s stale alert once a different action on the framework agreement succeeds (REB-407)', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, quadro: OUT, quadri: [OUT] },
+      'POST /api/hub/matches/m1/send': () =>
+        answer(409, {
+          detail:
+            'Il testo della lettera di incarico è ancora una bozza (status: draft): si genera e si salva, ma non parte per la firma.',
+        }),
+      'POST /api/hub/contract-documents/d1/resend': OUT,
+    })
+    mount('/admin/freelance/f1/contracts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('ancora una bozza')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Reinvia email del contratto quadro' }))
+
+    expect(await screen.findByText('Mail inviata di nuovo.')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('shows a failed «Reinvia email» on the framework agreement inside its own section, not under the matches table (REB-407)', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, quadro: OUT, quadri: [OUT] },
+      'POST /api/hub/contract-documents/d1/resend': () =>
+        answer(503, {
+          detail: 'La mail non è partita: il provider l’ha rifiutata. Riprova tra qualche minuto.',
+        }),
+    })
+    mount('/admin/freelance/f1/contracts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Reinvia email del contratto quadro' }))
+
+    const alerts = await screen.findAllByRole('alert')
+    expect(alerts).toHaveLength(1)
+    const quadroSection = screen.getByRole('region', { name: 'Contratto quadro' })
+    expect(within(quadroSection).getByRole('alert')).toHaveTextContent('non è partita')
+  })
+
+  it('resends the signing mail and refreshes a framework agreement out for signature (REB-407)', async () => {
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, quadro: OUT, quadri: [OUT] },
+      'POST /api/hub/contract-documents/d1/resend': OUT,
+      'POST /api/hub/contract-documents/d1/refresh': OUT,
+    })
+    mount('/admin/freelance/f1/contracts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Reinvia email del contratto quadro' }))
+    expect(await screen.findByText('Mail inviata di nuovo.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Aggiorna stato del contratto quadro' }))
+    expect(await screen.findByText('Stato letto da Documenso.')).toBeInTheDocument()
+    expect(spy).toHaveBeenCalledWith('/api/hub/contract-documents/d1/resend', expect.objectContaining({ method: 'POST' }))
+    expect(spy).toHaveBeenCalledWith('/api/hub/contract-documents/d1/refresh', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('cancels a framework agreement out for signature after asking, and says why it is cancelled', async () => {
+    let cancelled = false
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': () => {
+        const quadro = cancelled ? { ...OUT, stato: 'annullato', cancel_reason: 'Annullato da rebase.' } : OUT
+        return { ...PAGE, quadro, quadri: [quadro] }
+      },
+      'POST /api/hub/contract-documents/d1/cancel': () => {
+        cancelled = true
+        return { ...OUT, stato: 'annullato', cancel_reason: 'Annullato da rebase.' }
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Annulla il contratto quadro' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Sì, annulla il contratto quadro' }))
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith('/api/hub/contract-documents/d1/cancel', expect.objectContaining({ method: 'POST' })),
+    )
+    expect(await screen.findByText('Annullato da rebase.')).toBeInTheDocument()
+    // Spec § 6: an `annullato` framework agreement stays on the page with its reason,
+    // but none of the dates a signature would have given it.
+    const section = screen.getByRole('region', { name: 'Contratto quadro' })
+    expect(within(section).queryByText('Firmato il')).toBeNull()
+    expect(within(section).queryByText('Prossimo rinnovo')).toBeNull()
+    expect(within(section).queryByText('Ultimo giorno per la disdetta')).toBeNull()
+  })
+
+  it('records a notice on an active framework agreement after asking', async () => {
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': PAGE,
+      'POST /api/hub/contract-documents/d1/notice': { ...QUADRO, stato: 'disdetto', attivo: false },
+    })
+    mount('/admin/freelance/f1/contracts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Registra disdetta' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Sì, registra la disdetta' }))
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith('/api/hub/contract-documents/d1/notice', expect.objectContaining({ method: 'POST' })),
+    )
+    expect(await screen.findByText('Disdetta registrata.')).toBeInTheDocument()
+  })
+
+  it('shows why a letter was cancelled and offers no signing action on it', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': {
+        ...PAGE,
+        matches: [
+          {
+            ...MATCH,
+            stato: 'in_firma',
+            lettera: { ...LETTERA, stato: 'annullato', cancel_reason: 'Rifiutato dal freelance: il compenso è sbagliato' },
+          },
+        ],
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    const row = (await screen.findByText('Rossi Studio')).closest('tr')!
+    expect(within(row).getByText('Rifiutato dal freelance: il compenso è sbagliato')).toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: /Reinvia|Aggiorna stato|Invia per la firma/ })).toBeNull()
+    expect(within(row).getByRole('button', { name: 'Annulla il match con Rossi Studio' })).toBeInTheDocument()
+  })
+
+  it('warns that cancelling a match whose letter left stops the freelancer’s link', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': {
+        ...PAGE,
+        matches: [{ ...MATCH, stato: 'in_firma', lettera: { ...LETTERA, stato: 'inviato' } }],
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    const row = (await screen.findByText('Rossi Studio')).closest('tr')!
+    expect(within(row).getByRole('button', { name: 'Reinvia email della lettera n. 2026-001' })).toBeInTheDocument()
+    await userEvent.click(within(row).getByRole('button', { name: 'Annulla il match con Rossi Studio' }))
+    expect(await screen.findByText(/il link ricevuto dal freelance smette di funzionare/)).toBeInTheDocument()
+  })
+
+  it('shows when a document out for signature left, so the admin knows when to check Documenso', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': {
+        ...PAGE,
+        quadro: OUT,
+        quadri: [OUT],
+        matches: [{ ...MATCH, stato: 'in_firma', lettera: { ...LETTERA, stato: 'inviato', sent_at: '2026-09-24T08:00:00Z' } }],
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    const section = await screen.findByRole('region', { name: 'Contratto quadro' })
+    expect(within(section).getByText(`Inviato il ${formatDate(OUT.sent_at)}`)).toBeInTheDocument()
+    const row = (await screen.findByText('Rossi Studio')).closest('tr')!
+    expect(within(row).getByText(`Inviato il ${formatDate('2026-09-24T08:00:00Z')}`)).toBeInTheDocument()
+  })
+
+  it('shows «Aggiorna stato» in progress while it reads Documenso, as «Crea match» does for its own buttons (REB-407)', async () => {
+    const late = deferred<Response>()
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, quadro: OUT, quadri: [OUT] },
+      'POST /api/hub/contract-documents/d1/refresh': () => late.promise,
+    })
+    mount('/admin/freelance/f1/contracts')
+    const button = await screen.findByRole('button', { name: 'Aggiorna stato del contratto quadro' })
+    await userEvent.click(button)
+
+    expect(await screen.findByText('Aggiorno…')).toBeInTheDocument()
+    expect(button).toBeDisabled()
+
+    late.resolve(answer(200, OUT))
+    expect(await screen.findByText('Stato letto da Documenso.')).toBeInTheDocument()
+    expect(screen.getByText('Aggiorna stato')).toBeInTheDocument()
   })
 })
