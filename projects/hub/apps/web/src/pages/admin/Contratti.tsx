@@ -16,7 +16,14 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, ApiError, type ContractDocument, type Fiscal, type FiscalData, type Match } from '@/lib/api'
-import { draftFromFiscal, sendReportMessage, toFiscalData, type FiscalDraft } from '@/lib/contracts'
+import {
+  cancelDescription,
+  draftFromFiscal,
+  sendReportMessage,
+  toFiscalData,
+  whatOf,
+  type FiscalDraft,
+} from '@/lib/contracts'
 import { DOCUMENT_STATE_LABELS, MATCH_STATE_LABELS, formatDate } from '@/lib/format'
 import { Empty, Header, Row } from './lists'
 
@@ -55,7 +62,7 @@ export function FiscalFields({
 }
 
 function DocumentLinks({ document }: { document: ContractDocument }) {
-  const what = document.kind === 'quadro' ? 'del contratto quadro' : `della lettera n. ${document.numero}`
+  const what = whatOf(document)
   return (
     <span className="flex flex-wrap gap-2">
       <Button asChild variant="outline" size="sm">
@@ -76,7 +83,108 @@ function DocumentLinks({ document }: { document: ContractDocument }) {
   )
 }
 
-function FrameworkSection({ quadro }: { quadro: ContractDocument | null }) {
+/** The signing actions a document has in its state (REB-407): «Reinvia email» while it
+ *  waits for the signature; «Aggiorna stato» while Documenso may know more than the hub
+ *  (a lost webhook, a signed copy not downloaded yet, letters a signed framework
+ *  agreement has still to release). */
+function SigningActions({
+  document,
+  busy,
+  onRefresh,
+  onResend,
+}: {
+  document: ContractDocument
+  busy: boolean
+  onRefresh: (document: ContractDocument) => void
+  onResend: (document: ContractDocument) => void
+}) {
+  const what = whatOf(document)
+  const refreshable =
+    document.stato === 'inviato' ||
+    (document.stato === 'firmato' && (document.kind === 'quadro' || !document.ha_pdf_firmato))
+  return (
+    <>
+      {document.stato === 'inviato' && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          aria-label={`Reinvia email ${what}`}
+          onClick={() => onResend(document)}
+        >
+          Reinvia email
+        </Button>
+      )}
+      {refreshable && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          aria-label={`Aggiorna stato ${what}`}
+          onClick={() => onRefresh(document)}
+        >
+          Aggiorna stato
+        </Button>
+      )}
+    </>
+  )
+}
+
+/** A question before an action that cannot be taken back. */
+function Confirm({
+  open,
+  title,
+  description,
+  confirm,
+  pending,
+  onConfirm,
+  onClose,
+}: {
+  open: boolean
+  title: string
+  description: string
+  confirm: string
+  pending: boolean
+  onConfirm: () => void
+  onClose: () => void
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Indietro
+          </Button>
+          <Button type="button" variant="destructive" disabled={pending} onClick={onConfirm}>
+            {confirm}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function FrameworkSection({
+  quadro,
+  busy,
+  onRefresh,
+  onResend,
+  onCancel,
+  onNotice,
+}: {
+  quadro: ContractDocument | null
+  busy: boolean
+  onRefresh: (document: ContractDocument) => void
+  onResend: (document: ContractDocument) => void
+  onCancel: () => void
+  onNotice: () => void
+}) {
   return (
     <section aria-labelledby="contratti-quadro" className="space-y-3 px-6 py-6">
       <h2 id="contratti-quadro" className="text-sm font-medium">
@@ -92,8 +200,12 @@ function FrameworkSection({ quadro }: { quadro: ContractDocument | null }) {
               <span>{DOCUMENT_STATE_LABELS[quadro.stato] ?? quadro.stato}</span>
               {quadro.attivo && <Badge variant="pill">Attivo</Badge>}
               {quadro.testo_bozza && <Badge variant="pill">Testo in bozza</Badge>}
+              {quadro.stato === 'inviato' && quadro.sent_at && (
+                <span className="text-xs text-muted-foreground">Inviato il {formatDate(quadro.sent_at)}</span>
+              )}
             </span>
           </Row>
+          {quadro.cancel_reason && <Row label="Perché">{quadro.cancel_reason}</Row>}
           <Row label="Firmato il">{quadro.signed_at ? formatDate(quadro.signed_at) : 'non ancora'}</Row>
           <Row label="Prossimo rinnovo">{quadro.rinnovo ? formatDate(quadro.rinnovo) : 'dopo la firma'}</Row>
           <Row label="Ultimo giorno per la disdetta">
@@ -108,6 +220,30 @@ function FrameworkSection({ quadro }: { quadro: ContractDocument | null }) {
           <Row label="Documento">
             <DocumentLinks document={quadro} />
           </Row>
+          {quadro.stato !== 'annullato' && quadro.stato !== 'disdetto' && (
+            <Row label="Azioni">
+              <span className="flex flex-wrap gap-2">
+                <SigningActions document={quadro} busy={busy} onRefresh={onRefresh} onResend={onResend} />
+                {(quadro.stato === 'generato' || quadro.stato === 'inviato') && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy}
+                    aria-label="Annulla il contratto quadro"
+                    onClick={onCancel}
+                  >
+                    Annulla
+                  </Button>
+                )}
+                {quadro.attivo && (
+                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={onNotice}>
+                    Registra disdetta
+                  </Button>
+                )}
+              </span>
+            </Row>
+          )}
         </dl>
       )}
     </section>
@@ -163,6 +299,8 @@ function MatchesSection({
   busy,
   canSend,
   onSend,
+  onRefresh,
+  onResend,
   onCancel,
   onClose,
   error,
@@ -171,6 +309,8 @@ function MatchesSection({
   busy: boolean
   canSend: (match: Match) => boolean
   onSend: (match: Match) => void
+  onRefresh: (document: ContractDocument) => void
+  onResend: (document: ContractDocument) => void
   onCancel: (match: Match) => void
   onClose: (match: Match) => void
   error: string | null
@@ -209,45 +349,53 @@ function MatchesSection({
                     <p className="text-sm">
                       n. {match.lettera.numero} · {DOCUMENT_STATE_LABELS[match.lettera.stato] ?? match.lettera.stato}
                     </p>
+                    {match.lettera.stato === 'inviato' && match.lettera.sent_at && (
+                      <p className="text-xs text-muted-foreground">Inviato il {formatDate(match.lettera.sent_at)}</p>
+                    )}
+                    {match.lettera.cancel_reason && (
+                      <p className="text-xs text-muted-foreground">{match.lettera.cancel_reason}</p>
+                    )}
                     <DocumentLinks document={match.lettera} />
                   </TableCell>
-                  <TableCell className="text-right">
-                    {canSend(match) && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="mr-2"
-                        disabled={busy}
-                        aria-label={`Invia per la firma il match con ${match.nome_azienda}`}
-                        onClick={() => onSend(match)}
-                      >
-                        Invia per la firma
-                      </Button>
-                    )}
-                    {match.stato === 'bozza' && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={busy}
-                        aria-label={`Annulla il match con ${match.nome_azienda}`}
-                        onClick={() => onCancel(match)}
-                      >
-                        Annulla
-                      </Button>
-                    )}
-                    {match.stato === 'attivo' && (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={busy}
-                        aria-label={`Chiudi il match con ${match.nome_azienda}`}
-                        onClick={() => onClose(match)}
-                      >
-                        Chiudi match
-                      </Button>
-                    )}
+                  <TableCell>
+                    <span className="flex flex-wrap justify-end gap-2">
+                      {canSend(match) && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={busy}
+                          aria-label={`Invia per la firma il match con ${match.nome_azienda}`}
+                          onClick={() => onSend(match)}
+                        >
+                          Invia per la firma
+                        </Button>
+                      )}
+                      <SigningActions document={match.lettera} busy={busy} onRefresh={onRefresh} onResend={onResend} />
+                      {(match.stato === 'bozza' || match.stato === 'in_firma') && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={busy}
+                          aria-label={`Annulla il match con ${match.nome_azienda}`}
+                          onClick={() => onCancel(match)}
+                        >
+                          Annulla
+                        </Button>
+                      )}
+                      {match.stato === 'attivo' && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={busy}
+                          aria-label={`Chiudi il match con ${match.nome_azienda}`}
+                          onClick={() => onClose(match)}
+                        >
+                          Chiudi match
+                        </Button>
+                      )}
+                    </span>
                   </TableCell>
                 </TableRow>
               ))}
@@ -264,19 +412,23 @@ function MatchesSection({
   )
 }
 
-/** «Match e contratti» (REB-387): the framework agreement with its dates, the tax data,
- *  and every match with its letter; «Invia per la firma» on a match that has a document
- *  to send (REB-390). */
+/** «Match e contratti» (REB-387): the framework agreement with its dates and its signing
+ *  actions, the tax data, and every match with its letter. «Invia per la firma» sends a
+ *  match's document (REB-390); «Reinvia email», «Aggiorna stato», «Annulla» and
+ *  «Registra disdetta» follow the signature (REB-407). */
 export function AdminContratti() {
   const { id } = useParams({ from: '/signedIn/admin/freelance/$id/contracts' })
   const client = useQueryClient()
   const person = useQuery({ queryKey: ['freelancer', id], queryFn: () => admin.freelancer(id) })
   const contracts = useQuery({ queryKey: ['contracts', id], queryFn: () => admin.contracts(id) })
-  const refresh = () => void client.invalidateQueries({ queryKey: ['contracts', id] })
-  const cancel = useMutation({ mutationFn: (matchId: string) => admin.cancelMatch(matchId), onSuccess: refresh })
-  const close = useMutation({ mutationFn: (matchId: string) => admin.closeMatch(matchId), onSuccess: refresh })
-  const [confirming, setConfirming] = useState<Match | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [confirming, setConfirming] = useState<Match | null>(null)
+  const [confirmingQuadro, setConfirmingQuadro] = useState<'annulla' | 'disdetta' | null>(null)
+  const refresh = () => void client.invalidateQueries({ queryKey: ['contracts', id] })
+  const saying = (sentence: string) => () => {
+    setMessage(sentence)
+    refresh()
+  }
   const send = useMutation({
     mutationFn: (matchId: string) => admin.sendMatch(matchId),
     onSuccess: (report) => {
@@ -284,12 +436,33 @@ export function AdminContratti() {
       refresh()
     },
   })
+  const cancel = useMutation({ mutationFn: (matchId: string) => admin.cancelMatch(matchId), onSuccess: refresh })
+  const close = useMutation({ mutationFn: (matchId: string) => admin.closeMatch(matchId), onSuccess: refresh })
+  const resend = useMutation({
+    mutationFn: (documentId: string) => admin.resendDocument(documentId),
+    onSuccess: saying('Mail inviata di nuovo.'),
+  })
+  const update = useMutation({
+    mutationFn: (documentId: string) => admin.refreshDocument(documentId),
+    onSuccess: saying('Stato letto da Documenso.'),
+  })
+  const cancelQuadro = useMutation({
+    mutationFn: (documentId: string) => admin.cancelDocument(documentId),
+    onSuccess: saying('Contratto quadro annullato.'),
+  })
+  const notice = useMutation({
+    mutationFn: (documentId: string) => admin.recordNotice(documentId),
+    onSuccess: saying('Disdetta registrata.'),
+  })
+  const actions = [send, cancel, close, resend, update, cancelQuadro, notice]
 
   if (contracts.isError) return <Empty>Non riesco a leggere i contratti di questa persona.</Empty>
   if (contracts.isPending) return <Empty>Caricamento…</Empty>
   const data = contracts.data
+  const quadro = data.quadro
   const name = person.data ? `${person.data.nome} ${person.data.cognome}` : ''
-  const actionError = send.error ?? cancel.error ?? close.error
+  const busy = actions.some((action) => action.isPending)
+  const actionError = actions.map((action) => action.error).find((error) => error !== null) ?? null
   const actionFailure =
     actionError instanceof ApiError
       ? actionError.message
@@ -301,7 +474,15 @@ export function AdminContratti() {
   // or a signed one whose release failed).
   const canSend = (match: Match) =>
     match.stato === 'bozza' ||
-    (match.stato === 'in_firma' && match.lettera.stato === 'in_attesa' && data.quadro?.stato !== 'inviato')
+    (match.stato === 'in_firma' && match.lettera.stato === 'in_attesa' && quadro?.stato !== 'inviato')
+  const onRefresh = (document: ContractDocument) => {
+    setMessage(null)
+    update.mutate(document.id)
+  }
+  const onResend = (document: ContractDocument) => {
+    setMessage(null)
+    resend.mutate(document.id)
+  }
   return (
     <>
       <Header title={name ? `Match e contratti · ${name}` : 'Match e contratti'}>
@@ -311,7 +492,14 @@ export function AdminContratti() {
           </Link>
         </Button>
       </Header>
-      <FrameworkSection quadro={data.quadro} />
+      <FrameworkSection
+        quadro={quadro}
+        busy={busy}
+        onRefresh={onRefresh}
+        onResend={onResend}
+        onCancel={() => setConfirmingQuadro('annulla')}
+        onNotice={() => setConfirmingQuadro('disdetta')}
+      />
       <FiscalSection freelancerId={id} fiscale={data.fiscale} onSaved={refresh} />
       {message && (
         <p role="status" className="px-6 pb-3 text-sm">
@@ -320,12 +508,14 @@ export function AdminContratti() {
       )}
       <MatchesSection
         matches={data.matches}
-        busy={send.isPending || cancel.isPending || close.isPending}
+        busy={busy}
         canSend={canSend}
         onSend={(match) => {
           setMessage(null)
           send.mutate(match.id)
         }}
+        onRefresh={onRefresh}
+        onResend={onResend}
         onCancel={setConfirming}
         onClose={(match) => close.mutate(match.id)}
         error={actionFailure}
@@ -335,32 +525,39 @@ export function AdminContratti() {
           <ArrowLeft className="size-4" /> Torna alla scheda
         </Link>
       </p>
-      <Dialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Annullare il match?</DialogTitle>
-            <DialogDescription>
-              {confirming &&
-                `Il match con ${confirming.nome_azienda} e la lettera n. ${confirming.lettera.numero} diventano annullati, e il numero non si riusa. Il contratto quadro resta com’è.`}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setConfirming(null)}>
-              Indietro
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={cancel.isPending}
-              onClick={() => {
-                if (confirming) cancel.mutate(confirming.id, { onSettled: () => setConfirming(null) })
-              }}
-            >
-              {cancel.isPending ? 'Annullo…' : 'Annulla il match'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <Confirm
+        open={confirming !== null}
+        title="Annullare il match?"
+        description={confirming ? cancelDescription(confirming) : ''}
+        confirm={cancel.isPending ? 'Annullo…' : 'Annulla il match'}
+        pending={cancel.isPending}
+        onConfirm={() => {
+          if (confirming) cancel.mutate(confirming.id, { onSettled: () => setConfirming(null) })
+        }}
+        onClose={() => setConfirming(null)}
+      />
+      <Confirm
+        open={confirmingQuadro === 'annulla'}
+        title="Annullare il contratto quadro?"
+        description="Se è già partito, viene annullato anche sul sito di firma e il link ricevuto dal freelance smette di funzionare. Le lettere che lo aspettano restano in attesa: «Invia per la firma» sul loro match ne genera uno nuovo."
+        confirm={cancelQuadro.isPending ? 'Annullo…' : 'Sì, annulla il contratto quadro'}
+        pending={cancelQuadro.isPending}
+        onConfirm={() => {
+          if (quadro) cancelQuadro.mutate(quadro.id, { onSettled: () => setConfirmingQuadro(null) })
+        }}
+        onClose={() => setConfirmingQuadro(null)}
+      />
+      <Confirm
+        open={confirmingQuadro === 'disdetta'}
+        title="Registrare la disdetta?"
+        description="Da oggi il contratto quadro non è più attivo, e il prossimo match ne genera uno nuovo. Si registra quando il freelance o rebase ha dato disdetta, o uno dei due ha receduto."
+        confirm={notice.isPending ? 'Registro…' : 'Sì, registra la disdetta'}
+        pending={notice.isPending}
+        onConfirm={() => {
+          if (quadro) notice.mutate(quadro.id, { onSettled: () => setConfirmingQuadro(null) })
+        }}
+        onClose={() => setConfirmingQuadro(null)}
+      />
     </>
   )
 }

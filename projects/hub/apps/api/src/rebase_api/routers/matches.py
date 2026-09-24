@@ -18,6 +18,7 @@ from rebase_api.deps import AdminDep, RendererDep, SessionDep, SettingsDep, Sign
 from rebase_api.downloads import pdf_response
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import (
+    ContractDocumentRead,
     FiscalData,
     FiscalRead,
     FreelancerContracts,
@@ -61,6 +62,16 @@ def _require_live_freelancer(
     freelancer = session.get(Freelancer, freelancer_id)
     if freelancer is None or freelancer.deleted_at is not None:
         raise NotFound(entity, identifier)
+
+
+def _document_guard(session: Session, document_id: UUID) -> ContractDocument:
+    """404 when the document itself is gone or its freelancer is soft-deleted, exactly as
+    `download_contract` already checks it, before a signing action reaches the service."""
+    document = session.get(ContractDocument, document_id)
+    if document is None:
+        raise NotFound(DOCUMENT_ENTITY, document_id)
+    _require_live_freelancer(session, document.freelancer_id, DOCUMENT_ENTITY, document_id)
+    return document
 
 
 @router.get("/freelancers/{freelancer_id}/fiscal", response_model=FiscalRead | None)
@@ -148,12 +159,16 @@ def get_match(_: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
 
 
 @router.post("/matches/{match_id}/cancel", response_model=MatchRead)
-def cancel_match(admin: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
+def cancel_match(
+    admin: AdminDep, session: SessionDep, signing: SigningDep, match_id: UUID
+) -> MatchRead:
+    """A draft; or a match in signature, whose letter's envelope is cancelled on
+    Documenso too (REB-407)."""
     match = session.get(Match, match_id)
     if match is None:
         raise NotFound(ENTITY, match_id)
     _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
-    return MatchService(session).cancel(match_id, admin.id)
+    return signing(session).cancel_match(match_id, admin.id)
 
 
 @router.post("/matches/{match_id}/close", response_model=MatchRead)
@@ -178,6 +193,43 @@ def send_match(
         raise NotFound(ENTITY, match_id)
     _require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
     return signing(session).send_match(match_id, admin.id)
+
+
+@router.post("/contract-documents/{document_id}/refresh", response_model=ContractDocumentRead)
+def refresh_contract(
+    _: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
+) -> ContractDocumentRead:
+    """«Aggiorna stato»: what Documenso says about the envelope, applied as the webhook
+    would, and whatever a signature still leaves to do (REB-407)."""
+    _document_guard(session, document_id)
+    return signing(session).refresh(document_id)
+
+
+@router.post("/contract-documents/{document_id}/resend", response_model=ContractDocumentRead)
+def resend_contract(
+    admin: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
+) -> ContractDocumentRead:
+    """«Reinvia email»: the signing mail again, for a document still waiting."""
+    _document_guard(session, document_id)
+    return signing(session).resend_mail(document_id, admin.id)
+
+
+@router.post("/contract-documents/{document_id}/cancel", response_model=ContractDocumentRead)
+def cancel_contract(
+    admin: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
+) -> ContractDocumentRead:
+    """«Annulla» on a framework agreement not signed yet; a letter goes with its match."""
+    _document_guard(session, document_id)
+    return signing(session).cancel_document(document_id, admin.id)
+
+
+@router.post("/contract-documents/{document_id}/notice", response_model=ContractDocumentRead)
+def record_contract_notice(
+    admin: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
+) -> ContractDocumentRead:
+    """«Registra disdetta» on an active framework agreement."""
+    _document_guard(session, document_id)
+    return signing(session).record_notice(document_id, admin.id)
 
 
 @router.get("/contract-documents/{document_id}/pdf")

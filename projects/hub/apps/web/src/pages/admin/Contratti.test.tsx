@@ -281,4 +281,121 @@ describe('«Match e contratti» (REB-387)', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('ancora una bozza')
   })
+
+  const OUT = {
+    ...QUADRO,
+    stato: 'inviato',
+    attivo: false,
+    signed_at: null,
+    ha_pdf_firmato: false,
+    rinnovo: null,
+    ultimo_giorno_disdetta: null,
+    cancel_reason: null,
+  }
+
+  it('resends the signing mail and refreshes a framework agreement out for signature (REB-407)', async () => {
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, quadro: OUT, quadri: [OUT] },
+      'POST /api/hub/contract-documents/d1/resend': OUT,
+      'POST /api/hub/contract-documents/d1/refresh': OUT,
+    })
+    mount('/admin/freelance/f1/contracts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Reinvia email del contratto quadro' }))
+    expect(await screen.findByText('Mail inviata di nuovo.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Aggiorna stato del contratto quadro' }))
+    expect(await screen.findByText('Stato letto da Documenso.')).toBeInTheDocument()
+    expect(spy).toHaveBeenCalledWith('/api/hub/contract-documents/d1/resend', expect.objectContaining({ method: 'POST' }))
+    expect(spy).toHaveBeenCalledWith('/api/hub/contract-documents/d1/refresh', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('cancels a framework agreement out for signature after asking, and says why it is cancelled', async () => {
+    let cancelled = false
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': () => {
+        const quadro = cancelled ? { ...OUT, stato: 'annullato', cancel_reason: 'Annullato da rebase.' } : OUT
+        return { ...PAGE, quadro, quadri: [quadro] }
+      },
+      'POST /api/hub/contract-documents/d1/cancel': () => {
+        cancelled = true
+        return { ...OUT, stato: 'annullato', cancel_reason: 'Annullato da rebase.' }
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Annulla il contratto quadro' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Sì, annulla il contratto quadro' }))
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith('/api/hub/contract-documents/d1/cancel', expect.objectContaining({ method: 'POST' })),
+    )
+    expect(await screen.findByText('Annullato da rebase.')).toBeInTheDocument()
+  })
+
+  it('records a notice on an active framework agreement after asking', async () => {
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': PAGE,
+      'POST /api/hub/contract-documents/d1/notice': { ...QUADRO, stato: 'disdetto', attivo: false },
+    })
+    mount('/admin/freelance/f1/contracts')
+    await userEvent.click(await screen.findByRole('button', { name: 'Registra disdetta' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Sì, registra la disdetta' }))
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith('/api/hub/contract-documents/d1/notice', expect.objectContaining({ method: 'POST' })),
+    )
+    expect(await screen.findByText('Disdetta registrata.')).toBeInTheDocument()
+  })
+
+  it('shows why a letter was cancelled and offers no signing action on it', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': {
+        ...PAGE,
+        matches: [
+          {
+            ...MATCH,
+            stato: 'in_firma',
+            lettera: { ...LETTERA, stato: 'annullato', cancel_reason: 'Rifiutato dal freelance: il compenso è sbagliato' },
+          },
+        ],
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    const row = (await screen.findByText('Rossi Studio')).closest('tr')!
+    expect(within(row).getByText('Rifiutato dal freelance: il compenso è sbagliato')).toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: /Reinvia|Aggiorna stato|Invia per la firma/ })).toBeNull()
+    expect(within(row).getByRole('button', { name: 'Annulla il match con Rossi Studio' })).toBeInTheDocument()
+  })
+
+  it('warns that cancelling a match whose letter left stops the freelancer’s link', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': {
+        ...PAGE,
+        matches: [{ ...MATCH, stato: 'in_firma', lettera: { ...LETTERA, stato: 'inviato' } }],
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    const row = (await screen.findByText('Rossi Studio')).closest('tr')!
+    expect(within(row).getByRole('button', { name: 'Reinvia email della lettera n. 2026-001' })).toBeInTheDocument()
+    await userEvent.click(within(row).getByRole('button', { name: 'Annulla il match con Rossi Studio' }))
+    expect(await screen.findByText(/il link ricevuto dal freelance smette di funzionare/)).toBeInTheDocument()
+  })
+
+  it('shows when a document out for signature left, so the admin knows when to check Documenso', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': {
+        ...PAGE,
+        quadro: OUT,
+        quadri: [OUT],
+        matches: [{ ...MATCH, stato: 'in_firma', lettera: { ...LETTERA, stato: 'inviato', sent_at: '2026-09-24T08:00:00Z' } }],
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    const section = await screen.findByRole('region', { name: 'Contratto quadro' })
+    expect(within(section).getByText(`Inviato il ${formatDate(OUT.sent_at)}`)).toBeInTheDocument()
+    const row = (await screen.findByText('Rossi Studio')).closest('tr')!
+    expect(within(row).getByText(`Inviato il ${formatDate('2026-09-24T08:00:00Z')}`)).toBeInTheDocument()
+  })
 })

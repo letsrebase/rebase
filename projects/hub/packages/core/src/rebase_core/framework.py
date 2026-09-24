@@ -126,6 +126,7 @@ def document_read(
         sent_at=document.sent_at,
         signed_at=document.signed_at,
         notice_at=document.notice_at,
+        cancel_reason=document.cancel_reason,
         ha_pdf_firmato=document.signed_pdf is not None,
         attivo=active,
         rinnovo=renewal,

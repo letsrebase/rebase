@@ -513,6 +513,32 @@ def signing_request_mail(
     return Mail(to=to, subject=subject, text=text, html=_frame(subject, body))
 
 
+def signing_cancelled_mail(to: str, nome: str, kind: str, numero: str | None) -> Mail:
+    """A document that had already left for signature, cancelled by rebase before it was
+    signed (REB-407): the same frame as `signing_request_mail`, with no button, since
+    there is nothing left to sign. The link the earlier mail carried is dead from now
+    on, and a new document, if one is needed, arrives on its own."""
+    e = html_escape.escape
+    name = document_name(kind, numero)
+    cancelled = "annullato" if kind == "quadro" else "annullata"
+    nuovo = "un nuovo contratto quadro" if kind == "quadro" else "una nuova lettera di incarico"
+    greeting = f"Ciao {nome}," if nome else "Ciao,"
+    paragraph = (
+        f"il link che ti avevamo mandato per firmare {_article(kind)} {name} non funziona "
+        f"più: lo abbiamo annullato noi di rebase. Se serve {nuovo}, ti scriviamo."
+    )
+    subject = f"{name[0].upper()}{name[1:]} {cancelled}"
+    text = f"{greeting}\n\n{paragraph}\n\nNoi di rebase\n"
+    body = "\n".join(
+        (
+            f'<p style="margin:0 0 20px 0;">{e(greeting)}</p>',
+            f'<p style="margin:0;">{e(paragraph)}</p>',
+            '<p style="margin:24px 0 0 0;">Noi di rebase</p>',
+        )
+    )
+    return Mail(to=to, subject=subject, text=text, html=_frame(subject, body))
+
+
 def signed_copy_mail(
     to: str,
     *,

@@ -20,6 +20,7 @@ from rebase_core.mail import (
     magic_link_mail,
     sender_from_settings,
     signed_copy_mail,
+    signing_cancelled_mail,
     signing_request_mail,
     welcome_mail,
 )
@@ -288,6 +289,24 @@ def test_the_signing_mail_names_the_document_and_carries_the_one_link() -> None:
     )
     assert hostile.html is not None
     assert "<script>" not in hostile.html and "<b>Ada" not in hostile.html
+
+
+def test_the_cancellation_mail_names_the_document_and_carries_no_button() -> None:
+    """REB-407: the freelancer's own notice that a document already sent will not be
+    signed. Unlike `signing_request_mail`, there is no link left to give them."""
+    quadro = signing_cancelled_mail("ada@studio.it", "Ada", "quadro", None)
+    lettera = signing_cancelled_mail("ada@studio.it", "Ada", "lettera", "2026-001")
+    assert quadro.subject == "Contratto quadro rebase annullato"
+    assert lettera.subject == "Lettera di incarico n. 2026-001 annullata"
+    for mail in (quadro, lettera):
+        assert mail.to == "ada@studio.it"
+        assert mail.text.startswith("Ciao Ada,")
+        assert "annullato noi di rebase" in mail.text
+        assert mail.html is not None
+        assert "Firma il documento" not in mail.html
+        assert mail.attachments == ()
+    hostile = signing_cancelled_mail("ada@studio.it", "<b>Ada</b>", "quadro", None)
+    assert hostile.html is not None and "<b>Ada" not in hostile.html
 
 
 def test_the_signed_copy_travels_as_an_attachment_to_both_parties() -> None:

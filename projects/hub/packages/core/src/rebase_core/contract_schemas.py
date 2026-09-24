@@ -277,6 +277,9 @@ class ContractDocumentRead(BaseModel):
     sent_at: datetime | None
     signed_at: datetime | None
     notice_at: datetime | None
+    # Why it became `annullato`: the freelancer's own reason when they refused it, or who
+    # cancelled it (REB-407).
+    cancel_reason: str | None
     ha_pdf_firmato: bool
     attivo: bool
     rinnovo: date | None

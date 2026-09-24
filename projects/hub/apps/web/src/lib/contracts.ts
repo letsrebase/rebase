@@ -3,7 +3,19 @@
  * takes typed values, and these helpers are the one place the two meet. Kept out of the
  * page files, which export components only (`react-refresh/only-export-components`).
  */
-import { LETTERA_TEXT_KEYS, type Cliente, type ClienteDraft, type Fiscal, type FiscalData, type Lettera, type LetteraDraft, type LetteraTextKey, type SendReport } from './api'
+import {
+  LETTERA_TEXT_KEYS,
+  type Cliente,
+  type ClienteDraft,
+  type ContractDocument,
+  type Fiscal,
+  type FiscalData,
+  type Lettera,
+  type LetteraDraft,
+  type LetteraTextKey,
+  type Match,
+  type SendReport,
+} from './api'
 
 export type FiscalDraft = Record<keyof FiscalData, string>
 
@@ -167,6 +179,25 @@ export const LETTERA_MULTILINE: ReadonlySet<LetteraFieldKey> = new Set<LetteraFi
   'dati_finalita',
   'altre_condizioni',
 ])
+
+/** How a document is named in a button's label or a confirmation, the one place both
+ *  `DocumentLinks` and the signing actions on «Match e contratti» name a document
+ *  (REB-407): «del contratto quadro», «della lettera n. 2026-001». */
+export function whatOf(document: ContractDocument): string {
+  return document.kind === 'quadro' ? 'del contratto quadro' : `della lettera n. ${document.numero}`
+}
+
+/** What «Annulla» on a match asks before it acts: the match and its letter's own
+ *  number become `annullato` for good, and, when the letter has already left, that
+ *  its envelope on the signing site is cancelled too and the freelancer's link stops
+ *  working (REB-407). The framework agreement is the freelancer's, not the match's,
+ *  and stays untouched either way. */
+export function cancelDescription(match: Match): string {
+  const base = `Il match con ${match.nome_azienda} e la lettera n. ${match.lettera.numero} diventano annullati, e il numero non si riusa. Il contratto quadro resta com’è.`
+  return match.lettera.stato === 'inviato'
+    ? `${base} La lettera è già partita: viene annullata anche sul sito di firma, e il link ricevuto dal freelance smette di funzionare.`
+    : base
+}
 
 /** The sentence the pages show after «Invia per la firma» (REB-390). */
 export function sendReportMessage(report: SendReport): string {

@@ -415,19 +415,35 @@ class MatchService:
 
     def cancel(self, match_id: UUID, admin_id: UUID) -> MatchRead:
         """A draft and its letter become `annullato`; the framework agreement, which is
-        the freelancer's and not the match's, stays as it is. Phase 3 extends this to a
-        match in signature, which also has an envelope to cancel."""
-        match = self._match(match_id)
+        the freelancer's and not the match's, stays as it is. `SigningService.
+        cancel_match` extends this to a match in signature, which also has an envelope
+        to cancel.
+
+        The freelancer's row locks first, then the match, then its letters (the global
+        lock order): a cancel racing a send for the same match must not read a stale
+        `bozza` and overwrite a letter the send already put out for signature with
+        `annullato` while its envelope is still live on Documenso."""
+        freelancer_id = self.session.scalar(select(Match.freelancer_id).where(Match.id == match_id))
+        if freelancer_id is None:
+            raise NotFound(ENTITY, match_id)
+        self.session.execute(
+            select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
+        )
+        match = self._lock_match(match_id)
         if match.stato != "bozza":
+            self.session.rollback()
             raise InvalidState(
                 f"Si annulla solo un match in bozza: questo è {match.stato}.", stato=match.stato
             )
         letters = list(
             self.session.scalars(
-                select(ContractDocument).where(
+                select(ContractDocument)
+                .where(
                     ContractDocument.match_id == match.id,
                     ContractDocument.stato.in_(("generato", "in_attesa")),
                 )
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
         )
         match.stato = "annullato"
@@ -441,8 +457,18 @@ class MatchService:
         return self.get(match.id)
 
     def close(self, match_id: UUID, admin_id: UUID) -> MatchRead:
-        match = self._match(match_id)
+        """The freelancer's row locks first, then the match, the same order `cancel`
+        takes: a close racing a webhook that just turned this match `attivo` (or
+        `concluso` again) must re-check its state under the lock, not before it."""
+        freelancer_id = self.session.scalar(select(Match.freelancer_id).where(Match.id == match_id))
+        if freelancer_id is None:
+            raise NotFound(ENTITY, match_id)
+        self.session.execute(
+            select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update()
+        )
+        match = self._lock_match(match_id)
         if match.stato != "attivo":
+            self.session.rollback()
             raise InvalidState(
                 f"Si chiude solo un match attivo: questo è {match.stato}.", stato=match.stato
             )
@@ -680,8 +706,16 @@ class MatchService:
             raise ValidationFailed(ENTITY, "fiscale", "mancano i dati fiscali del freelance")
         return row
 
-    def _match(self, match_id: UUID) -> Match:
-        match = self.session.get(Match, match_id)
+    def _lock_match(self, match_id: UUID) -> Match:
+        """The match, row-locked until this transaction ends, and read again from the
+        database rather than from the session's memory. The caller must already hold
+        the freelancer's row lock, the global order."""
+        match = self.session.scalars(
+            select(Match)
+            .where(Match.id == match_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        ).first()
         if match is None:
             raise NotFound(ENTITY, match_id)
         return match

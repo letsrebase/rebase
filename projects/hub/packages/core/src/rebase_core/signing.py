@@ -26,6 +26,11 @@ webhook's background task or under «Aggiorna stato»: the sealed copy downloade
 and mailed to both parties once, then, for a framework agreement, the letters that
 waited for it typeset with its signature date and sent. Each step checks under the lock
 whether it is still to do, so running `finish` twice does everything once.
+
+The recovery actions are the admin's: «Aggiorna stato» (`refresh`) for the event
+Documenso gave up on, «Reinvia email» (`resend_mail`), «Annulla» on a framework agreement
+(`cancel_document`) or on a match (`cancel_match`), both cancelling the envelope on
+Documenso before the row, and «Registra disdetta» (`record_notice`).
 """
 
 import logging
@@ -38,17 +43,31 @@ from sqlalchemy.orm import Session
 
 from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.config import Settings
-from rebase_core.contract_schemas import SendReport
+from rebase_core.contract_schemas import ContractDocumentRead, MatchRead, SendReport
 from rebase_core.contracts.fields import ContractFailed, Value, signer_data
-from rebase_core.contracts.render import Renderer
-from rebase_core.documenso import COMPLETED, REJECTED, DocumensoClient, Outcome, fields_from_blanks
+from rebase_core.contracts.render import Renderer, text_version
+from rebase_core.documenso import (
+    COMPLETED,
+    REJECTED,
+    DocumensoClient,
+    Outcome,
+    fields_from_blanks,
+    outcome_from_envelope,
+)
 from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
-from rebase_core.framework import active_framework, is_active, pending_framework, rome_today
+from rebase_core.framework import (
+    active_framework,
+    document_read,
+    is_active,
+    pending_framework,
+    rome_today,
+)
 from rebase_core.mail import (
     Attachment,
     EmailSender,
     document_name,
     signed_copy_mail,
+    signing_cancelled_mail,
     signing_request_mail,
 )
 from rebase_core.matches import DOCUMENT_BY_KIND, ENTITY, LETTERA, QUADRO, MatchService, _full_name
@@ -84,6 +103,8 @@ NO_SENDER = (
 )
 REFUSED_ON_SITE = "Rifiutato dal freelance sul sito di firma."
 CANCELLED_ON_DOCUMENSO = "Annullato su Documenso."
+CANCELLED_BY_REBASE = "Annullato da rebase."
+CANCELLED_WITH_MATCH = "Annullato da rebase con il suo match."
 
 
 def _cancel_reason(outcome: Outcome) -> str:
@@ -486,6 +507,194 @@ class SigningService:
         self._dispatch(letter, framework, sent_by)
         self.session.commit()
         return letter
+
+    # ---- recovery, and the framework agreement's end -----------------------------------
+
+    def refresh(self, document_id: UUID) -> ContractDocumentRead:
+        """«Aggiorna stato»: Documenso's own word on the envelope, applied the way the
+        webhook applies it, then whatever a signature still leaves to do (spec § 6, probe
+        § 11.3). The net for an event Documenso gave up on, a copy not downloaded yet, a
+        letter whose release failed."""
+        document = self._document(document_id)
+        if document.documenso_id is None:
+            raise InvalidState(
+                "Questo documento non è mai partito per la firma: non c'è nulla da aggiornare.",
+                stato=document.stato,
+            )
+        envelope = self._documenso().get(document.documenso_id)
+        self.session.rollback()
+        outcome = outcome_from_envelope(envelope)
+        if outcome is not None:
+            self.apply(outcome)
+        self.finish(document_id)
+        return self._read(document_id)
+
+    def resend_mail(self, document_id: UUID, admin_id: UUID) -> ContractDocumentRead:
+        """«Reinvia email»: the signing mail again, the same link, for a document that
+        still waits for the signature."""
+        self._sender()
+        document = self._document(document_id)
+        if document.stato != "inviato" or document.signing_url is None:
+            raise InvalidState(
+                "Si reinvia la mail solo di un documento che aspetta la firma.",
+                stato=document.stato,
+            )
+        if not self._mail_signing_request(document):
+            raise SigningUnavailable(
+                "La mail non è partita: il provider l'ha rifiutata. Riprova tra qualche minuto."
+            )
+        self._record(document, "mail_resent", admin_id)
+        return self._read(document_id)
+
+    def cancel_document(self, document_id: UUID, admin_id: UUID) -> ContractDocumentRead:
+        """«Annulla» on a framework agreement not signed yet: its envelope cancelled on
+        Documenso first, under the row's lock (only a `PENDING` one can be, probe § 4),
+        then the row. A letter is cancelled with its match. The letters that waited for
+        this framework agreement keep waiting: «Invia per la firma» on their match writes
+        a new one. A freelancer already told about this document by mail is told again,
+        once it is gone (REB-407).
+
+        The freelancer's row locks first, the global order: its id is read here with no
+        lock of its own (`_document`), only to know which row to take."""
+        freelancer_id = self._document(document_id).freelancer_id
+        self._lock_freelancer(freelancer_id)
+        document = self._lock(document_id)
+        was_sent = False
+        try:
+            if document.kind != QUADRO:
+                raise InvalidState("Una lettera di incarico si annulla con il suo match.")
+            if document.stato not in ("generato", "inviato"):
+                raise InvalidState(
+                    f"Si annulla solo un contratto quadro non ancora firmato: questo è "
+                    f"{document.stato}.",
+                    stato=document.stato,
+                )
+            was_sent = document.stato == "inviato"
+            if was_sent and document.documenso_id is not None:
+                self._documenso().cancel(document.documenso_id, CANCELLED_BY_REBASE)
+            document.stato = "annullato"
+            document.cancel_reason = CANCELLED_BY_REBASE
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        self._record(document, "document_cancelled", admin_id)
+        if was_sent:
+            self._mail_cancellation(document)
+        return self._read(document_id)
+
+    def cancel_match(self, match_id: UUID, admin_id: UUID) -> MatchRead:
+        """«Annulla» on a match: a draft, still locked in the global order, delegates to
+        `MatchService.cancel` (which takes the same locks again, a no-op on a row this
+        transaction already holds); a match in signature also cancels its letter's
+        envelope when the letter is out for signature, so the link the freelancer got
+        stops working, and tells them by mail. The framework agreement is the
+        freelancer's, not the match's, and stays."""
+        freelancer_id = self._match_freelancer(match_id)
+        self._lock_freelancer(freelancer_id)
+        match = self._lock_match(match_id)
+        if match.stato == "bozza":
+            return self.matches.cancel(match_id, admin_id)
+        letters: list[ContractDocument] = []
+        mailed: list[ContractDocument] = []
+        try:
+            if match.stato != "in_firma":
+                raise InvalidState(
+                    f"Si annulla solo un match in bozza o in firma: questo è {match.stato}.",
+                    stato=match.stato,
+                )
+            letters = list(
+                self.session.scalars(
+                    select(ContractDocument)
+                    .where(
+                        ContractDocument.match_id == match.id,
+                        ContractDocument.stato.in_(("generato", "in_attesa", "inviato")),
+                    )
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            )
+            for letter in letters:
+                if letter.stato == "inviato":
+                    if letter.documenso_id is not None:
+                        self._documenso().cancel(letter.documenso_id, CANCELLED_BY_REBASE)
+                    mailed.append(letter)
+                letter.stato = "annullato"
+                letter.cancel_reason = CANCELLED_WITH_MATCH
+            match.stato = "annullato"
+            match.cancelled_at = self.now()
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        AdminActionService(self.session).record(
+            ENTITY, match_id, "match_cancelled", admin_id, {"documenti": [d.id for d in letters]}
+        )
+        for letter in mailed:
+            self._mail_cancellation(letter)
+        return self.matches.get(match_id)
+
+    def record_notice(self, document_id: UUID, admin_id: UUID) -> ContractDocumentRead:
+        """«Registra disdetta»: a notice or a withdrawal on an active framework agreement
+        (spec § 1d). From now the freelancer has none active, and their next match writes
+        a new one."""
+        freelancer_id = self._document(document_id).freelancer_id
+        self._lock_freelancer(freelancer_id)
+        document = self._lock(document_id)
+        if not is_active(document):
+            self.session.rollback()
+            raise InvalidState(
+                "Si registra la disdetta solo di un contratto quadro attivo.",
+                stato=document.stato,
+            )
+        document.notice_at = self.now()
+        document.stato = "disdetto"
+        self.session.commit()
+        self._record(document, "notice_recorded", admin_id)
+        return self._read(document_id)
+
+    def _document(self, document_id: UUID) -> ContractDocument:
+        document = self.session.get(ContractDocument, document_id, populate_existing=True)
+        if document is None:
+            raise NotFound("documento", document_id)
+        return document
+
+    def _match_freelancer(self, match_id: UUID) -> UUID:
+        freelancer_id = self.session.scalar(select(Match.freelancer_id).where(Match.id == match_id))
+        if freelancer_id is None:
+            raise NotFound(ENTITY, match_id)
+        return freelancer_id
+
+    def _read(self, document_id: UUID) -> ContractDocumentRead:
+        return document_read(
+            self._document(document_id), self.today(), text_version(DOCUMENT_BY_KIND[QUADRO])
+        )
+
+    def _record(self, document: ContractDocument, kind: str, admin_id: UUID) -> None:
+        """A framework agreement's action lands on its freelancer's trail, since it
+        belongs to no match; a letter's on its match's."""
+        if document.match_id is not None:
+            entity, entity_id = ENTITY, document.match_id
+        else:
+            entity, entity_id = FREELANCER, document.freelancer_id
+        AdminActionService(self.session).record(
+            entity, entity_id, kind, admin_id, {"documento": document.id, "kind": document.kind}
+        )
+
+    def _mail_cancellation(self, document: ContractDocument) -> None:
+        """The freelancer's own notice that a document already out for signature will
+        not be signed after all: their link is dead from now on. A refused or missing
+        sender is logged, never raised -- the cancel already happened, and nothing here
+        may undo it (REB-407)."""
+        if self.sender is None:
+            _log.warning("no mail sender: nobody was told document %s was cancelled", document.id)
+            return
+        user = self._owner(document.freelancer_id)
+        mail = signing_cancelled_mail(user.email, user.nome, document.kind, document.numero)
+        if not self.sender.send(mail):
+            _log.warning(
+                "the cancellation mail of document %s was refused by the provider", document.id
+            )
 
     # ---- plumbing ----------------------------------------------------------------------
 

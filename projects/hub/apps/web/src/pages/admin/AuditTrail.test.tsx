@@ -54,6 +54,19 @@ const CLEARED: AdminAction = {
   created_at: '2026-09-21T10:00:00Z',
 }
 
+// A framework agreement's own action, recorded on the freelancer's own trail
+// (REB-407): its `kind` alone is the whole story, exactly like `deleted`/`restored`.
+const NOTICE_RECORDED: AdminAction = {
+  id: 'a4',
+  entity_type: 'freelancer',
+  entity_id: 'f1',
+  kind: 'notice_recorded',
+  admin_id: 'u1',
+  admin_nome: 'Ivan Bianchi',
+  payload: {},
+  created_at: '2026-09-24T09:00:00Z',
+}
+
 function mount({ canRevert = true, onReverted = () => {} }: { canRevert?: boolean; onReverted?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
@@ -90,6 +103,13 @@ describe('AuditTrail', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [DELETE]))
     mount()
     await screen.findByText('Eliminazione')
+    expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
+  })
+
+  it('shows a framework agreement’s own action (mail resent, cancelled, a notice) with its kind alone (REB-407)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [NOTICE_RECORDED]))
+    mount()
+    await screen.findByText('Disdetta registrata')
     expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
   })
 

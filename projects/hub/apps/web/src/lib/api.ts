@@ -265,7 +265,15 @@ export interface AdminAction {
   id: string
   entity_type: string
   entity_id: string
-  kind: 'overridden' | 'cleared' | 'deleted' | 'restored'
+  kind:
+    | 'overridden'
+    | 'cleared'
+    | 'deleted'
+    | 'restored'
+    /** A framework agreement's own actions (REB-407), recorded on entity `freelancer`. */
+    | 'mail_resent'
+    | 'document_cancelled'
+    | 'notice_recorded'
   admin_id: string
   admin_nome: string
   payload: {
@@ -482,6 +490,9 @@ export interface ContractDocument {
   sent_at: string | null
   signed_at: string | null
   notice_at: string | null
+  /** Why it was cancelled: the freelancer's own reason when they refused it, or who
+   *  cancelled it (REB-407). */
+  cancel_reason: string | null
   ha_pdf_firmato: boolean
   attivo: boolean
   rinnovo: string | null
@@ -799,6 +810,18 @@ export const admin = {
   closeMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/close`, { method: 'POST' }),
   /** «Invia per la firma» (REB-390): the document that can leave now goes to Documenso. */
   sendMatch: (matchId: string) => request<SendReport>(`/api/hub/matches/${matchId}/send`, { method: 'POST' }),
+  /** «Aggiorna stato» (REB-407): what Documenso says, applied as the webhook would. */
+  refreshDocument: (documentId: string) =>
+    request<ContractDocument>(`/api/hub/contract-documents/${documentId}/refresh`, { method: 'POST' }),
+  /** «Reinvia email»: the signing mail again, for a document still waiting. */
+  resendDocument: (documentId: string) =>
+    request<ContractDocument>(`/api/hub/contract-documents/${documentId}/resend`, { method: 'POST' }),
+  /** «Annulla» on a framework agreement not signed yet. */
+  cancelDocument: (documentId: string) =>
+    request<ContractDocument>(`/api/hub/contract-documents/${documentId}/cancel`, { method: 'POST' }),
+  /** «Registra disdetta» on an active framework agreement. */
+  recordNotice: (documentId: string) =>
+    request<ContractDocument>(`/api/hub/contract-documents/${documentId}/notice`, { method: 'POST' }),
   /** A plain href, like `cvUrl`: the route answers an attachment behind the cookie. */
   contractPdfUrl: (documentId: string, firmato = false) =>
     `/api/hub/contract-documents/${documentId}/pdf${firmato ? '?firmato=true' : ''}`,

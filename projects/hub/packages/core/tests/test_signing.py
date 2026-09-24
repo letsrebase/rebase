@@ -22,7 +22,7 @@ from rebase_core.contracts.fields import ContractFailed, Value
 from rebase_core.contracts.render import Renderer
 from rebase_core.db import session_factory
 from rebase_core.documenso import Outcome, WebhookBody, outcome_from_webhook
-from rebase_core.errors import DocumensoFailed, InvalidState, SigningUnavailable
+from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
 from rebase_core.fiscal import FiscalService
 from rebase_core.mail import EmailSender, Mail, RecordingSender
 from rebase_core.matches import MatchService
@@ -1093,3 +1093,307 @@ def test_two_concurrent_finishes_download_and_mail_the_signed_copy_once(
     assert len(downloads) == 1
     copies = [mail for mail in sender.sent[before:] if mail.attachments]
     assert len(copies) == 2
+
+
+# ---- the recovery actions (REB-407) ------------------------------------------------------
+
+
+def _signed_framework(
+    clean: Session,
+    renderer: FakeRenderer,
+    fake: FakeDocumenso,
+    sender: RecordingSender,
+) -> tuple[UUID, UUID, MatchRead, str]:
+    """A match sent and its framework agreement signed on Documenso, the webhook never
+    heard: (admin, freelancer, match, envelope)."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    return admin_id, freelancer_id, match, envelope
+
+
+def test_refresh_applies_a_signature_the_webhook_never_delivered(clean: Session) -> None:
+    """Probe § 11.3: four attempts in 160 ms and then nothing. «Aggiorna stato» reads the
+    envelope and does everything the webhook and `finish` would have done."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _admin_id, freelancer_id, match, envelope = _signed_framework(clean, renderer, fake, sender)
+
+    read = _signing(clean, renderer, fake, sender).refresh(_framework_of(clean, freelancer_id).id)
+
+    assert (read.stato, read.attivo, read.ha_pdf_firmato, read.signed_at) == (
+        "firmato",
+        True,
+        True,
+        SIGNED_AT,
+    )
+    assert _framework_of(clean, freelancer_id).signed_pdf == fake.signed_pdf(envelope)
+    assert _letter_of(clean, match.id).stato == "inviato"
+
+
+def test_refresh_of_a_document_still_waiting_changes_nothing(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    mails = len(sender.sent)
+
+    read = _signing(clean, renderer, fake, sender).refresh(_framework_of(clean, freelancer_id).id)
+
+    assert read.stato == "inviato"
+    assert len(sender.sent) == mails
+
+
+def test_refresh_of_a_document_that_never_left_says_so(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer = FakeRenderer(draft=False)
+    _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    with pytest.raises(InvalidState, match="mai partito"):
+        _signing(clean, renderer, FakeDocumenso(), RecordingSender()).refresh(
+            _framework_of(clean, freelancer_id).id
+        )
+
+
+def test_resend_mails_the_same_link_again_and_leaves_a_trace(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    quadro = _framework_of(clean, freelancer_id)
+
+    _signing(clean, renderer, fake, sender).resend_mail(quadro.id, admin_id)
+
+    first, again = sender.sent[-2:]
+    assert first.subject == again.subject == "Da firmare: contratto quadro rebase"
+    assert quadro.signing_url is not None and quadro.signing_url in again.text
+    trail = AdminActionService(clean).timeline("freelancer", freelancer_id)
+    assert trail[0].kind == "mail_resent"
+
+
+def test_resend_refuses_a_document_that_is_not_waiting(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer = FakeRenderer(draft=False)
+    _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    with pytest.raises(InvalidState, match="aspetta la firma"):
+        _signing(clean, renderer, FakeDocumenso(), RecordingSender()).resend_mail(
+            _framework_of(clean, freelancer_id).id, admin_id
+        )
+
+
+def test_cancelling_a_framework_out_for_signature_cancels_its_envelope_first(
+    clean: Session,
+) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+
+    read = _signing(clean, renderer, fake, sender).cancel_document(
+        _framework_of(clean, freelancer_id).id, admin_id
+    )
+
+    assert (read.stato, read.cancel_reason) == ("annullato", "Annullato da rebase.")
+    assert fake.envelopes[envelope].status == "CANCELLED"
+    assert _letter_of(clean, match.id).stato == "in_attesa"
+    trail = AdminActionService(clean).timeline("freelancer", freelancer_id)
+    assert trail[0].kind == "document_cancelled"
+
+
+def test_a_cancel_documenso_refuses_leaves_the_document_as_it_was(clean: Session) -> None:
+    """The freelancer signed a moment before the admin pressed «Annulla»: Documenso
+    cancels only a `PENDING` envelope, and the hub changes nothing."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    admin_id, freelancer_id, _match, _envelope = _signed_framework(clean, renderer, fake, sender)
+    with pytest.raises(DocumensoFailed, match="Only pending documents can be cancelled"):
+        _signing(clean, renderer, fake, sender).cancel_document(
+            _framework_of(clean, freelancer_id).id, admin_id
+        )
+    assert _framework_of(clean, freelancer_id).stato == "inviato"
+
+
+def test_a_letter_is_cancelled_with_its_match_not_alone(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer = FakeRenderer(draft=False)
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    with pytest.raises(InvalidState, match="con il suo match"):
+        _signing(clean, renderer, FakeDocumenso(), RecordingSender()).cancel_document(
+            _letter_of(clean, match.id).id, admin_id
+        )
+
+
+def test_cancelling_a_match_in_signature_cancels_its_letters_envelope(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_letter_of(clean, match.id))
+
+    read = _signing(clean, renderer, fake, sender).cancel_match(match.id, admin_id)
+
+    assert (read.stato, read.lettera.stato) == ("annullato", "annullato")
+    assert _letter_of(clean, match.id).cancel_reason == "Annullato da rebase con il suo match."
+    assert fake.envelopes[envelope].status == "CANCELLED"
+    assert AdminActionService(clean).timeline("match", match.id)[0].kind == "match_cancelled"
+
+
+def test_cancelling_a_draft_match_needs_no_documenso(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer = FakeRenderer(draft=False)
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    read = _signing(clean, renderer, None, RecordingSender()).cancel_match(match.id, admin_id)
+    assert read.stato == "annullato"
+
+
+def test_a_notice_ends_the_active_framework_and_the_next_match_writes_a_new_one(
+    clean: Session,
+) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    active = _active_framework(clean, freelancer_id, admin_id)
+    renderer = FakeRenderer(draft=False)
+    signing = _signing(clean, renderer, FakeDocumenso(), RecordingSender())
+
+    read = signing.record_notice(active.id, admin_id)
+
+    assert (read.stato, read.attivo, read.notice_at) == ("disdetto", False, NOW)
+    assert _matches(clean, renderer).prefill(freelancer_id, company_id).quadro_necessario is True
+    with pytest.raises(InvalidState, match="attivo"):
+        signing.record_notice(active.id, admin_id)
+    with pytest.raises(NotFound):
+        signing.record_notice(UUID("00000000-0000-7000-8000-000000000000"), admin_id)
+
+
+# ---- the cancellation mail (REB-407) ------------------------------------------------------
+
+
+def test_cancelling_a_sent_framework_tells_the_freelancer_by_mail(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    quadro = _framework_of(clean, freelancer_id)
+    before = len(sender.sent)
+
+    _signing(clean, renderer, fake, sender).cancel_document(quadro.id, admin_id)
+
+    cancellations = [mail for mail in sender.sent[before:] if "annullat" in mail.subject.lower()]
+    assert len(cancellations) == 1
+    assert cancellations[0].to == "ada@studio.it"
+
+
+def test_cancelling_a_document_never_sent_mails_nobody(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer = FakeRenderer(draft=False)
+    _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    quadro = _framework_of(clean, freelancer_id)
+    sender = RecordingSender()
+
+    _signing(clean, renderer, None, sender).cancel_document(quadro.id, admin_id)
+
+    assert sender.sent == []
+
+
+def test_a_refused_cancellation_mail_does_not_undo_the_cancel(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    _sent(clean, renderer, fake, RecordingSender(), freelancer_id, company_id, admin_id)
+    quadro = _framework_of(clean, freelancer_id)
+
+    read = _signing(clean, renderer, fake, RefusingSender()).cancel_document(quadro.id, admin_id)
+
+    assert read.stato == "annullato"
+
+
+def test_cancelling_a_match_mails_only_a_letter_that_had_already_left(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    before = len(sender.sent)
+
+    _signing(clean, renderer, fake, sender).cancel_match(match.id, admin_id)
+
+    cancellations = [mail for mail in sender.sent[before:] if "annullat" in mail.subject.lower()]
+    assert len(cancellations) == 1
+
+
+def test_cancelling_a_match_whose_letter_still_waits_mails_nobody(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    before = len(sender.sent)
+
+    read = _signing(clean, renderer, fake, sender).cancel_match(match.id, admin_id)
+
+    assert read.lettera.stato == "annullato"
+    assert len(sender.sent) == before
+
+
+# ---- the lock order (REB-407) -------------------------------------------------------------
+
+
+def test_a_send_and_a_cancel_of_the_same_draft_never_leave_a_letter_annulled_with_a_live_envelope(
+    hub_engine: Engine, clean: Session
+) -> None:
+    """A send and a cancel of the same `bozza` match, at once, behind one gate on the
+    freelancer's row: whichever wins commits first, and the other then sees its result,
+    never a stale `bozza`. Either the cancel wins (and the send that follows finds
+    nothing left to send, an `InvalidState`), or the send wins (and the cancel that
+    follows finds the match `in_firma` and cancels its now-live envelope, `cancel_match`'s
+    other branch) -- never a letter `annullato` in the hub whose envelope is still live
+    on Documenso.
+
+    An active framework agreement is set up first, so the match's own letter, not the
+    framework agreement, is what a send dispatches: the letter's own `documenso_id` then
+    tells the two outcomes apart."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    factory = session_factory(hub_engine)
+    gate, sender_session, canceller_session = factory(), factory(), factory()
+    results: dict[str, object] = {}
+    errors: list[BaseException] = []
+
+    def send() -> None:
+        try:
+            results["send"] = _signing(
+                sender_session, renderer, fake, RecordingSender()
+            ).send_match(match.id, admin_id)
+        except InvalidState as exc:
+            results["send"] = exc
+        except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
+            errors.append(exc)
+
+    def cancel() -> None:
+        try:
+            results["cancel"] = _signing(
+                canceller_session, renderer, fake, RecordingSender()
+            ).cancel_match(match.id, admin_id)
+        except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
+            errors.append(exc)
+
+    try:
+        gate.execute(select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update())
+        sender_worker = threading.Thread(target=send)
+        canceller_worker = threading.Thread(target=cancel)
+        sender_worker.start()
+        sender_worker.join(timeout=0.5)
+        assert sender_worker.is_alive(), "the send did not wait on the freelancer's row"
+        canceller_worker.start()
+        canceller_worker.join(timeout=0.5)
+        assert canceller_worker.is_alive(), "the cancel did not wait on the freelancer's row"
+        gate.commit()
+        sender_worker.join(timeout=5)
+        canceller_worker.join(timeout=5)
+        assert not sender_worker.is_alive() and not canceller_worker.is_alive()
+    finally:
+        gate.close()
+        sender_session.close()
+        canceller_session.close()
+    assert not errors, errors
+    clean.expire_all()
+    letter = _letter_of(clean, match.id)
+    if letter.documenso_id is None:
+        # the cancel won the race before any send ever created an envelope.
+        assert isinstance(results.get("send"), InvalidState)
+    elif letter.stato == "annullato":
+        # the send won the race, and the cancel that followed cancelled its live
+        # envelope rather than merely annulling the row.
+        assert fake.envelopes[letter.documenso_id].status == "CANCELLED"
