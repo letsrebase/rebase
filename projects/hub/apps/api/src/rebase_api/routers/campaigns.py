@@ -4,11 +4,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 
 from rebase_api.deps import AdminDep, CampaignSenderDep, SessionDep, SettingsDep
-from rebase_api.ratelimit import spend_one
 from rebase_core.campaigns.optouts import TOKEN_MAX_LENGTH, OptoutService
 from rebase_core.campaigns.schemas import (
     AudiencePreview,
@@ -39,10 +38,14 @@ def unsubscribe_page(t: Token, settings: SettingsDep) -> RedirectResponse:
 
 
 @public.post("/disiscrizione", response_model=Ack)
-def unsubscribe(t: Token, request: Request, session: SessionDep) -> Ack:
+def unsubscribe(t: Token, session: SessionDep) -> Ack:
     """The page's button and RFC 8058's one-click POST. The same answer for a token that
-    matched and one that did not, so a guess learns nothing."""
-    spend_one(request)
+    matched and one that did not, so a guess learns nothing.
+
+    No `spend_one`: Gmail and Yahoo send the one-click POST from a few server
+    addresses, and the sign-up limiter's five a minute per address would turn the
+    sixth opt-out of a minute into a 429, silently lost. Nothing here needs it: the
+    token is 256 random bits, so guessing is pointless, and the write is idempotent."""
     OptoutService(session).unsubscribe(t)
     return Ack()
 

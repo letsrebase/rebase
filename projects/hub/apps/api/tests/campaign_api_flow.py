@@ -45,6 +45,11 @@ def admin_user(session: Session) -> User:
 
 
 def recipient_row(session: Session, token: str) -> None:
+    recipient_rows(session, {token: "ada@studio.it"})
+
+
+def recipient_rows(session: Session, addresses: dict[str, str]) -> None:
+    """One campaign with one recipient per `token: address` pair."""
     admin = admin_user(session)
     campaign = Campaign(
         created_by=admin.id,
@@ -61,14 +66,15 @@ def recipient_row(session: Session, token: str) -> None:
     )
     session.add(campaign)
     session.flush()
-    session.add(
-        CampaignRecipient(
-            campaign_id=campaign.id,
-            email="ada@studio.it",
-            tipo="freelancer",
-            codice="1",
-            prima={},
-            disiscrizione_token=token,
+    for token, email in addresses.items():
+        session.add(
+            CampaignRecipient(
+                campaign_id=campaign.id,
+                email=email,
+                tipo="freelancer",
+                codice="1",
+                prima={},
+                disiscrizione_token=token,
+            )
         )
-    )
     session.commit()

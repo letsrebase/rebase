@@ -2,7 +2,12 @@
 
 import re
 
-from campaign_api_flow import admin_user, recipient_row, tidy  # noqa: F401  (fixture)
+from campaign_api_flow import (  # noqa: F401  (fixture)
+    admin_user,
+    recipient_row,
+    recipient_rows,
+    tidy,
+)
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -37,6 +42,24 @@ def test_the_one_click_post_opts_out_and_a_wrong_token_answers_the_same(
     assert wrong.status_code == right.status_code == 200
     assert wrong.json() == right.json() == {"ok": True}
     assert tidy.get(CampaignOptout, "ada@studio.it") is not None
+
+
+def test_seven_one_click_posts_in_a_row_from_one_client_all_opt_out(
+    client: TestClient,
+    tidy: Session,  # noqa: F811  (fixture)
+) -> None:
+    """Gmail and Yahoo send RFC 8058's one-click POST from a handful of server
+    addresses: the route must not spend the sign-up limiter's five a minute, or the
+    sixth opt-out of a minute would be a 429 and silently lost."""
+    addresses = {f"token-{n}": f"persona{n}@studio.it" for n in range(7)}
+    recipient_rows(tidy, addresses)
+    for token in addresses:
+        answer = client.post(
+            f"/api/hub/campagne/disiscrizione?t={token}", data={"List-Unsubscribe": "One-Click"}
+        )
+        assert answer.status_code == 200, answer.text
+    tidy.expire_all()
+    assert {o.email for o in tidy.query(CampaignOptout)} == set(addresses.values())
 
 
 def login_admin(client: TestClient, sender: RecordingSender, session: Session) -> None:
