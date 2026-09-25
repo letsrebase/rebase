@@ -105,7 +105,11 @@ at
 `https://preview.letsrebase.com/api/hub/documenso/webhook`. Documenso retries a failed
 delivery only at once, so an event lost while the API restarts stays lost: «Aggiorna
 stato» on «Match e contratti» reads the envelope and applies it, and an admin presses it
-on a document that has waited for its signature longer than expected. Without
+on a document that has waited for its signature longer than expected. A completion is
+confirmed with Documenso itself, over the hub's own API token, before the document
+counts as signed (REB-431): the webhook alone only marks which document to confirm, so a
+secret leaked to somebody who never held the token still cannot forge a signature.
+Without
 `REBASE_DOCUMENSO_URL` and `REBASE_DOCUMENSO_API_TOKEN` signing answers 503, and a text
 whose front matter says `status: draft` never leaves unless `REBASE_CONTRACTS_ALLOW_DRAFT`
 is true; only the preview's `.env` sets it, and even there it stays false while both

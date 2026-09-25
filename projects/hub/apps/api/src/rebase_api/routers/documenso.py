@@ -10,10 +10,13 @@ answers 422, not 401.
 
 The answer is fast on purpose. Documenso gives up on a delivery after ten seconds and
 retries at once, three times within about 160 ms, then never again (probe § 5): the
-route only locks the freelancer's row, its match and the document, in that order, moves
-the document and commits (`SigningService.apply`), and the slow part (the sealed copy's
-download, the two mails, the letters a framework agreement releases) runs after the
-response, in a session of its own (`SigningService.finish`).
+route only locks the freelancer's row, its match and the document, in that order, and
+commits (`SigningService.apply`), and the slow part (the sealed copy's download, the two
+mails, the letters a framework agreement releases) runs after the response, in a session
+of its own (`SigningService.finish`). A completion is not moved by `apply`: the secret
+above travels in clear, so a `DOCUMENT_COMPLETED` only tells `apply` which document to
+hand to `finish`, which confirms it with Documenso itself, over the hub's own API token,
+before it counts as `firmato` (REB-431) -- a forged event then needs the token too.
 Every well-formed delivery is answered 200, handled or not, so Documenso never retries
 an event the hub chose to ignore. A delivery the hub missed entirely is recovered by
 «Aggiorna stato».
