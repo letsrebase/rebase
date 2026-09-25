@@ -4,7 +4,9 @@ Date: 2026-09-25. Status: approach and every section below approved in conversat
 Ivan on 2026-09-25 (provisioning when the match turns active, rebase as the customer,
 the minimum to log hours, a dedicated token, expected days on the match at eight hours a
 day, the reporting clause in the letter, the report per day, week and month with the
-invoices, and the same reads over MCP); this record is written for his review.
+invoices, and the same reads over MCP); this record is written for his review, amended
+the same day after an independent review of the text against the code (the lock and the
+commit order of § 2.3, where the letter's dates live, the timeout, the status codes).
 Tracker: REB-489 in `Report a match's hours from the freelancer's own CRM space`
 (P-REB-42). Builds on the matches spec (`2026-09-23-matches-and-contract-signing-design.md`,
 REB-387) and on the simpler-matches design (`2026-09-25-simpler-matches-and-mcp-design.md`,
@@ -24,8 +26,10 @@ and date and nothing else: the registry it reads (`rebase_core/pigro.py`, `GET
 /api/tenants/`) is read-only by design and says nothing about what a space holds. Every
 API of a space authenticates a user of that space, by session or by personal token, so
 the hub is nobody inside one and a new door is needed whatever the approach. And the
-letter of engagement names the commitment as free text (`impegno`, `unita`), so a report
-that compares hours with «the letter's days» needs a number that does not exist yet.
+letter of engagement names the commitment as free text (`impegno`, `unita`), and keeps
+its dates and fee only as the page prints them (`ContractDocument.data` holds
+`LetteraFields.to_fields()`: «1° ottobre 2026», a JSON number), so a report that
+compares hours with «the letter's days» needs numbers that do not exist yet.
 
 ## 1. The decisions, one paragraph each
 
@@ -64,17 +68,23 @@ freelancer who is a collaborator in somebody else's space but owns none gets one
 their own. A new space is born exactly as the signup makes one (`TenantService.provision`:
 no password, the freelancer its first admin, the defaults, the emitter with their name)
 and the CRM's own welcome mail with the link that enters is what tells them; the hub's
-mail says where the hours go.
+mail says where the hours go. Creating a space takes seconds to tens of seconds (a
+`CREATE DATABASE`, the whole Alembic history, the defaults): the hub's call allows for
+it (§ 3.3), and nothing a person is waiting on runs it.
 
-**Expected days are a number on the match.** `giorni_previsti`, an optional integer an
-admin fills in at «Crea match» next to the fee, stored on the match and sent to the CRM
-as `ore_preventivate` at eight hours a day. The letter's `impegno` stays free text; the
-report says «N giorni previsti, 8 ore al giorno» and measures against it. A match without
-it gets the hours and no progress bar.
+**Expected days are a number on the match, and so are the letter's dates and fee.**
+`giorni_previsti`, an optional integer an admin fills in at «Crea match» next to the
+fee, stored on the match and sent to the CRM as `ore_preventivate` at eight hours a day.
+Beside it the match keeps `lettera_data_inizio`, `lettera_data_fine` and
+`lettera_compenso` as a date, a date and a decimal, written at creation from the same
+fields the letter is typeset from: the printed copy in `ContractDocument.data` is for
+the page, these are for the CRM and the report. The letter's `impegno` stays free text;
+the report says «N giorni previsti, 8 ore al giorno» and measures against it. A match
+without an estimate gets the hours and no progress bar.
 
 **Transparency is written where the freelancer reads.** The deal's and the customer's
 notes say rebase created them for letter n. X and reads the hours of that deal; the
-space's timeline records «rebase» as the actor, not «sistema»; the member area shows
+space's timeline records «rebase» as the actor, not «Sistema»; the member area shows
 «Le tue ore su Pigro» under the active letter with the same sentence; the mail says it
 again. The letter itself carries the obligation (below), so nobody learns it from a
 note.
@@ -90,12 +100,16 @@ on, and the hub groups by ISO week and by month, sums, and compares with the exp
 days. The hub caches nothing: an hour the freelancer deletes is gone from the next
 opening, and there is no second copy of the register to keep honest.
 
-**A CRM that does not answer is a state on the match, retried by the sweep.** Linking
-is attempted right after the match turns active; a refusal or a timeout leaves the match
-`errore` with the sentence, the existing `contracts-sweep` (every ten minutes) retries
-every `da_collegare` and `errore` match, and «Riprova» on the match does it at once.
-Nothing blocks the signature: the document is `firmato` and the match `attivo` whether
-or not the CRM answered.
+**A CRM that does not answer is a state on the match, retried by the sweep; a CRM
+that refuses is a state the sweep leaves alone.** Linking is attempted right after the
+match turns active, in the background. A refusal of the connection, a timeout or an
+answer that is not the shape leaves the match `errore` with the sentence, and the
+existing `contracts-sweep` (every ten minutes) retries every `da_collegare` and
+`errore` match. A `409` or a `422` from the CRM (the deal was deleted in the space, a
+body the CRM will never accept) leaves the match `rifiutato` with the CRM's own
+sentence: the sweep skips it, «Riprova» on the match tries again when an admin decides
+to. Nothing blocks the signature: the document is `firmato` and the match `attivo`
+whether or not the CRM answered.
 
 **The same reads and the retry exist over the hub's MCP server.** `get_match_report`
 and `link_match_to_pigro`, calling the same core service the admin API calls, for an
@@ -111,21 +125,28 @@ exactly as `GET /api/tenants/` behaves without `registry_token`): a self-hosted
 installation exposes nothing new. The registry token is not widened: it keeps listing
 spaces and answering the member question, and a hub that holds only it cannot create a
 space or read an hour. Both tokens are generated with `openssl rand -hex 32` and set on
-the CRM's host and the hub's (`REBASE_PIGRO_ENGAGEMENTS_TOKEN`, § 4).
+the CRM's host and the hub's (`REBASE_PIGRO_ENGAGEMENTS_TOKEN`, § 4). The door also
+needs `PIGROCRM_PUBLIC_URL`, which production and the preview already set for their
+mails: without it the door answers `503` («PIGROCRM_PUBLIC_URL non configurato»)
+rather than hand the hub a relative link.
 
 ### 2.2 The registry table
 
 `rebase_engagements`, in the registry database beside `tenants` and the identity tables,
 on `TenantsBase` so `ensure_tenants_database`'s `create_all` creates it at the first boot
-after the deploy (the module is imported in `tenants/database.py` the way
-`identity.models` is, or `create_all` never sees it):
+after the deploy. `tenants/database.py` imports the models module by its full path
+(`pigrocrm.core.engagements.models`), the way it imports `identity.models`, and the
+`engagements` package's `__init__` exports nothing: its service imports
+`tenants.service`, which imports `tenants.database`, and a re-export from `__init__`
+would close that circle against a half-initialised module.
 
 | column | type | notes |
 |---|---|---|
-| `match_id` | UUID, primary key | the hub's match id, the idempotency key |
-| `tenant_id` | UUID, FK `tenants.id` | the space |
+| `id` | UUID, primary key | the registry's own key, as every `TenantsBase` row has (`PrimaryKeyMixin`) |
+| `match_id` | UUID, unique, not null | the hub's match id, the idempotency key |
+| `tenant_id` | UUID, FK `tenants.id`, indexed | the space |
 | `customer_id` | UUID, nullable | the customer «rebase» in that space |
-| `deal_id` | UUID, nullable | the deal for the letter; `NULL` while step 2 of § 2.3 has not completed |
+| `deal_id` | UUID, nullable | the deal for the letter; `NULL` while step 4 of § 2.3 has not completed |
 | `created_at`, `updated_at` | timestamptz | |
 
 The registry has no Alembic history (`create_all`, `tenants/database.py`); the table is
@@ -145,70 +166,92 @@ Bearer `engagements_token`, on the root installation (no space prefix), like
     "compenso": "400.00", "giorni_previsti": 40
   },
   "rebase": {
-    "ragione_sociale": "rebase S.r.l.", "partita_iva": "...", "codice_fiscale": "...",
-    "sede": "...", "pec": "...", "codice_destinatario": "..."
+    "ragione_sociale": "rebase S.r.l.", "partita_iva": "01234567890", "codice_fiscale": "...",
+    "indirizzo": "...", "pec": "...", "codice_sdi": "..."
   }
 }
 ```
 
-`data_fine`, `giorni_previsti`, `pec` and `codice_destinatario` may be null. The answer,
-`201` on the first call and `200` on every later one with the same `match_id`:
+`data_fine`, `giorni_previsti`, `partita_iva`, `codice_fiscale`, `indirizzo`, `pec` and
+`codice_sdi` may be null. `nome` and `cognome` take up to 120 characters (the hub's
+`NAME_MAX_LENGTH`), `indirizzo` 255, `partita_iva` exactly eleven digits or null,
+`codice_sdi` exactly seven characters or null: the CRM's own customer rules
+(`CustomerService._check_fiscal`), applied at the door so a value the space would refuse
+is a `422` with the field's name, never a customer that half exists. The answer, `201`
+on the first call and `200` on every later one with the same `match_id`:
 
 ```json
 {
   "slug": "ada-lovelace", "url": "https://pigro.letsrebase.com/ada-lovelace/app/",
   "customer_id": "...", "deal_id": "...",
-  "deal_url": "https://pigro.letsrebase.com/ada-lovelace/app/deals/<id>",
+  "deal_url": "https://pigro.letsrebase.com/ada-lovelace/app/deal/<id>",
   "spazio_creato": true, "creato": true
 }
 ```
 
+`url` and `deal_url` are built from `PIGROCRM_PUBLIC_URL`; the deal's page is the SPA's
+`/<slug>/app/deal/<id>` route.
+
 What the service (`pigrocrm.core.engagements.EngagementService`, in core, called by the
 router and by nothing else yet) does, in order:
 
-1. **Lock by address.** `pg_advisory_xact_lock(hashtext(lower(email)))` on the registry
-   session, so two letters of the same freelancer activating together create one space
-   and not two, and two retries of the same match wait for each other.
-2. **An engagement row already there** answers its ids (`creato: false`), after checking
-   the deal still exists in the space: a deal the freelancer soft-deleted answers `409`
-   with «Il deal di questa lettera è stato eliminato nello spazio.», which the hub shows
-   as the match's error. Nothing is recreated behind the freelancer's back.
+1. **Lock by address, for the whole call.** A session-level advisory lock,
+   `pg_advisory_lock(hashtext(:email))` with the address lowercased and stripped, taken
+   on a connection of the registry engine that the service keeps open until the end and
+   releases with `pg_advisory_unlock` in a `finally`. Not a transaction-level lock: the
+   registry session commits twice below (`TenantService.provision` commits on its own,
+   and the row is committed before the space is touched), and `pg_advisory_xact_lock`
+   would let go at the first of them. Two letters of the same freelancer activating
+   together therefore create one space and not two, and two retries of the same match
+   wait for each other through the whole of steps 2 to 6.
+2. **An engagement row already there.** With `deal_id` set: the deal is read in the
+   space; alive, the row's ids are answered (`creato: false`); gone (soft-deleted or
+   missing), the answer is `409` with «Il deal di questa lettera è stato eliminato nello
+   spazio.», and nothing is recreated behind the freelancer's back. With `deal_id`
+   `NULL`, a previous call stopped between steps 3 and 6: the call resumes at step 4
+   in that row's space.
 3. **The space.** The registry row whose `owner_email` equals the address, case-insensitively,
-   oldest first; none means `TenantService.provision` with `TenantSignup(slug, nome="Ada
-   Lovelace", email, membro=True)`, the slug from `slugify("ada lovelace")` cut to the
-   slug's maximum, with `-2`, `-3`... appended while `availability` says the name is
-   taken or reserved. Then exactly what the signup route does after provisioning (the
-   magic link and the welcome mail through `MagicLinkService.request` and `welcome_mail`),
-   moved out of the router into a function both call, so a space born here and a space
-   born at the signup are told the same way. The engagement row is written with the
-   `tenant_id` and no deal yet, and committed: a failure from here on leaves a row that
-   says «space found, deal missing», which the next call completes.
-4. **The customer «rebase»**, in the space, as `Actor.rebase()` (§ 2.5): the customer
-   whose `partita_iva` is rebase's, or, while `REBASE_SIGNER_JSON` carries no VAT number
-   yet, whose `ragione_sociale` is rebase's; created if missing with the fiscal fields of
-   the body and the note «Creato da rebase per la lettera n. 3/2026. rebase legge le ore
-   dei deal di questo cliente per rendicontare gli incarichi.» An existing customer is
-   left as it is: its fields are the freelancer's to edit.
-5. **The deal**, in the space: name `Lettera n. 3/2026 · Backend developer per Acme
-   S.r.l.`, on that customer, `tariffa_oraria = compenso / 8` (`Decimal`, the column's
-   six places), `ore_preventivate = giorni_previsti * 8` or null, `data_chiusura_prevista
-   = data_fine`, `owner_id` the space's admin whose email is the freelancer's, the
-   default open stage, and the note «Creato da rebase per la lettera n. 3/2026 con Acme
-   S.r.l. rebase legge le ore di questo deal per la rendicontazione al cliente.» Before
-   creating, a deal with that exact name under that customer is reused: it is the deal a
-   previous call created and failed to record (a failure between steps 5 and 6), and the
-   name is deterministic on purpose.
+   oldest first; none means `TenantService.provision` with `TenantSignup(slug, nome, email,
+   membro=True)`, `nome` being `f"{nome} {cognome}"` cut to the signup's 200 characters,
+   the slug from `slugify(f"{nome} {cognome}")` with `-2`, `-3`... in place of its tail
+   while `availability` says the name is taken or reserved. Then exactly what the signup
+   route does after provisioning (the magic link and the welcome mail,
+   `MagicLinkService.request` and `welcome_mail`), moved out of the router into a
+   function both call, so a space born here and a space born at the signup are told the
+   same way. The engagement row is written with the `tenant_id` and no deal yet, and
+   committed: a failure from here on leaves a row that says «space found, deal
+   missing», which step 2 resumes.
+4. **The customer «rebase»**, in the space, as `Actor.rebase()` (§ 2.5): found by
+   `CustomerRepository.match_by_fiscal_id` on the VAT number when the body carries one,
+   else by `ragione_sociale` compared exactly among the live customers (the repository's
+   list is a trigram search, so the exact comparison is done on the rows it answers);
+   created if missing with the fiscal fields of the body and the note «Creato da rebase
+   per la lettera n. 3/2026. rebase legge le ore dei deal di questo cliente per
+   rendicontare gli incarichi.» An existing customer is left as it is: its fields are
+   the freelancer's to edit.
+5. **The deal**, in the space: name `deal_name(numero, ruolo, azienda)`, that is
+   `Lettera n. 3/2026 · Backend developer per Acme S.r.l.` with the role cut to 80
+   characters and the company to 100, so the longest inputs stay under the column's 255;
+   on that customer, `tariffa_oraria = compenso / 8` (`Decimal`, the column's six
+   places), `ore_preventivate = giorni_previsti * 8` or null, `data_chiusura_prevista =
+   data_fine`, `owner_id` the space's admin whose email is the freelancer's, the default
+   open stage, and the note «Creato da rebase per la lettera n. 3/2026 con Acme S.r.l.
+   rebase legge le ore di questo deal per la rendicontazione al cliente.» Before
+   creating, a live deal with that exact name under that customer is reused: it is the
+   deal a previous call created and failed to record (a failure between steps 5 and 6),
+   and the name is deterministic on purpose.
 6. **The row completed** with `customer_id` and `deal_id`, committed, answered.
 
 `422` for a body that does not validate, `401` for a wrong or missing bearer, `404` when
-the token is not configured, `503` with the sentence when the space's database cannot be
-created or reached. The route is not throttled per client: the only caller holds the
-token.
+the token is not configured, `503` when `PIGROCRM_PUBLIC_URL` is empty or the space's
+database cannot be created or reached. The route is not throttled per client: the only
+caller holds the token.
 
 ### 2.4 `GET /api/rebase/engagements/{match_id}/report`
 
 Same bearer. Query `da` and `a` (`YYYY-MM-DD`), both optional: `da` defaults to the
-deal's creation date, `a` to today, and a span over 400 days is a `422`. The answer:
+deal's creation date, `a` to today (`pigrocrm.core.db.today_local()`, the CRM's own
+clock), `a` before `da` or a span over 800 days is a `422`. The answer:
 
 ```json
 {
@@ -229,19 +272,25 @@ deal's creation date, `a` to today, and a span over 400 days is a `422`. The ans
 One row per time entry (a day with two entries answers two rows; the hub sums), read
 through `TimeEntryService.list` with `deal_id`, `da`, `a`, paged to the end, each entry's
 `invoice_line_id` resolved to its invoice (`invoice_lines.invoice_id`, then `invoices`:
-type, year and number, state, payment state, date) in one query per report. `stato`
-is `DealTimeSummary.stato` as the deal's own page shows it. A row whose deal is gone
-(soft-deleted) answers `409` with the sentence of § 2.3 step 2; a `match_id` with no row
-answers `404`. Nothing else of the space is readable through this door: not the
-customers, not the other deals, not the invoices beyond the ones these hours sit on.
+type, year and number, state, payment state, `data_emissione`) in one query per report.
+`ore_fatturate` follows the CRM's own definition of billed (`billed_entry_ids`: on a
+line of a `fattura` that is `emessa` and not deleted), so it agrees with the deal's own
+summary; an entry on a draft, a proforma or an annulled invoice still shows that
+invoice in `fattura`, and counts as not billed. `stato` is `DealTimeSummary.stato` as
+the deal's own page shows it. A row whose deal is gone answers `409` with the sentence
+of § 2.3 step 2; a `match_id` with no row answers `404`. Nothing else of the space is
+readable through this door: not the customers, not the other deals, not the invoices
+beyond the ones these hours sit on.
 
 ### 2.5 The actor «rebase»
 
 `ActorType` gains `"rebase"` and `Actor.rebase()` (no id, role `admin`, `full_access`
-false), used for everything § 2.3 writes in a space. The activities timeline, which
-today names a `system` actor «sistema», names this one «rebase», so the deal's own
-history reads «rebase ha creato il deal» and the freelancer knows who did what without
-opening the note. `Actor.system()` stays what it is, for the CRM's own jobs.
+false), used for everything § 2.3 writes in a space. The word a person reads lives in
+the SPA: `apps/web/src/components/Timeline.tsx`'s `ACTOR_META` names `system`
+«Sistema», and gains a `rebase` entry that names it «rebase», so the deal's own history
+reads who did what without opening the note. Core's `Activity.actor_type` is a plain
+`String(10)` with no check, so no space's schema changes. `Actor.system()` stays what it
+is, for the CRM's own jobs.
 
 ### 2.6 What is not touched
 
@@ -254,26 +303,35 @@ the deal as any other. No change to the registry token's routes.
 
 ### 3.1 Data model
 
-New columns on `matches`, in the next free migration number when the branch lands
-(`0020_campaigns.py` is taken by PR #407: refetch `main` and renumber before merging,
-the lesson of two open PRs that both took `0006` on 2026-09-15). The migration also
-backfills `pigro_stato = 'da_collegare'` on every match already `attivo`, so an
-engagement signed before this ships is linked by the first sweep after the deploy:
+New columns on `matches`, migration `0021_match_pigro_link.py` with `down_revision`
+`0019` on the branch (`0020_campaigns.py` is PR #407's, on its own branch: whichever
+lands second re-points its `down_revision` at the other before merging, the lesson of
+two open PRs that both took `0006` on 2026-09-15). The migration also backfills
+`pigro_stato = 'da_collegare'` on every match already `attivo`, so an engagement signed
+before this ships is linked by the first sweep after the deploy:
 
 | column | type | meaning |
 |---|---|---|
 | `giorni_previsti` | integer, nullable, `CHECK (giorni_previsti BETWEEN 1 AND 366)` | expected billable days, an admin's estimate |
-| `pigro_stato` | varchar(20), nullable, `CHECK IN ('da_collegare', 'collegato', 'errore')` | `NULL` until the match turns active |
+| `lettera_data_inizio` | date, nullable | the letter's start, as `MatchCreate.lettera.data_inizio` came in |
+| `lettera_data_fine` | date, nullable | the letter's end, when it has one |
+| `lettera_compenso` | numeric(7, 2), nullable | the letter's daily fee |
+| `pigro_stato` | varchar(20), nullable, `CHECK IN ('da_collegare', 'collegato', 'errore', 'rifiutato')` | `NULL` until the match turns active |
 | `pigro_slug` | varchar(32), nullable | the space |
 | `pigro_deal_id` | UUID, nullable | the deal |
 | `pigro_url` | text, nullable | the deal's page, as the CRM answered it |
-| `pigro_collegato_il` | timestamptz, nullable | when `collegato` was reached |
-| `pigro_errore` | text, nullable | the sentence of the last failure, cleared on success |
-| `pigro_tentato_il` | timestamptz, nullable | the last attempt, for the sweep's log and the admin's eye |
+| `pigro_linked_at` | timestamptz, nullable | when `collegato` was reached |
+| `pigro_attempted_at` | timestamptz, nullable | the last attempt, for the sweep's log and the admin's eye |
+| `pigro_errore` | text, nullable | the sentence of the last failure or refusal, cleared on success |
+| `pigro_mail_sent_at` | timestamptz, nullable | when the freelancer's mail (§ 3.7) was accepted by the provider |
 
-`MatchRead` and the list item carry `giorni_previsti` and the six `pigro_*` fields;
-`MatchCreate` gains `giorni_previsti: int | None` beside `cliente` and `lettera`, and
-the MCP `create_match` of PR #416 gains the same optional argument.
+The three `lettera_*` columns are written by `MatchService.create` from `data.lettera`,
+where the ISO date and the `Decimal` are at hand; a match created before 0021 has them
+`NULL`, and `payload` (§ 3.3) reads its letter's printed data instead. `MatchRead`
+carries `giorni_previsti`, the three `lettera_*` values and the eight `pigro_*` fields;
+`MatchListItem` carries `giorni_previsti`, `pigro_stato` and `pigro_url`; `MatchCreate`
+gains `giorni_previsti: int | None` beside `cliente` and `lettera`, and the MCP
+`create_match` of PR #416 gains the same optional argument.
 
 ### 3.2 Settings
 
@@ -281,57 +339,92 @@ the MCP `create_match` of PR #416 gains the same optional argument.
 existing `pigro_api_url` and `pigro_registry_token`. Empty means the feature is off, as
 signing is off without Documenso: a match that turns active gets `pigro_stato =
 'da_collegare'` all the same, the link attempt is skipped and logged once at info level,
-the match card says «Consuntivo non configurato su questo ambiente», and the report route
-answers `503` with that sentence. Config, `.env.example` and the compose
-`x-api-environment` list all gain the variable (a variable missing from the compose list
-never reaches the container, REB-215).
+the match card says «Consuntivo non configurato su questo ambiente», and the report and
+link routes answer `503` with that sentence (the split `routers/pigro.py` already makes:
+`503` for a CRM not configured, `502` for a CRM that did not answer). Config,
+`.env.example` and the compose `x-api-environment` list all gain the variable (a variable
+missing from the compose list never reaches the container, REB-215).
 
 ### 3.3 The link: `rebase_core/engagements.py`
 
-`EngagementService(session, settings, http, now, sender, signer)`, the hub's twin of the
-registry client, through the same `HttpCall` seam (`rebase_core/http.py`: no redirects,
-a bounded body, a timeout). Three methods:
+`EngagementService(session, settings, http, *, sender=None, now=utcnow, today=rome_today)`,
+the hub's twin of the registry client, through the same `HttpCall` seam
+(`rebase_core/http.py`: no redirects, a bounded body) with one difference: the seam's
+`urllib_call` times out at ten seconds, and the first `PUT` for a new freelancer
+provisions a database, so the service is handed `urllib_engagements_call`, the same
+opener with a 90-second timeout, the way `urllib_download_call` varies the byte cap.
+`PigroUnavailable` and its four sentences («Pigro non risponde.», «Pigro non ha
+risposto (N).», «Pigro ha risposto qualcosa di troppo lungo.», «Pigro ha risposto
+qualcosa che non è un elenco.») become module constants of `pigro.py` so both clients
+say the same words. Three methods and a helper:
 
-- `payload(match)` builds § 2.3's body from the match, its company, its letter's data
-  (`ContractDocument.data` of the match's letter: `numero`, `ruolo`, `data_inizio`,
-  `data_fine`, `compenso`), the freelancer's user (email, nome, cognome), `giorni_previsti`,
-  and rebase's own data from `REBASE_SIGNER_JSON` (`rebase-ragione-sociale`, `-piva`,
-  `-cf`, `-sede`, `-pec`, `-codice-destinatario`). A match whose letter is not `firmato`
-  is refused: the link exists only for an active match.
-- `link(match_id, admin_id | None)` locks the match, refuses a match that is not
-  `attivo` (`ValidationFailed`, «Si collega a Pigro solo un match attivo.»), puts the
-  call, and writes the outcome: `collegato` with slug, deal id, url and date, or
-  `errore` with the sentence (`PigroUnavailable`'s own sentences for a refused connection,
-  a non-2xx, a body that is not the shape; the CRM's `detail` for a `409`). Sets
-  `pigro_tentato_il` either way. On the first `collegato` it sends the freelancer's mail
-  (§ 3.7) through the hub's sender, once: a retry that finds `collegato` already set sends
-  nothing. Records an `AdminAction` of kind `pigro_link` with the outcome when an admin
-  asked for it («Riprova», the MCP tool), so the audit trail of the match says who retried.
+- `payload(match, letter, user, company)` builds § 2.3's body: the freelancer's user
+  (email, nome, cognome), `giorni_previsti`, the letter's `numero` and `ruolo`
+  (`ContractDocument.numero`, `data["ruolo"]`), the company's name, the dates and the
+  fee from the match's `lettera_*` columns, or, when those are `NULL` (a match older
+  than 0021), from the letter's printed data through `parse_italian_date` (the inverse
+  of `contracts.fields.italian_date`, over the same `MONTHS`) and `amount(data, FEE)`;
+  and rebase's own data from `REBASE_SIGNER_JSON` (`rebase-ragione-sociale`,
+  `rebase-piva`, `rebase-cf`, `rebase-sede`, `rebase-pec`,
+  `rebase-codice-destinatario`), normalised for the CRM: the VAT number compacted and
+  stripped of a leading `IT`, sent only when it is eleven digits; `sede` as `indirizzo`
+  cut to 255; `codice_destinatario` as `codice_sdi` only when it is seven characters.
+  A match whose letter is not `firmato` is refused: the link exists only for an active
+  match.
+- `link(match_id, admin_id=None)`: under the match's lock (`MatchService.lock_match`),
+  refuse a match that is not `attivo` (`InvalidState`, «Si collega a Pigro solo un
+  match attivo.», a `409`); without a token, set `da_collegare` if unset, log once at
+  info, commit and return; otherwise build the payload, set `pigro_attempted_at =
+  now()`, commit, and release the lock. Then, with no row lock held (the house rule of
+  `_confirm_completion`, a network call), `PUT
+  {pigro_api_url}/api/rebase/engagements/{match_id}` with `Authorization: Bearer`,
+  `Content-Type: application/json`. Then lock the match again, re-read it, and write the
+  outcome only if it is not already `collegato`: `201` or `200` → `collegato` with slug,
+  deal id, url, `pigro_linked_at = now()`, `pigro_errore = None`; `409` or `422` →
+  `rifiutato` with the body's `detail`; any other status, an exception from `http`, a
+  body that is not the shape → `errore` with the seam's sentence. Commit. Then, for a
+  `collegato` match whose `pigro_mail_sent_at` is `NULL`, send the freelancer's mail
+  (§ 3.7) and stamp the column when the sender accepts it, in a commit of its own, so a
+  provider that refuses leaves the column `NULL` for the next call. With `admin_id`,
+  `AdminActionService.record(entity_type="match", entity_id, kind="pigro_link",
+  admin_id, payload={"esito": stato, "errore": ...})`, so the audit trail of the match
+  says who retried. Answer `MatchService.get`.
 - `link_pending()` lists every `attivo` match with `pigro_stato` in (`da_collegare`,
-  `errore`) and calls `link` on each, answering how many linked and how many failed, for
-  the sweep.
+  `errore`), or `collegato` with `pigro_mail_sent_at` `NULL`, and calls `link` on each,
+  answering how many linked and how many failed, for the sweep. A `rifiutato` match is
+  not on the list.
+- `report(match_id, da=None, a=None)` (§ 3.5).
 
 Where it is called from: `SigningService._confirm_completion` sets `pigro_stato =
-'da_collegare'` on the same commit that sets `attivo`, and the callers that run after a
-completion (`finish`, `sweep`) call `link` once the commit is through, in the same
-background step as the signed copy's download, so the webhook's response never waits on
-the CRM. `rebase contracts-sweep` calls `link_pending()` after its own work and prints
-«, N match collegati a Pigro, M non riusciti» on its line. `POST /api/hub/matches/{id}/pigro/link`
-(admin) runs `link` now and answers the `MatchRead`, for «Riprova».
+'da_collegare'` on the same commit that sets `attivo`. `finish` (the webhook's
+background step and «Aggiorna stato») and `sweep` then call `link` when, re-reading the
+row after the confirmation, the match is `attivo` with `pigro_stato = 'da_collegare'`
+(`_confirm_completion` answers `True` for a rejection as well, so the state, not the
+return value, decides). `SigningService` takes the engagement service as one more
+collaborator, and the two places that build one, `signing_from_settings` (the webhook's
+background task, the CLI) and `deps.get_signing_factory` (which gains the API's
+`HttpCallDep`), hand it over; a `SigningService` built without one links nothing, as one
+without Documenso signs nothing. `rebase contracts-sweep` calls `link_pending()` after
+its own work and prints «, N match collegati a Pigro, M non collegati» on its line.
+`POST /api/hub/matches/{id}/pigro/link` (admin) runs `link` now and answers the
+`MatchRead`, for «Riprova»: the admin's browser waits on it, up to the 90 seconds a new
+space can take, and the button says so while it runs.
 
 ### 3.4 «Crea match»: the expected days
 
 On the conditions step of PR #416's three-step wizard, an optional number field
-«Giorni previsti» beside «Compenso», with the helper «Per il consuntivo: 8 ore al
-giorno. Il testo della lettera resta quello di «Impegno».» The check step lists it with
-the other conditions. Nothing changes in the letter's fields or its text from this
-number.
+«Giorni previsti» beside «Compenso», id `match-giorni_previsti`, with the helper «Per il
+consuntivo: 8 ore al giorno. Il testo della lettera resta quello di «Impegno».» It
+belongs to `MatchCreate`, not to the letter's form (`LetteraFields` forbids an unknown
+key), and the check step lists it with the other conditions. Nothing changes in the
+letter's fields or its text from this number.
 
 ### 3.5 The report
 
 `GET /api/hub/matches/{id}/report?da&a` (admin): `EngagementService.report(match_id, da,
-a)` asks § 2.4 for the whole engagement by default (`da` = the letter's `data_inizio`,
-`a` = today, capped at 400 days) and answers:
+a)` asks § 2.4 for the whole engagement by default (`da` = the earlier of
+`lettera_data_inizio` and today, `a` = today, and never more than the CRM's 800 days
+back from `a`) and answers:
 
 ```json
 {
@@ -349,23 +442,25 @@ a)` asks § 2.4 for the whole engagement by default (`da` = the letter's `data_i
 
 `giorni_equivalenti` is `totale_ore / 8`, `avanzamento` a percentage of `ore_previste`
 with two places, null without `giorni_previsti`. A match not `collegato` answers `409`
-with the state's sentence; a CRM that does not answer, `503` with `PigroUnavailable`'s
-sentence. Nothing is stored.
+(`InvalidState`, with the state's sentence); a CRM not configured `503`; a CRM that does
+not answer `502` with the seam's sentence, the mapping `routers/pigro.py` already makes.
+Nothing is stored.
 
 **The screen.** A new admin route `/admin/matches/$id/report`, page title «Consuntivo»,
 reached from the match card on «Match e contratti» (a «Consuntivo» action beside the
 document links, shown for a `collegato` match) and from a «Pigro» column on the
-«Match» list that reads «Collegato», «Da collegare» or «Errore». The page: the match's
-title (company, role, letter number) and the link to the deal on Pigro; a period
-selector (a month picker, default the current month, plus «Tutto l'incarico»); the
-progress line «96 ore, 12 giorni su 40 previsti (30%)», or «96 ore, 12 giorni» without
-an estimate; a table per day (date, hours, descriptions, the invoice number or «da
-fatturare»); the totals per week and per month of the selected period; the invoices
-these hours sit on (number, date, state, payment state, hours). The match card itself
-shows the link state as a sentence in the `match_words` style (`situazione` gains one
-sentence: «Le ore si consuntivano su Pigro.», «Pigro non ha ancora il deal: riprova o
-aspetta lo sweep.», «Pigro non ha risposto: <sentence>.») and, for `errore` or
-`da_collegare`, the «Riprova» action among `altre_azioni`.
+«Match» list that reads «Collegato», «Da collegare», «Errore» or «Rifiutato». The page:
+the match's title (company, role, letter number) and the link to the deal on Pigro; a
+period selector (a month picker, default the current month, plus «Tutto l'incarico»);
+the progress line «96 ore, 12 giorni su 40 previsti (30%)», or «96 ore, 12 giorni»
+without an estimate; a table per day (date, hours, descriptions, the invoice number or
+«da fatturare»); the totals per week and per month of the selected period; the
+invoices these hours sit on (number, date, state, payment state, hours). The match card
+itself shows the link state as a sentence in the `match_words` style (`situazione`
+gains one sentence: «Le ore si consuntivano su Pigro.», «Pigro non ha ancora il deal:
+riprova o aspetta lo sweep.», «Pigro non ha risposto: <sentence>», «Pigro ha rifiutato
+il collegamento: <sentence>») and, for `errore`, `da_collegare` and `rifiutato`, the
+«Riprova su Pigro» action among `altre_azioni`.
 
 ### 3.6 The member area
 
@@ -376,13 +471,14 @@ member read model) carries `pigro_url` for the letter's match.
 
 ### 3.7 The mail
 
-`engagement_ready_mail(to, nome, numero, azienda, deal_url, spazio_creato)` in
-`rebase_core/mail.py`, sent once by `link` on the first `collegato`: subject «La tua
-lettera n. 3/2026 è attiva: le ore si registrano su Pigro»; the body says the letter with
-Acme is active, that the hours of this engagement are logged on Pigro in the deal the
-button opens, that rebase reads the hours of that deal and nothing else of the space,
-and, when `spazio_creato`, that a space was opened in their name and the mail from Pigro
-carries the link that enters. The hub's frame and tone (`_frame`, `_button`).
+`engagement_ready_mail(to, *, nome, numero, azienda, deal_url, spazio_creato)` in
+`rebase_core/mail.py`, sent by `link` for a `collegato` match until `pigro_mail_sent_at`
+is stamped: subject «La tua lettera n. 3/2026 è attiva: le ore si registrano su Pigro»;
+the body says the letter with Acme is active, that the hours of this engagement are
+logged on Pigro in the deal the button opens, that rebase reads the hours of that deal
+and nothing else of the space, and, when `spazio_creato`, that a space was opened in
+their name and the mail from Pigro carries the link that enters. The hub's frame and
+tone (`_frame`, `_button`).
 
 ### 3.8 The clause in the letter
 
@@ -402,15 +498,17 @@ agreement does not change.
 
 ### 3.9 Over MCP
 
-On `apps/mcp` (`rebase_mcp/server.py`), beside PR #416's match tools:
+On `apps/mcp` (`rebase_mcp/server.py`), beside PR #416's match tools, built the way
+`build_server` takes its `signing` factory:
 
 | Tool | Does | Core |
 |---|---|---|
 | `get_match_report(match_id, da=None, a=None)` | the report of § 3.5 | `EngagementService.report` |
 | `link_match_to_pigro(match_id)` | the «Riprova» of § 3.3, as the admin behind the token | `EngagementService.link` |
 
-`get_match` and `list_matches` (PR #416) carry the `pigro_*` fields as the API does. Both
-new tools are listed in `apps/mcp/tests/test_tools.py`.
+Both turn `PigroUnavailable` into a `ToolError` with its sentence, as `list_pigro_spaces`
+does. `get_match` and `list_matches` (PR #416) carry the `pigro_*` fields as the API
+does. Both new tools are listed in `apps/mcp/tests/test_tools.py`.
 
 ### 3.10 Failure cases
 
@@ -420,9 +518,14 @@ new tools are listed in `apps/mcp/tests/test_tools.py`.
   retried until the token exists.
 - **Two matches of one freelancer activating together**: § 2.3's lock; one space, two
   deals.
-- **The freelancer deletes the deal**: `409` from the CRM, `errore` on the match with
-  the CRM's sentence, the report says the same; an admin talks to the freelancer.
-  Nothing is recreated.
+- **The freelancer deletes the deal**: `409` from the CRM, `rifiutato` on the match with
+  the CRM's sentence, the report says the same, the sweep leaves it alone; an admin
+  talks to the freelancer and may «Riprova». Nothing is recreated.
+- **A body the CRM refuses** (a `422`: a VAT number that is not eleven digits after
+  normalising, say): `rifiutato` with the CRM's field and sentence, for an admin to fix
+  the signer data and «Riprova».
+- **The mail provider refuses the freelancer's mail**: the match is `collegato` all the
+  same, `pigro_mail_sent_at` stays `NULL`, the sweep sends it at its next run.
 - **The freelancer owns several spaces**: the oldest; the match shows which slug.
 - **Match `concluso` or `annullato` after linking**: nothing happens in the CRM, the
   report stays readable, «Riprova» disappears.
@@ -441,34 +544,42 @@ Production and preview each get their own pair, in the host `.env` files (the CR
 (`pigrocrm-v*`): the routes answer `404` until the token is set, and the hub's link
 attempts fail with a sentence, not an exception, until the CRM is up. The hub follows
 (`hub-v*`). No per-space migration; the registry table appears at the CRM's first
-boot. A row in `docs/design/DECISIONS.md`: the hub reaches into a space only through the
-CRM's engagements door, with a token of its own, and the registry token stays
-read-only.
+boot. A row in the monorepo's `docs/design/DECISIONS.md`: the hub reaches into a space
+only through the CRM's engagements door, with a token of its own, and the registry
+token stays read-only.
 
 ## 5. Testing
 
-- **CRM core** (`packages/core/tests/test_engagements.py`, on the tenants test
-  infrastructure that provisions real databases): first call creates space, customer and
-  deal; second call answers the same ids and creates nothing; an owned space is reused,
-  the oldest of two; a slug collision takes `-2`; the deal's rate, estimate, note and
-  actor; a failure between steps 5 and 6 recovered by name; the deleted-deal `409`; the
-  report's rows, the invoice resolution, the 400-day cap, the defaults.
+- **CRM core** (`packages/core/tests/test_engagements.py`, on the container the tenants
+  tests use, real databases): first call creates space, customer and deal; second call
+  answers the same ids and creates nothing; an owned space is reused, the oldest of two;
+  `Ada@Studio.it ` finds `ada@studio.it`; a slug collision takes `-2`; two threads with
+  two match ids and one address end with one tenant row and two deals; a row with
+  `deal_id` `NULL` is completed at the next call; a deal created and never recorded is
+  reused by name; the longest role and company still make a valid name; the deleted-deal
+  `409`; the report's rows, the invoice resolution and the billed definition, the
+  800-day cap, the defaults; the actor «rebase» on the timeline.
 - **CRM API** (`apps/api/tests/test_engagements_api.py`): `404` without the token, `401`
-  with a wrong bearer, `201` then `200`, `422` shapes, the report's JSON, and that the
-  registry token is refused on both routes.
-- **Hub core** (`packages/core/tests/test_engagements.py`, with a recorded `HttpCall`
-  like `test_pigro.py`): the payload from a real match; `link`'s states from a `201`, a
-  `200`, a `409`, a `503`, a refused connection; the mail sent once; `link_pending`'s
-  counts; `report`'s grouping by ISO week and month, the progress maths, the null
-  estimate; `_confirm_completion` setting `da_collegare`.
-- **Hub API and MCP**: the three routes' status codes and shapes; the two tools in
-  `test_tools.py`.
+  with a wrong bearer, `201` then `200`, `422` shapes, `503` without a public URL, the
+  report's JSON, and that the registry token is refused on both routes.
+- **Hub core** (`packages/core/tests/test_engagements.py`, with a recorded `HttpCall` as
+  `test_freelancers_companies.py`'s `fake_http` does): the payload from a match with the
+  columns and from one without them (the printed data parsed); the fiscal
+  normalisation; `link`'s states from a `201`, a `200`, a `409`, a `422`, a `502`, a
+  refused connection, and that no row lock is held during the call; the mail sent once
+  and retried when the sender refused; `link_pending`'s counts and its silence on
+  `rifiutato`; `report`'s grouping by ISO week and month across a year end, the progress
+  maths, the null estimate; `_confirm_completion` setting `da_collegare`; `finish` and
+  `sweep` linking a match that just turned active and not one whose letter was refused.
+- **Hub API and MCP**: the three routes' status codes (`409`, `502`, `503`) and shapes;
+  the two tools in `test_tools.py`.
 - **Hub web**: the wizard field and its check-step line; the «Consuntivo» page with a
-  recorded report; the card's sentence and «Riprova»; the member line; the «Pigro» column.
-- **Contracts**: `test_contract_render.py` typesets the new letter text;
-  `test_web_labels.py` holds the new labels.
+  recorded report; the card's sentences and «Riprova su Pigro»; the member line; the
+  «Pigro» column; `test_web_labels.py` holding the action's labels.
+- **Contracts**: `test_contract_render.py` typesets the new letter text.
 - **Preflight and preview**: a match activated on the preview (Documenso is on there)
-  gets a deal on the preview CRM, the page renders it, the video shows the flow.
+  gets a deal on the preview CRM (`preview.pigro.letsrebase.com`), the page renders it,
+  the video shows the flow.
 
 ## 6. Phases
 
@@ -500,3 +611,6 @@ The implementation plan, one task per card, is
 - Creating a space for a freelancer with no active letter: only an active match earns
   a deal. A match already `attivo` when this ships is linked by the sweep (§ 3.1's
   backfill), not by hand.
+- Provisioning in the background with a `202` and a poll: the 90-second call is enough
+  for one space at a time, and nothing a person waits on runs it; if the host ever
+  takes longer, that is the next step.
