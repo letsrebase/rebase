@@ -1,6 +1,6 @@
 # @rebase/ui
 
-The squared system every rebase application renders on: the tokens, the eighteen
+The squared system every rebase application renders on: the tokens, the nineteen
 primitives that read them, the class merger they compose with, and a gallery that shows
 the lot on one page. Each SPA imports this package instead of keeping a copy of its
 own.
@@ -51,10 +51,10 @@ of letting a visitor's OS apply them.
   expands: `tw-animate-css` for their enter and exit transitions and
   `shadcn/tailwind.css` for the `data-open`/`data-checked` custom variants their class
   names use. Its own header explains why they cannot live in `tokens.css`.
-- **Eighteen primitives**, flat beside this file, one export path each
-  (`@rebase/ui/button`): button, input, textarea, select, checkbox, label, badge, card,
-  dialog, sheet, dropdown-menu, popover, tooltip, tabs, table, separator, skeleton and
-  the sonner toaster.
+- **Nineteen primitives**, flat beside this file, one export path each
+  (`@rebase/ui/button`): button, input, textarea, select, checkbox, label, badge,
+  card, dialog, sheet, dropdown-menu, popover, tooltip, tabs, table, separator,
+  skeleton, loader and the sonner toaster.
 - **`cn.ts`**, the class merger they compose with and the applications import for their
   own components (`@rebase/ui/cn`).
 - **`gallery/`**, every primitive in every variant and state on one page.
@@ -94,9 +94,12 @@ with a green build: `@rebase/ui/sonner` exports both, and the CRM's callers impo
 `toast` from there.
 
 `components.json` here is the generator's own configuration, and since REB-304 it is
-the only one in the repository: a nineteenth primitive is added in this package
-(`pnpm --filter @rebase/ui exec shadcn add <name>`) and never in an application, which
-is what the CRM's own `components.json` quietly invited for as long as it existed.
+the only one in the repository: a twentieth primitive generated from shadcn's
+registry is added in this package
+(`pnpm --filter @rebase/ui exec shadcn add <name>`) and never in an application,
+which is what the CRM's own `components.json` quietly invited for as long as it
+existed. `loader.tsx` is not one of these: shadcn's registry has no brand-mark
+loader, so it is hand-written, the same way `skeleton.tsx` always was.
 
 That command needs one thing that looks out of place in `tsconfig.json`: a `@/*` entry
 in `paths`. The CLI resolves every alias in `components.json` through tsconfig paths and

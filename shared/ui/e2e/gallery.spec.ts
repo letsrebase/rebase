@@ -255,6 +255,32 @@ test.describe('the gallery renders the system', () => {
     expect(invalid, 'an invalid field should draw the destructive line').toBe(rgbOf('watermelon-deep'))
   })
 
+  test("resolves all four of the loader's tile classes to real colours, not just the ink ones", async ({ page }) => {
+    // The regression this guards: a tile class built from `BRAND_TILE_CLASSES` at
+    // render time (`@rebase/brand/mark.ts`) sits outside every `@source` this package
+    // declares, so Tailwind never emits it and the tile renders as `rgba(0,0,0,0)`.
+    // `loader.tsx` writes each class as a literal for exactly this reason; jsdom
+    // (`loader.test.tsx`) cannot catch a regression of it, since the className string
+    // is identical either way without a real Tailwind build behind it. Only this
+    // browser-driven read tells the two apart.
+    await page.goto('/')
+    // The gallery renders two instances (inline, then standalone), so scope to one:
+    // the query would otherwise concatenate 4 tiles per instance.
+    const tiles = await page.evaluate(() => {
+      const first = document.querySelector('[data-slot="loader"]')
+      if (!first) throw new Error('[data-slot="loader"] is not on the page')
+      return [...first.querySelectorAll(':scope > span')].map(
+        (el) => getComputedStyle(el).backgroundColor,
+      )
+    })
+    expect(tiles).toEqual([
+      rgbOf('prussian-blue'),
+      rgbOf('royal-gold'),
+      rgbOf('watermelon'),
+      rgbOf('prussian-blue'),
+    ])
+  })
+
   test('ignores an operating system in dark mode, which is ORB-138', async ({ page }) => {
     await page.goto('/')
     const light = {

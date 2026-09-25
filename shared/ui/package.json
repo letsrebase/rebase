@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "The squared system every rebase application renders on: the tokens, the eighteen primitives, and the gallery that shows them.",
+  "description": "The squared system every rebase application renders on: the tokens, the nineteen primitives, and the gallery that shows them.",
   "exports": {
     "./tokens.css": "./tokens.css",
     "./before-tailwind.css": "./before-tailwind.css",
@@ -25,6 +25,7 @@
     "./table": "./table.tsx",
     "./separator": "./separator.tsx",
     "./skeleton": "./skeleton.tsx",
+    "./loader": "./loader.tsx",
     "./sonner": "./sonner.tsx",
     "./package.json": "./package.json"
   },
@@ -49,6 +50,7 @@
     "table.tsx",
     "separator.tsx",
     "skeleton.tsx",
+    "loader.tsx",
     "sonner.tsx"
   ],
   "scripts": {
