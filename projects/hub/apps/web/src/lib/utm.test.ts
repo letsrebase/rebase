@@ -97,6 +97,30 @@ describe('what a login sends, remembered for the tab by the login page only (REB
     expect(loginAttribution('')).toEqual({ utm_campaign: 'second' })
   })
 
+  it('keeps the campaign when a later visit brings only the page', () => {
+    rememberLoginAttribution('?utm_campaign=outreach&utm_term=11425b70')
+    expect(loginAttribution('?da=home')).toEqual({
+      utm_campaign: 'outreach',
+      utm_term: '11425b70',
+      origine: 'home',
+    })
+    expect(loginAttribution('')).toEqual({
+      utm_campaign: 'outreach',
+      utm_term: '11425b70',
+      origine: 'home',
+    })
+  })
+
+  it('takes the page alone when the tab remembers no campaign', () => {
+    expect(loginAttribution('?da=pigrocrm')).toEqual({ origine: 'pigrocrm' })
+  })
+
+  it('drops the page of an older campaign when a new campaign arrives without one', () => {
+    rememberLoginAttribution('?utm_campaign=first&da=home')
+    expect(loginAttribution('?utm_campaign=second')).toEqual({ utm_campaign: 'second' })
+    expect(loginAttribution('')).toEqual({ utm_campaign: 'second' })
+  })
+
   it('keeps what an earlier visit remembered when a later one has no campaign', () => {
     rememberLoginAttribution('?utm_campaign=outreach')
     rememberLoginAttribution('')

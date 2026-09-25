@@ -114,35 +114,41 @@ export function ownAttribution(search: string): Utm {
  *  the wizards fill, so an ad's campaign never lands on a login (REB-426's review). */
 export const LOGIN_ATTRIBUTION_KEY = 'rebase.login-utm'
 
-/** Remember the campaign of a login page's own URL for the tab, the page as `da=`, so it
- *  reads back through `ownAttribution`; a URL without one leaves the memory as it was,
- *  and a storage that refuses is not an error. */
-export function rememberLoginAttribution(search: string): void {
-  const { origine, ...utm } = ownAttribution(search)
-  const params = new URLSearchParams(utm)
-  if (origine) params.set('da', origine)
-  if ([...params.keys()].length === 0) return
+/** What an earlier login page of this tab remembered, read back through the same checks
+ *  as a URL; an unreadable storage remembers nothing. */
+function recallLoginAttribution(): Utm {
   try {
-    storage()?.setItem(LOGIN_ATTRIBUTION_KEY, params.toString())
+    const raw = storage()?.getItem(LOGIN_ATTRIBUTION_KEY)
+    return raw ? ownAttribution(`?${raw}`) : {}
   } catch {
-    /* refused: this page's own URL still has it */
+    return {}
   }
 }
 
-/** What a login sends: this URL's own campaign when it has one, remembered for the tab;
- *  otherwise what an earlier login page of this tab remembered, read back through the
- *  same checks as a URL. */
+/** What a login sends, remembered for the tab. A URL with a campaign replaces what the
+ *  tab remembered, its page included, since the page belonged to the older visit; a URL
+ *  with only `da=` keeps the remembered campaign and takes the new page; a bare URL
+ *  sends what the tab remembers. A storage that refuses is not an error. */
 export function loginAttribution(search: string): Utm {
-  const own = ownAttribution(search)
-  if (Object.keys(own).length > 0) {
-    rememberLoginAttribution(search)
-    return own
+  const utm = readUtm(search)
+  const origin = readOrigin(search)
+  const base = Object.keys(utm).length > 0 ? utm : recallLoginAttribution()
+  const attribution: Utm = origin ? { ...base, origine: origin } : base
+  const { origine, ...keys } = attribution
+  const params = new URLSearchParams(keys)
+  if (origine) params.set('da', origine)
+  if ([...params.keys()].length > 0) {
+    try {
+      storage()?.setItem(LOGIN_ATTRIBUTION_KEY, params.toString())
+    } catch {
+      /* refused: this page's own URL still has it */
+    }
   }
-  let remembered: string | null = null
-  try {
-    remembered = storage()?.getItem(LOGIN_ATTRIBUTION_KEY) ?? null
-  } catch {
-    /* unreadable: nothing remembered */
-  }
-  return remembered ? ownAttribution(`?${remembered}`) : {}
+  return attribution
+}
+
+/** The same on arrival, for its effect alone: the person may leave the page before
+ *  asking for the link. */
+export function rememberLoginAttribution(search: string): void {
+  loginAttribution(search)
 }
