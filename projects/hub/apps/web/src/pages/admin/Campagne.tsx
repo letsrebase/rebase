@@ -27,36 +27,40 @@ export function AdminCampagne() {
       {list.isError && <Empty>Non riesco a leggere le campagne. Riprova tra poco.</Empty>}
       {list.data && items.length === 0 && <Empty>Ancora nessuna campagna.</Empty>}
       {items.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Campagna</TableHead>
-              <TableHead>Stato</TableHead>
-              <TableHead>Quando</TableHead>
-              <TableHead>Esito</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.map((item) => (
-              <TableRow key={item.id}>
-                <TableCell>
-                  <Link to="/admin/campaigns/$id" params={{ id: item.id }} className="font-medium hover:underline">
-                    {item.nome}
-                  </Link>
-                  <p className="text-xs text-muted-foreground">{item.oggetto}</p>
-                </TableCell>
-                <TableCell>
-                  <Badge variant="pill">{CAMPAIGN_STATE_LABELS[item.stato]}</Badge>
-                </TableCell>
-                <TableCell className="text-muted-foreground">{when(item)}</TableCell>
-                <TableCell className="text-sm">
-                  {item.conteggi.inviate} inviate · {item.conteggi.consegnate} consegnate · {item.conteggi.rimbalzate} rimbalzate ·{' '}
-                  {item.conteggi.saltate} saltate · {item.conteggi.fallite} fallite
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <div className="px-6 pt-6 pb-6">
+          <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Campagna</TableHead>
+                  <TableHead>Stato</TableHead>
+                  <TableHead>Quando</TableHead>
+                  <TableHead>Esito</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <Link to="/admin/campaigns/$id" params={{ id: item.id }} className="font-medium hover:underline">
+                        {item.nome}
+                      </Link>
+                      <p className="text-xs text-muted-foreground">{item.oggetto}</p>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="pill">{CAMPAIGN_STATE_LABELS[item.stato]}</Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{when(item)}</TableCell>
+                    <TableCell className="text-sm">
+                      {item.conteggi.inviate} inviate · {item.conteggi.consegnate} consegnate · {item.conteggi.rimbalzate} rimbalzate ·{' '}
+                      {item.conteggi.saltate} saltate · {item.conteggi.fallite} fallite
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
       )}
     </div>
   )
