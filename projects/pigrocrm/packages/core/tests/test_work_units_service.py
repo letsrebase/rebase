@@ -89,6 +89,12 @@ def test_a_system_actor_carries_no_id() -> None:
     assert actor_to_transition_json(Actor.system()) == '{"kind": "system"}'
 
 
+def test_a_rebase_actor_is_its_own_kind_and_never_an_agent() -> None:
+    """rebase writes in a freelancer's space through the engagements door (spec
+    2026-09-25 § 2.5): not the freelancer's own agent, so the log must not say one did."""
+    assert actor_to_transition_json(Actor.rebase()) == '{"kind": "rebase"}'
+
+
 # ---- WorkUnitService.create ----------------------------------------------------------
 
 

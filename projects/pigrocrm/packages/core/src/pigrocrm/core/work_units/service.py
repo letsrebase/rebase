@@ -39,10 +39,15 @@ def actor_to_transition_json(actor: Actor) -> str:
     """`work_unit_transitions.attore`'s JSON shape (spec §5), derived from `Actor`
     (`actor.py:135`) rather than a new authentication concept: mastro's own
     `TransitionActor` names `human`/`agent`/`system`, and PigroCRM's `Actor.type`
-    already distinguishes exactly those three cases as `user`/`mcp`/`system`."""
+    distinguishes those three cases as `user`/`mcp`/`system`. The fourth type, `rebase`
+    (the engagements door, spec 2026-09-25 § 2.5), has no word in mastro and keeps its
+    own, `{"kind": "rebase"}` with no id like `system`: folded into `agent` it would say
+    the freelancer's own assistant did what rebase did."""
     payload: dict[str, object]
     if actor.type == "system":
         payload = {"kind": "system"}
+    elif actor.type == "rebase":
+        payload = {"kind": "rebase"}
     else:
         payload = {
             "kind": "human" if actor.type == "user" else "agent",

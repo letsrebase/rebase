@@ -12,6 +12,7 @@ from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
+from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.schemas import (
     DECIMAL_PLACES,
     NOME_MAX_LENGTH,
@@ -1014,3 +1015,34 @@ def test_the_customer_name_costs_one_query_for_the_whole_page(db_session: Sessio
         "ACME 1",
         "ACME 2",
     ]
+
+
+def test_find_by_marker_is_the_live_deal_of_that_customer_carrying_it(
+    db_session: Session, customer_id, stages
+) -> None:
+    """How the engagements door finds again a deal it created and failed to record
+    (spec 2026-09-25 § 2.3 step 5): the marker in the note, as an exact substring, on a
+    live deal of that customer. A deal with the same name and no marker is not it."""
+    marker = f"rebase:match={uuid4()}"
+    service = DealService(db_session)
+    repo = DealRepository(db_session)
+    other = CustomerService(db_session).create(CustomerCreate(ragione_sociale="Beta"), ADMIN)
+    service.create(DealCreate(nome="Lettera n. 3/2026", customer_id=customer_id), ADMIN)
+    service.create(DealCreate(nome="Altro", customer_id=other.id, note=f"x\n{marker}"), ADMIN)
+    service.create(
+        DealCreate(nome="Maiuscolo", customer_id=customer_id, note=marker.upper()), ADMIN
+    )
+    archived = service.create(
+        DealCreate(nome="Archiviato", customer_id=customer_id, note=marker), ADMIN
+    )
+    service.soft_delete(archived.id, ADMIN)
+    assert repo.find_by_marker(customer_id, marker) is None
+
+    ours = service.create(
+        DealCreate(
+            nome="Lettera n. 3/2026", customer_id=customer_id, note=f"Creato da rebase.\n{marker}"
+        ),
+        ADMIN,
+    )
+    found = repo.find_by_marker(customer_id, marker)
+    assert found is not None and found.id == ours.id

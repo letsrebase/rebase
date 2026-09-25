@@ -85,6 +85,27 @@ class DealRepository:
         self.session.flush()
         return deal
 
+    def find_by_marker(self, customer_id: UUID, marker: str) -> Deal | None:
+        """The live deal of that customer whose `note` contains `marker`, as an exact
+        substring: how the engagements door finds again a deal it created and failed to
+        record (`rebase:match=<id>`, spec 2026-09-25 § 2.3 step 5). Not `list`'s search,
+        which is a trigram `ilike` answered a page at a time: a first page is not the set,
+        and a wildcard or a case fold is not the same marker.
+
+        `strpos` rather than `LIKE`: no character of the marker is a pattern. At most one
+        by construction (one marker per match, written once); oldest first all the same,
+        so the answer never depends on the plan."""
+        return self.session.scalars(
+            select(Deal)
+            .where(
+                Deal.customer_id == customer_id,
+                Deal.deleted_at.is_(None),
+                func.strpos(Deal.note, marker) > 0,
+            )
+            .order_by(Deal.created_at, Deal.id)
+            .limit(1)
+        ).first()
+
     def pipeline_summary(self) -> list[PipelineStageSummary]:
         """Deals per stage: count, `Σ valore_previsto`, count without a value, and the
         weighted estimate.

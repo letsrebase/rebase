@@ -6,6 +6,7 @@ from sqlalchemy import Column, Integer, MetaData, Table
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.customers.schemas import CustomerCreate, CustomerListQuery, CustomerUpdate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.errors import NotFound, PermissionDenied, ValidationFailed
@@ -550,6 +551,22 @@ def test_list_query_limit_is_bounded() -> None:
         CustomerListQuery(limit=0)
     with pytest.raises(ValidationError):
         CustomerListQuery(limit=201)
+
+
+def test_find_by_name_is_exact_and_skips_archived_customers(db_session: Session) -> None:
+    """The engagements door's identity check (spec 2026-09-25 § 2.3 step 4): the exact
+    name, not the list's case-folding substring search, and never an archived row."""
+    service = CustomerService(db_session)
+    repo = CustomerRepository(db_session)
+    archived = service.create(CustomerCreate(ragione_sociale="rebase S.r.l."), ADMIN)
+    service.soft_delete(archived.id, ADMIN)
+    service.create(CustomerCreate(ragione_sociale="rebase S.r.l. Vecchia"), ADMIN)
+    service.create(CustomerCreate(ragione_sociale="REBASE S.R.L."), ADMIN)
+    assert repo.find_by_name("rebase S.r.l.") is None
+
+    live = service.create(CustomerCreate(ragione_sociale="rebase S.r.l."), ADMIN)
+    found = repo.find_by_name("rebase S.r.l.")
+    assert found is not None and found.id == live.id
 
 
 def test_get_missing_customer_raises_not_found(db_session: Session) -> None:
