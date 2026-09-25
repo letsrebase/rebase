@@ -1,6 +1,8 @@
 """CampaignService: the admin's verbs (spec § 4)."""
 
+import threading
 from datetime import UTC, date, datetime, time, timedelta
+from time import sleep
 
 import pytest
 from campaign_fixtures import (  # noqa: F401  (fixture)
@@ -13,9 +15,10 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
     draft,
     person,
 )
-from sqlalchemy import text
+from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 
+from rebase_core.campaigns.audience import REASON_CANCELLED
 from rebase_core.campaigns.schemas import (
     CampaignPatch,
     CampaignRead,
@@ -24,6 +27,7 @@ from rebase_core.campaigns.schemas import (
 )
 from rebase_core.campaigns.sender import RecordingCampaignSender, SendOutcome
 from rebase_core.campaigns.service import NOT_A_DRAFT, CampaignService
+from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, ValidationFailed
 from rebase_core.models import Campaign, CampaignRecipient, User
 
@@ -237,3 +241,114 @@ def test_back_to_draft_drops_the_frozen_list_and_cancel_skips_what_is_left(
     } == {"campagna annullata"}
     with pytest.raises(InvalidState):
         service.cancel(campaign.id)
+
+
+def test_scheduling_an_already_scheduled_campaign_raises_invalid_state_not_integrity_error(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """Fix round 1 (controller ruling R12): the lock means a second «Programma» reads
+    the row's committed state and raises the ordinary sentence, never the unique
+    index's `IntegrityError`."""
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    service.schedule(campaign.id, ScheduleRequest())
+    with pytest.raises(InvalidState, match=NOT_A_DRAFT):
+        service.schedule(campaign.id, ScheduleRequest())
+
+
+def test_back_to_draft_refuses_a_campaign_already_in_invio_and_deletes_nothing(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    service.schedule(campaign.id, ScheduleRequest())
+    before = clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).count()
+    row = clean.get(Campaign, campaign.id)
+    assert row is not None
+    row.stato = "in_invio"
+    clean.commit()
+    with pytest.raises(InvalidState):
+        service.back_to_draft(campaign.id)
+    assert clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).count() == before
+
+
+def test_cancel_on_an_in_invio_campaign_leaves_the_sent_row_and_skips_the_queued_one(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    service.schedule(campaign.id, ScheduleRequest())
+    rows = (
+        clean.query(CampaignRecipient)
+        .filter_by(campaign_id=campaign.id)
+        .order_by(CampaignRecipient.email)
+        .all()
+    )
+    assert len(rows) == 2
+    rows[0].stato, rows[0].inviata_at = "inviata", clock.at
+    row = clean.get(Campaign, campaign.id)
+    assert row is not None
+    row.stato = "in_invio"
+    clean.commit()
+
+    cancelled = service.cancel(campaign.id)
+    assert cancelled.stato == "annullata"
+    refreshed = (
+        clean.query(CampaignRecipient)
+        .filter_by(campaign_id=campaign.id)
+        .order_by(CampaignRecipient.email)
+        .all()
+    )
+    assert refreshed[0].stato == "inviata" and refreshed[0].motivo is None
+    assert refreshed[1].stato == "saltata" and refreshed[1].motivo == REASON_CANCELLED
+
+
+def test_a_second_call_blocked_on_the_lock_then_sees_the_fresh_state_not_a_stale_one(
+    clean: Session,  # noqa: F811  (fixture)
+    hub_engine: Engine,
+) -> None:
+    """A true two-session race (Fix round 1, controller ruling R12, optional):
+    reproduces the finding's exact shape. `clean` stands in for a concurrent actor
+    (e.g. the future send loop) that has already moved the campaign to `annullata`,
+    locked, uncommitted — exactly like the tick that moves a campaign to `in_invio`
+    mid-way through `back_to_draft`'s read. A second `cancel()` call must block on the
+    locked read and, once `clean` commits, see the FRESH state and raise `InvalidState`
+    — never read the stale `programmata` and silently overwrite `clean`'s change, which
+    is what `_require` (no lock) would do: the plain read does not wait, the check
+    passes on stale data, and only the final commit blocks — succeeding once the lock
+    is released and clobbering the concurrent write instead of refusing."""
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    service.schedule(campaign.id, ScheduleRequest())
+
+    row = clean.get(Campaign, campaign.id, with_for_update=True)
+    assert row is not None
+    row.stato = "annullata"
+
+    other = session_factory(hub_engine)()
+    outcome: dict[str, BaseException] = {}
+    entered = threading.Event()
+
+    def call_cancel_from_another_session() -> None:
+        entered.set()
+        other_service = CampaignService(other, SETTINGS, clock=Clock(clock.at))
+        try:
+            other_service.cancel(campaign.id)
+        except InvalidState as exc:
+            outcome["raised"] = exc
+        finally:
+            other.rollback()
+
+    thread = threading.Thread(target=call_cancel_from_another_session)
+    thread.start()
+    entered.wait(timeout=5)
+    sleep(0.3)  # give the thread time to reach the blocking `SELECT ... FOR UPDATE`
+    clean.commit()  # releases the lock, `annullata` now the committed state
+    thread.join(timeout=5)
+    other.close()
+
+    assert isinstance(outcome.get("raised"), InvalidState)

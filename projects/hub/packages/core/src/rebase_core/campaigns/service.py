@@ -103,7 +103,7 @@ class CampaignService:
         return CampaignRead.model_validate(campaign)
 
     def update(self, campaign_id: UUID, data: CampaignPatch) -> CampaignRead:
-        campaign = self._require(campaign_id)
+        campaign = self._require_locked(campaign_id)
         if campaign.stato != "bozza":
             raise InvalidState(NOT_A_DRAFT)
         changes = data.model_dump(exclude_unset=True)
@@ -175,7 +175,7 @@ class CampaignService:
     def send_test(
         self, campaign_id: UUID, admin: AdminRead, sender: CampaignSender
     ) -> CampaignRead:
-        campaign = self._require(campaign_id)
+        campaign = self._require_locked(campaign_id)
         if campaign.stato != "bozza":
             raise InvalidState(NOT_A_DRAFT)
         if not (
@@ -201,7 +201,7 @@ class CampaignService:
         return CampaignRead.model_validate(campaign)
 
     def schedule(self, campaign_id: UUID, data: ScheduleRequest) -> CampaignRead:
-        campaign = self._require(campaign_id)
+        campaign = self._require_locked(campaign_id)
         if campaign.stato != "bozza":
             raise InvalidState(NOT_A_DRAFT)
         if campaign.prova_inviata_at is None or campaign.prova_inviata_at < campaign.contenuto_at:
@@ -243,7 +243,7 @@ class CampaignService:
         return CampaignRead.model_validate(campaign)
 
     def back_to_draft(self, campaign_id: UUID) -> CampaignRead:
-        campaign = self._require(campaign_id)
+        campaign = self._require_locked(campaign_id)
         if campaign.stato != "programmata":
             raise InvalidState("Torna in bozza solo una campagna programmata e non ancora partita.")
         self.session.execute(
@@ -254,7 +254,7 @@ class CampaignService:
         return CampaignRead.model_validate(campaign)
 
     def cancel(self, campaign_id: UUID) -> CampaignRead:
-        campaign = self._require(campaign_id)
+        campaign = self._require_locked(campaign_id)
         if campaign.stato not in ("programmata", "in_invio"):
             raise InvalidState("Si annulla solo una campagna programmata o in invio.")
         self.session.execute(
@@ -316,6 +316,18 @@ class CampaignService:
 
     def _require(self, campaign_id: UUID) -> Campaign:
         campaign = self.session.get(Campaign, campaign_id)
+        if campaign is None:
+            raise NotFound(ENTITY, campaign_id)
+        return campaign
+
+    def _require_locked(self, campaign_id: UUID) -> Campaign:
+        """Like `_require`, but `SELECT ... FOR UPDATE`: every method whose write is
+        gated on the row's current `stato` takes this lock first (controller ruling
+        R12), so a second concurrent call blocks until the first commits, then sees the
+        state the first left behind and raises the ordinary `InvalidState` sentence
+        instead of racing into a write (`ck_campaign_recipients_...`'s unique index, or
+        two mails to the same person)."""
+        campaign = self.session.get(Campaign, campaign_id, with_for_update=True)
         if campaign is None:
             raise NotFound(ENTITY, campaign_id)
         return campaign
