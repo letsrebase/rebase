@@ -660,6 +660,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
       - run: node --test tooling/client-repo-starter/*.test.mjs
 
   ci:
