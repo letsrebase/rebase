@@ -1,6 +1,7 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import type { LucideIcon } from 'lucide-react'
 import {
+  ArrowLeftRight,
   Briefcase,
   Building2,
   CalendarDays,
@@ -13,6 +14,7 @@ import {
   LogOut,
   PanelLeftIcon,
   Plug,
+  Plus,
   Receipt,
   Rocket,
   Search,
@@ -21,7 +23,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { BrandMark } from '@/components/BrandMark'
 import { readSidebarGroups, writeSidebarGroups } from '@/components/sidebarGroups'
 import { CommandPalette } from '@/features/search/CommandPalette'
@@ -38,10 +40,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@rebase/ui/dropdown-menu'
+import { toast } from '@rebase/ui/sonner'
+import { api, toProblem, unwrap } from '@/lib/api'
+import type { components } from '@/lib/api-types'
 import { useAuth, useIsAdmin } from '@/lib/auth'
 import { canSeeSettingsTab } from '@/lib/permissions'
 import { roleLabel } from '@/lib/roles'
+import { tenantPrefix } from '@/lib/tenant'
 import { cn } from '@rebase/ui/cn'
+
+type IdentitySpace = components['schemas']['IdentitySpace']
 
 /**
  * The shell of the app: a dark sidebar on the left, everything else the page, full
@@ -216,7 +224,13 @@ function matches(pathname: string, to: string, exact = false) {
   return exact ? pathname === to : pathname === to || pathname.startsWith(`${to}/`)
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  children,
+  go = (url) => window.location.assign(url),
+}: {
+  children: ReactNode
+  go?: (url: string) => void
+}) {
   const { user, logout } = useAuth()
   const isAdmin = useIsAdmin()
   const { location } = useRouterState()
@@ -242,6 +256,54 @@ export function AppShell({ children }: { children: ReactNode }) {
   // The connect-agent dialog, same idea as the search palette: mounted here once so its
   // trigger can sit in the sidebar as a plain button rather than a route.
   const [agentOpen, setAgentOpen] = useState(false)
+  // The other spaces this identity may reach, and the one being entered right now
+  // (disables every row while that request is in flight). Fetched on mount and again
+  // every time the menu opens (Greptile, PR #419): AppShell stays mounted for a whole
+  // session, so a space this identity gained after mount -- an invitation accepted in
+  // another tab -- would otherwise never show without a full reload. The same
+  // silent-on-401-or-failure shape the login chooser uses (design §3, REB-345): a
+  // stranger, or an identity with no live cookie, simply sees no extra rows here.
+  const [spaces, setSpaces] = useState<IdentitySpace[]>([])
+  const [enteringSlug, setEnteringSlug] = useState<string | null>(null)
+  // A request in flight is tagged with its own id: if a second `refreshSpaces` call
+  // (the menu re-opening quickly) starts before the first resolves, an out-of-order
+  // response from the first must not overwrite the second's -- CodeRabbit, PR #419.
+  const spacesRequestId = useRef(0)
+  const refreshSpaces = useCallback(() => {
+    const requestId = (spacesRequestId.current += 1)
+    void api
+      .GET('/api/identity/spaces')
+      .then(({ data }) => {
+        if (requestId !== spacesRequestId.current) return
+        if (Array.isArray(data)) setSpaces(data)
+      })
+      .catch(() => {})
+  }, [])
+  useEffect(() => {
+    refreshSpaces()
+  }, [refreshSpaces])
+  // The grandfathered root installation (design §1, 2026-09-08 spec §6) is a real row
+  // in the registry, reachable both unprefixed and under its own `PIGROCRM_ROOT_SLUG`
+  // alias -- `tenantPrefix` alone only ever names the alias, so browsing it unprefixed
+  // would otherwise leave the space already open unmatched and listed as "another one".
+  // Retried on menu open, same as `refreshSpaces`: a transient failure must not leave
+  // `rootSlug` stuck at `null`, which hides the whole switcher, for the rest of the
+  // session (Greptile, PR #419).
+  const [rootSlug, setRootSlug] = useState<string | null>(null)
+  const refreshRootSlug = useCallback(() => {
+    void api
+      .GET('/api/tenants/root')
+      // A response with no `data` (a malformed body, an error the client swallowed)
+      // must not overwrite an already-known slug with "no root at all" -- Greptile,
+      // PR #419, the same overwrite-on-retry shape as the space list's own guard.
+      .then(({ data }) => {
+        if (data) setRootSlug(data.slug ?? '')
+      })
+      .catch(() => {})
+  }, [])
+  useEffect(() => {
+    refreshRootSlug()
+  }, [refreshRootSlug])
 
   // The «Impostazioni» sub-items this reader may see (REB-294): the same
   // `canSeeSettingsTab` the settings page filters its own tabs with, so sidebar and
@@ -289,6 +351,29 @@ export function AppShell({ children }: { children: ReactNode }) {
     .join('')
     .slice(0, 2)
     .toUpperCase()
+
+  // `tenantPrefix` is `/<slug>` or `''`; at `''` the space already open is the root's
+  // own slug when this installation has one (see the effect above), never "no slug".
+  // While that answer has not come back yet, `currentSlug` is `null` rather than a
+  // guess: the switcher shows nothing sooner than it shows the wrong thing (CodeRabbit,
+  // PR #419), and settles once the root slug resolves, even to "no root at all" (`''`).
+  const currentSlug = tenantPrefix === '' ? rootSlug : tenantPrefix.replace(/^\//, '')
+  const otherSpaces = currentSlug === null ? [] : spaces.filter((space) => space.slug !== currentSlug)
+
+  /** Opens another space with no second proof (design §3, REB-345): the identity
+   *  cookie already is one. A different basepath is a different application
+   *  instance, so landing there is a full navigation, the same shape the login
+   *  chooser already uses. */
+  async function onEnterSpace(slug: string) {
+    setEnteringSlug(slug)
+    try {
+      await unwrap(api.POST('/api/identity/enter/{slug}', { params: { path: { slug } } }))
+      go(`/${slug}/app/`)
+    } catch (error) {
+      toast.error(toProblem(error).detail)
+      setEnteringSlug(null)
+    }
+  }
 
   /** A leaf entry: an icon and a label expanded, an icon alone in the rail. */
   const leaf = ({
@@ -478,7 +563,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         {/* The profile, anchored at the bottom, opens a menu: the account's own things --
             who is signed in, the space's settings for an admin, the way out. */}
         <div className="mt-auto border-t border-sidebar-border p-3">
-          <DropdownMenu>
+          <DropdownMenu
+            onOpenChange={(open) => {
+              if (!open) return
+              refreshSpaces()
+              refreshRootSlug()
+            }}
+          >
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
@@ -535,6 +626,29 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </Link>
                 </DropdownMenuItem>
               )}
+              <DropdownMenuSeparator />
+              {/* Every other space this identity may enter (design §3, REB-345): the
+                  same live chooser the login page uses, reachable now without first
+                  logging out. */}
+              {otherSpaces.length > 0 &&
+                otherSpaces.map((space) => (
+                  <DropdownMenuItem
+                    key={space.slug}
+                    disabled={enteringSlug !== null}
+                    onSelect={() => void onEnterSpace(space.slug)}
+                  >
+                    <ArrowLeftRight className="size-4" />
+                    <span className="flex-1 truncate">{space.slug}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {roleLabel(space.ruolo)}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              <DropdownMenuItem onSelect={() => go('/app/register')}>
+                <Plus className="size-4" />
+                Crea un nuovo spazio
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => void logout()}>
                 <LogOut className="size-4" />
                 Esci

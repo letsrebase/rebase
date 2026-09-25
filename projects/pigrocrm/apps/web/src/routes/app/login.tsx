@@ -177,6 +177,18 @@ export function LoginPage({
     }
   }
 
+  /** Where "Crea un nuovo spazio"/"Crea il tuo spazio" lands, whether this identity
+   *  already has spaces or not: the signup page lives at the unprefixed root, so a
+   *  visitor on any other basepath gets a full navigation, the same shape every
+   *  other cross-space move on this page already uses. */
+  function goToRegister() {
+    if (tenantPrefix === '') {
+      void navigate({ to: '/app/register' })
+      return
+    }
+    window.location.assign('/app/register')
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
       <Card className="w-full max-w-sm">
@@ -206,6 +218,15 @@ export function LoginPage({
                   <span className="text-muted-foreground text-xs">{roleLabel(space.ruolo)}</span>
                 </Button>
               ))}
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full"
+                disabled={enteringSlug !== null}
+                onClick={goToRegister}
+              >
+                Crea un nuovo spazio
+              </Button>
             </div>
           ) : (
             <>
@@ -295,20 +316,17 @@ export function LoginPage({
                   )}
                 </form>
               )}
-              {/* Only the root offers to create a space: a space creating spaces is not a
-                  thing this product means (spec 2026-09-08 §6). */}
+              {/* This form's own empty state still offers signup only on the root: the
+                  logged-out visitor here has proven no email yet, so there is nothing to
+                  scope "another space" to. An authenticated sidebar (AppShell) and this
+                  page's own chooser above do offer it from any space, since 2026-09-25 --
+                  the 2026-09-08 §6 "no space creates spaces" rule stops at signed-out. */}
               {isRoot && (
                 <Button
                   type="button"
                   variant="outline"
                   className="mt-4 w-full"
-                  onClick={() =>
-                    tenantPrefix === ''
-                      ? void navigate({ to: '/app/register' })
-                      : // The signup page lives at the unprefixed root: a different basepath
-                        // is a different application instance, so this is a navigation.
-                        window.location.assign('/app/register')
-                  }
+                  onClick={goToRegister}
                 >
                   Crea il tuo spazio
                 </Button>
