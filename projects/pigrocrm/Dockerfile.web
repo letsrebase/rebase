@@ -24,7 +24,12 @@ COPY shared/ui ./shared/ui
 COPY projects/pigrocrm/apps/web ./projects/pigrocrm/apps/web
 RUN pnpm --filter web build
 
-FROM nginx:1.29-alpine
+FROM nginx:1.30-alpine
+# Docker Hub rebuilds this tag only when nginx or its Alpine base moves, so a package
+# Alpine fixes in between (libexpat 2.8.5, missing from the 2026-09-23 build) is
+# installed here. The layer is cached like any other: it runs again when the deploy's
+# `build --pull` brings a new digest of the tag, or on a cold build cache.
+RUN apk upgrade --no-cache
 # The SPA and nothing else. Until 2026-09-09 this image also carried the public site
 # at the document root, because the two shared an origin; the site is its own project
 # and its own deployable now (`projects/website`), letsrebase.com points at that
