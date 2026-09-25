@@ -172,16 +172,22 @@ is the only repository on it, not a boundary to lean on once a second one joins.
 
 ## Configurable per contract
 
-Two knobs the script takes, because not every contract carries the same weight:
+Three knobs the script takes, because not every contract carries the same weight:
 
 - `--worktree` / `--no-worktree` (default: on). Recommended on always: more than one
   person — us, a freelancer, an agent each runs — can be committing to the same
   repository, and a worktree is what keeps one person's uncommitted state off
   another's.
 - `--greptile` / `--no-greptile` (default: off). On only for a contract that already
-  has Greptile configured on the repository (app.greptile.com); the generated
-  `pr-creation` skill includes or omits the review-gate section accordingly. Off by
-  default because most client repositories will not have it wired up on day one.
+  has Greptile configured on the repository (app.greptile.com). Off by default
+  because most client repositories will not have it wired up on day one.
+- `--coderabbit` / `--no-coderabbit` (default: off), same reasoning as `--greptile`:
+  on only once CodeRabbit is installed on the repository (app.coderabbit.ai), which
+  also writes a starter `.coderabbit.yaml`. Either flag alone renders that
+  reviewer's own review loop; both together render the adversarial pass as well
+  (CodeRabbit checks Greptile's findings against the code), the same loop
+  `letsrebase/rebase` runs on itself (`.claude/skills/pr-creation/` § After `gh pr
+  create`, step 3). Neither on renders no review-gate section at all.
 
 Commit conventions and the PR template are never configurable: every contract uses
 the same shape `letsrebase/rebase` does (`docs/design/DECISIONS.md`, 2026-09-24).

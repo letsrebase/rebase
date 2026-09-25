@@ -31,7 +31,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_DIR = join(HERE, "template");
 
 function parseArgs(argv) {
-  const out = { worktree: true, greptile: false, force: false, createRepo: false };
+  const out = { worktree: true, greptile: false, coderabbit: false, force: false, createRepo: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
@@ -48,6 +48,8 @@ function parseArgs(argv) {
       case "--no-worktree": out.worktree = false; break;
       case "--greptile": out.greptile = true; break;
       case "--no-greptile": out.greptile = false; break;
+      case "--coderabbit": out.coderabbit = true; break;
+      case "--no-coderabbit": out.coderabbit = false; break;
       case "--force": out.force = true; break;
       case "--create-repo": out.createRepo = true; break;
       default:
@@ -107,69 +109,279 @@ const WORKTREE_BLOCK = args.worktree
       "   worktree's isolation: revisit if that changes.",
     ].join("\n");
 
-const REVIEW_GATE_POLICY = args.greptile
+const REVIEW_GATE_POLICY = args.greptile && args.coderabbit
+  ? "Greptile and CodeRabbit both review every PR here (each already configured on this repository): Greptile first, then CodeRabbit's own review, then CodeRabbit checks Greptile's findings against the code. Every finding from either, and every adversarial verdict, gets fixed or answered before merging."
+  : args.greptile
   ? "Greptile reviews every PR here (app.greptile.com is already configured on this repository): wait for its check run and its review on the sha you want to merge, fix or reply to every finding, and do not merge under a full-score review or with a finding neither fixed nor answered."
+  : args.coderabbit
+  ? "CodeRabbit reviews every PR here (app.coderabbit.ai is already configured on this repository, .coderabbit.yaml): wait for its review on the sha you want to merge, and fix or reply to every finding before merging."
   : "No automated second reviewer is configured on this repository yet. A PR merges once CI is green and, when the change is non-trivial, a fresh read of the diff (your own second pass, or another agent's) has not turned up something CI cannot catch.";
 
-const GREPTILE_BLOCK = args.greptile
-  ? [
-      "",
-      "**Then iterate on Greptile until it scores full marks.** It reviews the PR once",
-      "it is open: inline findings with a severity badge, and a summary headed",
-      "`Confidence Score: N/5`, on the PR's own description or as a bot comment,",
-      "depending on this repository's Greptile setting (PR Summaries, in",
-      "app.greptile.com). Read both. A run shows on the commit as the `Greptile",
-      "Review` check run, and, when there are findings, as a review by the bot too;",
-      "a clean run can leave only the check run, and a run can leave only the",
-      "review, so wait for either, as a background job next to the CI watch:",
-      "",
-      "```bash",
-      "sha=$(git rev-parse HEAD)",
-      "for i in $(seq 20); do   # ten minutes, then the @greptileai nudge below",
-      "  run=$(gh api \"repos/" + args.org + "/" + args.repo + "/commits/$sha/check-runs\" \\",
-      "      --jq '.check_runs[] | select(.name == \"Greptile Review\" and .status == \"completed\" and (.conclusion == \"success\" or .conclusion == \"failure\")) | \"\\(.conclusion)\\t\\(.output.summary)\"')",
-      "  rid=$(gh api repos/" + args.org + "/" + args.repo + "/pulls/<n>/reviews \\",
-      "      --jq \".[] | select(.user.login == \\\"greptile-apps[bot]\\\" and .commit_id == \\\"$sha\\\") | .id\" | tail -n 1)",
-      "  [ -n \"$run$rid\" ] && break; sleep 30",
-      "done",
-      "[ -n \"$rid\" ] && gh api repos/" + args.org + "/" + args.repo + "/pulls/<n>/comments \\",
-      "    --jq \".[] | select(.pull_request_review_id == $rid and .in_reply_to_id == null) | \\\"\\(.id) \\(.path):\\(.line // .original_line) \\(.body)\\\"\"",
-      "echo \"$run\" | cut -f2-",
-      "{ gh pr view <n> --json body -q .body",
-      "  gh api repos/" + args.org + "/" + args.repo + "/issues/<n>/comments \\",
-      "      --jq '.[] | select(.user.login == \"greptile-apps[bot]\") | .body'; } \\",
-      "  | grep -oE 'Confidence Score: [0-9]/5' | tail -n 1",
-      "if [ \"$(echo \"$run\" | head -n1 | cut -f1)\" = success ]; then echo \"check run passes on $sha\"",
-      "elif [ -z \"$run\" ] && [ -n \"$rid\" ]; then echo \"no check run for $sha, only a review: judge from the score and findings above\"",
-      "else echo \"check run does not pass on $sha yet\"; fi",
-      "```",
-      "",
-      "Nothing printed after a completed run means it is not there yet: read again",
-      "before going on. Each finding is either **fixed**, in a commit that names it, or",
-      "**answered**, with a reply on its thread (`gh api",
-      "repos/" + args.org + "/" + args.repo + "/pulls/<n>/comments/<id>/replies -F body=@file`: never `-f`",
-      "with a backtick in the body, since bash reads it as a command substitution). An",
-      "answered finding still counts against the score until the thread is resolved (`gh api",
-      "graphql -f query='mutation { resolveReviewThread(input:{threadId:\"<id>\"}) {",
-      "thread { isResolved } } }'`, the id from the PR's `reviewThreads`) and",
-      "`@greptileai` is commented once after. After a fix, push, wait for the run on",
-      "the new sha, read again: the check run's own `conclusion` decides it when a check",
-      "run exists (the same signal the merge gate itself reads, sha-scoped, so a push",
-      "can't leave it stale); the score line above is what to judge from on the rarer",
-      "run that leaves only a review with no check run. The loop ends when the check run",
-      "on the sha that will merge reads `success`, or, on a review-only run, when the",
-      "score reads full marks. Ten minutes with no run on the head sha: comment",
-      "`@greptileai` once, which re-triggers it, and wait again.",
-    ].join("\n")
+const GREPTILE_LOOP_LINES = [
+  "",
+  "**Then iterate on Greptile until it scores full marks.** It reviews the PR once",
+  "it is open: inline findings with a severity badge, and a summary headed",
+  "`Confidence Score: N/5`, on the PR's own description or as a bot comment,",
+  "depending on this repository's Greptile setting (PR Summaries, in",
+  "app.greptile.com). Read both. A run shows on the commit as the `Greptile",
+  "Review` check run, and, when there are findings, as a review by the bot too;",
+  "a clean run can leave only the check run, and a run can leave only the",
+  "review, so wait for either, as a background job next to the CI watch:",
+  "",
+  "```bash",
+  "sha=$(git rev-parse HEAD)",
+  "for i in $(seq 20); do   # ten minutes, then the @greptileai nudge below",
+  "  run=$(gh api \"repos/" + args.org + "/" + args.repo + "/commits/$sha/check-runs\" \\",
+  "      --jq '.check_runs[] | select(.name == \"Greptile Review\" and .status == \"completed\" and (.conclusion == \"success\" or .conclusion == \"failure\")) | \"\\(.conclusion)\\t\\(.output.summary)\"')",
+  "  rid=$(gh api repos/" + args.org + "/" + args.repo + "/pulls/<n>/reviews \\",
+  "      --jq \".[] | select(.user.login == \\\"greptile-apps[bot]\\\" and .commit_id == \\\"$sha\\\") | .id\" | tail -n 1)",
+  "  [ -n \"$run$rid\" ] && break; sleep 30",
+  "done",
+  "[ -n \"$rid\" ] && gh api repos/" + args.org + "/" + args.repo + "/pulls/<n>/comments \\",
+  "    --jq \".[] | select(.pull_request_review_id == $rid and .in_reply_to_id == null) | \\\"\\(.id) \\(.path):\\(.line // .original_line) \\(.body)\\\"\"",
+  "echo \"$run\" | cut -f2-",
+  "{ gh pr view <n> --json body -q .body",
+  "  gh api repos/" + args.org + "/" + args.repo + "/issues/<n>/comments \\",
+  "      --jq '.[] | select(.user.login == \"greptile-apps[bot]\") | .body'; } \\",
+  "  | grep -oE 'Confidence Score: [0-9]/5' | tail -n 1",
+  "if [ \"$(echo \"$run\" | head -n1 | cut -f1)\" = success ]; then echo \"check run passes on $sha\"",
+  "elif [ -z \"$run\" ] && [ -n \"$rid\" ]; then echo \"no check run for $sha, only a review: judge from the score and findings above\"",
+  "else echo \"check run does not pass on $sha yet\"; fi",
+  "```",
+  "",
+  "Nothing printed after a completed run means it is not there yet: read again",
+  "before going on. Each finding is either **fixed**, in a commit that names it, or",
+  "**answered**, with a reply on its thread (`gh api",
+  "repos/" + args.org + "/" + args.repo + "/pulls/<n>/comments/<id>/replies -F body=@file`: never `-f`",
+  "with a backtick in the body, since bash reads it as a command substitution). An",
+  "answered finding still counts against the score until the thread is resolved (`gh api",
+  "graphql -f query='mutation { resolveReviewThread(input:{threadId:\"<id>\"}) {",
+  "thread { isResolved } } }'`, the id from the PR's `reviewThreads`) and",
+  "`@greptileai` is commented once after. After a fix, push, wait for the run on",
+  "the new sha, read again: the check run's own `conclusion` decides it when a check",
+  "run exists (the same signal the merge gate itself reads, sha-scoped, so a push",
+  "can't leave it stale); the score line above is what to judge from on the rarer",
+  "run that leaves only a review with no check run. The loop ends when the check run",
+  "on the sha that will merge reads `success`, or, on a review-only run, when the",
+  "score reads full marks. Ten minutes with no run on the head sha: comment",
+  "`@greptileai` once, which re-triggers it, and wait again.",
+];
+
+const CODERABBIT_LOOP_LINES = [
+  "",
+  "**Then wait for CodeRabbit's review and act on every finding.** It reviews the PR",
+  "once it is open and again on every push (settings in `.coderabbit.yaml`): a",
+  "`CodeRabbit` commit status (`Review in progress`, then `Review completed`, or",
+  "`Review skipped: ...` with the reason, a draft PR among them), inline findings",
+  "when it found something (a review by `coderabbitai[bot]` whose body opens",
+  "`Actionable comments posted: N`; that body can also carry `Outside diff range`",
+  "and `Nitpick` items that are not inline comments, so read it whole), and one",
+  "summary comment on the PR, edited in place on every round, with a `Merge Risk`",
+  "line and a pre-merge checks table; a check listed under `Failed checks` is a",
+  "finding too. A clean run leaves only the status and the summary.",
+  "",
+  "```bash",
+  "sha=$(git rev-parse HEAD)",
+  "for i in $(seq 20); do   # ten minutes, then @coderabbitai review",
+  "  st=$(gh api \"repos/" + args.org + "/" + args.repo + "/commits/$sha/statuses\" \\",
+  "      --jq '[.[] | select(.context == \"CodeRabbit\")][0].description // \"\"')",
+  "  [ \"$st\" = \"Review completed\" ] && break; sleep 30",
+  "done",
+  "echo \"$st\"",
+  "crid=$(gh api --paginate \"repos/" + args.org + "/" + args.repo + "/pulls/<n>/reviews?per_page=100\" \\",
+  "    --jq \".[] | select(.user.login == \\\"coderabbitai[bot]\\\" and .commit_id == \\\"$sha\\\" and (.body | test(\\\"Actionable comments posted\\\"))) | .id\" | tail -n 1)",
+  "[ -n \"$crid\" ] && gh api repos/" + args.org + "/" + args.repo + "/pulls/<n>/reviews/$crid --jq .body",
+  "[ -n \"$crid\" ] && gh api --paginate \"repos/" + args.org + "/" + args.repo + "/pulls/<n>/comments?per_page=100\" \\",
+  "    --jq \".[] | select(.pull_request_review_id == $crid and .in_reply_to_id == null) | \\\"\\(.id) \\(.path):\\(.line // .original_line) \\(.body)\\\"\"",
+  "```",
+  "",
+  "A missing `crid` after a completed run means that round raised nothing, not that",
+  "the review is late. Each finding is either **fixed**, in a commit that names it, or",
+  "**answered**: an inline one on its thread (`gh api",
+  "repos/" + args.org + "/" + args.repo + "/pulls/<n>/comments/<id>/replies -F body=@file`), one with no",
+  "thread (an `Outside diff range` or `Nitpick` item, a failed pre-merge check) in one",
+  "PR comment addressed to `@coderabbitai`, one line per item. The wait keys on",
+  "`Review completed` alone: `draft pull request` means it waits for the PR to be",
+  "marked ready, and no status, or a summary saying the reviews are paused (it pauses",
+  "itself after five reviewed commits on one PR, to spare the hourly allowance), is",
+  "`gh pr comment <n> --body '@coderabbitai review'`, then wait again. When it answers",
+  "that it is rate limited instead of reviewing, wait for the window it names.",
+];
+
+const ADVERSARIAL_LOOP_LINES = [
+  "",
+  "**Two reviewers read every push, and CodeRabbit then reads Greptile.** Greptile",
+  "and CodeRabbit both start by themselves when the PR opens and again on every push.",
+  "Each sha goes through the same round: Greptile's review (a), CodeRabbit's own",
+  "review (b), then CodeRabbit against Greptile (c), then every finding fixed or",
+  "answered (d). Run (a) and (b) as background jobs next to the CI watch; (c) waits",
+  "for both.",
+  "",
+  "**a. Greptile.** It reviews the PR once",
+  ...GREPTILE_LOOP_LINES.slice(2),
+  "",
+  "**b. CodeRabbit, its own review.** It reviews the PR",
+  ...CODERABBIT_LOOP_LINES.slice(2),
+  "",
+  "**c. CodeRabbit against Greptile.** It comes after CodeRabbit's own review on",
+  "purpose: its own findings are not shaped by Greptile's, and then it checks",
+  "Greptile's against the code. A pass is due when (a) and (b) are both done for the",
+  "sha and Greptile raised a finding on it, or you answered a Greptile finding since",
+  "the last pass. Until the verdict is in, reply to none of Greptile's threads: with",
+  "`chat.auto_reply` on, CodeRabbit answers replies in any thread by itself, which can",
+  "resolve a Greptile thread before any pass was asked for. One PR comment hands it",
+  "Greptile's side and asks for a verdict on each item:",
+  "",
+  "```bash",
+  "sha=$(git rev-parse HEAD); short=$(git rev-parse --short=9 HEAD)",
+  "rid=$(gh api --paginate \"repos/" + args.org + "/" + args.repo + "/pulls/<n>/comments?per_page=100\" \\",
+  "    --jq \".[] | select(.user.login == \\\"greptile-apps[bot]\\\" and .original_commit_id == \\\"$sha\\\" and .in_reply_to_id == null) | .pull_request_review_id\" | tail -n 1)",
+  "{ echo \"@coderabbitai Adversarial pass on Greptile's review of $short. You have reviewed this commit on your own; now act as Greptile's adversary. For each item below, check the claim against the code at $short yourself and answer **confirmed**, **refuted** or **partly**, with the evidence: file and line, or the script you ran and what it printed. Do not take Greptile's reasoning or mine on trust, and do not agree to be agreeable: a finding that does not hold is refuted, and an answer of mine that does not hold is wrong. Then list any defect in this diff that neither review raised. Start your reply with the line \\`Adversarial verdict on $short\\`, then one line per item, then the misses.\"",
+  "  echo; echo \"Greptile's findings on $short:\"",
+  "  [ -n \"$rid\" ] && gh api --paginate \"repos/" + args.org + "/" + args.repo + "/pulls/<n>/comments?per_page=100\" \\",
+  "      --jq \".[] | select(.pull_request_review_id == $rid and .in_reply_to_id == null) | \\\"- \\(.html_url) \\(.path):\\(.line // .original_line) \\(.body | split(\\\"<details>\\\")[0] | gsub(\\\"<[^>]*>\\\"; \\\"\\\") | gsub(\\\"\\\\\\\\s+\\\"; \\\" \\\"))\\\"\"",
+  "} > adversary.md",
+  "```",
+  "",
+  "Each line carries the finding's link, its `path:line` and the whole finding up to",
+  "Greptile's own fix prompt. Then add by hand, under `Greptile findings I answered",
+  "since the last pass:`, one line per answer: the thread's link and the answer in a",
+  "sentence. When Greptile raised nothing new and there is no new answer, there is no",
+  "pass. Post it and wait for the reply, a new comment by the bot that opens with the",
+  "line it was asked for:",
+  "",
+  "```bash",
+  "short=$(git rev-parse --short=9 HEAD); since=$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "gh pr comment <n> --body-file adversary.md",
+  "for i in $(seq 40); do   # twenty minutes",
+  "  verdict=$(gh api --paginate \"repos/" + args.org + "/" + args.repo + "/issues/<n>/comments?per_page=100\" \\",
+  "      --jq \".[] | select(.user.login == \\\"coderabbitai[bot]\\\" and .created_at >= \\\"$since\\\" and any(.body | split(\\\"\\n\\\")[]; test(\\\"^\\\\\\\\s*Adversarial verdict on $short\\\\\\\\s*\\$\\\"))) | .body\")",
+  "  [ -n \"$verdict\" ] && break; sleep 30",
+  "done",
+  "printf '%s\\n' \"$verdict\"",
+  "```",
+  "",
+  "The verdict line is matched as a line of its own, wherever it sits: a quote of the",
+  "request (`> ...`) does not match. Read it through: every item listed has a verdict;",
+  "one without is asked for again in a reply to the verdict. Twenty minutes with no",
+  "verdict: post the same comment once more and wait again; still nothing, say so on",
+  "the card and tell the person before you merge, as with a Greptile that does not",
+  "review.",
+  "",
+  "**d. What each finding and verdict does.** Every finding, from either reviewer, is",
+  "either **fixed**, in a commit that names it, or **answered** with the reason the",
+  "code stays as it is. An inline finding is answered on its thread. One with no",
+  "thread (an `Outside diff range` or `Nitpick` item, a failed pre-merge check, a miss",
+  "the adversarial pass named) is answered in one PR comment addressed to",
+  "`@coderabbitai`, one line per item. The adversarial verdict decides which way each",
+  "Greptile finding goes:",
+  "",
+  "- **Confirmed**: fix it. Read the code first all the same: a confirmation is a",
+  "  second opinion, not proof.",
+  "- **Refuted**, and the evidence holds when you check it yourself: answer on",
+  "  Greptile's thread with that evidence and a link to CodeRabbit's verdict.",
+  "- **Partly**: fix the part that holds, answer the rest.",
+  "- **An answer of yours called wrong**: it is a finding again; fix it, or answer",
+  "  with what the verdict missed.",
+  "- **A miss** CodeRabbit names: a finding like any other.",
+  "- **A refutation you do not accept**, or one Greptile answers by raising the",
+  "  finding again: the two reviewers disagree, and that is a decision for whoever",
+  "  leads this contract, as a `**Decision for the lead**` line on the card. The PR",
+  "  does not merge over it.",
+  "",
+  "An answered Greptile finding still counts against the score until Greptile reads",
+  "the thread as closed: resolve it (`gh api graphql -f query='mutation {",
+  "resolveReviewThread(input:{threadId:\"<id>\"}) { thread { isResolved } } }'`, the id",
+  "from the PR's `reviewThreads`) and comment `@greptileai` once after. A Greptile",
+  "thread CodeRabbit resolved is neither a verdict nor Greptile closing it: the",
+  "`@greptileai` still goes out. CodeRabbit resolves its own thread when it accepts an",
+  "answer; one it keeps open after your answer is a disagreement for the card, like a",
+  "finding raised again after an answer, which is not closed by repeating the answer.",
+  "After a fix, push, and the round starts again on the new sha. Before the merge,",
+  "list the threads still open (the author is `greptile-apps` or `coderabbitai`",
+  "here, without `[bot]`):",
+  "",
+  "```bash",
+  "gh api graphql --paginate -f query='query($endCursor: String) { repository(owner: \"" + args.org + "\", name: \"" + args.repo + "\") { pullRequest(number: <n>) { reviewThreads(first: 100, after: $endCursor) { pageInfo { hasNextPage endCursor } nodes { isResolved comments(first: 1) { nodes { author { login } url } } } } } } }' \\",
+  "  --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) | \"\\(.comments.nodes[0].author.login) \\(.comments.nodes[0].url)\"' \\",
+  "  || echo \"thread query failed: the gate is not met\"",
+  "```",
+  "",
+  "**The loop ends** on the sha that will merge when: Greptile's run on it raised",
+  "nothing new and its check run is `success`; CodeRabbit's status on it reads",
+  "`Review completed`, its review of it raised nothing new and none of its pre-merge",
+  "checks failed without an answer; the command above prints nothing; every verdict of",
+  "the last adversarial pass was acted on; and no `**Decision for the lead**` is open.",
+];
+
+const REVIEWER_BLOCK = args.greptile && args.coderabbit
+  ? ADVERSARIAL_LOOP_LINES.join("\n")
+  : args.greptile
+  ? GREPTILE_LOOP_LINES.join("\n")
+  : args.coderabbit
+  ? CODERABBIT_LOOP_LINES.join("\n")
   : "";
 
-const GREPTILE_MERGE_CLAUSE = args.greptile ? " and Greptile reads full marks" : "";
+const REVIEWER_MERGE_CLAUSE = args.greptile && args.coderabbit
+  ? " and Greptile reads full marks and CodeRabbit's review has nothing open"
+  : args.greptile
+  ? " and Greptile reads full marks"
+  : args.coderabbit
+  ? " and CodeRabbit's review has nothing open"
+  : "";
+
+const CODERABBIT_YAML = `# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit's review of this repository. Reads AGENTS.md and CLAUDE.md as review
+# guidelines; nothing here repeats a rule already stated there.
+
+language: en-US
+
+reviews:
+  profile: chill
+  high_level_summary_in_walkthrough: true
+  in_progress_fortune: false
+  auto_review:
+    enabled: true
+    drafts: false
+  finishing_touches:
+    docstrings:
+      enabled: false
+  pre_merge_checks:
+    title:
+      mode: warning
+      requirements: >-
+        Conventional Commits, as .claude/skills/pr-creation § Title says:
+        \`type(scope): subject\`. \`type\` is one of feat, fix, refactor, perf, test,
+        docs, ci, chore, style, revert. The subject starts with a lowercase letter
+        and has no Title Case.
+    custom_checks:
+      - name: PR body follows the template
+        mode: warning
+        instructions: >-
+          Read the PR description, leaving out every block a bot generated. Pass
+          when what remains contains the headings \`## What this changes\`, \`## How
+          I verified it\` and \`## Screenshots and video\`, in that order, and its
+          last non-empty line is exactly \`Linear: ${args.linearPrefix}-<number>.\`. Otherwise fail,
+          naming each missing heading or quoting the last line. Pass without
+          checking when the PR was opened by a bot account.
+
+knowledge_base:
+  linear:
+    usage: enabled
+    team_keys:
+      - ${args.linearPrefix}
+
+chat:
+  auto_reply: true
+  art: false
+`;
 
 // Line-level substitutions: a line whose trimmed content is exactly the key is
 // replaced wholesale (and dropped entirely when the value is empty).
 const BLOCK_SUBSTITUTIONS = {
   "{{WORKTREE_BLOCK}}": WORKTREE_BLOCK,
-  "{{GREPTILE_BLOCK}}": GREPTILE_BLOCK,
+  "{{GREPTILE_BLOCK}}": REVIEWER_BLOCK,
 };
 
 // Inline substitutions: replaced wherever they occur inside a line.
@@ -182,7 +394,7 @@ const INLINE_SUBSTITUTIONS = {
   "{{LINEAR_PROJECT}}": args.linearProject,
   "{{WORKTREE_POLICY}}": WORKTREE_POLICY,
   "{{REVIEW_GATE_POLICY}}": REVIEW_GATE_POLICY,
-  "{{GREPTILE_MERGE_CLAUSE}}": GREPTILE_MERGE_CLAUSE,
+  "{{GREPTILE_MERGE_CLAUSE}}": REVIEWER_MERGE_CLAUSE,
 };
 
 // ---- walk the template, resolve placeholders, write into the target ----
@@ -230,6 +442,16 @@ for (const src of listFiles(TEMPLATE_DIR)) {
   mkdirSync(dirname(dest), { recursive: true });
   writeFileSync(dest, resolveFile(readFileSync(src, "utf8")));
   written.push(rel);
+}
+
+if (args.coderabbit) {
+  const dest = join(targetDir, ".coderabbit.yaml");
+  if (existsSync(dest) && !args.force) {
+    skipped.push(".coderabbit.yaml");
+  } else {
+    writeFileSync(dest, CODERABBIT_YAML);
+    written.push(".coderabbit.yaml");
+  }
 }
 
 console.log(`Wrote ${written.length} file(s) into ${targetDir}:`);

@@ -25,7 +25,7 @@ the paragraph typed instead) has to answer, before the first Linear call:
 | One-line description | `--one-liner` | Ask for one sentence, the shape `docs/tracker.md` uses for an initiative or a project summary. |
 | The contract itself | `--linear-project`, named with a verb (`MVP delivery`, `Booking flow rebuild`) | Ask what this specific contract covers, distinct from the macroprogetto it lives under. |
 | New repository or an existing checkout | `--create-repo` vs `--target-dir` | When the macroprogetto is new, `--create-repo`. When it already exists, find the repository already tied to it before choosing either flag (`get_project` on one of its existing projects, `links`, or ask): README § The model is one GitHub repository per macroprogetto, never a second one for a second contract, so an existing macroprogetto always gets `--target-dir` on that same checkout, not `--create-repo` with a new slug. |
-| Worktree / Greptile | `--worktree`/`--greptile` | Default on / off (README § Configurable per contract); ask only when the spec signals otherwise (more than one person committing, or the client already runs Greptile). |
+| Worktree / Greptile / CodeRabbit | `--worktree`/`--greptile`/`--coderabbit` | Default on / off / off (README § Configurable per contract); ask only when the spec signals otherwise (more than one person committing, or the client already runs Greptile or CodeRabbit). Both reviewer flags on renders the adversarial pass between them. |
 | Who is on it | the Linear project's members | Lorenzo and whoever else the spec names; both members always, even a contract with one worker (`docs/tracker.md` § Where things are). |
 
 Never guess a field the spec does not answer and nobody has given: a wrong
@@ -71,7 +71,7 @@ node tooling/client-repo-starter/new-client-repo.mjs \
   --project-name <NAME> --one-liner "<one-liner>" \
   --linear-team <team> --linear-prefix <PREFIX> \
   --initiative <initiative> --linear-project "<contract name>" \
-  [--create-repo | --target-dir <path>] [--worktree|--no-worktree] [--greptile|--no-greptile]
+  [--create-repo | --target-dir <path>] [--worktree|--no-worktree] [--greptile|--no-greptile] [--coderabbit|--no-coderabbit]
 ```
 
 Read its own output rather than assuming what it did: it prints what it wrote, what it
