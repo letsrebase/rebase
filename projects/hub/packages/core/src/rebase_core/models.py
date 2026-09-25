@@ -890,7 +890,5 @@ class CampaignOptout(Base):
     )
 
     __table_args__ = (
-        CheckConstraint(
-            "fonte IN ('link', 'reclamo', 'admin')", name="ck_campaign_optouts_fonte"
-        ),
+        CheckConstraint("fonte IN ('link', 'reclamo', 'admin')", name="ck_campaign_optouts_fonte"),
     )
