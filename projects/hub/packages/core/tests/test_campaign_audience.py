@@ -219,3 +219,28 @@ def test_the_audience_lists_everyone_and_greys_out_the_excluded(
         ("boss@rebase.it", REASON_ADMIN),
         ("ok@studio.it", None),
     ]
+
+
+def test_the_aziende_filter_merges_open_requests_and_drops_the_closed_one(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    first = company(clean, "info@block-buy.it", stato="nuovo")
+    second = company(clean, "info@block-buy.it", stato="nuovo")
+    company(clean, "info@block-buy.it", stato="chiuso")
+    campaign = campaign_row(
+        clean, fonte="filtri", stato_percorso=None, filtri={"lista": "aziende", "stato": "nuovo"}
+    )
+    found = candidates(clean, campaign)
+    assert [c.email for c in found] == ["info@block-buy.it"]
+    assert set(found[0].company_ids) == {first.id, second.id}
+    assert found[0].nome == "Ciro"
+
+
+def test_a_cross_case_address_across_a_lead_and_a_card_is_one_lowercase_row(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    lead(clean, "Ada@Studio.it")
+    person(clean, "ada@studio.it")
+    campaign = campaign_row(clean, fonte="filtri", stato_percorso=None, filtri={"lista": "talenti"})
+    rows = build_audience(clean, campaign, now=T0, gap_days=3)
+    assert [(r.candidate.email, r.escluso) for r in rows] == [("ada@studio.it", None)]
