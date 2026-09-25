@@ -714,6 +714,10 @@ class EngagementService:
             )
         except Exception as exc:  # noqa: BLE001 - a refused connection, a DNS miss, a timeout
             raise PigroUnavailable(NOT_ANSWERING) from exc
+        if status == 409:
+            # The deal was deleted in the space (spec § 3.10): the CRM's own sentence,
+            # the same one `link` stores, since this page is where an admin learns it.
+            raise PigroUnavailable(_refusal(raw, status))
         if status != 200:
             raise PigroUnavailable(ANSWERED_STATUS.format(status=status))
         if len(raw) > MAX_BODY_BYTES:

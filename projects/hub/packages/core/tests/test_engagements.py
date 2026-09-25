@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import pytest
 from fakes_contracts import FakeRenderer
@@ -773,7 +773,8 @@ def _invoice(
     tipo: str, numero: int | None, anno: int | None = 2026, **extra: Any
 ) -> dict[str, Any]:
     return {
-        "id": "0192e0a0-0000-7000-8000-0000000f0001",
+        # One id per invoice, so two of them never merge when windows are joined.
+        "id": str(uuid5(NAMESPACE_URL, f"{tipo}/{numero}/{anno}")),
         "tipo": tipo,
         "anno": anno,
         "numero": numero,
@@ -1029,13 +1030,28 @@ def test_report_walks_800_day_windows(clean: Session) -> None:
     assert [(i.numero, i.ore) for i in report.fatture] == [("12/2026", Decimal("14.00"))]
 
 
+def test_report_surfaces_the_crm_sentence_on_409(clean: Session) -> None:
+    """The freelancer deleted the deal (spec § 3.10): the report page is where an admin
+    learns it, in the CRM's own words, the same the link stores; a 409 with nothing to
+    say still names its status."""
+    match_id = _linked_match(clean, date(2026, 10, 1))
+    problem = {"type": "x", "title": "Conflitto", "status": 409, "detail": DEAL_GONE}
+
+    for body, sentence in (
+        (json.dumps(problem).encode(), DEAL_GONE),
+        (b"", ANSWERED_STATUS.format(status=409)),
+    ):
+        with pytest.raises(PigroUnavailable) as gone:
+            _service(clean, RecordedPigro([(409, body)])).report(match_id)
+        assert str(gone.value) == sentence
+
+
 def test_report_when_pigro_does_not_answer_or_is_not_configured(clean: Session) -> None:
     match_id = _linked_match(clean, date(2026, 10, 1))
 
     for answer, sentence in (
         (ConnectionRefusedError("refused"), NOT_ANSWERING),
         ((500, b""), ANSWERED_STATUS.format(status=500)),
-        ((409, json.dumps({"detail": DEAL_GONE}).encode()), ANSWERED_STATUS.format(status=409)),
         ((200, b"[]"), NOT_THE_SHAPE),
         ((200, b'{"giorni": [{"data": "ieri"}]}'), NOT_THE_SHAPE),
         ((200, b"x" * 1_048_577), TOO_LONG),
