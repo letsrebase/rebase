@@ -13,7 +13,9 @@ from rebase_core.config import Settings
 from rebase_core.http import HttpCall, urllib_call
 from rebase_core.mail import RESEND_URL
 
-Esito = Literal["accettata", "riprova", "rifiutata"]
+# `fermati`: Resend refused the key or the domain (401/403), an answer every other
+# mail of the list would get too, so the tick stops instead of burning the list.
+Esito = Literal["accettata", "riprova", "rifiutata", "fermati"]
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,10 @@ class ResendCampaignSender:
             return SendOutcome("riprova", dettaglio=name)
         if status == 429 or status >= 500:
             return SendOutcome("riprova", dettaglio=f"Resend {status}")
+        if status in (401, 403):
+            # A revoked or restricted key, or a domain Resend no longer sends for: the
+            # status alone, since the body may name the domain or the key's id.
+            return SendOutcome("fermati", dettaglio=f"Resend {status}")
         return SendOutcome("rifiutata", dettaglio=f"Resend {status} {name}".strip())
 
 

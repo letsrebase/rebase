@@ -1,7 +1,9 @@
 """The loop's one pass (spec § 5.3, § 5.4)."""
 
+import logging
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from campaign_fixtures import (  # noqa: F401  (fixture)
     NOW,
     SETTINGS,
@@ -18,7 +20,13 @@ from sqlalchemy.orm import Session
 from rebase_core.campaigns.schemas import ScheduleRequest, TalentiFiltri
 from rebase_core.campaigns.sender import RecordingCampaignSender, SendOutcome
 from rebase_core.campaigns.service import CampaignService
-from rebase_core.campaigns.tick import MAX_ATTEMPTS, ROW_PREPARE_ERROR, _claim, run_tick
+from rebase_core.campaigns.tick import (
+    MAX_ATTEMPTS,
+    ROW_PREPARE_ERROR,
+    SEND_INTERVAL_SECONDS,
+    _claim,
+    run_tick,
+)
 from rebase_core.db import session_factory
 from rebase_core.models import Campaign, CampaignOptout, CampaignRecipient, Freelancer, User
 
@@ -137,6 +145,44 @@ def test_a_retry_keeps_the_row_until_the_third_failure(clean: Session) -> None: 
     row = rows(clean, campaign)["a@studio.it"]
     assert (row.stato, row.tentativi) == ("fallita", MAX_ATTEMPTS)
     assert len(set(flaky.keys)) == 1  # the same key every time
+
+
+def test_a_refused_key_stops_the_campaign_and_burns_nothing(
+    clean: Session,  # noqa: F811  (fixture)
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A 401/403 (a revoked or restricted key, a domain no longer verified) would be
+    the same answer for every row: the pass stops at the first, leaves every row
+    `in_coda` with no attempt counted, and logs the status alone. Once the key is
+    fixed, the next tick sends them all."""
+    # `hub_engine`'s `upgrade_to_head` runs Alembic's `env.py`, whose `fileConfig`
+    # disables every logger that already existed (the trap `test_member_api.py`
+    # documents): undo it so `caplog` sees this module's line.
+    logging.getLogger("rebase_core.campaigns.tick").disabled = False
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it", "b@studio.it")
+    refused = RecordingCampaignSender([SendOutcome("fermati", dettaglio="Resend 401")] * 2)
+    with caplog.at_level(logging.ERROR, logger="rebase_core.campaigns.tick"):
+        result = run_tick(clean, refused, SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert len(refused.sent) == 1
+    assert (result.inviate, result.fallite) == (0, 0)
+    assert {(r.stato, r.tentativi) for r in rows(clean, campaign).values()} == {("in_coda", 0)}
+    clean.refresh(campaign)
+    assert campaign.stato == "in_invio"
+    assert "Resend 401" in caplog.text and "studio.it" not in caplog.text
+    result = run_tick(clean, RecordingCampaignSender(), SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert result.inviate == 2
+
+
+def test_the_loop_leaves_a_second_between_two_mails(clean: Session) -> None:  # noqa: F811  (fixture)
+    """Resend allows two requests a second per team, and the magic link shares them:
+    a campaign takes at most one."""
+    clock = Clock(NOW)
+    scheduled(clean, clock, "a@studio.it", "b@studio.it")
+    pauses: list[float] = []
+    run_tick(clean, RecordingCampaignSender(), SETTINGS, clock=clock, pause=pauses.append)
+    assert SEND_INTERVAL_SECONDS == 1.0
+    assert pauses == [1.0, 1.0]
 
 
 def test_a_send_cut_short_resumes_on_the_next_tick(clean: Session) -> None:  # noqa: F811  (fixture)

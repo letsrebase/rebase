@@ -69,6 +69,17 @@ def test_a_changed_payload_under_the_same_key_and_a_bad_request_are_refused() ->
     )
 
 
+def test_a_revoked_key_or_an_unverified_domain_stops_the_send() -> None:
+    """401 and 403 say nothing about this one mail: every other would get the same
+    answer, so the tick must stop rather than burn the list (status only, no body)."""
+    for status, raw in (
+        (401, b'{"name": "missing_api_key"}'),
+        (403, b'{"name": "restricted_api_key"}'),
+    ):
+        outcome = ResendCampaignSender("k", "s", FakeHttp(status, raw)).send(MAIL, "x")
+        assert outcome == SendOutcome("fermati", dettaglio=f"Resend {status}")
+
+
 def test_the_seam_never_raises() -> None:
     def boom(*_: object) -> tuple[int, bytes]:
         raise OSError("down")

@@ -54,7 +54,9 @@ from rebase_core.config import Settings
 from rebase_core.models import Campaign, CampaignRecipient
 
 MAX_ATTEMPTS = 3
-SEND_INTERVAL_SECONDS = 0.5  # Resend's default limit is two requests a second
+# Resend's default limit is two requests a second for the whole team, and the magic
+# link and the member mails share it: a campaign takes one, leaving the other.
+SEND_INTERVAL_SECONDS = 1.0
 TICK_LOCK_KEY = 0x72656261  # "reba"
 ROW_PREPARE_ERROR = "errore nel preparare la mail"
 
@@ -213,6 +215,14 @@ def _send(
             session.commit()
             continue
         outcome = sender.send(rendered, idempotency_key=str(row.id))
+        if outcome.esito == "fermati":
+            # Resend refused the key or the domain: every other row would get the same
+            # answer. Stop this campaign's pass with the row still `in_coda` and no
+            # attempt counted; the campaign stays `in_invio` and the next tick tries
+            # again, so fixing the key resumes the send. The status alone is logged.
+            session.commit()  # releases the row's lock; nothing was written
+            _log.error("campaign %s stopped this tick: %s", campaign.id, outcome.dettaglio)
+            return
         if outcome.esito == "accettata":
             row.stato, row.resend_id, row.inviata_at = "inviata", outcome.resend_id, clock()
             result.inviate += 1
