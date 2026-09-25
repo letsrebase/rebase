@@ -27,7 +27,7 @@ dependencies = [
   "uuid-utils==0.17.0",
   "lxml==6.1.3",
   # Only `zoneinfo.ZoneInfo("Europe/Rome")` needs this, and only because
-  # `Dockerfile.api` pins no TZ, so `python:3.13-slim-bookworm` runs in UTC by
+  # `Dockerfile.api` pins no TZ, so `python:3.13-slim-trixie` runs in UTC by
   # default: a base image is not guaranteed to ship the IANA tz database at all
   # (Python's own docs recommend this exact package for that reason), so emission's
   # notion of "today in the issuer's calendar" cannot depend on the host having it.
