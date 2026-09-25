@@ -42,4 +42,4 @@ def test_the_contracts_sweep_command_builds_the_signing_service_and_prints_the_c
 
     assert len(_FakeSigningService.instances) == 1
     out = capsys.readouterr().out
-    assert out.strip() == "3 documenti aggiornati"
+    assert out.strip() == "3 documenti ripresi"

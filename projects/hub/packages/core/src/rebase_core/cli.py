@@ -177,7 +177,7 @@ def contracts_sweep() -> int:
         touched = signing.sweep()
     finally:
         session.close()
-    print(f"{touched} documenti aggiornati")
+    print(f"{touched} documenti ripresi")
     return 0
 
 

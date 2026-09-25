@@ -409,27 +409,31 @@ class SigningService:
         self.session.commit()
         return signed
 
-    def finish(self, document_id: UUID) -> None:
+    def finish(self, document_id: UUID) -> bool:
         """What a signature leaves to do once it is committed, each step idempotent: the
         completion confirmed with Documenso itself and the document moved to `firmato`
         (REB-431); the sealed copy downloaded and stored; the signed-copy mails sent,
         once; for an active framework agreement, the letters that waited for it
         released. A step that fails is logged and left for the next call (the next
-        «Aggiorna stato», or `sweep`); the others still run."""
-        self._confirm_completion(document_id)
+        «Aggiorna stato», or `sweep`); the others still run. Returns whether this call
+        actually moved anything -- the confirmation, a stored copy, an accepted mail, a
+        released letter -- so `sweep` counts only documents it truly advanced (REB-433),
+        not one still waiting on Documenso or a mail provider that keeps refusing."""
+        moved = self._confirm_completion(document_id)
         try:
-            self._store_signed_copy(document_id)
+            moved = self._store_signed_copy(document_id) is not None or moved
         except (DocumensoFailed, SigningUnavailable, NotFound):
             self.session.rollback()
             _log.warning(
                 "the signed copy of document %s is not stored yet", document_id, exc_info=True
             )
-        self._mail_signed_copy_once(document_id)
+        moved = self._mail_signed_copy_once(document_id) or moved
         document = self.session.get(ContractDocument, document_id, populate_existing=True)
         if document is not None and is_active(document):
-            self._release_letters(document)
+            moved = self._release_letters(document) or moved
+        return moved
 
-    def _confirm_completion(self, document_id: UUID) -> None:
+    def _confirm_completion(self, document_id: UUID) -> bool:
         """Before a document counts as signed: Documenso's own word on the envelope,
         read with no row lock held (a network call), so a forged webhook alone can no
         longer move a document to `firmato` -- a forged event now needs the hub's own
@@ -441,10 +445,11 @@ class SigningService:
         `apply` used to. Documenso unreachable is logged and left for the next `finish`
         (the sweep retries); an envelope Documenso does not report `COMPLETED` (still
         pending, rejected or cancelled there) leaves the row `inviato` too, logged at
-        info level for the ordinary "not signed yet" and at warning for anything else."""
+        info level for the ordinary "not signed yet" and at warning for anything else.
+        Returns whether this call moved the document to `firmato`."""
         document = self._document(document_id)
         if document.stato != "inviato" or document.documenso_id is None:
-            return
+            return False
         envelope_id = document.documenso_id
         try:
             envelope = self._documenso().get(envelope_id)
@@ -455,7 +460,7 @@ class SigningService:
                 document_id,
                 exc_info=True,
             )
-            return
+            return False
         outcome = outcome_from_envelope(envelope)
         self.matches.lock_freelancer(document.freelancer_id)
         match = (
@@ -464,7 +469,7 @@ class SigningService:
         document = self._lock(document_id)
         if document.stato != "inviato":
             self.session.rollback()
-            return
+            return False
         if outcome is None or outcome.kind != COMPLETED:
             self.session.rollback()
             if outcome is None:
@@ -478,7 +483,7 @@ class SigningService:
                     document_id,
                     outcome.kind,
                 )
-            return
+            return False
         document.stato = "firmato"
         # The signer's own date; the moment the hub heard of it only if Documenso said
         # nothing, which a completed envelope never does.
@@ -486,24 +491,28 @@ class SigningService:
         if match is not None and match.stato == "in_firma":
             match.stato = "attivo"
         self.session.commit()
+        return True
 
     def sweep(self) -> int:
         """`rebase contracts-sweep` (REB-391): redoes what a lost background task or a
         restart left behind, for every document `finish` still has something to do for.
         Each document runs in its own transaction, through `finish` itself, so the two
         steps stay exactly as idempotent as the webhook's own recovery; a failure is
-        logged and the next document is still tried. Returns how many it touched."""
+        logged and the next document is still tried. Returns how many `finish` actually
+        moved (REB-433), not how many it merely looked at -- a document still waiting on
+        Documenso, tried again next time, does not count."""
         touched = 0
         for document_id in self._to_finish():
             try:
-                self.finish(document_id)
+                moved = self.finish(document_id)
             except Exception:
                 self.session.rollback()
                 _log.warning(
                     "contracts-sweep: document %s could not be finished", document_id, exc_info=True
                 )
                 continue
-            touched += 1
+            if moved:
+                touched += 1
         return touched
 
     def _to_finish(self) -> list[UUID]:
@@ -566,14 +575,16 @@ class SigningService:
         self.session.commit()
         return document
 
-    def _mail_signed_copy_once(self, document_id: UUID) -> None:
+    def _mail_signed_copy_once(self, document_id: UUID) -> bool:
         """The signed-copy mails, the freelancer's and rebase's, each sent at most once
         and recorded on its own: one recipient's provider refusing forever must not
-        keep the other from ever getting theirs again once `finish` runs next (REB-391)."""
-        self._mail_signed_copy_to(document_id, to_freelancer=True)
-        self._mail_signed_copy_to(document_id, to_freelancer=False)
+        keep the other from ever getting theirs again once `finish` runs next (REB-391).
+        Returns whether either mail was actually accepted this call (REB-433)."""
+        freelancer_mailed = self._mail_signed_copy_to(document_id, to_freelancer=True)
+        rebase_mailed = self._mail_signed_copy_to(document_id, to_freelancer=False)
+        return freelancer_mailed or rebase_mailed
 
-    def _mail_signed_copy_to(self, document_id: UUID, *, to_freelancer: bool) -> None:
+    def _mail_signed_copy_to(self, document_id: UUID, *, to_freelancer: bool) -> bool:
         """One recipient's own signed-copy mail, locked under the document's own row,
         same as `_store_signed_copy`, so two concurrent `finish` calls mail this
         recipient once. Nothing to mail yet (no stored copy) or this recipient already
@@ -581,7 +592,8 @@ class SigningService:
         (`signed_copy_to_freelancer_at` or `signed_copy_to_rebase_at`) is set, and
         committed, only once their mail is accepted, still under this lock, so a refusal
         is retried on the next `finish` without repeating the other recipient's mail,
-        already accepted and recorded under its own column (REB-391)."""
+        already accepted and recorded under its own column (REB-391). Returns whether
+        this recipient's mail was accepted and recorded now (REB-433)."""
         document = self._lock(document_id)
         mailed_at = (
             document.signed_copy_to_freelancer_at
@@ -590,13 +602,13 @@ class SigningService:
         )
         if document.signed_pdf is None or mailed_at is not None:
             self.session.rollback()
-            return
+            return False
         if self.sender is None:
             self.session.rollback()
             _log.warning(
                 "no mail sender: the signed copy of document %s was not mailed", document.id
             )
-            return
+            return False
         user = self._owner(document.freelancer_id)
         pdf = self.matches.document_pdf(document.id, signed=True)
         attachment = Attachment(filename=pdf.filename, content=pdf.content)
@@ -617,14 +629,15 @@ class SigningService:
                 "freelancer" if to_freelancer else "rebase",
             )
             self.session.rollback()
-            return
+            return False
         if to_freelancer:
             document.signed_copy_to_freelancer_at = self.now()
         else:
             document.signed_copy_to_rebase_at = self.now()
         self.session.commit()
+        return True
 
-    def _release_letters(self, framework: ContractDocument) -> None:
+    def _release_letters(self, framework: ContractDocument) -> bool:
         """The letters that waited for this framework agreement (spec § 1e), each in a
         transaction of its own and mailed after its commit: a Documenso refusal leaves
         that letter waiting for the next `finish` and lets the others go. Only matches an
@@ -632,13 +645,15 @@ class SigningService:
 
         `send_match` refuses up front without a mail sender (`_sender`), so a release
         must not dispatch a letter to Documenso either when nobody could then be told
-        about it (REB-391): checked before any letter is even read."""
+        about it (REB-391): checked before any letter is even read. Returns whether at
+        least one letter was actually released this call (REB-433); its own signing-mail
+        need not have been accepted to count, the same as `send_match`'s own report."""
         if self.sender is None:
             _log.warning(
                 "no mail sender: the letters waiting on framework agreement %s stay waiting",
                 framework.id,
             )
-            return
+            return False
         waiting = list(
             self.session.execute(
                 select(ContractDocument.id, ContractDocument.match_id)
@@ -656,6 +671,7 @@ class SigningService:
         sent_by = framework.sent_by or framework.created_by
         freelancer_id = framework.freelancer_id
         self.session.rollback()
+        released = False
         for letter_id, match_id in waiting:
             try:
                 letter = self._send_waiting(
@@ -668,6 +684,7 @@ class SigningService:
                 )
                 continue
             if letter is not None:
+                released = True
                 mailed = self._mail_signing_request(letter)
                 # A letter released this way leaves the same trail `send_match` leaves
                 # for one it sends itself, attributed to whoever sent the framework
@@ -679,6 +696,7 @@ class SigningService:
                     sent_by,
                     {"documento": letter.id, "kind": LETTERA, "mail": mailed},
                 )
+        return released
 
     def _send_waiting(
         self,

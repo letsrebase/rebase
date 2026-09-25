@@ -26,7 +26,12 @@ function Actions({ document }: { document: MemberContract }) {
         <Button asChild variant="outline" size="sm">
           <a
             href={member.contractPdfUrl(document.id)}
-            aria-label={`Scarica la copia firmata ${whatOf(document)}`}
+            // `whatOf` alone repeats «del contratto quadro» for the current framework
+            // agreement and each one under «Contratti quadro precedenti»: the signature
+            // date tells the links apart by name (REB-433). `ha_pdf_firmato` never
+            // holds without `signed_at` set first, whichever step moved the document
+            // there.
+            aria-label={`Scarica la copia firmata ${whatOf(document)} del ${formatDate(document.signed_at!)}`}
           >
             <Download className="mr-2 size-4" aria-hidden="true" />
             Copia firmata

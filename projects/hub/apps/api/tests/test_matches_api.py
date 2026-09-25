@@ -8,12 +8,13 @@ import pytest
 from fakes_contracts import FailingRenderer, FakeRenderer
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_renderer
 from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
-from rebase_core.models import User
+from rebase_core.models import Match, User
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 ADMIN_EMAIL = "ivan@rebase.it"
@@ -240,6 +241,44 @@ def test_the_same_id_used_by_another_freelancers_match_is_a_409(
 
     assert refused.status_code == 409, refused.text
     assert client.get(f"/api/hub/freelancers/{other_freelancer_id}/matches").json()["matches"] == []
+
+
+def test_a_flush_time_id_collision_is_a_409_not_a_500(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    renderer: FakeRenderer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REB-433: two different freelancers can race past the id check -- each reads
+    "nothing written under this id yet" before the other commits (the real race, under
+    Postgres, is `test_matches.py`'s own two-session gate test) -- and only the insert
+    itself, protected by the id's primary key, catches the second one. Forged here by
+    making that one flush fail the way the database's own unique index would, so the
+    route is proven to answer 409, not an unhandled 500, with no second transaction
+    needed to reproduce it."""
+    freelancer_id, company_id = _ready(client, sender)
+    given_id = "01234567-89ab-7cde-8123-456789abcdef"
+    real_flush = Session.flush
+
+    def flush_as_the_unique_index_would(self: Session, *args: object, **kwargs: object) -> None:
+        if any(isinstance(obj, Match) and str(obj.id) == given_id for obj in self.new):
+            raise IntegrityError(
+                "INSERT INTO matches (id, ...)",
+                {},
+                Exception('duplicate key value violates unique constraint "matches_pkey"'),
+            )
+        real_flush(self, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "flush", flush_as_the_unique_index_would)
+
+    refused = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    )
+
+    assert refused.status_code == 409, refused.text
+    assert "un altro freelance" in refused.json()["detail"]
 
 
 def test_a_repeated_create_with_the_same_id_and_changed_data_is_a_409(

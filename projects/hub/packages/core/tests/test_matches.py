@@ -333,6 +333,92 @@ def test_a_repeated_id_already_used_by_another_freelancer_is_refused(clean: Sess
     assert len(_documents(clean, other_freelancer_id, "lettera")) == 0
 
 
+def test_two_freelancers_racing_the_same_match_id_get_a_409_not_a_500(
+    monkeypatch: pytest.MonkeyPatch, hub_engine: Engine, clean: Session
+) -> None:
+    """REB-433: the check above (`existing is None`) reads before either session has
+    committed, so two different freelancers' browsers sending the same client-generated
+    id at the same moment can both read "nothing written yet" and both proceed to the
+    insert; only the id's own primary key actually catches the second one. The gate
+    technique of
+    `test_two_admins_matching_the_same_freelancer_at_once_never_leave_two_open_frameworks`:
+    `next_letter_number`, the statement right after the Match itself is flushed, pauses
+    the first session there, its insert still uncommitted, so the second genuinely races
+    it at the database rather than merely following a thread schedule. Postgres blocks
+    the second session's own insert of the same id until the first's is decided; once it
+    commits, the second's raises `IntegrityError`, which `create` must turn into the same
+    409 the check above gives, never an unhandled 500."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    other_freelancer_id = _second_card(clean)
+    _fiscal(clean, other_freelancer_id, admin_id)
+    other_company_id = _request(clean, nome_azienda="Bianchi Srl", figura_richiesta="Designer")
+    given_id = uuid4()
+    factory = session_factory(hub_engine)
+    first, second = factory(), factory()
+    paused = threading.Event()
+    release = threading.Event()
+    real_next_letter_number = matches_module.next_letter_number
+
+    def paced_next_letter_number(session: Session, year: int) -> str:
+        if session is first:
+            paused.set()
+            assert release.wait(timeout=5), "the test never released the first create()"
+        return real_next_letter_number(session, year)
+
+    monkeypatch.setattr(matches_module, "next_letter_number", paced_next_letter_number)
+    first_errors: list[BaseException] = []
+    second_errors: list[BaseException] = []
+
+    def run_first() -> None:
+        try:
+            MatchService(first, FakeRenderer(), SIGNER, today=lambda: TODAY).create(
+                freelancer_id, _body(company_id).model_copy(update={"id": given_id}), admin_id
+            )
+        except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
+            first_errors.append(exc)
+
+    def run_second() -> None:
+        try:
+            MatchService(second, FakeRenderer(), SIGNER, today=lambda: TODAY).create(
+                other_freelancer_id,
+                _body(other_company_id).model_copy(update={"id": given_id}),
+                admin_id,
+            )
+        except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
+            second_errors.append(exc)
+
+    try:
+        first_worker = threading.Thread(target=run_first)
+        first_worker.start()
+        assert paused.wait(timeout=5), "the first create() never reached next_letter_number"
+
+        second_worker = threading.Thread(target=run_second)
+        second_worker.start()
+        second_worker.join(timeout=0.5)
+        assert second_worker.is_alive(), (
+            "the second create() did not block on the first's uncommitted insert of the "
+            "same match id"
+        )
+
+        release.set()
+        first_worker.join(timeout=5)
+        second_worker.join(timeout=5)
+        assert not first_worker.is_alive()
+        assert not second_worker.is_alive()
+    finally:
+        first.close()
+        second.close()
+
+    assert not first_errors, first_errors
+    assert len(second_errors) == 1
+    assert isinstance(second_errors[0], InvalidState)
+    assert "un altro freelance" in second_errors[0].message
+    clean.expire_all()
+    written = clean.get(Match, given_id)
+    assert written is not None and written.freelancer_id == freelancer_id
+    assert len(_documents(clean, other_freelancer_id, "lettera")) == 0
+
+
 def test_a_repeated_id_with_changed_data_is_refused_not_returned(clean: Session) -> None:
     """An admin who corrects the letter before retrying (a lost response, a second
     click) must not get the uncorrected match silently handed back: the request no

@@ -88,10 +88,11 @@ describe('«Contratti» in the member area (REB-392)', () => {
       quadri_precedenti: [],
       lettere: [],
     })
-    expect(await screen.findByRole('link', { name: 'Scarica la copia firmata del contratto quadro' })).toHaveAttribute(
-      'href',
-      '/api/hub/me/contracts/d1/pdf',
-    )
+    expect(
+      await screen.findByRole('link', {
+        name: `Scarica la copia firmata del contratto quadro del ${formatDate('2026-10-01T09:00:00Z')}`,
+      }),
+    ).toHaveAttribute('href', '/api/hub/me/contracts/d1/pdf')
     expect(screen.queryByRole('link', { name: /Firma/ })).toBeNull()
     expect(screen.getByText(new RegExp(formatDate('2027-10-01')))).toBeInTheDocument()
     expect(screen.getByText(/certificato della firma elettronica/)).toBeInTheDocument()
@@ -125,17 +126,30 @@ describe('«Contratti» in the member area (REB-392)', () => {
       attivo: false,
     }
     mount({
-      quadro: { ...QUADRO, id: 'd4', stato: 'firmato', signing_url: null, ha_pdf_firmato: true, attivo: true },
+      quadro: {
+        ...QUADRO,
+        id: 'd4',
+        stato: 'firmato',
+        signing_url: null,
+        signed_at: '2026-10-01T09:00:00Z',
+        ha_pdf_firmato: true,
+        attivo: true,
+      },
       quadri_precedenti: [PREVIOUS],
       lettere: [],
     })
 
     expect(await screen.findByText('Contratti quadro precedenti')).toBeInTheDocument()
-    // Both the current and the earlier framework agreement offer «Copia firmata»,
-    // which is the same aria-label for each: found by its own `href` rather than by
-    // name alone.
-    const copies = screen.getAllByRole('link', { name: 'Scarica la copia firmata del contratto quadro' })
-    expect(copies.map((link) => link.getAttribute('href'))).toContain('/api/hub/me/contracts/d3/pdf')
+    // The current and the earlier framework agreement each offer «Copia firmata»: their
+    // own signature date tells the two links apart by name (REB-433).
+    const current = screen.getByRole('link', {
+      name: `Scarica la copia firmata del contratto quadro del ${formatDate('2026-10-01T09:00:00Z')}`,
+    })
+    expect(current).toHaveAttribute('href', '/api/hub/me/contracts/d4/pdf')
+    const previous = screen.getByRole('link', {
+      name: `Scarica la copia firmata del contratto quadro del ${formatDate('2026-01-01T09:00:00Z')}`,
+    })
+    expect(previous).toHaveAttribute('href', '/api/hub/me/contracts/d3/pdf')
     expect(screen.queryByRole('link', { name: /Firma/ })).toBeNull()
   })
 

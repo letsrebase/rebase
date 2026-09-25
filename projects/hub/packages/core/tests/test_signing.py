@@ -1391,26 +1391,53 @@ def test_sweep_releases_a_waiting_letter_of_an_already_finished_framework(
 
     touched = signing.sweep()
 
-    # 2, not 1: the first match's own letter, released by the `finish` above, is
+    # 1, not 2: the first match's own letter, released by the `finish` above, is
     # itself `inviato` with an envelope still pending on Documenso, so REB-431's wider
-    # `_to_finish` visits it too, even though nothing moves for it (REB-433 later
-    # makes this count mean "moved").
-    assert touched == 2
+    # `_to_finish` visits it too, but nothing moves for it, and REB-433 counts only
+    # what actually moved.
+    assert touched == 1
     assert _letter_of(clean, second.id).stato == "inviato"
 
 
-def test_sweep_with_nothing_signed_yet_still_visits_the_pending_envelope(
-    clean: Session,
-) -> None:
+def test_sweep_with_nothing_left_to_do_returns_zero(clean: Session) -> None:
     """A document still `inviato`, not yet signed on Documenso, is in `_to_finish` now
-    too (REB-431), so `sweep` confirms nothing but still counts the visit; REB-433 is
-    what later makes the count mean "moved", not merely "tried"."""
+    too (REB-431): `finish` confirms nothing and moves nothing, so it still counts for
+    zero (REB-433)."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
 
-    assert _signing(clean, renderer, fake, sender).sweep() == 1
+    assert _signing(clean, renderer, fake, sender).sweep() == 0
     assert _framework_of(clean, freelancer_id).stato == "inviato"
+
+
+def test_sweep_does_not_keep_counting_a_document_stuck_on_a_failing_download(
+    clean: Session,
+) -> None:
+    """REB-433: `rebase contracts-sweep` must not print one more «documento ripreso»
+    for a document that keeps failing the same way every ten minutes -- only a sweep
+    that actually moves something (here, the confirmation to `firmato`, on the first
+    run) counts."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    fake.fail("download", 500, "Internal server error")
+
+    first = signing.sweep()
+
+    assert first == 1  # the confirmation to `firmato` itself moved something
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.stato, quadro.signed_pdf) == ("firmato", None)
+
+    fake.fail("download", 500, "Internal server error")
+
+    second = signing.sweep()
+
+    assert second == 0  # already confirmed; only the still-failing download was tried
+    assert _framework_of(clean, freelancer_id).signed_pdf is None
 
 
 # ---- the recovery actions (REB-407) ------------------------------------------------------
