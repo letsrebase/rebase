@@ -56,9 +56,9 @@ from rebase_core.framework import (
     active_framework,
     document_facts,
     document_read,
+    framework_states,
     next_letter_number,
     pending_framework,
-    pending_framework_states,
     rome_today,
     signed_on,
 )
@@ -179,8 +179,9 @@ class MatchService:
         ).first()
         if letter is None:
             raise NotFound("lettera", match_id)
-        pending = pending_framework(self.session, row[0].freelancer_id)
-        return self._match_read(row[0], row[1], letter, pending.stato if pending else None)
+        freelancer_id = row[0].freelancer_id
+        framework = framework_states(self.session, {freelancer_id}).get(freelancer_id)
+        return self._match_read(row[0], row[1], letter, framework)
 
     def list_all(
         self,
@@ -199,8 +200,8 @@ class MatchService:
         gone, the same as `for_freelancer`. `stato` is one of `MATCH_STATES` or a
         `ValidationFailed` naming the field, the same shape a 422 elsewhere in this module
         already takes. Neither `budget_giornaliero` nor a tax field is read here. Each
-        row's sentence needs its freelancer's pending framework agreement: read for the
-        whole page in one more query, never one per row."""
+        row's sentence needs where its freelancer's framework agreement stands: read for
+        the whole page in one more query, never one per row."""
         if stato is not None and stato not in MATCH_STATES:
             raise ValidationFailed(ENTITY, "stato", "stato sconosciuto")
         limit = max(1, min(limit, LIST_LIMIT_MAX))
@@ -246,7 +247,7 @@ class MatchService:
         rows = self.session.execute(
             base.order_by(Match.created_at.desc(), Match.id.desc()).limit(limit).offset(offset)
         ).all()
-        frameworks = pending_framework_states(self.session, {row[0].freelancer_id for row in rows})
+        frameworks = framework_states(self.session, {row[0].freelancer_id for row in rows})
         today = self.today()
         return MatchList(
             totale=totale,
@@ -280,7 +281,7 @@ class MatchService:
         shown = next((q for q in quadri if q.attivo), None) or next(
             (q for q in quadri if q.stato != "annullato" or q.sent_at is not None), None
         )
-        pending = pending_framework(self.session, freelancer_id)
+        framework = framework_states(self.session, {freelancer_id}).get(freelancer_id)
         rows = self.session.execute(
             select(Match, Company)
             .join(Company, Company.id == Match.company_id)
@@ -301,9 +302,7 @@ class MatchService:
             quadro=shown,
             quadri=quadri,
             matches=[
-                self._match_read(
-                    match, company, letters[match.id], pending.stato if pending else None
-                )
+                self._match_read(match, company, letters[match.id], framework)
                 for match, company in rows
                 if match.id in letters
             ],
@@ -789,8 +788,9 @@ class MatchService:
         letter: ContractDocument,
         framework_stato: str | None,
     ) -> MatchRead:
-        """`framework_stato` is the freelancer's pending framework agreement's state, or
-        `None`: whether a waiting letter leaves by itself or needs «Invia per la firma»."""
+        """`framework_stato` is where the freelancer's framework agreement stands
+        (`framework_states`): whether a waiting letter leaves by itself or needs «Invia
+        per la firma»."""
         today = self.today()
         situazione, prossima_azione, altre_azioni = match_words(
             match.stato,

@@ -1,12 +1,14 @@
 """REB-477: what a match and its documents are doing, and what comes next, in the words
 the page, the «Match» list and the MCP tools all read. Pure functions: no database."""
 
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 
 import pytest
 
 from rebase_core.contract_schemas import LetteraFields
+from rebase_core.documenso import REJECTED, Outcome
 from rebase_core.match_words import (
     DOCUMENT_STATE_LABELS,
     MATCH_STATE_LABELS,
@@ -16,6 +18,13 @@ from rebase_core.match_words import (
     match_words,
 )
 from rebase_core.models import MATCH_STATES
+from rebase_core.signing import (
+    CANCELLED_BY_REBASE,
+    CANCELLED_ON_DOCUMENSO,
+    CANCELLED_WITH_MATCH,
+    REFUSED_ON_SITE,
+    _cancel_reason,
+)
 
 SENT = date(2026, 9, 25)
 SIGNED = date(2026, 9, 28)
@@ -23,6 +32,25 @@ RENEWAL = date(2027, 9, 28)
 LAST_NOTICE = date(2027, 8, 29)
 NOTICE = date(2027, 3, 2)
 START, END = "1° ottobre 2026", "31 dicembre 2026"
+# Every reason the hub stores for a cancelled document, each already a sentence; the
+# sentence a page shows for it, the reason itself with one full stop; and whether it is
+# the freelancer's refusal, the one reason a cancelled match's own sentence repeats.
+STORED_REASONS = [
+    (CANCELLED_BY_REBASE, "Annullato da rebase.", False),
+    (CANCELLED_WITH_MATCH, "Annullato da rebase con il suo match.", False),
+    (CANCELLED_ON_DOCUMENSO, "Annullato su Documenso.", False),
+    (REFUSED_ON_SITE, "Rifiutato dal freelance sul sito di firma.", True),
+    (
+        _cancel_reason(Outcome("envelope", REJECTED, reason="il periodo non va")),
+        "Rifiutato dal freelance: il periodo non va.",
+        True,
+    ),
+    (
+        _cancel_reason(Outcome("envelope", REJECTED, reason="il periodo non va.")),
+        "Rifiutato dal freelance: il periodo non va.",
+        True,
+    ),
+]
 
 
 def _quadro(stato: str, **facts: object) -> DocumentFacts:
@@ -155,25 +183,17 @@ def test_a_signed_letter_with_its_copy_has_nothing_left_to_do() -> None:
     )
 
 
-@pytest.mark.parametrize(
-    ("document", "sentence"),
-    [
-        (
-            _quadro("annullato", cancel_reason="Annullato da rebase."),
-            "Annullato: Annullato da rebase.",
-        ),
-        (_quadro("annullato"), "Annullato."),
-        (
-            _lettera("annullato", cancel_reason="Rifiutato dal freelance: il periodo non va"),
-            "Annullata: Rifiutato dal freelance: il periodo non va.",
-        ),
-        (_lettera("annullato"), "Annullata."),
-    ],
-)
-def test_a_cancelled_document_says_why_and_has_nothing_left_to_do(
-    document: DocumentFacts, sentence: str
+@pytest.mark.parametrize(("reason", "sentence", "refusal"), STORED_REASONS)
+@pytest.mark.parametrize("make", [_quadro, _lettera])
+def test_a_cancelled_document_says_its_stored_reason_alone(
+    make: Callable[..., DocumentFacts], reason: str, sentence: str, refusal: bool
 ) -> None:
-    assert document_words(document) == (sentence, None, [])
+    assert document_words(make("annullato", cancel_reason=reason)) == (sentence, None, [])
+
+
+def test_a_cancelled_document_without_a_reason_says_so() -> None:
+    assert document_words(_quadro("annullato")) == ("Annullato.", None, [])
+    assert document_words(_lettera("annullato")) == ("Annullata.", None, [])
 
 
 def test_a_framework_with_a_notice_says_when() -> None:
@@ -217,9 +237,19 @@ def test_waiting_letter_with_framework_out_has_no_next_step() -> None:
     )
 
 
+def test_waiting_letter_with_an_active_framework_is_ready_to_leave() -> None:
+    """The framework agreement was signed and the letter's release was missed (a mail
+    sender missing, Documenso down): «Invia per la firma» sends the letter itself."""
+    assert match_words("in_firma", _lettera("in_attesa"), "firmato", START, None) == (
+        "La lettera n. 2026-003 è pronta a partire: il contratto quadro è già firmato.",
+        "invia",
+        ["annulla"],
+    )
+
+
 @pytest.mark.parametrize("framework_stato", [None, "generato"])
 def test_waiting_letter_without_framework_out_is_sent_again(framework_stato: str | None) -> None:
-    """No framework agreement pending (a cancelled or refused one is no longer
+    """No framework agreement active or pending (a cancelled or refused one is no longer
     pending), or one merely generated: «Invia per la firma» writes or sends it."""
     assert match_words("in_firma", _lettera("in_attesa"), framework_stato, START, None) == (
         "La lettera n. 2026-003 aspetta un contratto quadro: «Invia per la firma» ne genera "
@@ -271,29 +301,29 @@ def test_a_closed_match_says_its_period() -> None:
     assert match_words("concluso", letter, None, None, None)[0] == "Concluso: lettera n. 2026-003."
 
 
-def test_a_cancelled_match_says_why_or_that_nothing_is_to_be_signed() -> None:
-    refused = _lettera("annullato", cancel_reason="Annullato da rebase con il suo match.")
-    assert match_words("annullato", refused, None, START, None) == (
-        "Annullato: Annullato da rebase con il suo match.",
+@pytest.mark.parametrize(("reason", "sentence", "refusal"), [*STORED_REASONS, (None, "", False)])
+def test_a_cancelled_match_says_nothing_is_to_be_signed_and_why_only_for_a_refusal(
+    reason: str | None, sentence: str, refusal: bool
+) -> None:
+    words = match_words("annullato", _lettera("annullato", cancel_reason=reason), None, START, None)
+    because = f" {sentence}" if refusal else ""
+    assert words == (
+        f"Annullato: la lettera n. 2026-003 non va più firmata.{because}",
         None,
         [],
     )
-    assert match_words("annullato", _lettera("annullato"), None, START, None) == (
-        "Annullato: la lettera n. 2026-003 non va più firmata.",
-        None,
-        [],
-    )
+    assert "Annullato: Annullato" not in words[0]
 
 
-def test_a_match_in_signature_whose_letter_was_refused_can_still_be_cancelled() -> None:
+@pytest.mark.parametrize(("reason", "sentence", "refusal"), [*STORED_REASONS, (None, "", False)])
+def test_a_match_in_signature_whose_letter_was_refused_can_still_be_cancelled(
+    reason: str | None, sentence: str, refusal: bool
+) -> None:
     """Not a row of the design's table: a refusal on the signing site cancels the letter
     and leaves its match `in_firma`, and today's page still offers «Annulla» there."""
-    refused = _lettera("annullato", cancel_reason="Rifiutato dal freelance sul sito di firma.")
-    assert match_words("in_firma", refused, None, START, None) == (
-        "Lettera n. 2026-003 annullata: Rifiutato dal freelance sul sito di firma.",
-        None,
-        ["annulla"],
-    )
+    words = match_words("in_firma", _lettera("annullato", cancel_reason=reason), None, START, None)
+    because = f" {sentence}" if refusal else ""
+    assert words == (f"Lettera n. 2026-003 annullata.{because}", None, ["annulla"])
 
 
 # ---- the check before saving ----------------------------------------------------------

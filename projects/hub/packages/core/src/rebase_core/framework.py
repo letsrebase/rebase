@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -109,11 +109,16 @@ def pending_framework(session: Session, freelancer_id: UUID) -> ContractDocument
     return pending[0] if pending else None
 
 
-def pending_framework_states(session: Session, freelancer_ids: Iterable[UUID]) -> dict[UUID, str]:
-    """`pending_framework`'s state for many freelancers in one query, so the «Match»
-    list reads one statement for its page rather than one per row: `inviato` when one is
-    out for signature, else `generato` when one was merely written. A freelancer with
-    none pending is absent."""
+# Which framework agreement a waiting letter reads, when a freelancer has several: an
+# active one first, then one out for signature, then one merely generated.
+_FRAMEWORK_RANK = {"firmato": 0, "inviato": 1, "generato": 2}
+
+
+def framework_states(session: Session, freelancer_ids: Iterable[UUID]) -> dict[UUID, str]:
+    """Where each freelancer's framework agreement stands, in one query for all of them,
+    so the «Match» list reads one statement for its page rather than one per row:
+    `firmato` for an active one (`active_framework`), else `pending_framework`'s state,
+    `inviato` or `generato`. A freelancer with none of these is absent."""
     ids = set(freelancer_ids)
     if not ids:
         return {}
@@ -122,10 +127,14 @@ def pending_framework_states(session: Session, freelancer_ids: Iterable[UUID]) -
         select(ContractDocument.freelancer_id, ContractDocument.stato).where(
             ContractDocument.kind == QUADRO,
             ContractDocument.freelancer_id.in_(ids),
-            ContractDocument.stato.in_(("generato", "inviato")),
+            or_(
+                ContractDocument.stato.in_(("generato", "inviato")),
+                and_(ContractDocument.stato == "firmato", ContractDocument.notice_at.is_(None)),
+            ),
         )
     ):
-        if states.get(freelancer_id) != "inviato":
+        held = states.get(freelancer_id)
+        if held is None or _FRAMEWORK_RANK[stato] < _FRAMEWORK_RANK[held]:
             states[freelancer_id] = stato
     return states
 

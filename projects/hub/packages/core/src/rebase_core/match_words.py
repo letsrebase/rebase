@@ -31,6 +31,8 @@ FrameworkStep = Literal["da_inviare", "in_firma", "attivo"]
 Words = tuple[str, Action | None, list[Action]]
 
 QUADRO = "quadro"
+# How every refusal `SigningService` stores begins, with or without the freelancer's words.
+REFUSED = "Rifiutato"
 
 MATCH_STATE_LABELS = {
     "bozza": "Da inviare",
@@ -85,9 +87,19 @@ def _on(day: date | None) -> str:
     return f" il {italian_date(day)}" if day is not None else ""
 
 
-def _reason(text: str | None) -> str:
-    """A stored reason already ends in a full stop, and the sentence adds its own."""
-    return (text or "").strip().rstrip(".")
+def _sentence(reason: str | None) -> str:
+    """A stored `cancel_reason` is already a sentence («Annullato da rebase.», «Rifiutato
+    dal freelance: …»), shown as it is with exactly one full stop; a freelancer's own
+    words may end with theirs, or with none."""
+    text = (reason or "").strip().rstrip(".")
+    return f"{text}." if text else ""
+
+
+def _refusal(letter: DocumentFacts) -> str:
+    """The freelancer's refusal, the one reason a match's sentence repeats after its own:
+    the others (cancelled by rebase, with the match, on Documenso) say nothing more."""
+    reason = _sentence(letter.cancel_reason)
+    return f" {reason}" if reason.startswith(REFUSED) else ""
 
 
 def _flat(text: str) -> str:
@@ -149,9 +161,8 @@ def _document_words(document: DocumentFacts) -> Words:
         )
         return f"{signed}.{renewal}", None, ["aggiorna_stato", "registra_disdetta"]
     if stato == "annullato":
-        cancelled = "Annullato" if framework else "Annullata"
-        reason = _reason(document.cancel_reason)
-        return (f"{cancelled}: {reason}." if reason else f"{cancelled}."), None, []
+        cancelled = "Annullato." if framework else "Annullata."
+        return _sentence(document.cancel_reason) or cancelled, None, []
     if stato == "disdetto":
         return f"Disdetto{_on(document.notice_on)}.", None, []
     return f"{DOCUMENT_STATE_LABELS.get(stato, stato)}.", None, []
@@ -169,10 +180,12 @@ def match_words(
     letter_start: str | None,
     letter_end: str | None,
 ) -> Words:
-    """`framework_stato` is the state of the freelancer's pending framework agreement
-    (`framework.pending_framework`), `None` when there is none: a letter waiting on one
-    out for signature leaves by itself, while one waiting on nothing (none written, one
-    generated and never sent, one cancelled or refused) needs «Invia per la firma»."""
+    """`framework_stato` is where the freelancer's framework agreement stands
+    (`framework.framework_states`): `firmato` for an active one, else the pending one's
+    `inviato` or `generato`, `None` when there is none. A waiting letter leaves by itself
+    after one out for signature; with an active one (its release missed) or with none
+    out (none written, one generated and never sent, one cancelled or refused) it needs
+    «Invia per la firma»."""
     numero = letter.numero
     if stato == "bozza":
         return (
@@ -182,6 +195,12 @@ def match_words(
             ["annulla"],
         )
     if stato == "in_firma" and letter.stato == "in_attesa":
+        if framework_stato == "firmato":
+            return (
+                f"La lettera n. {numero} è pronta a partire: il contratto quadro è già firmato.",
+                "invia",
+                ["annulla"],
+            )
         if framework_stato == "inviato":
             return (
                 f"La lettera n. {numero} aspetta la firma del contratto quadro e parte da sola "
@@ -218,14 +237,15 @@ def match_words(
     if stato == "concluso":
         return f"Concluso: lettera n. {numero}{_period(letter_start, letter_end)}.", None, []
     if stato == "annullato":
-        reason = _reason(letter.cancel_reason) or f"la lettera n. {numero} non va più firmata"
-        return f"Annullato: {reason}.", None, []
+        return (
+            f"Annullato: la lettera n. {numero} non va più firmata.{_refusal(letter)}",
+            None,
+            [],
+        )
     # `in_firma` with a letter refused or cancelled on the signing site: the match stays in
     # signature until an admin cancels it.
     if letter.stato == "annullato":
-        reason = _reason(letter.cancel_reason)
-        because = f": {reason}" if reason else ""
-        return f"Lettera n. {numero} annullata{because}.", None, ["annulla"]
+        return f"Lettera n. {numero} annullata.{_refusal(letter)}", None, ["annulla"]
     label = MATCH_STATE_LABELS.get(stato, stato)
     return f"{label}: lettera n. {numero}.", None, ["annulla"] if stato == "in_firma" else []
 

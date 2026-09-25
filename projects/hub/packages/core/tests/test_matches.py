@@ -1180,8 +1180,12 @@ def _waiting(session: Session, match_id: UUID) -> None:
 def _framework_now(session: Session, freelancer_id: UUID, stato: str) -> None:
     (framework,) = _documents(session, freelancer_id, "quadro")
     framework.stato = stato
-    if stato == "inviato":
+    if stato in ("inviato", "firmato", "disdetto"):
         framework.sent_at = datetime(2026, 9, 25, 9, 0, tzinfo=UTC)
+    if stato in ("firmato", "disdetto"):
+        framework.signed_at = datetime(2026, 9, 28, 9, 0, tzinfo=UTC)
+    if stato == "disdetto":
+        framework.notice_at = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
     session.commit()
 
 
@@ -1243,7 +1247,13 @@ def test_a_waiting_letter_reads_its_freelancers_framework_wherever_the_match_is_
         f"La lettera n. {numero} aspetta la firma del contratto quadro e parte da sola dopo.",
         None,
     )
-    for stato in ("generato", "annullato"):
+    # Signed, and the letter's release missed: the send dispatches the letter itself.
+    _framework_now(clean, freelancer_id, "firmato")
+    assert everywhere()[0] == (
+        f"La lettera n. {numero} è pronta a partire: il contratto quadro è già firmato.",
+        "invia",
+    )
+    for stato in ("generato", "annullato", "disdetto"):
         _framework_now(clean, freelancer_id, stato)
         assert everywhere()[0] == (
             f"La lettera n. {numero} aspetta un contratto quadro: «Invia per la firma» ne genera "
@@ -1270,7 +1280,7 @@ def test_list_all_reads_frameworks_in_one_query(clean: Session) -> None:
         numbers[freelancer_id] = match.lettera.numero
     ada, grace, katherine = freelancers
     _framework_now(clean, grace, "inviato")
-    _framework_now(clean, katherine, "annullato")
+    _framework_now(clean, katherine, "firmato")
 
     statements: list[str] = []
 
@@ -1294,10 +1304,11 @@ def test_list_all_reads_frameworks_in_one_query(clean: Session) -> None:
     needs = (
         "La lettera n. {} aspetta un contratto quadro: «Invia per la firma» ne genera uno nuovo."
     )
+    ready = "La lettera n. {} è pronta a partire: il contratto quadro è già firmato."
     assert {item.freelancer_id: item.situazione for item in page.items} == {
         ada: needs.format(numbers[ada]),
         grace: waits.format(numbers[grace]),
-        katherine: needs.format(numbers[katherine]),
+        katherine: ready.format(numbers[katherine]),
     }
 
 
