@@ -87,3 +87,28 @@ def test_the_pigro_action_is_never_done_in_phase_one(clean: Session) -> None:  #
     candidate = candidates_for_state(clean, "completo")[0]
     row = recipient_for(clean, candidate, snapshot(clean, candidate, T0))
     assert done_at(clean, row, "pigro_cliente") is None
+
+
+def test_an_address_with_no_card_never_has_done_cv_or_scheda_completa(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    lead(clean, "nocard@studio.it")
+    candidate = candidates_for_state(clean, "lead")[0]
+    row = recipient_for(clean, candidate, snapshot(clean, candidate, T0))
+    assert done_at(clean, row, "cv") is None
+    assert done_at(clean, row, "scheda_completa") is None
+
+
+def test_a_card_soft_deleted_after_completing_counts_as_not_done(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    card = person(clean, "gone@studio.it", cv=False)
+    candidate = candidates_for_state(clean, "manca_cv")[0]
+    prima = snapshot(clean, candidate, T0)
+    assert prima["ha_cv"] is False and prima["completa"] is False
+    row = recipient_for(clean, candidate, prima)
+    card.cv_size, card.cv_filename, card.cv_bytes = 4, "cv.pdf", b"%PDF"
+    card.deleted_at = datetime.now(UTC)
+    clean.commit()
+    assert done_at(clean, row, "cv") is None
+    assert done_at(clean, row, "scheda_completa") is None
