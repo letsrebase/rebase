@@ -115,6 +115,7 @@ jobs:
       pigrocrm_deploy: ${{ steps.filter.outputs.pigrocrm_deploy }}
       website_deploy: ${{ steps.filter.outputs.website_deploy }}
       hub_deploy: ${{ steps.filter.outputs.hub_deploy }}
+      tooling: ${{ steps.filter.outputs.tooling }}
     steps:
       - uses: actions/checkout@v7
         if: github.event_name != 'pull_request'
@@ -318,6 +319,12 @@ jobs:
               - *hub_image
               - '.github/workflows/deploy-hub.yml'
               - '.github/workflows/_deploy-compose.yml'
+            # The scaffolding script's own regression test (REB-422): dependency-free
+            # on purpose, so it runs with node --test rather than through a project's
+            # own gate.
+            tooling:
+              - 'tooling/client-repo-starter/*.mjs'
+              - '.github/workflows/ci.yml'
 
       # The deploy workflows used to answer "did this push touch my project?" for
       # themselves, each with its own copy of the paths above, and each by waiting on
@@ -642,13 +649,26 @@ jobs:
         # but lacks pandoc, Typst, fontTools or the brand files is a broken deploy.
         run: docker run --rm rebase-api uv run --no-sync rebase contracts-check
 
+  # REB-422: dependency-free on purpose, same as the script it tests, so this runs
+  # node --test directly rather than through _node-gate.yml (which installs a pnpm
+  # workspace this script deliberately sits outside of).
+  tooling-starter:
+    name: tooling · client-repo-starter
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.tooling == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - run: node --test tooling/client-repo-starter/*.test.mjs
+
   ci:
     name: ci
     # `always()`, or a skipped dependency makes this job skip too and the check never
     # arrives. This is the only status check the repository should ever be asked to
     # require: every job name above can change forever without touching a ruleset.
     if: always()
-    needs: [changes, pigrocrm-py, pigrocrm-py-corpus, pigrocrm-web, pigrocrm-api-types, website, hub-py, hub-web, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images]
+    needs: [changes, pigrocrm-py, pigrocrm-py-corpus, pigrocrm-web, pigrocrm-api-types, website, hub-py, hub-web, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
