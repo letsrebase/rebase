@@ -286,8 +286,10 @@ signed on Documenso"); this section is the container's own.
   2026-09-25, because «Invia per la firma» refuses without a mail sender; its signer is
   fiction, and its contracts mail is `ciao+firma-preview@letsrebase.com`.
 - **Branding** (REB-474): both organisations show rebase, set in Documenso under
-  Organisation settings → Preferenze → Branding: the logo is `shared/brand/lockup.svg`
-  rendered to a transparent PNG, the brand URL `https://letsrebase.com`, and the colours
+  Organisation settings → Preferenze → Branding: the logo is the echo,
+  `shared/brand/echo/echo-ink-watermelon-outlines.png` (Ivan, 2026-09-25: the signing
+  surfaces and the documents carry the echo; the site's and the hub's headers keep the
+  lockup), the brand URL `https://letsrebase.com`, and the colours
   background `#f1f2f3`, foreground `#011936`, primary `#c50d33` with `#ffffff` on it,
   border `#465362`, ring `#ed254e`, radius `0rem`; no custom CSS. With billing off the
   branding needs no plan or licence. The preview's organisation took the same settings by
