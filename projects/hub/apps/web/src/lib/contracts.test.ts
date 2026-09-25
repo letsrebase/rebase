@@ -17,6 +17,7 @@ import {
   LETTERA_REQUIRED,
   letteraForm,
   letteraToSend,
+  machineAmount,
   matchOf,
   payModeOf,
   sendLabel,
@@ -100,6 +101,27 @@ describe('«Crea match» in three steps (REB-476)', () => {
     expect(amountForm('480.5')).toBe('480,50')
     expect(amountForm('480.05')).toBe('480,05')
     expect(toLettera({ ...LETTERA_EMPTY, compenso: amountForm('480.50') }).compenso).toBe('480.50')
+  })
+
+  it('reads a fee the Italian way: a dot before three digits is a thousands separator, a comma the decimal', () => {
+    expect(machineAmount('12.000')).toBe('12000')
+    expect(machineAmount('1.500')).toBe('1500')
+    expect(machineAmount('1.234,50')).toBe('1234.50')
+    expect(machineAmount('480')).toBe('480')
+    expect(machineAmount('480,50')).toBe('480.50')
+    expect(machineAmount('480.50')).toBe('480.50')
+    expect(machineAmount('480.5')).toBe('480.5')
+    expect(machineAmount('0,5')).toBe('0.5')
+    expect(machineAmount(' 12.000 ')).toBe('12000')
+    expect(toLettera({ ...LETTERA_EMPTY, compenso: '12.000' }).compenso).toBe('12000')
+    expect(toLettera({ ...LETTERA_EMPTY, compenso: '1.234,50' }).compenso).toBe('1234.50')
+  })
+
+  it('compares the fee with the day rate after reading both the Italian way', () => {
+    const daily = withPayMode({ ...LETTERA_EMPTY, compenso: '1.500' }, 'a giornata')
+    expect(switchPayMode(daily, 'a corpo', '1500').compenso).toBe('')
+    expect(switchPayMode({ ...daily, compenso: '1.500,00' }, 'a corpo', '1500').compenso).toBe('')
+    expect(switchPayMode({ ...daily, compenso: '1,5' }, 'a corpo', '1500').compenso).toBe('1,5')
   })
 
   it('does not take the day rate for a lump sum, and puts it back for an empty day-rate fee', () => {
