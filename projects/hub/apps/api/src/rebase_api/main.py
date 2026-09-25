@@ -9,6 +9,7 @@ from sqlalchemy import text
 from rebase_api.deps import SessionDep
 from rebase_api.routers import (
     admin,
+    campaigns,
     companies,
     documenso,
     freelancers,
@@ -85,6 +86,7 @@ def create_app() -> FastAPI:
     app.include_router(matches.router)
     app.include_router(documenso.router)
     app.include_router(members.router)
+    app.include_router(campaigns.public)
     app.include_router(pigro.router)
     app.include_router(tokens.router)
 

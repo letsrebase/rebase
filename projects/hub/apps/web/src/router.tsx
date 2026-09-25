@@ -20,6 +20,7 @@ import { AdminPigro } from '@/pages/admin/Pigro'
 import { AdminContratti } from '@/pages/admin/Contratti'
 import { AdminCreaMatch } from '@/pages/admin/CreaMatch'
 import { AdminMatches } from '@/pages/admin/Matches'
+import { Disiscrizione } from '@/pages/Disiscrizione'
 import { Thanks } from '@/pages/Thanks'
 import {
   AdminCompanies,
@@ -156,6 +157,13 @@ const verifyRedirect = createRoute({
   beforeLoad: ({ search }) => {
     throw redirect({ to: '/verify', search: () => search as never })
   },
+})
+
+const unsubscribe = createRoute({
+  getParentRoute: () => publicLayout,
+  path: '/disiscrizione',
+  validateSearch: (search: Record<string, unknown>): { t: string } => ({ t: typeof search.t === 'string' ? search.t : '' }),
+  component: Disiscrizione,
 })
 
 const signedInLayout = createRoute({
@@ -390,6 +398,7 @@ export const routeTree = root.addChildren([
     loginRedirect,
     verify,
     verifyRedirect,
+    unsubscribe,
   ]),
   signedInLayout.addChildren([
     me.addChildren([meIndex, meEdit, meEditCompany, meNewCompany]),

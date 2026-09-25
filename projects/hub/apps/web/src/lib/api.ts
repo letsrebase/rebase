@@ -976,3 +976,10 @@ export const member = {
   contractPdfUrl: (documentId: string) => `/api/hub/me/contracts/${documentId}/pdf`,
   logout: () => request<void>('/api/hub/me/logout', { method: 'POST' }),
 }
+
+// ---- campaigns, the public part -----------------------------------------------------------
+
+export const campaigns = {
+  unsubscribe: (t: string) =>
+    request<{ ok: boolean }>(`/api/hub/campagne/disiscrizione?t=${encodeURIComponent(t)}`, { method: 'POST' }),
+}
