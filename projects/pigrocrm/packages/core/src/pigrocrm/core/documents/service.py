@@ -390,6 +390,43 @@ class DocumentService:
                 expected=f"al massimo {DIMENSIONE_MAX} byte",
             )
 
+    def _check_invoice_pdf(self, document: Document, content_type: str) -> None:
+        """A document that an invoice names as its PDF takes only a PDF (REB-480).
+
+        `GET /api/invoices/{id}/pdf` serves the current version with that version's own
+        type, and the invoice page frames it. Before this, anyone who may write could add
+        an `application/xml` version to that document, and an XML file in the XHTML
+        namespace then rendered as a page of the app. The web preview has refused a
+        non-PDF since REB-463; this is the server's side of the same rule.
+
+        Here, in the version core, rather than in the router: every version added to an
+        existing document goes through `_add_version_row` (the REST upload, `regenerate`,
+        `InvoiceService`'s own render), and a guard on one door would leave the next
+        caller a way around it. Keyed on the invoice's own pointer rather than on
+        `documents.tipo`: a `fattura` document not yet linked to an invoice (an original
+        PDF waiting for `import_issued`) keeps the common allowlist, and
+        `_validate_original_pdf` already refuses to link one whose current version is not
+        a PDF. A soft-deleted invoice still counts, because its document can be restored
+        on its own. Every other document keeps `_check_upload`'s allowlist unchanged.
+
+        What this does not close: `import_issued` reads an unlinked document's current
+        version in its pure checks and writes the link later, in its own transaction. A
+        non-PDF upload to that same document in between sees no link yet and lands.
+        `InvoiceService.download` then answers 404 for it rather than serving it, and a
+        PDF version uploaded over it repairs it.
+        """
+        if content_type == "application/pdf":
+            return
+        tipo = self.repo.invoice_tipo_of_pdf(document.id)
+        if tipo is not None:
+            raise ValidationFailed(
+                ENTITY,
+                "content_type",
+                f"questo documento e' il PDF di una {tipo}: una nuova versione deve essere "
+                f"un PDF, non {content_type}",
+                expected="application/pdf",
+            )
+
     def _add_version_row(
         self,
         document: Document,
@@ -411,6 +448,7 @@ class DocumentService:
         committed) a needlessly subtle one.
         """
         self._check_upload(data, content_type)
+        self._check_invoice_pdf(document, content_type)
 
         numero = self._next_numero(document)
         version = DocumentVersion(

@@ -91,7 +91,7 @@ def _ready(session: Session, *, giorni: int = 30) -> Invoice:
     return unpaid_invoice(session, due=_days_ago(giorni), totale=Decimal("1220.00"))
 
 
-def _with_pdf(session: Session, invoice: Invoice) -> UUID:
+def _with_pdf(session: Session, invoice: Invoice, *, content_type: str = "application/pdf") -> UUID:
     """Give an invoice the rendered PDF slice 3 would have stored, and return the id of
     its current version -- the one `invoice_pdf_version_ids` is supposed to find.
 
@@ -111,7 +111,7 @@ def _with_pdf(session: Session, invoice: Invoice) -> UUID:
         document_id=document.id,
         numero=1,
         storage_key=f"invoices/{invoice.id}.pdf",
-        content_type="application/pdf",
+        content_type=content_type,
         dimensione=1024,
         hash_sha256="0" * 64,
     )
@@ -179,6 +179,26 @@ def test_a_reminder_that_does_attach_the_invoice_still_says_so(db_session: Sessi
     assert draft is not None
     assert draft.attachment_version_ids == [str(version_id)]
     assert "In allegato trova copia di cortesia della fattura." in draft.body_markdown
+
+
+def test_a_current_version_that_is_not_a_pdf_is_not_attached_as_the_invoice(
+    db_session: Session,
+) -> None:
+    """The invoice's PDF goes out as a PDF or not at all (REB-480). A current version of
+    another type, written before `add_version` refused one on that document, is not the
+    courtesy copy: the reminder goes without it, and without the sentence promising it."""
+    account = connected_account(db_session)
+    invoice = _ready(db_session)
+    _with_pdf(db_session, invoice, content_type="application/xml")
+    db_session.commit()
+
+    read = _service(db_session).create_reminder(invoice.id, actor_for(account))
+    db_session.commit()
+
+    draft = db_session.get(EmailDraft, read.email_draft_id)
+    assert draft is not None
+    assert draft.attachment_version_ids == []
+    assert "copia di cortesia" not in draft.body_markdown
 
 
 def test_creating_a_reminder_creates_a_draft_and_sends_nothing(

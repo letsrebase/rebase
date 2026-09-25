@@ -2488,6 +2488,12 @@ class InvoiceService:
         version = self.documents.repo.version(document.id, document.versione_corrente)
         if version is None:  # pragma: no cover - versione_corrente points at a real row
             raise NotFound("invoice_artifact", f"{invoice_id}#{kind}")
+        if kind == "pdf" and version.content_type != PDF_MIME:
+            # The PDF is served as a PDF or not at all (REB-480). `add_version` refuses
+            # any other type on this document now, so this is a version written before
+            # that: answered as a missing PDF, which the web already words as «non è
+            # disponibile» and, where it repairs it, points at «Rigenera documenti».
+            raise NotFound("invoice_artifact", f"{invoice_id}#{kind}")
         if kind == "xml":
             filename = self._xml_filename(self._for_export(invoice))
         elif invoice.tipo == "proforma":

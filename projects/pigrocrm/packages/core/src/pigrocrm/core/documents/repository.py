@@ -14,6 +14,7 @@ from pigrocrm.core.db import (
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import DOCUMENT_SORTS, DocumentListQuery
+from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.pipeline.models import PipelineStage
 
 
@@ -100,6 +101,13 @@ class DocumentRepository:
             .order_by(desc(DocumentVersion.numero))
         )
         return list(self.session.execute(stmt).scalars())
+
+    def invoice_tipo_of_pdf(self, document_id: UUID) -> str | None:
+        """The `tipo` (`fattura` or `proforma`) of the invoice row that names this
+        document as its PDF, a soft-deleted one included, or `None` when no invoice does.
+        See `DocumentService._check_invoice_pdf` for why that is the test."""
+        stmt = select(Invoice.tipo).where(Invoice.pdf_document_id == document_id).limit(1)
+        return self.session.execute(stmt).scalar_one_or_none()
 
     def pending_offers(self, limit: int = 20) -> list[PendingOffer]:
         """Sent offers still awaiting an answer, oldest first, with their age in days.
