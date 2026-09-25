@@ -726,8 +726,15 @@ def build_server(
         versione del testo; `quadri` li elenca tutti; `matches` sono i
         match dal più recente, ognuno con l'azienda, lo stato e la lettera di incarico
         con il suo numero. Ogni documento porta `pdf_url`, il link al PDF da aprire con
-        l'accesso admin: mai i byte, mai i dati fiscali. Solo lettura; un match nuovo si
-        prepara con `preview_match` e si salva con `create_match`."""
+        l'accesso admin: mai i byte, mai i dati fiscali. Ogni match e ogni documento
+        porta anche `situazione`, a che punto è, e `prossima_azione` e `altre_azioni`, i
+        passi che ha davanti. Su un match `invia` è `send_match_for_signature`, `annulla`
+        è `cancel_match` e `chiudi` è `close_match`, mentre `reinvia_email` e
+        `aggiorna_stato` agiscono sulla sua lettera (`lettera.id`) con
+        `resend_signing_mail` e `refresh_contract`; su un contratto quadro gli stessi due
+        strumenti prendono il suo id, `annulla` è `cancel_contract` e `registra_disdetta`
+        è `record_notice`. Solo lettura; un match nuovo si prepara con `preview_match` e
+        si salva con `create_match`."""
         body = _run(lambda s: MatchService(s).for_freelancer(UUID(freelancer_id)))
         body.pop("fiscale", None)
         for document in (body["quadro"], *body["quadri"]):
@@ -742,7 +749,9 @@ def build_server(
         """Un match, per id: l'azienda e la figura richiesta, i dati del cliente come li
         stampa la lettera, lo stato (bozza, in_firma, attivo, concluso, annullato), la
         lettera di incarico con numero e stato, e in `quadro` il contratto quadro del
-        freelance. Ogni documento porta `pdf_url`, mai i byte. Solo lettura."""
+        freelance. Ogni documento porta `pdf_url`, mai i byte. Il match e i documenti
+        portano `situazione`, `prossima_azione` e `altre_azioni`, e quale strumento fa
+        ogni azione lo dice `list_matches`. Solo lettura."""
         key = UUID(match_id)
 
         def call(session: Session) -> dict[str, Any]:
@@ -917,8 +926,8 @@ def build_server(
     def cancel_match(match_id: str) -> dict[str, Any]:
         """«Annulla» su un match in bozza o in firma: il match e la sua lettera di
         incarico diventano annullati, e il numero della lettera non si riusa. Una lettera
-        già partita è annullata anche su Documenso: il link del freelance smette di
-        funzionare e lui riceve una mail. Il contratto quadro resta com'è. Non si torna
+        già partita è annullata anche su Documenso: il freelance riceve una mail e il suo
+        link smette di funzionare. Il contratto quadro resta com'è. Non si torna
         indietro."""
         return _on_match(
             match_id, lambda session, key: contracts(session).cancel_match(key, admin().id)

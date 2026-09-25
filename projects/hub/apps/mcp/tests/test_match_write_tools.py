@@ -5,6 +5,7 @@ runs pandoc, reaches Documenso or sends a mail (`FakeRenderer`, `FakeDocumenso`,
 `RecordingSender`)."""
 
 import json
+import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -629,6 +630,21 @@ async def test_a_soft_deleted_freelancers_match_and_documents_are_not_found(
 
 # ---- what the tools say about themselves --------------------------------------------------
 
+MATCH_TOOLS = (
+    "list_matches",
+    "get_match",
+    "preview_match",
+    "create_match",
+    "send_match_for_signature",
+    "resend_signing_mail",
+    "refresh_contract",
+    "cancel_contract",
+    "record_notice",
+    "cancel_match",
+    "close_match",
+    "set_freelancer_tax_data",
+)
+
 
 async def test_the_actions_that_cannot_be_taken_back_say_so(world: World) -> None:
     async with Client(world.server()) as client:
@@ -646,3 +662,34 @@ async def test_the_actions_that_cannot_be_taken_back_say_so(world: World) -> Non
         assert "Non si torna indietro" in tools[name], name
     assert "incarico finisce" in tools["close_match"]
     assert "area admin" not in tools["list_matches"]
+
+
+async def test_the_match_reads_say_which_tool_each_next_step_is(world: World) -> None:
+    async with Client(world.server()) as client:
+        tools = {
+            tool.name: " ".join((tool.description or "").split())
+            for tool in (await client.list_tools()).tools
+        }
+    listed = tools["list_matches"]
+    for field in ("`situazione`", "`prossima_azione`", "`altre_azioni`", "`lettera.id`"):
+        assert field in listed, field
+    for action, tool in (
+        ("invia", "send_match_for_signature"),
+        ("reinvia_email", "resend_signing_mail"),
+        ("aggiorna_stato", "refresh_contract"),
+        ("annulla", "cancel_match"),
+        ("chiudi", "close_match"),
+        ("annulla", "cancel_contract"),
+        ("registra_disdetta", "record_notice"),
+    ):
+        assert f"`{action}`" in listed, action
+        assert f"`{tool}`" in listed, tool
+    assert "`list_matches`" in tools["get_match"]
+    assert "`prossima_azione`" in tools["get_match"]
+
+
+async def test_no_match_tool_speaks_of_the_freelancer_as_he_or_she(world: World) -> None:
+    async with Client(world.server()) as client:
+        tools = {tool.name: tool.description or "" for tool in (await client.list_tools()).tools}
+    for name in MATCH_TOOLS:
+        assert not re.search(r"\b(lui|lei)\b", tools[name]), name
