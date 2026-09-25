@@ -771,7 +771,11 @@ class Campaign(Base, PrimaryKeyMixin, TimestampMixin):
     slug: Mapped[str] = mapped_column(String(CAMPAIGN_SLUG_MAX_LENGTH), nullable=False)
     fonte: Mapped[str] = mapped_column(String(10), nullable=False)
     stato_percorso: Mapped[str | None] = mapped_column(String(30), default=None)
-    filtri: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    # `none_as_null=True`: an explicit `None` on this attribute must bind as a true SQL
+    # NULL, not a JSON `null` (SQLAlchemy's JSONB default), so a service can clear
+    # `filtri` on an edit without tripping `ck_campaigns_filtri`. Bind-side only, no
+    # migration needed.
+    filtri: Mapped[dict[str, Any] | None] = mapped_column(JSONB(none_as_null=True), default=None)
     segue_id: Mapped[UUID | None] = mapped_column(ForeignKey("campaigns.id"), default=None)
     oggetto: Mapped[str] = mapped_column(String(CAMPAIGN_SUBJECT_MAX_LENGTH), nullable=False)
     testo: Mapped[str] = mapped_column(Text, nullable=False)

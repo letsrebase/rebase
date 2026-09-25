@@ -67,28 +67,26 @@ class CampaignService:
             data.fonte, data.stato_percorso, data.filtri is not None, data.bottone_meta, data.azione
         )
         now = self.clock()
-        fields: dict[str, object] = {
-            "created_by": admin_id,
-            "nome": data.nome.strip(),
-            "slug": self._unique_slug(f"c-{now:%Y-%m-%d}-{_slugify(data.nome)}"[:70]),
-            "fonte": data.fonte,
-            "oggetto": data.oggetto,
-            "testo": data.testo,
-            "bottone_testo": data.bottone_testo,
-            "bottone_meta": data.bottone_meta,
-            "azione": data.azione,
-            "stato": "bozza",
-            "contenuto_at": now,
-        }
-        # Leaving `filtri`/`stato_percorso` out entirely (rather than passing `None`)
-        # keeps a JSONB column an honest SQL NULL: an explicit `None` goes through the
-        # type's bind processor and writes a JSON `null`, which the check constraint
-        # `(fonte = 'filtri') = (filtri IS NOT NULL)` treats as "not null" and rejects.
-        if data.fonte == "stato" and data.stato_percorso is not None:
-            fields["stato_percorso"] = data.stato_percorso
-        if data.filtri is not None:
-            fields["filtri"] = data.filtri.model_dump(mode="json", exclude_none=True)
-        campaign = Campaign(**fields)
+        # `Campaign.filtri` is `JSONB(none_as_null=True)` (models.py), so an explicit
+        # `None` here binds as a true SQL NULL, matching the check constraint
+        # `(fonte = 'filtri') = (filtri IS NOT NULL)`.
+        campaign = Campaign(
+            created_by=admin_id,
+            nome=data.nome.strip(),
+            slug=self._unique_slug(f"c-{now:%Y-%m-%d}-{_slugify(data.nome)}"[:70]),
+            fonte=data.fonte,
+            stato_percorso=data.stato_percorso if data.fonte == "stato" else None,
+            filtri=data.filtri.model_dump(mode="json", exclude_none=True)
+            if data.fonte == "filtri" and data.filtri
+            else None,
+            oggetto=data.oggetto,
+            testo=data.testo,
+            bottone_testo=data.bottone_testo,
+            bottone_meta=data.bottone_meta,
+            azione=data.azione,
+            stato="bozza",
+            contenuto_at=now,
+        )
         self.session.add(campaign)
         self.session.commit()
         return CampaignRead.model_validate(campaign)
@@ -104,6 +102,8 @@ class CampaignService:
             setattr(campaign, field, value)
         if campaign.fonte == "filtri":
             campaign.stato_percorso = None
+        elif campaign.fonte == "stato":
+            campaign.filtri = None
         self._validate(
             campaign.fonte,
             campaign.stato_percorso,
