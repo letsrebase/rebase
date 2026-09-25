@@ -208,6 +208,8 @@ for (const variant of VARIANTS) {
   page.on('pageerror', (error) => console.error(error.message))
   await page.setContent(markup(variant), { waitUntil: 'load' })
   await page.evaluate(() => window.drawn)
+  // Snyk Code javascript/PT here is a false positive: a developer's script, writing
+  // where the developer running it asks it to.
   writeFileSync(join(out, variant.file), await page.locator('#logo').screenshot({ omitBackground: true }))
   await page.close()
   console.log(`${variant.file}: chromium ${engine} on ${process.platform} -> ${out}`)

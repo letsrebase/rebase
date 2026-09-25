@@ -1,0 +1,20 @@
+# Snyk (https://snyk.io) policy file.
+#
+# `exclude.code` keeps test code out of Snyk Code, and nothing else: the fixtures in
+# these paths hold throwaway passwords and tokens on purpose, and they buried every
+# other finding (REB-463). A false positive in shipped code is not excluded here: its
+# ignore belongs in Snyk's own UI, since Snyk Code reads no ignore from this file or from
+# an inline comment, and a comment above the flagged line says why it is safe. Developer
+# scripts (`tooling/`, `shared/brand/tools/`, `projects/*/scripts/`) stay scanned: an
+# exclusion would hide their next real finding along with today's false one.
+version: v1.25.1
+exclude:
+  code:
+    - "projects/*/apps/*/tests/**"
+    - "projects/*/packages/*/tests/**"
+    - "**/e2e/**"
+    - "**/*.test.ts"
+    - "**/*.test.tsx"
+    - "**/*.test.mjs"
+    - "**/conftest.py"
+    - "**/test-setup.ts"

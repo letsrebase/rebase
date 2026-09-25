@@ -162,12 +162,22 @@
             }:
             pkgs.symlinkJoin {
               inherit name;
+              # The migrations first, the venv second: `symlinkJoin` runs `lndir` once
+              # per path, in order, and a member whose closure ships a `share` of its
+              # own (`hub-api-env`'s does, by way of fontTools) hands `mkVirtualEnv` a
+              # `$out/share` that is a plain symlink, not a directory. `lndir` cannot
+              # descend into a symlink to add `share/${name}` beside it and silently
+              # drops the whole thing, no warning short of `-silent`'s own "is a link
+              # instead of a directory" line, which nobody reads on a green build; this
+              # order lets the migrations claim `$out/share` as a real directory first,
+              # so the venv's vestigial symlink is what gets skipped instead (REB-403,
+              # found while making `hub-api` also carry pandoc, Typst and the brand).
               paths = [
-                (pythonSet.mkVirtualEnv "${name}-env" (lib.genAttrs members (_: [ ])))
                 (pkgs.runCommand "${name}-migrations" { } ''
                   mkdir -p "$out/share/${name}"
                   cp -r ${core}/alembic.ini ${core}/migrations "$out/share/${name}/"
                 '')
+                (pythonSet.mkVirtualEnv "${name}-env" (lib.genAttrs members (_: [ ])))
               ];
             };
 
@@ -270,13 +280,44 @@
               ];
               core = ./projects/pigrocrm/packages/core;
             };
-            hub-api = pythonApp {
+            # `rebase_core.contracts.render` shells out to bare `pandoc` and `typst`,
+            # and `.brand` reads the palette and the typeface at the repository's own
+            # paths (`REPO = parents[7]`), which a store venv does not have. Both
+            # binaries and a copy of the two files go into this derivation, the files
+            # at `share/hub-api/brand`; `postBuild` then rewraps `bin/rebase` (the CLI:
+            # `contracts-check`, `contracts-sweep`) and `bin/uvicorn` (both
+            # `rebase_api.main:app` and `rebase_mcp.http:app` run from it, one venv for
+            # both) with `makeWrapper`, so every entry point that can render a contract
+            # finds `pandoc`, `typst` and the brand on its own, with nothing set by a
+            # caller (REB-403).
+            hub-api = pkgs.symlinkJoin {
               name = "hub-api";
-              members = [
-                "rebase-api"
-                "rebase-mcp"
+              paths = [
+                (pythonApp {
+                  name = "hub-api";
+                  members = [
+                    "rebase-api"
+                    "rebase-mcp"
+                  ];
+                  core = ./projects/hub/packages/core;
+                })
+                pandoc
+                typst
+                (pkgs.runCommand "hub-api-brand" { } ''
+                  install -Dm444 ${./shared/brand/palette.css} \
+                    "$out/share/hub-api/brand/palette.css"
+                  install -Dm444 ${./shared/brand/fonts/outfit-variable-latin.woff2} \
+                    "$out/share/hub-api/brand/fonts/outfit-variable-latin.woff2"
+                '')
               ];
-              core = ./projects/hub/packages/core;
+              nativeBuildInputs = [ pkgs.makeWrapper ];
+              postBuild = ''
+                for exe in rebase uvicorn; do
+                  wrapProgram "$out/bin/$exe" \
+                    --set-default REBASE_CONTRACTS_BRAND_DIR "$out/share/hub-api/brand" \
+                    --prefix PATH : "$out/bin"
+                done
+              '';
             };
             pigrocrm-web = viteApp {
               name = "web";
@@ -390,53 +431,119 @@
 
             # The hub beside the website on one name, which is letsrebase.com's own
             # layout: two modules adding locations to the same virtual host.
-            hub = pkgs.testers.runNixOSTest {
-              name = "hub";
-              nodes.machine = {
-                imports = [
-                  self.nixosModules.rebase-hub
-                  self.nixosModules.rebase-website
-                ];
-                services.rebase-hub = {
-                  enable = true;
-                  domain = "hub.test";
+            hub =
+              let
+                # A minimal document the sweep has work on (REB-403, Greptile's review
+                # of the first cut): one user, one freelancer, one framework agreement
+                # `inviato` with an envelope, every NOT NULL column filled, every check
+                # constraint satisfied (`ck_contract_documents_envelope_item` wants
+                # `documenso_item_id` set alongside `documenso_id`; `kind = 'quadro'`
+                # wants `match_id`/`numero` both null). Verified by hand first against a
+                # throwaway Postgres with the same migrations (see the report).
+                sweepFixtureSql = pkgs.writeText "rebase-hub-sweep-fixture.sql" ''
+                  WITH u AS (
+                    INSERT INTO users (id, email, nome, cognome, role, attivo)
+                    VALUES (gen_random_uuid(), 'sweep-test@example.com', 'Test', 'Sweep', 'member', true)
+                    RETURNING id
+                  ), f AS (
+                    INSERT INTO freelancers (id, user_id, links, stato, compilata_da)
+                    SELECT gen_random_uuid(), u.id, '[]'::jsonb, 'nuovo', 'persona' FROM u
+                    RETURNING id
+                  )
+                  INSERT INTO contract_documents
+                    (id, kind, freelancer_id, text_version, testo_bozza, data, pdf, stato,
+                     documenso_id, documenso_item_id, created_by)
+                  SELECT gen_random_uuid(), 'quadro', f.id, '1.0', false, '{}'::jsonb,
+                         '\x255044462d312e34'::bytea, 'inviato',
+                         'env_test_sweep', 'item_test_sweep', u.id
+                  FROM f, u;
+                '';
+              in
+              pkgs.testers.runNixOSTest {
+                name = "hub";
+                nodes.machine = {
+                  imports = [
+                    self.nixosModules.rebase-hub
+                    self.nixosModules.rebase-website
+                  ];
+                  services.rebase-hub = {
+                    enable = true;
+                    domain = "hub.test";
+                    # An address the VM's own loopback refuses outright, so a document
+                    # awaiting confirmation fails fast with `DocumensoFailed` rather than
+                    # timing out: enough to make the sweep's `unconfirmed` count move,
+                    # never a real Documenso.
+                    settings = {
+                      documenso_url = "http://127.0.0.1:1";
+                      documenso_api_token = "unreachable-on-purpose";
+                    };
+                  };
+                  services.rebase-website = {
+                    enable = true;
+                    domain = "hub.test";
+                  };
                 };
-                services.rebase-website = {
-                  enable = true;
-                  domain = "hub.test";
-                };
-              };
-              testScript = ''
-                machine.wait_for_unit("rebase-hub-api.service")
-                machine.wait_for_open_port(8084)
-                machine.wait_for_unit("rebase-hub-mcp.service")
-                machine.wait_for_open_port(8088)
-                machine.wait_for_unit("nginx.service")
+                testScript = ''
+                  machine.wait_for_unit("rebase-hub-api.service")
+                  machine.wait_for_open_port(8084)
+                  machine.wait_for_unit("rebase-hub-mcp.service")
+                  machine.wait_for_open_port(8088)
+                  machine.wait_for_unit("nginx.service")
 
-                # The hub's probe touches the database on purpose, so a 200 here is
-                # the migration and Postgres both.
-                machine.succeed("curl -fsS http://localhost/health | grep -F '\"status\":\"ok\"'")
-                machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' http://localhost/hub | grep -Fx '302 http://localhost/hub/'")
-                machine.succeed("curl -fsS http://localhost/hub/ | grep -F '/hub/assets/'")
-                machine.succeed("curl -fsS http://localhost/hub/admin/anything | grep -F '/hub/assets/'")
-                machine.succeed("curl -fsS http://localhost/hub/mark.svg >/dev/null")
-                # The two API prefixes the host routes to the hub reach FastAPI: an
-                # empty POST is a 422 with FastAPI's JSON body, which nginx's own
-                # errors never are. (`Server:` is no discriminator, nginx rewrites it.)
-                machine.succeed("curl -sS -X POST http://localhost/api/hub/companies | grep -F '\"detail\"'")
-                machine.succeed("curl -sS -X POST http://localhost/api/community/signups | grep -F '\"detail\"'")
-                # The admin's MCP server behind /api/hub/mcp (REB-213): the process
-                # itself refuses a call with no token.
-                machine.succeed("curl -sS -o /dev/null -D - -X POST http://localhost/api/hub/mcp | grep -i '^www-authenticate: Bearer'")
-                # The magic link's token travels in the SPA's URL and in no Referer,
-                # and the header is set once although two modules share the name.
-                machine.succeed("curl -sSI http://localhost/hub/ | grep -ic '^referrer-policy: strict-origin' | grep -Fx 1")
-                machine.succeed("curl -sSI http://localhost/ | grep -ic '^x-content-type-options: nosniff' | grep -Fx 1")
-                # The website's front door on the same name, untouched by the hub.
-                machine.succeed("curl -fsS http://localhost/ | grep -Fi 'rebase'")
-                machine.succeed("curl -sS -o /dev/null -w '%{http_code}' http://localhost/nothing | grep -Ex '404'")
-              '';
-            };
+                  # The hub's probe touches the database on purpose, so a 200 here is
+                  # the migration and Postgres both.
+                  machine.succeed("curl -fsS http://localhost/health | grep -F '\"status\":\"ok\"'")
+                  machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' http://localhost/hub | grep -Fx '302 http://localhost/hub/'")
+                  machine.succeed("curl -fsS http://localhost/hub/ | grep -F '/hub/assets/'")
+                  machine.succeed("curl -fsS http://localhost/hub/admin/anything | grep -F '/hub/assets/'")
+                  machine.succeed("curl -fsS http://localhost/hub/mark.svg >/dev/null")
+                  # The two API prefixes the host routes to the hub reach FastAPI: an
+                  # empty POST is a 422 with FastAPI's JSON body, which nginx's own
+                  # errors never are. (`Server:` is no discriminator, nginx rewrites it.)
+                  machine.succeed("curl -sS -X POST http://localhost/api/hub/companies | grep -F '\"detail\"'")
+                  machine.succeed("curl -sS -X POST http://localhost/api/community/signups | grep -F '\"detail\"'")
+                  # The admin's MCP server behind /api/hub/mcp (REB-213): the process
+                  # itself refuses a call with no token.
+                  machine.succeed("curl -sS -o /dev/null -D - -X POST http://localhost/api/hub/mcp | grep -i '^www-authenticate: Bearer'")
+                  # The contracts sweep (REB-403) needs a document to find: one user,
+                  # one freelancer, one framework agreement `inviato` with an envelope
+                  # (`sweepFixtureSql`), as the superuser the same way the CRM's test
+                  # reaches its own database.
+                  machine.succeed(
+                      "su postgres -s /bin/sh -c 'psql -d rebase -v ON_ERROR_STOP=1 -f ${sweepFixtureSql}'"
+                  )
+                  # A oneshot a timer fires every ten minutes; starting it once here is
+                  # what the timer does. `settings.documenso_url` above answers nothing
+                  # on this machine, so confirming the envelope fails fast, and the
+                  # printed line proves the unit found the row and worked on it with its
+                  # own environment and permissions, not that an empty database left it
+                  # nothing to do.
+                  machine.succeed("systemctl start rebase-hub-contracts-sweep.service")
+                  out = machine.succeed(
+                      "journalctl -u rebase-hub-contracts-sweep --no-pager -o cat"
+                  )
+                  assert "0 documenti ripresi, 1 non confermati" in out, out
+                  # The renderer itself: pandoc, Typst and the brand are wrapped onto
+                  # `bin/rebase` inside the package (REB-403), so this runs under the
+                  # unit's own sandbox with nothing set by the caller, the way the CRM's
+                  # test runs its own renderer pair as the service user.
+                  out = machine.succeed(
+                      "systemd-run --wait --pipe --uid=rebase -p ProtectSystem=strict "
+                      "-p PrivateDevices=true -p PrivateTmp=true "
+                      "${self.packages.${pkgs.stdenv.hostPlatform.system}.hub-api}/bin/rebase contracts-check"
+                  )
+                  lines = {line.split(": ", 1)[0]: line for line in out.splitlines()}
+                  for document in ("contratto-quadro", "lettera-di-incarico"):
+                      assert "versione 1.0" in lines.get(document, ""), f"{document}: {out!r}"
+                  # The magic link's token travels in the SPA's URL and in no Referer,
+                  # and the header is set once although two modules share the name.
+                  machine.succeed("curl -sSI http://localhost/hub/ | grep -ic '^referrer-policy: strict-origin' | grep -Fx 1")
+                  machine.succeed("curl -sSI http://localhost/ | grep -ic '^x-content-type-options: nosniff' | grep -Fx 1")
+                  # The website's front door on the same name, untouched by the hub.
+                  machine.succeed("curl -fsS http://localhost/ | grep -Fi 'rebase'")
+                  machine.succeed("curl -sS -o /dev/null -w '%{http_code}' http://localhost/nothing | grep -Ex '404'")
+                '';
+              };
 
             website = pkgs.testers.runNixOSTest {
               name = "website";
@@ -967,6 +1074,15 @@
                 Restart = "on-failure";
                 RestartSec = 5;
               };
+              # The oneshot sweep is not this: on failure it waits for the timer's next
+              # tick rather than restarting fast, the way the compose loop's own
+              # `while :; do sleep 600; ...; done` does.
+              sweepServiceConfig = hardening // {
+                Type = "oneshot";
+                User = "rebase";
+                Group = "rebase";
+                EnvironmentFile = lib.optional (cfg.environmentFile != null) cfg.environmentFile;
+              };
               unitConfig.StartLimitIntervalSec = 0;
             in
             {
@@ -1073,6 +1189,29 @@
                       inherit environment;
                       serviceConfig = serviceConfig // {
                         ExecStart = "${cfg.package}/bin/uvicorn rebase_mcp.http:app --host ${cfg.address} --port ${toString cfg.mcp.port}";
+                      };
+                    };
+                    # The compose stack's `sweep` service (docker-compose.yml):
+                    # `rebase contracts-sweep` redoes what a lost background task or a
+                    # restart left unfinished. Compose runs it as a loop that sleeps
+                    # ten minutes between calls; here it is a oneshot a timer fires on
+                    # the same cadence (REB-403).
+                    systemd.services.rebase-hub-contracts-sweep = {
+                      description = "rebase hub contracts sweep";
+                      inherit unitConfig;
+                      after = [ "rebase-hub-api.service" ];
+                      wants = [ "rebase-hub-api.service" ];
+                      inherit environment;
+                      serviceConfig = sweepServiceConfig // {
+                        ExecStart = "${cfg.package}/bin/rebase contracts-sweep";
+                      };
+                    };
+                    systemd.timers.rebase-hub-contracts-sweep = {
+                      description = "rebase hub contracts sweep, every ten minutes";
+                      wantedBy = [ "timers.target" ];
+                      timerConfig = {
+                        OnBootSec = "10min";
+                        OnUnitActiveSec = "10min";
                       };
                     };
 

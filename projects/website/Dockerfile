@@ -19,7 +19,12 @@ COPY shared/brand ./shared/brand
 COPY projects/website ./projects/website
 RUN pnpm --filter website build
 
-FROM nginx:1.29-alpine
+FROM nginx:1.30-alpine
+# Docker Hub rebuilds this tag only when nginx or its Alpine base moves, so a package
+# Alpine fixes in between (libexpat 2.8.5, missing from the 2026-09-23 build) is
+# installed here. The layer is cached like any other: it runs again when the deploy's
+# `build --pull` brings a new digest of the tag, or on a cold build cache.
+RUN apk upgrade --no-cache
 COPY --from=build /app/projects/website/dist /usr/share/nginx/html
 COPY projects/website/deploy/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80

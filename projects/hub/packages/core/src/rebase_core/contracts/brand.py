@@ -10,6 +10,7 @@ copies both), so the woff2 in `shared/brand/fonts` stays the single source of th
 typeface.
 """
 
+import os
 import re
 import tempfile
 import threading
@@ -19,9 +20,13 @@ from rebase_core.contracts.fields import ContractFailed
 
 # `.../projects/hub/packages/core/src/rebase_core/contracts/brand.py`: seven levels up is
 # the root of the checkout, or `/app` in the image, which mirrors the repository.
+# `REBASE_CONTRACTS_BRAND_DIR` overrides `shared/brand` for a Nix store venv, which has
+# neither (the `hub-api` package's own `makeWrapper` sets it, REB-403), the way
+# `PIGROCRM_TENANTS_ALEMBIC_INI` stands in for a checkout path there.
 REPO = Path(__file__).resolve().parents[7]
-PALETTE = REPO / "shared" / "brand" / "palette.css"
-FONT = REPO / "shared" / "brand" / "fonts" / "outfit-variable-latin.woff2"
+BRAND = Path(os.environ.get("REBASE_CONTRACTS_BRAND_DIR") or REPO / "shared" / "brand")
+PALETTE = BRAND / "palette.css"
+FONT = BRAND / "fonts" / "outfit-variable-latin.woff2"
 
 # Weight 300 is `body`'s in landing.css, 500 is what `h1`, `h2`, `h3` and `.kicker` share.
 WEIGHTS = {300: "Light", 500: "Medium"}
