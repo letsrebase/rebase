@@ -865,9 +865,14 @@ def engagement_ready_mail(to: str, *, nome: str, numero: str, azienda: str, deal
 (company, role, letter number) and a link «Apri il deal su Pigro»; a `Select` of the
 months between the letter's start and today plus «Tutto l'incarico», default the current
 month, kept in the URL; the progress line «96 ore, 12 giorni su 40 previsti (30%)» or
-«96 ore, 12 giorni»; a `Table` per day (Data, Ore, Descrizione, Fattura with «da
-fatturare» when none); «Per settimana» and «Per mese» as two small tables of the
-selected period; «Fatture» (Numero, Data, Stato, Incasso, Ore). Loading, an error
+«96 ore, 12 giorni»; a `Table` per day (Data, Ore, Descrizione, Fatture, the day's
+list joined with a comma, «da fatturare» when empty); «Per settimana» and «Per mese» as
+two small tables of the selected period; «Fatture» (Numero, Data, Stato, Incasso, Ore)
+scoped to the period: with a month selected, only the invoices the shown days sit on,
+each with the hours of those days on it; with «Tutto l'incarico», every invoice with all
+its hours (the day rows carry their `fatture`, so `lib/report.ts` recomputes the
+invoice hours per period from the days alone, and an invoice spanning two months shows
+in both with each month's hours; tested on a two-month invoice). Loading, an error
 sentence from the API (a `409` shows the state's sentence, a `502` «Pigro non
 risponde», a `503` the not-configured sentence), each as a paragraph. All data from one
 `matches.report(id)` call for the whole engagement; the month filter slices `per_giorno`
