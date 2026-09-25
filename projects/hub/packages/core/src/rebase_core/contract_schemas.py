@@ -45,7 +45,7 @@ _IDENTIFIER_INPUT_MAX_LENGTH = 40
 LETTERA_TEXT_MAX_LENGTH = PROGETTO_MAX_LENGTH
 PREAVVISO_MAX_DAYS = 365
 
-# The letter's text fields an admin writes at step 4, in the Markdown's order.
+# The letter's text fields an admin writes on «Condizioni», in the Markdown's order.
 LETTERA_TEXT_FIELDS = (
     "ruolo",
     "attivita",
@@ -74,8 +74,8 @@ LETTERA_TEXT_FIELDS = (
     "rapporti_precedenti",
 )
 
-# The letter's fields the hub fills itself, never the admin at step 4: the number, the
-# framework's date, the two parties, and the four signing fields.
+# The letter's fields the hub fills itself, never the admin on «Condizioni»: the number,
+# the framework's date, the two parties, and the four signing fields.
 LETTER_AUTO_FIELDS = frozenset(
     {
         "numero",
@@ -108,7 +108,8 @@ def _compact(value: str) -> str:
 
 
 class FiscalData(BaseModel):
-    """What step 2 of «Crea match» and «Match e contratti» save for a freelancer."""
+    """What «Chi e per chi», step 1 of «Crea match», and «Match e contratti» save for a
+    freelancer."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -152,7 +153,7 @@ class FiscalRead(BaseModel):
 
 
 class ClienteData(BaseModel):
-    """The client as the letter prints it (step 3)."""
+    """The client as the letter prints it, asked on «Chi e per chi»."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -167,7 +168,7 @@ class ClienteData(BaseModel):
 
 
 class ClienteDraft(BaseModel):
-    """What the prefill suggests for step 3: any of the three may be unknown."""
+    """What the prefill suggests on «Chi e per chi»: any of the three may be unknown."""
 
     cliente_ragione_sociale: str | None = None
     cliente_piva: str | None = None
@@ -175,8 +176,9 @@ class ClienteDraft(BaseModel):
 
 
 class LetteraDraft(BaseModel):
-    """Every field of `lettera-di-incarico.md` an admin writes at step 4, all optional:
-    the shape the prefill suggests. `LetteraFields` is the one a letter is written from."""
+    """Every field of `lettera-di-incarico.md` an admin writes on «Condizioni», all
+    optional: the shape the prefill suggests. `LetteraFields` is the one a letter is
+    written from."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -285,12 +287,13 @@ class LetteraFields(LetteraDraft):
 
 
 class MatchCreate(BaseModel):
-    """Steps 1, 3 and 4 of «Crea match». The tax data of step 2 are saved by their own
-    route when the admin leaves that step, and read back from `freelancer_fiscal`.
+    """What «Chi e per chi» and «Condizioni», steps 1 and 2 of «Crea match», ask. The
+    tax data step 1 asks are saved by their own route when the admin leaves that step,
+    and read back from `freelancer_fiscal`.
 
     `id` is optional and client-generated (REB-406): one per wizard run, sent with both
-    «Salva come bozza» and «Invia per la firma», so a retry after the response is lost
-    writes nothing new -- `MatchService.create` reads it back and returns the match
+    «Salva senza inviare» and «Invia per la firma», so a retry after the response is
+    lost writes nothing new -- `MatchService.create` reads it back and returns the match
     already written."""
 
     model_config = ConfigDict(extra="forbid")
@@ -365,8 +368,9 @@ class FreelancerContracts(BaseModel):
 
 
 class MatchPrefill(BaseModel):
-    """What steps 2 to 4 start from. `quadro_necessario`: this match writes a framework
-    agreement. `lettera_in_attesa`: the letter waits for a framework's signature."""
+    """What «Chi e per chi» and «Condizioni» start from. `quadro_necessario`: this
+    match writes a framework agreement. `lettera_in_attesa`: the letter waits for a
+    framework's signature."""
 
     fiscale: FiscalRead | None
     cliente: ClienteDraft

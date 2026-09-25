@@ -8,10 +8,11 @@ spec § 1e) and prints its date as a blank line until phase 3 regenerates it on 
 signature. A framework agreement generated for an earlier draft and never sent is
 replaced, so the newest tax data win; one already out for signature (`inviato`, phase 3)
 is waited for instead. A render that fails rolls everything back, the number included.
-`preview` renders the same documents and writes nothing: step 5 of «Crea match».
-`check` says in sentences what saving would do, validated as `create` validates, and
-writes and numbers nothing either; `proposal` is the prefill as a `MatchCreate` with the
-fields an MCP tool was given laid over it (REB-476).
+`preview` renders the same documents and writes nothing: the PDFs «Controlla e invia»,
+step 3 of «Crea match», opens. `check` says in sentences what saving would do, on that
+same step, validated as `create` validates, and writes and numbers nothing either;
+`proposal` is the prefill as a `MatchCreate` with the fields an MCP tool was given laid
+over it (REB-476).
 
 The company's `budget_giornaliero` is read nowhere in this module: what rebase agrees
 with the client never reaches a freelancer's document (spec § 1h).
@@ -383,9 +384,10 @@ class MatchService:
         )
 
     def prefill(self, freelancer_id: UUID, company_id: UUID) -> MatchPrefill:
-        """Steps 2 to 4 as the hub can fill them: the saved tax data, the client as the
-        same company user's last match named it (else the request's company name), and
-        the letter from the request, the card and `rebase.json`."""
+        """«Chi e per chi» and «Condizioni» as the hub can fill them: the saved tax
+        data, the client as the same company user's last match named it (else the
+        request's company name), and the letter from the request, the card and
+        `rebase.json`."""
         freelancer, _user = self._freelancer(freelancer_id)
         company, referente = self._company(company_id)
         previous = self.session.scalars(
@@ -533,7 +535,7 @@ class MatchService:
 
     def create(self, freelancer_id: UUID, data: MatchCreate, admin_id: UUID) -> MatchRead:
         """Two admins racing to match the same freelancer (or one double click on «Salva
-        come bozza») must not both read "no active framework" and both write a fresh
+        senza inviare») must not both read "no active framework" and both write a fresh
         `generato` one: the first statement of the transaction locks the freelancer's own
         row (`SELECT ... FOR UPDATE`), so the second waits here, before it reads
         `active_framework`/`pending_framework`, for the first to commit or roll back.
@@ -549,16 +551,17 @@ class MatchService:
         may move the render or the number-taking earlier to "speed this up".
 
         `data.id`, when given, makes this call idempotent (REB-406): a retry after the
-        response is lost (the wizard sends the same client-generated id with both «Salva
-        come bozza» and «Invia per la firma») returns the match already written rather
-        than creating a second one with another letter number. The same id already used
-        by another freelancer's match is a 409 -- writing under it would silently steal
-        someone else's row. The retry must also carry the same request: a SHA-256 of it
-        (`_request_fingerprint`) is stored on every match this writes, and a same id with
-        a changed one -- an admin who corrected the company or the letter before retrying
-        -- is a 409 too, never the stale match returned as if nothing had changed; a
-        match with no fingerprint stored (written before this check existed) is treated
-        the same as a mismatch, since there is nothing to compare it against.
+        response is lost (the wizard sends the same client-generated id with both
+        «Salva senza inviare» and «Invia per la firma») returns the match already
+        written rather than creating a second one with another letter number. The same
+        id already used by another freelancer's match is a 409 -- writing under it would
+        silently steal someone else's row. The retry must also carry the same request: a
+        SHA-256 of it (`_request_fingerprint`) is stored on every match this writes, and
+        a same id with a changed one -- an admin who corrected the company or the letter
+        before retrying -- is a 409 too, never the stale match returned as if nothing
+        had changed; a match with no fingerprint stored (written before this check
+        existed) is treated the same as a mismatch, since there is nothing to compare it
+        against.
 
         Two different freelancers' browsers sending the same id at the same moment can
         both read "nothing written yet" here, since neither has committed: the id's own

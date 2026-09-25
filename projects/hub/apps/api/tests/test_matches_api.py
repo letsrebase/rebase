@@ -199,8 +199,9 @@ def test_a_repeated_create_with_the_same_id_writes_the_match_once(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
     """REB-406: the wizard's own retry after a lost response sends the same
-    client-generated id again with «Salva come bozza» or «Invia per la firma», and gets
-    the match already written back, never a second one with another letter number."""
+    client-generated id again with «Salva senza inviare» or «Invia per la firma», and
+    gets the match already written back, never a second one with another letter
+    number."""
     freelancer_id, company_id = _ready(client, sender)
     given_id = "01234567-89ab-7cde-8123-456789abcdef"
     body = {"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}

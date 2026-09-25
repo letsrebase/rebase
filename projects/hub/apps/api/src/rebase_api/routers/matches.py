@@ -67,7 +67,8 @@ def get_fiscal(_: AdminDep, session: SessionDep, freelancer_id: UUID) -> FiscalR
 def save_fiscal(
     admin: AdminDep, session: SessionDep, freelancer_id: UUID, payload: FiscalData
 ) -> FiscalRead:
-    """Step 2 of «Crea match» and the form on «Match e contratti»: saved for next time."""
+    """«Chi e per chi», step 1 of «Crea match», and the form on «Match e contratti»:
+    saved for next time."""
     return FiscalService(session).save(freelancer_id, payload, admin.id)
 
 
@@ -95,7 +96,8 @@ def preview_match_document(
     payload: MatchCreate,
     documento: Literal["lettera", "quadro"] = "lettera",
 ) -> Response:
-    """Step 5's preview: one document, typeset now, saved nowhere, numbered never."""
+    """The previews of «Controlla e invia», step 3 of «Crea match»: one document,
+    typeset now, saved nowhere, numbered never."""
     pdf = _writing(session, settings, renderer).preview(freelancer_id, payload, documento)
     return pdf_response(pdf.filename, pdf.content)
 
@@ -104,10 +106,10 @@ def preview_match_document(
 def check_match(
     _: AdminDep, session: SessionDep, freelancer_id: UUID, payload: MatchCreate
 ) -> MatchCheck:
-    """Step 3 of «Crea match» (REB-476): what saving would do, in sentences, with nothing
-    written and no number taken. 422 naming the field as `create` does, `company_id` for
-    a closed request; missing tax data are reported (`dati_fiscali_mancanti`), not
-    refused."""
+    """«Controlla e invia», step 3 of «Crea match» (REB-476): what saving would do, in
+    sentences, with nothing written and no number taken. 422 naming the field as
+    `create` does, `company_id` for a closed request; missing tax data are reported
+    (`dati_fiscali_mancanti`), not refused."""
     return MatchService(session).check(freelancer_id, payload)
 
 
@@ -124,7 +126,7 @@ def create_match(
     freelancer_id: UUID,
     payload: MatchCreate,
 ) -> MatchRead:
-    """«Salva come bozza»: the draft match with its numbered letter and, when needed,
+    """«Salva senza inviare»: the draft match with its numbered letter and, when needed,
     the framework agreement. 422 naming `fiscale` without tax data, `company_id` for a
     closed request. `payload.id`, when given, makes a retry idempotent (REB-406): the
     match already written under it comes back instead of a second one, and the same id
