@@ -5,9 +5,11 @@ import hashlib
 import hmac
 import time
 
+import pytest
 from campaign_fixtures import campaign_row, clean  # noqa: F401
 from sqlalchemy.orm import Session
 
+from rebase_core.campaigns.optouts import OptoutService
 from rebase_core.campaigns.webhook import apply_event, verify_signature
 from rebase_core.models import Campaign, CampaignOptout, CampaignRecipient
 
@@ -96,6 +98,28 @@ def test_only_a_permanent_bounce_marks_the_address(clean: Session) -> None:  # n
 def test_a_complaint_opts_the_address_out(clean: Session) -> None:  # noqa: F811  (fixture)
     target = row(clean)
     apply_event(clean, event("email.complained", target))
+    assert clean.get(CampaignOptout, "ada@studio.it").fonte == "reclamo"  # type: ignore[union-attr]
+
+
+def test_a_complaint_and_its_opt_out_are_one_commit(
+    clean: Session,  # noqa: F811  (fixture)
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the opt-out cannot be written, the complaint's moment is not kept either: the
+    route answers 500 and Resend's retry finds the row as it was, and writes both."""
+    target = row(clean)
+
+    def refuse(*_args: object) -> None:
+        raise RuntimeError("the opt-out could not be written")
+
+    monkeypatch.setattr(OptoutService, "stage", refuse)
+    with pytest.raises(RuntimeError):
+        apply_event(clean, event("email.complained", target))
+    clean.rollback()
+    assert clean.get(CampaignRecipient, target.id).reclamo_at is None  # type: ignore[union-attr]
+    monkeypatch.undo()
+    assert apply_event(clean, event("email.complained", target)) == "applicato"
+    assert clean.get(CampaignRecipient, target.id).reclamo_at is not None  # type: ignore[union-attr]
     assert clean.get(CampaignOptout, "ada@studio.it").fonte == "reclamo"  # type: ignore[union-attr]
 
 

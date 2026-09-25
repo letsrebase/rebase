@@ -100,7 +100,9 @@ def apply_event(session: Session, event: Mapping[str, Any]) -> Outcome:
     email_id = data.get("email_id")
     if row.resend_id is None and isinstance(email_id, str):
         row.resend_id = email_id
-    session.commit()
     if kind == "email.complained":
-        OptoutService(session).record(row.email, "reclamo", row.campaign_id)
+        # One commit for the complaint and its opt-out: a failure leaves neither, the
+        # route answers 500, and Resend's retry writes both.
+        OptoutService(session).stage(row.email, "reclamo", row.campaign_id)
+    session.commit()
     return "applicato"

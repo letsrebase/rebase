@@ -30,10 +30,15 @@ class OptoutService:
         self.record(email, "admin", None)
 
     def record(self, email: str, fonte: str, campaign_id: UUID | None) -> None:
+        self.stage(email, fonte, campaign_id)
+        self.session.commit()
+
+    def stage(self, email: str, fonte: str, campaign_id: UUID | None) -> None:
+        """`record` without the commit, for a caller whose own write must land in the
+        same transaction as the opt-out (a complaint and its `reclamo_at`)."""
         statement = (
             insert(CampaignOptout)
             .values(email=email.strip().lower(), fonte=fonte, campaign_id=campaign_id)
             .on_conflict_do_nothing(index_elements=["email"])
         )
         self.session.execute(statement)
-        self.session.commit()
