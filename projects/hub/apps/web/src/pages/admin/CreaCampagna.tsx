@@ -6,6 +6,7 @@ import { Checkbox } from '@rebase/ui/checkbox'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { Textarea } from '@rebase/ui/textarea'
 import {
   admin,
@@ -55,16 +56,21 @@ const AZIENDE_FILTRI_EMPTY: AziendeFiltriForm = { stato: '', q: '' }
 
 /** What the edit route seeds Chi's own filter fields with, out of `Campaign.filtri`
  *  (a bag the server never types further): a plain function so the effect that calls
- *  it stays a flat list of `setState`s, none of them behind a nested condition. */
+ *  it stays a flat list of `setState`s, none of them behind a nested condition. The
+ *  server always writes its own `lista` into that bag (`filtriPayload` below sends it
+ *  on every save), so this reads that key directly rather than guessing the list from
+ *  which of the Talenti-only fields happen to be present -- a filter with neither
+ *  `has_cv` nor `con_accessi` set is still a Talenti filter (fix 2, REB-472 round 1). */
 function seedFiltri(c: Campaign): { lista: Lista; talenti: TalentiFiltriForm; aziende: AziendeFiltriForm } {
   const empty = { lista: 'talenti' as Lista, talenti: TALENTI_FILTRI_EMPTY, aziende: AZIENDE_FILTRI_EMPTY }
   if (c.fonte !== 'filtri' || !c.filtri) return empty
   const f = c.filtri as Record<string, unknown>
+  const lista: Lista = f.lista === 'aziende' ? 'aziende' : 'talenti'
   const stato = typeof f.stato === 'string' ? f.stato : ''
   const q = typeof f.q === 'string' ? f.q : ''
-  if ('has_cv' in f || 'con_accessi' in f) {
+  if (lista === 'talenti') {
     return {
-      lista: 'talenti',
+      lista,
       talenti: {
         stato,
         q,
@@ -74,7 +80,7 @@ function seedFiltri(c: Campaign): { lista: Lista; talenti: TalentiFiltriForm; az
       aziende: AZIENDE_FILTRI_EMPTY,
     }
   }
-  return { lista: 'aziende', talenti: TALENTI_FILTRI_EMPTY, aziende: { stato, q } }
+  return { lista, talenti: TALENTI_FILTRI_EMPTY, aziende: { stato, q } }
 }
 
 function failureMessage(error: unknown): string | null {
@@ -136,24 +142,24 @@ function AudienceTable({
       <p className="text-sm text-muted-foreground">
         {audience.incluse} incluse, {audience.escluse} escluse
       </p>
-      <div className="overflow-x-auto border border-border">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b bg-muted/50 text-left">
-              <th className="px-3 py-1.5 font-medium">Nome</th>
-              <th className="px-3 py-1.5 font-medium">Indirizzo</th>
-              <th className="px-3 py-1.5 font-medium">Includi</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="border border-border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nome</TableHead>
+              <TableHead>Indirizzo</TableHead>
+              <TableHead>Includi</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {audience.righe.map((row) => {
               const forced = row.escluso !== null
               const checked = forced || !esclusi.includes(row.email)
               return (
-                <tr key={row.email} className="border-b last:border-0">
-                  <td className="px-3 py-1.5">{row.nome ?? '—'}</td>
-                  <td className="px-3 py-1.5">{row.email}</td>
-                  <td className="px-3 py-1.5">
+                <TableRow key={row.email}>
+                  <TableCell>{row.nome ?? '—'}</TableCell>
+                  <TableCell>{row.email}</TableCell>
+                  <TableCell>
                     <div className="flex items-center gap-2">
                       <Checkbox
                         aria-label={row.email}
@@ -163,12 +169,12 @@ function AudienceTable({
                       />
                       {row.escluso && <span className="text-xs text-muted-foreground">{row.escluso}</span>}
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </div>
   )
@@ -247,18 +253,38 @@ export function AdminCreaCampagna() {
     setAudience(null)
     setEsclusi([])
     const template = templates.data?.find((item) => item.stato_percorso === value)
-    if (!template || contentTouched) return
+    if (!template) return
+    // Azione is disabled in Cosa whenever the source is a state (it isn't the admin's
+    // to set), so it must always follow the picked template even once other content is
+    // touched -- otherwise a stale action from an earlier pick could never be corrected
+    // (fix 4, REB-472 round 1).
+    setAzione(template.azione)
+    if (contentTouched) return
     setNome(template.etichetta)
     setOggetto(template.oggetto)
     setTesto(template.testo)
     setBottoneTesto(template.bottone_testo)
     setBottoneMeta(template.bottone_meta)
-    setAzione(template.azione)
   }
 
   function chooseFonte(next: Fonte) {
     if (next === fonte) return
     setFonte(next)
+    setAudience(null)
+    setEsclusi([])
+  }
+
+  // Any change to a filter field invalidates the audience preview already on screen
+  // (fix 3, REB-472 round 1): otherwise «Avanti» would move on with a list the admin
+  // never actually saw, since a loaded `audience` short-circuits the next «Avanti» to a
+  // plain step change instead of reloading it.
+  function updateTalentiFiltri(patch: Partial<TalentiFiltriForm>) {
+    setTalentiFiltri((current) => ({ ...current, ...patch }))
+    setAudience(null)
+    setEsclusi([])
+  }
+  function updateAziendeFiltri(patch: Partial<AziendeFiltriForm>) {
+    setAziendeFiltri((current) => ({ ...current, ...patch }))
     setAudience(null)
     setEsclusi([])
   }
@@ -277,9 +303,16 @@ export function AdminCreaCampagna() {
     return { lista, stato: aziendeFiltri.stato || undefined, q: aziendeFiltri.q || undefined }
   }
 
+  // Chi has no Nome field (that's Cosa's); a filtered campaign with nothing typed yet
+  // must still create with a non-empty `nome` (`CampaignDraft.nome` is `min_length=1`
+  // server-side, fix 1, REB-472 round 1) -- the admin renames it in Cosa.
+  function defaultNome(): string {
+    return fonte === 'filtri' ? 'Campagna da filtri' : 'Nuova campagna'
+  }
+
   function buildPayload(): CampaignDraft {
     return {
-      nome: nome.trim(),
+      nome: nome.trim() || defaultNome(),
       fonte,
       stato_percorso: fonte === 'stato' ? statoPercorso : null,
       filtri: filtriPayload(),
@@ -302,6 +335,9 @@ export function AdminCreaCampagna() {
       setCampaign(saved)
       setAudience(preview)
       setEsclusi([])
+      // The default name from `defaultNome()` was sent, not typed: show it in Cosa's
+      // own Nome field so the admin edits it rather than finds it blank.
+      if (!nome.trim()) setNome(saved.nome)
     },
   })
 
@@ -426,7 +462,7 @@ export function AdminCreaCampagna() {
                       <Input
                         id="campagna-talenti-stato"
                         value={talentiFiltri.stato}
-                        onChange={(event) => setTalentiFiltri({ ...talentiFiltri, stato: event.target.value })}
+                        onChange={(event) => updateTalentiFiltri({ stato: event.target.value })}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -434,15 +470,12 @@ export function AdminCreaCampagna() {
                       <Input
                         id="campagna-talenti-q"
                         value={talentiFiltri.q}
-                        onChange={(event) => setTalentiFiltri({ ...talentiFiltri, q: event.target.value })}
+                        onChange={(event) => updateTalentiFiltri({ q: event.target.value })}
                       />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="campagna-talenti-cv">Ha un CV</Label>
-                      <Select
-                        value={talentiFiltri.has_cv}
-                        onValueChange={(value) => setTalentiFiltri({ ...talentiFiltri, has_cv: value })}
-                      >
+                      <Select value={talentiFiltri.has_cv} onValueChange={(value) => updateTalentiFiltri({ has_cv: value })}>
                         <SelectTrigger id="campagna-talenti-cv" className="w-full">
                           <SelectValue />
                         </SelectTrigger>
@@ -457,7 +490,7 @@ export function AdminCreaCampagna() {
                       <Label htmlFor="campagna-talenti-accessi">Ha fatto accesso</Label>
                       <Select
                         value={talentiFiltri.con_accessi}
-                        onValueChange={(value) => setTalentiFiltri({ ...talentiFiltri, con_accessi: value })}
+                        onValueChange={(value) => updateTalentiFiltri({ con_accessi: value })}
                       >
                         <SelectTrigger id="campagna-talenti-accessi" className="w-full">
                           <SelectValue />
@@ -477,7 +510,7 @@ export function AdminCreaCampagna() {
                       <Input
                         id="campagna-aziende-stato"
                         value={aziendeFiltri.stato}
-                        onChange={(event) => setAziendeFiltri({ ...aziendeFiltri, stato: event.target.value })}
+                        onChange={(event) => updateAziendeFiltri({ stato: event.target.value })}
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -485,7 +518,7 @@ export function AdminCreaCampagna() {
                       <Input
                         id="campagna-aziende-q"
                         value={aziendeFiltri.q}
-                        onChange={(event) => setAziendeFiltri({ ...aziendeFiltri, q: event.target.value })}
+                        onChange={(event) => updateAziendeFiltri({ q: event.target.value })}
                       />
                     </div>
                   </div>
