@@ -36,6 +36,12 @@ x-api-environment: &api-environment
   # A draft text never leaves for signature; only the preview sets this true. Not an
   # empty default: a bool field fails at start-up on an empty value.
   REBASE_CONTRACTS_ALLOW_DRAFT: ${REBASE_CONTRACTS_ALLOW_DRAFT:-false}
+  # Campaigns (P-REB-41): who the mail is from, the minimum gap between two campaigns
+  # to one person, and the secret of this environment's Resend webhook. Not an empty
+  # default for the gap: an int field fails at start-up on an empty value.
+  REBASE_CAMPAIGN_FROM: ${REBASE_CAMPAIGN_FROM:-Ivan di rebase <ciao@letsrebase.com>}
+  REBASE_CAMPAIGN_GAP_DAYS: ${REBASE_CAMPAIGN_GAP_DAYS:-3}
+  REBASE_RESEND_WEBHOOK_SECRET: ${REBASE_RESEND_WEBHOOK_SECRET:-}
 
 services:
   db:
