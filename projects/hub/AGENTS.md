@@ -289,8 +289,9 @@ signed on Documenso"); this section is the container's own.
   (its own certificate) in front of 127.0.0.1:8090.
 - **Data**: its own Postgres, `documenso-db`, on `REBASE_DOCUMENSO_DATA_DIR`
   (`/srv/rebase-data/documenso-postgres`), with every uploaded and sealed PDF in it:
-  back it up with the hub's own data. About 630 MiB of memory once warm, 80 MiB for its
-  Postgres.
+  nothing backs it up yet, nor the hub's own Postgres (REB-475). About 500 to 630 MiB of
+  memory once warm, 45 to 80 MiB for its Postgres; the server has 3.8 GB and 4 GB of swap
+  since 2026-09-25.
 - **Certificate**: self-signed, made on the host with OpenSSL, in the `.env` as the
   `.p12` on one line of base64 with its passphrase. The seal is valid and PDF readers say
   its issuer is not trusted; a certificate on Adobe's trust list is a later purchase.
@@ -303,8 +304,14 @@ signed on Documenso"); this section is the container's own.
 
   | Environment | Documenso user | Team | Webhook URL |
   |---|---|---|---|
-  | production | `ciao+firma@letsrebase.com` | `rebase` | `http://api:8000/api/hub/documenso/webhook` |
-  | preview | `ciao+firma-preview@letsrebase.com` | `rebase-preview` | `https://preview.letsrebase.com/api/hub/documenso/webhook` |
+  | production | `ciao+firma-is@letsrebase.com` | its Personal Team | `http://api:8000/api/hub/documenso/webhook` |
+  | preview | `ciao+firma-preview@letsrebase.com` | its Personal Team | `https://preview.letsrebase.com/api/hub/documenso/webhook` |
+
+  Made on 2026-09-25 (REB-408). Each user's own Personal Team holds its API token («prod»
+  and «demo», no expiry: revoke and replace one in Documenso, then in that hub's `.env`,
+  then redeploy) and its webhook. The two webhooks were written straight into Documenso's
+  `Webhook` table (URL, the three events, the secret, the user's own team) rather than
+  typed into its form, which is equivalent; the form is the way to edit them.
 
   Both webhooks send `document.completed`, `document.rejected` and `document.cancelled`,
   each with its own secret, which is that hub's `REBASE_DOCUMENSO_WEBHOOK_SECRET`.
@@ -320,8 +327,27 @@ signed on Documenso"); this section is the container's own.
   or not the window is open, so an account made in that window cannot outlive it. Check
   nobody else got in before closing the window: `docker exec rebase-documenso-db-1 psql
   -U documenso -d documenso -tAc 'SELECT email FROM "User"'` must list exactly the two
-  `@letsrebase.com` addresses above.
+  `@letsrebase.com` addresses above, beside Documenso's own two internal accounts,
+  `serviceaccount@firma.letsrebase.com` and `deleted-account@firma.letsrebase.com`.
 - **Who signs for rebase**: the `rebase-*` fields of `REBASE_SIGNER_JSON`, in the host's
   `.env`, never in the repository. With both texts `status: final`, production signs
   with whoever's data is there, which until the SRL exists (roadmap #284) is a person's,
-  not the company's yet.
+  not the company's yet. The value is one line of compact JSON. Compose's `.env` parser
+  refuses shell-style quoting (`'...'"'"'...'`), which an apostrophe in an address
+  produces (the patch tag of 2026-09-25 failed on it once). Unquoted JSON works as long as
+  it holds no ` #` (the rest of the line would become a comment) and no `$` (compose would
+  interpolate it); otherwise wrap the value in double quotes and escape every inner `"`,
+  `\` and `$` as `\"`, `\\` and `$$`. Check with `docker compose -p rebase --env-file
+  /opt/hub/.env config | grep REBASE_SIGNER_JSON` before any tag.
+- **The preview sends real mail**: its `.env` carries `REBASE_RESEND_API_KEY` since
+  2026-09-25, because «Invia per la firma» refuses without a mail sender; its signer is
+  fiction, and its contracts mail is `ciao+firma-preview@letsrebase.com`.
+- **Branding** (REB-474): both organisations show rebase, set in Documenso under
+  Organisation settings → Preferenze → Branding: the logo is the echo,
+  `shared/brand/echo/echo-ink-watermelon-outlines.png` (Ivan, 2026-09-25: the signing
+  surfaces and the documents carry the echo; the site's and the hub's headers keep the
+  lockup), the brand URL `https://letsrebase.com`, and the colours
+  background `#f1f2f3`, foreground `#011936`, primary `#c50d33` with `#ffffff` on it,
+  border `#465362`, ring `#ed254e`, radius `0rem`; no custom CSS. With billing off the
+  branding needs no plan or licence. The preview's organisation took the same settings by
+  copying production's `OrganisationGlobalSettings` branding columns in SQL.

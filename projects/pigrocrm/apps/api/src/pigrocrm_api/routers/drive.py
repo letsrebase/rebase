@@ -74,6 +74,8 @@ def read_account(session: SessionDep, actor: ActorDep, settings: SettingsDep) ->
 
 @router.get("/oauth/start")
 def start_oauth(session: SessionDep, actor: ActorDep, settings: SettingsDep) -> RedirectResponse:
+    # Snyk Code python/OR here is a false positive: the target is Google's fixed
+    # GOOGLE_AUTH_URL, with every parameter urlencoded.
     return RedirectResponse(_oauth(session, settings).start(actor), status_code=307)
 
 
@@ -115,6 +117,9 @@ def _back_to_settings(request: Request, esito: str) -> RedirectResponse:
     # settings page, not on the root's. `cookie_path` is the one place that already
     # knows the prefix, and its `/` is the bare root.
     prefix = cookie_path(request).rstrip("/")
+    # Snyk Code python/OR here is a false positive: a fixed page, under the request's own
+    # prefix (a slug that matched SLUG_PATTERN in `tenancy.py`, or none for the root),
+    # with one of the four constant esito codes.
     return RedirectResponse(f"{prefix}{_SETTINGS_PAGE}?esito={esito}", status_code=307)
 
 

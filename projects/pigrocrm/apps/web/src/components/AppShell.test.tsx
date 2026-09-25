@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { SETTINGS_TABS } from '@/features/settings/tabs'
 import { AppShell } from './AppShell'
 import { SIDEBAR_GROUPS_KEY } from './sidebarGroups'
@@ -62,6 +62,26 @@ vi.mock('@/lib/auth', () => ({
   useIsAdmin: () => mockAuth.ruolo === 'admin',
 }))
 
+vi.mock('@/lib/tenant', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/tenant')>()
+  // Pinned to a real slug so the switcher's exclusion of "the space already open"
+  // (AppShell.tsx) is actually exercised, rather than every test running as if it
+  // were the unprefixed root.
+  return { ...actual, tenantPrefix: '/studio' }
+})
+
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>()
+  return { ...actual, api: { GET: vi.fn(), POST: vi.fn() } }
+})
+
+import { api } from '@/lib/api'
+import { toast } from '@rebase/ui/sonner'
+
+const GET = api.GET as unknown as Mock
+const POST = api.POST as unknown as Mock
+const mockGo = vi.fn()
+
 /**
  * The shell mounts the command palette, which is a TanStack Query consumer, so the
  * provider is part of the harness rather than of any one test. Its query is disabled
@@ -73,7 +93,7 @@ function renderShell(children: React.ReactNode = <div />) {
   // bail-out, which would make `refresh()` (the stand-in for a navigation) do nothing.
   const tree = () => (
     <QueryClientProvider client={client}>
-      <AppShell>{children}</AppShell>
+      <AppShell go={mockGo}>{children}</AppShell>
     </QueryClientProvider>
   )
   const result = render(tree())
@@ -108,6 +128,12 @@ beforeEach(() => {
   mockRoute.pathname = '/app/customers'
   mockRoute.search = ''
   localStorage.clear()
+  GET.mockReset()
+  POST.mockReset()
+  mockGo.mockReset()
+  // No other space by default: the switcher's rows are opt-in per test, the same
+  // silent-empty shape the login chooser's own tests use.
+  GET.mockResolvedValue({ data: [], response: { status: 200 } })
 })
 
 describe('AppShell', () => {
@@ -483,5 +509,91 @@ describe('AppShell', () => {
     renderShell()
     await userEvent.click(screen.getByRole('button', { name: 'Comprimi il menu' }))
     expect(screen.getByRole('button', { name: 'Collega un agente' })).toBeInTheDocument()
+  })
+})
+
+/**
+ * The bottom-of-sidebar space switcher (REB-345 follow-up, 2026-09-25): reachable
+ * without logging out, mirroring the login chooser's own shape (REB-377).
+ */
+describe('the space switcher', () => {
+  it('lists another space the identity may enter, excluding the one already open', async () => {
+    GET.mockResolvedValue({
+      data: [
+        { slug: 'studio', ruolo: 'admin' },
+        { slug: 'altro', ruolo: 'collaboratore' },
+      ],
+      response: { status: 200 },
+    })
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    const menu = within(await screen.findByRole('menu'))
+    expect(await menu.findByRole('menuitem', { name: /altro/ })).toBeInTheDocument()
+    expect(menu.queryByRole('menuitem', { name: /^studio/ })).not.toBeInTheDocument()
+  })
+
+  it('enters another space on click and navigates to its own basepath', async () => {
+    GET.mockResolvedValue({ data: [{ slug: 'altro', ruolo: 'collaboratore' }], response: { status: 200 } })
+    POST.mockResolvedValue({
+      data: { id: 'u1', email: 'ada@altro.it', nome: 'Ada', ruolo: 'collaboratore' },
+      response: { status: 200 },
+    })
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    const menu = within(await screen.findByRole('menu'))
+    await userEvent.click(await menu.findByRole('menuitem', { name: /altro/ }))
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/identity/enter/{slug}', {
+        params: { path: { slug: 'altro' } },
+      }),
+    )
+    await waitFor(() => expect(mockGo).toHaveBeenCalledWith('/altro/app/'))
+  })
+
+  it('reports the API sentence when entering another space fails', async () => {
+    GET.mockResolvedValue({ data: [{ slug: 'altro', ruolo: 'admin' }], response: { status: 200 } })
+    POST.mockResolvedValue({
+      error: { detail: 'Questo spazio non esiste, o non lo hai mai raggiunto.' },
+      response: { status: 404 },
+    })
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    const menu = within(await screen.findByRole('menu'))
+    await userEvent.click(await menu.findByRole('menuitem', { name: /altro/ }))
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'Questo spazio non esiste, o non lo hai mai raggiunto.',
+      ),
+    )
+  })
+
+  it('offers to create a new space from the menu', async () => {
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    const menu = within(await screen.findByRole('menu'))
+    await userEvent.click(await menu.findByRole('menuitem', { name: 'Crea un nuovo spazio' }))
+    expect(mockGo).toHaveBeenCalledWith('/app/register')
+  })
+
+  it('refreshes the space list when the menu opens, not only once on mount', async () => {
+    // Greptile, PR #419: AppShell stays mounted for a whole session, so a space
+    // gained after mount (an invitation accepted in another tab) must not be stuck
+    // on the response the very first, mount-time fetch happened to return.
+    let spacesCalls = 0
+    GET.mockImplementation((path: string) => {
+      if (path === '/api/identity/spaces') {
+        spacesCalls += 1
+        return Promise.resolve({
+          data: spacesCalls === 1 ? [] : [{ slug: 'altro', ruolo: 'collaboratore' }],
+          response: { status: 200 },
+        })
+      }
+      return Promise.resolve({ data: { slug: null }, response: { status: 200 } })
+    })
+    renderShell()
+    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+    const menu = within(await screen.findByRole('menu'))
+    expect(await menu.findByRole('menuitem', { name: /altro/ })).toBeInTheDocument()
+    expect(spacesCalls).toBeGreaterThanOrEqual(2)
   })
 })

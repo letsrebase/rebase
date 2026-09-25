@@ -191,6 +191,54 @@ def test_issuing_assigns_a_number_and_produces_both_artefacts(
     assert "IT" in xml.headers["content-disposition"]
 
 
+def test_the_invoices_pdf_document_refuses_an_xml_version_with_a_422(
+    logged_in: TestClient,
+    customer: dict[str, Any],
+    fiscal_profile: dict[str, Any],
+    emitter: dict[str, Any],
+) -> None:
+    """REB-480, the reproduction of REB-463 at the HTTP surface: an XHTML file typed
+    `application/xml`, posted as a new version of the invoice's PDF document, used to
+    answer 201 and then came back from `GET /pdf` as `application/xml`. It is a 422 in
+    Italian now, the PDF the invoice had is still what it serves, and a PDF still goes
+    in."""
+    draft = _draft(logged_in, customer["id"])
+    issued = logged_in.post(f"/api/invoices/{draft['id']}/issue", json={}).json()
+    document_id = issued["pdf_document_id"]
+    before = logged_in.get(f"/api/invoices/{issued['id']}/pdf").content
+
+    refused = logged_in.post(
+        f"/api/documents/{document_id}/versions",
+        files={
+            "file": (
+                "fattura.xml",
+                b'<html xmlns="http://www.w3.org/1999/xhtml"><body>ciao</body></html>',
+                "application/xml",
+            )
+        },
+    )
+    assert refused.status_code == 422, refused.text
+    assert refused.headers["content-type"].startswith("application/problem+json")
+    body = refused.json()
+    assert body["code"] == "validation_failed"
+    assert body["field"] == "content_type"
+    assert body["expected"] == "application/pdf"
+    assert "PDF di una fattura" in body["detail"]
+    pdf = logged_in.get(f"/api/invoices/{issued['id']}/pdf")
+    assert pdf.headers["content-type"] == "application/pdf"
+    assert pdf.content == before
+
+    accepted = logged_in.post(
+        f"/api/documents/{document_id}/versions",
+        files={"file": ("fattura.pdf", b"%PDF-1.7\nfinto\n", "application/pdf")},
+    )
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["numero"] == 2
+    pdf = logged_in.get(f"/api/invoices/{issued['id']}/pdf")
+    assert pdf.headers["content-type"] == "application/pdf"
+    assert pdf.content == b"%PDF-1.7\nfinto\n"
+
+
 def test_a_render_that_raises_after_the_commit_still_answers_the_issued_row(
     logged_in: TestClient,
     customer: dict[str, Any],

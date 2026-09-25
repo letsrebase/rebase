@@ -308,6 +308,9 @@ def _docx_text(content: bytes) -> str:
     if _DTD in document:
         return ""
     try:
+        # Snyk Code python/InsecureXmlParser here is a false positive: it is about Python
+        # 3.10 and older. On 3.13 expat caps entity expansion, xml.etree resolves no
+        # external entity, and the input is capped at DOCX_XML_MAX_BYTES above.
         root = ElementTree.fromstring(document)
     except ElementTree.ParseError:
         return ""

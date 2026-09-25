@@ -36,38 +36,14 @@ made better with no new capability; `chore` is maintenance with no change in beh
 `docs` is documentation that stands on its own. `test`, `ci`, `design`, `security` and
 `spike` mean what their names say.
 
-The projects on the board, read with `list_projects` on 2026-09-16, 2026-09-17, 2026-09-22
-and 2026-09-25. This table is a snapshot and the board is the authority: `list_projects` with
-`team: "rebase"`, which answers completed projects too, is what to trust when the two
-disagree. Opening or closing a project is a board action with no PR of its own, so whoever
-does it adds or updates the row here, in the PR that ships the release or in one of its own.
-
-| Initiative | Project | Lead | State on 2026-09-25 |
-|---|---|---|---|
-| `PigroCRM` | `Ship from CI, with gates that catch real defects` | Ivan | In Progress |
-| `PigroCRM` | `Make a new space ready on day one` | Ivan | In Progress, opened 2026-09-12 |
-| `Hub` | `Build a home for signups and the company flow` | Ivan | In Progress |
-| `Hub` | `Align the wizard UI with the site` | Lorenzo | Completed, 2026-09-25 (opened 2026-09-09) |
-| `Website` | `Website v1 - the public site, live and correct on a phone` | Lorenzo | Completed, 2026-09-16 |
-| `Website` | `Make the landing hold up everywhere` | Lorenzo | Completed, 2026-09-25 (opened 2026-09-09) |
-| `Monorepo` | `Open a preview of every change` | Lorenzo | Completed, 2026-09-25 (opened 2026-09-10) |
-| `Monorepo` | `Make the site visible to search` | Lorenzo | Completed, 2026-09-25 (opened 2026-09-10) |
-| `Monorepo` | `Monorepo hygiene v1 - CI cost, licence and the English rule` | Lorenzo | Completed, 2026-09-10 |
-| `Monorepo` | `Rebrand v2 - orbiters leaves the code` | Lorenzo | Completed, 2026-09-16 (opened 2026-09-15) |
-| `Monorepo` | `Clear the known defects from the trunk` | Lorenzo | Completed, 2026-09-25 (opened 2026-09-16) |
-| `Hub` | `Hub v2 - one hub, and an admin is a member with one more section` | Lorenzo | Completed, 2026-09-22 (opened 2026-09-17) |
-| `PigroCRM` | `Give every space its own team` | Lorenzo | Completed, 2026-09-25 (opened 2026-09-17) |
-| `Monorepo` | `Shared UI v1 - the hub and the CRM look like the site` | Lorenzo | Completed, 2026-09-22 (opened 2026-09-17) |
-| `Website` | `Website v3 - routes in English` | Lorenzo | Completed, 2026-09-21 (opened and shipped the same day) |
-| `Hub` | `Hub v3 - routes in English` | Lorenzo | Completed, 2026-09-21 (opened and shipped the same day) |
-| `PigroCRM` | `PigroCRM v4 - routes in English` | Ivan | Completed, 2026-09-21 (opened and shipped the same day) |
-| `Monorepo` | `Choose the wordmark that carries the meaning` | Lorenzo | Completed, 2026-09-25 (opened 2026-09-22) |
-| `Monorepo` | `Make the backlog readable at a glance` | Lorenzo | In Progress, opened 2026-09-22 |
-| `PigroCRM` | `Bring mastro's ledger, invoice import and forecasting into PigroCRM` | Lorenzo | Completed, 2026-09-25 (opened 2026-09-22) |
-
-The open projects were renamed on 2026-09-22 to a verb and the work it does
-(§ Naming); the completed rows keep the name each shipped under, since a record
-is not rewritten.
+The projects live in Linear alone: `list_projects` with `team: "rebase"` and
+`includeArchived: true` (§ API details) is the read, for open and for completed work
+both, and it is the only place to trust. A table here went stale within days of being
+written: eight projects sat `Completed` on the board on 2026-09-25 while this page
+still called them `In Progress` or `Planned` from 2026-09-22, the same drift
+`adding-a-project.md` § 9 already ruled out for its own would-be copy after REB-45. The
+fix is not keeping the table current, it is not keeping one. Opening or closing a
+project is a board action with no PR of its own.
 
 `Monorepo hygiene v1` was where repository-wide work that belongs to no product went
 (CI cost, the licence, this page). It is closed, and nothing has replaced it: a
@@ -322,8 +298,8 @@ Applies to every project, milestone and issue title, and to the labels.
   (§ API details, `includeArchived`). Every issue terminal is not by itself proof
   the project shipped: one whose issues are all `Canceled` or `Duplicate`, with
   nothing `Done`, delivered nothing, and is itself `Canceled`, not `Completed`.
-  Mark it whichever is true in the same pass you notice, updating its row in the
-  table above.
+  Mark it whichever is true in the same pass you notice, moving its own `status`
+  on the board (`save_project`, § API details).
 - **Do not take a card that is not yours**, and do not hand your own to somebody else
   without asking them. Assigned to another person, or `In Progress` or `In Review` under
   their name, means hands off: no assignee change, no status change, no branch, no PR,
@@ -427,6 +403,10 @@ row for it is still to be written by whoever turned it on.
   and has no member field, and `list_projects` with `includeMembers: true` only reads
   them, so the rule that every project carries both members (§ Where things are) is kept
   by hand in the Linear UI, and read back with that call.
+- `save_project` **does** take a `state` field (a project status name, type or ID,
+  resolved against the lead team's statuses), unlike the members it cannot set above:
+  moving a project to `Completed` or `Canceled` once its issues say so (§ Rules) is one
+  `save_project` call, no UI pass needed.
 - `list_issues` filtered by `project` defaults to `includeArchived: false` like every
   other call, but an issue archives on its own six-month-since-`Done` clock (§ Where
   things are: a still-open project only holds that off *before* six months, not
