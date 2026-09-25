@@ -75,7 +75,12 @@ with `fields: ["id", "title", "status", "statusType", "labels", "project",
    noun. `query` ranks, it does not filter: read the first handful and stop where the
    titles stop being about your surface.
 3. **The project**, when the area is the wrong lens (a shared package, a change that
-   spans two apps): `list_issues` with `project:` the id and the three open states.
+   spans two apps): `list_issues` with `project:` the id and the three open states,
+   paging each with `cursor` until `hasNextPage` is false. Auditing whether the
+   whole project is done, not just its open work, needs a fourth call with
+   `includeArchived: true`, paged the same way: an issue archives on its own
+   schedule independent of the project's own state, so a project whose issues
+   already archived reads as empty without it (`AGENTS.md` § Tracker: Linear).
 
 What comes back is read, not counted:
 

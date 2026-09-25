@@ -140,10 +140,13 @@ committing to.
 That additive rule cuts the other way once a repository already carries its own
 `AGENTS.md`: a later change to `template/AGENTS.md` (a new rule, like this PR's
 project-update paragraph) does not reach that repository just because the script
-runs again, since an existing file is skipped without `--force`. Carrying a template
-change into an already-retrofitted repository is the same by-hand fold as the pilot's
-own `WARP.md` merge above, not a second run of the script, and it lands as its own
-small PR on that repository, reviewed the same way.
+runs again, since an existing file is skipped without `--force`. The moment such a
+change lands here, file a Linear issue in that repository's own team (never in
+`rebase`'s) naming the drift, rather than trusting it will be remembered later
+(`.claude/skills/client-repo-onboarding/` § Keeping the template in step). Carrying
+the change over is the same by-hand fold as the pilot's own `WARP.md` merge above,
+not a second run of the script, and it lands as its own small PR on that repository,
+reviewed the same way, closing the issue that tracked it.
 
 ## CI: the shared self-hosted runner pool
 
