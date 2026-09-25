@@ -38,14 +38,14 @@ from rebase_core.matches import (
     LIST_LIMIT_DEFAULT,
     LIST_LIMIT_MAX,
     MatchService,
+    require_live_document,
     require_live_freelancer,
 )
-from rebase_core.models import ContractDocument, Match
+from rebase_core.models import Match
 from rebase_core.search import SEARCH_MAX_LENGTH
 
 router = APIRouter(prefix="/api/hub", tags=["hub-admin"])
 
-DOCUMENT_ENTITY = "documento"
 NO_SIGNED_COPY = "Questo documento non ha ancora una copia firmata."
 
 Limit = Annotated[int, Query(ge=1, le=LIST_LIMIT_MAX)]
@@ -58,16 +58,6 @@ def _writing(session: Session, settings: Settings, renderer: Renderer) -> MatchS
     """The service as the two routes that typeset need it: the renderer, and who signs
     for rebase. The reads take neither."""
     return MatchService(session, renderer, signer_data(settings.signer_json))
-
-
-def _document_guard(session: Session, document_id: UUID) -> ContractDocument:
-    """404 when the document itself is gone or its freelancer is soft-deleted, before a
-    signing action -- or `download_contract` -- reaches the service."""
-    document = session.get(ContractDocument, document_id)
-    if document is None:
-        raise NotFound(DOCUMENT_ENTITY, document_id)
-    require_live_freelancer(session, document.freelancer_id, DOCUMENT_ENTITY, document_id)
-    return document
 
 
 @router.get("/freelancers/{freelancer_id}/fiscal", response_model=FiscalRead | None)
@@ -210,7 +200,7 @@ def refresh_contract(
 ) -> ContractDocumentRead:
     """«Aggiorna stato»: what Documenso says about the envelope, applied as the webhook
     would, and whatever a signature still leaves to do (REB-407)."""
-    _document_guard(session, document_id)
+    require_live_document(session, document_id)
     return signing(session).refresh(document_id)
 
 
@@ -219,7 +209,7 @@ def resend_contract(
     admin: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
 ) -> ContractDocumentRead:
     """«Reinvia email»: the signing mail again, for a document still waiting."""
-    _document_guard(session, document_id)
+    require_live_document(session, document_id)
     return signing(session).resend_mail(document_id, admin.id)
 
 
@@ -228,7 +218,7 @@ def cancel_contract(
     admin: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
 ) -> ContractDocumentRead:
     """«Annulla» on a framework agreement not signed yet; a letter goes with its match."""
-    _document_guard(session, document_id)
+    require_live_document(session, document_id)
     return signing(session).cancel_document(document_id, admin.id)
 
 
@@ -237,7 +227,7 @@ def record_contract_notice(
     admin: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
 ) -> ContractDocumentRead:
     """«Registra disdetta» on an active framework agreement."""
-    _document_guard(session, document_id)
+    require_live_document(session, document_id)
     return signing(session).record_notice(document_id, admin.id)
 
 
@@ -249,7 +239,7 @@ def download_contract(
     `firmato=true`, there is no signed copy yet -- in plain Italian, since the core's
     own sentence for that last case ("documento firmato ... non trovato") reads oddly
     to an admin."""
-    _document_guard(session, document_id)
+    require_live_document(session, document_id)
     try:
         pdf = MatchService(session).document_pdf(document_id, signed=firmato)
     except NotFound as exc:

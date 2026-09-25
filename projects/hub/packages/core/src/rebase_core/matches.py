@@ -86,6 +86,7 @@ from rebase_core.models import (
 from rebase_core.search import matches_any
 
 ENTITY = "match"
+DOCUMENT_ENTITY = "documento"
 QUADRO, LETTERA = "quadro", "lettera"
 DOCUMENT_BY_KIND = {QUADRO: "contratto-quadro", LETTERA: "lettera-di-incarico"}
 SIGNED_ELECTRONICALLY = "firmato elettronicamente"
@@ -111,6 +112,18 @@ def require_live_freelancer(
     freelancer = session.get(Freelancer, freelancer_id)
     if freelancer is None or freelancer.deleted_at is not None:
         raise NotFound(entity, identifier)
+
+
+def require_live_document(session: Session, document_id: UUID) -> ContractDocument:
+    """The guard before a document's action or its PDF: «documento ... non trovato» when
+    the document itself is gone or its freelancer is soft-deleted, before the service is
+    reached. The admin API's contract routes and the admin MCP server's contract tools
+    both run this one (REB-478), so the two doors answer the same."""
+    document = session.get(ContractDocument, document_id)
+    if document is None:
+        raise NotFound(DOCUMENT_ENTITY, document_id)
+    require_live_freelancer(session, document.freelancer_id, DOCUMENT_ENTITY, document_id)
+    return document
 
 
 def issued_by_rebase(day: date) -> str:

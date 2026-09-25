@@ -7,7 +7,12 @@ from decimal import Decimal
 
 import pytest
 
-from rebase_core.contract_schemas import LetteraFields
+from rebase_core.contract_schemas import (
+    ContractDocumentRead,
+    LetteraFields,
+    MatchRead,
+    SendReport,
+)
 from rebase_core.documenso import REJECTED, Outcome
 from rebase_core.match_words import (
     DOCUMENT_STATE_LABELS,
@@ -16,6 +21,7 @@ from rebase_core.match_words import (
     check_sentences,
     document_words,
     match_words,
+    send_report_sentence,
 )
 from rebase_core.models import MATCH_STATES
 from rebase_core.signing import (
@@ -460,3 +466,45 @@ def test_the_check_prints_the_period_once_even_if_the_commitment_ends_with_one()
         dati_fiscali_mancanti=False,
     )
     assert riepilogo[1] == "Impegno: Tre giorni a settimana, per tre mesi."
+
+
+# ---- what «Invia per la firma» did ------------------------------------------------------
+
+
+def _report(inviato: str | None, mail_inviata: bool | None) -> SendReport:
+    """Only the letter's number is read: the rest of the match does not matter here."""
+    letter = ContractDocumentRead.model_construct(numero="2026-001")
+    match = MatchRead.model_construct(lettera=letter)
+    return SendReport.model_construct(match=match, inviato=inviato, mail_inviata=mail_inviata)
+
+
+@pytest.mark.parametrize(
+    ("inviato", "mail_inviata", "sentence"),
+    [
+        (
+            "quadro",
+            True,
+            "Partito il contratto quadro: la lettera n. 2026-001 partirà da sola dopo la sua "
+            "firma.",
+        ),
+        ("lettera", True, "Partita la lettera di incarico n. 2026-001."),
+        (
+            None,
+            None,
+            "La lettera n. 2026-001 aspetta il contratto quadro già in firma e partirà da sola "
+            "dopo.",
+        ),
+        (
+            "lettera",
+            False,
+            "Partita la lettera di incarico n. 2026-001. La mail però non è partita: usa "
+            "«Reinvia email».",
+        ),
+    ],
+)
+def test_the_send_report_says_which_document_left_and_whether_its_mail_did(
+    inviato: str | None, mail_inviata: bool | None, sentence: str
+) -> None:
+    """The web's `sendReportMessage` word for word (REB-390): the pages and the MCP tool
+    answer the same sentence after «Invia per la firma»."""
+    assert send_report_sentence(_report(inviato, mail_inviata)) == sentence

@@ -11,6 +11,12 @@ with, so the thread says who.
 One session per tool call, closed whatever happened: the SDK dispatches sync tools on
 a thread pool, and a session shared across calls is the defect PigroCRM's MCP server
 measured as zero rows written under concurrency.
+
+The match and contract tools (REB-478) are «Crea match» and «Match e contratti» as
+actions: each runs the guard the admin API runs, then the service it calls, with the
+calling admin as the actor, so the trail reads the same whichever door was used. What
+writes a contract takes the renderer and `SigningService` as `build_server` is handed
+them: `signing_from_settings` for the real ones, test doubles in the tests.
 """
 
 from collections.abc import Callable, Sequence
@@ -24,6 +30,7 @@ from mcp.server import MCPServer
 from mcp.server.context import ServerMiddleware
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
+from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -31,12 +38,24 @@ from rebase_core.admin_tokens import AdminRead
 from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
 from rebase_core.config import Settings
-from rebase_core.errors import DomainError, NotFound
+from rebase_core.contract_schemas import FiscalData, MatchCreate
+from rebase_core.contracts.fields import signer_data
+from rebase_core.contracts.render import Renderer
+from rebase_core.documenso import client_from_settings
+from rebase_core.errors import DomainError, NotFound, ValidationFailed
+from rebase_core.fiscal import FiscalService
 from rebase_core.freelancers import LEAD_STATE, FreelancerService
 from rebase_core.http import HttpCall
 from rebase_core.logins import LoginService
-from rebase_core.matches import ENTITY, MatchService, require_live_freelancer
-from rebase_core.models import Freelancer, Signup, User
+from rebase_core.mail import sender_from_settings
+from rebase_core.match_words import send_report_sentence
+from rebase_core.matches import (
+    ENTITY,
+    MatchService,
+    require_live_document,
+    require_live_freelancer,
+)
+from rebase_core.models import Freelancer, Match, Signup, User
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
 from rebase_core.schemas import (
@@ -49,11 +68,14 @@ from rebase_core.schemas import (
 )
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import LIST_LIMIT_DEFAULT
+from rebase_core.signing import SigningService
 from rebase_core.talenti import TalentiService
 
 SessionFactory = sessionmaker[Session]
 # Who is calling: resolved by the transport, read by the tools that sign something.
 AdminProvider = Callable[[], AdminRead]
+# `SigningService` for one call's session, the way the admin API's `SigningDep` hands it.
+SigningFactory = Callable[[Session], SigningService]
 
 INSTRUCTIONS = (
     "rebase, la community di freelance di letsrebase.com. Gli strumenti leggono chi "
@@ -61,11 +83,57 @@ INSTRUCTIONS = (
     "CV e le aziende che cercano persone; possono cambiare lo stato di una candidatura, "
     "annotarla e lasciare un commento datato nel suo thread; da un'iscrizione possono "
     "creare la scheda freelance con quanto si trova in pubblico su quella persona, che poi "
-    "lei completa dalla sua area. Sono dati di altre persone: da usare solo per decidere "
-    "quando e cosa scrivere loro, mai da riportare altrove."
+    "lei completa dalla sua area. Da qui si gestiscono anche i match fra un freelance e "
+    "un'azienda, i loro contratti e la firma, come dall'area admin. Sono dati di altre "
+    "persone: da usare solo per decidere quando e cosa scrivere loro, mai da riportare "
+    "altrove."
 )
 
 PIGRO_NOT_CONFIGURED = "Il registro di Pigro non è configurato: manca REBASE_PIGRO_REGISTRY_TOKEN."
+# `MatchService.proposal` names the letter's fields as the admin API's body does
+# (`lettera.compenso`); the tools take them as `condizioni`, and a refusal says so.
+LETTER_PART, CONDITIONS_PART = "lettera.", "condizioni."
+TAX_DATA_SAVED = {"dati_fiscali": "salvati"}
+
+
+def signing_from_settings(settings: Settings, renderer: Renderer) -> SigningFactory:
+    """`SigningService` as this environment configures it, built the way the admin API's
+    `get_signing_factory` builds it (`apps/api` may not be imported here), afresh for each
+    call over that call's own session: Documenso and the mail sender from the settings,
+    `None` when either is off, and `REBASE_SIGNER_JSON` handed over raw, parsed only by
+    a path that typesets."""
+
+    def build(session: Session) -> SigningService:
+        return SigningService(
+            session,
+            renderer=renderer,
+            documenso=client_from_settings(settings),
+            sender=sender_from_settings(settings),
+            signer_json=settings.signer_json,
+            contracts_mail=settings.contracts_mail,
+            allow_draft=settings.contracts_allow_draft,
+        )
+
+    return build
+
+
+def _require_live_match(session: Session, match_id: UUID) -> None:
+    """The admin API's guard before a match's action: «match ... non trovato» for a match
+    that is gone and for one whose freelancer is soft-deleted (REB-417)."""
+    match = session.get(Match, match_id)
+    if match is None:
+        raise NotFound(ENTITY, match_id)
+    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+
+
+def _tax_refusal(exc: PydanticValidationError) -> ToolError:
+    """A tax field refused, named with the hub's own sentence when one of its validators
+    said why and «non valido» otherwise: never Pydantic's own text, which repeats the
+    value typed, and a tax identifier does not come back in an answer."""
+    error = exc.errors()[0]
+    field = ".".join(str(part) for part in error["loc"])
+    reason = (error.get("ctx") or {}).get("error")
+    return ToolError(f"{field}: {reason if reason is not None else 'non valido'}")
 
 
 def _number(value: str | None, field: str) -> Decimal | None:
@@ -136,13 +204,27 @@ def build_server(
     settings: Settings | None = None,
     http: HttpCall | None = None,
     middleware: Sequence[ServerMiddleware[Any]] | None = None,
+    renderer: Renderer | None = None,
+    signing: SigningFactory | None = None,
 ) -> MCPServer:
     """`admin` answers the admin behind the current call; `settings` and `http` are what
     reaches the CRM, for `list_pigro_spaces` and for the `pigro_slug` of `get_talento`,
     and without them the registry's tools answer the same sentence the admin area shows
     when it is not configured while the slug stays `None`. `middleware`
-    is the HTTP transport's way of binding the request's admin around each call."""
+    is the HTTP transport's way of binding the request's admin around each call.
+
+    `renderer` typesets what `create_match` writes, with rebase's signer read from
+    `settings`; `signing` builds the `SigningService` the signing tools call
+    (`signing_from_settings`). The transports hand the real ones; a test hands
+    `FakeRenderer` and a service over fakes. Without them a contract is not written and
+    a send answers that signing is not active here, as the admin area does."""
     mcp = MCPServer("rebase", instructions=INSTRUCTIONS, middleware=middleware)
+    signer_json = settings.signer_json if settings is not None else ""
+
+    def contracts(session: Session) -> SigningService:
+        if signing is not None:
+            return signing(session)
+        return SigningService(session, renderer=renderer)
 
     @mcp.tool()
     def create_freelancer_from_signup(
@@ -657,8 +739,8 @@ def build_server(
         versione del testo; `quadri` li elenca tutti; `matches` sono i
         match dal più recente, ognuno con l'azienda, lo stato e la lettera di incarico
         con il suo numero. Ogni documento porta `pdf_url`, il link al PDF da aprire con
-        l'accesso admin: mai i byte, mai i dati fiscali. Solo lettura: i match si creano
-        dall'area admin."""
+        l'accesso admin: mai i byte, mai i dati fiscali. Solo lettura; un match nuovo si
+        prepara con `preview_match` e si salva con `create_match`."""
         body = _run(lambda s: MatchService(s).for_freelancer(UUID(freelancer_id)))
         body.pop("fiscale", None)
         for document in (body["quadro"], *body["quadri"]):
@@ -693,6 +775,232 @@ def build_server(
         if body["quadro"] is not None:
             _document_links(body["quadro"])
         return body
+
+    # ---- matches and contracts, as actions (REB-478) -----------------------------------
+
+    def _call[T](call: Callable[[Session], T]) -> T:
+        """`_run` for a tool that shapes its own answer: one session, closed whatever
+        happened, and a domain error as its own sentence."""
+        session = factory()
+        try:
+            return call(session)
+        except DomainError as exc:
+            raise ToolError(exc.message) from exc
+        finally:
+            session.close()
+
+    def _proposal(
+        service: MatchService,
+        freelancer_id: UUID,
+        company_id: UUID,
+        cliente: dict[str, Any] | None,
+        condizioni: dict[str, Any] | None,
+        match_id: UUID | None = None,
+    ) -> MatchCreate:
+        """The hub's proposal with the given fields laid over it, a refusal naming a
+        letter's field by the parameter it came in (`condizioni.compenso`)."""
+        try:
+            return service.proposal(freelancer_id, company_id, cliente, condizioni, match_id)
+        except ValidationFailed as exc:
+            field = str(exc.details["field"])
+            if not field.startswith(LETTER_PART):
+                raise
+            raise ValidationFailed(
+                ENTITY,
+                CONDITIONS_PART + field.removeprefix(LETTER_PART),
+                str(exc.details["reason"]),
+            ) from exc
+
+    def _on_match(match_id: str, action: Callable[[Session, UUID], BaseModel]) -> dict[str, Any]:
+        key = UUID(match_id)
+
+        def call(session: Session) -> dict[str, Any]:
+            _require_live_match(session, key)
+            return action(session, key).model_dump(mode="json")
+
+        body = _call(call)
+        _document_links(body["lettera"])
+        return body
+
+    def _on_document(
+        document_id: str, action: Callable[[SigningService, UUID], BaseModel]
+    ) -> dict[str, Any]:
+        key = UUID(document_id)
+
+        def call(session: Session) -> dict[str, Any]:
+            require_live_document(session, key)
+            return action(contracts(session), key).model_dump(mode="json")
+
+        body = _call(call)
+        _document_links(body)
+        return body
+
+    @mcp.tool()
+    def preview_match(
+        freelancer_id: str,
+        company_id: str,
+        cliente: dict[str, Any] | None = None,
+        condizioni: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Cosa farebbe `create_match` con questi dati, senza scrivere nulla: le frasi del
+        passo 3 di «Crea match». `riepilogo` è la lettera di incarico in tre o quattro
+        frasi, `cosa_succede` quale documento parte per primo, `quadro_necessario` se
+        serve un nuovo contratto quadro, `dati_fiscali_mancanti` se mancano i dati
+        fiscali del freelance (si salvano con `set_freelancer_tax_data`). Si parte dalla
+        proposta dell'hub: il cliente come l'ha chiamato l'ultimo match della stessa
+        azienda (altrimenti solo il nome dell'azienda), la lettera dalla richiesta, dalla
+        scheda e dalle condizioni di rebase. `cliente` e `condizioni` la cambiano campo
+        per campo, con i nomi dell'API: per il cliente `cliente_ragione_sociale`,
+        `cliente_piva`, `cliente_sede`; per le condizioni i campi della lettera, come
+        `ruolo`, `attivita`, `data_inizio` e `data_fine` (AAAA-MM-GG), `impegno`, `luogo`,
+        `compenso` (IVA esclusa), `unita`, `giorni_pagamento`, `fine_mese`. Un campo
+        omesso resta come lo propone l'hub, `null` lo svuota. Risponde anche `cliente` e
+        `condizioni` come verrebbero scritti. Un campo sconosciuto, o obbligatorio e
+        rimasto vuoto, è rifiutato con il suo nome. Solo lettura."""
+        freelancer, company = UUID(freelancer_id), UUID(company_id)
+
+        def call(session: Session) -> dict[str, Any]:
+            service = MatchService(session)
+            proposal = _proposal(service, freelancer, company, cliente, condizioni)
+            body = service.check(freelancer, proposal).model_dump(mode="json")
+            body["cliente"] = proposal.cliente.model_dump(mode="json")
+            body["condizioni"] = proposal.lettera.model_dump(mode="json")
+            return body
+
+        return _call(call)
+
+    @mcp.tool()
+    def create_match(
+        freelancer_id: str,
+        company_id: str,
+        cliente: dict[str, Any] | None = None,
+        condizioni: dict[str, Any] | None = None,
+        match_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Salva il match come bozza, come «Salva senza inviare» al passo 3 di «Crea
+        match»: la lettera di incarico con il suo numero e, se il freelance non ha un
+        contratto quadro attivo né uno già in firma, un contratto quadro nuovo. Non parte
+        nulla: per la firma c'è `send_match_for_signature`. `cliente` e `condizioni` come
+        in `preview_match`, da chiamare prima per rileggere le frasi. Servono i dati
+        fiscali del freelance (`set_freelancer_tax_data`). `match_id`, un UUID scelto da
+        chi chiama, rende sicuro riprovare: con lo stesso id e gli stessi dati torna il
+        match già scritto e non un secondo; con dati diversi è rifiutato. Risponde il
+        match con `situazione`, `prossima_azione` e la lettera con `pdf_url`, a nome
+        dell'admin dietro il token."""
+        freelancer, company = UUID(freelancer_id), UUID(company_id)
+        key = UUID(match_id) if match_id else None
+
+        def call(session: Session) -> dict[str, Any]:
+            service = MatchService(session, renderer, signer_data(signer_json))
+            proposal = _proposal(service, freelancer, company, cliente, condizioni, key)
+            return service.create(freelancer, proposal, admin().id).model_dump(mode="json")
+
+        body = _call(call)
+        _document_links(body["lettera"])
+        return body
+
+    @mcp.tool()
+    def send_match_for_signature(match_id: str) -> dict[str, Any]:
+        """«Invia per la firma»: il documento che può partire ora va su Documenso e il
+        freelance riceve la mail con il link per firmarlo. Se non ha un contratto quadro
+        attivo parte prima quello, e la lettera di incarico parte da sola dopo la sua
+        firma. `messaggio` dice cosa è partito, con le parole della pagina; `inviato` è
+        `quadro`, `lettera` o `null` (la lettera aspetta un contratto quadro già in
+        firma), `mail_inviata` se la mail è partita (altrimenti `resend_signing_mail`).
+        Non si torna indietro: il documento arriva al freelance, e da lì si può solo
+        annullare. Rifiutato per un testo ancora in bozza o un match che non ha più nulla
+        da inviare."""
+        key = UUID(match_id)
+
+        def call(session: Session) -> dict[str, Any]:
+            _require_live_match(session, key)
+            report = contracts(session).send_match(key, admin().id)
+            return {**report.model_dump(mode="json"), "messaggio": send_report_sentence(report)}
+
+        body = _call(call)
+        _document_links(body["match"]["lettera"])
+        return body
+
+    @mcp.tool()
+    def resend_signing_mail(document_id: str) -> dict[str, Any]:
+        """«Reinvia email»: di nuovo la mail con il link per firmare, lo stesso di prima,
+        per un documento che aspetta ancora la firma del freelance. L'id del documento è
+        in `list_matches` o `get_match`. Risponde il documento con `pdf_url`."""
+        return _on_document(document_id, lambda service, key: service.resend_mail(key, admin().id))
+
+    @mcp.tool()
+    def refresh_contract(document_id: str) -> dict[str, Any]:
+        """«Aggiorna stato»: chiede a Documenso a che punto è il documento e lo applica
+        come farebbe la sua notifica, poi fa quello che una firma lascia da fare (salva e
+        manda la copia firmata, fa partire le lettere che aspettavano questo contratto
+        quadro). Serve quando una notifica non è arrivata. Risponde il documento con
+        `situazione`, `pdf_url` e, quando c'è la copia firmata, `pdf_firmato_url`."""
+        return _on_document(document_id, lambda service, key: service.refresh(key))
+
+    @mcp.tool()
+    def cancel_contract(document_id: str) -> dict[str, Any]:
+        """«Annulla» su un contratto quadro non ancora firmato: se era partito è annullato
+        anche su Documenso, e il freelance riceve una mail che il link non vale più. Una
+        lettera di incarico si annulla con il suo match (`cancel_match`). Non si torna
+        indietro: le lettere che lo aspettavano restano in attesa, e «Invia per la firma»
+        sul loro match ne scrive uno nuovo."""
+        return _on_document(
+            document_id, lambda service, key: service.cancel_document(key, admin().id)
+        )
+
+    @mcp.tool()
+    def record_notice(document_id: str) -> dict[str, Any]:
+        """«Registra disdetta» su un contratto quadro attivo, per una disdetta o un recesso:
+        da adesso il freelance non ha un contratto quadro attivo, e il suo prossimo match
+        ne scrive uno nuovo. Non si torna indietro."""
+        return _on_document(
+            document_id, lambda service, key: service.record_notice(key, admin().id)
+        )
+
+    @mcp.tool()
+    def cancel_match(match_id: str) -> dict[str, Any]:
+        """«Annulla» su un match in bozza o in firma: il match e la sua lettera di
+        incarico diventano annullati, e il numero della lettera non si riusa. Una lettera
+        già partita è annullata anche su Documenso: il link del freelance smette di
+        funzionare e lui riceve una mail. Il contratto quadro resta com'è. Non si torna
+        indietro."""
+        return _on_match(
+            match_id, lambda session, key: contracts(session).cancel_match(key, admin().id)
+        )
+
+    @mcp.tool()
+    def close_match(match_id: str) -> dict[str, Any]:
+        """«Chiudi match» su un match attivo: l'incarico finisce e il match diventa
+        concluso. Il contratto quadro resta com'è. Non si torna indietro."""
+        return _on_match(
+            match_id, lambda session, key: MatchService(session).close(key, admin().id)
+        )
+
+    @mcp.tool()
+    def set_freelancer_tax_data(
+        freelancer_id: str,
+        codice_fiscale: str,
+        partita_iva: str,
+        domicilio: str,
+        pec: str | None = None,
+    ) -> dict[str, Any]:
+        """Salva i dati fiscali di un freelance, quelli che i due contratti stampano:
+        codice fiscale (16 caratteri, o 11 cifre per una ditta), partita IVA (11 cifre),
+        domicilio su una riga e, se c'è, la PEC (omessa o vuota: nessuna). Sostituisce
+        quelli che c'erano. Risponde solo che sono salvati, mai i valori; il registro
+        delle modifiche nomina i campi cambiati, mai i valori."""
+        key = UUID(freelancer_id)
+        try:
+            data = FiscalData(
+                codice_fiscale=codice_fiscale,
+                partita_iva=partita_iva,
+                domicilio=domicilio,
+                pec=pec or None,
+            )
+        except PydanticValidationError as exc:
+            raise _tax_refusal(exc) from None
+        _call(lambda session: FiscalService(session).save(key, data, admin().id))
+        return dict(TAX_DATA_SAVED)
 
     def _run(call: Callable[[Session], BaseModel]) -> dict[str, Any]:
         """One session per call, closed whatever happened, and a domain error rendered

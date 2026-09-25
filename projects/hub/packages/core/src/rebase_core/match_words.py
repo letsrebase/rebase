@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Literal
 from rebase_core.contracts.fields import FEE, italian_date, rendered
 
 if TYPE_CHECKING:
-    from rebase_core.contract_schemas import LetteraFields
+    from rebase_core.contract_schemas import LetteraFields, SendReport
 
 Action = Literal[
     "invia", "reinvia_email", "aggiorna_stato", "annulla", "chiudi", "registra_disdetta"
@@ -30,6 +30,7 @@ FrameworkStep = Literal["da_inviare", "in_firma", "attivo"]
 Words = tuple[str, Action | None, list[Action]]
 
 QUADRO = "quadro"
+LETTERA = "lettera"
 # How every refusal `SigningService` stores begins, with or without the freelancer's words.
 REFUSED = "Rifiutato"
 SENTENCE_ENDS = (".", "!", "?", "…")
@@ -279,3 +280,25 @@ def check_sentences(
     if dati_fiscali_mancanti:
         riepilogo.append(MISSING_TAX_DATA)
     return riepilogo, WHAT_LEAVES_FIRST[quadro]
+
+
+def send_report_sentence(report: "SendReport") -> str:
+    """What «Invia per la firma» did, in the sentence the pages show after it (REB-390)
+    and `send_match_for_signature` answers: the document that left, or the letter waiting
+    for a framework agreement already out for signature, and a mail that did not leave."""
+    numero = report.match.lettera.numero
+    if report.inviato == QUADRO:
+        sent = (
+            f"Partito il contratto quadro: la lettera n. {numero} partirà da sola dopo la sua "
+            "firma."
+        )
+    elif report.inviato == LETTERA:
+        sent = f"Partita la lettera di incarico n. {numero}."
+    else:
+        sent = (
+            f"La lettera n. {numero} aspetta il contratto quadro già in firma e partirà da sola "
+            "dopo."
+        )
+    if report.mail_inviata is False:
+        return f"{sent} La mail però non è partita: usa «Reinvia email»."
+    return sent

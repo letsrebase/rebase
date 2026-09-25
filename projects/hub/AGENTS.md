@@ -56,6 +56,23 @@ is a process of its own because `apps/api` may not import `apps/mcp`. Over stdio
 is `REBASE_MCP_TOKEN`. Design record:
 `docs/superpowers/specs/2026-09-15-mcp-for-admins-design.md`.
 
+Every match and contract action is a tool too (REB-478): each runs the guard the admin
+API runs, then the same core service, with the calling admin as the actor, and answers
+`pdf_url`, never the PDF bytes, the tax identifiers or the client's budget. The
+transports hand `build_server` the real `ContractRenderer` and `signing_from_settings`;
+the tests hand `FakeRenderer` and a `SigningService` over `FakeDocumenso`.
+
+- `preview_match`: step 3's sentences for the hub's proposal with the given fields; writes nothing.
+- `create_match`: the draft match, «Salva senza inviare»; `match_id` makes a retry idempotent.
+- `send_match_for_signature`: «Invia per la firma»; `messaggio` is the page's sentence.
+- `resend_signing_mail`: «Reinvia email», for a document still waiting.
+- `refresh_contract`: «Aggiorna stato», Documenso's word applied as the webhook would.
+- `cancel_contract`: «Annulla» on a framework agreement not signed yet.
+- `record_notice`: «Registra disdetta» on an active framework agreement.
+- `cancel_match`: «Annulla» on a match in draft or in signature.
+- `close_match`: «Chiudi match», the engagement ends.
+- `set_freelancer_tax_data`: saves the tax data; answers that they are saved, never the values.
+
 ## The guide is a generated file, committed, and easy to leave stale
 
 `content/guida-primi-passi-freelance.md` is typeset by `tools/build_guide_pdf.py`, with

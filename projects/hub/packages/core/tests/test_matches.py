@@ -34,7 +34,7 @@ from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
 from rebase_core.freelancers import FreelancerService
-from rebase_core.matches import MatchService
+from rebase_core.matches import MatchService, require_live_document
 from rebase_core.models import ContractDocument, Freelancer, Match, User
 from rebase_core.schemas import CompanyCreate, FreelancerCreate, StatusChange
 
@@ -681,6 +681,21 @@ def test_a_deleted_card_or_request_is_not_found(clean: Session) -> None:
     FreelancerService(clean).soft_delete(freelancer_id, admin_id)
     with pytest.raises(NotFound):
         _service(clean).for_freelancer(freelancer_id)
+
+
+def test_a_document_is_not_found_once_its_freelancer_is_deleted(clean: Session) -> None:
+    """The guard the admin API and the MCP tools both run before a document's action:
+    «documento ... non trovato» for a document that is gone and for one whose freelancer
+    is soft-deleted, never the freelancer's own message (REB-417)."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    letter = _service(clean).create(freelancer_id, _body(company_id), admin_id).lettera
+    assert require_live_document(clean, letter.id).id == letter.id
+    missing = uuid4()
+    with pytest.raises(NotFound, match=f"documento {missing} non trovato"):
+        require_live_document(clean, missing)
+    FreelancerService(clean).soft_delete(freelancer_id, admin_id)
+    with pytest.raises(NotFound, match=f"documento {letter.id} non trovato"):
+        require_live_document(clean, letter.id)
 
 
 def test_cancelling_a_draft_cancels_its_letter_and_leaves_the_framework(clean: Session) -> None:
