@@ -81,10 +81,12 @@ pinned by a test in the task named.
    call, tested with two threads on two match ids (Task A4,
    `test_two_matches_one_email_share_one_space`).
 2. **A crash between creating the deal and recording it.** The next call finds the deal
-   by its deterministic name under the customer and completes the row instead of
-   creating a twin; a row with `deal_id` NULL resumes at the customer step (Task A4,
+   by the marker in its note (`rebase:match=<match_id>`) under the customer, through an
+   exact repository query and never the paginated trigram list, and completes the row
+   instead of creating a twin; a same-named deal without the marker is left alone; a row
+   with `deal_id` NULL resumes at the customer step (Task A4,
    `test_retry_after_deal_created_but_unrecorded_reuses_it`,
-   `test_half_written_row_is_completed`).
+   `test_same_named_deal_without_marker_is_not_reused`, `test_half_written_row_is_completed`).
 3. **Case and spaces in the address.** `Ada@Studio.it ` owns the space registered as
    `ada@studio.it`; the lock and the lookup both lowercase and strip (Task A4,
    `test_owner_lookup_is_case_insensitive`).
@@ -327,21 +329,27 @@ def welcome(space: Session, settings: Settings, sender: EmailSender | None, owne
 
 **Files:**
 - Create: `packages/core/src/pigrocrm/core/engagements/schemas.py`, `service.py`
+- Modify: `packages/core/src/pigrocrm/core/customers/repository.py`
+  (`find_by_name(ragione_sociale) -> Customer | None`: exact, live rows only) and
+  `deals/repository.py` (`find_by_marker(customer_id, marker) -> Deal | None`: the live
+  deal of that customer whose `note` contains the marker, exact substring, at most one
+  by construction)
 - Modify: `packages/core/src/pigrocrm/core/work_units/service.py`
   (`actor_to_transition_json`: a `rebase` actor is recorded as `{"kind": "rebase"}`,
   never folded into `agent`; read the function's docstring and keep its shape)
 - Test: `packages/core/tests/test_engagements.py`, `packages/core/tests/test_work_units*.py`
-  (the transition json of a rebase actor)
+  (the transition json of a rebase actor), the repository tests beside the two new
+  methods
 
 **Interfaces:**
 - Consumes: `TenantService.provision`, `TenantService.availability`, `slugify`,
   `SLUG_MAX` (`tenants/schemas.py`), `welcome` (A3), `CustomerService.create`,
-  `CustomerRepository.match_by_fiscal_id`, `CustomerService.list` /
-  `DealService.list` (trigram searches: the exact comparison on name is done in Python
-  over the rows they answer), `DealService.create`, `PipelineService.default_stage`,
-  `UserRepository.get_by_email`, `Actor.rebase()`, `RebaseEngagement` (A2),
-  `tenant_database_url`, `tenant_database_name`, `session_factory`,
-  `Settings.public_url`.
+  `CustomerRepository.match_by_fiscal_id`, the two new exact repository methods
+  (never `CustomerService.list` or `DealService.list`: those are paginated trigram
+  searches, and a first page is not the set), `DealService.create`,
+  `PipelineService.default_stage`, `UserRepository.get_by_email`, `Actor.rebase()`,
+  `RebaseEngagement` (A2), `tenant_database_url`, `tenant_database_name`,
+  `session_factory`, `Settings.public_url`.
 - Produces:
 
 ```python
@@ -391,7 +399,11 @@ class EngagementRead(BaseModel):
 def deal_name(numero: str, ruolo: str, azienda: str) -> str:
     """`Lettera n. 3/2026 · Backend developer per Acme S.r.l.`, the role cut to 80 and
     the company to 100 characters so the longest inputs stay under deals.nome's 255.
-    Deterministic on purpose: it is how a deal created and never recorded is found."""
+    A label: the marker below is what finds a deal again."""
+
+def deal_marker(match_id: UUID) -> str:
+    """`rebase:match=<match_id>`, the last line of the deal's note and the key a retry
+    recovers the deal by (`DealRepository.find_by_marker`)."""
 
 def space_url(settings: Settings, slug: str) -> str      # f"{public_url}/{slug}/app/"
 def deal_url(settings: Settings, slug: str, deal_id: UUID) -> str  # ... + f"deal/{deal_id}"
@@ -431,21 +443,21 @@ class EngagementService:
   - **Step 4.** In the space (`_space_session(tenant)`: an engine from
     `tenant_database_url`, disposed in `finally`): the customer by
     `CustomerRepository.match_by_fiscal_id(partita_iva)` when the body carries one, else
-    the live customer whose `ragione_sociale == data.rebase.ragione_sociale` among
-    `CustomerService.list(...)`'s rows for that query; missing → `CustomerService.create`
-    with `ragione_sociale`, `partita_iva`, `codice_fiscale`, `indirizzo`, `pec`,
-    `codice_sdi` and the note of § 2.3 step 4, as `Actor.rebase()`.
-  - **Step 5.** The live deal named `deal_name(...)` under that customer among
-    `DealService.list(...)`'s rows, else `DealService.create(DealCreate(nome, customer_id,
+    `CustomerRepository.find_by_name(data.rebase.ragione_sociale)`; missing →
+    `CustomerService.create` with `ragione_sociale`, `partita_iva`, `codice_fiscale`,
+    `indirizzo`, `pec`, `codice_sdi` and the note of § 2.3 step 4, as `Actor.rebase()`.
+  - **Step 5.** `DealRepository.find_by_marker(customer_id, deal_marker(match_id))`,
+    else `DealService.create(DealCreate(nome=deal_name(...), customer_id,
     tariffa_oraria=(compenso / HOURS_PER_DAY).quantize(Decimal("0.000001")),
     ore_preventivate=giorni_previsti * HOURS_PER_DAY or None,
     data_chiusura_prevista=data_fine, owner_id=<the admin whose email is the
-    freelancer's, via UserRepository.get_by_email>, note=<§ 2.3 step 5>), Actor.rebase())`
-    (the default open stage comes from `pipeline_stage_id=None`).
+    freelancer's, via UserRepository.get_by_email>, note=<§ 2.3 step 5's sentence,
+    a newline, deal_marker(match_id)>), Actor.rebase())` (the default open stage comes
+    from `pipeline_stage_id=None`). A deal with the same name and no marker is not ours.
   - **Step 6.** `row.customer_id`, `row.deal_id`, commit, answer `EngagementRead(...,
     spazio_creato=<step 3 provisioned>, creato=True)`.
 
-- [ ] **Step 1: Write the failing tests** (each on the container, registry emptied and spaces dropped in a fixture shaped like `test_tenants_api.py`'s `_serving`, but on core alone; `public_url="https://pigro.test"` in the settings):
+- [ ] **Step 1: Write the failing tests** (each on the container; the fixture, shaped like `test_tenants_api.py`'s `_serving` but on core alone, reads the registry at teardown and drops every space it finds there, so a slug the test did not choose is dropped too and nothing else is; `public_url="https://pigro.test"` in the settings):
 
 ```python
 def test_first_call_creates_space_customer_and_deal(...): ...   # creato and spazio_creato True; the space's customer «rebase» with the VAT number; the deal's name, rate 50.000000 for a 400.00 fee, 320.00 hours for 40 days, the note, the timeline's actor_type "rebase"; url and deal_url shaped https://pigro.test/ada-lovelace/app/ and .../app/deal/<id>
@@ -455,7 +467,8 @@ def test_owner_lookup_is_case_insensitive(...): ...              # "Ada@Studio.i
 def test_slug_collision_takes_a_suffix(...): ...                 # "ada-lovelace" taken -> "ada-lovelace-2"
 def test_two_matches_one_email_share_one_space(...): ...         # two threads, two match ids, one address: one tenant row, two deals, no error
 def test_half_written_row_is_completed(...): ...                 # a row with deal_id NULL: ensure() creates customer and deal in that tenant and fills the row
-def test_retry_after_deal_created_but_unrecorded_reuses_it(...): ...
+def test_retry_after_deal_created_but_unrecorded_reuses_it(...): ...  # a deal with the marker exists, the row has no deal_id: reused, count stays 1
+def test_same_named_deal_without_marker_is_not_reused(...): ...       # a freelancer's own deal with the same name: ours is created beside it
 def test_longest_role_and_company_still_make_a_valid_name(...): ...  # 200-char role, 255-char company: deal_name under 255, create succeeds
 def test_deleted_deal_answers_409(...): ...                      # Conflict with the sentence
 def test_refuses_without_public_url(...): ...                    # ValidationFailed on public_url
@@ -563,7 +576,7 @@ def require_service_token(configured: str, authorization: str | None) -> None:
   maps to 422 except the `public_url` one, which the route turns into `503` with its
   sentence (a missing setting is the installation's fault, not the caller's).
 
-- [ ] **Step 1: Failing tests** with a `_serving`-style client and `engagements_token="un-token-per-la-porta"` in the settings: `test_door_is_absent_without_the_token` (404), `test_wrong_bearer_is_401`, `test_registry_token_does_not_open_the_door` (the registry token → 401), `test_put_creates_then_answers_200`, `test_put_refuses_an_unknown_field` (422), `test_put_without_public_url_is_503`, `test_report_answers_the_hours` (two entries logged in the space through `TimeEntryService` as `Actor.system()`: the space's admin has no password, so the service is the way in), `test_report_of_deleted_deal_is_409`.
+- [ ] **Step 1: Failing tests** with a `_serving`-style client whose teardown drops every space the registry lists (never a fixed slug) and `engagements_token="un-token-per-la-porta"` in the settings: `test_door_is_absent_without_the_token` (404), `test_wrong_bearer_is_401`, `test_registry_token_does_not_open_the_door` (the registry token → 401), `test_put_creates_then_answers_200`, `test_put_refuses_an_unknown_field` (422), `test_put_without_public_url_is_503`, `test_report_answers_the_hours` (two entries logged in the space through `TimeEntryService` as `Actor.system()`: the space's admin has no password, so the service is the way in), `test_report_of_deleted_deal_is_409`.
 - [ ] **Step 2: Run, fail.** **Step 3: Implement**, and switch `list_spaces` to `require_service_token(settings.registry_token, authorization)`.
 - [ ] **Step 4: Run** `test_engagements_api.py`, then `test_tenants_api.py`; ruff and mypy on `apps/api`.
 - [ ] **Step 5: Commit** `feat(api): rebase's engagements door answers under its own token` (`REB-495.`).
@@ -576,8 +589,8 @@ The preview CRM answers at `https://preview.pigro.letsrebase.com`
 (`projects/pigrocrm/deploy/nginx/preview.pigro.letsrebase.conf`).
 
 - [ ] **Step 1:** `gh pr ready` on the milestone's draft PR, then the review loop of `.claude/skills/pr-creation` (fresh reviewer before ready, Greptile and CodeRabbit to 5/5 and clean), merge with a merge commit.
-- [ ] **Step 2:** The preview deploys from `main`. Generate the token (`openssl rand -hex 32`), add it to the preview CRM's `.env`, restart the `api` service (`docker compose up -d api` in the preview's compose directory), and read the boot log for the registry table (`ensure-space-defaults` runs `create_all`).
-- [ ] **Step 3:** `curl -X PUT https://preview.pigro.letsrebase.com/api/rebase/engagements/<uuid4> -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '<a body with a test address of ours>'` answers `201` with a slug; the same call again answers `200`; the report answers the empty deal; a wrong token answers `401`. Drop the test space afterwards the way `test_tenants_api.py` does (`drop_database`), or leave it if it is our own address and say so.
+- [ ] **Step 2:** The preview deploys from `main`. Generate the token straight into the preview CRM's `.env` without printing it (`printf 'PIGROCRM_ENGAGEMENTS_TOKEN=%s\n' "$(openssl rand -hex 32)" >> .env`, the file already `600`), restart the `api` service (`docker compose up -d api` in the preview's compose directory), and read the boot log for the registry table (`ensure-space-defaults` runs `create_all`).
+- [ ] **Step 3:** The token never appears in a terminal or in `argv`: write `Authorization: Bearer <token>` into a `600` file on the host and call `curl -H @auth.txt -X PUT https://preview.pigro.letsrebase.com/api/rebase/engagements/<uuid4> -H "Content-Type: application/json" -d '<a body with a fresh disposable address of ours, one that owns no space>'`: `201` with a slug; the same call again `200`; the report the empty deal; a wrong token `401`. Afterwards drop only that space, by the slug the `201` answered, the way `test_tenants_api.py` does (`drop_database`): a fresh address is what makes it certain that no pre-existing space of a real freelancer was reused, and no backup is needed for a database this run created. Delete `auth.txt`.
 - [ ] **Step 4:** Closing comment on each card A1 to A7 with the evidence (run ids, the curl lines and their answers), the milestone's cards moved to `Done` by hand (the milestone branch carries no id).
 - [ ] **Step 5:** Tell Ivan the production `.env` needs the same variable before the `pigrocrm-v*` tag that ships this (a production deploy is his call).
 
@@ -674,7 +687,7 @@ class ReportDay(BaseModel):
     data: date
     ore: Decimal
     descrizioni: list[str]
-    fattura: str | None          # "12/2026", "proforma 3/2026", or None
+    fatture: list[str]           # distinct: ["12/2026"], ["12/2026", "proforma 3/2026"], or []
 
 class ReportWeek(BaseModel):
     settimana: str               # "2026-W40"
@@ -734,6 +747,11 @@ class EngagementService:
   mapping: `ragione_sociale`, `partita_iva = normalise_vat(...)`, `codice_fiscale`,
   `indirizzo = sede[:255]`, `pec`, `codice_sdi` only when seven characters. A letter not
   `firmato` → `InvalidState("match", "La lettera non è firmata.")`.
+  `HTTPS_ONLY = "Pigro è raggiungibile solo su https."`: before any call, `link` and
+  `report` check `settings.pigro_api_url` starts with `https://`, or with `http://`
+  on `localhost` / `127.0.0.1` only; anything else is `PigroUnavailable(HTTPS_ONLY)`
+  (for `link`: the match gets `errore` with that sentence), so the token never leaves
+  in clear.
   `link`, in this order: lock the match (`lock_match`), refuse not-`attivo` with
   `InvalidState("match", "Si collega a Pigro solo un match attivo.")`; token empty →
   `pigro_stato = 'da_collegare'` if `None`, log once at info, commit, answer; else
@@ -741,14 +759,17 @@ class EngagementService:
   it). Call `PUT {pigro_api_url}/api/rebase/engagements/{match_id}` (headers
   `Authorization: Bearer`, `Content-Type: application/json`, `Accept:
   application/json`) with no row lock held. Lock and re-read the match; if it is
-  already `collegato`, leave it (another caller won); else write: `201`/`200` →
+  already `collegato`, leave the state (another caller won); else write: `201`/`200` →
   `collegato`, `pigro_slug`, `pigro_deal_id`, `pigro_url = deal_url`,
   `pigro_linked_at = now()`, `pigro_errore = None`; `409`/`422` → `rifiutato`,
   `pigro_errore = body["detail"]` (or the seam's status sentence when the body has
   none); anything else, an exception from `http`, a body that is not the shape →
-  `errore` with the seam's sentence. Commit. Then if `collegato` and
-  `pigro_mail_sent_at is None` and `sender`: `sender.send(engagement_ready_mail(...))`,
-  on acceptance `pigro_mail_sent_at = now()`, commit (a refused mail leaves it `NULL`).
+  `errore` with the seam's sentence. In the same locked write, when the match is
+  `collegato` and `pigro_mail_sent_at is None` and `sender` is set, stamp
+  `pigro_mail_sent_at = now()` as a claim (`claimed = True`). Commit. Only when
+  `claimed`: `sender.send(engagement_ready_mail(...))`; a refusal re-locks, sets
+  `pigro_mail_sent_at = None`, commits. Two `link` calls racing on one match send one
+  mail: the second sees the claim under the lock.
   With `admin_id`: `AdminActionService(session).record(entity_type="match",
   entity_id=match_id, kind="pigro_link", admin_id=admin_id, payload={"esito":
   stato, "errore": pigro_errore})`. Answer `MatchService(session).get(match_id)`.
@@ -756,10 +777,13 @@ class EngagementService:
   'errore')` or (`collegato` and `pigro_mail_sent_at IS NULL`), `link` on each in its
   own try/except (a failure is logged, counted in `failed`, the loop goes on).
   `report`: not `collegato` → `InvalidState("match", <the state's sentence from
-  match_words>)`; `da = min(lettera_data_inizio or today, today)`, `a = today`, and if
-  `a - da` exceeds `REPORT_MAX_DAYS` then `da = a - REPORT_MAX_DAYS`; `GET
-  .../report?da=&a=`; non-200 → `PigroUnavailable` with the seam's sentence; then
-  `group_report`.
+  match_words>)`; `da = lettera_data_inizio`, or `parse_italian_date(letter.data["data-inizio"])`
+  when the column is NULL (a match older than 0021), or the match's `created_at` date
+  when the letter has no start either, never today; `a = today()`; the span is walked
+  in consecutive windows of at most `REPORT_MAX_DAYS` days (`[da, da+800]`,
+  `[da+801, ...]`, up to `a`), one `GET .../report?da=&a=` each, the `giorni` rows
+  concatenated and the `deal` taken from the last answer; any non-200 →
+  `PigroUnavailable` with the seam's sentence; then `group_report`.
 
 ```python
 def engagement_ready_mail(to: str, *, nome: str, numero: str, azienda: str, deal_url: str, spazio_creato: bool) -> Mail:
@@ -767,7 +791,7 @@ def engagement_ready_mail(to: str, *, nome: str, numero: str, azienda: str, deal
     paragraphs of spec § 3.7, the hub's frame and button."""
 ```
 
-- [ ] **Step 1: Failing tests**: `test_parse_italian_date_round_trips` (fields), `test_payload_from_a_match_with_the_columns`, `test_payload_from_an_older_match_parses_the_printed_letter`, `test_payload_normalises_rebase_fiscal_data` («IT 0123 456 7890» → `01234567890`; a six-character SDI → None; a 300-char address cut to 255), `test_link_refuses_a_match_that_is_not_active` (409 `InvalidState`), `test_link_without_token_marks_da_collegare_and_calls_nothing`, `test_link_on_201_is_collegato_and_mails_once` (a second `link` with a recorded `200` sends no second mail), `test_link_holds_no_lock_during_the_call` (the recorded `http` opens a second session and updates the match's `note`-free column, say `pigro_attempted_at`, without blocking), `test_link_writes_the_crm_sentence_on_409_as_rifiutato`, `test_link_on_422_is_rifiutato`, `test_link_on_refused_connection_is_errore_with_the_sentence`, `test_link_retries_a_refused_mail` (sender refuses once: `pigro_mail_sent_at` NULL; second `link` sends and stamps), `test_link_records_an_admin_action_when_an_admin_asked`, `test_link_pending_counts`, `test_link_pending_skips_rifiutato`, `test_report_groups_by_iso_week_and_month` (`group_report` with entries on 2026-12-28, 2026-12-31, 2027-01-01, 2027-01-04: weeks `2026-W53` and `2027-W01`, months `2026-12` and `2027-01`, both summing to the same total; `avanzamento` `"30.00"` for 96 hours of 40 days; `None` without days), `test_report_refuses_a_match_not_linked` (409), `test_report_asks_at_most_800_days`.
+- [ ] **Step 1: Failing tests**: `test_parse_italian_date_round_trips` (fields), `test_payload_from_a_match_with_the_columns`, `test_payload_from_an_older_match_parses_the_printed_letter`, `test_payload_normalises_rebase_fiscal_data` («IT 0123 456 7890» → `01234567890`; a six-character SDI → None; a 300-char address cut to 255), `test_link_refuses_a_match_that_is_not_active` (409 `InvalidState`), `test_link_without_token_marks_da_collegare_and_calls_nothing`, `test_link_refuses_plain_http` (`pigro_api_url = "http://pigro.example"` → `errore` with `HTTPS_ONLY`, `http` never called; `http://localhost:8000` allowed), `test_link_on_201_is_collegato_and_mails_once` (a second `link` with a recorded `200` sends no second mail), `test_two_links_racing_send_one_mail` (the recorded `http` of the first call runs a second `link` on the same match re-entrantly before answering; one mail leaves), `test_link_holds_no_lock_during_the_call` (the recorded `http` opens a second session and updates `pigro_attempted_at` without blocking), `test_link_writes_the_crm_sentence_on_409_as_rifiutato`, `test_link_on_422_is_rifiutato`, `test_link_on_refused_connection_is_errore_with_the_sentence`, `test_link_retries_a_refused_mail` (sender refuses once: `pigro_mail_sent_at` back to NULL; second `link` sends and stamps), `test_link_records_an_admin_action_when_an_admin_asked`, `test_link_pending_counts`, `test_link_pending_skips_rifiutato`, `test_report_groups_by_iso_week_and_month` (`group_report` with entries on 2026-12-28, 2026-12-31, 2027-01-01, 2027-01-04: weeks `2026-W53` and `2027-W01`, months `2026-12` and `2027-01`, both summing to the same total; `avanzamento` `"30.00"` for 96 hours of 40 days; `None` without days; a day with two entries on two invoices lists both in `fatture`), `test_report_refuses_a_match_not_linked` (409), `test_report_default_start_for_an_older_match` (the printed letter's start, then the match's creation date, never today), `test_report_walks_800_day_windows` (a 1000-day engagement: two calls, `da`/`a` contiguous, rows concatenated).
 - [ ] **Step 2: Run, fail.** **Step 3: Implement** (settings first: the three edits, one line each with the comment in `config.py`'s voice).
 - [ ] **Step 4: Run green; ruff, mypy.**
 - [ ] **Step 5: Commit** `feat(core): the hub links a match to its Pigro deal and reads its hours` (`REB-498.`).
@@ -857,29 +881,38 @@ client-side and recomputes the two small tables from the sliced days (`lib/repor
 
 **Files:**
 - Modify: `packages/core/src/rebase_core/contracts/texts/lettera-di-incarico.md` (the paragraph of spec § 3.8 after the one on `scadenze-fatturazione`; `text_version` in its front matter bumped)
-- Modify: the monorepo's `docs/design/DECISIONS.md` (one row, dated 2026-09-25: the hub reaches into a space only through the CRM's engagements door, with a token of its own; the registry token stays read-only)
 - Test: `packages/core/tests/test_contract_render.py` (typesets the letter: `rebase contracts-check` passes), `test_matches.py` (a letter written now carries the new `text_version`)
+
+The DECISIONS row of spec § 4 is already on `main` with the design record (PR #424);
+nothing to add here.
 
 - [ ] **Step 1:** Read the letter's front matter and how `text_version` is read (`contracts/__init__.py`, `fields.py`). Add the paragraph, bump the version, run `uv run rebase contracts-check`.
 - [ ] **Step 2:** Run `test_contract_render.py`, `test_contract_pdf.py`, `test_matches.py` (a letter written from the new text carries the new version; an existing document keeps its own).
-- [ ] **Step 3:** The DECISIONS row (expect a merge conflict with every other open PR on that file: resolve by keeping both rows).
-- [ ] **Step 4: Commit** `feat(contracts): the letter of engagement carries the reporting clause` (`REB-504.`), a comment on the card asking Ivan to read the wording on the PR.
+- [ ] **Step 3: Commit** `feat(contracts): the letter of engagement carries the reporting clause` (`REB-504.`), and a comment on REB-504 asking Ivan to read the wording on the PR: his «ok» on that card is the gate B9 waits for before `gh pr ready`.
 
 ### Task B9: The milestone's evidence
 
 - [ ] **Step 1:** `git merge origin/main` once PR #416 has merged; if `0020_campaigns.py` is on `main`, re-point `0021`'s `down_revision` to `0020`; resolve, rerun every suite in the foreground, one DB-backed run at a time.
 - [ ] **Step 2:** On the preview (Documenso is on there, and A7 set the CRM's token): set `REBASE_PIGRO_ENGAGEMENTS_TOKEN` in the preview hub's `.env`, restart `api` and `sweep`, create a match for a test freelancer of ours with `giorni_previsti`, send it for signature, sign on Documenso, watch the sweep line («1 match collegati a Pigro»), open the preview CRM as that freelancer (the welcome mail's link), log two hours on the deal, open «Consuntivo» on the preview hub and read them.
 - [ ] **Step 3:** The before-and-after pairs (the card, the «Match» list, the wizard's conditions step, the member's letter, «Consuntivo») and the video of the flow, with the monorepo's `docs/pr-screenshots/record.mjs` (`docs/pr-screenshots/README.md`; the screenshot stack runs on its own ports, never `:8000`).
-- [ ] **Step 4:** `gh pr ready`, the fresh reviewer on the whole diff, Greptile and CodeRabbit to 5/5 and clean, a merge commit; the closing comment on every card B1 to B9 and each moved to `Done` by hand; a project update on P-REB-42 (three sentences, `type: "project"`).
+- [ ] **Step 4:** Not before Ivan's «ok» on the clause's wording sits on REB-504 (B8): the PR stays a draft until then, whatever else is done. Then `gh pr ready`, the fresh reviewer on the whole diff, Greptile and CodeRabbit to 5/5 and clean, a merge commit; the closing comment on every card B1 to B9 and each moved to `Done` by hand; a project update on P-REB-42 (three sentences, `type: "project"`).
 - [ ] **Step 5:** Tell Ivan the production hub `.env` needs the token before the `hub-v*` tag, and that the CRM tag goes first.
 
 ## Self-review (done while writing, redone after the review of 2026-09-25)
 
 - **Spec coverage.** § 2.1 A1, A6 (the public URL refusal); § 2.2 A2; § 2.3 A3, A4; § 2.4
-  A5; § 2.5 A1, A4 (the work-units branch); § 2.6 nothing to do; § 3.1 B1; § 3.2 B2, B3;
-  § 3.3 B2, B3; § 3.4 B6; § 3.5 B3, B7; § 3.6 B4, B7; § 3.7 B2; § 3.8 B8; § 3.9 B5; § 3.10
-  tests in A4, B2 and B3; § 4 A7, B9, B8 (the row); § 5 the tests named in each task;
-  § 6 the two milestones.
+  A5; § 2.5 A1, A4 (the work-units branch); § 2.6 nothing to do; § 3.1 B1; § 3.2 B2, B3
+  (https only in B2); § 3.3 B2, B3; § 3.4 B6; § 3.5 B3, B7; § 3.6 B4, B7; § 3.7 B2; § 3.8
+  B8; § 3.9 B5; § 3.10 tests in A4, B2 and B3; § 4 A7, B9 (the DECISIONS row rides the
+  design record's own PR); § 5 the tests named in each task; § 6 the two milestones.
+- **The PR reviewers' findings (2026-09-25, PR #424).** Folded in: the deal recovered by
+  its note marker through exact repository queries (A4), the fixtures and the preview
+  run dropping only what they created and keeping the token out of `argv` (A4, A6,
+  A7), the report's start for an older match and its 800-day windows (B2), a day's
+  invoices as a list (B2, B7), the mail claimed under the lock (B2), https only (B2),
+  the invoice table scoped to the period (B7), the wording gate before `gh pr ready`
+  (B8, B9), the deleted deal's recovery documented (spec § 3.10, § 7), the DECISIONS
+  row in the design PR.
 - **Placeholders.** None left: the migration is `0021` with its re-pointing rule, the
   preview host is named, the test files exist under the names given, the lookups name
   the repository methods, today is `today_local()`.
