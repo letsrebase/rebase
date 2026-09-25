@@ -179,6 +179,20 @@ def test_a_save_that_changes_nothing_keeps_the_test(clean: Session) -> None:  # 
     assert service.schedule(campaign.id, ScheduleRequest()).stato == "programmata"
 
 
+def test_a_rename_after_the_test_asks_for_a_new_one(clean: Session) -> None:  # noqa: F811  (fixture)
+    """A new name is a new slug, and the slug is the button's `utm_campaign` and the
+    mail's Resend tag: the mail the test showed is not the one that would leave."""
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _who = ready(service, clean, clock)
+    clock.at += timedelta(minutes=1)
+    renamed = service.update(campaign.id, CampaignPatch(nome="Manca il CV, secondo giro"))
+    assert renamed.slug != campaign.slug
+    assert renamed.pronta is False
+    with pytest.raises(InvalidState, match="Manda una prova"):
+        service.schedule(campaign.id, ScheduleRequest())
+
+
 def test_a_filter_save_that_changes_nothing_keeps_the_test(clean: Session) -> None:  # noqa: F811  (fixture)
     clock = Clock(NOW)
     service = CampaignService(clean, SETTINGS, clock=clock)

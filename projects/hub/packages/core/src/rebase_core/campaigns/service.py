@@ -43,7 +43,10 @@ ROME = ZoneInfo("Europe/Rome")
 NEED_TEST = "Manda una prova dopo l'ultima modifica, poi invia."
 EMPTY_MAIL = "Oggetto, testo e bottone servono prima della prova."
 PAST_SLACK = timedelta(minutes=1)
+# What the test mail showed: the list's source, the mail, and the slug, which is the
+# button link's `utm_campaign` and Resend's tag and follows a renamed draft.
 _CONTENT_FIELDS = (
+    "slug",
     "fonte",
     "stato_percorso",
     "filtri",
