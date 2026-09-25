@@ -129,6 +129,46 @@ rebase-preview-sweep-1` (preview): each run prints «N documenti ripresi», and,
 Documenso itself refused a confirmation or could not be reached (an expired, revoked or
 wrong token among them, REB-431), «, M non confermati» on the same line.
 
+## Campaigns
+
+Since P-REB-41 «Invia una campagna» the `campaigns` service in `docker-compose.yml` runs
+`rebase campaigns-tick` on a loop, every minute, on both stacks: a campaign whose
+`programmata_per` has come, or one an earlier pass left `in_invio`, gets one row of
+`run_tick` (`rebase_core.campaigns.tick`) sent through
+`campaign_sender_from_settings` (`rebase_core.campaigns.sender`), one mail at a time,
+inside a session advisory lock so two passes never overlap. A loop, never a one-shot,
+for the same reason as `sweep`: `_deploy-compose.yml` fails a deploy on any container
+that is not `running`. Without `REBASE_RESEND_API_KEY` the command prints why and exits
+0, so the loop keeps running and sends nothing -- the preview carries no key. Read what
+it did with `docker logs rebase-campaigns-1` (production) or `docker logs
+rebase-preview-campaigns-1` (preview): each run prints one line, «N campagne, M
+inviate, S saltate, F fallite» -- `campagne` is how many due campaigns this pass
+touched, `inviate` and `saltate` are recipients this pass actually sent to or skipped,
+and `fallite` are rows a broken checker or a broken render marked `fallita` rather than
+let wedge every campaign after them (controller ruling R14). A tick's own address never
+appears in this line or anywhere else in stdout.
+
+**Scripts written for one campaign wave never live under `/opt/hub`.** The deploy syncs
+the whole repository there with `rsync -az --delete` (`.github/workflows/
+_deploy-compose.yml`), so anything dropped into the checkout by hand that is not in the
+repository is gone on the next deploy: a one-off `outreach-r2` directory of scripts for
+the September waves, placed under `/opt/hub` rather than committed or kept outside the
+checkout, was wiped this way on 24/09. A wave's own scripts belong in the repository (if
+they are worth keeping) or outside `/opt/hub` entirely, the same rule `REBASE_DATA_DIR`
+follows for Postgres's own files.
+
+**A campaign reaches an address only through `CampaignOptout`.** `exclusions()`
+(`rebase_core.campaigns.audience`) excludes an admin by `User.role == "admin"` --
+`REASON_ADMIN`, no row needed -- and everyone else only by a row in
+`campaign_optouts`: `fonte='link'` for the recipient's own unsubscribe, `'reclamo'` for
+a spam complaint Resend reports, and `'admin'` for the team, who go in with «Non
+scrivere mai» rather than relying on the role check to cover them too. Optouts are
+campaigns-only: the magic link, the welcome mail and the contracts flow keep reaching an
+opted-out address, since none of those is a campaign.
+
+*(The Resend webhook that turns a bounce or a complaint into a row here, rather than
+waiting for someone to notice, is Task 16's.)*
+
 ## Running it
 
 From the repository root:

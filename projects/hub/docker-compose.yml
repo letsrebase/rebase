@@ -102,6 +102,26 @@ services:
     ports:
       - '${REBASE_MCP_PORT:-127.0.0.1:8088}:8001'
 
+  campaigns:
+    # `rebase campaigns-tick` (P-REB-41): sends the campaigns whose time has come, one
+    # mail at a time, every minute, on both stacks. A loop, never a one-shot, for the
+    # same reason as `sweep`: `_deploy-compose.yml` fails a deploy on any container not
+    # `running`. Harmless without REBASE_RESEND_API_KEY: it prints why and sends nothing.
+    # Read with `docker logs rebase-campaigns-1` (production) or
+    # `rebase-preview-campaigns-1` (preview).
+    build:
+      context: ../..
+      dockerfile: projects/hub/Dockerfile.api
+    restart: unless-stopped
+    init: true
+    command: ['sh', '-c', 'while :; do sleep 60; uv run --no-sync rebase campaigns-tick; done']
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment: *api-environment
+
   sweep:
     # `rebase contracts-sweep` (REB-391), scheduled here rather than by the host, so both
     # stacks carry their own schedule (REB-393): a loop, never a one-shot, because
