@@ -18,6 +18,9 @@ import { AdminGuard } from '@/pages/admin/AdminGuard'
 import { AdminGuida } from '@/pages/admin/Guida'
 import { AdminPigro } from '@/pages/admin/Pigro'
 import { AdminContratti } from '@/pages/admin/Contratti'
+import { AdminCampagna } from '@/pages/admin/Campagna'
+import { AdminCampagne } from '@/pages/admin/Campagne'
+import { AdminCreaCampagna } from '@/pages/admin/CreaCampagna'
 import { AdminCreaMatch } from '@/pages/admin/CreaMatch'
 import { AdminMatches } from '@/pages/admin/Matches'
 import { Disiscrizione } from '@/pages/Disiscrizione'
@@ -313,6 +316,22 @@ const adminMatches = createRoute({
     q: strParam(search.q),
   }),
 })
+// P-REB-41: the list, a stub for the new/edit form (Task 20) and a stub for the
+// detail (Task 21). `adminCampaignNew` sits before `adminCampaign` in the tree below --
+// TanStack ranks a static segment over `$id` either way, but the list reads in the
+// order a person follows.
+const adminCampaigns = createRoute({ getParentRoute: () => adminArea, path: '/campaigns', component: AdminCampagne })
+const adminCampaignNew = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/campaigns/new',
+  component: AdminCreaCampagna,
+})
+const adminCampaign = createRoute({ getParentRoute: () => adminArea, path: '/campaigns/$id', component: AdminCampagna })
+const adminCampaignEdit = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/campaigns/$id/edit',
+  component: AdminCreaCampagna,
+})
 const adminCompanies = createRoute({
   getParentRoute: () => adminArea,
   path: '/companies',
@@ -415,6 +434,10 @@ export const routeTree = root.addChildren([
       adminFreelanceMatchNew,
       adminFreelanceRedirect,
       adminMatches,
+      adminCampaigns,
+      adminCampaignNew,
+      adminCampaign,
+      adminCampaignEdit,
       adminCompanies,
       adminCompaniesRedirect,
       adminCompaniesDetail,
