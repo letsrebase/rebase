@@ -14,6 +14,7 @@ from pigrocrm.core.db import (
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import DOCUMENT_SORTS, DocumentListQuery
+from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.pipeline.models import PipelineStage
 
 
@@ -100,6 +101,34 @@ class DocumentRepository:
             .order_by(desc(DocumentVersion.numero))
         )
         return list(self.session.execute(stmt).scalars())
+
+    def lock(self, document_id: UUID) -> Document | None:
+        """The row, locked `FOR NO KEY UPDATE` until this transaction ends and read
+        fresh, soft-deleted or not (REB-480).
+
+        What serialises a version upload with `InvoiceService.import_issued` linking the
+        same document as an invoice's PDF: each takes this lock before it reads what the
+        other writes, so the second one waits for the first to commit and then reads its
+        outcome. `NO KEY UPDATE` is the lock an `UPDATE` of `versione_corrente` takes
+        anyway, and it leaves alone the `KEY SHARE` a foreign key from `invoices` takes.
+        `populate_existing` because the session keeps objects across commits
+        (`expire_on_commit=False`): a row loaded before the wait would otherwise answer
+        with what it held then.
+        """
+        stmt = (
+            select(Document)
+            .where(Document.id == document_id)
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
+        return self.session.execute(stmt).scalar_one_or_none()
+
+    def invoice_tipo_of_pdf(self, document_id: UUID) -> str | None:
+        """The `tipo` (`fattura` or `proforma`) of the invoice row that names this
+        document as its PDF, a soft-deleted one included, or `None` when no invoice does.
+        See `DocumentService._check_invoice_pdf` for why that is the test."""
+        stmt = select(Invoice.tipo).where(Invoice.pdf_document_id == document_id).limit(1)
+        return self.session.execute(stmt).scalar_one_or_none()
 
     def pending_offers(self, limit: int = 20) -> list[PendingOffer]:
         """Sent offers still awaiting an answer, oldest first, with their age in days.

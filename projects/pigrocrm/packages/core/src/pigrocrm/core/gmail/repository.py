@@ -625,6 +625,10 @@ class GmailRepository:
                 # `max(numero)`: those two disagree the moment a version is added and the
                 # pointer is not moved, and the document layer owns that decision.
                 DocumentVersion.numero == Document.versione_corrente,
+                # The PDF goes out as a PDF or not at all (REB-480): a current version of
+                # another type, written before `add_version` refused one on this
+                # document, is no courtesy copy, and the reminder goes without one.
+                DocumentVersion.content_type == "application/pdf",
                 Document.deleted_at.is_(None),
             )
         ).scalar_one_or_none()

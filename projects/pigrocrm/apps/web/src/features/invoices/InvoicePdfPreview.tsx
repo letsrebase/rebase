@@ -21,12 +21,13 @@ import { useInvoicePdf, type Invoice } from './queries'
  * React throws away runs no cleanup, so a URL made there would never be revoked.
  *
  * Only a PDF reaches the frame (REB-463). The Blob's type is the response's
- * `Content-Type`, which is the current version's own, and anyone who may write can add
- * a version of any allowed type to the invoice's document, `application/xml` among
- * them. A `blob:` URL has this page's origin, so an XML file in the XHTML namespace
- * rendered here as a page of the app: its markup always, a form included, and its
- * script wherever no CSP forbids inline script. Anything that is not `application/pdf`
- * gets no object URL at all, and the pane says so instead.
+ * `Content-Type`, which is the current version's own. Until REB-480 anyone who may write
+ * could add a version of any allowed type to the invoice's document, `application/xml`
+ * among them, and a `blob:` URL has this page's origin, so an XML file in the XHTML
+ * namespace rendered here as a page of the app: its markup always, a form included, and
+ * its script wherever no CSP forbids inline script. The server now refuses such a
+ * version and answers 404 for one written before, so this check is the second line: a
+ * Blob that is not `application/pdf` still gets no object URL, and the pane says so.
  */
 export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
   const pdf = useInvoicePdf(invoice)
@@ -79,7 +80,8 @@ function PdfFrame({ blob, title }: { blob: Blob; title: string }) {
     // it. The bar's own «PDF» button is the download either way.
     // Snyk Code flags this as javascript/DOMXSS. It was real until REB-463: an XHTML
     // version of the invoice's document rendered here as the app. Now only an
-    // application/pdf Blob reaches this component.
+    // application/pdf Blob reaches this component, and since REB-480 the server serves
+    // nothing else on this route.
     node.src = `${url}#toolbar=0&navpanes=0`
     return () => URL.revokeObjectURL(url)
   }, [blob])
@@ -136,10 +138,12 @@ function Missing({ invoice }: { invoice: Invoice }) {
 }
 
 /**
- * The server answered with bytes that are not a PDF (REB-463): somebody added a version
- * of another type to the invoice's document. It names «Rigenera documenti» where
- * `Missing` does, since on an issued fattura of ours that button stores a fresh PDF as
- * the document's next version; elsewhere nothing on the page makes one.
+ * The response carried bytes that are not a PDF (REB-463): a version of another type on
+ * the invoice's document. Since REB-480 the server refuses one and answers 404 for one
+ * written before, which `Missing` words, so this is the client's own second line. It
+ * names «Rigenera documenti» where `Missing` does, since on an issued fattura of ours
+ * that button stores a fresh PDF as the document's next version; elsewhere nothing on
+ * the page makes one.
  */
 function NotPdf({ invoice }: { invoice: Invoice }) {
   const regenerate = useRegenerateHint(invoice)
