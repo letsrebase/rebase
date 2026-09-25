@@ -303,12 +303,17 @@ def test_a_match_whose_letter_is_out_for_signature_mails_it_again() -> None:
     )
 
 
-@pytest.mark.parametrize(("stato", "other"), [("in_firma", "annulla"), ("attivo", "chiudi")])
-def test_a_match_whose_signed_letter_has_no_copy_yet_is_refreshed(stato: str, other: str) -> None:
+@pytest.mark.parametrize(
+    ("stato", "others"),
+    [("in_firma", ["annulla"]), ("attivo", ["chiudi"]), ("concluso", [])],
+)
+def test_a_match_whose_signed_letter_has_no_copy_yet_is_refreshed(
+    stato: str, others: list[str]
+) -> None:
     assert match_words(stato, _lettera("firmato", signed_on=SIGNED), None, START, None) == (
         "Lettera n. 2026-003 firmata il 28 settembre 2026; la copia firmata non è ancora arrivata.",
         "aggiorna_stato",
-        [other],
+        others,
     )
 
 

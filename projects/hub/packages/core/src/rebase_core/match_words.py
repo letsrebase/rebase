@@ -35,6 +35,13 @@ LETTERA = "lettera"
 # How every refusal `SigningService` stores begins, with or without the freelancer's words.
 REFUSED = "Rifiutato"
 SENTENCE_ENDS = (".", "!", "?", "…")
+# The match states a signed letter still waiting for its copy can be in, each with what
+# else its match can do: a closed match's letter still fetches the copy (REB-477).
+AWAITING_COPY: dict[str, tuple[Action, ...]] = {
+    "in_firma": ("annulla",),
+    "attivo": ("chiudi",),
+    "concluso": (),
+}
 
 MATCH_STATE_LABELS = {
     "bozza": "Da inviare",
@@ -217,12 +224,12 @@ def match_words(
             "reinvia_email",
             ["aggiorna_stato", "annulla"],
         )
-    if stato in ("in_firma", "attivo") and letter.stato == "firmato" and not letter.ha_pdf_firmato:
+    if stato in AWAITING_COPY and letter.stato == "firmato" and not letter.ha_pdf_firmato:
         return (
             f"Lettera n. {numero} firmata{_on(letter.signed_on)}; la copia firmata non è ancora "
             "arrivata.",
             "aggiorna_stato",
-            ["chiudi"] if stato == "attivo" else ["annulla"],
+            list(AWAITING_COPY[stato]),
         )
     if stato == "attivo":
         return (
