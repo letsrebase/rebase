@@ -2,14 +2,35 @@
 
 from datetime import UTC, datetime, timedelta
 
-from campaign_fixtures import T0, clean, company, lead, person  # noqa: F401  (fixture)
+from campaign_fixtures import (  # noqa: F401  (fixture)
+    T0,
+    campaign_row,
+    clean,
+    company,
+    lead,
+    person,
+)
 from sqlalchemy.orm import Session
 
 from rebase_core.campaigns.actions import done_at, snapshot
+from rebase_core.campaigns.audience import (
+    REASON_ADMIN,
+    REASON_BOUNCED,
+    REASON_NEVER,
+    build_audience,
+    candidates,
+    exclusions,
+)
 from rebase_core.campaigns.states import JOURNEY_STATES, PHASE_ONE_STATES, candidates_for_state
 from rebase_core.campaigns.templates import STATE_TEMPLATES
 from rebase_core.comments import CommentService
-from rebase_core.models import CAMPAIGN_ACTIONS, CAMPAIGN_DESTINATIONS, CampaignRecipient, Login
+from rebase_core.models import (
+    CAMPAIGN_ACTIONS,
+    CAMPAIGN_DESTINATIONS,
+    CampaignOptout,
+    CampaignRecipient,
+    Login,
+)
 
 
 def test_every_phase_one_state_has_a_template_that_fits_the_columns() -> None:
@@ -112,3 +133,89 @@ def test_a_card_soft_deleted_after_completing_counts_as_not_done(
     clean.commit()
     assert done_at(clean, row, "cv") is None
     assert done_at(clean, row, "scheda_completa") is None
+
+
+def test_filters_reuse_talenti_and_merge_one_person_across_cases(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    person(clean, "ada@studio.it", tariffa=False)
+    lead(clean, "giulia@studio.it")
+    campaign = campaign_row(
+        clean, fonte="filtri", stato_percorso=None, filtri={"lista": "talenti", "has_cv": True}
+    )
+    assert [c.email for c in candidates(clean, campaign)] == ["ada@studio.it"]
+    campaign.filtri = {"lista": "talenti", "stato": "lead"}
+    clean.commit()
+    assert [c.email for c in candidates(clean, campaign)] == ["giulia@studio.it"]
+
+
+def test_every_exclusion_names_its_reason(clean: Session) -> None:  # noqa: F811  (fixture)
+    person(clean, "boss@rebase.it", role="admin", cv=False)
+    person(clean, "gone@studio.it", cv=False)
+    person(clean, "never@studio.it", cv=False)
+    person(clean, "bounce@studio.it", cv=False)
+    person(clean, "recent@studio.it", cv=False)
+    person(clean, "ok@studio.it", cv=False)
+    clean.add(CampaignOptout(email="gone@studio.it", fonte="link"))
+    clean.add(CampaignOptout(email="never@studio.it", fonte="admin"))
+    earlier = campaign_row(clean)
+    clean.add(
+        CampaignRecipient(
+            campaign_id=earlier.id,
+            email="bounce@studio.it",
+            tipo="freelancer",
+            codice="1",
+            prima={},
+            disiscrizione_token="b",
+            stato="inviata",
+            inviata_at=T0 - timedelta(days=30),
+            rimbalzata_at=T0 - timedelta(days=30),
+        )
+    )
+    clean.add(
+        CampaignRecipient(
+            campaign_id=earlier.id,
+            email="recent@studio.it",
+            tipo="freelancer",
+            codice="2",
+            prima={},
+            disiscrizione_token="r",
+            stato="inviata",
+            inviata_at=T0 - timedelta(days=1),
+        )
+    )
+    clean.commit()
+    current = campaign_row(clean)
+    reasons = exclusions(
+        clean,
+        [
+            "boss@rebase.it",
+            "gone@studio.it",
+            "never@studio.it",
+            "bounce@studio.it",
+            "recent@studio.it",
+            "ok@studio.it",
+        ],
+        campaign_id=current.id,
+        now=T0,
+        gap_days=3,
+    )
+    assert reasons["boss@rebase.it"] == REASON_ADMIN
+    assert reasons["gone@studio.it"] == "si è disiscritto"
+    assert reasons["never@studio.it"] == REASON_NEVER
+    assert reasons["bounce@studio.it"] == REASON_BOUNCED
+    assert reasons["recent@studio.it"].startswith("ha ricevuto un'altra campagna il ")
+    assert "ok@studio.it" not in reasons
+
+
+def test_the_audience_lists_everyone_and_greys_out_the_excluded(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    person(clean, "boss@rebase.it", role="admin", cv=False)
+    person(clean, "ok@studio.it", cv=False)
+    campaign = campaign_row(clean)
+    rows = build_audience(clean, campaign, now=T0, gap_days=3)
+    assert [(r.candidate.email, r.escluso) for r in rows] == [
+        ("boss@rebase.it", REASON_ADMIN),
+        ("ok@studio.it", None),
+    ]

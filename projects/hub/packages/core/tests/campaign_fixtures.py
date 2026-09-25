@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from rebase_core.campaigns.states import Candidate
-from rebase_core.models import Company, Freelancer, Login, Signup, User
+from rebase_core.models import Campaign, Company, Freelancer, Login, Signup, User
 
 CAMPAIGN_TABLES = ("campaign_optouts", "campaign_recipients", "campaigns")
 PEOPLE_TABLES = ("logins", "comments", "freelancers", "companies", "signups", "users")
@@ -100,3 +100,38 @@ def company(
 
 def emails(candidates: list[Candidate]) -> list[str]:
     return [c.email for c in candidates]
+
+
+ADMIN_EMAIL = "ivan@rebase.it"
+
+
+def admin(session: Session) -> User:
+    """The admin every campaign test acts as: one row, whoever asks first makes it."""
+    user = session.query(User).filter(User.email == ADMIN_EMAIL).one_or_none()
+    if user is None:
+        user = User(email=ADMIN_EMAIL, nome="Ivan", cognome="Sala", role="admin")
+        session.add(user)
+        session.commit()
+    return user
+
+
+def campaign_row(session: Session, **fields: object) -> Campaign:
+    """A campaign row written straight to the table, for the tests below the service."""
+    values: dict[str, object] = {
+        "created_by": admin(session).id,
+        "nome": "Prova",
+        "slug": f"c-prova-{session.query(Campaign).count()}",
+        "fonte": "stato",
+        "stato_percorso": "manca_cv",
+        "oggetto": "o",
+        "testo": "Ciao {nome},",
+        "bottone_testo": "Vai",
+        "bottone_meta": "area",
+        "azione": "cv",
+        "contenuto_at": T0,
+    }
+    values.update(fields)
+    campaign = Campaign(**values)
+    session.add(campaign)
+    session.commit()
+    return campaign
