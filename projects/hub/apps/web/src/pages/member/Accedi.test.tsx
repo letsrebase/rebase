@@ -7,7 +7,7 @@ import {
   createRoute,
   createRouter,
 } from '@tanstack/react-router'
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Accedi } from './Accedi'
@@ -110,6 +110,60 @@ describe('/login', () => {
     expect(fetchSpy).toHaveBeenCalledWith(
       '/api/hub/auth/link',
       expect.objectContaining({ body: JSON.stringify({ email: 'ada@studio.it' }) }),
+    )
+  })
+
+  it('sends the campaign an earlier login page of the tab arrived with', async () => {
+    // The outreach case of 25/09 (REB-455): the tracked link opens /login?utm_..., the
+    // person wanders to the home and the area, lands back on a bare /login and asks
+    // for the link there.
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => Promise.resolve(answer(202, { ok: true })))
+    mount('/login?utm_source=email&utm_campaign=outreach-2026-09-r2&utm_content=scheda-vuota&utm_term=a0ff8efd')
+    await screen.findByLabelText('Email')
+    cleanup()
+    mount('/login')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Email'), 'ada@studio.it')
+    await user.click(screen.getByRole('button', { name: 'Mandami il link' }))
+    await screen.findByText(/Se sei dentro, ti abbiamo scritto/)
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/hub/auth/link',
+      expect.objectContaining({
+        body: JSON.stringify({
+          email: 'ada@studio.it',
+          utm: {
+            utm_source: 'email',
+            utm_campaign: 'outreach-2026-09-r2',
+            utm_content: 'scheda-vuota',
+            utm_term: 'a0ff8efd',
+          },
+        }),
+      }),
+    )
+  })
+
+  it('still asks for the link when the tab refuses its storage', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError')
+    })
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('denied', 'SecurityError')
+    })
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(() => Promise.resolve(answer(202, { ok: true })))
+    mount('/login?utm_campaign=outreach')
+    const user = userEvent.setup()
+    await user.type(await screen.findByLabelText('Email'), 'ada@studio.it')
+    await user.click(screen.getByRole('button', { name: 'Mandami il link' }))
+    await screen.findByText(/Se sei dentro, ti abbiamo scritto/)
+    expect(fetchSpy).toHaveBeenCalledWith(
+      '/api/hub/auth/link',
+      expect.objectContaining({
+        body: JSON.stringify({ email: 'ada@studio.it', utm: { utm_campaign: 'outreach' } }),
+      }),
     )
   })
 

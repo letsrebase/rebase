@@ -1,16 +1,18 @@
 import { Link, useLocation } from '@tanstack/react-router'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { ApiError } from '@/lib/api'
 import { useRequestLink } from '@/lib/me'
-import { ownAttribution } from '@/lib/utm'
+import { loginAttribution, rememberLoginAttribution } from '@/lib/utm'
 
 /** The way in: an address, a link by mail, no password. The page says the same thing
  *  whether the address is known or not, as the API does. The campaign in this page's own
  *  URL goes with the address, so the login it leads to says which mail brought the
- *  person back (REB-426); a campaign the tab remembers from another page does not. */
+ *  person back (REB-426), and the page remembers it for the tab, so a detour through the
+ *  home or the area back to a bare `/login` still sends it (REB-455). A campaign the tab
+ *  remembers from the landing or a wizard does not. */
 export function Accedi() {
   const requestLink = useRequestLink()
   const searchStr = useLocation({ select: (location) => location.searchStr })
@@ -18,10 +20,13 @@ export function Accedi() {
   const [sent, setSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // On arrival, not at submit: the person may leave before asking for the link.
+  useEffect(() => rememberLoginAttribution(searchStr), [searchStr])
+
   function submit(event: FormEvent) {
     event.preventDefault()
     setError(null)
-    requestLink.mutate({ email: email.trim(), utm: ownAttribution(searchStr) }, {
+    requestLink.mutate({ email: email.trim(), utm: loginAttribution(searchStr) }, {
       onSuccess: () => setSent(true),
       onError: (failure) =>
         setError(
