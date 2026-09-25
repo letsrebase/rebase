@@ -3,15 +3,20 @@ actually sends is `tick.py`; this module never calls Resend except for the admin
 test."""
 
 import re
+import secrets
 import unicodedata
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.orm import Session
 
-from rebase_core.campaigns.audience import build_audience
+from rebase_core.admin_tokens import AdminRead
+from rebase_core.campaigns.actions import snapshot
+from rebase_core.campaigns.audience import REASON_CANCELLED, build_audience
+from rebase_core.campaigns.render import RenderTarget, person_code, render
 from rebase_core.campaigns.schemas import (
     AudiencePreview,
     AudienceRowRead,
@@ -23,8 +28,10 @@ from rebase_core.campaigns.schemas import (
     CampaignPatch,
     CampaignRead,
     RecipientRead,
+    ScheduleRequest,
     TemplateRead,
 )
+from rebase_core.campaigns.sender import CampaignSender
 from rebase_core.campaigns.states import ENTITY, JOURNEY_STATES, PIGRO_LATER
 from rebase_core.campaigns.templates import STATE_TEMPLATES
 from rebase_core.config import Settings
@@ -32,6 +39,10 @@ from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.models import Campaign, CampaignRecipient
 
 NOT_A_DRAFT = "Si modifica solo una bozza: riportala in bozza prima."
+ROME = ZoneInfo("Europe/Rome")
+NEED_TEST = "Manda una prova dopo l'ultima modifica, poi invia."
+EMPTY_MAIL = "Oggetto, testo e bottone servono prima della prova."
+PAST_SLACK = timedelta(minutes=1)
 _CONTENT_FIELDS = (
     "fonte",
     "stato_percorso",
@@ -160,6 +171,120 @@ class CampaignService:
             conteggi=self._counts([campaign_id]).get(campaign_id, CampaignCounts()),
             destinatari=[RecipientRead.model_validate(r) for r in rows],
         )
+
+    def send_test(
+        self, campaign_id: UUID, admin: AdminRead, sender: CampaignSender
+    ) -> CampaignRead:
+        campaign = self._require(campaign_id)
+        if campaign.stato != "bozza":
+            raise InvalidState(NOT_A_DRAFT)
+        if not (
+            campaign.oggetto.strip() and campaign.testo.strip() and campaign.bottone_testo.strip()
+        ):
+            raise ValidationFailed(ENTITY, "testo", EMPTY_MAIL)
+        target = RenderTarget(
+            email=admin.email,
+            nome=(admin.nome or "").split(" ")[0] or None,
+            codice=person_code(admin.email),
+            token="prova",
+        )
+        outcome = sender.send(
+            render(campaign, target, self.settings, test=True),
+            idempotency_key=f"prova-{campaign.id}-{self.clock().isoformat()}",
+        )
+        if outcome.esito != "accettata":
+            raise InvalidState(
+                f"Resend non ha accettato la prova ({outcome.dettaglio or outcome.esito})."
+            )
+        campaign.prova_inviata_at = self.clock()
+        self.session.commit()
+        return CampaignRead.model_validate(campaign)
+
+    def schedule(self, campaign_id: UUID, data: ScheduleRequest) -> CampaignRead:
+        campaign = self._require(campaign_id)
+        if campaign.stato != "bozza":
+            raise InvalidState(NOT_A_DRAFT)
+        if campaign.prova_inviata_at is None or campaign.prova_inviata_at < campaign.contenuto_at:
+            raise InvalidState(NEED_TEST)
+        now = self.clock()
+        when = self._when(data, now)
+        unticked = {str(e).lower() for e in data.esclusi}
+        rows = [
+            r
+            for r in build_audience(
+                self.session, campaign, now=now, gap_days=self.settings.campaign_gap_days
+            )
+            if r.escluso is None and r.candidate.email not in unticked
+        ]
+        if not rows:
+            raise ValidationFailed(
+                ENTITY, "esclusi", "La lista è vuota: nessuno riceverebbe la mail."
+            )
+        for row in rows:
+            c = row.candidate
+            self.session.add(
+                CampaignRecipient(
+                    campaign_id=campaign.id,
+                    email=c.email,
+                    nome=c.nome,
+                    tipo=c.tipo,
+                    user_id=c.user_id,
+                    freelancer_id=c.freelancer_id,
+                    signup_id=c.signup_id,
+                    pigro_slugs=list(c.pigro_slugs),
+                    codice=person_code(c.email),
+                    prima=snapshot(self.session, c, now),
+                    disiscrizione_token=secrets.token_urlsafe(32),
+                )
+            )
+        campaign.stato = "programmata"
+        campaign.programmata_per = when
+        self.session.commit()
+        return CampaignRead.model_validate(campaign)
+
+    def back_to_draft(self, campaign_id: UUID) -> CampaignRead:
+        campaign = self._require(campaign_id)
+        if campaign.stato != "programmata":
+            raise InvalidState("Torna in bozza solo una campagna programmata e non ancora partita.")
+        self.session.execute(
+            delete(CampaignRecipient).where(CampaignRecipient.campaign_id == campaign.id)
+        )
+        campaign.stato, campaign.programmata_per = "bozza", None
+        self.session.commit()
+        return CampaignRead.model_validate(campaign)
+
+    def cancel(self, campaign_id: UUID) -> CampaignRead:
+        campaign = self._require(campaign_id)
+        if campaign.stato not in ("programmata", "in_invio"):
+            raise InvalidState("Si annulla solo una campagna programmata o in invio.")
+        self.session.execute(
+            update(CampaignRecipient)
+            .where(
+                CampaignRecipient.campaign_id == campaign.id, CampaignRecipient.stato == "in_coda"
+            )
+            .values(stato="saltata", motivo=REASON_CANCELLED)
+        )
+        campaign.stato = "annullata"
+        self.session.commit()
+        return CampaignRead.model_validate(campaign)
+
+    def _when(self, data: ScheduleRequest, now: datetime) -> datetime:
+        if data.giorno is None and data.ora is None:
+            return now
+        if data.giorno is None or data.ora is None:
+            raise ValidationFailed(
+                ENTITY, "ora", "Serve giorno e ora, o nessuno dei due per inviare adesso."
+            )
+        wall = datetime.combine(data.giorno, data.ora)
+        local = wall.replace(tzinfo=ROME)  # fold=0: the first of an hour that happens twice
+        if local.astimezone(UTC).astimezone(ROME).replace(tzinfo=None) != wall:
+            raise ValidationFailed(
+                ENTITY, "ora", "Quest'ora non esiste il giorno del cambio d'ora: scegline un'altra."
+            )
+        when = local.astimezone(UTC)
+        if when < now - PAST_SLACK:
+            raise ValidationFailed(ENTITY, "giorno", "È già passato: scegli un momento futuro.")
+        return when
 
     # ---- helpers ------------------------------------------------------------------------
 
