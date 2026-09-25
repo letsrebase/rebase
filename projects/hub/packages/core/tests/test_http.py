@@ -9,11 +9,14 @@ import pytest
 
 import rebase_core.http as http_module
 from rebase_core.http import (
+    ENGAGEMENTS_TIMEOUT_SECONDS,
+    HTTP_TIMEOUT_SECONDS,
     MAX_BODY_BYTES,
     MAX_DOWNLOAD_BYTES,
     USER_AGENT,
     urllib_call,
     urllib_download_call,
+    urllib_engagements_call,
 )
 
 
@@ -54,6 +57,25 @@ def test_every_call_names_itself_unless_the_caller_already_did(
     # refuse (the registry read of ORB-142 is such a GET).
     assert seen[1].data is None
     assert seen[0].data == b"{}"
+
+
+def test_the_engagements_seam_waits_for_a_space_to_be_provisioned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The first link of a new freelancer makes the CRM provision a database for their
+    space (REB-498): that one client waits 90 seconds, every other call still ten."""
+    timeouts: list[float] = []
+
+    def fake_open(request: Any, timeout: float) -> _Response:
+        timeouts.append(timeout)
+        return _Response()
+
+    monkeypatch.setattr(http_module._OPENER, "open", fake_open)
+    urllib_engagements_call("PUT", "https://pigro.example.test/x", {}, b"{}")
+    urllib_call("GET", "https://api.example.test/y", {}, b"")
+    urllib_download_call("GET", "https://api.example.test/z", {}, b"")
+    assert timeouts == [ENGAGEMENTS_TIMEOUT_SECONDS, HTTP_TIMEOUT_SECONDS, HTTP_TIMEOUT_SECONDS]
+    assert ENGAGEMENTS_TIMEOUT_SECONDS == 90
 
 
 def test_an_http_error_is_a_status_not_an_exception(monkeypatch: pytest.MonkeyPatch) -> None:

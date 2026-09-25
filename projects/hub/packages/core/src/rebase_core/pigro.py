@@ -30,6 +30,13 @@ LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
 _CURSOR_ENTITY = "cursor"
 _CURSOR_INVALID = "cursore non valido"
+# What an admin reads when the CRM does not answer as it should: shared with the
+# engagements client (`rebase_core.engagements`, REB-498), so both say the same words.
+# `ANSWERED_STATUS` is a format, filled with the status the CRM answered.
+NOT_ANSWERING = "Pigro non risponde."
+ANSWERED_STATUS = "Pigro non ha risposto ({status})."
+TOO_LONG = "Pigro ha risposto qualcosa di troppo lungo."
+NOT_THE_SHAPE = "Pigro ha risposto qualcosa che non è un elenco."
 
 
 class PigroUnavailable(Exception):
@@ -118,15 +125,15 @@ class PigroRegistry:
         try:
             status, body = self.http("GET", self._base_url() + REGISTRY_PATH, headers, b"")
         except Exception as exc:  # noqa: BLE001 - a refused connection, a DNS miss, a timeout
-            raise PigroUnavailable("Pigro non risponde.") from exc
+            raise PigroUnavailable(NOT_ANSWERING) from exc
         if status != 200:
-            raise PigroUnavailable(f"Pigro non ha risposto ({status}).")
+            raise PigroUnavailable(ANSWERED_STATUS.format(status=status))
         if len(body) > MAX_BODY_BYTES:
-            raise PigroUnavailable("Pigro ha risposto qualcosa di troppo lungo.")
+            raise PigroUnavailable(TOO_LONG)
         try:
             return _ROWS.validate_python(json.loads(body))
         except (ValueError, ValidationError) as exc:
-            raise PigroUnavailable("Pigro ha risposto qualcosa che non è un elenco.") from exc
+            raise PigroUnavailable(NOT_THE_SHAPE) from exc
 
     def list_spaces(
         self,

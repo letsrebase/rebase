@@ -169,6 +169,26 @@ def italian_date(day: date) -> str:
     return f"{number} {MONTHS[day.month - 1]} {day.year}"
 
 
+# What `italian_date` writes and nothing else: the ordinal on the first, the plain number
+# (no leading zero) on every other day, a month of `MONTHS`, four digits of year.
+_ITALIAN_DATE = re.compile(r"(1°|[2-9]|[12][0-9]|3[01]) ([a-z]+) ([0-9]{4})")
+
+
+def parse_italian_date(text: str) -> date:
+    """`1° ottobre 2026` as `2026-10-01`: the inverse of `italian_date`, over the same
+    `MONTHS`. A match written before it kept its letter's dates as dates (REB-498) is
+    read back from what the letter printed; anything `italian_date` would not have
+    written, a day the month does not have among them, is refused."""
+    found = _ITALIAN_DATE.fullmatch(text.strip())
+    if found is None or found.group(2) not in MONTHS:
+        raise ContractFailed(f"{text!r} is not a date as a contract writes it")
+    day = 1 if found.group(1) == "1°" else int(found.group(1))
+    try:
+        return date(int(found.group(3)), MONTHS.index(found.group(2)) + 1, day)
+    except ValueError as exc:
+        raise ContractFailed(f"{text!r} is not a day of the calendar") from exc
+
+
 def rendered(key: str, value: Value) -> str:
     """What the page prints for a value. Only the fee is reformatted: a letter number or
     a VAT number is an identifier, printed as it was given."""

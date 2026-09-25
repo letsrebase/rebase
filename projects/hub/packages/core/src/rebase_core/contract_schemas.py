@@ -461,6 +461,66 @@ class MatchList(BaseModel):
     items: list[MatchListItem]
 
 
+class ReportDay(BaseModel):
+    """One day of hours on the match's deal (REB-498): the CRM answers one row per time
+    entry, summed here. `fatture` names each invoice these hours sit on once, «12/2026»
+    for an invoice and «proforma 3/2026» for anything else, empty when none does yet."""
+
+    data: date
+    ore: Decimal
+    descrizioni: list[str]
+    fatture: list[str]
+
+
+class ReportWeek(BaseModel):
+    """An ISO week, «2026-W40», from its Monday to its Sunday."""
+
+    settimana: str
+    da: date
+    a: date
+    ore: Decimal
+
+
+class ReportMonth(BaseModel):
+    mese: str
+    ore: Decimal
+
+
+class ReportInvoice(BaseModel):
+    """An invoice these hours sit on, with how many of them: «12/2026», or «senza
+    numero» for one not numbered yet."""
+
+    numero: str
+    tipo: str
+    data: date | None
+    stato: str
+    stato_pagamento: str
+    ore: Decimal
+
+
+class MatchReport(BaseModel):
+    """«Consuntivo» (REB-498): the hours logged on the match's deal on Pigro over a
+    period, read from the CRM on every request and never stored. `ore_previste` is
+    `giorni_previsti` times eight, `giorni_equivalenti` the hours over eight,
+    `avanzamento` the hours as a percentage of `ore_previste`, two places, `None`
+    without an estimate. What counts as billed is the CRM's own word."""
+
+    match_id: UUID
+    pigro_url: str | None
+    pigro_stato: str | None
+    giorni_previsti: int | None
+    ore_previste: Decimal | None
+    totale_ore: Decimal
+    giorni_equivalenti: Decimal
+    avanzamento: Decimal | None
+    ore_fatturate: Decimal
+    ore_non_fatturate: Decimal
+    per_giorno: list[ReportDay]
+    per_settimana: list[ReportWeek]
+    per_mese: list[ReportMonth]
+    fatture: list[ReportInvoice]
+
+
 class SendReport(BaseModel):
     """What «Invia per la firma» did (REB-387 phase 3): the match as it is now, the kind
     of the document that left (`quadro`, `lettera`, or none when the letter waits for a

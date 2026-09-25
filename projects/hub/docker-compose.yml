@@ -18,6 +18,9 @@ x-api-environment: &api-environment
   # token its own `.env` carries as PIGROCRM_REGISTRY_TOKEN. Empty token: 503.
   REBASE_PIGRO_API_URL: ${REBASE_PIGRO_API_URL:-https://pigro.letsrebase.com}
   REBASE_PIGRO_REGISTRY_TOKEN: ${REBASE_PIGRO_REGISTRY_TOKEN:-}
+  # The CRM's door for rebase's engagements (REB-498), its own token: the link of an
+  # active match and its hours. Empty: the link waits and the report answers 503.
+  REBASE_PIGRO_ENGAGEMENTS_TOKEN: ${REBASE_PIGRO_ENGAGEMENTS_TOKEN:-}
   # PostHog, the completion event from the API (REB-215): the public project key.
   # Empty: no client, no event. The list is explicit, so a variable the `.env` carries
   # reaches the container only if it is named here.
