@@ -217,6 +217,16 @@ describe('the Gmail door', () => {
     expect(await screen.findByText('Casella Google collegata.')).toBeInTheDocument()
   })
 
+  it('says a consent came back with no session, and offers «Riprova» beside the door', async () => {
+    answers({ '/api/gmail/account': GMAIL_READY })
+    renderPage('sessione')
+    const door = within(await screen.findByRole('region', { name: 'Collega Gmail' }))
+    expect(door.getByRole('status')).toHaveTextContent(
+      'La sessione è scaduta mentre eri su Google, quindi la casella non è stata collegata.',
+    )
+    expect(door.getByRole('link', { name: 'Riprova' })).toHaveAttribute('href', '/api/gmail/oauth/start')
+  })
+
   it('does not echo an esito it does not know', async () => {
     renderPage('<b>scrivi qui</b>')
     await screen.findByRole('region', { name: 'Collega Gmail' })

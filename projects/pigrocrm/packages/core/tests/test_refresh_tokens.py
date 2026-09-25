@@ -184,6 +184,51 @@ def test_an_expired_refresh_token_row_is_rejected(db_session: Session) -> None:
         RefreshTokenService(db_session).consume(already_expired.jti, user.id)
 
 
+def test_is_live_answers_as_rotate_would_without_touching_anything(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Google consent's way back asks this (REB-446), and it must answer what
+    `rotate` would, without touching the session it asks about: a token rotated away
+    seconds ago by another tab is still this browser's, one rotated away long ago or
+    spent by a logout reads as dead, and neither burns the family."""
+    owner = _make_user(db_session, "owner@live.it")
+    other = _make_user(db_session, "other@live.it")
+    service = RefreshTokenService(db_session)
+    jti = decode_token(service.issue(owner.id, SETTINGS), SETTINGS, expected_type="refresh").jti
+    assert jti is not None
+
+    assert service.is_live(jti, owner.id) is True
+    assert service.is_live(jti, other.id) is False
+    assert service.is_live(uuid4(), owner.id) is False
+
+    logged_out = decode_token(
+        service.issue(owner.id, SETTINGS), SETTINGS, expected_type="refresh"
+    ).jti
+    assert logged_out is not None
+    service.consume(logged_out, owner.id)
+    assert service.is_live(logged_out, owner.id) is False
+
+    successor = service.rotate(jti, owner.id, SETTINGS).refresh_token
+    next_jti = decode_token(successor, SETTINGS, expected_type="refresh").jti
+    assert next_jti is not None
+    # Inside the grace window, as `rotate` would answer it with the successor's pair.
+    assert service.is_live(jti, owner.id) is True
+    assert service.is_live(next_jti, owner.id) is True
+
+    _shifted_by(monkeypatch, REFRESH_GRACE_SECONDS + 1)
+    assert service.is_live(jti, owner.id) is False
+    # Asking burned nothing: the successor is still live and still rotates.
+    assert service.is_live(next_jti, owner.id) is True
+    service.rotate(next_jti, owner.id, SETTINGS)
+
+    expired = RefreshToken(
+        jti=uuid4(), user_id=owner.id, expires_at=datetime.now(UTC) - timedelta(seconds=1)
+    )
+    db_session.add(expired)
+    db_session.commit()
+    assert service.is_live(expired.jti, owner.id) is False
+
+
 def test_get_active_returns_the_user(db_session: Session) -> None:
     user = _make_user(db_session)
     fetched = UserRepository(db_session).get_active(user.id)

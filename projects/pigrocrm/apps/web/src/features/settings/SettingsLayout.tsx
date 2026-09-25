@@ -5,6 +5,8 @@ import { SETTINGS_TABS } from '@/features/settings/tabs'
 import { PageHeader } from '@/components/PageHeader'
 import { Button } from '@rebase/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
+import { ConsentOutcome } from '@/components/ConsentOutcome'
+import { messaggioEsito, riprovaEsito } from '@/features/drive/esito'
 import { useAuth, useIsAdmin } from '@/lib/auth'
 import { canSeeSettingsTab } from '@/lib/permissions'
 
@@ -48,6 +50,13 @@ import { canSeeSettingsTab } from '@/lib/permissions'
  * this exemption that link would be dead for anyone but an admin, which REB-221's
  * first round shipped and its second round exists to fix. A non-admin on that one path
  * sees a `tabs` list of exactly one entry, never the other admin-only tabs.
+ *
+ * And one outcome is read out to a non-admin as well: the Google Drive consent's
+ * (`?esito=` on the Drive tab, REB-446). The app offers that consent only under this
+ * gate, but the service lets any writer connect their own Drive, and the callback sends
+ * every outcome here, `sessione` included, where it cannot know the role. So a
+ * collaboratore who started it reads what happened, and «Riprova» when it applies,
+ * above the explanation. Whether they should have a Drive tab at all is REB-457.
  */
 export function SettingsLayout() {
   const { user } = useAuth()
@@ -56,9 +65,22 @@ export function SettingsLayout() {
   const onProfileTab = location.pathname.endsWith('profile')
 
   if (!isAdmin && !onProfileTab) {
+    const search = (location as { search?: Record<string, unknown> }).search
+    const driveEsito =
+      location.pathname.replace(/\/+$/, '').endsWith('/settings/drive') &&
+      typeof search?.esito === 'string'
+        ? search.esito
+        : undefined
     return (
       <div className="p-8">
         <div className="mx-auto flex max-w-md flex-col items-center gap-3 pt-16 text-center">
+          {driveEsito ? (
+            <ConsentOutcome
+              messaggio={messaggioEsito(driveEsito)}
+              riprova={riprovaEsito(driveEsito)}
+              className="mb-4 text-left"
+            />
+          ) : null}
           <ShieldAlert className="size-10 text-muted-foreground" aria-hidden="true" />
           <h1 className="text-xl font-semibold tracking-tight">Accesso riservato</h1>
           <p className="text-muted-foreground">

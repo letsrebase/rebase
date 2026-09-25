@@ -15,8 +15,10 @@ anything at all.
 a page of the SPA, with an outcome code the SPA renders in Italian: the Home while the
 space is still empty, since that is where its «Collega Gmail» door is (spec 2026-09-16
 §4.2, REB-222); otherwise the settings page for an admin, and «Primi passi», the other
-page with that door, for anybody the admin-only settings page would turn away. Google's own `error`
-is never forwarded: it is English and occasionally embeds the client id. Nor is a
+page with that door, for anybody the admin-only settings page would turn away. A browser
+that comes back with no live session at all lands on «Primi passi» with `sessione`, and
+the SPA's own login sends it on there once the person is back in (REB-446). Google's
+own `error` is never forwarded: it is English and occasionally embeds the client id. Nor is a
 `Conflict` from the exchange rendered as a problem document -- an RFC 9457 body in the
 address bar strands the user outside the SPA at the end of a consent flow, with the one
 message they could act on ("scollega prima l'account attuale") in a shape no browser
@@ -56,14 +58,14 @@ from pigrocrm.core.gmail.schemas import (
 from pigrocrm.core.gmail.sync import SUGGEST_MAX_MONTHS, GmailSyncService
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, callback_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.oauth_relay import relay_to_space
 from pigrocrm_api.tenancy import cookie_path
 
 router = APIRouter(prefix="/api/gmail", tags=["gmail"], responses=PROBLEM_RESPONSES)
 
-# Where the SPA renders the outcome of a consent flow. Three codes and no free text:
+# Where the SPA renders the outcome of a consent flow. Four codes and no free text:
 # `esito` is looked up in a fixed table on the page, so nothing an attacker appends to
 # this URL can put words of their own on the screen. The start page's Gmail door reads
 # the same table, on the Home of an empty space and on «Primi passi» (`_back`).
@@ -73,6 +75,10 @@ _START_PAGE = "/app/get-started"
 _ESITO_COLLEGATO = "collegato"
 _ESITO_NEGATO = "negato"
 _ESITO_ERRORE = "errore"
+# The browser came back with no live session (REB-446): no access cookie that still
+# works and no refresh cookie that could renew it. Nothing was redeemed, so the person
+# only has to start again once they are signed in.
+_ESITO_SESSIONE = "sessione"
 
 # One `GoogleTokenClient` per process, keyed by the OAuth client it authenticates as.
 #
@@ -177,7 +183,15 @@ def finish_oauth(
     relayed = relay_to_space(request, settings, _CALLBACK_PATH, code=code, state=state, error=error)
     if relayed is not None:
         return relayed
-    actor = get_actor(request, session, settings)
+    # The access cookie may have run out while the person was on Google's screens, and
+    # the SPA had no chance to renew it before this navigation: `callback_actor` reads
+    # the refresh cookie too (REB-446). The state below is still redeemed against this
+    # actor's own id, so what it adds is a way back for the person who started the flow.
+    actor = callback_actor(request, session, settings)
+    if actor is None:
+        # Never a 401 document in the address bar. The state stays unredeemed and runs
+        # out on its own; the page asks the person to sign in and start again.
+        return _back(request, session, None, _ESITO_SESSIONE)
     if error is not None or code is None or state is None:
         # One outcome code for every refusal on Google's side. Google's own `error` is
         # not forwarded: it is English, and it sometimes embeds the client id.
@@ -197,7 +211,7 @@ def finish_oauth(
     return _back(request, session, actor, _ESITO_COLLEGATO)
 
 
-def _back(request: Request, session: Session, actor: Actor, esito: str) -> RedirectResponse:
+def _back(request: Request, session: Session, actor: Actor | None, esito: str) -> RedirectResponse:
     # Under the prefix the request wore: a space's consent must end on that space's
     # page, not on the root's. `cookie_path` is the one place that already knows the
     # prefix, and its `/` is the bare root.
@@ -209,8 +223,15 @@ def _back(request: Request, session: Session, actor: Actor, esito: str) -> Redir
     # sends an admin to the settings page, as it always has, and anybody else to «Primi
     # passi»: a collaboratore may connect their own mailbox (`require_write`) but may not
     # open Impostazioni, which would answer the consent with «Accesso riservato».
+    #
+    # With no actor (REB-446) the page is «Primi passi», whoever started the flow and
+    # whatever the space holds: it carries the Gmail door for every role, it is the
+    # Home's own content while the space is empty, and choosing it without reading the
+    # database keeps a request with no session from learning whether the space is empty.
     prefix = cookie_path(request).rstrip("/")
-    if space_is_empty(session):
+    if actor is None:
+        page = _START_PAGE
+    elif space_is_empty(session):
         page = _HOME_PAGE
     elif actor.role == "admin":
         page = _SETTINGS_PAGE

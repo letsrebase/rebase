@@ -27,12 +27,12 @@ import { Link } from '@tanstack/react-router'
 import { Mail } from 'lucide-react'
 import { Button } from '@rebase/ui/button'
 import { useAuth, useCanWrite } from '@/lib/auth'
-import { messaggioEsito } from '@/features/gmail/esito'
+import { ConsentOutcome } from '@/components/ConsentOutcome'
+import { messaggioEsito, riprovaEsito } from '@/features/gmail/esito'
 import { GMAIL_OAUTH_START, useGmailHealth } from '@/features/gmail/queries'
 import { SuggestedCustomers } from '@/features/gmail/SuggestedCustomers'
 
 export function GmailDoor({ esito }: { esito?: string }) {
-  const messaggio = messaggioEsito(esito)
   return (
     <section aria-labelledby="porta-gmail" className="space-y-3 border p-4">
       <header className="flex items-start gap-3">
@@ -47,11 +47,7 @@ export function GmailDoor({ esito }: { esito?: string }) {
           </p>
         </div>
       </header>
-      {messaggio ? (
-        <p role="status" className="bg-muted/50 border px-3 py-2 text-sm">
-          {messaggio}
-        </p>
-      ) : null}
+      <ConsentOutcome messaggio={messaggioEsito(esito)} riprova={riprovaEsito(esito)} />
       <DoorState />
     </section>
   )

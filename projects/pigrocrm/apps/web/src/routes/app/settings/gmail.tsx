@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { GmailPanel } from '@/features/gmail/GmailPanel'
-import { messaggioEsito } from '@/features/gmail/esito'
+import { ConsentOutcome } from '@/components/ConsentOutcome'
+import { messaggioEsito, riprovaEsito } from '@/features/gmail/esito'
 
 /**
  * Where `GET /api/gmail/oauth/callback` lands the browser after a consent flow.
@@ -16,14 +17,9 @@ import { messaggioEsito } from '@/features/gmail/esito'
  */
 function GmailSettingsRoute() {
   const { esito } = Route.useSearch()
-  const messaggio = messaggioEsito(esito)
   return (
     <div className="space-y-4">
-      {messaggio ? (
-        <p role="status" className="border bg-muted/50 px-3 py-2 text-sm">
-          {messaggio}
-        </p>
-      ) : null}
+      <ConsentOutcome messaggio={messaggioEsito(esito)} riprova={riprovaEsito(esito)} />
       <GmailPanel />
     </div>
   )

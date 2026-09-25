@@ -24,6 +24,7 @@ both without an env var leaking across tests.
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 import pytest
@@ -31,10 +32,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+import pigrocrm_api.routers.gmail as gmail_router
+from pigrocrm.core.auth.tokens import issue_access_token
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.gmail.models import GmailMessage, GmailMessageLink, GoogleAccount
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES
+from pigrocrm.core.gmail.tokens import TokenGrant
+from pigrocrm_api.deps import ACCESS_COOKIE, REFRESH_COOKIE
+from pigrocrm_api.routers.gmail import token_client_key
 
 # Deliberately literal rather than imported from `fakes.gmail_fixtures`: that package
 # lives under `packages/core/tests`, which is only on `sys.path` once a test from that
@@ -161,10 +167,11 @@ def test_a_configured_installation_with_no_mailbox_says_so_differently(
 
 
 def test_every_gmail_endpoint_requires_authentication(client: TestClient) -> None:
+    """Every one but the consent's way back, which is a browser navigation and answers
+    a missing session with a page (the next test)."""
     for method, path in [
         ("GET", "/api/gmail/account"),
         ("GET", "/api/gmail/oauth/start"),
-        ("GET", "/api/gmail/oauth/callback"),
         ("POST", "/api/gmail/sync"),
         ("POST", "/api/gmail/backfill"),
         ("GET", "/api/gmail/messages"),
@@ -285,6 +292,294 @@ def test_a_collaboratore_is_brought_back_to_primi_passi_not_to_settings_they_can
     )
     assert response.status_code == 307, response.text
     assert response.headers["location"] == "/app/get-started?esito=negato"
+
+
+# --- a session that ran out on Google's screens (REB-446) -----------------------------
+
+
+class _Google:
+    """Google's token endpoint for the exchanges these tests reach: one grant for one
+    identity, and every code it was handed, so a refusal can prove nothing got this far.
+    Installed as the process's token client for the configured client id, where both
+    routers look it up (`token_client`)."""
+
+    def __init__(self) -> None:
+        self.codes: list[str] = []
+
+    def exchange_code(self, *, code: str, code_verifier: str, redirect_uri: str) -> TokenGrant:
+        self.codes.append(code)
+        return TokenGrant(
+            access_token="ya29.finto",
+            refresh_token="1//0gFinto",
+            scopes=tuple(REQUESTED_SCOPES),
+            subject="sub-123",
+            email_address="io@example.it",
+            expires_in=3599,
+        )
+
+    def forget(self, account_id: Any) -> None:
+        pass
+
+
+@pytest.fixture
+def google(gmail_ready: TestClient, monkeypatch: pytest.MonkeyPatch) -> _Google:
+    fake = _Google()
+    monkeypatch.setitem(gmail_router._token_clients, token_client_key(_configured()), fake)
+    return fake
+
+
+def _start(client: TestClient) -> str:
+    started = client.get("/api/gmail/oauth/start", follow_redirects=False)
+    assert started.status_code == 307, started.text
+    return parse_qs(urlparse(started.headers["location"]).query)["state"][0]
+
+
+def _lose_access_cookie(client: TestClient, *, replace_with: str | None = None) -> None:
+    """What the browser does while the person is on Google's screens: the access cookie's
+    max-age is the token's own lifetime, so it is dropped, and the refresh cookie stays.
+    `replace_with` puts a token back in its place, for a browser whose clock kept it."""
+    jar = list(client.cookies.jar)
+    assert any(cookie.name == ACCESS_COOKIE for cookie in jar)
+    for cookie in jar:
+        if cookie.name == ACCESS_COOKIE:
+            client.cookies.delete(ACCESS_COOKIE, domain=cookie.domain, path=cookie.path)
+            if replace_with is not None:
+                client.cookies.set(
+                    ACCESS_COOKIE, replace_with, domain=cookie.domain, path=cookie.path
+                )
+    # Proven gone, or the test below would pass through `get_actor` and prove nothing.
+    left = [cookie.value for cookie in client.cookies.jar if cookie.name == ACCESS_COOKIE]
+    assert left == ([] if replace_with is None else [replace_with])
+
+
+@pytest.mark.parametrize("access", ["dropped", "expired"])
+def test_a_consent_that_outlasts_the_access_cookie_still_connects_the_mailbox(
+    access: str, logged_in: TestClient, google: _Google, admin_user: Any
+) -> None:
+    """Production, 2026-09-25: a minute on the account chooser and the consent, and the
+    callback answered «Autenticazione richiesta» as JSON. The refresh cookie proves
+    whose browser came back, and it is only read: the SPA renews the pair on landing,
+    with the very token the callback saw."""
+    state = _start(logged_in)
+    expired = issue_access_token(
+        admin_user.id, "admin", _configured(), issued_at=datetime.now(UTC) - timedelta(hours=1)
+    )
+    _lose_access_cookie(logged_in, replace_with=expired if access == "expired" else None)
+
+    back = logged_in.get(
+        "/api/gmail/oauth/callback",
+        params={"code": "4/0A-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert back.status_code == 307, back.text
+    assert back.headers["location"] == "/app/?esito=collegato"
+    assert google.codes == ["4/0A-code"]
+    assert "set-cookie" not in back.headers
+    assert logged_in.post("/api/auth/refresh").status_code == 200
+    account = logged_in.get("/api/gmail/account").json()["account"]
+    assert account["email_address"] == "io@example.it"
+    assert account["status"] == "active"
+
+
+@pytest.mark.parametrize("refresh", ["none", "forged", "consumed"])
+def test_a_consent_that_comes_back_with_no_live_session_lands_on_a_page_not_on_json(
+    refresh: str, logged_in: TestClient, google: _Google, api_session: Session
+) -> None:
+    """No access cookie and no refresh cookie that could renew it: nobody to redeem the
+    state for. The browser lands on «Primi passi», whatever the space holds and whoever
+    started, with `sessione`; the SPA's login sends it back there once the person is in,
+    and the state is left to run out on its own. `consumed` is a token rotated away a
+    minute ago, past the grace a second tab gets."""
+    state = _start(logged_in)
+    spent = logged_in.cookies.get(REFRESH_COOKIE)
+    assert logged_in.post("/api/auth/refresh").status_code == 200
+    api_session.execute(
+        text(
+            "update refresh_tokens set consumed_at = consumed_at - interval '1 minute' "
+            "where consumed_at is not null"
+        )
+    )
+    api_session.flush()
+    _lose_access_cookie(logged_in)
+    for cookie in list(logged_in.cookies.jar):
+        if cookie.name == REFRESH_COOKIE:
+            logged_in.cookies.delete(REFRESH_COOKIE, domain=cookie.domain, path=cookie.path)
+            if refresh != "none":
+                value = spent if refresh == "consumed" else "non.un.token"
+                logged_in.cookies.set(REFRESH_COOKIE, value, domain=cookie.domain, path=cookie.path)
+
+    back = logged_in.get(
+        "/api/gmail/oauth/callback",
+        params={"code": "4/0A-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert back.status_code == 307, back.text
+    assert back.headers["location"] == "/app/get-started?esito=sessione"
+    assert google.codes == []
+
+
+def test_a_token_another_tab_rotated_seconds_ago_still_identifies_the_browser(
+    logged_in: TestClient, google: _Google
+) -> None:
+    """Another tab's refresh can land while the callback is on its way, carrying the
+    token that refresh just rotated away. `/api/auth/refresh` would still answer that
+    token with its successor for ten seconds, and so the callback still knows whose
+    browser this is."""
+    state = _start(logged_in)
+    spent = logged_in.cookies.get(REFRESH_COOKIE)
+    assert logged_in.post("/api/auth/refresh").status_code == 200
+    _lose_access_cookie(logged_in)
+    for cookie in list(logged_in.cookies.jar):
+        if cookie.name == REFRESH_COOKIE:
+            logged_in.cookies.delete(REFRESH_COOKIE, domain=cookie.domain, path=cookie.path)
+            logged_in.cookies.set(REFRESH_COOKIE, spent, domain=cookie.domain, path=cookie.path)
+
+    back = logged_in.get(
+        "/api/gmail/oauth/callback",
+        params={"code": "4/0A-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert back.status_code == 307, back.text
+    assert back.headers["location"] == "/app/?esito=collegato"
+    assert google.codes == ["4/0A-code"]
+
+
+def test_the_callback_with_no_cookie_at_all_is_a_page_too(client: TestClient) -> None:
+    """Even on an installation with no Google: the session is asked about first, and a
+    browser navigation never ends on a 401 document."""
+    for query in ({}, {"code": "c", "state": "s"}, {"error": "access_denied"}):
+        back = client.get("/api/gmail/oauth/callback", params=query, follow_redirects=False)
+        assert back.status_code == 307, (query, back.text)
+        assert back.headers["location"] == "/app/get-started?esito=sessione"
+
+
+def test_another_persons_state_is_refused_on_a_refresh_only_session(
+    logged_in: TestClient, google: _Google, api_session: Session, admin_user: Any
+) -> None:
+    """The refresh cookie proves who this browser is, not that the consent was theirs:
+    the state is still redeemed against that person's own id. The admin's consent,
+    handed to a collaboratore's browser whose access cookie ran out, connects nothing
+    for either of them, and never reaches Google."""
+    state = _start(logged_in)
+    created = logged_in.post(
+        "/api/users",
+        json={
+            "email": "collab@pigro.it",
+            "password": "supersegreta1",
+            "nome": "C",
+            "ruolo": "collaboratore",
+        },
+    )
+    assert created.status_code == 201, created.text
+    other = TestClient(logged_in.app, base_url="https://testserver")
+    login = other.post(
+        "/api/auth/login", json={"email": "collab@pigro.it", "password": "supersegreta1"}
+    )
+    assert login.status_code == 200, login.text
+    _lose_access_cookie(other)
+
+    back = other.get(
+        "/api/gmail/oauth/callback",
+        params={"code": "4/0A-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert back.status_code == 307, back.text
+    assert back.headers["location"] == "/app/?esito=errore"
+    assert google.codes == []
+    assert logged_in.get("/api/gmail/account").json()["account"] is None
+    count = api_session.execute(text("select count(*) from google_accounts")).scalar_one()
+    assert count == 0
+
+
+def test_a_refusal_on_googles_side_on_a_refresh_only_session_is_still_negato(
+    logged_in: TestClient, google: _Google
+) -> None:
+    """Whose browser this is comes first, what Google said second: with the session
+    recovered from the refresh cookie, Google's refusal reads as it always did."""
+    _lose_access_cookie(logged_in)
+    back = logged_in.get(
+        "/api/gmail/oauth/callback",
+        params={"error": "access_denied", "state": "s"},
+        follow_redirects=False,
+    )
+    assert back.status_code == 307, back.text
+    assert back.headers["location"] == "/app/?esito=negato"
+    assert google.codes == []
+
+
+def test_a_readonly_person_on_a_refresh_only_session_is_still_refused_as_a_role(
+    logged_in: TestClient, google: _Google
+) -> None:
+    """The 403 problem document `complete`'s `require_write` gives is unchanged, and
+    since the callback only read the refresh cookie, that answer carries no cookie it
+    would have had to: the token still renews afterwards."""
+    state = _start(logged_in)
+    created = logged_in.post(
+        "/api/users",
+        json={
+            "email": "sola@pigro.it",
+            "password": "supersegreta1",
+            "nome": "S",
+            "ruolo": "readonly",
+        },
+    )
+    assert created.status_code == 201, created.text
+    other = TestClient(logged_in.app, base_url="https://testserver")
+    login = other.post(
+        "/api/auth/login", json={"email": "sola@pigro.it", "password": "supersegreta1"}
+    )
+    assert login.status_code == 200, login.text
+    _lose_access_cookie(other)
+
+    back = other.get(
+        "/api/gmail/oauth/callback",
+        params={"code": "4/0A-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert back.status_code == 403, back.text
+    assert back.json()["code"] == "permission_denied"
+    assert google.codes == []
+    assert other.post("/api/auth/refresh").status_code == 200
+
+
+def test_a_deactivated_person_with_a_live_refresh_cookie_has_no_session_here(
+    logged_in: TestClient, google: _Google, api_session: Session
+) -> None:
+    """The refresh row is still live (deactivated by hand, past whatever a deactivation
+    revokes), so what refuses is the user check, the same one `/refresh` makes."""
+    state = _start(logged_in)
+    _lose_access_cookie(logged_in)
+    api_session.execute(
+        text("update users set attivo = false where email = :e"), {"e": "admin@pigro.it"}
+    )
+    api_session.flush()
+
+    back = logged_in.get(
+        "/api/gmail/oauth/callback",
+        params={"code": "4/0A-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert back.status_code == 307, back.text
+    assert back.headers["location"] == "/app/get-started?esito=sessione"
+    assert google.codes == []
+
+
+def test_a_failing_agent_token_on_the_callback_is_still_a_401(logged_in: TestClient) -> None:
+    """`get_actor`'s precedence holds here too: a header that names a PAT is answered
+    for that PAT, never from the cookies riding along with it."""
+    back = logged_in.get(
+        "/api/gmail/oauth/callback",
+        params={"code": "c", "state": "s"},
+        headers={"Authorization": "Bearer pgc_non-esiste"},
+        follow_redirects=False,
+    )
+    assert back.status_code == 401, back.text
 
 
 # --- reading what is already stored ---------------------------------------------------

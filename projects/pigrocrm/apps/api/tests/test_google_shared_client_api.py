@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -25,7 +26,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core"
 from fakes.fake_gmail import FakeGmail  # noqa: E402
 
 import pigrocrm_api.routers.gmail as gmail_router  # noqa: E402
+from pigrocrm.core.auth.magic_link import MagicLinkService  # noqa: E402
+from pigrocrm.core.auth.tokens import issue_access_token, issue_refresh_token  # noqa: E402
 from pigrocrm.core.config import Settings, decode_google_token_key, get_settings  # noqa: E402
+from pigrocrm.core.db import session_factory  # noqa: E402
 from pigrocrm.core.db.sidecar import drop_database  # noqa: E402
 from pigrocrm.core.gmail.crypto import unseal  # noqa: E402
 from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES  # noqa: E402
@@ -33,7 +37,7 @@ from pigrocrm.core.gmail.tokens import GoogleTokenClient  # noqa: E402
 from pigrocrm.core.gmail.transport import GmailTransport  # noqa: E402
 from pigrocrm.core.tenants import ensure_tenants_database, space_base_settings  # noqa: E402
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url  # noqa: E402
-from pigrocrm_api.deps import reset_session_factories  # noqa: E402
+from pigrocrm_api.deps import ACCESS_COOKIE, REFRESH_COOKIE, reset_session_factories  # noqa: E402
 from pigrocrm_api.main import create_app  # noqa: E402
 from pigrocrm_api.ratelimit import reset_rate_limit  # noqa: E402
 
@@ -44,6 +48,8 @@ CLIENT_SECRET = "il-segreto-del-client"
 TOKEN_KEY_B64 = base64.b64encode(b"k" * 32).decode()
 ROOT_CALLBACK = "https://pigro.test/api/gmail/oauth/callback"
 REFRESH = "1//0gSharedClientRefresh"
+# Where the root's own callback sends a browser with no session of the root's (REB-446).
+ROOT_NO_SESSION = "/app/get-started?esito=sessione"
 
 
 def _settings(api_engine: Engine, *, shared: bool) -> Settings:
@@ -255,12 +261,151 @@ def test_drive_consent_takes_the_same_way_back(shared: TestClient, google: FakeG
     assert landed.headers["location"] == f"/{SLUG}/app/settings/drive?esito=negato"
 
 
+# --- a session that ran out on Google's screens (REB-446) -----------------------------
+#
+# Production, 2026-09-25, space `rebase-demo`: a minute on the account chooser, the
+# unverified-app screen and the consent, and the space's callback answered
+# `{"detail":"Autenticazione richiesta"}`. The access cookie's max-age is the token's
+# own lifetime, so the browser had dropped it; the refresh cookie was still there.
+
+# Where each product's consent lands in an empty space, with a session and without.
+LANDING = {"gmail": "/app/", "drive": "/app/settings/drive"}
+LANDING_NO_SESSION = {"gmail": "/app/get-started", "drive": "/app/settings/drive"}
+
+
+def _enter(client: TestClient, api_engine: Engine, slug: str, email: str) -> None:
+    """The welcome mail's link, clicked: the refresh cookie a signup alone never sets
+    (`routers/tenants.py::signup`), at the space's own path."""
+    settings = _settings(api_engine, shared=True)
+    engine = create_engine(tenant_database_url(settings, tenant_database_name(slug)))
+    try:
+        with session_factory(engine)() as space:
+            raw = MagicLinkService(space, settings).request(email)
+    finally:
+        engine.dispose()
+    entered = client.post(f"/{slug}/api/auth/verify", json={"t": raw})
+    assert entered.status_code == 200, entered.text
+
+
+def _state(client: TestClient, slug: str, product: str) -> str:
+    started = client.get(f"/{slug}/api/{product}/oauth/start", follow_redirects=False)
+    assert started.status_code == 307, started.text
+    return parse_qs(urlparse(started.headers["location"]).query)["state"][0]
+
+
+def _drop(client: TestClient, name: str, slug: str) -> None:
+    """A cookie of the space's pair gone from the jar, as the browser drops it, and
+    proven gone: a test that went on through a live cookie would prove nothing."""
+    assert any(c.name == name and c.path == f"/{slug}/" for c in client.cookies.jar)
+    client.cookies.delete(name, path=f"/{slug}/")
+    assert all(not (c.name == name and c.path == f"/{slug}/") for c in client.cookies.jar)
+
+
+def _through_the_root(client: TestClient, product: str, **params: str) -> str:
+    """Google's redirect to the root's callback, then the relay's to the space's: where
+    the browser ends up."""
+    back = client.get(f"/api/{product}/oauth/callback", params=params, follow_redirects=False)
+    assert back.status_code == 307, back.text
+    done = client.get(back.headers["location"], follow_redirects=False)
+    assert done.status_code == 307, done.text
+    return str(done.headers["location"])
+
+
+@pytest.mark.parametrize("product", ["gmail", "drive"])
+def test_a_space_consent_that_outlasts_the_access_cookie_still_connects(
+    product: str, shared: TestClient, google: FakeGmail, api_engine: Engine
+) -> None:
+    _sign_up(shared, SLUG, "ada@studio.it")
+    _enter(shared, api_engine, SLUG, "ada@studio.it")
+    state = _state(shared, SLUG, product)
+    _drop(shared, ACCESS_COOKIE, SLUG)
+
+    landed = _through_the_root(shared, product, code="4/0A-code", state=state)
+
+    assert landed == f"/{SLUG}{LANDING[product]}?esito=collegato"
+    assert len(_exchanges(google)) == 1
+    # The refresh cookie was read, not spent: the SPA renews the pair with it on landing.
+    assert shared.post(f"/{SLUG}/api/auth/refresh").status_code == 200
+    account = shared.get(f"/{SLUG}/api/{product}/account").json()["account"]
+    assert account["email_address"] == "ada@studio.it"
+    assert account["status"] == "active"
+
+
+@pytest.mark.parametrize("product", ["gmail", "drive"])
+def test_a_space_consent_with_no_session_left_lands_in_the_space_not_on_json(
+    product: str, shared: TestClient, google: FakeGmail, api_engine: Engine
+) -> None:
+    """Both cookies gone: the space's own page, with `sessione` for the SPA to say in
+    Italian once its login has brought the person back, and nothing sent to Google."""
+    _sign_up(shared, SLUG, "ada@studio.it")
+    _enter(shared, api_engine, SLUG, "ada@studio.it")
+    state = _state(shared, SLUG, product)
+    _drop(shared, ACCESS_COOKIE, SLUG)
+    _drop(shared, REFRESH_COOKIE, SLUG)
+
+    landed = _through_the_root(shared, product, code="4/0A-code", state=state)
+
+    assert landed == f"/{SLUG}{LANDING_NO_SESSION[product]}?esito=sessione"
+    assert _exchanges(google) == []
+
+
+@pytest.mark.parametrize("product", ["gmail", "drive"])
+def test_a_state_never_crosses_spaces_on_a_refresh_only_session(
+    product: str, shared: TestClient, google: FakeGmail, api_engine: Engine
+) -> None:
+    """Signed in to both spaces, both access cookies gone: the other space's refresh
+    cookie names its own admin, and that space never issued this jti, swapped prefix or
+    not. Nothing reaches Google."""
+    _sign_up(shared, SLUG, "ada@studio.it")
+    _sign_up(shared, OTHER, "bob@altro.it")
+    _enter(shared, api_engine, OTHER, "bob@altro.it")
+    state = _state(shared, SLUG, product)
+    for slug in (SLUG, OTHER):
+        _drop(shared, ACCESS_COOKIE, slug)
+    swapped = f"{OTHER}.{state.partition('.')[2]}"
+
+    landed = _through_the_root(shared, product, code="4/0A-code", state=swapped)
+    assert landed == f"/{OTHER}{LANDING[product]}?esito=errore"
+    direct = shared.get(
+        f"/{OTHER}/api/{product}/oauth/callback",
+        params={"code": "4/0A-code", "state": state},
+        follow_redirects=False,
+    )
+    assert direct.headers["location"] == f"/{OTHER}{LANDING[product]}?esito=errore"
+    assert _exchanges(google) == []
+
+
+@pytest.mark.parametrize("product", ["gmail", "drive"])
+def test_the_roots_session_is_nobody_in_a_space(
+    product: str, shared: TestClient, google: FakeGmail, api_engine: Engine
+) -> None:
+    """A browser signed in at the root too sends the root's pair, at `Path=/`, into every
+    space request, and once the space's own pair is gone `first_cookie` reads the root's.
+    Its signature is good here (one secret for the whole installation), so what refuses
+    it is the row: neither token names anything in the space's database."""
+    _sign_up(shared, SLUG, "ada@studio.it")
+    _enter(shared, api_engine, SLUG, "ada@studio.it")
+    state = _state(shared, SLUG, product)
+    _drop(shared, ACCESS_COOKIE, SLUG)
+    _drop(shared, REFRESH_COOKIE, SLUG)
+    root = _settings(api_engine, shared=True)
+    stranger = uuid4()
+    shared.cookies.set(ACCESS_COOKIE, issue_access_token(stranger, "admin", root), path="/")
+    shared.cookies.set(REFRESH_COOKIE, issue_refresh_token(stranger, root), path="/")
+
+    landed = _through_the_root(shared, product, code="4/0A-code", state=state)
+
+    assert landed == f"/{SLUG}{LANDING_NO_SESSION[product]}?esito=sessione"
+    assert _exchanges(google) == []
+
+
 def test_the_root_relays_only_what_names_a_space_and_only_when_it_lends_its_client(
     api_engine: Engine,
 ) -> None:
     """The root's own consent is a bare jti and still needs the root's session; a state
     that names no well-formed space is not relayed; and with the setting off nothing
-    is, whatever the state says."""
+    is, whatever the state says. Each of them stays at the root, which has no session
+    for this browser and says so on its own page (REB-446), never on another site."""
     with _serving(_settings(api_engine, shared=True)) as client:
         for state in ("un-jti-della-radice", "app.jti", "evil.com/x.jti"):
             response = client.get(
@@ -268,14 +413,16 @@ def test_the_root_relays_only_what_names_a_space_and_only_when_it_lends_its_clie
                 params={"code": "c", "state": state},
                 follow_redirects=False,
             )
-            assert response.status_code == 401, (state, response.text)
+            assert response.status_code == 307, (state, response.text)
+            assert response.headers["location"] == ROOT_NO_SESSION, state
     with _serving(_settings(api_engine, shared=False)) as client:
         response = client.get(
             "/api/gmail/oauth/callback",
             params={"code": "c", "state": f"{SLUG}.jti"},
             follow_redirects=False,
         )
-        assert response.status_code == 401, response.text
+        assert response.status_code == 307, response.text
+        assert response.headers["location"] == ROOT_NO_SESSION
         _sign_up(client, SLUG, "ada@studio.it")
         assert client.get(f"/{SLUG}/api/gmail/account").json()["configured"] is False
 
@@ -320,4 +467,5 @@ def test_under_the_roots_own_name_the_callback_still_relays_and_never_to_itself(
             params={"code": "c", "state": "studiorossi.jti"},
             follow_redirects=False,
         )
-        assert itself.status_code == 401, itself.text
+        assert itself.status_code == 307, itself.text
+        assert itself.headers["location"] == ROOT_NO_SESSION

@@ -19,14 +19,21 @@ unconfigured, which is the state the first tests need.
 import json
 from collections.abc import Iterator
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+import pigrocrm_api.routers.gmail as gmail_router
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.drive.models import GoogleDriveAccount
+from pigrocrm.core.drive.schemas import DRIVE_REQUESTED_SCOPES
 from pigrocrm.core.drive.transport import DriveTransport
+from pigrocrm.core.gmail.tokens import TokenGrant
+from pigrocrm_api.deps import ACCESS_COOKIE
+from pigrocrm_api.routers.gmail import token_client_key
 
 TOKEN_KEY_B64 = "a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s="  # 32 bytes of "k"
 CLIENT_SECRET = "il-segreto-del-client"
@@ -141,10 +148,11 @@ def test_a_configured_installation_with_no_drive_says_so_differently(
 
 
 def test_every_drive_endpoint_requires_authentication(client: TestClient) -> None:
+    """Every one but the consent's way back, a browser navigation that answers a missing
+    session with the settings page (REB-446, below)."""
     for method, path in [
         ("GET", "/api/drive/account"),
         ("GET", "/api/drive/oauth/start"),
-        ("GET", "/api/drive/oauth/callback"),
         ("DELETE", "/api/drive/account"),
         ("PATCH", "/api/drive/account/roots"),
     ]:
@@ -317,6 +325,117 @@ def test_a_callback_with_a_state_nobody_issued_never_reports_a_connection(
     )
     assert response.status_code == 307, response.text
     assert response.headers["location"] == "/app/settings/drive?esito=errore"
+
+
+# --- a session that ran out on Google's screens (REB-446) -------------------------------
+
+
+class _Google:
+    """Google's token endpoint for the exchanges these tests reach, the Drive twin of
+    `test_gmail_router.py`'s: one grant for one identity, and every code it was handed."""
+
+    def __init__(self) -> None:
+        self.codes: list[str] = []
+
+    def exchange_code(self, *, code: str, code_verifier: str, redirect_uri: str) -> TokenGrant:
+        self.codes.append(code)
+        return TokenGrant(
+            access_token="ya29.finto",
+            refresh_token="1//0gFinto",
+            scopes=tuple(DRIVE_REQUESTED_SCOPES),
+            subject="sub-123",
+            email_address="io@example.it",
+            expires_in=3599,
+        )
+
+    def forget(self, account_id: Any) -> None:
+        pass
+
+
+@pytest.fixture
+def google(drive_ready: TestClient, monkeypatch: pytest.MonkeyPatch) -> _Google:
+    fake = _Google()
+    monkeypatch.setitem(gmail_router._token_clients, token_client_key(_configured()), fake)
+    return fake
+
+
+def _start(client: TestClient) -> str:
+    started = client.get("/api/drive/oauth/start", follow_redirects=False)
+    assert started.status_code == 307, started.text
+    return parse_qs(urlparse(started.headers["location"]).query)["state"][0]
+
+
+def _lose_access_cookie(client: TestClient) -> None:
+    """The browser drops the access cookie when its max-age runs out, which is the
+    token's own lifetime; the refresh cookie stays."""
+    jar = list(client.cookies.jar)
+    assert any(cookie.name == ACCESS_COOKIE for cookie in jar)
+    for cookie in jar:
+        if cookie.name == ACCESS_COOKIE:
+            client.cookies.delete(ACCESS_COOKIE, domain=cookie.domain, path=cookie.path)
+    # Proven gone, or the test would pass through `get_actor` and prove nothing.
+    assert all(cookie.name != ACCESS_COOKIE for cookie in client.cookies.jar)
+
+
+def test_a_consent_that_outlasts_the_access_cookie_still_connects_drive(
+    logged_in: TestClient, google: _Google
+) -> None:
+    state = _start(logged_in)
+    _lose_access_cookie(logged_in)
+
+    back = logged_in.get(
+        "/api/drive/oauth/callback",
+        params={"code": "4/0A-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert back.status_code == 307, back.text
+    assert back.headers["location"] == "/app/settings/drive?esito=collegato"
+    assert google.codes == ["4/0A-code"]
+    # Only read: the SPA renews the pair on landing with the token the callback saw.
+    assert logged_in.post("/api/auth/refresh").status_code == 200
+    account = logged_in.get("/api/drive/account").json()["account"]
+    assert account["email_address"] == "io@example.it"
+    assert account["status"] == "active"
+
+
+def test_a_drive_consent_with_no_live_session_lands_on_the_settings_page(
+    logged_in: TestClient, google: _Google
+) -> None:
+    state = _start(logged_in)
+    logged_in.cookies.clear()
+
+    back = logged_in.get(
+        "/api/drive/oauth/callback",
+        params={"code": "4/0A-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert back.status_code == 307, back.text
+    assert back.headers["location"] == "/app/settings/drive?esito=sessione"
+    assert google.codes == []
+
+
+def test_another_persons_drive_state_is_refused_on_a_refresh_only_session(
+    logged_in: TestClient, google: _Google, api_session: Session
+) -> None:
+    """The state is redeemed against the id of whoever the refresh cookie names, so the
+    admin's consent in a collaboratore's browser connects nothing and reaches no Google."""
+    state = _start(logged_in)
+    other = _second_actor(logged_in, "collaboratore")
+    _lose_access_cookie(other)
+
+    back = other.get(
+        "/api/drive/oauth/callback",
+        params={"code": "4/0A-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert back.status_code == 307, back.text
+    assert back.headers["location"] == "/app/settings/drive?esito=errore"
+    assert google.codes == []
+    count = api_session.execute(text("select count(*) from google_drive_accounts")).scalar_one()
+    assert count == 0
 
 
 # --- the roots configuration -------------------------------------------------------------

@@ -135,6 +135,24 @@ class RefreshTokenService:
         `test_a_replay_within_the_grace_window_returns_the_very_same_successor` pins,
         so a future change to how `expires_at` is derived cannot quietly break it.
         """
+        successor = self._live_successor(record, user_id, now)
+        if successor is None:
+            return None
+        issued_at = successor.expires_at - timedelta(days=settings.refresh_token_days)
+        return Rotation(
+            refresh_token=issue_refresh_token(
+                user_id, settings, jti=successor.jti, issued_at=issued_at
+            ),
+            issued_at=issued_at,
+        )
+
+    def _live_successor(
+        self, record: RefreshToken, user_id: UUID, now: datetime
+    ) -> RefreshToken | None:
+        """The row `record`'s own consumption produced, if that consumption is inside
+        `REFRESH_GRACE_SECONDS` and the successor is itself neither consumed nor expired:
+        the one shape of a second presentation that is two tabs and not a theft. None
+        otherwise. A read: `rotate` answers with this row's pair, `is_live` with yes."""
         if record.successor_jti is None or record.consumed_at is None:
             return None
         if now - record.consumed_at > timedelta(seconds=REFRESH_GRACE_SECONDS):
@@ -146,13 +164,7 @@ class RefreshTokenService:
         ).scalar_one_or_none()
         if successor is None or successor.consumed_at is not None or successor.expires_at < now:
             return None
-        issued_at = successor.expires_at - timedelta(days=settings.refresh_token_days)
-        return Rotation(
-            refresh_token=issue_refresh_token(
-                user_id, settings, jti=successor.jti, issued_at=issued_at
-            ),
-            issued_at=issued_at,
-        )
+        return successor
 
     def consume(self, jti: UUID, user_id: UUID) -> None:
         """Marks a refresh token used up so it can never be presented again. Reusing an
@@ -183,6 +195,33 @@ class RefreshTokenService:
             raise ValidationFailed("refresh_token", "jti", INVALID_REFRESH_TOKEN)
         record.consumed_at = now
         self.session.commit()
+
+    def is_live(self, jti: UUID, user_id: UUID) -> bool:
+        """Whether `rotate` would answer this token with a pair: its row exists for this
+        user and has not expired, and it is either unconsumed or was rotated away inside
+        `REFRESH_GRACE_SECONDS` into a successor that is still live (a second tab's
+        refresh that landed while this request was on its way). A read and nothing else:
+        no lock, no write, no revocation, so asking it never changes the session it asks
+        about.
+
+        Its one caller is the Google consent's way back (`deps.callback_actor`, REB-446),
+        a top-level navigation that has to know whose browser came back after the access
+        cookie ran out on Google's screens, and that must not rotate the pair the SPA is
+        about to renew on its own: a rotation there would need its new cookies on every
+        answer the callback can give, and one it could not carry them on would leave the
+        browser holding a consumed token, which the next refresh reads as a replay. A
+        token consumed outside the grace answers False here without burning the family,
+        like an unknown one: this read is not where a replay is judged, `rotate` is.
+        """
+        now = datetime.now(UTC)
+        record = self.session.execute(
+            select(RefreshToken).where(RefreshToken.jti == jti, RefreshToken.user_id == user_id)
+        ).scalar_one_or_none()
+        if record is None or record.expires_at < now:
+            return False
+        if record.consumed_at is None:
+            return True
+        return self._live_successor(record, user_id, now) is not None
 
     def _locked(self, jti: UUID, user_id: UUID, now: datetime) -> RefreshToken:
         """The row for this jti, locked for the rest of the transaction, or a rejection.

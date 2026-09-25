@@ -9,11 +9,15 @@ const mockAuth = vi.hoisted(() => ({ isAdmin: true }))
 vi.mock('@/lib/auth', () => ({
   useIsAdmin: () => mockAuth.isAdmin,
   useAuth: () => ({ user: { ruolo: mockAuth.isAdmin ? 'admin' : 'collaboratore' } }),
+  useCanWrite: () => true,
 }))
 
 // Defaults to the admin suite's usual page; the two REB-221 tests below point this at
 // `/app/settings/profile` instead, the one path a non-admin may also reach.
-const mockLocation = vi.hoisted(() => ({ pathname: '/app/settings/fields' }))
+const mockLocation = vi.hoisted(() => ({
+  pathname: '/app/settings/fields',
+  search: {} as Record<string, unknown>,
+}))
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
@@ -25,13 +29,48 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
       </a>
     ),
     Outlet: () => <div data-testid="outlet-content" />,
-    useRouterState: () => ({ location: { pathname: mockLocation.pathname } }),
+    useRouterState: () => ({
+      location: { pathname: mockLocation.pathname, search: mockLocation.search },
+    }),
   }
 })
 
 describe('SettingsLayout (the /app/settings route guard)', () => {
   beforeEach(() => {
     mockLocation.pathname = '/app/settings/fields'
+    mockLocation.search = {}
+  })
+
+  /**
+   * REB-446: every Drive consent outcome lands on the Drive tab, and the service lets a
+   * collaboratore connect their own Drive, so the outcome is read out above the gate
+   * rather than lost behind it.
+   */
+  it('reads a Drive consent outcome to a non-admin above the explanation, with «Riprova»', () => {
+    mockAuth.isAdmin = false
+    mockLocation.pathname = '/app/settings/drive'
+    mockLocation.search = { esito: 'sessione' }
+    render(<SettingsLayout />)
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'La sessione è scaduta mentre eri su Google, quindi Drive non è stato collegato.',
+    )
+    expect(screen.getByRole('link', { name: 'Riprova' })).toHaveAttribute('href', '/api/drive/oauth/start')
+    expect(screen.getByRole('heading', { name: 'Accesso riservato' })).toBeInTheDocument()
+    expect(screen.queryByTestId('outlet-content')).toBeNull()
+  })
+
+  it('reads no outcome on another tab, nor on the Drive tab without one', () => {
+    mockAuth.isAdmin = false
+    mockLocation.pathname = '/app/settings/fields'
+    mockLocation.search = { esito: 'sessione' }
+    const { unmount } = render(<SettingsLayout />)
+    expect(screen.queryByRole('status')).toBeNull()
+    unmount()
+    mockLocation.pathname = '/app/settings/drive'
+    mockLocation.search = {}
+    render(<SettingsLayout />)
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Accesso riservato' })).toBeInTheDocument()
   })
 
   it('opens with its title as the page heading, from PageHeader', () => {
