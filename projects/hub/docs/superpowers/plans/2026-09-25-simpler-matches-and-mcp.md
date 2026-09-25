@@ -111,11 +111,11 @@ When `testo_bozza` is true, append « Il testo è ancora in bozza.» to a framew
 
 «No framework out» means the freelancer's pending framework agreement is missing or not `inviato` (the web's `quadro?.stato !== 'inviato'` today, read through `pending_framework`).
 
-**The check's sentences** (`check_sentences`; name is the freelancer's `nome cognome`; amounts with the Italian decimal comma and no decimals when whole, the same way the letter prints `compenso`, reuse that formatter):
+**The check's sentences** (`check_sentences`; name is the freelancer's `nome cognome`; the fee through the letter's own formatter, `contracts.fields.rendered`, so it reads «450,00 €» as the PDF does):
 
 1. «{nome cognome} lavorerà per {cliente_ragione_sociale} come {ruolo}[, {luogo}], dal {data_inizio}[ al {data_fine}].»
 2. When `impegno` is set: «Impegno: {impegno}.»
-3. «Compenso: {compenso} € {unita or modalita}, IVA esclusa, pagato a {giorni_pagamento} giorni[ fine mese].»
+3. «Compenso: {compenso} {unita or modalita}, IVA esclusa, pagato a {giorni_pagamento} giorni[ fine mese].» (`{compenso}` carries its «€»)
 4. `cosa_succede`: with `quadro_necessario`: «Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua firma.» With a framework agreement already out for signature: «Il contratto quadro è già in firma: la lettera di incarico parte da sola dopo la sua firma.» With an active one: «Il contratto quadro è già attivo: parte subito la lettera di incarico.»
 5. With `dati_fiscali_mancanti`, `riepilogo` ends with «Mancano i dati fiscali del freelance: servono prima di salvare.»
 
