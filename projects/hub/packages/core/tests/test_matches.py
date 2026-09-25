@@ -1236,26 +1236,33 @@ def test_a_waiting_letter_reads_its_freelancers_framework_wherever_the_match_is_
     _waiting(clean, match.id)
     numero = match.lettera.numero
 
-    def everywhere() -> list[tuple[str, str | None]]:
+    def everywhere() -> tuple[str, str | None]:
         got, page = service.get(match.id), service.for_freelancer(freelancer_id)
         listed = service.list_all(stato=None, q=None, limit=100, offset=0).items[0]
         assert got.situazione == page.matches[0].situazione == listed.situazione
-        return [(got.situazione, got.prossima_azione), (listed.situazione, None)]
+        assert got.prossima_azione == page.matches[0].prossima_azione
+        return got.situazione, got.prossima_azione
 
     _framework_now(clean, freelancer_id, "inviato")
-    assert everywhere()[0] == (
+    assert everywhere() == (
         f"La lettera n. {numero} aspetta la firma del contratto quadro e parte da sola dopo.",
         None,
     )
     # Signed, and the letter's release missed: the send dispatches the letter itself.
     _framework_now(clean, freelancer_id, "firmato")
-    assert everywhere()[0] == (
+    assert everywhere() == (
         f"La lettera n. {numero} è pronta a partire: il contratto quadro è già firmato.",
         "invia",
     )
-    for stato in ("generato", "annullato", "disdetto"):
+    _framework_now(clean, freelancer_id, "generato")
+    assert everywhere() == (
+        f"La lettera n. {numero} parte dopo il contratto quadro: «Invia per la firma» lo manda "
+        "al freelance.",
+        "invia",
+    )
+    for stato in ("annullato", "disdetto"):
         _framework_now(clean, freelancer_id, stato)
-        assert everywhere()[0] == (
+        assert everywhere() == (
             f"La lettera n. {numero} aspetta un contratto quadro: «Invia per la firma» ne genera "
             "uno nuovo.",
             "invia",
@@ -1301,15 +1308,26 @@ def test_list_all_reads_frameworks_in_one_query(clean: Session) -> None:
     assert len(page.items) == 3
     assert for_three == for_one
     waits = "La lettera n. {} aspetta la firma del contratto quadro e parte da sola dopo."
-    needs = (
-        "La lettera n. {} aspetta un contratto quadro: «Invia per la firma» ne genera uno nuovo."
+    sends = (
+        "La lettera n. {} parte dopo il contratto quadro: «Invia per la firma» lo manda al "
+        "freelance."
     )
     ready = "La lettera n. {} è pronta a partire: il contratto quadro è già firmato."
     assert {item.freelancer_id: item.situazione for item in page.items} == {
-        ada: needs.format(numbers[ada]),
+        ada: sends.format(numbers[ada]),
         grace: waits.format(numbers[grace]),
         katherine: ready.format(numbers[katherine]),
     }
+
+
+def test_a_match_listed_with_no_letter_at_all_reads_as_its_state(clean: Session) -> None:
+    """`create` always writes a letter; the list still reads a match that has none."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    match = _service(clean).create(freelancer_id, _body(company_id), admin_id)
+    clean.execute(text("DELETE FROM contract_documents WHERE match_id = :id"), {"id": match.id})
+    clean.commit()
+    (row,) = _service(clean).list_all(stato=None, q=None, limit=100, offset=0).items
+    assert (row.situazione, row.lettera_numero, row.lettera_stato) == ("Da inviare.", None, None)
 
 
 # ---- the check before saving, and the proposal (REB-476) ---------------------------------
@@ -1343,7 +1361,7 @@ def test_check_says_what_saving_would_do_and_which_document_leaves_first(clean: 
     service = _service(clean)
     riepilogo = [
         "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, dal 1° ottobre 2026.",
-        "Compenso: 450 €, IVA esclusa, pagato a 30 giorni fine mese.",
+        "Compenso: 450,00 €, IVA esclusa, pagato a 30 giorni fine mese.",
     ]
     assert service.check(freelancer_id, _body(company_id)) == MatchCheck(
         riepilogo=riepilogo,
@@ -1464,6 +1482,17 @@ def test_the_proposal_refuses_an_unknown_key_by_name(
         # A client never matched before: the prefill knows only its name.
         (None, None, "cliente.cliente_piva", "manca"),
         (CLIENTE_REST, {"compenso": None}, "lettera.compenso", "manca"),
+        # Pydantic's own checks say it in English: the admin reads «non valido».
+        (CLIENTE_REST, {"compenso": "abc"}, "lettera.compenso", "non valido"),
+        (CLIENTE_REST, {"giorni_pagamento": "trenta"}, "lettera.giorni_pagamento", "non valido"),
+        # The hub's own checks already say it in Italian, and say why.
+        (CLIENTE_REST, {"impegno": "   "}, "lettera.impegno", "serve un valore, non solo spazi"),
+        (
+            CLIENTE_REST,
+            {"data_fine": "2026-09-01"},
+            "lettera.data_fine",
+            "la fine prevista viene prima dell'inizio",
+        ),
         (
             CLIENTE_REST,
             {"giorni_pagamento": 45, "fine_mese": True},
@@ -1472,7 +1501,7 @@ def test_the_proposal_refuses_an_unknown_key_by_name(
         ),
     ],
 )
-def test_the_proposal_refuses_a_required_field_left_empty_by_name(
+def test_the_proposal_refuses_a_field_left_empty_or_invalid_by_name(
     clean: Session,
     cliente: dict[str, object] | None,
     lettera: dict[str, object] | None,

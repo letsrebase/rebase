@@ -65,7 +65,7 @@ sentences, from a new check endpoint (section 3), for example:
 
 > Ada Lovelace lavorerà per Azienda Prova S.r.l. come Backend developer, da remoto,
 > dal 1 ottobre 2026, per 3 mesi.
-> Compenso: 450 € a giornata, IVA esclusa, pagato a 30 giorni fine mese.
+> Compenso: 450,00 € a giornata, IVA esclusa, pagato a 30 giorni fine mese.
 > Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua firma.
 
 Then two links, «Apri la lettera (PDF)» and, when one is written, «Apri il contratto

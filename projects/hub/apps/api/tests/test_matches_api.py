@@ -596,7 +596,7 @@ def test_the_check_says_what_saving_would_do_and_writes_nothing(
     assert checked.json() == {
         "riepilogo": [
             "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, dal 1° ottobre 2026.",
-            "Compenso: 450 €, IVA esclusa, pagato a 30 giorni fine mese.",
+            "Compenso: 450,00 €, IVA esclusa, pagato a 30 giorni fine mese.",
         ],
         "cosa_succede": (
             "Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua "

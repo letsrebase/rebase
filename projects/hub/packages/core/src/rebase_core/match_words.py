@@ -13,10 +13,9 @@ back before anything is saved.
 
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
 from typing import TYPE_CHECKING, Literal
 
-from rebase_core.contracts.fields import italian, italian_date
+from rebase_core.contracts.fields import FEE, italian_date, rendered
 
 if TYPE_CHECKING:
     from rebase_core.contract_schemas import LetteraFields
@@ -33,6 +32,7 @@ Words = tuple[str, Action | None, list[Action]]
 QUADRO = "quadro"
 # How every refusal `SigningService` stores begins, with or without the freelancer's words.
 REFUSED = "Rifiutato"
+SENTENCE_ENDS = (".", "!", "?", "…")
 
 MATCH_STATE_LABELS = {
     "bozza": "Da inviare",
@@ -89,10 +89,10 @@ def _on(day: date | None) -> str:
 
 def _sentence(reason: str | None) -> str:
     """A stored `cancel_reason` is already a sentence («Annullato da rebase.», «Rifiutato
-    dal freelance: …»), shown as it is with exactly one full stop; a freelancer's own
-    words may end with theirs, or with none."""
-    text = (reason or "").strip().rstrip(".")
-    return f"{text}." if text else ""
+    dal freelance: …»), shown as it is: a freelancer's own words may end with their own
+    full stop, question or exclamation mark, or with none, which gets a full stop."""
+    text = (reason or "").strip()
+    return text if not text or text.endswith(SENTENCE_ENDS) else f"{text}."
 
 
 def _refusal(letter: DocumentFacts) -> str:
@@ -105,13 +105,6 @@ def _refusal(letter: DocumentFacts) -> str:
 def _flat(text: str) -> str:
     """A paragraph the letter may print on several lines, on one line."""
     return " ".join(text.split())
-
-
-def _euro(amount: Decimal) -> str:
-    """`450` as `450`, `12000.5` as `12.000,50`: the letter's own Italian number, with
-    no decimals when the amount is whole."""
-    whole = amount == amount.to_integral_value()
-    return italian(amount, 0 if whole else 2)
 
 
 def document_words(document: DocumentFacts) -> Words:
@@ -183,9 +176,9 @@ def match_words(
     """`framework_stato` is where the freelancer's framework agreement stands
     (`framework.framework_states`): `firmato` for an active one, else the pending one's
     `inviato` or `generato`, `None` when there is none. A waiting letter leaves by itself
-    after one out for signature; with an active one (its release missed) or with none
-    out (none written, one generated and never sent, one cancelled or refused) it needs
-    «Invia per la firma»."""
+    after one out for signature; otherwise «Invia per la firma» sends it (an active one,
+    its release missed), sends the framework agreement first (one generated and never
+    sent) or writes a new one (none, or one cancelled or refused)."""
     numero = letter.numero
     if stato == "bozza":
         return (
@@ -206,6 +199,13 @@ def match_words(
                 f"La lettera n. {numero} aspetta la firma del contratto quadro e parte da sola "
                 "dopo.",
                 None,
+                ["annulla"],
+            )
+        if framework_stato == "generato":
+            return (
+                f"La lettera n. {numero} parte dopo il contratto quadro: «Invia per la firma» lo "
+                "manda al freelance.",
+                "invia",
                 ["annulla"],
             )
         return (
@@ -271,9 +271,10 @@ def check_sentences(
     unit = lettera.unita or lettera.modalita
     per = f" {_flat(unit)}" if unit else ""
     month_end = " fine mese" if lettera.fine_mese else ""
+    # The fee exactly as the letter prints it, «450,00 €», so step 3 and the PDF agree.
+    fee = rendered(FEE, lettera.to_fields()[FEE])
     riepilogo.append(
-        f"Compenso: {_euro(lettera.compenso)} €{per}, IVA esclusa, pagato a "
-        f"{lettera.giorni_pagamento} giorni{month_end}."
+        f"Compenso: {fee}{per}, IVA esclusa, pagato a {lettera.giorni_pagamento} giorni{month_end}."
     )
     if dati_fiscali_mancanti:
         riepilogo.append(MISSING_TAX_DATA)

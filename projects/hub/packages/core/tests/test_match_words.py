@@ -50,6 +50,21 @@ STORED_REASONS = [
         "Rifiutato dal freelance: il periodo non va.",
         True,
     ),
+    (
+        _cancel_reason(Outcome("envelope", REJECTED, reason="perché così poco?")),
+        "Rifiutato dal freelance: perché così poco?",
+        True,
+    ),
+    (
+        _cancel_reason(Outcome("envelope", REJECTED, reason="no grazie!")),
+        "Rifiutato dal freelance: no grazie!",
+        True,
+    ),
+    (
+        _cancel_reason(Outcome("envelope", REJECTED, reason="ci devo pensare…")),
+        "Rifiutato dal freelance: ci devo pensare…",
+        True,
+    ),
 ]
 
 
@@ -247,13 +262,28 @@ def test_waiting_letter_with_an_active_framework_is_ready_to_leave() -> None:
     )
 
 
-@pytest.mark.parametrize("framework_stato", [None, "generato"])
-def test_waiting_letter_without_framework_out_is_sent_again(framework_stato: str | None) -> None:
-    """No framework agreement active or pending (a cancelled or refused one is no longer
-    pending), or one merely generated: «Invia per la firma» writes or sends it."""
+@pytest.mark.parametrize(
+    ("framework_stato", "sentence"),
+    [
+        # None active or pending: never written, or cancelled or refused since.
+        (
+            None,
+            "La lettera n. 2026-003 aspetta un contratto quadro: «Invia per la firma» ne genera "
+            "uno nuovo.",
+        ),
+        # Written for a later draft and never sent: the send takes that one.
+        (
+            "generato",
+            "La lettera n. 2026-003 parte dopo il contratto quadro: «Invia per la firma» lo manda "
+            "al freelance.",
+        ),
+    ],
+)
+def test_waiting_letter_without_framework_out_is_sent_again(
+    framework_stato: str | None, sentence: str
+) -> None:
     assert match_words("in_firma", _lettera("in_attesa"), framework_stato, START, None) == (
-        "La lettera n. 2026-003 aspetta un contratto quadro: «Invia per la firma» ne genera "
-        "uno nuovo.",
+        sentence,
         "invia",
         ["annulla"],
     )
@@ -326,6 +356,29 @@ def test_a_match_in_signature_whose_letter_was_refused_can_still_be_cancelled(
     assert words == (f"Lettera n. 2026-003 annullata.{because}", None, ["annulla"])
 
 
+@pytest.mark.parametrize(
+    "letter",
+    [_lettera("generato"), _lettera("firmato", signed_on=SIGNED, ha_pdf_firmato=True)],
+)
+def test_a_match_in_signature_with_a_letter_no_row_names_still_reads_and_cancels(
+    letter: DocumentFacts,
+) -> None:
+    """Neither combination is written by the hub today; the page must still read."""
+    assert match_words("in_firma", letter, None, START, None) == (
+        "In attesa di firma: lettera n. 2026-003.",
+        None,
+        ["annulla"],
+    )
+
+
+def test_a_match_state_the_words_do_not_know_reads_as_itself() -> None:
+    assert match_words("sospeso", _lettera("generato"), None, START, None) == (
+        "sospeso: lettera n. 2026-003.",
+        None,
+        [],
+    )
+
+
 # ---- the check before saving ----------------------------------------------------------
 
 
@@ -356,7 +409,7 @@ def test_the_check_of_a_day_rate_names_the_person_the_client_the_period_and_the_
         "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, da remoto, dal 1° "
         "ottobre 2026 al 31 dicembre 2026.",
         "Impegno: 3 mesi.",
-        "Compenso: 450 € a giornata, IVA esclusa, pagato a 30 giorni fine mese.",
+        "Compenso: 450,00 € a giornata, IVA esclusa, pagato a 30 giorni fine mese.",
     ]
     assert cosa_succede == (
         "Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua firma."
@@ -392,7 +445,9 @@ def test_the_check_with_an_active_framework_sends_the_letter_at_once() -> None:
     riepilogo, cosa_succede = check_sentences(
         "Ada Lovelace", "ACME S.r.l.", _letter(), "attivo", dati_fiscali_mancanti=False
     )
-    assert riepilogo[-1] == "Compenso: 450 € a giornata, IVA esclusa, pagato a 30 giorni fine mese."
+    assert (
+        riepilogo[-1] == "Compenso: 450,00 € a giornata, IVA esclusa, pagato a 30 giorni fine mese."
+    )
     assert cosa_succede == "Il contratto quadro è già attivo: parte subito la lettera di incarico."
 
 

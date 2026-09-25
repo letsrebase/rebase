@@ -21,9 +21,12 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping
 from datetime import date
+from typing import get_args
 from uuid import UUID
 
 from pydantic import ValidationError as PydanticValidationError
+from pydantic_core import ErrorDetails
+from pydantic_core.core_schema import ErrorType
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
@@ -56,13 +59,21 @@ from rebase_core.framework import (
     active_framework,
     document_facts,
     document_read,
+    framework_state,
     framework_states,
     next_letter_number,
     pending_framework,
     rome_today,
     signed_on,
 )
-from rebase_core.match_words import MATCH_STATE_LABELS, FrameworkStep, check_sentences, match_words
+from rebase_core.match_words import (
+    MATCH_STATE_LABELS,
+    DocumentFacts,
+    FrameworkStep,
+    Words,
+    check_sentences,
+    match_words,
+)
 from rebase_core.models import (
     MATCH_STATES,
     Company,
@@ -82,6 +93,9 @@ PEC_MISSING = "non indicata"
 DAY_RATE = "a giornata"
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
+# Pydantic's own error types, whose messages are English; any other type is one the hub
+# raised itself (`PydanticCustomError`), with an Italian message.
+PYDANTIC_ERRORS = frozenset(get_args(ErrorType))
 
 
 def require_live_freelancer(
@@ -121,6 +135,31 @@ def _printed(letter: ContractDocument, key: str) -> str | None:
     """A letter's field as it printed it (`data-inizio` is already `1° ottobre 2026`)."""
     value = letter.data.get(key)
     return value if isinstance(value, str) else None
+
+
+def _match_words(
+    match: Match, letter: ContractDocument, facts: DocumentFacts, framework_stato: str | None
+) -> Words:
+    """`match_words` for a match and its letter, the one call `MatchRead` and the «Match»
+    list's rows both make."""
+    return match_words(
+        match.stato,
+        facts,
+        framework_stato,
+        _printed(letter, "data-inizio"),
+        _printed(letter, "data-fine"),
+    )
+
+
+def _reason(error: ErrorDetails) -> str:
+    """What an admin reads for one of `MatchCreate`'s errors: «manca» for an empty field;
+    the hub's own sentence when one of its validators refused the value, already
+    Italian; «non valido» for Pydantic's own checks, whose words are English."""
+    if error["type"] == "missing" or error["input"] is None:
+        return "manca"
+    if error["type"] == "value_error":
+        return str(error.get("ctx", {}).get("error", "non valido"))
+    return error["msg"] if error["type"] not in PYDANTIC_ERRORS else "non valido"
 
 
 def _request_fingerprint(data: MatchCreate) -> str:
@@ -268,10 +307,14 @@ class MatchService:
     def for_freelancer(self, freelancer_id: UUID) -> FreelancerContracts:
         self._freelancer(freelancer_id)
         today, current = self.today(), text_version(DOCUMENT_BY_KIND[QUADRO])
-        frameworks = self.session.scalars(
-            select(ContractDocument)
-            .where(ContractDocument.kind == QUADRO, ContractDocument.freelancer_id == freelancer_id)
-            .order_by(ContractDocument.created_at.desc(), ContractDocument.id.desc())
+        frameworks = list(
+            self.session.scalars(
+                select(ContractDocument)
+                .where(
+                    ContractDocument.kind == QUADRO, ContractDocument.freelancer_id == freelancer_id
+                )
+                .order_by(ContractDocument.created_at.desc(), ContractDocument.id.desc())
+            )
         )
         quadri = [document_read(document, today, current) for document in frameworks]
         # The active one when there is one (unchanged); else the newest framework that
@@ -281,7 +324,7 @@ class MatchService:
         shown = next((q for q in quadri if q.attivo), None) or next(
             (q for q in quadri if q.stato != "annullato" or q.sent_at is not None), None
         )
-        framework = framework_states(self.session, {freelancer_id}).get(freelancer_id)
+        framework = framework_state(frameworks)
         rows = self.session.execute(
             select(Match, Company)
             .join(Company, Company.id == Match.company_id)
@@ -373,7 +416,8 @@ class MatchService:
         `lettera` laid over what the hub suggests (a `None` given blanks a suggestion):
         what an MCP tool saves when the admin asked for a match in a sentence. A key
         that is not a field of the letter or of the client, and a required field still
-        empty once laid over, are a `ValidationFailed` naming it (`lettera.compenso`)."""
+        empty once laid over, are a `ValidationFailed` naming it (`lettera.compenso`), in
+        Italian (`_reason`)."""
         prefill = self.prefill(freelancer_id, company_id)
         body: dict[str, object] = {"id": match_id, "company_id": company_id}
         for part, suggested, given, known in (
@@ -389,8 +433,7 @@ class MatchService:
         except PydanticValidationError as exc:
             error = exc.errors()[0]
             field = ".".join(str(part) for part in error["loc"])
-            empty = error["type"] == "missing" or error["input"] is None
-            raise ValidationFailed(ENTITY, field, "manca" if empty else error["msg"]) from exc
+            raise ValidationFailed(ENTITY, field, _reason(error)) from exc
 
     def document_pdf(self, document_id: UUID, *, signed: bool = False) -> ContractPdf:
         document = self.session.get(ContractDocument, document_id)
@@ -792,12 +835,9 @@ class MatchService:
         (`framework_states`): whether a waiting letter leaves by itself or needs «Invia
         per la firma»."""
         today = self.today()
-        situazione, prossima_azione, altre_azioni = match_words(
-            match.stato,
-            document_facts(letter, today),
-            framework_stato,
-            _printed(letter, "data-inizio"),
-            _printed(letter, "data-fine"),
+        facts = document_facts(letter, today)
+        situazione, prossima_azione, altre_azioni = _match_words(
+            match, letter, facts, framework_stato
         )
         return MatchRead(
             id=match.id,
@@ -813,7 +853,7 @@ class MatchService:
             created_by=match.created_by,
             cancelled_at=match.cancelled_at,
             updated_at=match.updated_at,
-            lettera=document_read(letter, today, text_version(DOCUMENT_BY_KIND[QUADRO])),
+            lettera=document_read(letter, today, text_version(DOCUMENT_BY_KIND[QUADRO]), facts),
             situazione=situazione,
             prossima_azione=prossima_azione,
             altre_azioni=altre_azioni,
@@ -830,13 +870,7 @@ class MatchService:
         today: date,
     ) -> MatchListItem:
         situazione = (
-            match_words(
-                match.stato,
-                document_facts(letter, today),
-                framework_stato,
-                _printed(letter, "data-inizio"),
-                _printed(letter, "data-fine"),
-            )[0]
+            _match_words(match, letter, document_facts(letter, today), framework_stato)[0]
             if letter is not None
             else f"{MATCH_STATE_LABELS.get(match.stato, match.stato)}."
         )

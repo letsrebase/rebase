@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -114,29 +114,48 @@ def pending_framework(session: Session, freelancer_id: UUID) -> ContractDocument
 _FRAMEWORK_RANK = {"firmato": 0, "inviato": 1, "generato": 2}
 
 
-def framework_states(session: Session, freelancer_ids: Iterable[UUID]) -> dict[UUID, str]:
-    """Where each freelancer's framework agreement stands, in one query for all of them,
-    so the «Match» list reads one statement for its page rather than one per row:
+def _standing(documents: Iterable[tuple[str, datetime | None]]) -> str | None:
+    """The best-ranked of `(stato, notice_at)`: a signed one counts only while active
+    (no notice recorded, as `is_active` reads it); a cancelled one, or one given notice,
+    not at all."""
+    counted = [
+        stato
+        for stato, notice_at in documents
+        if stato in _FRAMEWORK_RANK and (stato != "firmato" or notice_at is None)
+    ]
+    return min(counted, key=_FRAMEWORK_RANK.__getitem__, default=None)
+
+
+def framework_state(frameworks: Iterable[ContractDocument]) -> str | None:
+    """Where one freelancer's framework agreement stands, from the rows already read:
     `firmato` for an active one (`active_framework`), else `pending_framework`'s state,
-    `inviato` or `generato`. A freelancer with none of these is absent."""
+    `inviato` or `generato`, else `None`."""
+    return _standing((document.stato, document.notice_at) for document in frameworks)
+
+
+def framework_states(session: Session, freelancer_ids: Iterable[UUID]) -> dict[UUID, str]:
+    """`framework_state` for many freelancers in one query, so the «Match» list reads one
+    statement for its page rather than one per row. A freelancer with none that counts
+    is absent."""
     ids = set(freelancer_ids)
     if not ids:
         return {}
-    states: dict[UUID, str] = {}
-    for freelancer_id, stato in session.execute(
-        select(ContractDocument.freelancer_id, ContractDocument.stato).where(
+    documents: dict[UUID, list[tuple[str, datetime | None]]] = {}
+    for freelancer_id, stato, notice_at in session.execute(
+        select(
+            ContractDocument.freelancer_id, ContractDocument.stato, ContractDocument.notice_at
+        ).where(
             ContractDocument.kind == QUADRO,
             ContractDocument.freelancer_id.in_(ids),
-            or_(
-                ContractDocument.stato.in_(("generato", "inviato")),
-                and_(ContractDocument.stato == "firmato", ContractDocument.notice_at.is_(None)),
-            ),
+            ContractDocument.stato.in_(tuple(_FRAMEWORK_RANK)),
         )
     ):
-        held = states.get(freelancer_id)
-        if held is None or _FRAMEWORK_RANK[stato] < _FRAMEWORK_RANK[held]:
-            states[freelancer_id] = stato
-    return states
+        documents.setdefault(freelancer_id, []).append((stato, notice_at))
+    return {
+        freelancer_id: standing
+        for freelancer_id, pairs in documents.items()
+        if (standing := _standing(pairs)) is not None
+    }
 
 
 def next_letter_number(session: Session, year: int) -> str:
@@ -174,9 +193,14 @@ def document_facts(document: ContractDocument, today: date) -> DocumentFacts:
 
 
 def document_read(
-    document: ContractDocument, today: date, current_version: str
+    document: ContractDocument,
+    today: date,
+    current_version: str,
+    facts: DocumentFacts | None = None,
 ) -> ContractDocumentRead:
-    facts = document_facts(document, today)
+    """`facts`, when the caller already built them from `document` for the same `today`,
+    are not built again."""
+    facts = facts or document_facts(document, today)
     situazione, prossima_azione, altre_azioni = document_words(facts)
     return ContractDocumentRead(
         id=document.id,
