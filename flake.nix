@@ -64,7 +64,7 @@
           pythonVersion = readPin ./.python-version "([0-9]+\\.[0-9]+)[[:space:]]*";
           python = pkgs."python${lib.replaceStrings [ "." ] [ "" ] pythonVersion}";
 
-          # `engines.node` is ">=22.12"; the attribute is `nodejs_22`.
+          # `engines.node` is ">=22.13"; the attribute is `nodejs_22`.
           nodeMajor = lib.head (
             builtins.match ">=([0-9]+)(\\.[0-9]+)*" (builtins.fromJSON (builtins.readFile ./package.json)).engines.node
           );
