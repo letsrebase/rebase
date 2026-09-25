@@ -264,6 +264,7 @@ signed on Documenso"); this section is the container's own.
   nobody else got in before closing the window: `docker exec rebase-documenso-db-1 psql
   -U documenso -d documenso -tAc 'SELECT email FROM "User"'` must list exactly the two
   `@letsrebase.com` addresses above.
-- **What still stops a real signature**: the `rebase-*` fields of `REBASE_SIGNER_JSON`,
-  which wait for the SRL (roadmap #284). Until they are there «Invia per la firma»
-  refuses with a sentence.
+- **Who signs for rebase**: the `rebase-*` fields of `REBASE_SIGNER_JSON`, in the host's
+  `.env`, never in the repository. With both texts `status: final`, production signs
+  with whoever's data is there, which until the SRL exists (roadmap #284) is a person's,
+  not the company's yet.

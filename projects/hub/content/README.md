@@ -52,7 +52,7 @@ freelancer, starting from the day rate they ask for (article 5); what rebase agr
 the client is a separate contract (roadmap #286) and appears in neither document.
 
 Each file opens with a front matter (`title`, `subtitle`, `version`, `date`, `status`).
-The version is what the member area will record against a signature (REB-339), so a
+The version is what the member area will record against a signature (REB-454), so a
 change to the text after the first signature is a new version, not an edit.
 
 Two markers, both handled by `rebase_core.contracts.fields` (`../tools/build_contract_pdf.py` is the laptop's thin wrapper over it):
@@ -120,7 +120,7 @@ Still open, before the first real signature (spec § 11):
 - **The separate written approval**: a click in the member area is a simple electronic
   signature. It records consent, but a court may not accept it as the separate written
   approval that articles 1341 and 1342 of the civil code ask for the onerous clauses.
-  REB-339 should ask for that approval as its own step, and an advanced signature (a
+  REB-454 should ask for that approval as its own step, and an advanced signature (a
   one-time code) for the framework agreement is worth weighing.
 - **Autonomy, as the text and in practice** (4.2): the freelancer works alone and in
   person for a client who coordinates the work, which is the pattern article 2 of
