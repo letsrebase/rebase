@@ -12,13 +12,13 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
     draft,
     person,
 )
-from sqlalchemy import Engine
+from sqlalchemy import Engine, update
 from sqlalchemy.orm import Session
 
-from rebase_core.campaigns.schemas import ScheduleRequest
+from rebase_core.campaigns.schemas import ScheduleRequest, TalentiFiltri
 from rebase_core.campaigns.sender import RecordingCampaignSender, SendOutcome
 from rebase_core.campaigns.service import CampaignService
-from rebase_core.campaigns.tick import MAX_ATTEMPTS, _claim, run_tick
+from rebase_core.campaigns.tick import MAX_ATTEMPTS, ROW_PREPARE_ERROR, _claim, run_tick
 from rebase_core.db import session_factory
 from rebase_core.models import Campaign, CampaignOptout, CampaignRecipient, Freelancer, User
 
@@ -31,6 +31,24 @@ def scheduled(session: Session, clock: Clock, *emails: str) -> Campaign:
     for email in emails:
         person(session, email, cv=False)
     created = service.create(who.id, draft())
+    clock.at += timedelta(minutes=1)
+    service.send_test(created.id, as_admin(who), RecordingCampaignSender())
+    service.schedule(created.id, ScheduleRequest())
+    return session.get(Campaign, created.id)  # type: ignore[return-value]
+
+
+def scheduled_filtri(session: Session, clock: Clock, *emails: str) -> Campaign:
+    service = CampaignService(session, SETTINGS, clock=clock)
+    who = admin(session)
+    for email in emails:
+        # A card *with* a CV: a filtri campaign (no completeness filter) reaches it
+        # regardless, but it must not also match a `manca_cv` stato campaign scheduled
+        # afterwards in the same test — the two would otherwise double-book the address.
+        person(session, email)
+    created = service.create(
+        who.id,
+        draft(fonte="filtri", stato_percorso=None, filtri=TalentiFiltri(lista="talenti")),
+    )
     clock.at += timedelta(minutes=1)
     service.send_test(created.id, as_admin(who), RecordingCampaignSender())
     service.schedule(created.id, ScheduleRequest())
@@ -208,3 +226,63 @@ def test_a_campaign_cancelled_between_two_rows_ends_annullata_not_inviata(
     assert len(inviata) == 1
     assert [(r.stato, r.motivo) for r in saltata] == [("saltata", "campagna annullata")]
     assert len(recording.sent) == 1
+
+
+def test_a_row_whose_checks_raise_is_marked_fallita_the_rest_still_sends(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """Controller ruling R14. `render` itself only fails on a campaign-wide setting (a
+    `pigro` button, refused for every row alike), so it can't isolate to a single row;
+    `done_at` can, and is named right alongside `render` in the finding: it indexes
+    `recipient.prima["t"]` unconditionally, and a broken snapshot on just one row (data
+    this pass didn't choose, not a loop bug) must not be able to fail every row after
+    it. One row's `prima` is wiped straight in the table, bypassing `schedule()`'s own
+    snapshot; the other row's is untouched."""
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "broken@studio.it", "ok@studio.it")
+    clean.execute(
+        update(CampaignRecipient)
+        .where(
+            CampaignRecipient.campaign_id == campaign.id,
+            CampaignRecipient.email == "broken@studio.it",
+        )
+        .values(prima={})
+    )
+    clean.commit()
+    recording = RecordingCampaignSender()
+    result = run_tick(clean, recording, SETTINGS, clock=clock, pause=NO_PAUSE)
+    sent = rows(clean, campaign)
+    assert (sent["broken@studio.it"].stato, sent["broken@studio.it"].motivo) == (
+        "fallita",
+        ROW_PREPARE_ERROR,
+    )
+    assert sent["ok@studio.it"].stato == "inviata"
+    assert (result.fallite, result.inviate) == (1, 1)
+    assert [m.mail.to for m in recording.sent] == ["ok@studio.it"]
+    clean.refresh(campaign)
+    assert campaign.stato == "inviata"
+
+
+def test_a_campaign_whose_candidates_raises_does_not_stop_a_second_due_campaign(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """Controller ruling R14: corrupt stored `filtri` (data this pass didn't choose)
+    makes `candidates()` raise while this campaign's own membership set is rebuilt for
+    the send, before any row is touched. The tick rolls that one campaign's work back
+    and leaves it `in_invio` for a later pass, without stopping the second due campaign
+    in the same pass."""
+    clock = Clock(NOW)
+    broken = scheduled_filtri(clean, clock, "a@studio.it")
+    clean.execute(update(Campaign).where(Campaign.id == broken.id).values(filtri={"lista": "boom"}))
+    clean.commit()
+    healthy = scheduled(clean, clock, "b@studio.it")
+
+    recording = RecordingCampaignSender()
+    run_tick(clean, recording, SETTINGS, clock=clock, pause=NO_PAUSE)
+
+    assert [m.mail.to for m in recording.sent] == ["b@studio.it"]
+    clean.refresh(broken)
+    assert broken.stato == "in_invio"
+    assert rows(clean, broken)["a@studio.it"].stato == "in_coda"
+    clean.refresh(healthy)
+    assert healthy.stato == "inviata"

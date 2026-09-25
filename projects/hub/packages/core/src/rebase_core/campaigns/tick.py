@@ -22,8 +22,21 @@ next statement may check out a different one. Taking and releasing the lock thro
 unlocking on another, leaking the lock onto whichever connection went back to the
 pool still holding it. So the lock lives on its own `Connection`, checked out once
 from the same engine `session` is bound to and held for the whole pass, independent of
-whatever `session` does with its own connections."""
+whatever `session` does with its own connections.
 
+Controller ruling R14: nothing else isolates an exception per campaign or per row, so
+one bad row or one bad campaign must not be able to wedge every campaign after it,
+forever. Two backstops, both narrow on purpose — they catch what preparing a mail can
+raise on data this pass didn't choose (a `pigro` button phase 1 refuses, a recipient's
+own broken `prima` snapshot, corrupt stored `filtri`), not bugs in the loop itself:
+a row whose checks or `render` raise is marked `fallita` with a short, address-free
+reason and the row loop moves on; a campaign whose own work raises outside a row (e.g.
+`candidates`/`exclusions`) rolls that campaign's work back, is logged by id and
+exception type only, and is left `in_invio` for a later pass while the loop moves on
+to the next due campaign. The advisory lock is released in every case regardless,
+since it is taken and released around the whole pass, outside both of these."""
+
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -43,6 +56,9 @@ from rebase_core.models import Campaign, CampaignRecipient
 MAX_ATTEMPTS = 3
 SEND_INTERVAL_SECONDS = 0.5  # Resend's default limit is two requests a second
 TICK_LOCK_KEY = 0x72656261  # "reba"
+ROW_PREPARE_ERROR = "errore nel preparare la mail"
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -84,7 +100,11 @@ def run_tick(
                 if campaign is None:
                     continue
                 result.campagne += 1
-                _send(session, campaign, sender, settings, clock, pause, result)
+                try:
+                    _send(session, campaign, sender, settings, clock, pause, result)
+                except Exception as exc:  # one bad campaign must not wedge the rest (R14)
+                    session.rollback()
+                    _log.error("campaign %s failed this tick: %s", campaign_id, type(exc).__name__)
         finally:
             lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": TICK_LOCK_KEY})
             lock_conn.commit()
@@ -166,24 +186,33 @@ def _send(
         ).first()
         if row is None:
             break
-        reason = excluded.get(row.email)
-        if reason is None and done_at(session, row, campaign.azione) is not None:
-            reason = REASON_DONE
-        if reason is None and members is not None and row.email not in members:
-            reason = REASON_NOT_LISTED
-        if reason is not None:
-            row.stato, row.motivo = "saltata", reason
-            result.saltate += 1
+        try:
+            reason = excluded.get(row.email)
+            if reason is None and done_at(session, row, campaign.azione) is not None:
+                reason = REASON_DONE
+            if reason is None and members is not None and row.email not in members:
+                reason = REASON_NOT_LISTED
+            if reason is not None:
+                row.stato, row.motivo = "saltata", reason
+                result.saltate += 1
+                session.commit()
+                continue
+            target = RenderTarget(
+                email=row.email,
+                nome=row.nome,
+                codice=row.codice,
+                token=row.disiscrizione_token,
+                recipient_id=str(row.id),
+            )
+            rendered = render(campaign, target, settings)
+        except Exception:  # one bad row must not stop the rest of the send (R14)
+            # Data this pass didn't choose (a `pigro` button phase 1 refuses, a
+            # recipient's own broken `prima` snapshot): never the address, never a key.
+            row.stato, row.motivo = "fallita", ROW_PREPARE_ERROR
+            result.fallite += 1
             session.commit()
             continue
-        target = RenderTarget(
-            email=row.email,
-            nome=row.nome,
-            codice=row.codice,
-            token=row.disiscrizione_token,
-            recipient_id=str(row.id),
-        )
-        outcome = sender.send(render(campaign, target, settings), idempotency_key=str(row.id))
+        outcome = sender.send(rendered, idempotency_key=str(row.id))
         if outcome.esito == "accettata":
             row.stato, row.resend_id, row.inviata_at = "inviata", outcome.resend_id, clock()
             result.inviate += 1
