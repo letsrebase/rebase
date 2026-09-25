@@ -8,7 +8,6 @@ import pytest
 from fakes_contracts import FailingRenderer, FakeRenderer
 from fastapi.testclient import TestClient
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_renderer
@@ -243,7 +242,7 @@ def test_the_same_id_used_by_another_freelancers_match_is_a_409(
     assert client.get(f"/api/hub/freelancers/{other_freelancer_id}/matches").json()["matches"] == []
 
 
-def test_a_flush_time_id_collision_is_a_409_not_a_500(
+def test_a_real_id_collision_at_the_flush_is_a_409_not_a_500(
     client: TestClient,
     admin: None,
     sender: RecordingSender,
@@ -253,27 +252,43 @@ def test_a_flush_time_id_collision_is_a_409_not_a_500(
     """REB-433: two different freelancers can race past the id check -- each reads
     "nothing written under this id yet" before the other commits (the real race, under
     Postgres, is `test_matches.py`'s own two-session gate test) -- and only the insert
-    itself, protected by the id's primary key, catches the second one. Forged here by
-    making that one flush fail the way the database's own unique index would, so the
-    route is proven to answer 409, not an unhandled 500, with no second transaction
-    needed to reproduce it."""
+    itself, protected by the id's primary key, catches the second one. This drives a
+    real collision rather than forging the exception: a first freelancer's match is
+    actually committed under `given_id`, the ordinary id check is made to miss that row
+    once (standing in for the race window: it read "nothing written yet" a moment
+    before the first committed), and the second freelancer's own `INSERT` then hits the
+    real `matches_pkey` constraint. The route must still answer 409, not an unhandled
+    500."""
     freelancer_id, company_id = _ready(client, sender)
     given_id = "01234567-89ab-7cde-8123-456789abcdef"
-    real_flush = Session.flush
+    committed = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    )
+    assert committed.status_code == 201, committed.text
 
-    def flush_as_the_unique_index_would(self: Session, *args: object, **kwargs: object) -> None:
-        if any(isinstance(obj, Match) and str(obj.id) == given_id for obj in self.new):
-            raise IntegrityError(
-                "INSERT INTO matches (id, ...)",
-                {},
-                Exception('duplicate key value violates unique constraint "matches_pkey"'),
-            )
-        real_flush(self, *args, **kwargs)
+    _apply_member(client, "grace@studio.it")
+    other_freelancer_id = str(client.get("/api/hub/freelancers").json()["items"][0]["id"])
+    assert (
+        client.put(f"/api/hub/freelancers/{other_freelancer_id}/fiscal", json=FISCAL).status_code
+        == 200
+    )
+    real_get = Session.get
+    missed = False
 
-    monkeypatch.setattr(Session, "flush", flush_as_the_unique_index_would)
+    def get_missing_the_committed_match(
+        self: Session, entity: type, ident: object, **kwargs: object
+    ) -> object:
+        nonlocal missed
+        if not missed and entity is Match and str(ident) == given_id:
+            missed = True
+            return None
+        return real_get(self, entity, ident, **kwargs)
+
+    monkeypatch.setattr(Session, "get", get_missing_the_committed_match)
 
     refused = client.post(
-        f"/api/hub/freelancers/{freelancer_id}/matches",
+        f"/api/hub/freelancers/{other_freelancer_id}/matches",
         json={"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
     )
 

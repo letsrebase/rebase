@@ -13,6 +13,7 @@ import pytest
 from fakes_contracts import FailingRenderer, FakeRenderer
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import Engine, func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from rebase_core import matches as matches_module
@@ -413,10 +414,55 @@ def test_two_freelancers_racing_the_same_match_id_get_a_409_not_a_500(
     assert len(second_errors) == 1
     assert isinstance(second_errors[0], InvalidState)
     assert "un altro freelance" in second_errors[0].message
+    # The second session's own id check never ran into the row at all (it read "nothing
+    # written yet" too): this 409 came from the primary key's own IntegrityError, caught
+    # at the flush, not from the ordinary cross-freelancer check above it.
+    assert isinstance(second_errors[0].__cause__, IntegrityError)
     clean.expire_all()
     written = clean.get(Match, given_id)
     assert written is not None and written.freelancer_id == freelancer_id
     assert len(_documents(clean, other_freelancer_id, "lettera")) == 0
+
+
+class _FakeDiag:
+    def __init__(self, constraint_name: str) -> None:
+        self.constraint_name = constraint_name
+
+
+class _FakeOrig(Exception):
+    """Stands in for the DBAPI exception `IntegrityError.orig` carries, with a
+    `.diag.constraint_name` of a constraint that is not the match's own primary key."""
+
+    def __init__(self, constraint_name: str) -> None:
+        super().__init__("una violazione diversa")
+        self.diag = _FakeDiag(constraint_name)
+
+
+def test_a_different_integrity_error_at_the_same_flush_still_propagates(
+    monkeypatch: pytest.MonkeyPatch, clean: Session
+) -> None:
+    """REB-433: `create`'s catch is narrow on purpose -- only the match's own primary
+    key (`matches_pkey`) is the freelancer race it exists for. An integrity error at
+    the same flush over a different constraint (a foreign key gone missing
+    mid-transaction, say) is not that race and must not be swallowed into "un altro
+    freelance": it propagates unconverted, the admin's own failure to look into."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    real_flush = Session.flush
+
+    def flush_raising_a_different_constraint(
+        self: Session, *args: object, **kwargs: object
+    ) -> None:
+        if any(isinstance(obj, Match) for obj in self.new):
+            raise IntegrityError(
+                "INSERT INTO matches (id, ...)", {}, _FakeOrig("matches_company_id_fkey")
+            )
+        real_flush(self, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "flush", flush_raising_a_different_constraint)
+
+    with pytest.raises(IntegrityError):
+        service.create(freelancer_id, _body(company_id), admin_id)
 
 
 def test_a_repeated_id_with_changed_data_is_refused_not_returned(clean: Session) -> None:
