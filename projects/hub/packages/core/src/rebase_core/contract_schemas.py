@@ -26,6 +26,7 @@ from pydantic import (
 from pydantic_core import InitErrorDetails, PydanticCustomError, ValidationError
 
 from rebase_core.contracts.fields import DAYS_LIMIT, DAYS_LIMIT_MONTH_END, Value, italian_date
+from rebase_core.match_words import Action
 from rebase_core.models import (
     AZIENDA_MAX_LENGTH,
     CLIENTE_PIVA_MAX_LENGTH,
@@ -302,7 +303,8 @@ class MatchCreate(BaseModel):
 
 class ContractDocumentRead(BaseModel):
     """A document as the pages and the MCP tools read it: never the PDF bytes and never
-    `data`, which carries rebase's signer and the freelancer's tax identifiers."""
+    `data`, which carries rebase's signer and the freelancer's tax identifiers.
+    `situazione`, `prossima_azione` and `altre_azioni` are `match_words`' (REB-477)."""
 
     id: UUID
     kind: str
@@ -325,6 +327,9 @@ class ContractDocumentRead(BaseModel):
     rinnovo: date | None
     ultimo_giorno_disdetta: date | None
     nuova_versione: bool
+    situazione: str
+    prossima_azione: Action | None
+    altre_azioni: list[Action]
 
 
 class MatchRead(BaseModel):
@@ -342,6 +347,9 @@ class MatchRead(BaseModel):
     cancelled_at: datetime | None
     updated_at: datetime
     lettera: ContractDocumentRead
+    situazione: str
+    prossima_azione: Action | None
+    altre_azioni: list[Action]
 
 
 class FreelancerContracts(BaseModel):
@@ -368,6 +376,18 @@ class MatchPrefill(BaseModel):
     lettera_in_attesa: bool
 
 
+class MatchCheck(BaseModel):
+    """What saving a match would do, in sentences (REB-476), with nothing written:
+    `riepilogo` is the letter in three or four sentences, `cosa_succede` which document
+    leaves first. Missing tax data are reported here, not refused: `create` refuses
+    them."""
+
+    riepilogo: list[str]
+    cosa_succede: str
+    quadro_necessario: bool
+    dati_fiscali_mancanti: bool
+
+
 class ContractPdf(BaseModel):
     """A document's bytes and the name a browser saves them under."""
 
@@ -383,7 +403,8 @@ class MatchListItem(BaseModel):
     finished sentence), not re-formatted here. The four `lettera_*` fields are `None`
     together, only were a match ever to have no letter at all -- `create` always
     writes one, so this is the list staying honest about a shape `get` does not need
-    to allow for."""
+    to allow for. `situazione` is the match's sentence, the same `MatchRead` carries
+    (REB-477)."""
 
     id: UUID
     freelancer_id: UUID
@@ -400,6 +421,7 @@ class MatchListItem(BaseModel):
     created_at: datetime
     created_by_nome: str
     created_by_email: str
+    situazione: str
 
 
 class MatchList(BaseModel):

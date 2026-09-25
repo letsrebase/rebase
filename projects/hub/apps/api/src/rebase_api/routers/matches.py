@@ -22,6 +22,7 @@ from rebase_core.contract_schemas import (
     FiscalData,
     FiscalRead,
     FreelancerContracts,
+    MatchCheck,
     MatchCreate,
     MatchList,
     MatchPrefill,
@@ -109,6 +110,17 @@ def preview_match_document(
     """Step 5's preview: one document, typeset now, saved nowhere, numbered never."""
     pdf = _writing(session, settings, renderer).preview(freelancer_id, payload, documento)
     return pdf_response(pdf.filename, pdf.content)
+
+
+@router.post("/freelancers/{freelancer_id}/matches/check", response_model=MatchCheck)
+def check_match(
+    _: AdminDep, session: SessionDep, freelancer_id: UUID, payload: MatchCreate
+) -> MatchCheck:
+    """Step 3 of «Crea match» (REB-476): what saving would do, in sentences, with nothing
+    written and no number taken. 422 naming the field as `create` does, `company_id` for
+    a closed request; missing tax data are reported (`dati_fiscali_mancanti`), not
+    refused."""
+    return MatchService(session).check(freelancer_id, payload)
 
 
 @router.post(
