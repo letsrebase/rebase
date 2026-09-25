@@ -200,7 +200,15 @@ jobs:
             # lives. The project name: compose otherwise derives it from the directory
             # name, so moving a project in the repository would silently orphan a
             # running stack and build a second one beside it.
-            $COMPOSE -p "${COMPOSE_PROJECT}" --env-file "${DEPLOY_PATH}/.env" up -d --build
+            #
+            # `build --pull` first: without it the host builds on whatever copy of
+            # each base image (the nginx, Node and Python bases) it cached the first
+            # time, and the security fixes Docker Hub rebuilds under the same tag
+            # never reach a deployed image (REB-462). If a registry does not answer,
+            # `set -e` stops here and the running containers are left as they are.
+            # `up -d` then recreates only the services whose image changed.
+            $COMPOSE -p "${COMPOSE_PROJECT}" --env-file "${DEPLOY_PATH}/.env" build --pull
+            $COMPOSE -p "${COMPOSE_PROJECT}" --env-file "${DEPLOY_PATH}/.env" up -d
           SSH
 
       - name: Check the deployed code answers
