@@ -14,11 +14,9 @@ from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, 
 from pydantic import BaseModel, ConfigDict, EmailStr
 from sqlalchemy import create_engine
 
-from pigrocrm.core.auth.magic_link import MagicLinkService
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.tokens import issue_access_token
 from pigrocrm.core.db.session import session_factory
-from pigrocrm.core.mail import welcome_mail
 from pigrocrm.core.tenants import (
     TenantAvailability,
     TenantRead,
@@ -27,6 +25,7 @@ from pigrocrm.core.tenants import (
     lookup_member,
 )
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
+from pigrocrm.core.tenants.welcome import welcome
 from pigrocrm_api.deps import SettingsDep, TenantsRegistryDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.ratelimit import (
@@ -173,11 +172,8 @@ def signup(
             if admin is None:  # pragma: no cover - provision just created it
                 raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "spazio senza admin")
             access = issue_access_token(admin.id, admin.ruolo, settings)
-            origin = settings.public_url.strip().rstrip("/")
-            raw = (
-                MagicLinkService(space, settings).request(tenant.owner_email)
-                if sender and origin
-                else None
+            mail = welcome(
+                space, settings, sender, tenant.owner_email, tenant.slug, membro=data.membro
             )
     finally:
         engine.dispose()
@@ -189,14 +185,6 @@ def signup(
         path=f"/{tenant.slug}/",
     )
     response.headers["Location"] = f"/{tenant.slug}/app/"
-    if sender is not None and origin and raw:
-        background.add_task(
-            sender.send,
-            welcome_mail(
-                tenant.owner_email,
-                f"{origin}/{tenant.slug}/app/verify?t={raw}",
-                f"{origin}/{tenant.slug}/app/login",
-                membro=data.membro,
-            ),
-        )
+    if sender is not None and mail is not None:
+        background.add_task(sender.send, mail)
     return tenant
