@@ -166,8 +166,25 @@ scrivere mai» rather than relying on the role check to cover them too. Optouts 
 campaigns-only: the magic link, the welcome mail and the contracts flow keep reaching an
 opted-out address, since none of those is a campaign.
 
-*(The Resend webhook that turns a bounce or a complaint into a row here, rather than
-waiting for someone to notice, is Task 16's.)*
+`POST /api/hub/webhooks/resend` is that webhook: Resend signs every call with Svix, and
+the route verifies the raw body against `REBASE_RESEND_WEBHOOK_SECRET` before parsing
+it as JSON, then turns `email.delivered`, `email.bounced`, `email.clicked` and
+`email.complained` into a row on `campaign_recipients`
+(`rebase_core.campaigns.webhook`). Ivan sets it up once per environment:
+
+1. In Resend, go to Webhooks, then «Add endpoint».
+   - Production: `https://letsrebase.com/api/hub/webhooks/resend`.
+   - Preview: `https://preview.letsrebase.com/api/hub/webhooks/resend`, only once the
+     preview has a Resend key.
+2. Select the events `email.delivered`, `email.bounced`, `email.clicked` and
+   `email.complained`.
+3. Copy the `whsec_…` value into that environment's `${DEPLOY_PATH}/.env` as
+   `REBASE_RESEND_WEBHOOK_SECRET`.
+4. Recreate the api container with the next deploy, or with
+   `docker compose -p rebase --env-file ... up -d api` from `projects/hub`.
+
+Resend's webhook covers every mail of the domain, magic links included. Those arrive
+untagged and are acknowledged without effect.
 
 ## Running it
 

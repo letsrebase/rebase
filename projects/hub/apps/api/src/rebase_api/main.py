@@ -16,6 +16,7 @@ from rebase_api.routers import (
     matches,
     members,
     pigro,
+    resend,
     signups,
     tokens,
 )
@@ -88,6 +89,7 @@ def create_app() -> FastAPI:
     app.include_router(members.router)
     app.include_router(campaigns.public)
     app.include_router(pigro.router)
+    app.include_router(resend.router)
     app.include_router(tokens.router)
 
     @app.get("/health")
