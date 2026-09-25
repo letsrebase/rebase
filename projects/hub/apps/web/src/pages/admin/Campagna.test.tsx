@@ -53,15 +53,34 @@ describe('the campaign page', () => {
     expect(screen.queryByRole('link', { name: 'Modifica' })).not.toBeInTheDocument()
   })
 
-  it('adds a person to «Non scrivere mai» from their row', async () => {
+  it('adds a person to «Non scrivere mai» from their row, after a second click like «Annulla»', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
       String(input).endsWith('/never-write') ? json({ ok: true }) : json(DETAIL),
     )
     mount()
     const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
     await userEvent.click(within(ada).getByRole('button', { name: 'Non scrivere mai' }))
+    expect(within(ada).getByText('Non scrivere più a questa persona?')).toBeInTheDocument()
+    await userEvent.click(within(ada).getByRole('button', { name: 'Indietro' }))
+    expect(fetch.mock.calls.some(([url]) => String(url).endsWith('/never-write'))).toBe(false)
+    await userEvent.click(within(ada).getByRole('button', { name: 'Non scrivere mai' }))
+    await userEvent.click(within(ada).getByRole('button', { name: 'Conferma' }))
     expect(await within(ada).findByText('Non riceverà più campagne')).toBeInTheDocument()
     const call = fetch.mock.calls.find(([url]) => String(url).endsWith('/never-write'))!
     expect(JSON.parse(String(call[1]!.body))).toEqual({ email: 'ada@studio.it' })
+  })
+
+  it('says when a scheduled campaign leaves, in Rome time', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(DETAIL))
+    mount()
+    expect(await screen.findByText('Parte il 26 settembre 2026 alle 09:30 (ora di Roma)')).toBeInTheDocument()
+  })
+
+  it('says when a sent campaign left, in Rome time', async () => {
+    const sent = { ...DETAIL, campagna: { ...DETAIL.campagna, stato: 'inviata', inviata_at: '2026-09-26T07:31:00Z' } }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(sent))
+    mount()
+    expect(await screen.findByText('Inviata il 26 settembre 2026 alle 09:31')).toBeInTheDocument()
+    expect(screen.queryByText(/^Parte il/)).not.toBeInTheDocument()
   })
 })

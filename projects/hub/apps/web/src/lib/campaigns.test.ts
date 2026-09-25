@@ -5,8 +5,10 @@ import {
   CAMPAIGN_STATE_LABELS,
   META_LABELS,
   RECIPIENT_STATE_LABELS,
+  campaignMoment,
   defaultSchedule,
   personalise,
+  refetchEvery,
   romeToday,
 } from './campaigns'
 
@@ -102,5 +104,46 @@ describe('labels', () => {
     expect(RECIPIENT_STATE_LABELS.inviata).toBe('Inviata')
     expect(RECIPIENT_STATE_LABELS.saltata).toBe('Saltata')
     expect(RECIPIENT_STATE_LABELS.fallita).toBe('Fallita')
+  })
+})
+
+describe('campaignMoment', () => {
+  it('says when a scheduled or sending campaign leaves, in Rome time', () => {
+    const at = { programmata_per: '2026-09-26T07:30:00Z', inviata_at: null }
+    expect(campaignMoment({ ...at, stato: 'programmata' })).toBe('Parte il 26 settembre 2026 alle 09:30 (ora di Roma)')
+    expect(campaignMoment({ ...at, stato: 'in_invio' })).toBe('Parte il 26 settembre 2026 alle 09:30 (ora di Roma)')
+  })
+
+  it('says when a sent campaign left, in Rome time, across the winter change too', () => {
+    expect(campaignMoment({ stato: 'inviata', programmata_per: '2026-09-25T07:30:00Z', inviata_at: '2026-09-25T07:32:00Z' })).toBe(
+      'Inviata il 25 settembre 2026 alle 09:32',
+    )
+    expect(campaignMoment({ stato: 'inviata', programmata_per: null, inviata_at: '2026-12-01T23:30:00Z' })).toBe(
+      'Inviata il 2 dicembre 2026 alle 00:30',
+    )
+  })
+
+  it('says nothing for a draft or a campaign cancelled before it left', () => {
+    expect(campaignMoment({ stato: 'bozza', programmata_per: null, inviata_at: null })).toBeNull()
+    expect(campaignMoment({ stato: 'annullata', programmata_per: '2026-09-26T07:30:00Z', inviata_at: null })).toBeNull()
+  })
+})
+
+describe('refetchEvery', () => {
+  const now = Date.parse('2026-09-25T08:00:00Z')
+
+  it('polls while the campaign is scheduled or sending', () => {
+    expect(refetchEvery({ stato: 'programmata', inviata_at: null }, now)).toBe(10_000)
+    expect(refetchEvery({ stato: 'in_invio', inviata_at: null }, now)).toBe(10_000)
+  })
+
+  it('keeps polling for five minutes after the send, while deliveries come in, then stops', () => {
+    expect(refetchEvery({ stato: 'inviata', inviata_at: '2026-09-25T07:56:00Z' }, now)).toBe(10_000)
+    expect(refetchEvery({ stato: 'inviata', inviata_at: '2026-09-25T07:54:59Z' }, now)).toBe(false)
+  })
+
+  it('never polls a draft or a cancelled campaign', () => {
+    expect(refetchEvery({ stato: 'bozza', inviata_at: null }, now)).toBe(false)
+    expect(refetchEvery({ stato: 'annullata', inviata_at: null }, now)).toBe(false)
   })
 })

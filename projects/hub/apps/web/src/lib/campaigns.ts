@@ -1,4 +1,4 @@
-import type { CampaignAzione, CampaignMeta, CampaignStato, RecipientStato } from './api'
+import type { Campaign, CampaignAzione, CampaignMeta, CampaignStato, RecipientStato } from './api'
 
 export const CAMPAIGN_STATE_LABELS: Record<CampaignStato, string> = {
   bozza: 'Bozza',
@@ -68,3 +68,36 @@ export function defaultSchedule(now = new Date()): { giorno: string; ora: string
 /** The server's column limits (`rebase_core/models.py`, `CAMPAIGN_*_MAX_LENGTH`), so
  *  a field stops where the API would refuse it instead of failing the save. */
 export const CAMPAIGN_MAX_LENGTH = { nome: 120, oggetto: 200, testo: 5000, bottone_testo: 60 } as const
+
+const romeDay = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'long', year: 'numeric' })
+const romeClock = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+
+/** The campaign page's line on when it leaves or left, always in Rome time -- the
+ *  time the admin scheduled it in, whatever the browser's own zone. `null` for a
+ *  draft, or a campaign cancelled before it left. */
+export function campaignMoment(campagna: Pick<Campaign, 'stato' | 'programmata_per' | 'inviata_at'>): string | null {
+  const { stato, programmata_per, inviata_at } = campagna
+  if ((stato === 'programmata' || stato === 'in_invio') && programmata_per) {
+    const at = new Date(programmata_per)
+    return `Parte il ${romeDay.format(at)} alle ${romeClock.format(at)} (ora di Roma)`
+  }
+  if (inviata_at) {
+    const at = new Date(inviata_at)
+    return `Inviata il ${romeDay.format(at)} alle ${romeClock.format(at)}`
+  }
+  return null
+}
+
+const POLL_MS = 10_000
+/** Resend's delivery and bounce events land seconds to minutes after the last mail. */
+const AFTER_SEND_MS = 5 * 60 * 1000
+
+/** How often the campaign page rereads itself: while it is scheduled or sending, and
+ *  for five minutes after it was sent, while the deliveries come in; then never. */
+export function refetchEvery(campagna: Pick<Campaign, 'stato' | 'inviata_at'>, now = Date.now()): number | false {
+  if (campagna.stato === 'programmata' || campagna.stato === 'in_invio') return POLL_MS
+  if (campagna.stato === 'inviata' && campagna.inviata_at && now - Date.parse(campagna.inviata_at) < AFTER_SEND_MS) {
+    return POLL_MS
+  }
+  return false
+}

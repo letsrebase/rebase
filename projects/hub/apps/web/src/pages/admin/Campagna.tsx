@@ -5,14 +5,53 @@ import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, ApiError, type CampaignRecipient } from '@/lib/api'
-import { CAMPAIGN_STATE_LABELS, RECIPIENT_STATE_LABELS } from '@/lib/campaigns'
+import { CAMPAIGN_STATE_LABELS, RECIPIENT_STATE_LABELS, campaignMoment, refetchEvery } from '@/lib/campaigns'
 import { formatDateTime } from '@/lib/format'
 import { Empty, Figure, Header } from './lists'
 
-/** A row's own «Non scrivere mai» (REB-473): one click, no confirmation -- the same
- *  reasoning `RecordLifecycle` already gives, since the opt-out is itself reversible
- *  only by the person writing back in. The row keeps `email` after success, so the
- *  page has something to render the fixed sentence beside. */
+/** An action behind an inline second click, in place of a browser `confirm()`: the
+ *  first click swaps the button for the question, the second one runs it. «Annulla»
+ *  and «Non scrivere mai» both use it -- neither can be undone from this page. */
+function ConfirmAction({
+  label,
+  question,
+  pendingLabel,
+  pending,
+  onConfirm,
+  variant,
+}: {
+  label: string
+  question: string
+  pendingLabel: string
+  pending: boolean
+  onConfirm: () => void
+  variant: 'destructive' | 'outline'
+}) {
+  const [asking, setAsking] = useState(false)
+  if (!asking) {
+    return (
+      <Button type="button" variant={variant} size="sm" onClick={() => setAsking(true)}>
+        {label}
+      </Button>
+    )
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-sm">{question}</span>
+      <Button type="button" variant="destructive" size="sm" disabled={pending} onClick={() => onConfirm()}>
+        {pending ? pendingLabel : 'Conferma'}
+      </Button>
+      <Button type="button" variant="outline" size="sm" onClick={() => setAsking(false)} disabled={pending}>
+        Indietro
+      </Button>
+    </div>
+  )
+}
+
+/** A row's own «Non scrivere mai» (REB-473), behind the same second click as
+ *  «Annulla»: the opt-out is undone only by the person writing back in, so a stray
+ *  click on the wrong row must not settle it. The row keeps `email` after success,
+ *  so the page has something to render the fixed sentence beside. */
 function NeverWriteCell({ email }: { email: string }) {
   const [done, setDone] = useState(false)
   const neverWrite = useMutation({
@@ -28,9 +67,14 @@ function NeverWriteCell({ email }: { email: string }) {
         : null
   return (
     <div className="space-y-1">
-      <Button type="button" variant="outline" size="sm" onClick={() => neverWrite.mutate()} disabled={neverWrite.isPending}>
-        {neverWrite.isPending ? 'Registro…' : 'Non scrivere mai'}
-      </Button>
+      <ConfirmAction
+        label="Non scrivere mai"
+        question="Non scrivere più a questa persona?"
+        pendingLabel="Registro…"
+        pending={neverWrite.isPending}
+        onConfirm={() => neverWrite.mutate()}
+        variant="outline"
+      />
       {failure && (
         <p role="alert" className="text-xs text-destructive">
           {failure}
@@ -67,41 +111,12 @@ function RecipientRow({ recipient }: { recipient: CampaignRecipient }) {
   )
 }
 
-/** «Annulla», with an inline second click in place of a browser `confirm()`: the first
- *  click swaps the button for the question, the second one runs the mutation. */
-function CancelAction({ pending, onConfirm }: { pending: boolean; onConfirm: () => void }) {
-  const [asking, setAsking] = useState(false)
-  if (!asking) {
-    return (
-      <Button type="button" variant="destructive" size="sm" onClick={() => setAsking(true)}>
-        Annulla
-      </Button>
-    )
-  }
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-sm">Annullare l’invio?</span>
-      <Button
-        type="button"
-        variant="destructive"
-        size="sm"
-        disabled={pending}
-        onClick={() => onConfirm()}
-      >
-        {pending ? 'Annullo…' : 'Conferma'}
-      </Button>
-      <Button type="button" variant="outline" size="sm" onClick={() => setAsking(false)} disabled={pending}>
-        Indietro
-      </Button>
-    </div>
-  )
-}
-
-/** «Campagna» (P-REB-41): the numbers, the recipients and what an admin can still undo
- *  from here -- «Modifica» on a draft, «Riporta in bozza»/«Annulla» on a scheduled
- *  campaign, «Annulla» alone once it is sending. The query refetches every 10s while
- *  the state is `programmata` or `in_invio`, so a send in progress fills in on its
- *  own without a manual reload. */
+/** «Campagna» (P-REB-41): when it leaves or left, the numbers, the recipients and
+ *  what an admin can still undo from here -- «Modifica» on a draft, «Riporta in
+ *  bozza»/«Annulla» on a scheduled campaign, «Annulla» alone once it is sending. The
+ *  query refetches every 10s while the state is `programmata` or `in_invio` and for
+ *  five minutes after it was sent (`refetchEvery`), so a send in progress and the
+ *  deliveries after it fill in on their own without a manual reload. */
 export function AdminCampagna() {
   const { id } = useParams({ from: '/signedIn/admin/campaigns/$id' })
   const client = useQueryClient()
@@ -109,8 +124,8 @@ export function AdminCampagna() {
     queryKey: ['campaign', id],
     queryFn: () => admin.campaign(id),
     refetchInterval: (query) => {
-      const stato = query.state.data?.campagna.stato
-      return stato === 'programmata' || stato === 'in_invio' ? 10_000 : false
+      const campagna = query.state.data?.campagna
+      return campagna ? refetchEvery(campagna) : false
     },
   })
   const invalidate = () => void client.invalidateQueries({ queryKey: ['campaign', id] })
@@ -127,6 +142,7 @@ export function AdminCampagna() {
   if (detail.isPending) return <Empty>Caricamento…</Empty>
 
   const { campagna, conteggi, destinatari } = detail.data
+  const moment = campaignMoment(campagna)
   const toDraftFailure =
     toDraft.error instanceof ApiError
       ? toDraft.error.message
@@ -164,10 +180,18 @@ export function AdminCampagna() {
             </Button>
           )}
           {(campagna.stato === 'programmata' || campagna.stato === 'in_invio') && (
-            <CancelAction pending={cancel.isPending} onConfirm={() => cancel.mutate()} />
+            <ConfirmAction
+              label="Annulla"
+              question="Annullare l’invio?"
+              pendingLabel="Annullo…"
+              pending={cancel.isPending}
+              onConfirm={() => cancel.mutate()}
+              variant="destructive"
+            />
           )}
         </div>
       </Header>
+      {moment && <p className="px-6 pt-4 text-sm text-muted-foreground">{moment}</p>}
       {(toDraftFailure || cancelFailure) && (
         <p role="alert" className="px-6 pt-4 text-sm text-destructive">
           {toDraftFailure ?? cancelFailure}

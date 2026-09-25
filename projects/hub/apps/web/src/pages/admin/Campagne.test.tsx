@@ -23,7 +23,7 @@ const ITEM = {
   inviata_at: '2026-09-25T07:32:00Z',
   created_at: '2026-09-25T07:00:00Z',
   pronta: true,
-  conteggi: { destinatari: 9, in_coda: 0, inviate: 8, saltate: 1, fallite: 0, consegnate: 8, rimbalzate: 0 },
+  conteggi: { destinatari: 11, in_coda: 0, inviate: 8, saltate: 1, fallite: 2, consegnate: 8, rimbalzate: 0 },
 }
 
 function mount() {
@@ -55,6 +55,7 @@ describe('«Campagne»', () => {
     expect(within(row).getByText('Inviata')).toBeInTheDocument()
     expect(row).toHaveTextContent('8 inviate')
     expect(row).toHaveTextContent('1 saltate')
+    expect(row).toHaveTextContent('2 fallite')
     expect(screen.getByRole('link', { name: 'Nuova campagna' })).toHaveAttribute('href', expect.stringMatching(/\/admin\/campaigns\/new$/))
   })
 

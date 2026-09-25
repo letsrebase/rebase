@@ -51,7 +51,7 @@ export function AdminCampagne() {
                 <TableCell className="text-muted-foreground">{when(item)}</TableCell>
                 <TableCell className="text-sm">
                   {item.conteggi.inviate} inviate · {item.conteggi.consegnate} consegnate · {item.conteggi.rimbalzate} rimbalzate ·{' '}
-                  {item.conteggi.saltate} saltate
+                  {item.conteggi.saltate} saltate · {item.conteggi.fallite} fallite
                 </TableCell>
               </TableRow>
             ))}
