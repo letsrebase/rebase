@@ -354,16 +354,16 @@ def callback_actor(request: Request, session: Session, settings: Settings) -> Ac
 
     So `get_actor` first, unchanged, and when it refuses the cookie, the refresh cookie
     this browser holds for the same prefix: the most specific one, signed, of the
-    refresh type, with a row in *this* database that belongs to its user and is neither
-    consumed nor expired, and a user still active. Stricter than `POST
-    /api/auth/refresh`, which answers a token consumed seconds ago with its successor
-    and burns the family for one consumed long ago: here both are refused, and no
-    replay is judged, because this is a read. It is verified, not rotated, and nothing
-    is issued: the SPA the callback lands on meets a 401 on its first request and renews
-    the pair itself, as it does after any idle tab. Minting an access token here without
-    rotating would be a way to renew a session that skips rotation's replay check;
-    rotating here would have to carry the new pair on every answer the callback can
-    give, a 403 problem document included.
+    refresh type, with a row in *this* database that belongs to its user, and a user
+    still active. The row answers as `POST /api/auth/refresh` would
+    (`RefreshTokenService.is_live`): unconsumed and unexpired, or rotated away by
+    another tab inside the ten-second grace. A token consumed long ago is refused
+    without burning the family: no replay is judged here, because this is a read. It is
+    verified, not rotated, and nothing is issued: the SPA the callback lands on meets a
+    401 on its first request and renews the pair itself, as it does after any idle tab.
+    Minting an access token here without rotating would be a way to renew a session
+    that skips rotation's replay check; rotating here would have to carry the new pair
+    on every answer the callback can give, a 403 problem document included.
 
     A session opened by a signup alone has no refresh cookie (`routers/tenants.py`,
     until the welcome link proves the address), so it is not rescued here: it lands on

@@ -391,6 +391,7 @@ _CREDENZIALI: dict[Method, str] = {
     ("RefreshTokenService", "consume"): "sessione del browser, non superficie agentica",
     ("RefreshTokenService", "rotate"): "sessione del browser, non superficie agentica",
     ("RefreshTokenService", "revoke_all"): "sessione del browser, non superficie agentica",
+    ("RefreshTokenService", "is_live"): "sessione del browser, non superficie agentica",
     ("MagicLinkService", "request"): "e' il passo di login via mail, non un'operazione",
     ("MagicLinkService", "enter"): "e' il passo di login via mail, non un'operazione",
     # REB-376 (design 2026-09-23 §1-2): `IdentityService` vive nel registro, non in

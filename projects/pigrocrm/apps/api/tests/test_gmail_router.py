@@ -384,15 +384,23 @@ def test_a_consent_that_outlasts_the_access_cookie_still_connects_the_mailbox(
 
 @pytest.mark.parametrize("refresh", ["none", "forged", "consumed"])
 def test_a_consent_that_comes_back_with_no_live_session_lands_on_a_page_not_on_json(
-    refresh: str, logged_in: TestClient, google: _Google
+    refresh: str, logged_in: TestClient, google: _Google, api_session: Session
 ) -> None:
     """No access cookie and no refresh cookie that could renew it: nobody to redeem the
     state for. The browser lands on «Primi passi», whatever the space holds and whoever
     started, with `sessione`; the SPA's login sends it back there once the person is in,
-    and the state is left to run out on its own."""
+    and the state is left to run out on its own. `consumed` is a token rotated away a
+    minute ago, past the grace a second tab gets."""
     state = _start(logged_in)
     spent = logged_in.cookies.get(REFRESH_COOKIE)
     assert logged_in.post("/api/auth/refresh").status_code == 200
+    api_session.execute(
+        text(
+            "update refresh_tokens set consumed_at = consumed_at - interval '1 minute' "
+            "where consumed_at is not null"
+        )
+    )
+    api_session.flush()
     _lose_access_cookie(logged_in)
     for cookie in list(logged_in.cookies.jar):
         if cookie.name == REFRESH_COOKIE:
@@ -410,6 +418,33 @@ def test_a_consent_that_comes_back_with_no_live_session_lands_on_a_page_not_on_j
     assert back.status_code == 307, back.text
     assert back.headers["location"] == "/app/get-started?esito=sessione"
     assert google.codes == []
+
+
+def test_a_token_another_tab_rotated_seconds_ago_still_identifies_the_browser(
+    logged_in: TestClient, google: _Google
+) -> None:
+    """Another tab's refresh can land while the callback is on its way, carrying the
+    token that refresh just rotated away. `/api/auth/refresh` would still answer that
+    token with its successor for ten seconds, and so the callback still knows whose
+    browser this is."""
+    state = _start(logged_in)
+    spent = logged_in.cookies.get(REFRESH_COOKIE)
+    assert logged_in.post("/api/auth/refresh").status_code == 200
+    _lose_access_cookie(logged_in)
+    for cookie in list(logged_in.cookies.jar):
+        if cookie.name == REFRESH_COOKIE:
+            logged_in.cookies.delete(REFRESH_COOKIE, domain=cookie.domain, path=cookie.path)
+            logged_in.cookies.set(REFRESH_COOKIE, spent, domain=cookie.domain, path=cookie.path)
+
+    back = logged_in.get(
+        "/api/gmail/oauth/callback",
+        params={"code": "4/0A-code", "state": state},
+        follow_redirects=False,
+    )
+
+    assert back.status_code == 307, back.text
+    assert back.headers["location"] == "/app/?esito=collegato"
+    assert google.codes == ["4/0A-code"]
 
 
 def test_the_callback_with_no_cookie_at_all_is_a_page_too(client: TestClient) -> None:
