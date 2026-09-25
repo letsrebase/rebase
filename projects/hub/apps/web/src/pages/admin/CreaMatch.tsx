@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cn } from '@rebase/ui/cn'
-import { admin, ApiError, type Company, type FiscalData, type Match, type MatchCreate } from '@/lib/api'
+import { admin, ApiError, type Company, type Fiscal, type FiscalData, type Match, type MatchCreate } from '@/lib/api'
 import {
   ALTRE_CONDIZIONI_FIELDS,
   CLIENTE_EMPTY,
@@ -17,7 +17,9 @@ import {
   draftFromFiscal,
   failureOf,
   fiscalToSave,
+  olderFiscal,
   refillFiscal,
+  typedAfterSave,
   typedFiscalFields,
   letteraForm,
   letteraToSend,
@@ -66,10 +68,17 @@ export function AdminCreaMatch() {
   const [step, setStep] = useState(0)
   const [company, setCompany] = useState<Company | null>(null)
   const [prefillFor, setPrefillFor] = useState<string | null>(null)
-  const [savedFiscal, setSavedFiscal] = useState<FiscalData | null>(null)
+  const [savedFiscal, setSavedFiscal] = useState<Fiscal | null>(null)
+  // The same record, readable at once from a response's callback, which may run before
+  // the page renders what the previous one set.
+  const heldFiscal = useRef<Fiscal | null>(null)
+  function holdFiscal(record: Fiscal | null) {
+    heldFiscal.current = record
+    setSavedFiscal(record)
+  }
   const [fiscal, setFiscal] = useState<FiscalDraft>(FISCAL_EMPTY)
-  // The tax fields the admin typed in since the draft was last filled or sent: a save
-  // landing late refills every other one and leaves these as typed.
+  // The tax fields the admin typed in since the draft was last filled and not saved yet:
+  // a save landing refills every other one and leaves these as typed.
   const fiscalTyped = useRef(new Set<FiscalKey>())
   const [editFiscal, setEditFiscal] = useState(false)
   const [cliente, setCliente] = useState<ClienteForm>(CLIENTE_EMPTY)
@@ -110,10 +119,16 @@ export function AdminCreaMatch() {
   // has moved on: picked another company, left the step, changed what the check was
   // asked about. Such a response is dropped rather than let it fill the forms with
   // another company's details or jump to an outdated check (Greptile 4092036036).
-  const shown = useRef({ company: null as string | null, prefillFor: null as string | null, step: 0, request: '' })
+  const shown = useRef({
+    company: null as string | null,
+    prefillFor: null as string | null,
+    step: 0,
+    request: '',
+    fiscal: FISCAL_EMPTY,
+  })
   const request = JSON.stringify(payload())
   useLayoutEffect(() => {
-    shown.current = { company: company?.id ?? null, prefillFor, step, request }
+    shown.current = { company: company?.id ?? null, prefillFor, step, request, fiscal }
   })
 
   function landOnContracts(notice: string) {
@@ -127,10 +142,16 @@ export function AdminCreaMatch() {
       const client = clienteForm(data.cliente)
       const form = letteraForm(data.lettera)
       setPrefillFor(companyId)
-      setSavedFiscal(data.fiscale)
-      setFiscal(draftFromFiscal(data.fiscale))
-      fiscalTyped.current = new Set()
-      setEditFiscal(false)
+      if (olderFiscal(data.fiscale, heldFiscal.current)) {
+        // Read before a tax save the page already has back: the saved record and the
+        // draft stay, and the section opens only on text typed and not saved yet.
+        setEditFiscal(fiscalTyped.current.size > 0)
+      } else {
+        holdFiscal(data.fiscale)
+        setFiscal(draftFromFiscal(data.fiscale))
+        fiscalTyped.current = new Set()
+        setEditFiscal(false)
+      }
       setCliente(client)
       setEditCliente(!clienteComplete(client))
       setLettera(withPayMode(form, payModeOf(form)))
@@ -140,17 +161,20 @@ export function AdminCreaMatch() {
   })
   const saveFiscal = useMutation({
     mutationFn: ({ data }: { data: FiscalData; companyId: string }) => admin.saveFiscal(id, data),
-    onSuccess: (saved, { companyId }) => {
+    onSuccess: (saved, { data, companyId }) => {
       // The tax data are the freelancer's, whichever request is picked now: what the
       // server saved is what the page shows from here, except in a field the admin has
       // typed in since, for the request now picked.
-      setSavedFiscal(saved)
-      const typed = new Set(fiscalTyped.current)
+      holdFiscal(saved)
+      const typed = typedAfterSave(shown.current.fiscal, fiscalTyped.current, data)
+      fiscalTyped.current = typed
       setFiscal((current) => refillFiscal(current, saved, typed))
       // Closing the section and moving on belong to the request they were saved for;
-      // after a switch the admin may have opened the section again for the new one.
+      // after a switch the admin may have opened the section again for the new one. A
+      // field typed in again while the save was on its way is not saved yet: the section
+      // stays open on it.
       const now = shown.current
-      if (now.step !== 0 || now.company !== companyId || now.prefillFor !== companyId) return
+      if (typed.size > 0 || now.step !== 0 || now.company !== companyId || now.prefillFor !== companyId) return
       setEditFiscal(false)
       setStep(1)
     },
@@ -247,10 +271,7 @@ export function AdminCreaMatch() {
     // «Condizioni» starts clean.
     check.reset()
     const data = fiscalToSave(savedFiscal, fiscal, editFiscal)
-    if (data) {
-      fiscalTyped.current = new Set()
-      saveFiscal.mutate({ data, companyId: company.id })
-    }
+    if (data) saveFiscal.mutate({ data, companyId: company.id })
     else setStep(1)
   }
 

@@ -50,6 +50,23 @@ export function refillFiscal(draft: FiscalDraft, fiscal: Fiscal | null, typed: R
   return Object.fromEntries(keys.map((key) => [key, typed.has(key) ? draft[key] : fresh[key]])) as FiscalDraft
 }
 
+/** Whether `record` was read before `held`, the tax record the page already holds: a
+ *  prefill that read the tax data before a save the page already has back must not put
+ *  them back. No record is older than any. */
+export function olderFiscal(record: Fiscal | null, held: Fiscal | null): boolean {
+  if (held === null) return false
+  if (record === null) return true
+  return Date.parse(record.updated_at) < Date.parse(held.updated_at)
+}
+
+/** The typed fields a save did not cover, because their text changed after it was sent
+ *  (compared as sent, trimmed): once the save succeeds only these stay typed, and the
+ *  others take the record that comes back. */
+export function typedAfterSave(draft: FiscalDraft, typed: ReadonlySet<FiscalKey>, sent: FiscalData): Set<FiscalKey> {
+  const now = toFiscalData(draft)
+  return new Set([...typed].filter((key) => now[key] !== sent[key]))
+}
+
 /** An empty PEC is `null`, not `""`, which the API would try to read as an address. */
 export function toFiscalData(draft: FiscalDraft): FiscalData {
   return {

@@ -16,6 +16,7 @@ import {
   LETTERA_LABELS,
   LETTERA_REQUIRED,
   letteraForm,
+  olderFiscal,
   letteraToSend,
   machineAmount,
   matchOf,
@@ -26,6 +27,7 @@ import {
   switchPayMode,
   toCliente,
   toLettera,
+  typedAfterSave,
   typedFiscalFields,
   whatOf,
   withPayMode,
@@ -208,6 +210,32 @@ describe('«Crea match» in three steps (REB-476)', () => {
       pec: 'ada@pec.it',
     })
     expect(refillFiscal(after, newer, new Set())).toMatchObject({ domicilio: 'Torino' })
+  })
+
+  it('tells a tax record read before the one the page holds', () => {
+    const record = (updated_at: string) => ({
+      freelancer_id: 'f1',
+      codice_fiscale: 'LVLDAA85T50H501Z',
+      partita_iva: '01234567890',
+      domicilio: 'Milano',
+      pec: null,
+      updated_by: 'a1',
+      updated_at,
+    })
+    const held = record('2026-09-25T10:00:00Z')
+    expect(olderFiscal(record('2026-09-23T10:00:00Z'), held)).toBe(true)
+    expect(olderFiscal(record('2026-09-25T10:00:00+00:00'), held)).toBe(false)
+    expect(olderFiscal(record('2026-09-25T11:00:00Z'), held)).toBe(false)
+    expect(olderFiscal(null, held)).toBe(true)
+    expect(olderFiscal(record('2026-09-23T10:00:00Z'), null)).toBe(false)
+    expect(olderFiscal(null, null)).toBe(false)
+  })
+
+  it('keeps typed only the fields changed after the save was sent', () => {
+    const sent = { codice_fiscale: 'LVLDAA85T50H501Z', partita_iva: '01234567890', domicilio: 'Bari', pec: null }
+    const draft = { codice_fiscale: 'LVLDAA85T50H501Z ', partita_iva: '01234567890', domicilio: 'Bari centro', pec: '' }
+    const typed = new Set(['codice_fiscale', 'domicilio', 'pec'] as const)
+    expect(typedAfterSave(draft, typed, sent)).toEqual(new Set(['domicilio']))
   })
 
   it('names the freelancer on the send button, with «ad» before an a', () => {
