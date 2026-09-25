@@ -64,9 +64,9 @@
           pythonVersion = readPin ./.python-version "([0-9]+\\.[0-9]+)[[:space:]]*";
           python = pkgs."python${lib.replaceStrings [ "." ] [ "" ] pythonVersion}";
 
-          # `engines.node` is ">=22"; the attribute is `nodejs_22`.
+          # `engines.node` is ">=22.12"; the attribute is `nodejs_22`.
           nodeMajor = lib.head (
-            builtins.match ">=([0-9]+)" (builtins.fromJSON (builtins.readFile ./package.json)).engines.node
+            builtins.match ">=([0-9]+)(\\.[0-9]+)*" (builtins.fromJSON (builtins.readFile ./package.json)).engines.node
           );
           nodejs = pkgs."nodejs_${nodeMajor}";
 
@@ -200,7 +200,7 @@
                 )
               );
             };
-            hash = "sha256-919HyAlQet6I49qbtklqDoP7E1xYheR/Pd019RUSHzQ=";
+            hash = "sha256-6z3B6P9Zdu4Abw7/big9N1ejeVZiU6u5lbjkfSLnkKo=";
           };
 
           # A Vite deployable: the `dist/` of one workspace package, built the way its

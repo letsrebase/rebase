@@ -46,7 +46,7 @@ catalog:
   typescript: '5.9'
   typescript-eslint: ^8.70.0
   vite: ^8.3.0
-  vitest: ^4.1.10
+  vitest: ^5.0.1
 
 # esbuild compiles a native binary in its install script. Without this it is skipped,
 # and pnpm 11 makes that a hard error (ERR_PNPM_IGNORED_BUILDS) rather than a warning,
