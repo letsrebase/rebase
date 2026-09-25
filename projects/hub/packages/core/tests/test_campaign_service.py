@@ -2,6 +2,7 @@
 
 import threading
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from time import sleep
 
 import pytest
@@ -152,6 +153,56 @@ def test_an_edit_after_the_test_blocks_scheduling_until_a_new_test(
     clock.at += timedelta(minutes=1)
     service.send_test(campaign.id, as_admin(who), RecordingCampaignSender())
     assert service.schedule(campaign.id, ScheduleRequest()).stato == "programmata"
+
+
+def test_a_save_that_changes_nothing_keeps_the_test(clean: Session) -> None:  # noqa: F811  (fixture)
+    """The wizard sends every field again when the admin goes back to Chi or Cosa and
+    presses «Avanti» without touching anything: the test already sent still holds."""
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _who = ready(service, clean, clock)
+    clock.at += timedelta(minutes=1)
+    same = draft()
+    service.update(
+        campaign.id,
+        CampaignPatch(
+            nome=same.nome,
+            fonte=same.fonte,
+            stato_percorso=same.stato_percorso,
+            oggetto=same.oggetto,
+            testo=same.testo,
+            bottone_testo=same.bottone_testo,
+            bottone_meta=same.bottone_meta,
+            azione=same.azione,
+        ),
+    )
+    assert service.schedule(campaign.id, ScheduleRequest()).stato == "programmata"
+
+
+def test_a_filter_save_that_changes_nothing_keeps_the_test(clean: Session) -> None:  # noqa: F811  (fixture)
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    who = admin(clean)
+    person(clean, "ada@studio.it")
+    filtri = TalentiFiltri(lista="talenti", posizione="Backend", tariffa_min=Decimal("300"))
+    created = service.create(who.id, draft(fonte="filtri", stato_percorso=None, filtri=filtri))
+    clock.at += timedelta(minutes=1)
+    service.send_test(created.id, as_admin(who), RecordingCampaignSender())
+    clock.at += timedelta(minutes=1)
+    unchanged = service.update(
+        created.id,
+        CampaignPatch(
+            fonte="filtri",
+            filtri=TalentiFiltri(lista="talenti", posizione="Backend", tariffa_min=Decimal("300")),
+        ),
+    )
+    assert unchanged.pronta is True
+    clock.at += timedelta(minutes=1)
+    changed = service.update(
+        created.id,
+        CampaignPatch(filtri=TalentiFiltri(lista="talenti", posizione="Frontend")),
+    )
+    assert changed.pronta is False
 
 
 def test_a_refused_test_does_not_enable_sending(clean: Session) -> None:  # noqa: F811  (fixture)

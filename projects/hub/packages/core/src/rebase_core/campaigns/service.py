@@ -106,6 +106,9 @@ class CampaignService:
         campaign = self._require_locked(campaign_id)
         if campaign.stato != "bozza":
             raise InvalidState(NOT_A_DRAFT)
+        # The wizard sends every field on each «Avanti»: only a value that differs
+        # makes the last test stale, not a field merely present in the request.
+        before = {field: getattr(campaign, field) for field in _CONTENT_FIELDS}
         changes = data.model_dump(exclude_unset=True)
         if "filtri" in changes and data.filtri is not None:
             changes["filtri"] = data.filtri.model_dump(mode="json", exclude_none=True)
@@ -133,7 +136,7 @@ class CampaignService:
             campaign.bottone_meta,
             campaign.azione,
         )
-        if any(field in changes for field in _CONTENT_FIELDS):
+        if any(getattr(campaign, field) != before[field] for field in _CONTENT_FIELDS):
             campaign.contenuto_at = self.clock()
         self.session.commit()
         return CampaignRead.model_validate(campaign)
