@@ -302,6 +302,9 @@ class MatchCreate(BaseModel):
     company_id: UUID
     cliente: ClienteData
     lettera: LetteraFields
+    # An admin's estimate of the engagement's billable days (REB-497), read back
+    # unchanged; `Match.giorni_previsti` carries the same `CHECK`.
+    giorni_previsti: int | None = Field(default=None, ge=1, le=366)
 
 
 class ContractDocumentRead(BaseModel):
@@ -336,6 +339,12 @@ class ContractDocumentRead(BaseModel):
 
 
 class MatchRead(BaseModel):
+    """`giorni_previsti`, the three `lettera_*` values and the eight `pigro_*` fields
+    are `Match`'s own (REB-497): the `lettera_*` ones are what `create` copied off
+    `data.lettera` at the time, not necessarily what the current `lettera` prints, were
+    it ever regenerated. `pigro_stato` is `None` until the match turns `attivo`, one of
+    `PIGRO_STATES` after."""
+
     id: UUID
     freelancer_id: UUID
     company_id: UUID
@@ -353,6 +362,18 @@ class MatchRead(BaseModel):
     situazione: str
     prossima_azione: Action | None
     altre_azioni: list[Action]
+    giorni_previsti: int | None
+    lettera_data_inizio: date | None
+    lettera_data_fine: date | None
+    lettera_compenso: Decimal | None
+    pigro_stato: str | None
+    pigro_slug: str | None
+    pigro_deal_id: UUID | None
+    pigro_url: str | None
+    pigro_linked_at: datetime | None
+    pigro_attempted_at: datetime | None
+    pigro_errore: str | None
+    pigro_mail_sent_at: datetime | None
 
 
 class FreelancerContracts(BaseModel):
@@ -408,7 +429,8 @@ class MatchListItem(BaseModel):
     together, only were a match ever to have no letter at all -- `create` always
     writes one, so this is the list staying honest about a shape `get` does not need
     to allow for. `situazione` is the match's sentence, the same `MatchRead` carries
-    (REB-477)."""
+    (REB-477). `giorni_previsti`, `pigro_stato` and `pigro_url` are `Match`'s own
+    (REB-497), the row's narrower share of what `MatchRead` carries in full."""
 
     id: UUID
     freelancer_id: UUID
@@ -426,6 +448,9 @@ class MatchListItem(BaseModel):
     created_by_nome: str
     created_by_email: str
     situazione: str
+    giorni_previsti: int | None
+    pigro_stato: str | None
+    pigro_url: str | None
 
 
 class MatchList(BaseModel):

@@ -141,7 +141,7 @@ def _setup(session: Session) -> tuple[UUID, UUID, UUID]:
     return admin_id, freelancer_id, company_id
 
 
-def _body(company_id: UUID) -> MatchCreate:
+def _body(company_id: UUID, *, giorni_previsti: int | None = None) -> MatchCreate:
     return MatchCreate(
         company_id=company_id,
         cliente=ClienteData(
@@ -155,6 +155,7 @@ def _body(company_id: UUID) -> MatchCreate:
             giorni_pagamento=30,
             fine_mese=True,
         ),
+        giorni_previsti=giorni_previsti,
     )
 
 
@@ -515,6 +516,54 @@ def test_create_with_no_id_still_writes_a_fresh_match_each_time(clean: Session) 
     first = service.create(freelancer_id, _body(company_id), admin_id)
     second = service.create(freelancer_id, _body(company_id), admin_id)
     assert first.id != second.id
+
+
+def test_create_stores_the_expected_days(clean: Session) -> None:
+    """`giorni_previsti` is an admin's estimate, optional (REB-497): given, it reads
+    back on the match `create` returns; left out, it stays `None`. Outside 1-366 is a
+    `MatchCreate` the wizard never manages to send at all."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+
+    with_days = service.create(freelancer_id, _body(company_id, giorni_previsti=40), admin_id)
+    assert with_days.giorni_previsti == 40
+
+    without_days = service.create(freelancer_id, _body(company_id), admin_id)
+    assert without_days.giorni_previsti is None
+
+    for invalid in (0, 367):
+        with pytest.raises(PydanticValidationError):
+            _body(company_id, giorni_previsti=invalid)
+
+
+def test_create_stores_the_letters_dates_and_fee(clean: Session) -> None:
+    """The three `lettera_*` columns on `Match` are `create`'s own copy of what the
+    letter was told (REB-497): a stable place for the report to read them from even if
+    the letter itself is later regenerated. Read straight back on the `MatchRead`
+    `create` returns."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    body = MatchCreate(
+        company_id=company_id,
+        cliente=ClienteData(
+            cliente_ragione_sociale="ACME S.r.l.", cliente_piva="01234567890", cliente_sede="Milano"
+        ),
+        lettera=LetteraFields(
+            ruolo="Backend developer",
+            attivita="Le API del prodotto.",
+            data_inizio=date(2026, 10, 1),
+            data_fine=date(2027, 3, 31),
+            compenso=Decimal("450"),
+            giorni_pagamento=30,
+            fine_mese=True,
+        ),
+    )
+
+    match = service.create(freelancer_id, body, admin_id)
+
+    assert match.lettera_data_inizio == body.lettera.data_inizio
+    assert match.lettera_data_fine == body.lettera.data_fine
+    assert match.lettera_compenso == body.lettera.compenso
 
 
 def test_a_stale_draft_framework_that_never_left_stays_hidden_from_the_page(

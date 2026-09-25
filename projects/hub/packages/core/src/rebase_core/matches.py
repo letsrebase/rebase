@@ -623,6 +623,10 @@ class MatchService:
                 stato="bozza",
                 created_by=admin_id,
                 request_fingerprint=fingerprint,
+                giorni_previsti=data.giorni_previsti,
+                lettera_data_inizio=data.lettera.data_inizio,
+                lettera_data_fine=data.lettera.data_fine,
+                lettera_compenso=data.lettera.compenso,
             )
             self.session.add(match)
             try:
@@ -890,6 +894,18 @@ class MatchService:
             situazione=situazione,
             prossima_azione=prossima_azione,
             altre_azioni=altre_azioni,
+            giorni_previsti=match.giorni_previsti,
+            lettera_data_inizio=match.lettera_data_inizio,
+            lettera_data_fine=match.lettera_data_fine,
+            lettera_compenso=match.lettera_compenso,
+            pigro_stato=match.pigro_stato,
+            pigro_slug=match.pigro_slug,
+            pigro_deal_id=match.pigro_deal_id,
+            pigro_url=match.pigro_url,
+            pigro_linked_at=match.pigro_linked_at,
+            pigro_attempted_at=match.pigro_attempted_at,
+            pigro_errore=match.pigro_errore,
+            pigro_mail_sent_at=match.pigro_mail_sent_at,
         )
 
     def _list_item(
@@ -924,6 +940,9 @@ class MatchService:
             created_by_nome=_full_name(admin_user),
             created_by_email=admin_user.email,
             situazione=situazione,
+            giorni_previsti=match.giorni_previsti,
+            pigro_stato=match.pigro_stato,
+            pigro_url=match.pigro_url,
         )
 
     def _renderer(self) -> Renderer:
