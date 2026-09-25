@@ -511,6 +511,9 @@ export async function downloadInvoiceArtifact(
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = ''
+  // Snyk Code javascript/DOMXSS here is a false positive: the href is a blob: URL made
+  // just above, never a script URL, and `download` makes the click save the file
+  // whatever its type, so nothing it holds is ever rendered.
   document.body.appendChild(anchor)
   anchor.click()
   anchor.remove()

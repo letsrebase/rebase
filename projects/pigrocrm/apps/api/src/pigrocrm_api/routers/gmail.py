@@ -166,6 +166,8 @@ def read_account(session: SessionDep, actor: ActorDep, settings: SettingsDep) ->
 
 @router.get("/oauth/start")
 def start_oauth(session: SessionDep, actor: ActorDep, settings: SettingsDep) -> RedirectResponse:
+    # Snyk Code python/OR here is a false positive: the target is Google's fixed
+    # GOOGLE_AUTH_URL, with every parameter urlencoded.
     return RedirectResponse(_oauth(session, settings).start(actor), status_code=307)
 
 
@@ -237,6 +239,9 @@ def _back(request: Request, session: Session, actor: Actor | None, esito: str) -
         page = _SETTINGS_PAGE
     else:
         page = _START_PAGE
+    # Snyk Code python/OR here is a false positive: one of three fixed pages, under the
+    # request's own prefix (a slug that matched SLUG_PATTERN in `tenancy.py`, or none
+    # for the root), with one of the four constant esito codes.
     return RedirectResponse(f"{prefix}{page}?esito={esito}", status_code=307)
 
 
