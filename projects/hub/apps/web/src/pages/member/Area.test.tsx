@@ -206,7 +206,7 @@ describe('/me, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)'
     expect(screen.getByRole('link', { name: /Ada CV\.pdf/ })).toHaveAttribute('href', '/api/hub/me/cv')
     expect(screen.getByRole('link', { name: /Apri PigroCRM/ })).toHaveAttribute(
       'href',
-      'https://pigro.letsrebase.com/app/register',
+      'https://pigro.letsrebase.com/app/login',
     )
     expect(screen.getByRole('link', { name: /Scarica la guida/ })).toHaveAttribute(
       'href',

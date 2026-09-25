@@ -40,6 +40,25 @@
      no radius and the applications now follow it: the 10px the CRM carried from
      2026-09-08 to 2026-09-18 is what the record replaced. */
   --radius: 0px;
+  /* The loading state, `Loader` (loader.tsx): an 800ms trapezoid, applied to each of
+     the four brand tiles with a -200ms stagger per tile so they light in reading
+     order, one at a time, never together. Chosen over a synchronised pulse (Claude
+     Design canvas c0ee076a-22c6-40f8-8707-4a71b1485340, 2026-09-25, Lorenzo:
+     "replay"): a synchronised fade dims every tile at once and the mark stops
+     reading as itself right when it has to say "still working". `motion-reduce:`
+     strips the animation back to the static, fully-lit mark `BrandMark` draws. */
+  --animate-loader-replay: rebase-loader-replay 800ms linear infinite;
+}
+
+@keyframes rebase-loader-replay {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  25%,
+  75% {
+    opacity: 0.3;
+  }
 }
 
 :root {

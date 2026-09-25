@@ -184,4 +184,11 @@ describe('the chooser (REB-377)', () => {
     )
     expect(screen.getByRole('button', { name: /studio/ })).toBeInTheDocument()
   })
+
+  it('also offers to create a new space, not gated behind the empty-state root check', async () => {
+    mockSpaces([{ slug: 'studio', ruolo: 'admin' }])
+    render(<LoginPage />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Crea un nuovo spazio' }))
+    expect(navigate).toHaveBeenCalledWith({ to: '/app/register' })
+  })
 })

@@ -20,3 +20,17 @@ describe('the old /accedi address', () => {
     expect(new URLSearchParams(router.state.location.searchStr).get('utm_term')).toBe('abc1')
   })
 })
+
+describe('the bare /admin address', () => {
+  it('lands on /admin/talent instead of an empty panel (ORB-106)', async () => {
+    // session.js's landingRoute() sends an admin's "Accedi" click straight to
+    // /hub/admin: this router must have a real page there, not AdminGuard's own
+    // <Outlet /> matching nothing.
+    const router = createRouter({
+      routeTree,
+      history: createMemoryHistory({ initialEntries: ['/admin'] }),
+    })
+    await router.load()
+    expect(router.state.location.pathname).toBe('/admin/talent')
+  })
+})

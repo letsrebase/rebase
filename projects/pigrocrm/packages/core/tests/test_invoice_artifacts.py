@@ -8,6 +8,7 @@ whole result of one call, and it could not render a proforma's PDF at all -- it 
 read the frozen, `issue`-only view (`_for_export`), which a proforma never populates.
 """
 
+import hashlib
 import subprocess
 from collections.abc import Callable
 from decimal import Decimal
@@ -21,11 +22,11 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document
-from pigrocrm.core.documents.schemas import DocumentListQuery
+from pigrocrm.core.documents.schemas import DocumentCreate, DocumentListQuery
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
 from pigrocrm.core.emitter.service import EmitterProfileService
-from pigrocrm.core.errors import Conflict, NotFound
+from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.models import Invoice
@@ -432,3 +433,115 @@ def test_the_proforma_pdf_for_a_non_resident_customer_prints_the_same_address_li
     testo = _one_line(extract_pdf_text(storage, db_session, pdf.document_id))
     assert "1 Old Street, EC1V 9HL London GB" in testo
     assert "()" not in testo
+
+
+# --- an invoice's PDF document takes only a PDF (REB-480) --------------------------
+
+# An XML file in the XHTML namespace: the shape that rendered as a page of the app while
+# the preview framed whatever the invoice's PDF document held (REB-463).
+XHTML = (
+    b'<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml">'
+    b'<body><form><input name="password"/></form></body></html>'
+)
+UPLOADED_PDF = b"%PDF-1.7\nfinto\n"
+
+
+@pytest.mark.parametrize("tipo", ["fattura", "proforma"])
+def test_an_invoices_pdf_document_refuses_a_version_that_is_not_a_pdf(
+    service: InvoiceService, customer_id: UUID, tipo: str
+) -> None:
+    """The guard sits in the version core, so the REST upload and every other caller of
+    `add_version` meet it. The refusal writes nothing: the document keeps its version
+    and the invoice keeps serving the PDF it had. A PDF still goes in."""
+    invoice_id = (
+        _issue(service, customer_id)
+        if tipo == "fattura"
+        else _confirmed_proforma(service, customer_id)
+    )
+    pdf = service.produce_artifacts(invoice_id, ADMIN)[0]
+
+    with pytest.raises(ValidationFailed) as excinfo:
+        service.documents.add_version(pdf.document_id, XHTML, "application/xml", ADMIN)
+    assert excinfo.value.details["field"] == "content_type"
+    assert excinfo.value.details["expected"] == "application/pdf"
+    assert f"il PDF di una {tipo}:" in excinfo.value.details["reason"]
+    assert service.documents.get(pdf.document_id, ADMIN).versione_corrente == pdf.version_numero
+    content, content_type, _ = service.download(invoice_id, "pdf", ADMIN)
+    assert content_type == "application/pdf"
+    assert hashlib.sha256(content).hexdigest() == pdf.hash_sha256
+
+    added = service.documents.add_version(pdf.document_id, UPLOADED_PDF, "application/pdf", ADMIN)
+    assert added.numero == pdf.version_numero + 1
+    assert service.download(invoice_id, "pdf", ADMIN)[0] == UPLOADED_PDF
+
+
+def test_a_discarded_proformas_pdf_document_still_takes_only_a_pdf_once_restored(
+    service: InvoiceService, customer_id: UUID
+) -> None:
+    """A soft-deleted invoice still names its PDF document, and that document can be
+    restored on its own from the documents surface, so the rule follows it."""
+    proforma_id = _confirmed_proforma(service, customer_id)
+    (pdf,) = service.produce_artifacts(proforma_id, ADMIN)
+    service.soft_delete(proforma_id, ADMIN)
+    service.documents.restore(pdf.document_id, ADMIN)
+
+    with pytest.raises(ValidationFailed):
+        service.documents.add_version(pdf.document_id, XHTML, "application/xml", ADMIN)
+
+
+def test_a_fattura_document_no_invoice_names_keeps_the_common_allowlist(
+    service: InvoiceService, customer_id: UUID
+) -> None:
+    """The rule is the invoice's pointer, not `documents.tipo`: a `fattura` document
+    nobody linked yet (an original waiting for `import_issued`) takes what any document
+    takes. `_validate_original_pdf` refuses to link one whose current version is not a
+    PDF, so it cannot become an invoice's PDF that way."""
+    document = service.documents.create(
+        DocumentCreate(customer_id=customer_id, tipo="fattura", titolo="Fattura fornitore"),
+        ADMIN,
+    )
+    version = service.documents.add_version(document.id, XHTML, "application/xml", ADMIN)
+    assert version.content_type == "application/xml"
+
+
+def test_a_version_that_is_not_a_pdf_is_never_served_as_the_invoices_pdf(
+    service: InvoiceService, customer_id: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A version written before REB-480, when `add_version` took any allowed type here.
+    The download answers it as a missing PDF, the 404 the web already words as «non è
+    disponibile», and «Rigenera documenti» (`produce_artifacts`) stores a PDF over it."""
+    invoice_id = _issue(service, customer_id)
+    pdf = service.produce_artifacts(invoice_id, ADMIN)[0]
+    with monkeypatch.context() as patched:
+        # The guard lifted for this one call: the write as it could happen before.
+        patched.setattr(DocumentService, "_check_invoice_pdf", lambda *_: None)
+        service.documents.add_version(pdf.document_id, XHTML, "application/xml", ADMIN)
+
+    with pytest.raises(NotFound):
+        service.download(invoice_id, "pdf", ADMIN)
+
+    repaired = service.produce_artifacts(invoice_id, ADMIN)[0]
+    assert repaired.version_numero == pdf.version_numero + 2
+    content, content_type, _ = service.download(invoice_id, "pdf", ADMIN)
+    assert content_type == "application/pdf"
+    assert hashlib.sha256(content).hexdigest() == pdf.hash_sha256
+
+
+def test_the_pdfs_own_bytes_stored_under_another_type_are_repaired_not_reused(
+    service: InvoiceService, customer_id: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rendered PDF's exact bytes, stored before REB-480 as `application/xml`. The
+    hash matches what `produce_artifacts` renders, so reusing the version on the hash
+    alone left `download` refusing it for good. The type has to match too."""
+    invoice_id = _issue(service, customer_id)
+    pdf = service.produce_artifacts(invoice_id, ADMIN)[0]
+    rendered, _, _ = service.download(invoice_id, "pdf", ADMIN)
+    with monkeypatch.context() as patched:
+        patched.setattr(DocumentService, "_check_invoice_pdf", lambda *_: None)
+        service.documents.add_version(pdf.document_id, rendered, "application/xml", ADMIN)
+    with pytest.raises(NotFound):
+        service.download(invoice_id, "pdf", ADMIN)
+
+    repaired = service.produce_artifacts(invoice_id, ADMIN)[0]
+    assert repaired.version_numero == pdf.version_numero + 2
+    assert service.download(invoice_id, "pdf", ADMIN)[:2] == (rendered, "application/pdf")
