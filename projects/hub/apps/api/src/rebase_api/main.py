@@ -23,6 +23,7 @@ from rebase_core.contracts.fields import ContractFailed
 from rebase_core.errors import (
     DocumensoFailed,
     DomainError,
+    LlmUnavailable,
     NotFound,
     SigningUnavailable,
     ValidationFailed,
@@ -42,8 +43,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse:
     """A domain error is a sentence and a status, never a stack trace. `NotFound` is a
     404, `ValidationFailed` a 422 in FastAPI's own shape so a form can point at the
-    field, `ContractFailed` a 503, `DocumensoFailed` a 502, `SigningUnavailable` a 503,
-    anything else a 409."""
+    field, `LlmUnavailable` a 502, `ContractFailed` a 503, `DocumensoFailed` a 502,
+    `SigningUnavailable` a 503, anything else a 409."""
     assert isinstance(exc, DomainError)
     if isinstance(exc, NotFound):
         return JSONResponse({"detail": exc.message}, status_code=404)
@@ -60,6 +61,10 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
             },
             status_code=422,
         )
+    if isinstance(exc, LlmUnavailable):
+        # Claude did not answer: a gateway's failure, in the one Italian sentence a
+        # page can show as it stands (`llm.py`, REB-508).
+        return JSONResponse({"detail": exc.message}, status_code=502)
     if isinstance(exc, ContractFailed):
         # A contract that could not be typeset is the server's failure, not the
         # request's: pandoc missing, a template that no longer compiles, a malformed

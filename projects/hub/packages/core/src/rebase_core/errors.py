@@ -55,3 +55,12 @@ class SigningUnavailable(DomainError):
     mail key."""
 
     code = "signing_unavailable"
+
+
+class LlmUnavailable(DomainError):
+    """Claude did not answer: a refusal fallback exhausted, a rate limit, an outage
+    (`llm.py`, REB-508). `message` is the one sentence a page can show as it stands. A
+    502 in the API; the MCP's `_call` renders it as the tool's own sentence rather than
+    a traceback."""
+
+    code = "llm_unavailable"

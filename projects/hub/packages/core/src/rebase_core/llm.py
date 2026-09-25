@@ -1,14 +1,17 @@
 """The hub's one seam onto Claude (REB-508): two future callers -- the anonymous card
 (spec § 5.1) and the team proposal (spec § 3.4) -- share `LlmCall` and never see the
 `anthropic` SDK itself. Like `EmailSender` in `mail.py`, a protocol, one real
-implementation on the official SDK, and `call_from_settings` answering `None` without a
-key so a caller refuses with its own sentence rather than guessing at one.
+implementation on the official SDK, a recording fake for the tests, and
+`call_from_settings` answering `None` without a key so a caller refuses with its own
+sentence rather than guessing at one.
 
 `AnthropicCall` never raises past `complete`: a `LlmUnavailable` is the only thing that
 crosses the boundary, carrying the one sentence a page can show as it stands, because
 the SDK's own exceptions carry no Italian and no promise to keep meaning the same thing
-after the next version. Nothing here logs the request: not the CV text a card is
-written from, not a project's description, not the key.
+after the next version. It is a `DomainError` (`errors.py`), so the API's
+`domain_error_handler` answers a 502 and the MCP's `_call` answers the tool's own
+sentence, both with no code of their own. Nothing here logs the request: not the CV text
+a card is written from, not a project's description, not the key.
 """
 
 import logging
@@ -18,6 +21,7 @@ import anthropic
 from pydantic import BaseModel
 
 from rebase_core.config import Settings
+from rebase_core.errors import LlmUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +31,13 @@ UNAVAILABLE_SENTENCE = "Non riesco a proporre un team adesso: riprova tra poco."
 # The server-side fallback opt-in, exactly as the spec's § 5 and the global constraints
 # name it: never the older array form, never a client-side fallback list.
 _BETAS = ["server-side-fallback-2026-07-01"]
+
+# Under nginx's own 60-second cut (AGENTS.md), so a stalled provider answers
+# `LlmUnavailable` instead of leaving the caller behind a proxy that already gave up.
+_TIMEOUT_SECONDS = 50.0
+
+# Inference stays in the European Union, which the privacy page states (spec § 6).
+_INFERENCE_GEO = "eu"
 
 
 class LlmRequest(BaseModel):
@@ -48,10 +59,6 @@ class LlmResponse(BaseModel):
     input_tokens: int
     output_tokens: int
     cache_read_tokens: int
-
-
-class LlmUnavailable(Exception):
-    """The provider did not answer: the sentence the page shows."""
 
 
 class LlmCall(Protocol):
@@ -86,6 +93,8 @@ class AnthropicCall:
                 # future callers never import an `anthropic` type of their own.
                 system=cast(Any, request.system),
                 messages=cast(Any, request.messages),
+                timeout=_TIMEOUT_SECONDS,
+                inference_geo=_INFERENCE_GEO,
             )
         except anthropic.APIConnectionError as error:
             logger.warning("Anthropic %s: connection error", type(error).__name__)
@@ -113,6 +122,22 @@ class AnthropicCall:
             output_tokens=response.usage.output_tokens,
             cache_read_tokens=response.usage.cache_read_input_tokens or 0,
         )
+
+
+class RecordingCall:
+    """Scripted responses, answered in order, the way `RecordingSender` (`mail.py`)
+    keeps every mail it was asked to send: here it is every `LlmRequest`, in
+    `.requests`, for the card writer's, the proposal engine's, the API's and the MCP's
+    own tests to assert against, with no network and no `anthropic` import of their
+    own."""
+
+    def __init__(self, responses: list[LlmResponse]) -> None:
+        self._responses = list(responses)
+        self.requests: list[LlmRequest] = []
+
+    def complete(self, request: LlmRequest) -> LlmResponse:
+        self.requests.append(request)
+        return self._responses.pop(0)
 
 
 def call_from_settings(settings: Settings) -> LlmCall | None:

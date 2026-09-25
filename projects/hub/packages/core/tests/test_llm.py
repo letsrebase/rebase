@@ -17,11 +17,13 @@ import httpx2
 import pytest
 
 from rebase_core.config import Settings
+from rebase_core.errors import DomainError
 from rebase_core.llm import (
     AnthropicCall,
     LlmRequest,
     LlmResponse,
     LlmUnavailable,
+    RecordingCall,
     call_from_settings,
 )
 
@@ -171,6 +173,8 @@ def test_complete_sends_the_documented_request() -> None:
             },
             "system": REQUEST.system,
             "messages": REQUEST.messages,
+            "timeout": 50.0,
+            "inference_geo": "eu",
         }
     ]
 
@@ -238,3 +242,62 @@ def test_settings_default() -> None:
     call = call_from_settings(with_key)
     assert isinstance(call, AnthropicCall)
     assert call.model == "claude-opus-5"
+
+
+def test_provider_errors_are_domain_errors() -> None:
+    """The API's `domain_error_handler` and the MCP's `_call` both catch `DomainError`,
+    not `LlmUnavailable` by name: this is what turns a stalled provider into a 502 or a
+    tool sentence instead of a traceback."""
+    assert issubclass(LlmUnavailable, DomainError)
+    stub = StubClient(_connection_error())
+    call = AnthropicCall(API_KEY, MODEL, client=stub)  # type: ignore[arg-type]
+
+    with pytest.raises(DomainError) as exc_info:
+        call.complete(REQUEST)
+
+    assert exc_info.value.message == SENTENCE
+
+
+def test_recording_call_keeps_requests() -> None:
+    first = LlmResponse(
+        text="Uno",
+        stop_reason="end_turn",
+        refusal_category=None,
+        model=MODEL,
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+    )
+    second = LlmResponse(
+        text="Due",
+        stop_reason="end_turn",
+        refusal_category=None,
+        model=MODEL,
+        input_tokens=2,
+        output_tokens=2,
+        cache_read_tokens=0,
+    )
+    call = RecordingCall([first, second])
+
+    assert call.complete(REQUEST) is first
+    assert call.complete(REQUEST) is second
+    assert call.requests == [REQUEST, REQUEST]
+
+
+def test_request_carries_timeout_and_eu_geo() -> None:
+    """Under nginx's own 60-second cut, and inference stays in the EU (spec § 6)."""
+    message = _Message(
+        content=[_Block("text", "Ecco la scheda.")],
+        stop_reason="end_turn",
+        stop_details=None,
+        usage=_Usage(input_tokens=1, output_tokens=1, cache_read_input_tokens=0),
+        model=MODEL,
+    )
+    stub = StubClient(message)
+    call = AnthropicCall(API_KEY, MODEL, client=stub)  # type: ignore[arg-type]
+
+    call.complete(REQUEST)
+
+    [kwargs] = stub.beta.messages.calls
+    assert kwargs["timeout"] == 50.0
+    assert kwargs["inference_geo"] == "eu"
