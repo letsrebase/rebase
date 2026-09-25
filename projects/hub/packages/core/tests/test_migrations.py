@@ -322,3 +322,70 @@ def test_migration_0019_can_run_again_and_roll_back() -> None:
             diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
             assert diff == [], diff
         engine.dispose()
+
+
+def test_migration_0020_can_run_again_and_roll_back() -> None:
+    """A retried deploy runs 0020's statements over tables that already exist, and the
+    downgrade leaves 0019's schema: both must work, and the result must be the models'."""
+    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+        url = container.get_connection_url()
+        upgrade_to_head(url)
+        config = Config(str(INI_PATH))
+        config.set_main_option("sqlalchemy.url", url)
+        command.downgrade(config, "0019")
+        command.upgrade(config, "head")
+        engine = create_engine(url, future=True)
+        with engine.begin() as connection:
+            connection.execute(text("UPDATE alembic_version SET version_num = '0019'"))
+        command.upgrade(config, "head")
+        with engine.connect() as connection:
+            assert (
+                connection.execute(text("SELECT version_num FROM alembic_version")).scalar()
+                == head_revision()
+            )
+            diff = compare_metadata(MigrationContext.configure(connection), Base.metadata)
+            assert diff == [], diff
+        engine.dispose()
+
+
+def test_the_campaign_constraints_are_installed(hub_engine: Engine) -> None:
+    """A campaign's source and its source's field go together, and every enum column
+    refuses a value outside its list: proven with raw SQL, rolled back."""
+    with hub_engine.connect() as connection:
+        outer = connection.begin()
+        user_id = connection.execute(
+            text(
+                "INSERT INTO users (id, email, nome, cognome, role, attivo, created_at, "
+                "updated_at) VALUES (gen_random_uuid(), 'c@rebase.it', 'C', '', 'admin', "
+                "true, now(), now()) RETURNING id"
+            )
+        ).scalar_one()
+        base = (
+            "INSERT INTO campaigns (id, created_by, nome, slug, fonte, stato_percorso, filtri, "
+            "oggetto, testo, bottone_testo, bottone_meta, azione, stato, contenuto_at, "
+            "created_at, updated_at) VALUES (gen_random_uuid(), :u, 'n', :slug, :fonte, :sp, "
+            "CAST(:filtri AS JSONB), '', '', '', 'area', :azione, 'bozza', now(), now(), now())"
+        )
+        bad = (
+            {"slug": "a", "fonte": "stato", "sp": None, "filtri": None, "azione": "cv"},
+            {"slug": "b", "fonte": "filtri", "sp": None, "filtri": None, "azione": "cv"},
+            {"slug": "c", "fonte": "stato", "sp": "lead", "filtri": None, "azione": "vola"},
+            {"slug": "d", "fonte": "nuvola", "sp": None, "filtri": None, "azione": "cv"},
+        )
+        for values in bad:
+            savepoint = connection.begin_nested()
+            with pytest.raises(IntegrityError):
+                connection.execute(text(base), {"u": user_id, **values})
+            savepoint.rollback()
+        connection.execute(
+            text(base),
+            {
+                "u": user_id,
+                "slug": "ok",
+                "fonte": "stato",
+                "sp": "lead",
+                "filtri": None,
+                "azione": "cv",
+            },
+        )
+        outer.rollback()
