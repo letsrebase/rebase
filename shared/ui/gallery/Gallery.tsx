@@ -35,6 +35,7 @@ import {
 } from '../dropdown-menu'
 import { Input } from '../input'
 import { Label } from '../label'
+import { Loader } from '../loader'
 import {
   Popover,
   PopoverContent,
@@ -138,7 +139,7 @@ export function Gallery() {
         <header className="flex flex-col gap-2 pb-6">
           <h1 className="text-2xl font-medium">@rebase/ui</h1>
           <p className="max-w-prose text-sm text-muted-foreground">
-            The eighteen primitives the hub and the CRM share, on the tokens of the
+            The nineteen primitives the hub and the CRM share, on the tokens of the
             application-variant record: squared, 1px ink lines, one 4px step shadow on
             what floats and none on what rests. Every variant, every size and every
             state each one declares, so a review has one page instead of two products.
@@ -292,6 +293,21 @@ export function Gallery() {
               <Skeleton className="h-8 w-24" />
             </CardContent>
           </Card>
+        </Section>
+
+        <Section
+          title="Loader"
+          note="The brand's own four-tile mark, animated: one tile lit at a time in reading order, an 800ms loop, inert behind prefers-reduced-motion."
+        >
+          <Row label="inline, size-3 (default)">
+            <span className="inline-flex items-center gap-2 text-sm">
+              <Loader />
+              Caricamento…
+            </span>
+          </Row>
+          <Row label="standalone, size-12">
+            <Loader className="size-12" />
+          </Row>
         </Section>
 
         <Section title="Table" note="48px rows, a 40px header closed by the 2px rule, the ink separators and the Paper hover." className="items-stretch">
