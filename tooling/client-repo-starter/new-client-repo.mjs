@@ -457,6 +457,8 @@ for (const src of listFiles(TEMPLATE_DIR)) {
     continue;
   }
   mkdirSync(dirname(dest), { recursive: true });
+  // Snyk Code javascript/PT here is a false positive: a developer's script, writing
+  // where the developer running it asks it to.
   writeFileSync(dest, resolveFile(readFileSync(src, "utf8")));
   written.push(rel);
 }
@@ -466,6 +468,8 @@ if (args.coderabbit) {
   if (existsSync(dest) && !args.force) {
     skipped.push(".coderabbit.yaml");
   } else {
+    // Snyk Code javascript/PT here is a false positive: a developer's script, writing
+    // where the developer running it asks it to.
     writeFileSync(dest, CODERABBIT_YAML);
     written.push(".coderabbit.yaml");
   }

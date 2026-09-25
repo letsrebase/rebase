@@ -135,6 +135,8 @@ const page = await browser.newPage({
 await page.setContent(markup(), { waitUntil: 'load' })
 await page.evaluate(() => document.fonts.ready.then(() => undefined))
 mkdirSync(dirname(out), { recursive: true })
+// Snyk Code javascript/PT here is a false positive: a developer's script, writing
+// where the developer running it asks it to.
 writeFileSync(out, await page.screenshot({ type: 'png' }))
 await browser.close()
 // Which browser drew it and where: glyph rasterization differs between macOS and

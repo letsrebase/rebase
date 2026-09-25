@@ -58,7 +58,11 @@ export function TimeReportButtons({ dealId }: { dealId: string }) {
           PDF
         </Button>
         <Button asChild variant="outline">
-          <a href={timeReportXlsxUrl(dealId, mese)}>
+          <a
+            // Snyk Code javascript/DOMXSS here is a false positive: always a same-origin
+            // path under /api/deals/, with the month passed through URLSearchParams.
+            href={timeReportXlsxUrl(dealId, mese)}
+          >
             <FileSpreadsheet className="mr-2 size-4" aria-hidden="true" />
             XLSX
           </a>

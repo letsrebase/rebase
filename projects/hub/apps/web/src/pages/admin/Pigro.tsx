@@ -97,6 +97,9 @@ export function AdminPigro() {
                     <TableRow key={space.slug}>
                       <TableCell>
                         <a
+                          // Snyk Code javascript/DOMXSS here is a false positive: the hub's
+                          // API builds every url as pigro_api_url + /<slug>/app/, so the
+                          // scheme is always the configured one.
                           href={space.url}
                           target="_blank"
                           rel="noreferrer"
