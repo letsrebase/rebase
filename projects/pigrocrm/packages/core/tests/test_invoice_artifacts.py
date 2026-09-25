@@ -525,3 +525,23 @@ def test_a_version_that_is_not_a_pdf_is_never_served_as_the_invoices_pdf(
     content, content_type, _ = service.download(invoice_id, "pdf", ADMIN)
     assert content_type == "application/pdf"
     assert hashlib.sha256(content).hexdigest() == pdf.hash_sha256
+
+
+def test_the_pdfs_own_bytes_stored_under_another_type_are_repaired_not_reused(
+    service: InvoiceService, customer_id: UUID, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rendered PDF's exact bytes, stored before REB-480 as `application/xml`. The
+    hash matches what `produce_artifacts` renders, so reusing the version on the hash
+    alone left `download` refusing it for good. The type has to match too."""
+    invoice_id = _issue(service, customer_id)
+    pdf = service.produce_artifacts(invoice_id, ADMIN)[0]
+    rendered, _, _ = service.download(invoice_id, "pdf", ADMIN)
+    with monkeypatch.context() as patched:
+        patched.setattr(DocumentService, "_check_invoice_pdf", lambda *_: None)
+        service.documents.add_version(pdf.document_id, rendered, "application/xml", ADMIN)
+    with pytest.raises(NotFound):
+        service.download(invoice_id, "pdf", ADMIN)
+
+    repaired = service.produce_artifacts(invoice_id, ADMIN)[0]
+    assert repaired.version_numero == pdf.version_numero + 2
+    assert service.download(invoice_id, "pdf", ADMIN)[:2] == (rendered, "application/pdf")

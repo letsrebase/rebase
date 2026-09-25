@@ -1294,11 +1294,12 @@ class InvoiceService:
         against the lines to the cent instead of recomputed (§3.3): the document the
         customer holds is the fact, and this method refuses to record a different one.
 
-        Order: pure checks on the input, then `lock_counter(anno)` -- the first and only
-        row lock -- then every check that reads the register (duplicates, neighbours,
-        gaps, native numbers), then the write. Nothing is consumed on failure: the
-        counter is only ever raised to a number that is being written in the same
-        transaction.
+        Order: pure checks on the input, then `lock_counter(anno)` -- the only lock on
+        the register, and the first row lock unless the original PDF is an existing
+        document, whose own row `_validate_original_pdf` locks (REB-480) -- then every
+        check that reads the register (duplicates, neighbours, gaps, native numbers),
+        then the write. Nothing is consumed on failure: the counter is only ever raised
+        to a number that is being written in the same transaction.
 
         **One transaction, Drive included.** With `pdf_sorgente.drive_file_id` the bytes
         of the original PDF are read among the pure checks (see `_resolve_original_pdf`)
@@ -1761,7 +1762,7 @@ class InvoiceService:
 
     def _validate_original_pdf(self, customer_id: UUID, document_id: UUID) -> UUID:
         """Check that this `documents` row may become the invoice's PDF, and return its
-        id. Reads only.
+        id. Writes nothing; it only locks the row it reads.
 
         The PDF the customer actually received, never rendered: a PDF produced today
         with today's layout would not be that document (§3.5).
@@ -1772,8 +1773,17 @@ class InvoiceService:
         pure checks, above the counter lock and before a single row is flushed. The
         assignment -- one line, `invoice.pdf_document_id = ...` -- happens after the row
         exists.
+
+        The document's row is locked before it is read (REB-480), and stays locked until
+        the import commits the link. A version upload takes the same lock before it checks
+        whether an invoice names the document, so a non-PDF version cannot land between
+        this read and that commit: whichever comes second waits, then reads what the
+        first wrote. It is the one row lock above `lock_counter`, and the order cannot
+        deadlock: every other writer of an unlinked document's row (an upload, an edit)
+        never takes the counter, and another import of the same document takes this lock
+        first as well.
         """
-        document = self.documents.repo.get(document_id)
+        document = self.documents.repo.lock(document_id)
         if document is None or document.deleted_at is not None:
             raise NotFound("document", document_id)
         if document.tipo != "fattura":
@@ -2210,9 +2220,9 @@ class InvoiceService:
         * the hash matches and the stored bytes still hash to it -- nothing to do.
           Return the existing version rather than writing an identical one, so a
           download does not grow the history;
-        * the hash matches but the bytes are gone or corrupt -- a **repair**: write a
-          new version with identical content. Spec 4 allows exactly this and calls it a
-          repair, not a modification;
+        * the hash matches but the bytes are gone or corrupt, or stored under another
+          type -- a **repair**: write a new version with identical content. Spec 4
+          allows exactly this and calls it a repair, not a modification;
         * the hash differs -- an error to report, never a version to save.
         """
         digest = hashlib.sha256(data).hexdigest()
@@ -2232,7 +2242,15 @@ class InvoiceService:
             if document.versione_corrente
             else None
         )
-        if current is not None and current.hash_sha256 == digest:
+        # The type too, not only the bytes (REB-480): the same bytes stored under
+        # another type, before `add_version` refused one here, are what `download`
+        # refuses to serve, and reusing them would leave «Rigenera documenti» unable to
+        # repair it. They get a new version with the right type instead.
+        if (
+            current is not None
+            and current.hash_sha256 == digest
+            and current.content_type == content_type
+        ):
             try:
                 stored_ok = (
                     hashlib.sha256(self.storage.get(current.storage_key)).hexdigest() == digest

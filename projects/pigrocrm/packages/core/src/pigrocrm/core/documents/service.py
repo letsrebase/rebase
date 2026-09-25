@@ -409,14 +409,17 @@ class DocumentService:
         a PDF. A soft-deleted invoice still counts, because its document can be restored
         on its own. Every other document keeps `_check_upload`'s allowlist unchanged.
 
-        What this does not close: `import_issued` reads an unlinked document's current
-        version in its pure checks and writes the link later, in its own transaction. A
-        non-PDF upload to that same document in between sees no link yet and lands.
-        `InvoiceService.download` then answers 404 for it rather than serving it, and a
-        PDF version uploaded over it repairs it.
+        The row is locked before the link is read. `import_issued` reads an unlinked
+        document's current version among its pure checks and writes the link only at its
+        commit, and `_validate_original_pdf` takes the same lock before that read: an
+        upload that arrives while an import holds the document waits, then sees the link
+        and is refused; an import that arrives while an upload holds it waits, then sees
+        the new version and refuses the document. Only a non-PDF upload locks: a PDF
+        breaks no rule either way.
         """
         if content_type == "application/pdf":
             return
+        self.repo.lock(document.id)
         tipo = self.repo.invoice_tipo_of_pdf(document.id)
         if tipo is not None:
             raise ValidationFailed(
