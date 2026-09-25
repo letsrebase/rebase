@@ -65,6 +65,16 @@ and why, the next visible thing. An update that only restates the board is noise
 skipping one when the board alone would mislead whoever reads only the update is the
 more common mistake.
 
+**A project does not close itself.** Nothing moves it to `Completed` when its last
+issue does. An issue can also archive on its own schedule regardless of the
+project's own state, so a `list_issues` query on that project without
+`includeArchived: true` can read empty on a project that is actually finished, not
+only on one nobody has touched. Re-check with that flag before trusting either
+reading. Every issue terminal is not by itself proof the contract shipped: a
+project whose issues are all `Canceled` or `Duplicate`, with nothing `Done`,
+delivered nothing, and is itself `Canceled`, not `Completed`. Move it to whichever
+is true yourself once you have checked.
+
 **A card assigned to somebody else stays untouched.** Comment at most, never an
 assignee or status change, however you were asked for it: this is the only thing
 that keeps two people on the same contract off the same card. A card with no

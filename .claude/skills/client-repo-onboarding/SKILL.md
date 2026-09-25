@@ -111,6 +111,28 @@ session's call to make (root `AGENTS.md` § What a human decides):
 State to the person, once the rest is done, exactly which of these are still open:
 none of them are silently skipped just because the repository and the project exist.
 
+## Keeping the template in step
+
+`tooling/client-repo-starter/template/` and `letsrebase/point` (today's only repo
+built from it) each carry their own copy of `AGENTS.md` and the three skills, not a
+link back to this repository's own `docs/tracker.md` or `.claude/skills/`. An edit
+here that is not `rebase`-team-specific (an API quirk, a habit like closing a
+finished project once its issues are all terminal, a naming rule) does not reach
+either copy on its own.
+
+Fold the same edit into `tooling/client-repo-starter/template/` in the same pull
+request that makes it here: the two are meant to read as one contract with different
+team names filled in, and a PR that changes one without the other is incomplete, not
+deferred.
+
+For a repository that already exists (`point`, and any client repo after it), the
+fold cannot land in this PR: it is that repository's own change, reviewed there.
+File a Linear issue in that repository's own team (never in `rebase`'s), named and
+labelled the way any other issue there is, describing the drift and pointing at the
+commit or PR that introduced it here.
+`tooling/client-repo-starter/README.md` § Retrofitting an existing repository is the
+procedure for the fold itself, once someone picks the issue up.
+
 ## Keeping it running: project updates
 
 The generated repository's own `AGENTS.md` and its copy of the `linear-content` skill

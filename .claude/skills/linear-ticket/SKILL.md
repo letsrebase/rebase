@@ -100,8 +100,12 @@ reads, each with `fields: ["id", "title", "status", "statusType", "labels", "pro
    then twenty unrelated ones). Read the first handful and stop where the titles stop
    being about your surface.
 3. **The project**, when the area is the wrong lens (a shared package, `docs/`, a
-   change that spans two apps): `list_issues` with `project:` the id and the three open
-   states.
+   change that spans two apps): `list_issues` with `project:` the id and the three
+   open states, paging each with `cursor` until `hasNextPage` is false. Auditing
+   whether the whole project is done, not just its open work, needs a fourth call
+   with `includeArchived: true`, paged the same way: an issue archives on its own
+   schedule independent of the project's own state, so a project whose issues
+   already archived reads as empty without it (`docs/tracker.md` § API details).
 
 What comes back is read, not counted:
 

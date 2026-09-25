@@ -289,6 +289,20 @@ tested on a branch and is proven on the trunk instead.
   the card; every comment, the closing evidence included, written before or right after
   the merge; `Canceled`; and the `In production` comment when a tag ships. An issue
   reference in a commit body is a pointer, not a link.
+- **A change to how this repository uses Linear reaches the client-repo template and
+  every repo already built from it, or it is a rule that quietly stops being true off
+  this board.** `docs/tracker.md`, `.claude/skills/linear-ticket`,
+  `.claude/skills/linear-content` and `.claude/skills/pr-creation` are the same shape
+  `tooling/client-repo-starter/template/` hands to a new client repo, and the shape
+  `letsrebase/point` (and any repo onboarded after it) already copied at setup. When
+  an edit to one of those four is not `rebase`-team-specific, fold the matching edit
+  into `tooling/client-repo-starter/template/` in the same pull request
+  (`.claude/skills/client-repo-onboarding/` § Keeping the template in step). For a
+  repository already onboarded, the fold cannot land in this PR: file a Linear issue
+  in that repository's own team, never in `rebase`'s, naming the drift, the same way
+  `tooling/client-repo-starter/README.md` § Retrofitting an existing repository
+  already asks for the fold's own PR. A lesson learned once and never carried over is
+  a lesson every future client repo, and `point` today, pays for again.
 
 Find the issue before you start, check it is yours, move it as you go, and close it
 only against evidence on the surface it is about. A defect you found and did not fix
