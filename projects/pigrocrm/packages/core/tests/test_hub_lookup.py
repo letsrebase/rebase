@@ -20,6 +20,15 @@ from pigrocrm.core.tenants.hub import LOOKUP_PATH, MAX_BODY_BYTES, MemberLookup,
 TOKEN = "un-token-lungo-condiviso-con-l-hub"
 
 
+def test_engagements_token_defaults_empty_and_hides_from_repr() -> None:
+    """Not a hub-lookup test: `engagements_token` guards a door the hub reaches
+    through, same as `registry_token` above, and this is the file `registry_token`
+    already lives in (REB-490)."""
+    settings = Settings(_env_file=None)
+    assert settings.engagements_token == ""
+    assert "engagements_token" not in repr(Settings(engagements_token="x", _env_file=None))
+
+
 def _settings(**overrides: object) -> Settings:
     values: dict[str, object] = {
         "jwt_secret": "test-secret-for-the-core-test-suite-only",
