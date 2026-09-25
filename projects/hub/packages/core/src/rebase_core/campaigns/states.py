@@ -12,7 +12,7 @@ from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import exists, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from rebase_core.errors import ValidationFailed
 from rebase_core.models import Company, Freelancer, Login, Signup, User
@@ -121,6 +121,7 @@ def _cards(session: Session, stato: str) -> list[Candidate]:
         .join(User, User.id == Freelancer.user_id)
         .where(Freelancer.deleted_at.is_(None))
         .order_by(Freelancer.created_at, Freelancer.id)
+        .options(defer(Freelancer.cv_bytes))  # completeness reads `cv_size`, never the PDF
     ).all()
     found: list[Candidate] = []
     for card, user, entrato in rows:

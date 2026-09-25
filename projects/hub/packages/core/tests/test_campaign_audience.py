@@ -1,6 +1,9 @@
 """A campaign's list: templates, candidates, exclusions, the action already done."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from campaign_fixtures import (  # noqa: F401  (fixture)
     T0,
@@ -10,6 +13,7 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
     lead,
     person,
 )
+from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from rebase_core.campaigns.actions import done_at, snapshot
@@ -244,3 +248,40 @@ def test_a_cross_case_address_across_a_lead_and_a_card_is_one_lowercase_row(
     campaign = campaign_row(clean, fonte="filtri", stato_percorso=None, filtri={"lista": "talenti"})
     rows = build_audience(clean, campaign, now=T0, gap_days=3)
     assert [(r.candidate.email, r.escluso) for r in rows] == [("ada@studio.it", None)]
+
+
+@contextmanager
+def statements(session: Session) -> Iterator[list[str]]:
+    """Every SQL statement `session`'s engine runs inside the block."""
+    seen: list[str] = []
+    engine = session.get_bind()
+
+    def record(*args: Any) -> None:
+        seen.append(args[2])  # (conn, cursor, statement, parameters, context, many)
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        yield seen
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+
+def test_no_list_snapshot_or_check_reads_a_cvs_bytes(clean: Session) -> None:  # noqa: F811  (fixture)
+    """A list of a few hundred cards must not pull a few hundred PDFs out of Postgres:
+    completeness reads `cv_size`, and nothing a campaign does needs the bytes."""
+    person(clean, "nocv@studio.it", cv=False)
+    person(clean, "done@studio.it")
+    person(clean, "empty@studio.it", cv=False, tariffa=False)
+    filtered = campaign_row(
+        clean, fonte="filtri", stato_percorso=None, filtri={"lista": "talenti", "has_cv": True}
+    )
+    with statements(clean) as seen:
+        for state in ("manca_cv", "completo", "scheda_vuota_nuovi", "scheda_vuota_entrati"):
+            candidates_for_state(clean, state)
+        candidate = candidates_for_state(clean, "manca_cv")[0]
+        row = recipient_for(clean, candidate, snapshot(clean, candidate, T0))
+        for azione in ("cv", "scheda_completa", "profilo_creato"):
+            done_at(clean, row, azione)
+        assert [c.email for c in candidates(clean, filtered)] == ["done@studio.it"]
+    assert seen
+    assert not [sql for sql in seen if "cv_bytes" in sql]

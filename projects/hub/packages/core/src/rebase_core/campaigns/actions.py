@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from rebase_core.campaigns.states import Candidate, card_state
 from rebase_core.models import CampaignRecipient, Comment, Company, Freelancer, Login, User
@@ -16,10 +16,13 @@ CV_COMMENT_PREFIX = "CV caricato dalla persona"
 
 
 def _card(session: Session, email: str) -> Freelancer | None:
+    """The live card of `email`, without its CV's bytes: `cv_size` says whether one is
+    there, and a snapshot or a check runs once per recipient."""
     return session.scalar(
         select(Freelancer)
         .join(User, User.id == Freelancer.user_id)
         .where(func.lower(User.email) == email.lower(), Freelancer.deleted_at.is_(None))
+        .options(defer(Freelancer.cv_bytes))
     )
 
 
