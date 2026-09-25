@@ -166,8 +166,7 @@ follows for Postgres's own files.
 
 **Four rules keep an address out of a campaign, and only one of them is an opt-out.**
 `exclusions()` (`rebase_core.campaigns.audience`) runs when the list is shown, when it
-is frozen and once at the start of each tick's pass over the campaign, and leaves out,
-with the reason on screen:
+is frozen and again right before each mail, and leaves out, with the reason on screen:
 an admin, by `User.role == "admin"` (`REASON_ADMIN`, no row needed); an address with a
 row in `campaign_optouts` -- `fonte='link'` for the recipient's own unsubscribe,
 `'reclamo'` for a spam complaint Resend reports, `'admin'` for «Non scrivere mai»,
@@ -175,10 +174,10 @@ which is how the team goes in rather than relying on the role check; an address 
 hard-bounced on any earlier campaign (`campaign_recipients.rimbalzata_at`, no optout
 row); and an address another campaign reached in the last `REBASE_CAMPAIGN_GAP_DAYS`
 (3), the gap rule that also turns several campaigns scheduled for the same minute into
-one mail per person. It does not run again within a pass: before each mail the tick
-checks only whether the action is already done (`done_at`) and, for a list built from a
-state or from filters, whether the person is still on it. An opt-out or a bounce
-recorded while a pass is sending holds from the next pass, for the rows still queued.
+one mail per person. Before each mail the tick also checks whether the action is
+already done (`done_at`) and, for a list built from a state or from filters, whether
+the person is still on it. That list is rebuilt once per pass, since it is a scan of
+every card; an opt-out or a bounce recorded mid-pass keeps a queued mail from leaving.
 Optouts are campaigns-only: the magic link, the welcome mail and the contracts flow
 keep reaching an opted-out address, since none of those is a campaign. The unsubscribe
 route (`POST /api/hub/campagne/disiscrizione`) has no rate limit on purpose: Gmail and

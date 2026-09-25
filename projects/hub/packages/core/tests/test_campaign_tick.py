@@ -14,9 +14,10 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
     draft,
     person,
 )
-from sqlalchemy import Engine, update
+from sqlalchemy import Engine, select, update
 from sqlalchemy.orm import Session
 
+from rebase_core.campaigns.optouts import OptoutService
 from rebase_core.campaigns.schemas import ScheduleRequest, TalentiFiltri
 from rebase_core.campaigns.sender import RecordingCampaignSender, SendOutcome
 from rebase_core.campaigns.service import CampaignService
@@ -132,6 +133,42 @@ def test_an_opt_out_after_freezing_is_skipped(clean: Session) -> None:  # noqa: 
     clean.commit()
     run_tick(clean, RecordingCampaignSender(), SETTINGS, clock=clock, pause=NO_PAUSE)
     assert rows(clean, campaign)["a@studio.it"].motivo == "si è disiscritto"
+
+
+def test_an_opt_out_between_two_rows_of_the_same_pass_is_skipped(
+    clean: Session,  # noqa: F811  (fixture)
+    hub_engine: Engine,
+) -> None:
+    """Spec § 5.3: the exclusions are read right before each mail, not once per pass. A
+    pass sends one mail a second, so the person who unsubscribes while it runs must not
+    get the mail still queued for them. The `pause` hook between two rows is where the
+    opt-out lands, from a second session, as the unsubscribe route would write it."""
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it", "b@studio.it")
+    other = session_factory(hub_engine)()
+    done = {"optout": False}
+
+    def unsubscribe_after_first_row(_seconds: float) -> None:
+        if done["optout"]:
+            return
+        done["optout"] = True
+        queued = other.scalars(
+            select(CampaignRecipient.email).where(
+                CampaignRecipient.campaign_id == campaign.id,
+                CampaignRecipient.stato == "in_coda",
+            )
+        ).one()
+        OptoutService(other).record(queued, "link", None)
+        other.close()
+
+    recording = RecordingCampaignSender()
+    run_tick(clean, recording, SETTINGS, clock=clock, pause=unsubscribe_after_first_row)
+    sent = rows(clean, campaign)
+    assert sorted((r.stato, r.motivo) for r in sent.values()) == [
+        ("inviata", None),
+        ("saltata", "si è disiscritto"),
+    ]
+    assert len(recording.sent) == 1
 
 
 def test_a_retry_keeps_the_row_until_the_third_failure(clean: Session) -> None:  # noqa: F811  (fixture)

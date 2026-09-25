@@ -31,7 +31,7 @@ raise on data this pass didn't choose (a `pigro` button phase 1 refuses, a recip
 own broken `prima` snapshot, corrupt stored `filtri`), not bugs in the loop itself:
 a row whose checks or `render` raise is marked `fallita` with a short, address-free
 reason and the row loop moves on; a campaign whose own work raises outside a row (e.g.
-`candidates`/`exclusions`) rolls that campaign's work back, is logged by id and
+`candidates`) rolls that campaign's work back, is logged by id and
 exception type only, and is left `in_invio` for a later pass while the loop moves on
 to the next due campaign. The advisory lock is released in every case regardless,
 since it is taken and released around the whole pass, outside both of these."""
@@ -159,18 +159,8 @@ def _send(
     pause: Callable[[float], None],
     result: TickResult,
 ) -> None:
-    queued = session.scalars(
-        select(CampaignRecipient.email).where(
-            CampaignRecipient.campaign_id == campaign.id, CampaignRecipient.stato == "in_coda"
-        )
-    ).all()
-    excluded = exclusions(
-        session,
-        list(queued),
-        campaign_id=campaign.id,
-        now=clock(),
-        gap_days=settings.campaign_gap_days,
-    )
+    # Read once per pass: rebuilding a state's list is a scan of every card. Who opted
+    # out, bounced or was reached by another campaign is read again per row, below.
     members = (
         {c.email for c in candidates(session, campaign)}
         if campaign.fonte in ("stato", "filtri")
@@ -189,7 +179,16 @@ def _send(
         if row is None:
             break
         try:
-            reason = excluded.get(row.email)
+            # Right before this mail, not once per pass (spec § 5.3): a pass sends one
+            # mail a second, so an opt-out, a «Non scrivere mai» or a bounce recorded
+            # while it runs must stop the rows still queued behind it.
+            reason = exclusions(
+                session,
+                [row.email],
+                campaign_id=campaign.id,
+                now=clock(),
+                gap_days=settings.campaign_gap_days,
+            ).get(row.email)
             if reason is None and done_at(session, row, campaign.azione) is not None:
                 reason = REASON_DONE
             if reason is None and members is not None and row.email not in members:
