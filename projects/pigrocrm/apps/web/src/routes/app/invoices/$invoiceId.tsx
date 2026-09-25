@@ -3,6 +3,7 @@ import { Receipt } from 'lucide-react'
 import { EntityDetailLayout } from '@/components/EntityDetailLayout'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { StatusPill } from '@/components/StatusPill'
+import { Loader } from '@rebase/ui/loader'
 import { ConsumedProformaNotice } from '@/features/invoices/ConsumedProformaNotice'
 import { InvoiceActions } from '@/features/invoices/InvoiceActions'
 import { InvoiceHeaderEditor } from '@/features/invoices/InvoiceHeaderEditor'
@@ -34,7 +35,14 @@ export function InvoiceDetail() {
   const canEditInvoice = useCan('update_invoice')
   const invoice = useInvoice(invoiceId)
   const lines = useInvoiceLines(invoiceId)
-  if (invoice.isLoading) return <p className="p-8">Caricamento…</p>
+  if (invoice.isLoading) {
+    return (
+      <p className="flex items-center gap-2 p-8">
+        <Loader className="size-4" />
+        Caricamento…
+      </p>
+    )
+  }
   if (invoice.isError) {
     return (
       <div className="p-8">

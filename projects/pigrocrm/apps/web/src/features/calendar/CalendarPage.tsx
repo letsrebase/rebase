@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
+import { Loader } from '@rebase/ui/loader'
 import { formatIsoDateItalian } from '@/lib/dates'
 import { cn } from '@rebase/ui/cn'
 import { DayPanel } from './DayPanel'
@@ -95,7 +96,10 @@ export function CalendarPage({
       {header}
       <div className="space-y-6 px-8 py-6">
         {month.isPending ? (
-          <p className="text-sm text-muted-foreground">Caricamento…</p>
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader className="size-4" />
+            Caricamento…
+          </p>
         ) : (
           <>
             <div

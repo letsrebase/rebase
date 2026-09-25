@@ -3,6 +3,7 @@ import { FileText } from 'lucide-react'
 import { EntityDetailLayout } from '@/components/EntityDetailLayout'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
+import { Loader } from '@rebase/ui/loader'
 import { OfferStatePicker } from '@/features/documents/OfferStatePicker'
 import { VersionHistory } from '@/features/documents/VersionHistory'
 import { DOCUMENT_TYPE_LABELS, downloadDocument, useDocument } from '@/features/documents/queries'
@@ -26,7 +27,14 @@ function DocumentDetail() {
       </div>
     )
   }
-  if (!document.data) return <div className="p-8 text-muted-foreground">Caricamento…</div>
+  if (!document.data) {
+    return (
+      <div className="flex items-center gap-2 p-8 text-muted-foreground">
+        <Loader className="size-4" />
+        Caricamento…
+      </div>
+    )
+  }
 
   const record = document.data
 

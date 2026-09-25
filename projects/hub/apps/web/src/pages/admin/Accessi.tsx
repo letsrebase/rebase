@@ -2,6 +2,7 @@ import { useInfiniteQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
+import { Loader } from '@rebase/ui/loader'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
@@ -75,7 +76,12 @@ export function AdminAccessi() {
       {stats.isError ? (
         <Empty>Non riesco a leggere gli accessi.</Empty>
       ) : stats.isPending || !totals ? (
-        <Empty>Caricamento…</Empty>
+        <Empty>
+          <span className="inline-flex items-center gap-2">
+            <Loader className="size-4" />
+            Caricamento…
+          </span>
+        </Empty>
       ) : (
         <>
           <dl className="grid gap-4 border-b px-6 py-5 sm:grid-cols-3">
