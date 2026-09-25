@@ -98,18 +98,17 @@ Since REB-387 phase 3 «Invia per la firma» sends a match's documents through D
 itself: Documenso sends no mail of its own. Documenso calls back
 `POST /api/hub/documenso/webhook` with `X-Documenso-Secret` equal to
 `REBASE_DOCUMENSO_WEBHOOK_SECRET`, which must be long and random (`openssl rand -hex
-32`): the route sits public behind `/api/hub/` with no rate limit, and the secret is the
-only thing standing between it and a forged signature event. Production's webhook points
-at
+32`): the route sits public behind `/api/hub/` with no rate limit, and for a rejection
+or a cancellation the secret is the only guard. A completion is not moved on the secret
+alone (REB-431): the webhook only marks which document to confirm, and `finish` reads
+the envelope back with the hub's own API token before the document counts as signed, so
+a secret leaked to somebody who never held the token still cannot forge a signature.
+Production's webhook points at
 `http://api:8000/api/hub/documenso/webhook` inside the compose network, preview's at
 `https://preview.letsrebase.com/api/hub/documenso/webhook`. Documenso retries a failed
 delivery only at once, so an event lost while the API restarts stays lost: «Aggiorna
 stato» on «Match e contratti» reads the envelope and applies it, and an admin presses it
-on a document that has waited for its signature longer than expected. A completion is
-confirmed with Documenso itself, over the hub's own API token, before the document
-counts as signed (REB-431): the webhook alone only marks which document to confirm, so a
-secret leaked to somebody who never held the token still cannot forge a signature.
-Without
+on a document that has waited for its signature longer than expected. Without
 `REBASE_DOCUMENSO_URL` and `REBASE_DOCUMENSO_API_TOKEN` signing answers 503, and a text
 whose front matter says `status: draft` never leaves unless `REBASE_CONTRACTS_ALLOW_DRAFT`
 is true; only the preview's `.env` sets it, and even there it stays false while both
@@ -117,12 +116,13 @@ texts are `status: final`, ready again for the next draft. Documenso reaches `ap
 `NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS` lists it (probe § 5); the secret travels in
 clear, so the webhook URL stays on the compose network or is HTTPS.
 
-The webhook's own follow-up (the sealed copy's download and mails, a framework
-agreement's waiting letters) runs in the background, after the response: a restart
-between the webhook's commit and that background task leaves it undone. `rebase
-contracts-sweep` redoes anything a restart, or a mail the provider refused, left behind,
-and production runs it every ten minutes (the schedule itself is to be scheduled with the
-Documenso rollout).
+The webhook's own follow-up now starts with that confirmation, then the sealed copy's
+download and mails, a framework agreement's waiting letters, all in the background,
+after the response: a restart caught mid-confirmation leaves a signed document plain
+`inviato`, not even `firmato` yet, until the next sweep tries it again; caught later, it
+leaves whichever step ran undone. `rebase contracts-sweep` redoes anything a restart, or
+a mail the provider refused, left behind, and production runs it every ten minutes (the
+schedule itself is to be scheduled with the Documenso rollout).
 
 ## Running it
 

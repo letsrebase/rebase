@@ -20,22 +20,25 @@ the webhook and «Aggiorna stato» can reach the same freelancer's documents at 
 
 The webhook's side is `apply` and `finish`. `apply` locks the freelancer's row, its match
 (when it has one) and the document, in that order, and commits, so Documenso gets its
-answer long before its ten seconds (probe § 5); a second delivery of the same event,
-which can arrive while the first is still running, waits on the lock and finds nothing
-left to do. A rejection or a cancellation is moved and recorded there and then, the harm
-of forging one being small; a completion is not: the webhook's secret travels in clear
-(probe § 5), so `apply` only notes which document to confirm and leaves it `inviato`.
-`finish` runs after that commit, in the webhook's background task or under «Aggiorna
-stato»: it first confirms a still-`inviato` document with Documenso itself, over the
-hub's own API token, and only moves it to `firmato` when Documenso agrees the envelope is
-`COMPLETED` (REB-431, a forged event then needs the token too); then the sealed copy is
-downloaded and stored, the two mails (the freelancer's and rebase's) sent, each recorded
-on its own once accepted (`signed_copy_to_freelancer_at`, `signed_copy_to_rebase_at`),
-then, for a framework agreement, the letters that waited for it typeset with its
-signature date and sent. Each step checks under the document's own row lock whether it
-is still to do, so running `finish` twice does everything once; a lost background task
-or a restart between steps leaves whichever of the two columns is unset, which the next
-`finish` reads as still to do for that recipient alone (REB-391).
+answer long before its ten seconds (probe § 5). A rejection or a cancellation is moved
+and recorded there and then, the harm of forging one being small, so a second delivery of
+the same event waits on the lock and finds it already `annullato`. A completion is not
+moved by `apply`: the webhook's secret travels in clear (probe § 5), so `apply` only
+notes which document to confirm and leaves it `inviato` -- a second delivery of the same
+`DOCUMENT_COMPLETED`, arriving before the first's own confirmation has run, reads the
+same `inviato` row and schedules its own `finish` too. `finish` runs after `apply`'s
+commit, in the webhook's background task or under «Aggiorna stato»: it first confirms a
+still-`inviato` document with Documenso itself, over the hub's own API token, and only
+moves it to `firmato` (or, for a rejection or a cancellation the webhook never delivered,
+`annullato`) once Documenso says so (REB-431, a forged completion then needs the token
+too); then the sealed copy is downloaded and stored, the two mails (the freelancer's and
+rebase's) sent, each recorded on its own once accepted (`signed_copy_to_freelancer_at`,
+`signed_copy_to_rebase_at`), then, for a framework agreement, the letters that waited for
+it typeset with its signature date and sent. Each step checks under the document's own
+row lock whether it is still to do, so running `finish` twice -- two overlapping
+deliveries' own background tasks among them -- does everything once; a lost background
+task or a restart between steps leaves whichever of the two mail columns is unset, which
+the next `finish` reads as still to do for that recipient alone (REB-391).
 
 `sweep` is the recovery `rebase contracts-sweep` runs, meant every ten minutes once
 production schedules it with the Documenso rollout: `finish` again, for every document a
@@ -411,7 +414,8 @@ class SigningService:
 
     def finish(self, document_id: UUID) -> bool:
         """What a signature leaves to do once it is committed, each step idempotent: the
-        completion confirmed with Documenso itself and the document moved to `firmato`
+        outcome confirmed with Documenso itself and the document moved to `firmato`, or
+        to `annullato` for a rejection or a cancellation the webhook never delivered
         (REB-431); the sealed copy downloaded and stored; the signed-copy mails sent,
         once; for an active framework agreement, the letters that waited for it
         released. A step that fails is logged and left for the next call (the next
@@ -440,19 +444,34 @@ class SigningService:
         API token too (REB-431). Nothing to confirm for a document not `inviato`, or
         with no envelope. The freelancer's row, the document's match (when it has one)
         and the document itself are then locked in that order, the global rule, and the
-        document re-read: only one still `inviato` moves, with the signer's own date
-        (`outcome_from_envelope(envelope).signed_at`), turning its match `attivo` as
-        `apply` used to. Documenso unreachable is logged and left for the next `finish`
-        (the sweep retries); an envelope Documenso does not report `COMPLETED` (still
-        pending, rejected or cancelled there) leaves the row `inviato` too, logged at
-        info level for the ordinary "not signed yet" and at warning for anything else.
-        Returns whether this call moved the document to `firmato`."""
+        document re-read: only one still `inviato` moves. A `COMPLETED` envelope signs
+        it, with the signer's own date (`outcome_from_envelope(envelope).signed_at`),
+        turning its match `attivo` as `apply` used to; a `REJECTED` or `CANCELLED` one
+        is applied the same way `refresh` already applies one, from the same envelope
+        this call already read, so a rejection or a cancellation a webhook never
+        delivered is recovered by the next `finish` or `sweep` too, not just a missed
+        signature (REB-431). Still `PENDING` (or `DRAFT`) leaves the row `inviato`,
+        logged at info level, tried again next time. Documenso unreachable
+        (`DocumensoFailed`) or not configured on this environment at all
+        (`SigningUnavailable`, `self._documenso()`'s own refusal) is logged once and
+        left for the next call rather than raised, so the sweep never logs a traceback
+        merely for running where signing is off. Returns whether this call moved the
+        document."""
         document = self._document(document_id)
         if document.stato != "inviato" or document.documenso_id is None:
             return False
         envelope_id = document.documenso_id
         try:
             envelope = self._documenso().get(envelope_id)
+        except SigningUnavailable:
+            # No REBASE_DOCUMENSO_URL/REBASE_DOCUMENSO_API_TOKEN on this environment: a
+            # routine, expected state (a preview with signing off, say), not a failure
+            # worth a traceback on every sweep run.
+            _log.info(
+                "no Documenso configured on this environment: document %s stays inviato",
+                document_id,
+            )
+            return False
         except DocumensoFailed:
             _log.warning(
                 "could not confirm envelope %s of document %s with Documenso",
@@ -470,20 +489,15 @@ class SigningService:
         if document.stato != "inviato":
             self.session.rollback()
             return False
-        if outcome is None or outcome.kind != COMPLETED:
+        if outcome is None:
             self.session.rollback()
-            if outcome is None:
-                _log.info(
-                    "envelope %s of document %s is not completed yet", envelope_id, document_id
-                )
-            else:
-                _log.warning(
-                    "envelope %s of document %s reports %s, not completed",
-                    envelope_id,
-                    document_id,
-                    outcome.kind,
-                )
+            _log.info("envelope %s of document %s is not completed yet", envelope_id, document_id)
             return False
+        if outcome.kind != COMPLETED:
+            document.stato = "annullato"
+            document.cancel_reason = _cancel_reason(outcome)
+            self.session.commit()
+            return True
         document.stato = "firmato"
         # The signer's own date; the moment the hub heard of it only if Documenso said
         # nothing, which a completed envelope never does.
@@ -517,10 +531,11 @@ class SigningService:
 
     def _to_finish(self) -> list[UUID]:
         """Every document a sweep must run `finish` on: a document `inviato` with an
-        envelope, whose completion a lost webhook delivery never confirmed (REB-431); a
-        signature or a notice whose sealed copy is missing or not yet mailed to either
-        recipient; and every active framework agreement that still has a letter
-        `in_attesa` on a match `in_firma` (a release `finish` itself missed, or never ran
+        envelope, whose outcome (a completion, a rejection or a cancellation) a lost
+        webhook delivery never confirmed (REB-431); a signature or a notice whose sealed
+        copy is missing or not yet mailed to either recipient; and every active
+        framework agreement that still has a letter `in_attesa` on a match `in_firma` (a
+        release `finish` itself missed, or never ran
         for). `finish` is idempotent either way, so the three sets are simply run
         together. The first costs one GET to Documenso per waiting document per sweep --
         acceptable at the hub's volume."""
