@@ -225,6 +225,20 @@ const meEditCompanyRedirect = createRoute({
 })
 
 const adminArea = createRoute({ getParentRoute: () => signedInLayout, path: '/admin', component: AdminGuard })
+// A signed-in admin lands here bare: `landingRoute()` in the website's `session.js`
+// sends the marketing site's "Accedi" link straight to `/hub/admin` for anyone whose
+// session already says `role === 'admin'`, and this router had no page for `/admin`
+// alone -- AdminGuard's own `<Outlet />` renders nothing for it (the "frame with an
+// empty panel" ORB-106 already named, until now only patched for the old
+// `/admin/freelance` address below). Talent is the same sensible default
+// `adminFreelanceRedirect` already uses.
+const adminIndexRedirect = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/admin/talent' })
+  },
+})
 const adminTalent = createRoute({
   getParentRoute: () => adminArea,
   path: '/talent',
@@ -287,17 +301,17 @@ const adminFreelanceContracts = createRoute({
   path: '/freelance/$id/contracts',
   component: AdminContratti,
 })
-// REB-387: the five-step «Crea match», from the talent row's menu and the contracts page.
+// REB-387, REB-476: the three-step «Crea match», from the talent row's menu and the contracts page.
 const adminFreelanceMatchNew = createRoute({
   getParentRoute: () => adminArea,
   path: '/freelance/$id/match/new',
   component: AdminCreaMatch,
 })
-// The website's footer links to /hub/admin/freelance (ORB-106: the hub router has no
-// index route under /admin, so a signed-in admin sent to a bare /admin would see the
-// frame with an empty panel). Talent replaced the list this used to be (REB-283, then
-// REB-319 for the English path); the redirect keeps that one documented door open
-// rather than 404ing it.
+// The website's footer links to /hub/admin/freelance (ORB-106: before
+// `adminIndexRedirect` above existed, the hub router had no index route under /admin
+// at all, so even a signed-in admin sent to a bare /admin saw the frame with an empty
+// panel). Talent replaced the list this used to be (REB-283, then REB-319 for the
+// English path); the redirect keeps that one documented door open rather than 404ing it.
 const adminFreelanceRedirect = createRoute({
   getParentRoute: () => adminArea,
   path: '/freelance',
@@ -425,6 +439,7 @@ export const routeTree = root.addChildren([
     meEditRedirect,
     meEditCompanyRedirect,
     adminArea.addChildren([
+      adminIndexRedirect,
       adminTalent,
       adminTalentRedirect,
       adminTalentLead,
@@ -460,5 +475,10 @@ export const router = createRouter({ routeTree, basepath: '/hub' })
 declare module '@tanstack/react-router' {
   interface Register {
     router: typeof router
+  }
+  interface HistoryState {
+    /** A sentence the page navigated to shows on arrival: «Crea match» leaves the send
+     *  report's, or that the draft is saved, for «Match e contratti» (REB-476). */
+    notice?: string
   }
 }

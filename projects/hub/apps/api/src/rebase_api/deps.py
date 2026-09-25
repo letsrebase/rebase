@@ -20,7 +20,7 @@ from rebase_core.http import HttpCall, urllib_call
 from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.members import MemberService
 from rebase_core.schemas import MeRead
-from rebase_core.signing import SigningService
+from rebase_core.signing import SigningFactory, signing_from_settings
 from rebase_core.users import UserService
 
 MEMBER_COOKIE = "orbiters_user"
@@ -134,32 +134,20 @@ def get_documenso(settings: SettingsDep) -> DocumensoClient | None:
 
 DocumensoDep = Annotated[DocumensoClient | None, Depends(get_documenso)]
 
-SigningFactory = Callable[[Session], SigningService]
-
 
 def get_signing_factory(
     settings: SettingsDep, renderer: RendererDep, documenso: DocumensoDep, sender: SenderDep
 ) -> SigningFactory:
-    """`SigningService` as this environment configures it, for any session: the
-    request's own, or the one a background task opens for itself (the webhook's).
-    `REBASE_SIGNER_JSON` is handed to `SigningService` as the raw setting, unparsed:
-    `build` runs for every route behind `SigningDep` (a future cancel, refresh, resend
-    or the webhook among them), so parsing it here would 503 all of them on a malformed
-    value. `SigningService` itself parses it once, lazily, only where a document is
-    about to be typeset (REB-406)."""
-
-    def build(session: Session) -> SigningService:
-        return SigningService(
-            session,
-            renderer=renderer,
-            documenso=documenso,
-            sender=sender,
-            signer_json=settings.signer_json,
-            contracts_mail=settings.contracts_mail,
-            allow_draft=settings.contracts_allow_draft,
-        )
-
-    return build
+    """`SigningService` as this environment configures it, for any session: the request's
+    own, or the one a background task opens for itself (the webhook's). Built by the
+    core's `signing_from_settings`, the one builder the MCP server and the sweep use too,
+    with this request's own renderer, Documenso client and sender, so a test's dependency
+    override reaches the service. `REBASE_SIGNER_JSON` stays the raw setting, unparsed:
+    `build` runs for every route behind `SigningDep` (a cancel, a refresh, a resend or the
+    webhook among them), so parsing it here would 503 all of them on a malformed value.
+    `SigningService` itself parses it once, lazily, only where a document is about to be
+    typeset (REB-406)."""
+    return signing_from_settings(settings, renderer, documenso=documenso, sender=sender)
 
 
 SigningDep = Annotated[SigningFactory, Depends(get_signing_factory)]

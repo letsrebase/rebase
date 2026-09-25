@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 import pytest
 from fakes_contracts import FailingRenderer, FakeRenderer
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import Engine, func, select, text
+from sqlalchemy import Engine, event, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -23,6 +23,7 @@ from rebase_core.contract_schemas import (
     ClienteData,
     FiscalData,
     LetteraFields,
+    MatchCheck,
     MatchCreate,
     MatchListItem,
 )
@@ -33,7 +34,7 @@ from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
 from rebase_core.freelancers import FreelancerService
-from rebase_core.matches import MatchService
+from rebase_core.matches import MatchService, require_live_document, require_live_match
 from rebase_core.models import ContractDocument, Freelancer, Match, User
 from rebase_core.schemas import CompanyCreate, FreelancerCreate, StatusChange
 
@@ -682,6 +683,36 @@ def test_a_deleted_card_or_request_is_not_found(clean: Session) -> None:
         _service(clean).for_freelancer(freelancer_id)
 
 
+def test_a_document_is_not_found_once_its_freelancer_is_deleted(clean: Session) -> None:
+    """The guard the admin API and the MCP tools both run before a document's action:
+    «documento ... non trovato» for a document that is gone and for one whose freelancer
+    is soft-deleted, never the freelancer's own message (REB-417)."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    letter = _service(clean).create(freelancer_id, _body(company_id), admin_id).lettera
+    assert require_live_document(clean, letter.id).id == letter.id
+    missing = uuid4()
+    with pytest.raises(NotFound, match=f"documento {missing} non trovato"):
+        require_live_document(clean, missing)
+    FreelancerService(clean).soft_delete(freelancer_id, admin_id)
+    with pytest.raises(NotFound, match=f"documento {letter.id} non trovato"):
+        require_live_document(clean, letter.id)
+
+
+def test_a_match_is_not_found_once_its_freelancer_is_deleted(clean: Session) -> None:
+    """The guard the admin API and the MCP tools both run before a match's action or
+    read: «match ... non trovato» for a match that is gone and for one whose freelancer
+    is soft-deleted, never the freelancer's own message (REB-417)."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    match = _service(clean).create(freelancer_id, _body(company_id), admin_id)
+    assert require_live_match(clean, match.id).id == match.id
+    missing = uuid4()
+    with pytest.raises(NotFound, match=f"match {missing} non trovato"):
+        require_live_match(clean, missing)
+    FreelancerService(clean).soft_delete(freelancer_id, admin_id)
+    with pytest.raises(NotFound, match=f"match {match.id} non trovato"):
+        require_live_match(clean, match.id)
+
+
 def test_cancelling_a_draft_cancels_its_letter_and_leaves_the_framework(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
@@ -1162,3 +1193,358 @@ def test_the_match_list_row_carries_no_tax_field_and_no_budget() -> None:
     fields = set(MatchListItem.model_fields)
     assert not any("budget" in name for name in fields)
     assert fields.isdisjoint({"codice_fiscale", "partita_iva", "domicilio", "pec"})
+
+
+# ---- what a match and its documents are doing (REB-477) ---------------------------------
+
+
+def _waiting(session: Session, match_id: UUID) -> None:
+    """A match sent while its freelancer had no active framework agreement: in signature,
+    its letter waiting (what `SigningService.send_match` leaves)."""
+    match = session.get(Match, match_id)
+    assert match is not None
+    match.stato = "in_firma"
+    session.commit()
+
+
+def _framework_now(session: Session, freelancer_id: UUID, stato: str) -> None:
+    (framework,) = _documents(session, freelancer_id, "quadro")
+    framework.stato = stato
+    if stato in ("inviato", "firmato", "disdetto"):
+        framework.sent_at = datetime(2026, 9, 25, 9, 0, tzinfo=UTC)
+    if stato in ("firmato", "disdetto"):
+        framework.signed_at = datetime(2026, 9, 28, 9, 0, tzinfo=UTC)
+    if stato == "disdetto":
+        framework.notice_at = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
+    session.commit()
+
+
+def test_the_contracts_page_says_what_each_document_is_doing(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    match = service.create(freelancer_id, _body(company_id), admin_id)
+    page = service.for_freelancer(freelancer_id)
+    assert page.quadro is not None
+    # `FakeRenderer` writes texts in draft, as the preview's would be.
+    assert (page.quadro.situazione, page.quadro.prossima_azione, page.quadro.altre_azioni) == (
+        "Parte con «Invia per la firma» sul suo match. Il testo è ancora in bozza.",
+        None,
+        ["annulla"],
+    )
+    (read,) = page.matches
+    assert (read.situazione, read.prossima_azione, read.altre_azioni) == (
+        f"La lettera n. {match.lettera.numero} è pronta: il freelance non ha ancora ricevuto "
+        "nulla.",
+        "invia",
+        ["annulla"],
+    )
+    assert read.lettera.situazione == "Parte da sola dopo la firma del contratto quadro."
+    assert (read.lettera.prossima_azione, read.lettera.altre_azioni) == (None, [])
+    listed = service.list_all(stato=None, q=None, limit=100, offset=0).items[0]
+    assert listed.situazione == read.situazione
+
+
+def test_a_signed_framework_reads_its_signature_day_in_rome(clean: Session) -> None:
+    admin_id, freelancer_id, _company_id = _setup(clean)
+    _framework(clean, freelancer_id, admin_id, signed_at=datetime(2026, 9, 30, 23, 30, tzinfo=UTC))
+    quadro = _service(clean, today=date(2026, 12, 1)).for_freelancer(freelancer_id).quadro
+    assert quadro is not None
+    assert (quadro.situazione, quadro.prossima_azione, quadro.altre_azioni) == (
+        "Firmato il 1° ottobre 2026; la copia firmata non è ancora arrivata.",
+        "aggiorna_stato",
+        ["registra_disdetta"],
+    )
+
+
+def test_a_waiting_letter_reads_its_freelancers_framework_wherever_the_match_is_read(
+    clean: Session,
+) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    match = service.create(freelancer_id, _body(company_id), admin_id)
+    _waiting(clean, match.id)
+    numero = match.lettera.numero
+
+    def everywhere() -> tuple[str, str | None]:
+        got, page = service.get(match.id), service.for_freelancer(freelancer_id)
+        listed = service.list_all(stato=None, q=None, limit=100, offset=0).items[0]
+        assert got.situazione == page.matches[0].situazione == listed.situazione
+        assert got.prossima_azione == page.matches[0].prossima_azione
+        return got.situazione, got.prossima_azione
+
+    _framework_now(clean, freelancer_id, "inviato")
+    assert everywhere() == (
+        f"La lettera n. {numero} aspetta la firma del contratto quadro e parte da sola dopo.",
+        None,
+    )
+    # Signed, and the letter's release missed: the send dispatches the letter itself.
+    _framework_now(clean, freelancer_id, "firmato")
+    assert everywhere() == (
+        f"La lettera n. {numero} è pronta a partire: il contratto quadro è già firmato.",
+        "invia",
+    )
+    _framework_now(clean, freelancer_id, "generato")
+    assert everywhere() == (
+        f"La lettera n. {numero} parte dopo il contratto quadro: «Invia per la firma» lo manda "
+        "al freelance.",
+        "invia",
+    )
+    for stato in ("annullato", "disdetto"):
+        _framework_now(clean, freelancer_id, stato)
+        assert everywhere() == (
+            f"La lettera n. {numero} aspetta un contratto quadro: «Invia per la firma» ne genera "
+            "uno nuovo.",
+            "invia",
+        )
+
+
+def test_list_all_reads_frameworks_in_one_query(clean: Session) -> None:
+    """Up to 500 rows a page: each row's sentence reads its freelancer's pending framework
+    agreement, all of them in one statement, never one per row."""
+    admin_id, company_id = _admin(clean), _request(clean)
+    service = _service(clean)
+    freelancers = [
+        _card(clean),
+        _second_card(clean),
+        _second_card(clean, nome="Katherine", cognome="Johnson", email="katherine@studio.it"),
+    ]
+    numbers: dict[UUID, str | None] = {}
+    for freelancer_id in freelancers:
+        _fiscal(clean, freelancer_id, admin_id)
+        match = service.create(freelancer_id, _body(company_id), admin_id)
+        _waiting(clean, match.id)
+        numbers[freelancer_id] = match.lettera.numero
+    ada, grace, katherine = freelancers
+    _framework_now(clean, grace, "inviato")
+    _framework_now(clean, katherine, "firmato")
+
+    statements: list[str] = []
+
+    def record(_c: object, _cur: object, statement: str, *_rest: object) -> None:
+        statements.append(statement)
+
+    engine = clean.get_bind()
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        service.list_all(stato=None, q=None, limit=1, offset=0)
+        for_one = len(statements)
+        statements.clear()
+        page = service.list_all(stato=None, q=None, limit=100, offset=0)
+        for_three = len(statements)
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+
+    assert len(page.items) == 3
+    assert for_three == for_one
+    waits = "La lettera n. {} aspetta la firma del contratto quadro e parte da sola dopo."
+    sends = (
+        "La lettera n. {} parte dopo il contratto quadro: «Invia per la firma» lo manda al "
+        "freelance."
+    )
+    ready = "La lettera n. {} è pronta a partire: il contratto quadro è già firmato."
+    assert {item.freelancer_id: item.situazione for item in page.items} == {
+        ada: sends.format(numbers[ada]),
+        grace: waits.format(numbers[grace]),
+        katherine: ready.format(numbers[katherine]),
+    }
+
+
+def test_a_match_listed_with_no_letter_at_all_reads_as_its_state(clean: Session) -> None:
+    """`create` always writes a letter; the list still reads a match that has none."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    match = _service(clean).create(freelancer_id, _body(company_id), admin_id)
+    clean.execute(text("DELETE FROM contract_documents WHERE match_id = :id"), {"id": match.id})
+    clean.commit()
+    (row,) = _service(clean).list_all(stato=None, q=None, limit=100, offset=0).items
+    assert (row.situazione, row.lettera_numero, row.lettera_stato) == ("Da inviare.", None, None)
+
+
+# ---- the check before saving, and the proposal (REB-476) ---------------------------------
+
+SAVED_TABLES = ("matches", "contract_documents", "contract_letter_counters", "admin_actions")
+
+
+def _rows(session: Session) -> dict[str, list[tuple[object, ...]]]:
+    return {
+        table: [tuple(row) for row in session.execute(text(f"SELECT * FROM {table} ORDER BY 1"))]
+        for table in SAVED_TABLES
+    }
+
+
+def test_check_writes_nothing(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    _service(clean).create(freelancer_id, _body(company_id), admin_id)
+    before = _rows(clean)
+    # No renderer: a check typesets nothing.
+    checked = MatchService(clean, today=lambda: TODAY).check(freelancer_id, _body(company_id))
+    clean.commit()
+    assert checked.quadro_necessario is True
+    assert _rows(clean) == before
+    assert _service(clean).create(freelancer_id, _body(company_id), admin_id).lettera.numero == (
+        "2026-002"
+    )
+
+
+def test_check_says_what_saving_would_do_and_which_document_leaves_first(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    riepilogo = [
+        "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, dal 1° ottobre 2026.",
+        "Compenso: 450,00 €, IVA esclusa, pagato a 30 giorni fine mese.",
+    ]
+    assert service.check(freelancer_id, _body(company_id)) == MatchCheck(
+        riepilogo=riepilogo,
+        cosa_succede=(
+            "Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua "
+            "firma."
+        ),
+        quadro_necessario=True,
+        dati_fiscali_mancanti=False,
+    )
+    service.create(freelancer_id, _body(company_id), admin_id)
+    _framework_now(clean, freelancer_id, "inviato")
+    in_signature = service.check(freelancer_id, _body(company_id))
+    assert (in_signature.quadro_necessario, in_signature.cosa_succede) == (
+        False,
+        "Il contratto quadro è già in firma: la lettera di incarico parte da sola dopo la sua "
+        "firma.",
+    )
+    _framework(clean, freelancer_id, admin_id)
+    active = service.check(freelancer_id, _body(company_id))
+    assert (active.quadro_necessario, active.cosa_succede) == (
+        False,
+        "Il contratto quadro è già attivo: parte subito la lettera di incarico.",
+    )
+    assert active.riepilogo == riepilogo
+
+
+@pytest.mark.parametrize("action", ["create", "check"])
+def test_check_refuses_what_create_refuses(clean: Session, action: str) -> None:
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+
+    def attempt(freelancer: UUID, body: MatchCreate) -> object:
+        if action == "create":
+            return service.create(freelancer, body, admin_id)
+        return service.check(freelancer, body)
+
+    with pytest.raises(NotFound):
+        attempt(freelancer_id, _body(uuid4()))
+    with pytest.raises(NotFound):
+        attempt(uuid4(), _body(company_id))
+    CompanyService(clean).set_status(company_id, StatusChange(stato="chiuso"))
+    with pytest.raises(ValidationFailed) as refused:
+        attempt(freelancer_id, _body(company_id))
+    assert refused.value.details["field"] == "company_id"
+
+
+def test_check_reports_missing_tax_data_that_create_still_refuses(clean: Session) -> None:
+    admin_id, freelancer_id, company_id = _admin(clean), _card(clean), _request(clean)
+    service = _service(clean)
+    checked = service.check(freelancer_id, _body(company_id))
+    assert checked.dati_fiscali_mancanti is True
+    assert checked.riepilogo[-1] == (
+        "Mancano i dati fiscali del freelance: servono prima di salvare."
+    )
+    with pytest.raises(ValidationFailed) as refused:
+        service.create(freelancer_id, _body(company_id), admin_id)
+    assert refused.value.details["field"] == "fiscale"
+    _fiscal(clean, freelancer_id, admin_id)
+    assert service.check(freelancer_id, _body(company_id)).dati_fiscali_mancanti is False
+
+
+CLIENTE_REST = {"cliente_piva": "01234567890", "cliente_sede": "Milano"}
+
+
+def test_the_proposal_keeps_the_prefill(clean: Session) -> None:
+    _admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    proposal = service.proposal(freelancer_id, company_id, cliente=CLIENTE_REST)
+    prefill = service.prefill(freelancer_id, company_id)
+    assert (proposal.id, proposal.company_id) == (None, company_id)
+    assert proposal.cliente == ClienteData(cliente_ragione_sociale="ACME Srl", **CLIENTE_REST)
+    assert proposal.lettera.model_dump(exclude_none=True) == prefill.lettera.model_dump(
+        exclude_none=True
+    )
+
+
+def test_the_proposal_lays_the_given_fields_over_the_prefill(clean: Session) -> None:
+    _admin_id, freelancer_id, company_id = _setup(clean)
+    match_id = uuid4()
+    proposal = _service(clean).proposal(
+        freelancer_id,
+        company_id,
+        cliente={**CLIENTE_REST, "cliente_ragione_sociale": "ACME S.r.l."},
+        lettera={"ruolo": "Staff engineer", "data_fine": "2026-12-31", "impegno": None},
+        match_id=match_id,
+    )
+    assert proposal.id == match_id
+    assert proposal.cliente.cliente_ragione_sociale == "ACME S.r.l."
+    assert (proposal.lettera.ruolo, proposal.lettera.data_fine, proposal.lettera.impegno) == (
+        "Staff engineer",
+        date(2026, 12, 31),
+        None,
+    )
+    assert proposal.lettera.attivita == "Le API del prodotto, per tre mesi."
+    assert proposal.lettera.compenso == Decimal("450")
+
+
+@pytest.mark.parametrize(
+    ("cliente", "lettera", "field"),
+    [
+        ({**CLIENTE_REST, "nome": "ACME"}, None, "cliente.nome"),
+        (CLIENTE_REST, {"budget_giornaliero": 777}, "lettera.budget_giornaliero"),
+    ],
+)
+def test_the_proposal_refuses_an_unknown_key_by_name(
+    clean: Session, cliente: dict[str, object], lettera: dict[str, object] | None, field: str
+) -> None:
+    _admin_id, freelancer_id, company_id = _setup(clean)
+    with pytest.raises(ValidationFailed) as refused:
+        _service(clean).proposal(freelancer_id, company_id, cliente=cliente, lettera=lettera)
+    assert refused.value.details["field"] == field
+
+
+@pytest.mark.parametrize(
+    ("cliente", "lettera", "field", "reason"),
+    [
+        # A client never matched before: the prefill knows only its name.
+        (None, None, "cliente.cliente_piva", "manca"),
+        (CLIENTE_REST, {"compenso": None}, "lettera.compenso", "manca"),
+        # Pydantic's own checks say it in English: the admin reads «non valido».
+        (CLIENTE_REST, {"compenso": "abc"}, "lettera.compenso", "non valido"),
+        (CLIENTE_REST, {"giorni_pagamento": "trenta"}, "lettera.giorni_pagamento", "non valido"),
+        # The hub's own checks already say it in Italian, and say why.
+        (CLIENTE_REST, {"impegno": "   "}, "lettera.impegno", "serve un valore, non solo spazi"),
+        (
+            CLIENTE_REST,
+            {"data_fine": "2026-09-01"},
+            "lettera.data_fine",
+            "la fine prevista viene prima dell'inizio",
+        ),
+        (
+            CLIENTE_REST,
+            {"giorni_pagamento": 45, "fine_mese": True},
+            "lettera.giorni_pagamento",
+            "contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)",
+        ),
+        # `SafeStr`'s own sentence names the field already: said once, not twice.
+        (
+            CLIENTE_REST,
+            {"ruolo": "Backend\x00developer"},
+            "lettera.ruolo",
+            "il testo contiene un carattere nullo (\\x00), non ammesso",
+        ),
+    ],
+)
+def test_the_proposal_refuses_a_field_left_empty_or_invalid_by_name(
+    clean: Session,
+    cliente: dict[str, object] | None,
+    lettera: dict[str, object] | None,
+    field: str,
+    reason: str,
+) -> None:
+    _admin_id, freelancer_id, company_id = _setup(clean)
+    with pytest.raises(ValidationFailed) as refused:
+        _service(clean).proposal(freelancer_id, company_id, cliente=cliente, lettera=lettera)
+    assert (refused.value.details["field"], refused.value.details["reason"]) == (field, reason)

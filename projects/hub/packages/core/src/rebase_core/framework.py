@@ -8,6 +8,7 @@ stored. Dates are Rome's, where rebase signs: a signature at 23:30 UTC on 30 Sep
 is dated 1 October.
 """
 
+from collections.abc import Iterable
 from datetime import date, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -17,6 +18,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from rebase_core.contract_schemas import ContractDocumentRead
+from rebase_core.match_words import DocumentFacts, document_words
 from rebase_core.models import ContractDocument, LetterCounter
 
 ROME = ZoneInfo("Europe/Rome")
@@ -49,8 +51,12 @@ def last_notice_day(renewal: date) -> date:
     return renewal - timedelta(days=NOTICE_DAYS)
 
 
+def rome_day(moment: datetime | None) -> date | None:
+    return moment.astimezone(ROME).date() if moment is not None else None
+
+
 def signed_on(document: ContractDocument) -> date | None:
-    return document.signed_at.astimezone(ROME).date() if document.signed_at is not None else None
+    return rome_day(document.signed_at)
 
 
 def is_active(document: ContractDocument) -> bool:
@@ -103,6 +109,55 @@ def pending_framework(session: Session, freelancer_id: UUID) -> ContractDocument
     return pending[0] if pending else None
 
 
+# Which framework agreement a waiting letter reads, when a freelancer has several: an
+# active one first, then one out for signature, then one merely generated.
+_FRAMEWORK_RANK = {"firmato": 0, "inviato": 1, "generato": 2}
+
+
+def _standing(documents: Iterable[tuple[str, datetime | None]]) -> str | None:
+    """The best-ranked of `(stato, notice_at)`: a signed one counts only while active
+    (no notice recorded, as `is_active` reads it); a cancelled one, or one given notice,
+    not at all."""
+    counted = [
+        stato
+        for stato, notice_at in documents
+        if stato in _FRAMEWORK_RANK and (stato != "firmato" or notice_at is None)
+    ]
+    return min(counted, key=_FRAMEWORK_RANK.__getitem__, default=None)
+
+
+def framework_state(frameworks: Iterable[ContractDocument]) -> str | None:
+    """Where one freelancer's framework agreement stands, from the rows already read:
+    `firmato` for an active one (`active_framework`), else `pending_framework`'s state,
+    `inviato` or `generato`, else `None`."""
+    return _standing((document.stato, document.notice_at) for document in frameworks)
+
+
+def framework_states(session: Session, freelancer_ids: Iterable[UUID]) -> dict[UUID, str]:
+    """`framework_state` for many freelancers in one query, so the «Match» list reads one
+    statement for its page rather than one per row. A freelancer with none that counts
+    is absent."""
+    ids = set(freelancer_ids)
+    if not ids:
+        return {}
+    documents: dict[UUID, list[tuple[str, datetime | None]]] = {}
+    for freelancer_id, stato, notice_at in session.execute(
+        select(
+            ContractDocument.freelancer_id, ContractDocument.stato, ContractDocument.notice_at
+        ).where(
+            ContractDocument.kind == QUADRO,
+            ContractDocument.freelancer_id.in_(ids),
+            ContractDocument.stato.in_(tuple(_FRAMEWORK_RANK)),
+        )
+    ):
+        documents.setdefault(freelancer_id, []).append((stato, notice_at))
+    return {
+        freelancer_id: standing
+        for freelancer_id, pairs in documents.items()
+        if (standing := _standing(pairs)) is not None
+    }
+
+
 def next_letter_number(session: Session, year: int) -> str:
     """The next letter number of `year`, `YYYY-NNN`, taken inside the caller's
     transaction and never committed here: a generation that fails rolls it back, and a
@@ -118,10 +173,35 @@ def next_letter_number(session: Session, year: int) -> str:
     return f"{year}-{taken:03d}"
 
 
-def document_read(
-    document: ContractDocument, today: date, current_version: str
-) -> ContractDocumentRead:
+def document_facts(document: ContractDocument, today: date) -> DocumentFacts:
+    """What `match_words` reads of a document, each date a day in Rome."""
     active, renewal, last_notice = framework_dates(document, today)
+    return DocumentFacts(
+        kind=document.kind,
+        stato=document.stato,
+        numero=document.numero,
+        testo_bozza=bool(document.testo_bozza),
+        sent_on=rome_day(document.sent_at),
+        signed_on=signed_on(document),
+        notice_on=rome_day(document.notice_at),
+        cancel_reason=document.cancel_reason,
+        ha_pdf_firmato=document.signed_pdf is not None,
+        attivo=active,
+        rinnovo=renewal,
+        ultimo_giorno_disdetta=last_notice,
+    )
+
+
+def document_read(
+    document: ContractDocument,
+    today: date,
+    current_version: str,
+    facts: DocumentFacts | None = None,
+) -> ContractDocumentRead:
+    """`facts`, when the caller already built them from `document` for the same `today`,
+    are not built again."""
+    facts = facts or document_facts(document, today)
+    situazione, prossima_azione, altre_azioni = document_words(facts)
     return ContractDocumentRead(
         id=document.id,
         kind=document.kind,
@@ -137,9 +217,12 @@ def document_read(
         signed_at=document.signed_at,
         notice_at=document.notice_at,
         cancel_reason=document.cancel_reason,
-        ha_pdf_firmato=document.signed_pdf is not None,
-        attivo=active,
-        rinnovo=renewal,
-        ultimo_giorno_disdetta=last_notice,
+        ha_pdf_firmato=facts.ha_pdf_firmato,
+        attivo=facts.attivo,
+        rinnovo=facts.rinnovo,
+        ultimo_giorno_disdetta=facts.ultimo_giorno_disdetta,
         nuova_versione=document.kind == QUADRO and document.text_version != current_version,
+        situazione=situazione,
+        prossima_azione=prossima_azione,
+        altre_azioni=altre_azioni,
     )

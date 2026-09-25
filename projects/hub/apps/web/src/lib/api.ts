@@ -469,6 +469,10 @@ export interface CompanyList {
 export type MatchStato = 'bozza' | 'in_firma' | 'attivo' | 'concluso' | 'annullato'
 export type DocumentStato = 'generato' | 'in_attesa' | 'inviato' | 'firmato' | 'annullato' | 'disdetto'
 
+/** What an admin can do next on a document or a match (REB-477), as the core's
+ *  `match_words` names it: the page maps each to its button and its API call. */
+export type Action = 'invia' | 'reinvia_email' | 'aggiorna_stato' | 'annulla' | 'chiudi' | 'registra_disdetta'
+
 /** A freelancer's tax data, as the two contracts print them. */
 export interface FiscalData {
   codice_fiscale: string
@@ -506,6 +510,10 @@ export interface ContractDocument {
   rinnovo: string | null
   ultimo_giorno_disdetta: string | null
   nuova_versione: boolean
+  /** What happened and what comes next, in a sentence (REB-477). */
+  situazione: string
+  prossima_azione: Action | null
+  altre_azioni: Action[]
 }
 
 export interface Match {
@@ -523,6 +531,10 @@ export interface Match {
   cancelled_at: string | null
   updated_at: string
   lettera: ContractDocument
+  /** Same as the document's: the match's sentence and its actions (REB-477). */
+  situazione: string
+  prossima_azione: Action | null
+  altre_azioni: Action[]
 }
 
 /** One row of the admin's «Match» list (REB-413): never a tax field and never
@@ -544,6 +556,8 @@ export interface MatchListItem {
   created_at: string
   created_by_nome: string
   created_by_email: string
+  /** The match's sentence, the one `Match` carries (REB-477). */
+  situazione: string
 }
 
 /** `GET /api/hub/matches`'s shape (REB-413): newest first, `totale` counting every
@@ -770,13 +784,22 @@ export interface Cliente {
 export type ClienteDraft = { [K in keyof Cliente]: string | null }
 
 /** `id` is optional and client-generated (REB-406): one per wizard run, sent with both
- *  «Salva come bozza» and «Invia per la firma», so a retry after the response is lost
+ *  «Salva senza inviare» and «Invia per la firma», so a retry after the response is lost
  *  writes nothing new -- the server returns the match already written under it. */
 export interface MatchCreate {
   id?: string
   company_id: string
   cliente: Cliente
   lettera: Lettera
+}
+
+/** What saving a match would do, in sentences, with nothing written (REB-476):
+ *  «Controlla e invia» shows `riepilogo` and `cosa_succede` as they come. */
+export interface MatchCheck {
+  riepilogo: string[]
+  cosa_succede: string
+  quadro_necessario: boolean
+  dati_fiscali_mancanti: boolean
 }
 
 export interface MatchPrefill {
@@ -965,10 +988,14 @@ export const admin = {
     request<MatchPrefill>(
       `/api/hub/freelancers/${freelancerId}/matches/prefill?company_id=${encodeURIComponent(companyId)}`,
     ),
-  /** Step 5's preview: a PDF typeset now and saved nowhere. */
+  /** «Controlla e invia»'s sentences (REB-476): a 422 names the field as `createMatch`
+   *  would, and nothing is written. */
+  matchCheck: (freelancerId: string, payload: MatchCreate) =>
+    request<MatchCheck>(`/api/hub/freelancers/${freelancerId}/matches/check`, json(payload)),
+  /** «Controlla e invia»'s previews: a PDF typeset now and saved nowhere. */
   matchPreview: (freelancerId: string, payload: MatchCreate, documento: 'lettera' | 'quadro') =>
     requestBlob(`/api/hub/freelancers/${freelancerId}/matches/preview?documento=${documento}`, json(payload)),
-  /** «Salva come bozza»: the draft match with its numbered letter. */
+  /** «Salva senza inviare»: the draft match with its numbered letter. */
   createMatch: (freelancerId: string, payload: MatchCreate) =>
     request<Match>(`/api/hub/freelancers/${freelancerId}/matches`, json(payload)),
   cancelMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/cancel`, { method: 'POST' }),

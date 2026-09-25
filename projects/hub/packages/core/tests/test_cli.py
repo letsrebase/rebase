@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from rebase_core import cli
+from rebase_core import cli, signing
 from rebase_core.campaigns.tick import TickResult
 from rebase_core.cli import main
 from rebase_core.config import Settings
@@ -43,11 +43,14 @@ def test_the_contracts_sweep_command_builds_the_signing_service_and_prints_the_c
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
-    monkeypatch.setattr(cli, "SigningService", _FakeSigningService)
+    monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
 
     assert main(["contracts-sweep"]) == 0
 
     assert len(_FakeSigningService.instances) == 1
+    # Built by `signing_from_settings`: without a Documenso or a mail key, both are off.
+    kwargs = _FakeSigningService.instances[0].kwargs
+    assert (kwargs["documenso"], kwargs["sender"]) == (None, None)
     out = capsys.readouterr().out
     assert out.strip() == "3 documenti ripresi"
 
@@ -59,7 +62,7 @@ def test_the_contracts_sweep_command_also_prints_the_unconfirmed_count_when_it_i
     leaves a document `inviato` -- not silently, any more. Left off the line entirely
     when it is zero, so the ordinary run reads exactly as it always has."""
     monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
-    monkeypatch.setattr(cli, "SigningService", _FakeSigningService)
+    monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
     _FakeSigningService.result = SweepResult(touched=1, unconfirmed=2)
 
     assert main(["contracts-sweep"]) == 0

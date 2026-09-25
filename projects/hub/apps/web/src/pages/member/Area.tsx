@@ -10,7 +10,15 @@ import { COMPANY_FIELDS } from '@/pages/CompanyWizard'
 import { FREELANCER_FIELDS } from '@/pages/FreelancerWizard'
 import { MemberContratti } from '@/pages/member/Contratti'
 
-const PIGROCRM_URL = 'https://pigro.letsrebase.com/app/register'
+// `/app/login`, not `/app/register`: PigroCRM's own login already knows what to do with
+// whoever is behind it (REB-377's identity-cookie chooser, its own effect that sends an
+// already-authenticated visitor straight to their dashboard, and REB-482's "Crea un
+// nuovo spazio" beside the chooser too) and offers "Crea il tuo spazio" to anyone with
+// nothing to open yet. `/app/register` used to sit here and always opened its own
+// two-step form first, even to a member who already had a space -- its own hub-lookup
+// only ran after that, one screen further in, and only then offered a link to enter
+// instead of creating a second one.
+const PIGROCRM_URL = 'https://pigro.letsrebase.com/app/login'
 const ROLE_LABELS: Record<string, string> = { admin: 'Amministratore', member: 'Membro' }
 
 /** What the person sent, under the wizard's own questions, and the perks. The email is
