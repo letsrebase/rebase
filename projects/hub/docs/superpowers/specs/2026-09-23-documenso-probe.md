@@ -204,9 +204,9 @@ rejected or cancelled alike, its audit log kept, a `DOCUMENT_CANCELLED` webhook 
 only soft-deletes (`deletedAt` set, the row kept) a `COMPLETED` one -- both branches answer
 `{"success": true}`, neither refuses by state. So a still-`DRAFT` orphan the hub never
 finished dispatching deletes exactly as a `PENDING` one would; what it does refuse on is
-the envelope not existing, or this token having no access to it. Its behaviour on a real
-`DRAFT` and a real `PENDING` envelope is checked with real tokens during the rollout
-(REB-408 Step 10).
+the envelope not existing, or this token having no access to it. Checked on the real
+instance on 2026-09-25 with the preview's token (REB-408): a `DRAFT` and a `PENDING`
+envelope each answered 200 to the delete and 404 to a read afterwards.
 
 ## 5. The webhook
 
