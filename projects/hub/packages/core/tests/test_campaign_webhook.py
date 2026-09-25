@@ -35,6 +35,12 @@ def test_a_good_signature_passes_and_a_changed_body_or_a_stale_stamp_does_not() 
     assert not verify_signature("", sid, stamp, sig, body, now)
 
 
+def test_an_oversized_timestamp_is_refused_not_raised() -> None:
+    body = b'{"type":"email.delivered"}'
+    huge_id, huge_stamp, huge_sig = signed(body, at=int("1" + "0" * 400))
+    assert not verify_signature(SECRET, huge_id, huge_stamp, huge_sig, body, time.time())
+
+
 def row(session: Session, **fields: object) -> CampaignRecipient:
     campaign = campaign_row(session)
     recipient = CampaignRecipient(

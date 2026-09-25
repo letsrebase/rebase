@@ -34,7 +34,7 @@ def verify_signature(
         key = base64.b64decode(secret.removeprefix("whsec_"), validate=True)
     except (ValueError, binascii.Error):
         return False
-    if abs(now - stamp) > TOLERANCE_SECONDS:
+    if abs(int(now) - stamp) > TOLERANCE_SECONDS:
         return False
     expected = base64.b64encode(
         hmac.new(key, f"{svix_id}.{svix_timestamp}.".encode() + body, hashlib.sha256).digest()
