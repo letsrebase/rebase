@@ -17,9 +17,10 @@ import {
   type CampaignDraft,
   type CampaignMeta,
 } from '@/lib/api'
-import { AZIONE_LABELS, META_LABELS, personalise, romeToday } from '@/lib/campaigns'
+import { AZIONE_LABELS, CAMPAIGN_MAX_LENGTH, META_LABELS, defaultSchedule, personalise } from '@/lib/campaigns'
+import { COMPANY_STATES, FREELANCER_LIST_STATES, REMOTO_LABELS, STATE_LABELS } from '@/lib/format'
 import { useMe } from '@/lib/me'
-import { Header } from './lists'
+import { FilterField, Header } from './lists'
 
 const STEPS = ['Chi', 'Cosa', 'Prova', 'Quando'] as const
 
@@ -39,20 +40,78 @@ function selectToBool(value: string): boolean | undefined {
   return value === 'si' ? true : value === 'no' ? false : undefined
 }
 
+/** The Talenti list's own filters (spec § 2), field for field the server's
+ *  `TalentiFiltri` (`rebase_core/campaigns/schemas.py`) and the list page's
+ *  `TalentiFilters`: every value a string as its input holds it, `ANY` for a `Select`
+ *  left on «Tutti». `filtriPayload` below turns it into the server's shape. */
 interface TalentiFiltriForm {
   stato: string
   q: string
+  posizione: string
+  remoto: string
+  tariffa_min: string
+  tariffa_max: string
+  origine: string
+  utm_source: string
   has_cv: string
   con_accessi: string
+  creato_da: string
+  creato_a: string
 }
 
+/** The company list's own filters, the server's `AziendeFiltri`. */
 interface AziendeFiltriForm {
   stato: string
   q: string
+  budget_min: string
+  budget_max: string
+  periodo_da: string
+  origine: string
+  creato_da: string
+  creato_a: string
 }
 
-const TALENTI_FILTRI_EMPTY: TalentiFiltriForm = { stato: '', q: '', has_cv: ANY, con_accessi: ANY }
-const AZIENDE_FILTRI_EMPTY: AziendeFiltriForm = { stato: '', q: '' }
+const TALENTI_FILTRI_EMPTY: TalentiFiltriForm = {
+  stato: ANY,
+  q: '',
+  posizione: '',
+  remoto: ANY,
+  tariffa_min: '',
+  tariffa_max: '',
+  origine: '',
+  utm_source: '',
+  has_cv: ANY,
+  con_accessi: ANY,
+  creato_da: '',
+  creato_a: '',
+}
+const AZIENDE_FILTRI_EMPTY: AziendeFiltriForm = {
+  stato: ANY,
+  q: '',
+  budget_min: '',
+  budget_max: '',
+  periodo_da: '',
+  origine: '',
+  creato_da: '',
+  creato_a: '',
+}
+
+/** What a text, number or date input sends: nothing when it is empty. */
+function typed(value: string): string | undefined {
+  return value.trim() === '' ? undefined : value.trim()
+}
+
+/** What a `Select` sends: nothing while it reads «Tutti». */
+function picked(value: string): string | undefined {
+  return value === ANY ? undefined : value
+}
+
+/** A stored filter value back into its input: a decimal the server keeps as a string
+ *  (or a number, from an older row), a day out of a stored `datetime`. */
+function stored(value: unknown, { day = false }: { day?: boolean } = {}): string {
+  const text = typeof value === 'string' ? value : typeof value === 'number' ? String(value) : ''
+  return day ? text.slice(0, 10) : text
+}
 
 /** What the edit route seeds Chi's own filter fields with, out of `Campaign.filtri`
  *  (a bag the server never types further): a plain function so the effect that calls
@@ -66,21 +125,41 @@ function seedFiltri(c: Campaign): { lista: Lista; talenti: TalentiFiltriForm; az
   if (c.fonte !== 'filtri' || !c.filtri) return empty
   const f = c.filtri as Record<string, unknown>
   const lista: Lista = f.lista === 'aziende' ? 'aziende' : 'talenti'
-  const stato = typeof f.stato === 'string' ? f.stato : ''
-  const q = typeof f.q === 'string' ? f.q : ''
+  const stato = stored(f.stato) || ANY
   if (lista === 'talenti') {
     return {
       lista,
       talenti: {
         stato,
-        q,
+        q: stored(f.q),
+        posizione: stored(f.posizione),
+        remoto: stored(f.remoto) || ANY,
+        tariffa_min: stored(f.tariffa_min),
+        tariffa_max: stored(f.tariffa_max),
+        origine: stored(f.origine),
+        utm_source: stored(f.utm_source),
         has_cv: boolToSelect(f.has_cv as boolean | undefined),
         con_accessi: boolToSelect(f.con_accessi as boolean | undefined),
+        creato_da: stored(f.creato_da, { day: true }),
+        creato_a: stored(f.creato_a, { day: true }),
       },
       aziende: AZIENDE_FILTRI_EMPTY,
     }
   }
-  return { lista, talenti: TALENTI_FILTRI_EMPTY, aziende: { stato, q } }
+  return {
+    lista,
+    talenti: TALENTI_FILTRI_EMPTY,
+    aziende: {
+      stato,
+      q: stored(f.q),
+      budget_min: stored(f.budget_min),
+      budget_max: stored(f.budget_max),
+      periodo_da: stored(f.periodo_da, { day: true }),
+      origine: stored(f.origine),
+      creato_da: stored(f.creato_da, { day: true }),
+      creato_a: stored(f.creato_a, { day: true }),
+    },
+  }
 }
 
 function failureMessage(error: unknown): string | null {
@@ -217,7 +296,9 @@ export function AdminCreaCampagna() {
   const [esclusi, setEsclusi] = useState<string[]>([])
 
   const [mode, setMode] = useState<'adesso' | 'programma'>('adesso')
-  const [when, setWhen] = useState(() => romeToday())
+  // Filled when «Programma» is chosen, not when the page opens: a wizard left open for
+  // an hour must not propose a moment already past.
+  const [when, setWhen] = useState({ giorno: '', ora: '' })
 
   const templates = useQuery({ queryKey: ['campaignTemplates'], queryFn: admin.campaignTemplates })
   const editing = useQuery({
@@ -292,15 +373,40 @@ export function AdminCreaCampagna() {
   function filtriPayload(): Record<string, unknown> | null {
     if (fonte !== 'filtri') return null
     if (lista === 'talenti') {
+      const t = talentiFiltri
       return {
         lista,
-        stato: talentiFiltri.stato || undefined,
-        q: talentiFiltri.q || undefined,
-        has_cv: selectToBool(talentiFiltri.has_cv),
-        con_accessi: selectToBool(talentiFiltri.con_accessi),
+        stato: picked(t.stato),
+        q: typed(t.q),
+        posizione: typed(t.posizione),
+        remoto: picked(t.remoto),
+        tariffa_min: typed(t.tariffa_min),
+        tariffa_max: typed(t.tariffa_max),
+        origine: typed(t.origine),
+        utm_source: typed(t.utm_source),
+        has_cv: selectToBool(t.has_cv),
+        con_accessi: selectToBool(t.con_accessi),
+        creato_da: typed(t.creato_da),
+        creato_a: typed(t.creato_a),
       }
     }
-    return { lista, stato: aziendeFiltri.stato || undefined, q: aziendeFiltri.q || undefined }
+    const a = aziendeFiltri
+    return {
+      lista,
+      stato: picked(a.stato),
+      q: typed(a.q),
+      budget_min: typed(a.budget_min),
+      budget_max: typed(a.budget_max),
+      periodo_da: typed(a.periodo_da),
+      origine: typed(a.origine),
+      creato_da: typed(a.creato_da),
+      creato_a: typed(a.creato_a),
+    }
+  }
+
+  function chooseProgramma() {
+    if (mode !== 'programma') setWhen(defaultSchedule())
+    setMode('programma')
   }
 
   // Chi has no Nome field (that's Cosa's); a filtered campaign with nothing typed yet
@@ -457,24 +563,92 @@ export function AdminCreaCampagna() {
                 </div>
                 {lista === 'talenti' ? (
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="campagna-talenti-stato">Stato</Label>
-                      <Input
-                        id="campagna-talenti-stato"
-                        value={talentiFiltri.stato}
-                        onChange={(event) => updateTalentiFiltri({ stato: event.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="campagna-talenti-q">Cerca</Label>
+                    <FilterField label="Stato" htmlFor="campagna-talenti-stato">
+                      <Select value={talentiFiltri.stato} onValueChange={(value) => updateTalentiFiltri({ stato: value })}>
+                        <SelectTrigger id="campagna-talenti-stato" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ANY}>Tutti</SelectItem>
+                          {FREELANCER_LIST_STATES.map((state) => (
+                            <SelectItem key={state} value={state}>
+                              {STATE_LABELS[state] ?? state}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FilterField>
+                    <FilterField label="Cerca" htmlFor="campagna-talenti-q">
                       <Input
                         id="campagna-talenti-q"
+                        maxLength={200}
                         value={talentiFiltri.q}
                         onChange={(event) => updateTalentiFiltri({ q: event.target.value })}
                       />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="campagna-talenti-cv">Ha un CV</Label>
+                    </FilterField>
+                    <FilterField label="Posizione" htmlFor="campagna-talenti-posizione">
+                      <Input
+                        id="campagna-talenti-posizione"
+                        maxLength={160}
+                        value={talentiFiltri.posizione}
+                        onChange={(event) => updateTalentiFiltri({ posizione: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Da remoto" htmlFor="campagna-talenti-remoto">
+                      <Select value={talentiFiltri.remoto} onValueChange={(value) => updateTalentiFiltri({ remoto: value })}>
+                        <SelectTrigger id="campagna-talenti-remoto" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ANY}>Tutti</SelectItem>
+                          {Object.entries(REMOTO_LABELS).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FilterField>
+                    <FilterField label="Tariffa min (€/giorno)" htmlFor="campagna-talenti-tariffa-min">
+                      <Input
+                        id="campagna-talenti-tariffa-min"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        value={talentiFiltri.tariffa_min}
+                        onChange={(event) => updateTalentiFiltri({ tariffa_min: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Tariffa max (€/giorno)" htmlFor="campagna-talenti-tariffa-max">
+                      <Input
+                        id="campagna-talenti-tariffa-max"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        value={talentiFiltri.tariffa_max}
+                        onChange={(event) => updateTalentiFiltri({ tariffa_max: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Pagina di provenienza" htmlFor="campagna-talenti-origine">
+                      <Input
+                        id="campagna-talenti-origine"
+                        maxLength={40}
+                        placeholder="home, pigrocrm…"
+                        value={talentiFiltri.origine}
+                        onChange={(event) => updateTalentiFiltri({ origine: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="UTM source" htmlFor="campagna-talenti-utm-source">
+                      <Input
+                        id="campagna-talenti-utm-source"
+                        maxLength={200}
+                        value={talentiFiltri.utm_source}
+                        onChange={(event) => updateTalentiFiltri({ utm_source: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Ha un CV" htmlFor="campagna-talenti-cv">
                       <Select value={talentiFiltri.has_cv} onValueChange={(value) => updateTalentiFiltri({ has_cv: value })}>
                         <SelectTrigger id="campagna-talenti-cv" className="w-full">
                           <SelectValue />
@@ -485,9 +659,8 @@ export function AdminCreaCampagna() {
                           <SelectItem value="no">No</SelectItem>
                         </SelectContent>
                       </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="campagna-talenti-accessi">Ha fatto accesso</Label>
+                    </FilterField>
+                    <FilterField label="Ha fatto accesso" htmlFor="campagna-talenti-accessi">
                       <Select
                         value={talentiFiltri.con_accessi}
                         onValueChange={(value) => updateTalentiFiltri({ con_accessi: value })}
@@ -501,26 +674,104 @@ export function AdminCreaCampagna() {
                           <SelectItem value="no">No</SelectItem>
                         </SelectContent>
                       </Select>
-                    </div>
+                    </FilterField>
+                    <FilterField label="Creato dal" htmlFor="campagna-talenti-creato-da">
+                      <Input
+                        id="campagna-talenti-creato-da"
+                        type="date"
+                        value={talentiFiltri.creato_da}
+                        onChange={(event) => updateTalentiFiltri({ creato_da: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Creato al" htmlFor="campagna-talenti-creato-a">
+                      <Input
+                        id="campagna-talenti-creato-a"
+                        type="date"
+                        value={talentiFiltri.creato_a}
+                        onChange={(event) => updateTalentiFiltri({ creato_a: event.target.value })}
+                      />
+                    </FilterField>
                   </div>
                 ) : (
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="campagna-aziende-stato">Stato</Label>
-                      <Input
-                        id="campagna-aziende-stato"
-                        value={aziendeFiltri.stato}
-                        onChange={(event) => updateAziendeFiltri({ stato: event.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="campagna-aziende-q">Cerca</Label>
+                    <FilterField label="Stato" htmlFor="campagna-aziende-stato">
+                      <Select value={aziendeFiltri.stato} onValueChange={(value) => updateAziendeFiltri({ stato: value })}>
+                        <SelectTrigger id="campagna-aziende-stato" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ANY}>Tutti</SelectItem>
+                          {COMPANY_STATES.map((state) => (
+                            <SelectItem key={state} value={state}>
+                              {STATE_LABELS[state] ?? state}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FilterField>
+                    <FilterField label="Cerca" htmlFor="campagna-aziende-q">
                       <Input
                         id="campagna-aziende-q"
+                        maxLength={200}
                         value={aziendeFiltri.q}
                         onChange={(event) => updateAziendeFiltri({ q: event.target.value })}
                       />
-                    </div>
+                    </FilterField>
+                    <FilterField label="Budget min (€/giorno)" htmlFor="campagna-aziende-budget-min">
+                      <Input
+                        id="campagna-aziende-budget-min"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        value={aziendeFiltri.budget_min}
+                        onChange={(event) => updateAziendeFiltri({ budget_min: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Budget max (€/giorno)" htmlFor="campagna-aziende-budget-max">
+                      <Input
+                        id="campagna-aziende-budget-max"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        value={aziendeFiltri.budget_max}
+                        onChange={(event) => updateAziendeFiltri({ budget_max: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Periodo dal" htmlFor="campagna-aziende-periodo-da">
+                      <Input
+                        id="campagna-aziende-periodo-da"
+                        type="date"
+                        value={aziendeFiltri.periodo_da}
+                        onChange={(event) => updateAziendeFiltri({ periodo_da: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Pagina di provenienza" htmlFor="campagna-aziende-origine">
+                      <Input
+                        id="campagna-aziende-origine"
+                        maxLength={40}
+                        placeholder="home, pigrocrm…"
+                        value={aziendeFiltri.origine}
+                        onChange={(event) => updateAziendeFiltri({ origine: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Creata dal" htmlFor="campagna-aziende-creato-da">
+                      <Input
+                        id="campagna-aziende-creato-da"
+                        type="date"
+                        value={aziendeFiltri.creato_da}
+                        onChange={(event) => updateAziendeFiltri({ creato_da: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Creata al" htmlFor="campagna-aziende-creato-a">
+                      <Input
+                        id="campagna-aziende-creato-a"
+                        type="date"
+                        value={aziendeFiltri.creato_a}
+                        onChange={(event) => updateAziendeFiltri({ creato_a: event.target.value })}
+                      />
+                    </FilterField>
                   </div>
                 )}
               </div>
@@ -542,7 +793,7 @@ export function AdminCreaCampagna() {
               <Input
                 id="campagna-nome"
                 required
-                maxLength={200}
+                maxLength={CAMPAIGN_MAX_LENGTH.nome}
                 value={nome}
                 onChange={(event) => {
                   setNome(event.target.value)
@@ -555,7 +806,7 @@ export function AdminCreaCampagna() {
               <Input
                 id="campagna-oggetto"
                 required
-                maxLength={300}
+                maxLength={CAMPAIGN_MAX_LENGTH.oggetto}
                 value={oggetto}
                 onChange={(event) => {
                   setOggetto(event.target.value)
@@ -569,6 +820,7 @@ export function AdminCreaCampagna() {
                 id="campagna-testo"
                 required
                 rows={8}
+                maxLength={CAMPAIGN_MAX_LENGTH.testo}
                 value={testo}
                 onChange={(event) => {
                   setTesto(event.target.value)
@@ -582,7 +834,7 @@ export function AdminCreaCampagna() {
               <Input
                 id="campagna-bottone-testo"
                 required
-                maxLength={80}
+                maxLength={CAMPAIGN_MAX_LENGTH.bottone_testo}
                 value={bottoneTesto}
                 onChange={(event) => {
                   setBottoneTesto(event.target.value)
@@ -654,7 +906,10 @@ export function AdminCreaCampagna() {
               <Button type="button" disabled>
                 {bottoneTesto}
               </Button>
-              <p className="text-xs text-muted-foreground">Non vuoi più ricevere queste mail? Cancellati.</p>
+              {/* The mail's own footer, word for word (`campaigns/render.py`'s `UNSUBSCRIBE_LINE`). */}
+              <p className="text-xs text-muted-foreground">
+                Non vuoi più ricevere queste mail? <span className="underline">Disiscriviti</span>
+              </p>
             </div>
             <div className="space-y-2">
               <div className="flex flex-wrap gap-2">
@@ -683,7 +938,7 @@ export function AdminCreaCampagna() {
                 type="button"
                 variant={mode === 'programma' ? 'default' : 'outline'}
                 aria-pressed={mode === 'programma'}
-                onClick={() => setMode('programma')}
+                onClick={chooseProgramma}
               >
                 Programma
               </Button>
@@ -728,7 +983,9 @@ export function AdminCreaCampagna() {
               </div>
               {!campaign.pronta && (
                 <p className="text-sm text-muted-foreground">
-                  Hai modificato la campagna dopo la prova: mandane un’altra dal passo Prova.
+                  {campaign.prova_inviata_at === null
+                    ? 'Manda prima una prova dal passo Prova.'
+                    : 'Hai modificato la campagna dopo la prova: mandane un’altra dal passo Prova.'}
                 </p>
               )}
               <Failure message={failureMessage(schedule.error)} />

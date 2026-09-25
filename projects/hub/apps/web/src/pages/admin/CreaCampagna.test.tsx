@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AdminCreaCampagna } from './CreaCampagna'
@@ -100,7 +100,59 @@ function mountEdit(id: string) {
   )
 }
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
+
+/** Opens the `Select` a label names and picks one of its options. */
+async function pick(label: string, option: string) {
+  await userEvent.click(await screen.findByRole('combobox', { name: label }))
+  await userEvent.click(await screen.findByRole('option', { name: option }))
+}
+
+/** A date input takes its value whole, as a browser's picker hands it over. */
+function day(label: string, value: string) {
+  fireEvent.change(screen.getByLabelText(label), { target: { value } })
+}
+
+/** Every Talenti filter filled, as the wizard must send it: the same literal
+ *  `test_campaign_schemas.py` validates against the server's `TalentiFiltri`, so a
+ *  renamed or retyped field fails on one side or the other. */
+const TALENTI_FILTRI = {
+  lista: 'talenti',
+  stato: 'attivo',
+  q: 'react',
+  posizione: 'Frontend',
+  remoto: 'ibrido',
+  tariffa_min: '300',
+  tariffa_max: '500',
+  origine: 'home',
+  utm_source: 'linkedin',
+  has_cv: true,
+  con_accessi: false,
+  creato_da: '2026-01-01',
+  creato_a: '2026-09-01',
+}
+
+/** Every company filter filled; `test_campaign_schemas.py` validates the same literal
+ *  against `AziendeFiltri`. */
+const AZIENDE_FILTRI = {
+  lista: 'aziende',
+  stato: 'in_corso',
+  q: 'block',
+  budget_min: '200',
+  budget_max: '400',
+  periodo_da: '2026-10-01',
+  origine: 'home',
+  creato_da: '2026-01-01',
+  creato_a: '2026-09-01',
+}
+
+function createdBody(calls: ReturnType<typeof api>) {
+  const create = calls.mock.calls.find(([url, init]) => String(url).endsWith('/api/hub/campaigns') && init?.method === 'POST')!
+  return JSON.parse(String(create[1]!.body))
+}
 
 describe('«Nuova campagna»', () => {
   it('fills the mail from the state, shows who is left out and why, and sends after a test', async () => {
@@ -139,7 +191,9 @@ describe('«Nuova campagna»', () => {
       'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
       'POST /api/hub/campaigns/c1/test': () => json({ ...DRAFT, pronta: true, prova_inviata_at: '2026-09-25T07:05:00Z' }),
       'POST /api/hub/campaigns': () => json(DRAFT, 201),
-      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, pronta: false }),
+      // What the server answers to an edit after a test: the test is still on record
+      // (`prova_inviata_at`), just older than the edit, so `pronta` is false.
+      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, pronta: false, prova_inviata_at: '2026-09-25T07:05:00Z' }),
       'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
     })
     mount()
@@ -171,7 +225,7 @@ describe('fix round 1 (REB-472)', () => {
     })
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
-    await userEvent.type(screen.getByLabelText('Stato'), 'nuovo')
+    await pick('Stato', 'Nuovo')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByText('amministratore')
     const create = calls.mock.calls.find(([url, init]) => String(url).endsWith('/api/hub/campaigns') && init?.method === 'POST')!
@@ -197,7 +251,7 @@ describe('fix round 1 (REB-472)', () => {
     // Talenti-only field: only present once the seeded `lista` really reads 'talenti'
     // from `filtri.lista`, not the old (buggy) has_cv/con_accessi presence guess.
     expect(await screen.findByLabelText('Ha un CV')).toBeInTheDocument()
-    expect(screen.getByLabelText('Stato')).toHaveValue('nuovo')
+    expect(screen.getByRole('combobox', { name: 'Stato' })).toHaveTextContent('Nuovo')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByText('amministratore')
     const patch = calls.mock.calls.find(([url, init]) => String(url).endsWith('/campaigns/c1') && init?.method === 'PATCH')!
@@ -262,5 +316,122 @@ describe('fix round 1 (REB-472)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     const table = await screen.findByRole('table')
     expect(table.closest('[data-slot="table-container"]')).not.toBeNull()
+  })
+})
+
+describe('final review (REB-472)', () => {
+  it('I3: every Talenti filter goes out under the server\'s own name and type', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: TALENTI_FILTRI }, 201),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+    })
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
+    await pick('Stato', 'Attivo')
+    await userEvent.type(screen.getByLabelText('Cerca'), 'react')
+    await userEvent.type(screen.getByLabelText('Posizione'), 'Frontend')
+    await pick('Da remoto', 'Ibrido')
+    await userEvent.type(screen.getByLabelText('Tariffa min (€/giorno)'), '300')
+    await userEvent.type(screen.getByLabelText('Tariffa max (€/giorno)'), '500')
+    await userEvent.type(screen.getByLabelText('Pagina di provenienza'), 'home')
+    await userEvent.type(screen.getByLabelText('UTM source'), 'linkedin')
+    await pick('Ha un CV', 'Sì')
+    await pick('Ha fatto accesso', 'No')
+    day('Creato dal', '2026-01-01')
+    day('Creato al', '2026-09-01')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await screen.findByText('amministratore')
+    expect(createdBody(calls).filtri).toEqual(TALENTI_FILTRI)
+  })
+
+  it('I3: every company filter goes out under the server\'s own name and type', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: AZIENDE_FILTRI }, 201),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+    })
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
+    await pick('Lista', 'Aziende')
+    await pick('Stato', 'In corso')
+    await userEvent.type(screen.getByLabelText('Cerca'), 'block')
+    await userEvent.type(screen.getByLabelText('Budget min (€/giorno)'), '200')
+    await userEvent.type(screen.getByLabelText('Budget max (€/giorno)'), '400')
+    day('Periodo dal', '2026-10-01')
+    await userEvent.type(screen.getByLabelText('Pagina di provenienza'), 'home')
+    day('Creata dal', '2026-01-01')
+    day('Creata al', '2026-09-01')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await screen.findByText('amministratore')
+    expect(createdBody(calls).filtri).toEqual(AZIENDE_FILTRI)
+  })
+
+  it('I3: the edit route puts every stored filter back, a stored moment as its day', async () => {
+    const stored = { ...TALENTI_FILTRI, creato_da: '2026-01-01T00:00:00', creato_a: '2026-09-01T00:00:00' }
+    const editCampaign = { ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: stored }
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'GET /api/hub/campaigns/c1': () => json({ campagna: editCampaign, conteggi: COUNTS_EMPTY, destinatari: [] }),
+      'PATCH /api/hub/campaigns/c1': () => json(editCampaign),
+    })
+    mountEdit('c1')
+    expect(await screen.findByLabelText('Creato dal')).toHaveValue('2026-01-01')
+    expect(screen.getByRole('combobox', { name: 'Da remoto' })).toHaveTextContent('Ibrido')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await screen.findByText('amministratore')
+    const patch = calls.mock.calls.find(([url, init]) => String(url).endsWith('/campaigns/c1') && init?.method === 'PATCH')!
+    expect(JSON.parse(String(patch[1]!.body)).filtri).toEqual(TALENTI_FILTRI)
+  })
+
+  it('I3: picking a state clears the audience already on screen', async () => {
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti' } }, 201),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+    })
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await screen.findByText('amministratore')
+    await pick('Stato', 'Lead')
+    expect(screen.queryByText('amministratore')).not.toBeInTheDocument()
+  })
+
+  it('F1, F3, F4, M6: Cosa stops at the server\'s limits, the preview reads like the mail, Quando asks for a first test and proposes a time when «Programma» is chosen', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-25T07:00:00Z'))
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+      'PATCH /api/hub/campaigns/c1': () => json(DRAFT),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await screen.findByText('amministratore')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Cosa
+    expect(screen.getByLabelText('Nome')).toHaveAttribute('maxLength', '120')
+    expect(screen.getByLabelText('Oggetto')).toHaveAttribute('maxLength', '200')
+    expect(screen.getByLabelText('Testo')).toHaveAttribute('maxLength', '5000')
+    expect(screen.getByLabelText('Testo del bottone')).toHaveAttribute('maxLength', '60')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Prova
+    const footer = await screen.findByText((_, node) => node?.tagName === 'P' && node.textContent === 'Non vuoi più ricevere queste mail? Disiscriviti')
+    expect(footer).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Quando, no test yet
+    expect(screen.getByText('Manda prima una prova dal passo Prova.')).toBeInTheDocument()
+    expect(screen.queryByText(/Hai modificato la campagna dopo la prova/)).not.toBeInTheDocument()
+    // Two hours after the page opened: the proposal is from the click, not the mount.
+    vi.setSystemTime(new Date('2026-09-25T09:07:00Z'))
+    await userEvent.click(screen.getByRole('button', { name: 'Programma' }))
+    expect(screen.getByLabelText('Giorno')).toHaveValue('2026-09-25')
+    expect(screen.getByLabelText('Ora')).toHaveValue('12:15') // 11:07 in Rome, + 1 h, next quarter
   })
 })

@@ -54,3 +54,17 @@ export function romeToday(now = new Date()): { giorno: string; ora: string } {
   )
   return { giorno: `${parts.year}-${parts.month}-${parts.day}`, ora: `${parts.hour}:${parts.minute}` }
 }
+
+const QUARTER_HOUR_MS = 15 * 60 * 1000
+
+/** What «Programma» proposes when it is chosen: an hour from now, rounded up to the
+ *  next quarter hour, as a Rome day and time. Rome's offset is whole hours, so the
+ *  quarter hours are the same instants in UTC and in Rome. */
+export function defaultSchedule(now = new Date()): { giorno: string; ora: string } {
+  const inAnHour = now.getTime() + 60 * 60 * 1000
+  return romeToday(new Date(Math.ceil(inAnHour / QUARTER_HOUR_MS) * QUARTER_HOUR_MS))
+}
+
+/** The server's column limits (`rebase_core/models.py`, `CAMPAIGN_*_MAX_LENGTH`), so
+ *  a field stops where the API would refuse it instead of failing the save. */
+export const CAMPAIGN_MAX_LENGTH = { nome: 120, oggetto: 200, testo: 5000, bottone_testo: 60 } as const

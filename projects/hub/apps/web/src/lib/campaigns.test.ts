@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { AZIONE_LABELS, CAMPAIGN_STATE_LABELS, META_LABELS, RECIPIENT_STATE_LABELS, personalise, romeToday } from './campaigns'
+import {
+  AZIONE_LABELS,
+  CAMPAIGN_STATE_LABELS,
+  META_LABELS,
+  RECIPIENT_STATE_LABELS,
+  defaultSchedule,
+  personalise,
+  romeToday,
+} from './campaigns'
 
 describe('personalise', () => {
   it('puts the name in, or leaves a clean greeting like the server', () => {
@@ -44,6 +52,23 @@ describe('romeToday', () => {
   it('rolls the day forward across midnight in Rome even while still the prior day in UTC', () => {
     // 2026-06-30 22:15 UTC = 2026-07-01 00:15 in Rome (UTC+2, CEST).
     expect(romeToday(new Date('2026-06-30T22:15:00Z'))).toEqual({ giorno: '2026-07-01', ora: '00:15' })
+  })
+})
+
+describe('defaultSchedule', () => {
+  it('proposes an hour from now, rounded up to the next quarter hour, in Rome time', () => {
+    // 07:07 UTC = 09:07 in Rome (CEST); + 1 h = 10:07; next quarter = 10:15.
+    expect(defaultSchedule(new Date('2026-09-25T07:07:00Z'))).toEqual({ giorno: '2026-09-25', ora: '10:15' })
+  })
+
+  it('keeps a time already on a quarter hour', () => {
+    // 08:30 UTC = 09:30 in Rome (CET) + 1 h = 10:30.
+    expect(defaultSchedule(new Date('2026-01-15T08:30:00Z'))).toEqual({ giorno: '2026-01-15', ora: '10:30' })
+  })
+
+  it('rolls over to the next Rome day late in the evening', () => {
+    // 21:50 UTC = 23:50 in Rome (CEST); + 1 h = 00:50; next quarter = 01:00 the day after.
+    expect(defaultSchedule(new Date('2026-09-25T21:50:00Z'))).toEqual({ giorno: '2026-09-26', ora: '01:00' })
   })
 })
 
