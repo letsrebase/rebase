@@ -9,7 +9,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from rebase_core.admin_tokens import AdminRead
+from rebase_core.campaigns.schemas import CampaignDraft
 from rebase_core.campaigns.states import Candidate
+from rebase_core.config import Settings
 from rebase_core.models import Campaign, Company, Freelancer, Login, Signup, User
 
 CAMPAIGN_TABLES = ("campaign_optouts", "campaign_recipients", "campaigns")
@@ -135,3 +138,36 @@ def campaign_row(session: Session, **fields: object) -> Campaign:
     session.add(campaign)
     session.commit()
     return campaign
+
+
+SETTINGS = Settings(_env_file=None)  # type: ignore[call-arg]
+NOW = datetime(2026, 9, 25, 7, 0, tzinfo=UTC)
+
+
+class Clock:
+    """A clock a test moves by hand: the service and the tick take one."""
+
+    def __init__(self, at: datetime) -> None:
+        self.at = at
+
+    def __call__(self) -> datetime:
+        return self.at
+
+
+def as_admin(user: User) -> AdminRead:
+    return AdminRead.model_validate(user)
+
+
+def draft(**fields: object) -> CampaignDraft:
+    values: dict[str, object] = {
+        "nome": "Manca il CV",
+        "fonte": "stato",
+        "stato_percorso": "manca_cv",
+        "oggetto": "Manca solo il CV",
+        "testo": "Ciao {nome},\n\ntesto.",
+        "bottone_testo": "Carica il CV",
+        "bottone_meta": "area",
+        "azione": "cv",
+    }
+    values.update(fields)
+    return CampaignDraft(**values)  # type: ignore[arg-type]
