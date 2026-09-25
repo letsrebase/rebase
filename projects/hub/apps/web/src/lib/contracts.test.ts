@@ -20,11 +20,13 @@ import {
   machineAmount,
   matchOf,
   payModeOf,
+  refillFiscal,
   sendLabel,
   sendReportMessage,
   switchPayMode,
   toCliente,
   toLettera,
+  typedFiscalFields,
   whatOf,
   withPayMode,
 } from './contracts'
@@ -184,6 +186,28 @@ describe('«Crea match» in three steps (REB-476)', () => {
       domicilio: '',
       pec: null,
     })
+  })
+
+  it('refills tax fields from a newer record, except the ones typed in', () => {
+    const before = { codice_fiscale: 'LVLDAA85T50H501Z', partita_iva: '01234567890', domicilio: 'Milano', pec: '' }
+    const after = { ...before, domicilio: 'Bari' }
+    expect(typedFiscalFields(before, after)).toEqual(['domicilio'])
+    const newer = {
+      freelancer_id: 'f1',
+      codice_fiscale: 'LVLDAA85T50H501Z',
+      partita_iva: '01234567899',
+      domicilio: 'Torino',
+      pec: 'ada@pec.it',
+      updated_by: 'a1',
+      updated_at: '2026-09-25T09:00:00Z',
+    }
+    expect(refillFiscal(after, newer, new Set(['domicilio'] as const))).toEqual({
+      codice_fiscale: 'LVLDAA85T50H501Z',
+      partita_iva: '01234567899',
+      domicilio: 'Bari',
+      pec: 'ada@pec.it',
+    })
+    expect(refillFiscal(after, newer, new Set())).toMatchObject({ domicilio: 'Torino' })
   })
 
   it('names the freelancer on the send button, with «ad» before an a', () => {

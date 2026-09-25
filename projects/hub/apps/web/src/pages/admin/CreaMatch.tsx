@@ -17,6 +17,8 @@ import {
   draftFromFiscal,
   failureOf,
   fiscalToSave,
+  refillFiscal,
+  typedFiscalFields,
   letteraForm,
   letteraToSend,
   payModeOf,
@@ -25,6 +27,7 @@ import {
   withPayMode,
   type ClienteForm,
   type FiscalDraft,
+  type FiscalKey,
   type LetteraForm,
 } from '@/lib/contracts'
 import { ChiStep } from './crea-match/ChiStep'
@@ -65,6 +68,9 @@ export function AdminCreaMatch() {
   const [prefillFor, setPrefillFor] = useState<string | null>(null)
   const [savedFiscal, setSavedFiscal] = useState<FiscalData | null>(null)
   const [fiscal, setFiscal] = useState<FiscalDraft>(FISCAL_EMPTY)
+  // The tax fields the admin typed in since the draft was last filled or sent: a save
+  // landing late refills every other one and leaves these as typed.
+  const fiscalTyped = useRef(new Set<FiscalKey>())
   const [editFiscal, setEditFiscal] = useState(false)
   const [cliente, setCliente] = useState<ClienteForm>(CLIENTE_EMPTY)
   const [editCliente, setEditCliente] = useState(false)
@@ -123,6 +129,7 @@ export function AdminCreaMatch() {
       setPrefillFor(companyId)
       setSavedFiscal(data.fiscale)
       setFiscal(draftFromFiscal(data.fiscale))
+      fiscalTyped.current = new Set()
       setEditFiscal(false)
       setCliente(client)
       setEditCliente(!clienteComplete(client))
@@ -135,9 +142,11 @@ export function AdminCreaMatch() {
     mutationFn: ({ data }: { data: FiscalData; companyId: string }) => admin.saveFiscal(id, data),
     onSuccess: (saved, { companyId }) => {
       // The tax data are the freelancer's, whichever request is picked now: what the
-      // server saved is what the page shows from here.
+      // server saved is what the page shows from here, except in a field the admin has
+      // typed in since, for the request now picked.
       setSavedFiscal(saved)
-      setFiscal(draftFromFiscal(saved))
+      const typed = new Set(fiscalTyped.current)
+      setFiscal((current) => refillFiscal(current, saved, typed))
       // Closing the section and moving on belong to the request they were saved for;
       // after a switch the admin may have opened the section again for the new one.
       const now = shown.current
@@ -238,7 +247,10 @@ export function AdminCreaMatch() {
     // «Condizioni» starts clean.
     check.reset()
     const data = fiscalToSave(savedFiscal, fiscal, editFiscal)
-    if (data) saveFiscal.mutate({ data, companyId: company.id })
+    if (data) {
+      fiscalTyped.current = new Set()
+      saveFiscal.mutate({ data, companyId: company.id })
+    }
     else setStep(1)
   }
 
@@ -278,7 +290,10 @@ export function AdminCreaMatch() {
             onEditCliente={() => setEditCliente(true)}
             savedFiscal={savedFiscal}
             fiscal={fiscal}
-            onFiscal={setFiscal}
+            onFiscal={(next) => {
+              for (const key of typedFiscalFields(fiscal, next)) fiscalTyped.current.add(key)
+              setFiscal(next)
+            }}
             editFiscal={editFiscal}
             onEditFiscal={() => setEditFiscal(true)}
             onNext={submitChi}

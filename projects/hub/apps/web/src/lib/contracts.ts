@@ -34,6 +34,22 @@ export function draftFromFiscal(fiscal: Fiscal | null): FiscalDraft {
   }
 }
 
+export type FiscalKey = keyof FiscalDraft
+
+/** The fields one change of the form typed in. */
+export function typedFiscalFields(before: FiscalDraft, after: FiscalDraft): FiscalKey[] {
+  return (Object.keys(after) as FiscalKey[]).filter((key) => after[key] !== before[key])
+}
+
+/** A form refilled from a newer saved record: the fields the admin typed in since keep
+ *  their text, the others take the record's values, so no field left alone keeps a value
+ *  older than the record, for a later save to write back. */
+export function refillFiscal(draft: FiscalDraft, fiscal: Fiscal | null, typed: ReadonlySet<FiscalKey>): FiscalDraft {
+  const fresh = draftFromFiscal(fiscal)
+  const keys = Object.keys(fresh) as FiscalKey[]
+  return Object.fromEntries(keys.map((key) => [key, typed.has(key) ? draft[key] : fresh[key]])) as FiscalDraft
+}
+
 /** An empty PEC is `null`, not `""`, which the API would try to read as an address. */
 export function toFiscalData(draft: FiscalDraft): FiscalData {
   return {

@@ -4,7 +4,15 @@ import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { admin, ApiError, type Fiscal, type FiscalData } from '@/lib/api'
-import { draftFromFiscal, fiscalLine, toFiscalData, type FiscalDraft } from '@/lib/contracts'
+import {
+  draftFromFiscal,
+  fiscalLine,
+  refillFiscal,
+  toFiscalData,
+  typedFiscalFields,
+  type FiscalDraft,
+  type FiscalKey,
+} from '@/lib/contracts'
 
 /** The four tax fields, shared by «Match e contratti» and «Chi e per chi» of «Crea match». */
 export function FiscalFields({
@@ -55,10 +63,28 @@ export function FiscalSection({
   onSaved: () => void
 }) {
   const [draft, setDraft] = useState<FiscalDraft>(() => draftFromFiscal(fiscale))
+  // The fields typed in and not saved yet, and the saved record the form was last filled
+  // from. A newer record (a save here or elsewhere, a refetch) refills the form while it
+  // stays open, except in those fields, so a save never writes back a value older than
+  // the record. Adjusted while rendering rather than in an effect: React's pattern for
+  // state that follows a prop.
+  const [typed, setTyped] = useState<ReadonlySet<FiscalKey>>(() => new Set())
+  const version = fiscale?.updated_at ?? null
+  const [filledFrom, setFilledFrom] = useState(version)
+  if (version !== filledFrom) {
+    setFilledFrom(version)
+    setDraft(refillFiscal(draft, fiscale, typed))
+  }
+  function change(next: FiscalDraft) {
+    setTyped(new Set([...typed, ...typedFiscalFields(draft, next)]))
+    setDraft(next)
+  }
   const [saved, setSaved] = useState(false)
   const save = useMutation({
     mutationFn: (data: FiscalData) => admin.saveFiscal(freelancerId, data),
     onSuccess: () => {
+      // Saved: the record that comes back refills every field.
+      setTyped(new Set())
       setSaved(true)
       onSaved()
     },
@@ -80,7 +106,7 @@ export function FiscalSection({
         <FiscalFields
           idPrefix="contratti"
           draft={draft}
-          onChange={setDraft}
+          onChange={change}
           wrong={(field) => failure?.fields.includes(field) || undefined}
         />
         <Button type="submit" size="sm" disabled={save.isPending}>

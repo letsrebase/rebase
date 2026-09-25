@@ -519,6 +519,58 @@ describe('step 1, «Chi e per chi»', () => {
     await screen.findByLabelText('Ruolo')
     expect(bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')).toHaveLength(1)
   })
+
+  /** Picks Rossi, sends an edited tax save that the test holds back, and moves to Verdi.
+   *  Any later save is answered at once with what it sent. */
+  async function saveHeldThenSwitch(late: ReturnType<typeof deferred<Response>>) {
+    let puts = 0
+    const spy = routes({
+      'PUT /api/hub/freelancers/f1/fiscal': (init?: RequestInit) =>
+        ++puts === 1 ? late.promise : answer(200, { ...FISCALE, ...JSON.parse(String(init!.body)) }),
+    })
+    mount()
+    await pick(/Rossi Studio/)
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
+    const domicilio = screen.getByLabelText('Domicilio professionale')
+    await userEvent.clear(domicilio)
+    await userEvent.type(domicilio, 'Via Po 2, Torino')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cambia richiesta' }))
+    await pick(/Verdi Snc/)
+    return spy
+  }
+
+  it('shows a late tax save on the saved line of the new request', async () => {
+    const late = deferred<Response>()
+    await saveHeldThenSwitch(late)
+    expect(screen.getByText('Salvati: CF LVLDAA85T50H501Z · P.IVA 01234567890')).toBeInTheDocument()
+    late.resolve(answer(200, { ...FISCALE, partita_iva: '01234567899', domicilio: 'Via Po 2, 10121 Torino' }))
+    expect(await screen.findByText('Salvati: CF LVLDAA85T50H501Z · P.IVA 01234567899')).toBeInTheDocument()
+    current('1. Chi e per chi')
+  })
+
+  it('keeps what the admin typed for the new request when a late tax save lands', async () => {
+    const late = deferred<Response>()
+    const spy = await saveHeldThenSwitch(late)
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
+    const domicilio = screen.getByLabelText('Domicilio professionale')
+    await userEvent.clear(domicilio)
+    await userEvent.type(domicilio, 'Via Nuova 3, Bari')
+    late.resolve(answer(200, { ...FISCALE, partita_iva: '01234567899', domicilio: 'Via Po 2, 10121 Torino' }))
+
+    // The field typed in keeps its text; the one left alone takes the saved value.
+    await waitFor(() => expect(screen.getByLabelText('Partita IVA')).toHaveValue('01234567899'))
+    expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Nuova 3, Bari')
+    current('1. Chi e per chi')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await screen.findByLabelText('Ruolo')
+    expect(bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')[1]).toEqual({
+      codice_fiscale: 'LVLDAA85T50H501Z',
+      partita_iva: '01234567899',
+      domicilio: 'Via Nuova 3, Bari',
+      pec: null,
+    })
+  })
 })
 
 describe('step 2, «Condizioni»', () => {
