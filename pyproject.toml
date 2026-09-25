@@ -51,7 +51,7 @@ dev = [
   # hide. Same reason `lxml-stubs` is here. Only a dev dependency: stubs are read by
   # mypy, never imported at runtime, so they have no business in core's own
   # `[project].dependencies` (and the architecture test reads that list literally).
-  "types-openpyxl==3.1.5.20260807",
+  "types-openpyxl==3.1.5.20260827",
   # The website's guide PDF (ORB-70) is typeset with pandoc and Typst, the same two
   # binaries PigroCRM's renderer uses, and neither reads the woff2 the brand ships or
   # a variable weight axis. fontTools decompresses that one file and pins the two
