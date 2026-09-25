@@ -212,7 +212,7 @@ const QUIET = 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-
 const DESKTOP = '(min-width: 1024px)'
 
 /** Is `pathname` this entry, or a page below it (a detail route, a tab)? */
-function matches(pathname: string, to: string, exact = false) {
+function isUnder(pathname: string, to: string, exact = false) {
   return exact ? pathname === to : pathname === to || pathname.startsWith(`${to}/`)
 }
 
@@ -253,8 +253,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const groups = isAdmin ? [...GROUPS, SETTINGS] : GROUPS
   const activeGroup = groups.find((group) =>
     'base' in group
-      ? matches(location.pathname, group.base)
-      : group.items.some((item) => matches(location.pathname, item.to)),
+      ? isUnder(location.pathname, group.base)
+      : group.items.some((item) => isUnder(location.pathname, item.to)),
   )?.id
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(readSidebarGroups)
