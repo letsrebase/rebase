@@ -16,7 +16,8 @@ from rebase_core.contracts.render import ContractRenderer
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.errors import DomainError
 from rebase_core.http import urllib_call
-from rebase_mcp.server import build_server, signing_from_settings
+from rebase_core.signing import signing_from_settings
+from rebase_mcp.server import build_server
 
 TOKEN_VARIABLE = "REBASE_MCP_TOKEN"
 

@@ -26,17 +26,24 @@ from test_matches import (
 
 from rebase_core import signing as signing_module
 from rebase_core.audit import AdminActionService
+from rebase_core.config import Settings
 from rebase_core.contract_schemas import FiscalData, MatchRead, SendReport
 from rebase_core.contracts.fields import ContractFailed, Value
-from rebase_core.contracts.render import Renderer
+from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.db import session_factory
-from rebase_core.documenso import UNREACHABLE, Outcome, WebhookBody, outcome_from_webhook
+from rebase_core.documenso import (
+    UNREACHABLE,
+    DocumensoClient,
+    Outcome,
+    WebhookBody,
+    outcome_from_webhook,
+)
 from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
 from rebase_core.fiscal import FiscalService
-from rebase_core.mail import EmailSender, Mail, RecordingSender
+from rebase_core.mail import EmailSender, Mail, RecordingSender, ResendSender
 from rebase_core.matches import MatchService
 from rebase_core.models import ContractDocument, Freelancer, Match
-from rebase_core.signing import SigningService, SweepResult
+from rebase_core.signing import SigningService, SweepResult, signing_from_settings
 
 # 23:30 UTC on 30 September is already 1 October in Rome.
 SIGNED_AT = datetime(2026, 9, 30, 23, 30, tzinfo=UTC)
@@ -2078,3 +2085,39 @@ def test_a_send_and_a_cancel_of_the_same_draft_never_leave_a_letter_annulled_wit
         # that followed found nothing left to send, and Documenso never heard from it.
         assert isinstance(results.get("send"), InvalidState)
         assert fake.envelopes == {}
+
+
+# ---- one builder for both doors -----------------------------------------------------------
+
+
+def test_signing_from_settings_builds_the_service_this_environment_configures(
+    clean: Session,
+) -> None:
+    """The admin API's dependency and the MCP server build `SigningService` here, so a
+    setting reaches both doors or neither."""
+    configured = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        documenso_url="http://documenso.test",
+        documenso_api_token="api_fake",
+        resend_api_key="re_fake",
+        signer_json='{"rebase-sede": "Milano"}',
+        contracts_mail=CONTRACTS_MAIL,
+        contracts_allow_draft=True,
+    )
+    renderer = FakeRenderer()
+    service = signing_from_settings(configured, renderer)(clean)
+    assert service.renderer is renderer
+    assert isinstance(service.documenso, DocumensoClient)
+    assert service.documenso.api.startswith("http://documenso.test")
+    assert isinstance(service.sender, ResendSender)
+    assert (service.contracts_mail, service.allow_draft) == (CONTRACTS_MAIL, True)
+    assert service._signer() == {"rebase-sede": "Milano"}
+
+    # What the API injects wins, `None` included: signing off stays off.
+    sender = RecordingSender()
+    overridden = signing_from_settings(configured, renderer, documenso=None, sender=sender)(clean)
+    assert (overridden.documenso, overridden.sender) == (None, sender)
+
+    bare = signing_from_settings(Settings(_env_file=None))(clean)  # type: ignore[call-arg]
+    assert isinstance(bare.renderer, ContractRenderer)
+    assert (bare.documenso, bare.sender, bare.allow_draft) == (None, None, False)

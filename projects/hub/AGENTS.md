@@ -58,9 +58,11 @@ is `REBASE_MCP_TOKEN`. Design record:
 
 Every match and contract action is a tool too (REB-478): each runs the guard the admin
 API runs, then the same core service, with the calling admin as the actor, and answers
-`pdf_url`, never the PDF bytes, the tax identifiers or the client's budget. The
-transports hand `build_server` the real `ContractRenderer` and `signing_from_settings`;
-the tests hand `FakeRenderer` and a `SigningService` over `FakeDocumenso`.
+`pdf_url`, never the PDF bytes, the tax identifiers or the client's budget. The guards
+are the core's `require_live_match` and `require_live_document`, and `SigningService`
+comes from the core's `signing_from_settings`, the one builder the API's `SigningDep`,
+the MCP transports and `rebase contracts-sweep` share; the tests hand `FakeRenderer` and
+a `SigningService` over `FakeDocumenso`.
 
 - `preview_match`: step 3's sentences for the hub's proposal with the given fields; writes nothing.
 - `create_match`: the draft match, «Salva senza inviare»; `match_id` makes a retry idempotent.

@@ -34,14 +34,12 @@ from rebase_core.contracts.render import Renderer
 from rebase_core.errors import NotFound
 from rebase_core.fiscal import FiscalService
 from rebase_core.matches import (
-    ENTITY,
     LIST_LIMIT_DEFAULT,
     LIST_LIMIT_MAX,
     MatchService,
     require_live_document,
-    require_live_freelancer,
+    require_live_match,
 )
-from rebase_core.models import Match
 from rebase_core.search import SEARCH_MAX_LENGTH
 
 router = APIRouter(prefix="/api/hub", tags=["hub-admin"])
@@ -152,9 +150,8 @@ def list_matches(
 
 @router.get("/matches/{match_id}", response_model=MatchRead)
 def get_match(_: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
-    match = MatchService(session).get(match_id)
-    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
-    return match
+    require_live_match(session, match_id)
+    return MatchService(session).get(match_id)
 
 
 @router.post("/matches/{match_id}/cancel", response_model=MatchRead)
@@ -163,19 +160,13 @@ def cancel_match(
 ) -> MatchRead:
     """A draft; or a match in signature, whose letter's envelope is cancelled on
     Documenso too (REB-407)."""
-    match = session.get(Match, match_id)
-    if match is None:
-        raise NotFound(ENTITY, match_id)
-    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    require_live_match(session, match_id)
     return signing(session).cancel_match(match_id, admin.id)
 
 
 @router.post("/matches/{match_id}/close", response_model=MatchRead)
 def close_match(admin: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
-    match = session.get(Match, match_id)
-    if match is None:
-        raise NotFound(ENTITY, match_id)
-    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    require_live_match(session, match_id)
     return MatchService(session).close(match_id, admin.id)
 
 
@@ -187,10 +178,7 @@ def send_match(
     freelancer gets its mail; a letter whose framework agreement is not signed yet waits
     for it. 503 when this environment cannot sign, 502 when Documenso refuses, 409 for a
     draft text or a match with nothing left to send."""
-    match = session.get(Match, match_id)
-    if match is None:
-        raise NotFound(ENTITY, match_id)
-    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    require_live_match(session, match_id)
     return signing(session).send_match(match_id, admin.id)
 
 

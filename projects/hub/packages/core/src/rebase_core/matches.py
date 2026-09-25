@@ -114,6 +114,18 @@ def require_live_freelancer(
         raise NotFound(entity, identifier)
 
 
+def require_live_match(session: Session, match_id: UUID) -> Match:
+    """The guard before a match's action or read: «match ... non trovato» when the match
+    itself is gone or its freelancer is soft-deleted, before the service is reached. The
+    admin API's match routes and the admin MCP server's match tools both run this one
+    (REB-478)."""
+    match = session.get(Match, match_id)
+    if match is None:
+        raise NotFound(ENTITY, match_id)
+    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    return match
+
+
 def require_live_document(session: Session, document_id: UUID) -> ContractDocument:
     """The guard before a document's action or its PDF: «documento ... non trovato» when
     the document itself is gone or its freelancer is soft-deleted, before the service is
@@ -164,14 +176,19 @@ def _match_words(
     )
 
 
-def _reason(error: ErrorDetails) -> str:
-    """What an admin reads for one of `MatchCreate`'s errors: «manca» for an empty field;
-    the hub's own sentence when one of its validators refused the value, already
-    Italian; «non valido» for Pydantic's own checks, whose words are English."""
+def field_reason(error: ErrorDetails) -> str:
+    """What an admin reads after a field's name for one of a model's errors: «manca» for
+    an empty field; the hub's own sentence when one of its validators refused the value,
+    already Italian, without the field's name when the sentence starts with it
+    (`SafeStr`'s refusal of a NUL byte does), so the name is not said twice; «non
+    valido» for Pydantic's own checks, whose words are English and repeat the value.
+    `MatchService.proposal` and the MCP server's tax-data tool both name a refusal
+    this way."""
     if error["type"] == "missing" or error["input"] is None:
         return "manca"
     if error["type"] == "value_error":
-        return str(error.get("ctx", {}).get("error", "non valido"))
+        reason = str(error.get("ctx", {}).get("error", "non valido"))
+        return reason.removeprefix(f"{error['loc'][-1]}: ") if error["loc"] else reason
     return error["msg"] if error["type"] not in PYDANTIC_ERRORS else "non valido"
 
 
@@ -430,7 +447,7 @@ class MatchService:
         what an MCP tool saves when the admin asked for a match in a sentence. A key
         that is not a field of the letter or of the client, and a required field still
         empty once laid over, are a `ValidationFailed` naming it (`lettera.compenso`), in
-        Italian (`_reason`)."""
+        Italian (`field_reason`)."""
         prefill = self.prefill(freelancer_id, company_id)
         body: dict[str, object] = {"id": match_id, "company_id": company_id}
         for part, suggested, given, known in (
@@ -446,7 +463,7 @@ class MatchService:
         except PydanticValidationError as exc:
             error = exc.errors()[0]
             field = ".".join(str(part) for part in error["loc"])
-            raise ValidationFailed(ENTITY, field, _reason(error)) from exc
+            raise ValidationFailed(ENTITY, field, field_reason(error)) from exc
 
     def document_pdf(self, document_id: UUID, *, signed: bool = False) -> ContractPdf:
         document = self.session.get(ContractDocument, document_id)

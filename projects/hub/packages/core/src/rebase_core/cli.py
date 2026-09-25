@@ -13,7 +13,6 @@ from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.fields import ContractFailed, Value, merge_data
 from rebase_core.contracts.render import (
     DOCUMENTS,
-    ContractRenderer,
     company_defaults,
     render,
     signature_blanks,
@@ -26,7 +25,7 @@ from rebase_core.freelancers import freelancer_read
 from rebase_core.http import HttpCall
 from rebase_core.mail import CardSummary, EmailSender, sender_from_settings, welcome_mail
 from rebase_core.models import USER_ROLES, Freelancer, Signup, User
-from rebase_core.signing import SigningService
+from rebase_core.signing import signing_from_settings
 from rebase_core.users import UserService
 
 
@@ -159,27 +158,17 @@ def contracts_sweep() -> int:
     """`rebase contracts-sweep`: redoes what a lost background task or a restart left
     behind (REB-391).
 
-    Runs `SigningService.sweep()` with this environment's own collaborators -- the same
-    ones `SigningDep` builds for a request, gathered here by hand since this command has
-    no request to build one from. Runs every ten minutes on production and the preview
-    alike, from the `sweep` service in `docker-compose.yml` (REB-393). Prints the
-    `unconfirmed` count only when it is not zero (REB-431): an expired, revoked or
-    wrong token, or Documenso itself unreachable, otherwise failed silently, leaving a
-    document `inviato` and «0 documenti ripresi» printed every ten minutes with nothing
-    to say why."""
+    Runs `SigningService.sweep()` with this environment's own collaborators, built by
+    `signing_from_settings`, the same builder `SigningDep` and the MCP server use. Runs
+    every ten minutes on production and the preview alike, from the `sweep` service in
+    `docker-compose.yml` (REB-393). Prints the `unconfirmed` count only when it is not
+    zero (REB-431): an expired, revoked or wrong token, or Documenso itself unreachable,
+    otherwise failed silently, leaving a document `inviato` and «0 documenti ripresi»
+    printed every ten minutes with nothing to say why."""
     settings = get_settings()
     session = session_factory(create_engine_from_settings(settings))()
     try:
-        signing = SigningService(
-            session,
-            renderer=ContractRenderer(),
-            documenso=client_from_settings(settings),
-            sender=sender_from_settings(settings),
-            signer_json=settings.signer_json,
-            contracts_mail=settings.contracts_mail,
-            allow_draft=settings.contracts_allow_draft,
-        )
-        result = signing.sweep()
+        result = signing_from_settings(settings)(session).sweep()
     finally:
         session.close()
     line = f"{result.touched} documenti ripresi"

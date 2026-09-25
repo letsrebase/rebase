@@ -34,7 +34,7 @@ from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
 from rebase_core.freelancers import FreelancerService
-from rebase_core.matches import MatchService, require_live_document
+from rebase_core.matches import MatchService, require_live_document, require_live_match
 from rebase_core.models import ContractDocument, Freelancer, Match, User
 from rebase_core.schemas import CompanyCreate, FreelancerCreate, StatusChange
 
@@ -696,6 +696,21 @@ def test_a_document_is_not_found_once_its_freelancer_is_deleted(clean: Session) 
     FreelancerService(clean).soft_delete(freelancer_id, admin_id)
     with pytest.raises(NotFound, match=f"documento {letter.id} non trovato"):
         require_live_document(clean, letter.id)
+
+
+def test_a_match_is_not_found_once_its_freelancer_is_deleted(clean: Session) -> None:
+    """The guard the admin API and the MCP tools both run before a match's action or
+    read: «match ... non trovato» for a match that is gone and for one whose freelancer
+    is soft-deleted, never the freelancer's own message (REB-417)."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    match = _service(clean).create(freelancer_id, _body(company_id), admin_id)
+    assert require_live_match(clean, match.id).id == match.id
+    missing = uuid4()
+    with pytest.raises(NotFound, match=f"match {missing} non trovato"):
+        require_live_match(clean, missing)
+    FreelancerService(clean).soft_delete(freelancer_id, admin_id)
+    with pytest.raises(NotFound, match=f"match {match.id} non trovato"):
+        require_live_match(clean, match.id)
 
 
 def test_cancelling_a_draft_cancels_its_letter_and_leaves_the_framework(clean: Session) -> None:
@@ -1513,6 +1528,13 @@ def test_the_proposal_refuses_an_unknown_key_by_name(
             {"giorni_pagamento": 45, "fine_mese": True},
             "lettera.giorni_pagamento",
             "contati da fine mese, i giorni di pagamento sono al massimo 30 (legge 81/2017)",
+        ),
+        # `SafeStr`'s own sentence names the field already: said once, not twice.
+        (
+            CLIENTE_REST,
+            {"ruolo": "Backend\x00developer"},
+            "lettera.ruolo",
+            "il testo contiene un carattere nullo (\\x00), non ammesso",
         ),
     ],
 )

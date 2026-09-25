@@ -16,7 +16,7 @@ The match and contract tools (REB-478) are «Crea match» and «Match e contratt
 actions: each runs the guard the admin API runs, then the service it calls, with the
 calling admin as the actor, so the trail reads the same whichever door was used. What
 writes a contract takes the renderer and `SigningService` as `build_server` is handed
-them: `signing_from_settings` for the real ones, test doubles in the tests.
+them: the core's `signing_from_settings` for the real ones, test doubles in the tests.
 """
 
 from collections.abc import Callable, Sequence
@@ -41,21 +41,20 @@ from rebase_core.config import Settings
 from rebase_core.contract_schemas import FiscalData, MatchCreate
 from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
-from rebase_core.documenso import client_from_settings
 from rebase_core.errors import DomainError, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
 from rebase_core.freelancers import LEAD_STATE, FreelancerService
 from rebase_core.http import HttpCall
 from rebase_core.logins import LoginService
-from rebase_core.mail import sender_from_settings
 from rebase_core.match_words import send_report_sentence
 from rebase_core.matches import (
     ENTITY,
     MatchService,
+    field_reason,
     require_live_document,
-    require_live_freelancer,
+    require_live_match,
 )
-from rebase_core.models import Freelancer, Match, Signup, User
+from rebase_core.models import Freelancer, Signup, User
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
 from rebase_core.schemas import (
@@ -68,14 +67,12 @@ from rebase_core.schemas import (
 )
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import LIST_LIMIT_DEFAULT
-from rebase_core.signing import SigningService
+from rebase_core.signing import SigningFactory, SigningService
 from rebase_core.talenti import TalentiService
 
 SessionFactory = sessionmaker[Session]
 # Who is calling: resolved by the transport, read by the tools that sign something.
 AdminProvider = Callable[[], AdminRead]
-# `SigningService` for one call's session, the way the admin API's `SigningDep` hands it.
-SigningFactory = Callable[[Session], SigningService]
 
 INSTRUCTIONS = (
     "rebase, la community di freelance di letsrebase.com. Gli strumenti leggono chi "
@@ -96,44 +93,34 @@ LETTER_PART, CONDITIONS_PART = "lettera.", "condizioni."
 TAX_DATA_SAVED = {"dati_fiscali": "salvati"}
 
 
-def signing_from_settings(settings: Settings, renderer: Renderer) -> SigningFactory:
-    """`SigningService` as this environment configures it, built the way the admin API's
-    `get_signing_factory` builds it (`apps/api` may not be imported here), afresh for each
-    call over that call's own session: Documenso and the mail sender from the settings,
-    `None` when either is off, and `REBASE_SIGNER_JSON` handed over raw, parsed only by
-    a path that typesets."""
-
-    def build(session: Session) -> SigningService:
-        return SigningService(
-            session,
-            renderer=renderer,
-            documenso=client_from_settings(settings),
-            sender=sender_from_settings(settings),
-            signer_json=settings.signer_json,
-            contracts_mail=settings.contracts_mail,
-            allow_draft=settings.contracts_allow_draft,
-        )
-
-    return build
-
-
-def _require_live_match(session: Session, match_id: UUID) -> None:
-    """The admin API's guard before a match's action: «match ... non trovato» for a match
-    that is gone and for one whose freelancer is soft-deleted (REB-417)."""
-    match = session.get(Match, match_id)
-    if match is None:
-        raise NotFound(ENTITY, match_id)
-    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
-
-
 def _tax_refusal(exc: PydanticValidationError) -> ToolError:
-    """A tax field refused, named with the hub's own sentence when one of its validators
-    said why and «non valido» otherwise: never Pydantic's own text, which repeats the
-    value typed, and a tax identifier does not come back in an answer."""
+    """A tax field refused in the words `MatchService.proposal` uses (`field_reason`):
+    never Pydantic's own text, which repeats the value typed, and a tax identifier does
+    not come back in an answer."""
     error = exc.errors()[0]
     field = ".".join(str(part) for part in error["loc"])
-    reason = (error.get("ctx") or {}).get("error")
-    return ToolError(f"{field}: {reason if reason is not None else 'non valido'}")
+    return ToolError(f"{field}: {field_reason(error)}")
+
+
+def _proposal(
+    service: MatchService,
+    freelancer_id: UUID,
+    company_id: UUID,
+    cliente: dict[str, Any] | None,
+    condizioni: dict[str, Any] | None,
+    match_id: UUID | None = None,
+) -> MatchCreate:
+    """The hub's proposal with the given fields laid over it, a refusal naming a letter's
+    field by the parameter it came in (`condizioni.compenso`)."""
+    try:
+        return service.proposal(freelancer_id, company_id, cliente, condizioni, match_id)
+    except ValidationFailed as exc:
+        field = str(exc.details["field"])
+        if not field.startswith(LETTER_PART):
+            raise
+        raise ValidationFailed(
+            ENTITY, CONDITIONS_PART + field.removeprefix(LETTER_PART), str(exc.details["reason"])
+        ) from exc
 
 
 def _number(value: str | None, field: str) -> Decimal | None:
@@ -756,21 +743,20 @@ def build_server(
         stampa la lettera, lo stato (bozza, in_firma, attivo, concluso, annullato), la
         lettera di incarico con numero e stato, e in `quadro` il contratto quadro del
         freelance. Ogni documento porta `pdf_url`, mai i byte. Solo lettura."""
-        session = factory()
-        try:
-            service = MatchService(session)
-            match = service.get(UUID(match_id))
+        key = UUID(match_id)
+
+        def call(session: Session) -> dict[str, Any]:
             # A soft-deleted freelancer's match reads as «match not found», the answer
-            # the admin API already gives (REB-417): checked here, right after `get`,
-            # rather than let `for_freelancer` refuse with the freelancer's own message.
-            require_live_freelancer(session, match.freelancer_id, ENTITY, UUID(match_id))
-            quadro = service.for_freelancer(match.freelancer_id).quadro
-            body = match.model_dump(mode="json")
+            # the admin API gives (REB-417), rather than `for_freelancer` refusing with
+            # the freelancer's own message.
+            freelancer_id = require_live_match(session, key).freelancer_id
+            service = MatchService(session)
+            body = service.get(key).model_dump(mode="json")
+            quadro = service.for_freelancer(freelancer_id).quadro
             body["quadro"] = quadro.model_dump(mode="json") if quadro is not None else None
-        except DomainError as exc:
-            raise ToolError(exc.message) from exc
-        finally:
-            session.close()
+            return body
+
+        body = _call(call)
         _document_links(body["lettera"])
         if body["quadro"] is not None:
             _document_links(body["quadro"])
@@ -778,44 +764,11 @@ def build_server(
 
     # ---- matches and contracts, as actions (REB-478) -----------------------------------
 
-    def _call[T](call: Callable[[Session], T]) -> T:
-        """`_run` for a tool that shapes its own answer: one session, closed whatever
-        happened, and a domain error as its own sentence."""
-        session = factory()
-        try:
-            return call(session)
-        except DomainError as exc:
-            raise ToolError(exc.message) from exc
-        finally:
-            session.close()
-
-    def _proposal(
-        service: MatchService,
-        freelancer_id: UUID,
-        company_id: UUID,
-        cliente: dict[str, Any] | None,
-        condizioni: dict[str, Any] | None,
-        match_id: UUID | None = None,
-    ) -> MatchCreate:
-        """The hub's proposal with the given fields laid over it, a refusal naming a
-        letter's field by the parameter it came in (`condizioni.compenso`)."""
-        try:
-            return service.proposal(freelancer_id, company_id, cliente, condizioni, match_id)
-        except ValidationFailed as exc:
-            field = str(exc.details["field"])
-            if not field.startswith(LETTER_PART):
-                raise
-            raise ValidationFailed(
-                ENTITY,
-                CONDITIONS_PART + field.removeprefix(LETTER_PART),
-                str(exc.details["reason"]),
-            ) from exc
-
     def _on_match(match_id: str, action: Callable[[Session, UUID], BaseModel]) -> dict[str, Any]:
         key = UUID(match_id)
 
         def call(session: Session) -> dict[str, Any]:
-            _require_live_match(session, key)
+            require_live_match(session, key)
             return action(session, key).model_dump(mode="json")
 
         body = _call(call)
@@ -883,10 +836,13 @@ def build_server(
         nulla: per la firma c'è `send_match_for_signature`. `cliente` e `condizioni` come
         in `preview_match`, da chiamare prima per rileggere le frasi. Servono i dati
         fiscali del freelance (`set_freelancer_tax_data`). `match_id`, un UUID scelto da
-        chi chiama, rende sicuro riprovare: con lo stesso id e gli stessi dati torna il
-        match già scritto e non un secondo; con dati diversi è rifiutato. Risponde il
-        match con `situazione`, `prossima_azione` e la lettera con `pdf_url`, a nome
-        dell'admin dietro il token."""
+        chi chiama, rende sicuro riprovare: con lo stesso id torna il match già scritto e
+        non un secondo, ma solo se la proposta è rimasta identica. Se nel frattempo la
+        proposta dell'hub è cambiata (la richiesta, la scheda o l'ultimo match
+        dell'azienda), il tentativo è rifiutato: per riprovare passa esplicitamente in
+        `cliente` e `condizioni` i valori della prima volta. Risponde il match con
+        `situazione`, `prossima_azione` e la lettera con `pdf_url`, a nome dell'admin
+        dietro il token."""
         freelancer, company = UUID(freelancer_id), UUID(company_id)
         key = UUID(match_id) if match_id else None
 
@@ -913,7 +869,7 @@ def build_server(
         key = UUID(match_id)
 
         def call(session: Session) -> dict[str, Any]:
-            _require_live_match(session, key)
+            require_live_match(session, key)
             report = contracts(session).send_match(key, admin().id)
             return {**report.model_dump(mode="json"), "messaggio": send_report_sentence(report)}
 
@@ -1002,26 +958,25 @@ def build_server(
         _call(lambda session: FiscalService(session).save(key, data, admin().id))
         return dict(TAX_DATA_SAVED)
 
-    def _run(call: Callable[[Session], BaseModel]) -> dict[str, Any]:
+    def _call[T](call: Callable[[Session], T]) -> T:
         """One session per call, closed whatever happened, and a domain error rendered
         as its own sentence rather than a stack trace."""
         session = factory()
         try:
-            return call(session).model_dump(mode="json")
+            return call(session)
         except DomainError as exc:
             raise ToolError(exc.message) from exc
         finally:
             session.close()
 
+    def _run(call: Callable[[Session], BaseModel]) -> dict[str, Any]:
+        """`_call` for a tool that answers one row as the service reads it, dumped while
+        its session is still open."""
+        return _call(lambda session: call(session).model_dump(mode="json"))
+
     def _run_list(call: Callable[[Session], Sequence[BaseModel]]) -> list[dict[str, Any]]:
         """`_run`'s own shape for a tool that answers several rows, like
         `get_freelancer_audit`."""
-        session = factory()
-        try:
-            return [item.model_dump(mode="json") for item in call(session)]
-        except DomainError as exc:
-            raise ToolError(exc.message) from exc
-        finally:
-            session.close()
+        return _call(lambda session: [item.model_dump(mode="json") for item in call(session)])
 
     return mcp

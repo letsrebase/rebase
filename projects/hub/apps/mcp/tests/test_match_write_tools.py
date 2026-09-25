@@ -5,7 +5,7 @@ runs pandoc, reaches Documenso or sends a mail (`FakeRenderer`, `FakeDocumenso`,
 `RecordingSender`)."""
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -140,6 +140,15 @@ class World:
 
     def written(self) -> list[int]:
         return [self.count(model) for model in WRITTEN]
+
+    def trail(self, entity: str, entity_id: str) -> list[tuple[str, UUID]]:
+        """Who did what to `entity`, newest first."""
+        session = self.factory()
+        try:
+            entries = AdminActionService(session).timeline(entity, UUID(entity_id))
+            return [(entry.kind, entry.admin_id) for entry in entries]
+        finally:
+            session.close()
 
 
 def _seed(factory: sessionmaker[Session], *, fiscal: bool = True) -> tuple[str, str]:
@@ -436,12 +445,13 @@ async def test_a_match_goes_from_signature_to_closed_and_its_framework_to_notice
 
 
 async def test_cancel_contract_cancels_a_framework_out_for_signature(world: World) -> None:
-    async with Client(world.server()) as client:
+    async with Client(world.server(IVAN)) as client:
         match = await _create(client, world, cliente=CLIENTE)
         await _call(client, "send_match_for_signature", match_id=match["id"])
         quadro_id = _payload(
             await client.call_tool("list_matches", {"freelancer_id": world.freelancer_id})
         )["quadro"]["id"]
+    async with Client(world.server(GRACE)) as client:
         letter = await _refused(client, "cancel_contract", document_id=match["lettera"]["id"])
         cancelled = await _call(client, "cancel_contract", document_id=quadro_id)
     assert letter == "Una lettera di incarico si annulla con il suo match."
@@ -449,20 +459,59 @@ async def test_cancel_contract_cancels_a_framework_out_for_signature(world: Worl
     assert cancelled["pdf_url"] == _link(cancelled)
     [envelope] = world.documenso.envelopes.values()
     assert envelope.status == "CANCELLED"
+    # A framework agreement belongs to no match: its entry lands on the card's trail.
+    assert world.trail("freelancer", world.freelancer_id)[0] == ("document_cancelled", GRACE.id)
 
 
 async def test_cancel_match_cancels_a_draft_and_one_in_signature(world: World) -> None:
-    async with Client(world.server()) as client:
+    async with Client(world.server(IVAN)) as client:
         draft = await _create(client, world, cliente=CLIENTE)
-        cancelled = await _call(client, "cancel_match", match_id=draft["id"])
         sent = await _create(client, world, cliente=CLIENTE)
         await _call(client, "send_match_for_signature", match_id=sent["id"])
+    async with Client(world.server(GRACE)) as client:
+        cancelled = await _call(client, "cancel_match", match_id=draft["id"])
         stopped = await _call(client, "cancel_match", match_id=sent["id"])
         again = await _refused(client, "cancel_match", match_id=sent["id"])
     assert (cancelled["stato"], cancelled["lettera"]["stato"]) == ("annullato", "annullato")
     assert cancelled["lettera"]["pdf_url"] == _link(cancelled["lettera"])
     assert (stopped["stato"], stopped["lettera"]["stato"]) == ("annullato", "annullato")
     assert "questo è annullato" in again
+    assert world.trail("match", draft["id"])[0] == ("match_cancelled", GRACE.id)
+    assert world.trail("match", sent["id"])[0] == ("match_cancelled", GRACE.id)
+
+
+@pytest.mark.parametrize(
+    ("breaks", "sentence"),
+    [
+        (
+            lambda documenso: documenso.down("create"),
+            "Documenso non risponde: riprova tra qualche minuto.",
+        ),
+        (
+            lambda documenso: documenso.fail("create", 400, "Qualcosa non va"),
+            "Documenso ha rifiutato la richiesta: Qualcosa non va",
+        ),
+    ],
+)
+async def test_a_documenso_failure_answers_its_sentence_and_sends_nothing(
+    world: World, breaks: Callable[[FakeDocumenso], None], sentence: str
+) -> None:
+    """The service's own Italian sentence, never Documenso's stack trace or ours; the
+    send rolls back, so the match is still a draft and nobody got a mail."""
+    async with Client(world.server()) as client:
+        match = await _create(client, world, cliente=CLIENTE)
+        breaks(world.documenso)
+        refused = await _refused(client, "send_match_for_signature", match_id=match["id"])
+        after = await _call(client, "get_match", match_id=match["id"])
+    assert refused == sentence
+    assert "Traceback" not in refused and "node_modules" not in refused
+    assert (world.sender.sent, world.documenso.envelopes) == ([], {})
+    assert (after["stato"], after["lettera"]["stato"], after["quadro"]["stato"]) == (
+        "bozza",
+        "in_attesa",
+        "generato",
+    )
+    assert [kind for kind, _admin in world.trail("match", match["id"])] == ["match_created"]
 
 
 # ---- tax data -------------------------------------------------------------------------
@@ -492,6 +541,20 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
                 partita_iva=TAX["partita_iva"],
                 domicilio=TAX["domicilio"],
             )
+            nul = await _refused(
+                client,
+                "set_freelancer_tax_data",
+                freelancer_id=freelancer_id,
+                codice_fiscale="LVLDAA85\x00T50H501Z",
+                partita_iva=TAX["partita_iva"],
+                domicilio=TAX["domicilio"],
+            )
+            pec = await _refused(
+                client,
+                "set_freelancer_tax_data",
+                freelancer_id=freelancer_id,
+                **TAX | {"pec": "no"},
+            )
             saved = await _call(
                 client, "set_freelancer_tax_data", freelancer_id=freelancer_id, **TAX
             )
@@ -507,6 +570,9 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
             refused == "codice_fiscale: il codice fiscale ha 16 caratteri, o 11 cifre per una ditta"
         )
         assert "XYZ987" not in refused
+        # `SafeStr`'s sentence already names the field: said once.
+        assert nul == "codice_fiscale: il testo contiene un carattere nullo (\\x00), non ammesso"
+        assert pec == "pec: non valido"
         assert saved == {"dati_fiscali": "salvati"}
         assert after["dati_fiscali_mancanti"] is False
         session = factory()
@@ -516,11 +582,10 @@ async def test_set_freelancer_tax_data_saves_them_and_never_answers_them(
                     FreelancerFiscal.freelancer_id == UUID(freelancer_id)
                 )
             ).one()
-            trail = AdminActionService(session).timeline("freelancer_fiscal", UUID(freelancer_id))
         finally:
             session.close()
         assert (row.codice_fiscale, row.partita_iva, row.domicilio, row.pec) == tuple(TAX.values())
-        assert [(entry.kind, entry.admin_id) for entry in trail] == [("fiscal_updated", GRACE.id)]
+        assert world.trail("freelancer_fiscal", freelancer_id) == [("fiscal_updated", GRACE.id)]
     finally:
         _wipe(factory)
 
