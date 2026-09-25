@@ -50,7 +50,8 @@ export const STATE_LABELS: Record<string, string> = {
 export const MATCH_STATES = ['bozza', 'in_firma', 'attivo', 'concluso', 'annullato'] as const
 /** What a match and a contract document are, in the admin's words: the same as the
  *  core's `MATCH_STATE_LABELS` and `DOCUMENT_STATE_LABELS` (`match_words.py`), which the
- *  MCP tools answer, so keep the two identical (REB-477). */
+ *  MCP tools answer, so keep the two identical (REB-477): the core's
+ *  `tests/test_web_labels.py` names any label that drifts. */
 export const MATCH_STATE_LABELS: Record<string, string> = {
   bozza: 'Da inviare',
   in_firma: 'In attesa di firma',
