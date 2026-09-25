@@ -420,9 +420,10 @@ because a copy drifts, which is exactly what an earlier version of this section 
 directory reads to people (`PigroCRM`, not `pigrocrm`) and created by hand in the Linear
 UI since the MCP surface cannot create one, and a first project under it with a scope
 that can actually close, a lead and both members (the members in the UI too, since
-`save_project` has no field for them), plus its row in the project table of
-`docs/tracker.md` § Where things are in the same change: the initiative is the permanent
-container, the project is the release. Repository-wide work that belongs to no product
+`save_project` has no field for them): the initiative is the permanent container, the
+project is the release, and neither gets a row anywhere in this repository anymore
+(`docs/tracker.md` § Where things are, which dropped its own project snapshot for
+the same drift, REB-460). Repository-wide work that belongs to no product
 (CI cost, the licence, this documentation) goes under the `Monorepo` initiative; it went
 into `Monorepo hygiene v1`, which sat under no `projects/<name>/` and is closed, and
 where such an issue goes now is that same section of the tracker page. The `Area`
