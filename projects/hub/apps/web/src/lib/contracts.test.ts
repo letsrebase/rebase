@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { LETTERA_TEXT_KEYS, type LetteraDraft } from './api'
 import {
   ALTRE_CONDIZIONI_GROUPS,
+  amountForm,
   CONDIZIONI_FIELDS,
   cancelDescription,
   clienteComplete,
@@ -18,6 +19,7 @@ import {
   payModeOf,
   sendLabel,
   sendReportMessage,
+  switchPayMode,
   toCliente,
   toLettera,
   whatOf,
@@ -69,14 +71,44 @@ describe('the letter form (REB-387)', () => {
 })
 
 describe('«Crea match» in three steps (REB-476)', () => {
-  it('asks each field of the letter once: on «Condizioni» or in «Altre condizioni», in the letter’s order', () => {
+  it('asks each field of the letter once: on «Condizioni» or in «Altre condizioni»', () => {
     const altre = ALTRE_CONDIZIONI_GROUPS.flatMap((group) => group.fields)
+    expect(new Set(altre).size).toBe(altre.length)
     expect(altre.filter((field) => CONDIZIONI_FIELDS.has(field))).toEqual([])
     expect(new Set([...CONDIZIONI_FIELDS, ...altre])).toEqual(new Set(Object.keys(LETTERA_LABELS)))
-    const order = LETTERA_GROUPS.flatMap((group) => group.fields).filter((field) => !CONDIZIONI_FIELDS.has(field))
-    expect(altre).toEqual(order)
-    expect(ALTRE_CONDIZIONI_GROUPS.every((group) => group.fields.length > 0)).toBe(true)
     expect(altre.filter((field) => LETTERA_REQUIRED.has(field))).toEqual([])
+  })
+
+  it('keeps the letter’s sections in «Altre condizioni», with the fields left alone in one «Altro»', () => {
+    expect(ALTRE_CONDIZIONI_GROUPS.every((group) => group.fields.length > 1)).toBe(true)
+    expect(ALTRE_CONDIZIONI_GROUPS.at(-1)).toEqual({
+      title: 'Altro',
+      fields: ['periodo_verifica', 'giorni_preavviso', 'rapporti_precedenti'],
+    })
+    const order = LETTERA_GROUPS.flatMap((group) => group.fields)
+    for (const group of ALTRE_CONDIZIONI_GROUPS) {
+      expect([...group.fields].sort((a, b) => order.indexOf(a) - order.indexOf(b))).toEqual(group.fields)
+    }
+  })
+
+  it('shows an amount the way the letter writes it', () => {
+    expect(amountForm('480.00')).toBe('480')
+    expect(amountForm('480')).toBe('480')
+    expect(amountForm('480.50')).toBe('480,50')
+    expect(amountForm('480.5')).toBe('480,50')
+    expect(amountForm('480.05')).toBe('480,05')
+    expect(toLettera({ ...LETTERA_EMPTY, compenso: amountForm('480.50') }).compenso).toBe('480.50')
+  })
+
+  it('does not take the day rate for a lump sum, and puts it back for an empty day-rate fee', () => {
+    const daily = withPayMode({ ...LETTERA_EMPTY, compenso: '480' }, 'a giornata')
+    expect(switchPayMode(daily, 'a corpo', '480')).toMatchObject({ modalita: 'a corpo', unita: 'a corpo', compenso: '' })
+    expect(switchPayMode({ ...daily, compenso: '480,00' }, 'a corpo', '480').compenso).toBe('')
+    expect(switchPayMode({ ...daily, compenso: '500' }, 'a corpo', '480').compenso).toBe('500')
+    const lump = withPayMode({ ...LETTERA_EMPTY, compenso: '' }, 'a corpo')
+    expect(switchPayMode(lump, 'a giornata', '480')).toMatchObject({ modalita: 'a giornata', compenso: '480' })
+    expect(switchPayMode({ ...lump, compenso: '12000' }, 'a giornata', '480').compenso).toBe('12000')
+    expect(switchPayMode(daily, 'a corpo', '').compenso).toBe('480')
   })
 
   it('sets modalità and unità together, and reads anything but «a corpo» as a day rate', () => {

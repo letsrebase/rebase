@@ -8,6 +8,7 @@ import {
   LETTERA_TEXT_KEYS,
   type Cliente,
   type ClienteDraft,
+  type Company,
   type ContractDocument,
   type Fiscal,
   type FiscalData,
@@ -17,6 +18,7 @@ import {
   type Match,
   type SendReport,
 } from './api'
+import { formatDate } from './format'
 
 export type FiscalDraft = Record<keyof FiscalData, string>
 
@@ -77,6 +79,21 @@ export function toCliente(form: ClienteForm): Cliente {
   }
 }
 
+/** The request «Chi e per chi» folds its list into once one is picked. Never the
+ *  budget, which this flow does not show (spec § 1h). */
+export function requestLine(company: Company): string {
+  return `${company.nome_azienda} · ${company.referente} · ${company.figura_richiesta} · dal ${formatDate(company.periodo_da)}`
+}
+
+/** What a refusal can name that «Chi e per chi» asks: the client on the letter, and the
+ *  freelancer's tax data (`fiscale` when they are missing altogether). */
+export const CLIENTE_FIELDS: ReadonlySet<string> = new Set<keyof Cliente>([
+  'cliente_ragione_sociale',
+  'cliente_piva',
+  'cliente_sede',
+])
+export const FISCAL_FIELDS: ReadonlySet<string> = new Set(['fiscale', ...Object.keys(FISCAL_EMPTY)])
+
 /** A client with all three details reads as one line; one missing asks for the fields. */
 export function clienteComplete(form: ClienteForm): boolean {
   return Object.values(toCliente(form)).every(Boolean)
@@ -111,13 +128,21 @@ export const LETTERA_EMPTY: LetteraForm = {
   giorni_preavviso: '',
 }
 
+/** The API's amount as the fee field shows it, the way the letter writes it: «480» for
+ *  «480.00», «480,50» for «480.50». `toLettera` reads the comma back. */
+export function amountForm(value: string): string {
+  const [whole = '', cents = ''] = value.trim().split('.')
+  const significant = cents.replace(/0+$/, '')
+  return significant ? `${whole},${significant.padEnd(2, '0')}` : whole
+}
+
 export function letteraForm(draft: LetteraDraft): LetteraForm {
   const text = Object.fromEntries(LETTERA_TEXT_KEYS.map((key) => [key, draft[key] ?? ''])) as Record<LetteraTextKey, string>
   return {
     ...text,
     data_inizio: draft.data_inizio ?? '',
     data_fine: draft.data_fine ?? '',
-    compenso: draft.compenso ?? '',
+    compenso: draft.compenso === null ? '' : amountForm(draft.compenso),
     giorni_pagamento: draft.giorni_pagamento === null ? '' : String(draft.giorni_pagamento),
     fine_mese: draft.fine_mese ?? false,
     giorni_preavviso: draft.giorni_preavviso === null ? '' : String(draft.giorni_preavviso),
@@ -223,6 +248,21 @@ export function withPayMode(form: LetteraForm, mode: PayMode): LetteraForm {
   return { ...form, modalita: mode, unita: mode }
 }
 
+const amount = (value: string) => Number(value.replace(',', '.').trim())
+
+/** «Come si paga» chosen on the page. The prefill's fee is the freelancer's day rate,
+ *  never a lump sum: «A corpo» empties a fee still equal to it, so the total is typed,
+ *  and «A giornata» puts the day rate back into an empty fee. A fee the admin typed
+ *  stays either way. */
+export function switchPayMode(form: LetteraForm, mode: PayMode, dayRate: string): LetteraForm {
+  const next = withPayMode(form, mode)
+  const fee = form.compenso.trim()
+  if (!dayRate) return next
+  if (mode === 'a corpo' && fee && amount(fee) === amount(dayRate)) return { ...next, compenso: '' }
+  if (mode === 'a giornata' && !fee) return { ...next, compenso: dayRate }
+  return next
+}
+
 /** What only a fixed-price engagement prints, asked right after the fee «A corpo». */
 export const A_CORPO_FIELDS: readonly LetteraTextFieldKey[] = ['risultati', 'accettazione', 'scadenze_fatturazione']
 
@@ -242,14 +282,21 @@ export const CONDIZIONI_FIELDS: ReadonlySet<LetteraFieldKey> = new Set<LetteraFi
   ...A_CORPO_FIELDS,
 ])
 
-/** Every other field of the letter, in its own sections and order, inside the closed
- *  «Altre condizioni (facoltative)». */
-export const ALTRE_CONDIZIONI_GROUPS = LETTERA_GROUPS.map((group) => ({
+const ALTRE_SECTIONS = LETTERA_GROUPS.map((group) => ({
   title: group.title,
   fields: group.fields.filter(
     (field): field is LetteraTextFieldKey => field !== 'fine_mese' && !CONDIZIONI_FIELDS.has(field),
   ),
-})).filter((group) => group.fields.length > 0)
+}))
+
+/** Every other field of the letter inside the closed «Altre condizioni (facoltative)»,
+ *  in the letter's sections and order. A section left with one field would only repeat
+ *  its label («Preavviso», «Giorni di preavviso»), so those fields share one last
+ *  «Altro». */
+export const ALTRE_CONDIZIONI_GROUPS: readonly { title: string; fields: readonly LetteraTextFieldKey[] }[] = [
+  ...ALTRE_SECTIONS.filter((group) => group.fields.length > 1),
+  { title: 'Altro', fields: ALTRE_SECTIONS.filter((group) => group.fields.length === 1).flatMap((group) => group.fields) },
+].filter((group) => group.fields.length > 0)
 
 export const ALTRE_CONDIZIONI_FIELDS: ReadonlySet<string> = new Set(
   ALTRE_CONDIZIONI_GROUPS.flatMap((group) => group.fields),

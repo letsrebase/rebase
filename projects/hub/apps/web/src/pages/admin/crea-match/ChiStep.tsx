@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '@rebase/ui/button'
 import { cn } from '@rebase/ui/cn'
 import { Input } from '@rebase/ui/input'
@@ -8,6 +8,7 @@ import { admin, type Company, type FiscalData } from '@/lib/api'
 import {
   clienteLine,
   fiscalLine,
+  requestLine,
   type ClienteForm,
   type Failure,
   type FiscalDraft,
@@ -28,7 +29,33 @@ function useDebounce<T>(value: T, delayMs: number): T {
   return debounced
 }
 
-function CompanyList({ selected, onSelect }: { selected: Company | null; onSelect: (company: Company) => void }) {
+/** «Modifica» and «Cambia richiesta» take themselves off the page when clicked: the
+ *  focus goes to what replaced them, never back to the top of the page. */
+function useFocusWhenOpened(open: boolean) {
+  const fields = useRef<HTMLDivElement>(null)
+  const opening = useRef(false)
+  useEffect(() => {
+    if (!open || !opening.current) return
+    opening.current = false
+    fields.current?.querySelector<HTMLElement>('input, textarea')?.focus()
+  }, [open])
+  return {
+    fields,
+    markOpening: () => {
+      opening.current = true
+    },
+  }
+}
+
+function CompanyList({
+  selected,
+  onSelect,
+  searchRef,
+}: {
+  selected: Company | null
+  onSelect: (company: Company) => void
+  searchRef: RefObject<HTMLInputElement | null>
+}) {
   const [q, setQ] = useState('')
   const term = useDebounce(q.trim(), SEARCH_DEBOUNCE_MS)
   // A page at a time, through the same cursor «Aziende» walks: an older request past the
@@ -81,6 +108,7 @@ function CompanyList({ selected, onSelect }: { selected: Company | null; onSelec
       <div className="space-y-1.5">
         <Label htmlFor="match-azienda-q">Cerca una richiesta</Label>
         <Input
+          ref={searchRef}
           id="match-azienda-q"
           type="search"
           maxLength={200}
@@ -117,17 +145,44 @@ function Summary({ line, edit, onEdit }: { line: string; edit: string; onEdit: (
   )
 }
 
+function ChosenRequest({
+  company,
+  onChange,
+  buttonRef,
+}: {
+  company: Company
+  onChange: () => void
+  buttonRef: RefObject<HTMLButtonElement | null>
+}) {
+  return (
+    <section aria-labelledby="match-richiesta" className="space-y-2">
+      <h2 id="match-richiesta" className="text-sm font-medium">
+        Richiesta
+      </h2>
+      <div className="flex flex-wrap items-center gap-3">
+        <p className="text-sm">{requestLine(company)}</p>
+        <Button ref={buttonRef} type="button" variant="outline" size="sm" onClick={onChange}>
+          Cambia richiesta
+        </Button>
+      </div>
+    </section>
+  )
+}
+
 function ClienteSection({
   form,
   onChange,
   editing,
   onEdit,
+  failure,
 }: {
   form: ClienteForm
   onChange: (form: ClienteForm) => void
   editing: boolean
   onEdit: () => void
+  failure: Failure | null
 }) {
+  const { fields, markOpening } = useFocusWhenOpened(editing)
   const field = (name: keyof ClienteForm, label: string, maxLength: number) => (
     <div className="space-y-1.5">
       <Label htmlFor={`match-${name}`}>{label}</Label>
@@ -137,6 +192,7 @@ function ClienteSection({
         maxLength={maxLength}
         value={form[name]}
         onChange={(event) => onChange({ ...form, [name]: event.target.value })}
+        aria-invalid={failure?.fields.includes(name) || undefined}
       />
     </div>
   )
@@ -146,13 +202,20 @@ function ClienteSection({
         Cliente sulla lettera
       </h2>
       {editing ? (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div ref={fields} className="grid gap-3 sm:grid-cols-2">
           {field('cliente_ragione_sociale', 'Ragione sociale del cliente', 200)}
           {field('cliente_piva', 'Partita IVA del cliente', 32)}
           {field('cliente_sede', 'Sede del cliente', 300)}
         </div>
       ) : (
-        <Summary line={clienteLine(form)} edit="Modifica il cliente" onEdit={onEdit} />
+        <Summary
+          line={clienteLine(form)}
+          edit="Modifica il cliente"
+          onEdit={() => {
+            markOpening()
+            onEdit()
+          }}
+        />
       )}
     </section>
   )
@@ -175,15 +238,24 @@ function FiscaleSection({
   onEdit: () => void
   failure: Failure | null
 }) {
+  const open = !saved || editing
+  const { fields, markOpening } = useFocusWhenOpened(open)
   return (
     <section aria-labelledby="match-fiscale" className="space-y-2">
       <h2 id="match-fiscale" className="text-sm font-medium">
         {nome ? `Dati fiscali di ${nome}` : 'Dati fiscali del freelance'}
       </h2>
       {saved && !editing ? (
-        <Summary line={fiscalLine(saved)} edit="Modifica i dati fiscali" onEdit={onEdit} />
+        <Summary
+          line={fiscalLine(saved)}
+          edit="Modifica i dati fiscali"
+          onEdit={() => {
+            markOpening()
+            onEdit()
+          }}
+        />
       ) : (
-        <>
+        <div ref={fields} className="space-y-2">
           {!saved && <p className="text-sm text-muted-foreground">Mancano: servono per il contratto.</p>}
           <FiscalFields
             idPrefix="match"
@@ -191,19 +263,21 @@ function FiscaleSection({
             onChange={onChange}
             wrong={(field) => failure?.fields.includes(field) || undefined}
           />
-        </>
+        </div>
       )}
     </section>
   )
 }
 
-/** Step 1: the request, then the client the letter names and the freelancer's tax data,
- *  both read from the prefill and asked only when missing or opened. */
+/** Step 1: the request, folded into one line once picked, then the client the letter
+ *  names and the freelancer's tax data, both read from the prefill and asked only when
+ *  missing or opened. */
 export function ChiStep({
   nome,
   selected,
   onSelect,
   loaded,
+  loadFailed,
   cliente,
   onCliente,
   editCliente,
@@ -222,6 +296,8 @@ export function ChiStep({
   onSelect: (company: Company) => void
   /** The prefill of `selected` is in the forms below. */
   loaded: boolean
+  /** Reading the prefill of `selected` failed: the list comes back to pick it again. */
+  loadFailed: boolean
   cliente: ClienteForm
   onCliente: (form: ClienteForm) => void
   editCliente: boolean
@@ -235,6 +311,16 @@ export function ChiStep({
   pending: boolean
   failure: Failure | null
 }) {
+  const [choosing, setChoosing] = useState(selected === null)
+  const listOpen = choosing || selected === null || loadFailed
+  const changeButton = useRef<HTMLButtonElement>(null)
+  const search = useRef<HTMLInputElement>(null)
+  const focusNext = useRef<RefObject<HTMLElement | null> | null>(null)
+  useEffect(() => {
+    const target = focusNext.current ?? (listOpen && loadFailed ? search : null)
+    focusNext.current = null
+    target?.current?.focus()
+  }, [listOpen, loadFailed])
   return (
     <form
       className="space-y-4"
@@ -243,10 +329,35 @@ export function ChiStep({
         onNext()
       }}
     >
-      <CompanyList selected={selected} onSelect={onSelect} />
-      {selected && loaded && (
+      {listOpen || !selected ? (
+        <CompanyList
+          selected={selected}
+          searchRef={search}
+          onSelect={(company) => {
+            focusNext.current = changeButton
+            setChoosing(false)
+            onSelect(company)
+          }}
+        />
+      ) : (
+        <ChosenRequest
+          company={selected}
+          buttonRef={changeButton}
+          onChange={() => {
+            focusNext.current = search
+            setChoosing(true)
+          }}
+        />
+      )}
+      {!listOpen && selected && loaded && (
         <div className="space-y-6 border-t pt-4">
-          <ClienteSection form={cliente} onChange={onCliente} editing={editCliente} onEdit={onEditCliente} />
+          <ClienteSection
+            form={cliente}
+            onChange={onCliente}
+            editing={editCliente}
+            onEdit={onEditCliente}
+            failure={failure}
+          />
           <FiscaleSection
             nome={nome}
             saved={savedFiscal}
@@ -258,8 +369,8 @@ export function ChiStep({
           />
         </div>
       )}
-      {selected && !loaded && !failure && <p className="text-sm text-muted-foreground">Leggo la richiesta…</p>}
-      <StepFooter next="Avanti" pending={pending} ready={selected !== null && loaded} failure={failure} />
+      {!listOpen && selected && !loaded && <p className="text-sm text-muted-foreground">Leggo la richiesta…</p>}
+      <StepFooter next="Avanti" pending={pending} ready={!listOpen && loaded} failure={failure} />
     </form>
   )
 }

@@ -9,7 +9,7 @@ import {
   LETTERA_MULTILINE,
   LETTERA_REQUIRED,
   payModeOf,
-  withPayMode,
+  switchPayMode,
   type Failure,
   type LetteraForm,
   type LetteraTextFieldKey,
@@ -24,7 +24,9 @@ const PAY_MODES: readonly { mode: PayMode; label: string; per: string }[] = [
 
 type Invalid = (field: string) => true | undefined
 
-/** One text, date or number field of the letter, labelled as `LETTERA_LABELS` names it. */
+/** One text, date or number field of the letter, labelled as `LETTERA_LABELS` names it.
+ *  No `min` or other constraint the browser checks: inside a closed «Altre condizioni»
+ *  it would block «Avanti» with no bubble to see, and the server names a wrong value. */
 function LetteraInput({
   field,
   form,
@@ -55,7 +57,6 @@ function LetteraInput({
         <Input
           id={inputId}
           type={type}
-          min={type === 'number' ? 0 : undefined}
           required={LETTERA_REQUIRED.has(field)}
           value={form[field]}
           onChange={(event) => set(event.target.value)}
@@ -66,8 +67,19 @@ function LetteraInput({
   )
 }
 
-/** «Come si paga» sets `modalita` and `unita` together; «A corpo» asks what it adds. */
-function Pagamento({ form, onChange, invalid }: { form: LetteraForm; onChange: (form: LetteraForm) => void; invalid: Invalid }) {
+/** «Come si paga» sets `modalita` and `unita` together; «A corpo» asks what it adds,
+ *  and the total rather than the day rate (`switchPayMode`). */
+function Pagamento({
+  form,
+  onChange,
+  dayRate,
+  invalid,
+}: {
+  form: LetteraForm
+  onChange: (form: LetteraForm) => void
+  dayRate: string
+  invalid: Invalid
+}) {
   const mode = payModeOf(form)
   const per = PAY_MODES.find((option) => option.mode === mode)!.per
   return (
@@ -82,8 +94,8 @@ function Pagamento({ form, onChange, invalid }: { form: LetteraForm; onChange: (
                 name="lettera-pagamento"
                 value={option.mode}
                 checked={mode === option.mode}
-                onChange={() => onChange(withPayMode(form, option.mode))}
-                className="size-4 shrink-0 accent-primary outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                onChange={() => onChange(switchPayMode(form, option.mode, dayRate))}
+                className="size-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               />
               {option.label}
             </Label>
@@ -149,6 +161,7 @@ function Pagamento({ form, onChange, invalid }: { form: LetteraForm; onChange: (
 export function CondizioniStep({
   form,
   onChange,
+  dayRate,
   altreOpen,
   onAltreOpen,
   onBack,
@@ -158,6 +171,8 @@ export function CondizioniStep({
 }: {
   form: LetteraForm
   onChange: (form: LetteraForm) => void
+  /** The freelancer's day rate as the prefill wrote it into the fee. */
+  dayRate: string
   altreOpen: boolean
   onAltreOpen: (open: boolean) => void
   onBack: () => void
@@ -185,7 +200,7 @@ export function CondizioniStep({
       </div>
       {input('impegno')}
       {input('luogo')}
-      <Pagamento form={form} onChange={onChange} invalid={invalid} />
+      <Pagamento form={form} onChange={onChange} dayRate={dayRate} invalid={invalid} />
       <details
         open={altreOpen}
         onToggle={(event) => onAltreOpen(event.currentTarget.open)}

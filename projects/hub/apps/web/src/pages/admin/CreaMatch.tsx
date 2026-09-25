@@ -7,8 +7,10 @@ import { admin, ApiError, type Company, type FiscalData, type Match, type MatchC
 import {
   ALTRE_CONDIZIONI_FIELDS,
   CLIENTE_EMPTY,
+  CLIENTE_FIELDS,
   DRAFT_SAVED,
   FISCAL_EMPTY,
+  FISCAL_FIELDS,
   LETTERA_EMPTY,
   clienteComplete,
   clienteForm,
@@ -31,6 +33,8 @@ import { ControllaStep, type Review } from './crea-match/ControllaStep'
 import { Header } from './lists'
 
 const STEPS = ['Chi e per chi', 'Condizioni', 'Controlla e invia'] as const
+
+const onStepOne = (field: string) => CLIENTE_FIELDS.has(field) || FISCAL_FIELDS.has(field)
 
 function revoke(review: Review) {
   URL.revokeObjectURL(review.lettera)
@@ -63,6 +67,7 @@ export function AdminCreaMatch() {
   const [cliente, setCliente] = useState<ClienteForm>(CLIENTE_EMPTY)
   const [editCliente, setEditCliente] = useState(false)
   const [lettera, setLettera] = useState<LetteraForm>(LETTERA_EMPTY)
+  const [dayRate, setDayRate] = useState('')
   const [altreOpen, setAltreOpen] = useState(false)
   const [review, setReview] = useState<Review | null>(null)
   // «Invia per la firma» writes the match first, once: after a refusal the draft exists,
@@ -78,6 +83,16 @@ export function AdminCreaMatch() {
     if (!review) return
     return () => revoke(review)
   }, [review])
+
+  // A new step replaces the button that led to it: focus goes to the step's heading, so
+  // a keyboard or a screen reader starts there rather than at the top of the page.
+  const stepHeading = useRef<HTMLHeadingElement>(null)
+  const lastStep = useRef(step)
+  useEffect(() => {
+    if (lastStep.current === step) return
+    lastStep.current = step
+    stepHeading.current?.focus()
+  }, [step])
 
   const payload = (): MatchCreate | null =>
     company
@@ -110,6 +125,7 @@ export function AdminCreaMatch() {
       setCliente(client)
       setEditCliente(!clienteComplete(client))
       setLettera(withPayMode(form, payModeOf(form)))
+      setDayRate(form.compenso)
       setAltreOpen(false)
     },
   })
@@ -124,16 +140,22 @@ export function AdminCreaMatch() {
     },
   })
   const check = useMutation({
+    // The check and the letter's preview together; the framework agreement's preview only
+    // when the check says one leaves first. The check's refusal wins over the preview's,
+    // since it names the field as saving would. Blob URLs are made only once every PDF
+    // is back, so a failure leaves none behind.
     mutationFn: async (body: MatchCreate): Promise<Review> => {
-      const words = await admin.matchCheck(id, body)
-      const letter = URL.createObjectURL(await admin.matchPreview(id, body, 'lettera'))
-      if (!words.quadro_necessario) return { check: words, lettera: letter, quadro: null }
-      try {
-        const quadro = URL.createObjectURL(await admin.matchPreview(id, body, 'quadro'))
-        return { check: words, lettera: letter, quadro }
-      } catch (error) {
-        URL.revokeObjectURL(letter)
-        throw error
+      const [words, letter] = await Promise.allSettled([
+        admin.matchCheck(id, body),
+        admin.matchPreview(id, body, 'lettera'),
+      ])
+      if (words.status === 'rejected') throw words.reason
+      if (letter.status === 'rejected') throw letter.reason
+      const quadro = words.value.quadro_necessario ? await admin.matchPreview(id, body, 'quadro') : null
+      return {
+        check: words.value,
+        lettera: URL.createObjectURL(letter.value),
+        quadro: quadro ? URL.createObjectURL(quadro) : null,
       }
     },
     onSuccess: (made, sent) => {
@@ -144,12 +166,15 @@ export function AdminCreaMatch() {
       setReview(made)
       setStep(2)
     },
-    // A refused field inside the closed «Altre condizioni» would otherwise be marked
-    // where nobody sees it.
-    onError: (error) => {
-      if (error instanceof ApiError && error.fields.some((field) => ALTRE_CONDIZIONI_FIELDS.has(field))) {
-        setAltreOpen(true)
-      }
+    // A refused field must be marked where the admin sees it: inside «Altre condizioni»,
+    // opened; on «Chi e per chi», back there with its section's fields open.
+    onError: (error, sent) => {
+      if (shown.current.step !== 1 || shown.current.request !== JSON.stringify(sent)) return
+      if (!(error instanceof ApiError)) return
+      if (error.fields.some((field) => ALTRE_CONDIZIONI_FIELDS.has(field))) setAltreOpen(true)
+      if (error.fields.some((field) => CLIENTE_FIELDS.has(field))) setEditCliente(true)
+      if (error.fields.some((field) => FISCAL_FIELDS.has(field))) setEditFiscal(true)
+      if (error.fields.some(onStepOne)) setStep(0)
     },
   })
   const save = useMutation({
@@ -176,6 +201,8 @@ export function AdminCreaMatch() {
       : null
   const fiscalFailure = failureOf(saveFiscal.error, 'Non riesco a salvare i dati fiscali.')
   const checkFailure = failureOf(check.error, 'Non riesco a preparare il riepilogo.')
+  const chiFailure =
+    fiscalFailure ?? prefillFailure ?? (checkFailure?.fields.some(onStepOne) ? checkFailure : null)
   const sendFailure = failureOf(sendNow.error, 'Non riesco a inviare per la firma.')
   const reviewFailure =
     failureOf(save.error, 'Non riesco a salvare la bozza.') ??
@@ -189,11 +216,18 @@ export function AdminCreaMatch() {
     setCompany(item)
     if (item.id === prefillFor) return
     if (loadPrefill.isPending && loadPrefill.variables === item.id) return
+    // The forms are about to hold another request's prefill: a refused tax save is no
+    // longer about what they show.
+    saveFiscal.reset()
     loadPrefill.mutate(item.id)
   }
 
   function submitChi() {
     if (!company || !loaded) return
+    // A refusal of the previous check stays on «Chi e per chi» while the admin fixes
+    // what it names, whether they came back through «Indietro» or were brought back;
+    // «Condizioni» starts clean.
+    check.reset()
     const data = fiscalToSave(savedFiscal, fiscal, editFiscal)
     if (data) saveFiscal.mutate({ data, companyId: company.id })
     else setStep(1)
@@ -219,12 +253,16 @@ export function AdminCreaMatch() {
         ))}
       </ol>
       <div className="max-w-3xl space-y-4 p-6">
+        <h2 ref={stepHeading} tabIndex={-1} className="sr-only">
+          Passo {step + 1} di {STEPS.length}: {STEPS[step]}
+        </h2>
         {step === 0 && (
           <ChiStep
             nome={nome}
             selected={company}
             onSelect={select}
             loaded={loaded}
+            loadFailed={prefillFailure !== null}
             cliente={cliente}
             onCliente={setCliente}
             editCliente={editCliente}
@@ -236,13 +274,14 @@ export function AdminCreaMatch() {
             onEditFiscal={() => setEditFiscal(true)}
             onNext={submitChi}
             pending={saveFiscal.isPending}
-            failure={fiscalFailure ?? prefillFailure}
+            failure={chiFailure}
           />
         )}
         {step === 1 && (
           <CondizioniStep
             form={lettera}
             onChange={setLettera}
+            dayRate={dayRate}
             altreOpen={altreOpen}
             onAltreOpen={setAltreOpen}
             onBack={() => setStep(0)}
