@@ -50,9 +50,9 @@ you introduce on top of that one is still yours to explain before you commit
 The state is a local `terraform.tfstate`, ignored by git, on the machine that ran the
 last `apply`. That is acceptable while one person runs this, because the state holds
 nothing that is not in Cloudflare and the `*-imports.tf` files rebuild it from nothing:
-`rebase.tf` and `orbiters.tf` declare twenty-four records, and on a fresh clone
-`terraform init && terraform apply` imports the twenty-three that carry an import
-block into a new state and changes none. The twenty-fourth,
+`rebase.tf` and `orbiters.tf` declare twenty-five records, and on a fresh clone
+`terraform init && terraform apply` imports the twenty-four that carry an import
+block into a new state and changes none. The twenty-fifth,
 `orbiters_apex_google_site_verification_txt` (the second, change-of-address Search
 Console token from ORB-195, not the older `orbiters_apex_txt` imported above),
 still has no block: a fresh clone's `apply` plans it as a record to create, which
