@@ -3,6 +3,7 @@
 from sqlalchemy import Engine
 from sqlalchemy.engine import URL, make_url
 
+import pigrocrm.core.engagements.models  # noqa: F401 -- same reason as identity.models below
 import pigrocrm.core.identity.models  # noqa: F401
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db.sidecar import ensure_sidecar_database, sidecar_url
