@@ -19,12 +19,33 @@ function answer(status: number, body: unknown) {
   })
 }
 
+/** Every test below drives the link request as a signed-out visitor: the page's own
+ *  `useMe()` check (REB-484) must answer 401 first, or its redirect effect would fire
+ *  before the assertions get a look at the form. `linkAnswer` is a factory, not a
+ *  fixed `Response`, since a `Response` body can only be read once and some tests
+ *  drive the link request twice. */
+function fetchMock(linkAnswer: () => Response) {
+  return vi
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation((input) =>
+      Promise.resolve(
+        String(input) === '/api/hub/me'
+          ? answer(401, { detail: 'Autenticazione richiesta' })
+          : linkAnswer(),
+      ),
+    )
+}
+
+/** `/me` and `/admin` are stubs: this file's business is only whether the redirect
+ *  effect sends a signed-in visitor to the right one, not what either page renders. */
 function mount(entry = '/login') {
   const root = createRootRoute({ component: () => <Outlet /> })
   const login = createRoute({ getParentRoute: () => root, path: '/login', component: Accedi })
   const freelance = createRoute({ getParentRoute: () => root, path: '/freelance', component: () => <h1>Wizard</h1> })
+  const me = createRoute({ getParentRoute: () => root, path: '/me', component: () => <h1>La tua area</h1> })
+  const admin = createRoute({ getParentRoute: () => root, path: '/admin', component: () => <h1>Amministrazione</h1> })
   const router = createRouter({
-    routeTree: root.addChildren([login, freelance]),
+    routeTree: root.addChildren([login, freelance, me, admin]),
     history: createMemoryHistory({ initialEntries: [entry] }),
   })
   render(
@@ -44,9 +65,7 @@ describe('/login', () => {
     // A fresh Response per call: this test drives two real submissions, and a `Response`
     // body can only be read once (`mockResolvedValue` would hand out the same instance
     // twice, which no live network round trip ever does).
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockImplementation(() => Promise.resolve(answer(202, { ok: true })))
+    const fetchSpy = fetchMock(() => answer(202, { ok: true }))
     mount()
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText('Email'), 'ada@studio.it')
@@ -67,9 +86,7 @@ describe('/login', () => {
   })
 
   it('sends the campaign the page was opened from with the address', async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockImplementation(() => Promise.resolve(answer(202, { ok: true })))
+    const fetchSpy = fetchMock(() => answer(202, { ok: true }))
     const utm = 'utm_source=email&utm_medium=outreach&utm_campaign=outreach-2026-09-r2'
     mount(`/login?${utm}&utm_content=cv&utm_term=11425b70`)
     const user = userEvent.setup()
@@ -99,9 +116,7 @@ describe('/login', () => {
     // thanks page then links a bare /login. That login came from no campaign.
     window.sessionStorage.setItem('orbiters.utm', 'utm_source=linkedin&utm_campaign=ads')
     window.sessionStorage.setItem('orbiters.da', 'home')
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockImplementation(() => Promise.resolve(answer(202, { ok: true })))
+    const fetchSpy = fetchMock(() => answer(202, { ok: true }))
     mount()
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText('Email'), 'ada@studio.it')
@@ -117,9 +132,7 @@ describe('/login', () => {
     // The outreach case of 25/09 (REB-455): the tracked link opens /login?utm_..., the
     // person wanders to the home and the area, lands back on a bare /login and asks
     // for the link there.
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockImplementation(() => Promise.resolve(answer(202, { ok: true })))
+    const fetchSpy = fetchMock(() => answer(202, { ok: true }))
     mount('/login?utm_source=email&utm_campaign=outreach-2026-09-r2&utm_content=scheda-vuota&utm_term=a0ff8efd')
     await screen.findByLabelText('Email')
     cleanup()
@@ -151,9 +164,7 @@ describe('/login', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new DOMException('denied', 'SecurityError')
     })
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockImplementation(() => Promise.resolve(answer(202, { ok: true })))
+    const fetchSpy = fetchMock(() => answer(202, { ok: true }))
     mount('/login?utm_campaign=outreach')
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText('Email'), 'ada@studio.it')
@@ -168,9 +179,7 @@ describe('/login', () => {
   })
 
   it('shows the API sentence when the mail is not active yet', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(503, { detail: "L'accesso via email non è ancora attivo. Riprova più avanti." }),
-    )
+    fetchMock(() => answer(503, { detail: "L'accesso via email non è ancora attivo. Riprova più avanti." }))
     mount()
     const user = userEvent.setup()
     await user.type(await screen.findByLabelText('Email'), 'ada@studio.it')
@@ -178,5 +187,51 @@ describe('/login', () => {
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('non è ancora attivo'),
     )
+  })
+})
+
+describe('an already signed-in visitor (REB-484)', () => {
+  // A bookmark, a shared link, Thanks.tsx's own `<Link to="/login">`, or `/hub/login`
+  // reached before the marketing site's session.js ever got a chance to point the
+  // click elsewhere: the request-link form has no business showing up for a session
+  // that already exists.
+  it('is sent to /me, and never sees the request-link form', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+      Promise.resolve(
+        String(input) === '/api/hub/me' ? answer(200, { role: 'member' }) : answer(404, {}),
+      ),
+    )
+    mount()
+    await screen.findByRole('heading', { name: 'La tua area' })
+    expect(screen.queryByLabelText('Email')).toBeNull()
+  })
+
+  it('sends an admin to /admin instead', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+      Promise.resolve(
+        String(input) === '/api/hub/me' ? answer(200, { role: 'admin' }) : answer(404, {}),
+      ),
+    )
+    mount()
+    await screen.findByRole('heading', { name: 'Amministrazione' })
+  })
+
+  it('never flashes the request-link form while the session is still resolving', async () => {
+    // The bookmark/shared-link/direct-hit case this whole file is about starts with no
+    // `me` query already cached: `GET /api/hub/me` is genuinely in flight for a moment,
+    // and the form must not render in that window either, or an already-signed-in
+    // visitor sees it anyway, just briefly.
+    const me = Promise.withResolvers<Response>()
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) =>
+      String(input) === '/api/hub/me' ? me.promise : Promise.resolve(answer(404, {})),
+    )
+    mount()
+    // Give React a tick to render whatever it renders while the query is pending.
+    const tick = Promise.withResolvers<void>()
+    setTimeout(tick.resolve, 0)
+    await tick.promise
+    expect(screen.queryByLabelText('Email')).toBeNull()
+    me.resolve(answer(200, { role: 'member' }))
+    await screen.findByRole('heading', { name: 'La tua area' })
   })
 })
