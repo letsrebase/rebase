@@ -777,9 +777,11 @@ class EngagementService:
   'errore')` or (`collegato` and `pigro_mail_sent_at IS NULL`), `link` on each in its
   own try/except (a failure is logged, counted in `failed`, the loop goes on).
   `report`: not `collegato` → `InvalidState("match", <the state's sentence from
-  match_words>)`; `da = lettera_data_inizio`, or `parse_italian_date(letter.data["data-inizio"])`
-  when the column is NULL (a match older than 0021), or the match's `created_at` date
-  when the letter has no start either, never today; `a = today()`; the span is walked
+  match_words>)`; `da = min(start, a)` where `start` is `lettera_data_inizio`, or
+  `parse_italian_date(letter.data["data-inizio"])` when the column is NULL (a match
+  older than 0021), or the match's `created_at` date when the letter has no start
+  either; `a = today()`; a letter that starts in the future therefore asks for today
+  alone and answers an empty report, never a reversed range; the span is walked
   in consecutive windows of at most `REPORT_MAX_DAYS` days (`[da, da+800]`,
   `[da+801, ...]`, up to `a`), one `GET .../report?da=&a=` each, the `giorni` rows
   concatenated and the `deal` taken from the last answer; any non-200 →

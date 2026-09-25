@@ -438,7 +438,9 @@ letter's fields or its text from this number.
 `GET /api/hub/matches/{id}/report?da&a` (admin): `EngagementService.report(match_id, da,
 a)` asks § 2.4 for the whole engagement by default: `da` is `lettera_data_inizio`, or
 the letter's printed start parsed for a match older than 0021, or the match's creation
-date, never today; `a` is today; a span longer than the CRM's 800 days is fetched in
+date, and never later than today (a letter signed before it starts asks for today
+alone, and the report is empty until the first hour); `a` is today; a span longer than
+the CRM's 800 days is fetched in
 consecutive windows of at most 800 days and merged, so «Tutto l'incarico» is the whole
 engagement and nothing is clipped. It answers:
 
