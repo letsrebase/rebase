@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@rebase/ui/dropdown-menu'
 import { admin, type Action, type ContractDocument, type Match } from '@/lib/api'
-import { whatOf } from '@/lib/contracts'
+import { MATCHES_HEADING_ID, QUADRO_HEADING_ID, matchHeadingId, whatOf } from '@/lib/contracts'
 import {
   ACTION_LABELS,
   ACTION_PENDING_LABELS,
@@ -25,6 +25,8 @@ export interface ActionHandle {
   /** What a screen reader hears: the button's words plus the object, since every card
    *  carries the same words (REB-407). */
   label: string
+  /** The same while the request runs, so the name carries the progress the words show. */
+  pendingLabel: string
   /** `from` is the control the admin used, where a question asked first gives the focus
    *  back when dismissed: the button, or «Altre azioni» for an item of its menu. */
   run: (from: HTMLElement | null) => void
@@ -33,8 +35,8 @@ export interface ActionHandle {
 }
 export type ActionHandles = Partial<Record<Action, ActionHandle>>
 
-// The two that ask before acting, and cannot be taken back.
-const DESTRUCTIVE: ReadonlySet<Action> = new Set<Action>(['annulla', 'registra_disdetta'])
+// The ones that ask before acting, and cannot be taken back from the page.
+const DESTRUCTIVE: ReadonlySet<Action> = new Set<Action>(['annulla', 'chiudi', 'registra_disdetta'])
 
 function DocumentLinks({ document }: { document: ContractDocument }) {
   const what = whatOf(document)
@@ -92,7 +94,7 @@ function NextSteps({
           type="button"
           size="sm"
           disabled={busy}
-          aria-label={primary.label}
+          aria-label={primary.pending ? primary.pendingLabel : primary.label}
           onClick={(event) => primary.run(event.currentTarget)}
         >
           {primary.pending ? ACTION_PENDING_LABELS[next] : ACTION_LABELS[next]}
@@ -102,7 +104,14 @@ function NextSteps({
       {more.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button ref={trigger} type="button" variant="ghost" size="sm" disabled={busy} aria-label={moreLabel}>
+            <Button
+              ref={trigger}
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              aria-label={running ? running.handle.pendingLabel : moreLabel}
+            >
               {running ? ACTION_PENDING_LABELS[running.action] : 'Altre azioni'}
               <ChevronDown aria-hidden="true" />
             </Button>
@@ -148,11 +157,14 @@ export function FrameworkCard({
   error: string | null
 }) {
   return (
-    <section aria-labelledby="contratti-quadro" className="space-y-2">
+    <section aria-labelledby={QUADRO_HEADING_ID} className="space-y-2">
       <Card>
         <CardHeader>
           <CardTitle>
-            <h2 id="contratti-quadro">Contratto quadro</h2>
+            {/* Focusable by the page alone, to land on when an action took its control away. */}
+            <h2 id={QUADRO_HEADING_ID} tabIndex={-1}>
+              Contratto quadro
+            </h2>
           </CardTitle>
           {quadro && (
             <CardAction>
@@ -197,13 +209,13 @@ export function FrameworkCard({
 
 /** One match: the company and the role, where it stands, and its next step. */
 function MatchCard({ match, handles, busy }: { match: Match; handles: ActionHandles; busy: boolean }) {
-  const titleId = `match-${match.id}`
+  const titleId = matchHeadingId(match.id)
   return (
     <article aria-labelledby={titleId}>
       <Card>
         <CardHeader>
           <CardTitle>
-            <h3 id={titleId}>{`${match.nome_azienda} · ${match.figura_richiesta}`}</h3>
+            <h3 id={titleId} tabIndex={-1}>{`${match.nome_azienda} · ${match.figura_richiesta}`}</h3>
           </CardTitle>
           <CardAction>
             <Badge variant="pill">{MATCH_STATE_LABELS[match.stato] ?? match.stato}</Badge>
@@ -216,7 +228,7 @@ function MatchCard({ match, handles, busy }: { match: Match; handles: ActionHand
             others={match.altre_azioni}
             handles={handles}
             busy={busy}
-            moreLabel={`Altre azioni del match con ${match.nome_azienda}`}
+            moreLabel={`Altre azioni del match con ${match.nome_azienda} come ${match.figura_richiesta}`}
           >
             <DocumentLinks document={match.lettera} />
           </NextSteps>
@@ -241,8 +253,8 @@ export function MatchCards({
   error: string | null
 }) {
   return (
-    <section aria-labelledby="contratti-match" className="space-y-3">
-      <h2 id="contratti-match" className="text-sm font-medium">
+    <section aria-labelledby={MATCHES_HEADING_ID} className="space-y-3">
+      <h2 id={MATCHES_HEADING_ID} tabIndex={-1} className="text-sm font-medium">
         Match
       </h2>
       {matches.length === 0 ? (

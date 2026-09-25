@@ -5,6 +5,7 @@ import {
   amountForm,
   CONDIZIONI_FIELDS,
   cancelDescription,
+  closeDescription,
   clienteComplete,
   clienteLine,
   FISCAL_EMPTY,
@@ -16,6 +17,7 @@ import {
   LETTERA_REQUIRED,
   letteraForm,
   letteraToSend,
+  matchOf,
   payModeOf,
   sendLabel,
   sendReportMessage,
@@ -206,5 +208,26 @@ describe('cancelDescription (REB-407)', () => {
   it('warns that a letter already out for signature is cancelled on the signing site too', () => {
     const sent = { nome_azienda: 'Rossi Studio', lettera: { numero: '2026-001', stato: 'inviato' } } as never
     expect(cancelDescription(sent)).toContain('il link ricevuto dal freelance smette di funzionare')
+  })
+})
+
+describe('matchOf', () => {
+  it('names a match by its company and its role, which tell two matches with one company apart', () => {
+    expect(matchOf({ nome_azienda: 'Rossi Studio', figura_richiesta: 'Designer' })).toBe(
+      'il match con Rossi Studio come Designer',
+    )
+  })
+})
+
+describe('closeDescription', () => {
+  it('says the match ends as «Concluso» and that its letter and the framework agreement stay', () => {
+    const match = {
+      nome_azienda: 'Rossi Studio',
+      figura_richiesta: 'Designer',
+      lettera: { numero: '2026-001' },
+    } as never
+    expect(closeDescription(match)).toBe(
+      'Il match con Rossi Studio come Designer diventa «Concluso»: l’incarico è finito, e dalla pagina non si riapre. La lettera n. 2026-001 e il contratto quadro restano come sono.',
+    )
   })
 })

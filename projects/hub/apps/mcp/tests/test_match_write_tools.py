@@ -269,7 +269,10 @@ async def test_create_match_saves_the_draft_with_the_fields_given(world: World) 
     async with Client(world.server()) as client:
         body = await _create(client, world, cliente=CLIENTE, condizioni={"ruolo": "Staff engineer"})
     assert (body["stato"], body["cliente_ragione_sociale"]) == ("bozza", "ACME S.r.l.")
-    assert body["situazione"].startswith("Da inviare: la lettera n. ")
+    assert body["situazione"] == (
+        f"La lettera n. {body['lettera']['numero']} è pronta: il freelance non ha ancora ricevuto "
+        "nulla."
+    )
     assert (body["prossima_azione"], body["altre_azioni"]) == ("invia", ["annulla"])
     assert body["lettera"]["pdf_url"] == _link(body["lettera"])
     assert body["created_by"] == str(IVAN.id)
@@ -423,7 +426,7 @@ async def test_a_match_goes_from_signature_to_closed_and_its_framework_to_notice
 
         closed = await _call(client, "close_match", match_id=match["id"])
         assert closed["stato"] == "concluso"
-        assert closed["situazione"].startswith("Concluso: lettera n. ")
+        assert closed["situazione"].startswith(f"Lettera n. {closed['lettera']['numero']}")
         assert closed["lettera"]["pdf_url"] == _link(closed["lettera"])
 
         notice = await _call(client, "record_notice", document_id=quadro_id)

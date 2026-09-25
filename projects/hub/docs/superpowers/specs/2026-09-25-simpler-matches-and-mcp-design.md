@@ -86,13 +86,18 @@ The page reads top to bottom as the freelancer's situation:
   rest (Aggiorna stato, Annulla, Registra disdetta). The text version, and whether a
   newer one exists, move into a closed «Dettagli».
 - **Match**: one card per match, newest first. Title: company and role. A sentence
-  («Da inviare: la lettera n. 2026-003 è pronta, il freelance non ha ancora ricevuto nulla.»,
+  («La lettera n. 2026-003 è pronta: il freelance non ha ancora ricevuto nulla.»,
   «La lettera n. 2026-003 aspetta la firma del contratto quadro e parte da sola dopo.»,
-  «Attivo: lettera n. 2026-003 firmata il 25 settembre 2026, dal 1 ottobre 2026.»). One
+  «Lettera n. 2026-003 firmata il 25 settembre 2026, dal 1° ottobre 2026.»). One
   primary button for the next step («Invia per la firma», «Reinvia email»), the letter's
   PDFs as links, «Altre azioni» for the rest (Aggiorna stato, Annulla, Chiudi match).
-- **Dati fiscali**: a closed section with the one-line summary and «Modifica», since
-  they are set once and read rarely.
+- **Dati fiscali**: a closed section whose summary says whether they are saved
+  («Salvati: CF … · P.IVA …» or «Mancano»), holding the form, since they are set once
+  and read rarely.
+
+Every card shows its state label as a pill beside the sentence, so no sentence opens
+with that label again. «Annulla», «Chiudi match» and «Registra disdetta» ask before
+they act: none of them can be taken back from the page.
 
 The sentences and the actions come from the core (section 3), so the page, the «Match»
 list and the MCP tools say the same thing. The «Match» list's «Stato» column shows the

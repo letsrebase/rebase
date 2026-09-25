@@ -1227,15 +1227,14 @@ def test_the_contracts_page_says_what_each_document_is_doing(clean: Session) -> 
     assert page.quadro is not None
     # `FakeRenderer` writes texts in draft, as the preview's would be.
     assert (page.quadro.situazione, page.quadro.prossima_azione, page.quadro.altre_azioni) == (
-        "Pronto, non ancora inviato: parte con «Invia per la firma» sul match. Il testo è "
-        "ancora in bozza.",
+        "Parte con «Invia per la firma» sul suo match. Il testo è ancora in bozza.",
         None,
         ["annulla"],
     )
     (read,) = page.matches
     assert (read.situazione, read.prossima_azione, read.altre_azioni) == (
-        f"Da inviare: la lettera n. {match.lettera.numero} è pronta, il freelance non ha ancora "
-        "ricevuto nulla.",
+        f"La lettera n. {match.lettera.numero} è pronta: il freelance non ha ancora ricevuto "
+        "nulla.",
         "invia",
         ["annulla"],
     )

@@ -8,7 +8,8 @@ live and are tested in one place. Every function is pure: the caller hands the f
 each date already a day in Rome. The sentences say «il freelance», never a name: a
 document read does not carry one, and the page's title already names the person. The
 check's first sentence is the exception, since it is what step 3 of «Crea match» reads
-back before anything is saved.
+back before anything is saved. Nor does a sentence open with its state's label: the
+pages show that label beside it.
 """
 
 from dataclasses import dataclass
@@ -120,11 +121,7 @@ def _document_words(document: DocumentFacts) -> Words:
     stato = document.stato
     if stato == "generato":
         if framework:
-            return (
-                "Pronto, non ancora inviato: parte con «Invia per la firma» sul match.",
-                None,
-                ["annulla"],
-            )
+            return "Parte con «Invia per la firma» sul suo match.", None, ["annulla"]
         return "Pronta, non ancora inviata.", None, []
     if stato == "in_attesa":
         return "Parte da sola dopo la firma del contratto quadro.", None, []
@@ -183,8 +180,7 @@ def match_words(
     numero = letter.numero
     if stato == "bozza":
         return (
-            f"Da inviare: la lettera n. {numero} è pronta, il freelance non ha ancora ricevuto "
-            "nulla.",
+            f"La lettera n. {numero} è pronta: il freelance non ha ancora ricevuto nulla.",
             "invia",
             ["annulla"],
         )
@@ -230,25 +226,20 @@ def match_words(
         )
     if stato == "attivo":
         return (
-            f"Attivo: lettera n. {numero} firmata{_on(letter.signed_on)}"
+            f"Lettera n. {numero} firmata{_on(letter.signed_on)}"
             f"{_period(letter_start, letter_end)}.",
             None,
             ["chiudi"],
         )
     if stato == "concluso":
-        return f"Concluso: lettera n. {numero}{_period(letter_start, letter_end)}.", None, []
+        return f"Lettera n. {numero}{_period(letter_start, letter_end)}.", None, []
     if stato == "annullato":
-        return (
-            f"Annullato: la lettera n. {numero} non va più firmata.{_refusal(letter)}",
-            None,
-            [],
-        )
+        return f"La lettera n. {numero} non va più firmata.{_refusal(letter)}", None, []
     # `in_firma` with a letter refused or cancelled on the signing site: the match stays in
     # signature until an admin cancels it.
     if letter.stato == "annullato":
         return f"Lettera n. {numero} annullata.{_refusal(letter)}", None, ["annulla"]
-    label = MATCH_STATE_LABELS.get(stato, stato)
-    return f"{label}: lettera n. {numero}.", None, ["annulla"] if stato == "in_firma" else []
+    return f"Lettera n. {numero}.", None, ["annulla"] if stato == "in_firma" else []
 
 
 def check_sentences(

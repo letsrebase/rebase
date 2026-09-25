@@ -45,10 +45,13 @@ export function FiscalFields({
 export function FiscalSection({
   freelancerId,
   fiscale,
+  onSaving,
   onSaved,
 }: {
   freelancerId: string
   fiscale: Fiscal | null
+  /** A save is an action like the others: the page drops its last sentence. */
+  onSaving: () => void
   onSaved: () => void
 }) {
   const [draft, setDraft] = useState<FiscalDraft>(() => draftFromFiscal(fiscale))
@@ -64,6 +67,7 @@ export function FiscalSection({
   function submit(event: FormEvent) {
     event.preventDefault()
     setSaved(false)
+    onSaving()
     save.mutate(toFiscalData(draft))
   }
   return (

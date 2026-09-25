@@ -568,9 +568,7 @@ def test_a_match_and_its_documents_say_what_they_are_doing_and_what_comes_next(
         json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
     ).json()
     numero = match["lettera"]["numero"]
-    draft = (
-        f"Da inviare: la lettera n. {numero} è pronta, il freelance non ha ancora ricevuto nulla."
-    )
+    draft = f"La lettera n. {numero} è pronta: il freelance non ha ancora ricevuto nulla."
     assert (match["situazione"], match["prossima_azione"], match["altre_azioni"]) == (
         draft,
         "invia",
@@ -579,7 +577,7 @@ def test_a_match_and_its_documents_say_what_they_are_doing_and_what_comes_next(
     assert match["lettera"]["situazione"] == "Parte da sola dopo la firma del contratto quadro."
     quadro = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()["quadro"]
     assert (quadro["prossima_azione"], quadro["altre_azioni"]) == (None, ["annulla"])
-    assert quadro["situazione"].startswith("Pronto, non ancora inviato")
+    assert quadro["situazione"].startswith("Parte con «Invia per la firma» sul suo match.")
     (row,) = client.get("/api/hub/matches").json()["items"]
     assert row["situazione"] == draft
 

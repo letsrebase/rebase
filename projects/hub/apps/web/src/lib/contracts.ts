@@ -320,6 +320,26 @@ export function whatOf(document: Pick<ContractDocument, 'kind' | 'numero'>): str
   return document.kind === 'quadro' ? 'del contratto quadro' : `della lettera n. ${document.numero}`
 }
 
+/** How a match is named in a button's label: its company and its role, since one
+ *  company can have a match for each of two roles. */
+export function matchOf(match: Pick<Match, 'nome_azienda' | 'figura_richiesta'>): string {
+  return `il match con ${match.nome_azienda} come ${match.figura_richiesta}`
+}
+
+/** What «Chiudi match» asks before it acts: the engagement ends and the page cannot
+ *  reopen it; the letter and the framework agreement are left as they are. */
+export function closeDescription(match: Match): string {
+  return `Il match con ${match.nome_azienda} come ${match.figura_richiesta} diventa «Concluso»: l’incarico è finito, e dalla pagina non si riapre. La lettera n. ${match.lettera.numero} e il contratto quadro restano come sono.`
+}
+
+/** The headings «Match e contratti» moves the focus to when an action took away the
+ *  control that started it: the card's, or the section's when the card went too. */
+export const QUADRO_HEADING_ID = 'contratti-quadro'
+export const MATCHES_HEADING_ID = 'contratti-match'
+export function matchHeadingId(matchId: string): string {
+  return `match-${matchId}`
+}
+
 /** What «Annulla» on a match asks before it acts: the match and its letter's own
  *  number become `annullato` for good, and, when the letter has already left, that
  *  its envelope on the signing site is cancelled too and the freelancer's link stops

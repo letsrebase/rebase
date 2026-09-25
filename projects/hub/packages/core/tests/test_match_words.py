@@ -112,7 +112,7 @@ def test_every_document_state_has_its_admin_label() -> None:
 
 def test_a_framework_generated_leaves_with_its_match() -> None:
     assert document_words(_quadro("generato")) == (
-        "Pronto, non ancora inviato: parte con «Invia per la firma» sul match.",
+        "Parte con «Invia per la firma» sul suo match.",
         None,
         ["annulla"],
     )
@@ -244,7 +244,7 @@ def test_a_framework_whose_text_is_a_draft_says_so_after_its_sentence() -> None:
 
 def test_a_draft_match_is_sent_next() -> None:
     assert match_words("bozza", _lettera("in_attesa"), None, START, None) == (
-        "Da inviare: la lettera n. 2026-003 è pronta, il freelance non ha ancora ricevuto nulla.",
+        "La lettera n. 2026-003 è pronta: il freelance non ha ancora ricevuto nulla.",
         "invia",
         ["annulla"],
     )
@@ -321,7 +321,7 @@ def test_an_active_match_says_when_its_letter_was_signed_and_its_period(
 ) -> None:
     letter = _lettera("firmato", signed_on=SIGNED, ha_pdf_firmato=True)
     assert match_words("attivo", letter, None, START, end) == (
-        f"Attivo: lettera n. 2026-003 firmata il 28 settembre 2026{period}.",
+        f"Lettera n. 2026-003 firmata il 28 settembre 2026{period}.",
         None,
         ["chiudi"],
     )
@@ -330,11 +330,11 @@ def test_an_active_match_says_when_its_letter_was_signed_and_its_period(
 def test_a_closed_match_says_its_period() -> None:
     letter = _lettera("firmato", signed_on=SIGNED, ha_pdf_firmato=True)
     assert match_words("concluso", letter, None, START, END) == (
-        "Concluso: lettera n. 2026-003, dal 1° ottobre 2026 al 31 dicembre 2026.",
+        "Lettera n. 2026-003, dal 1° ottobre 2026 al 31 dicembre 2026.",
         None,
         [],
     )
-    assert match_words("concluso", letter, None, None, None)[0] == "Concluso: lettera n. 2026-003."
+    assert match_words("concluso", letter, None, None, None)[0] == "Lettera n. 2026-003."
 
 
 @pytest.mark.parametrize(("reason", "sentence", "refusal"), [*STORED_REASONS, (None, "", False)])
@@ -344,11 +344,10 @@ def test_a_cancelled_match_says_nothing_is_to_be_signed_and_why_only_for_a_refus
     words = match_words("annullato", _lettera("annullato", cancel_reason=reason), None, START, None)
     because = f" {sentence}" if refusal else ""
     assert words == (
-        f"Annullato: la lettera n. 2026-003 non va più firmata.{because}",
+        f"La lettera n. 2026-003 non va più firmata.{because}",
         None,
         [],
     )
-    assert "Annullato: Annullato" not in words[0]
 
 
 @pytest.mark.parametrize(("reason", "sentence", "refusal"), [*STORED_REASONS, (None, "", False)])
@@ -371,15 +370,35 @@ def test_a_match_in_signature_with_a_letter_no_row_names_still_reads_and_cancels
 ) -> None:
     """Neither combination is written by the hub today; the page must still read."""
     assert match_words("in_firma", letter, None, START, None) == (
-        "In attesa di firma: lettera n. 2026-003.",
+        "Lettera n. 2026-003.",
         None,
         ["annulla"],
     )
 
 
-def test_a_match_state_the_words_do_not_know_reads_as_itself() -> None:
+@pytest.mark.parametrize("stato", MATCH_STATES)
+@pytest.mark.parametrize("framework", [None, "generato", "inviato", "firmato"])
+@pytest.mark.parametrize(
+    "letter",
+    [
+        _lettera("generato"),
+        _lettera("in_attesa"),
+        _lettera("inviato", sent_on=SIGNED),
+        _lettera("firmato", signed_on=SIGNED),
+        _lettera("firmato", signed_on=SIGNED, ha_pdf_firmato=True),
+        _lettera("annullato", cancel_reason="Annullato da rebase."),
+    ],
+)
+def test_no_match_sentence_opens_with_the_label_the_pages_show_beside_it(
+    stato: str, framework: str | None, letter: DocumentFacts
+) -> None:
+    sentence = match_words(stato, letter, framework, START, END)[0]
+    assert not sentence.startswith(MATCH_STATE_LABELS[stato])
+
+
+def test_a_match_state_the_words_do_not_know_still_names_its_letter() -> None:
     assert match_words("sospeso", _lettera("generato"), None, START, None) == (
-        "sospeso: lettera n. 2026-003.",
+        "Lettera n. 2026-003.",
         None,
         [],
     )

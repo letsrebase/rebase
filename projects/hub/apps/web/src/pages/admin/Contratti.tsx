@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import {
   Dialog,
@@ -12,22 +12,44 @@ import {
   DialogTitle,
 } from '@rebase/ui/dialog'
 import { admin, ApiError, type ContractDocument, type Match } from '@/lib/api'
-import { cancelDescription, sendReportMessage, whatOf } from '@/lib/contracts'
+import {
+  MATCHES_HEADING_ID,
+  QUADRO_HEADING_ID,
+  cancelDescription,
+  closeDescription,
+  matchHeadingId,
+  matchOf,
+  sendReportMessage,
+  whatOf,
+} from '@/lib/contracts'
 import { ACTION_LABELS } from '@/lib/format'
 import { FrameworkCard, MatchCards, type ActionHandles } from './contratti/Cards'
 import { FiscalSection } from './contratti/Fiscal'
 import { Empty, Header } from './lists'
 
-/** A question before an action that cannot be taken back. `opener` gets the focus back
- *  on close: an item of «Altre azioni» has left the page by then, and Radix alone would
- *  drop the focus on the body. */
+type Section = 'quadro' | 'match'
+const SECTION_HEADING: Record<Section, string> = { quadro: QUADRO_HEADING_ID, match: MATCHES_HEADING_ID }
+
+/** Where the focus goes back to after an action: the control that started it while it is
+ *  still on the page, else the first of `headings` that is (its card's, then its
+ *  section's). Radix, and the browser once a focused control is removed, would leave it
+ *  on the body. Answers whether it found a place. */
+function focusBack(opener: HTMLElement | null, headings: string[]): boolean {
+  const target = opener?.isConnected
+    ? opener
+    : (headings.map((id) => document.getElementById(id)).find((heading) => heading !== null) ?? null)
+  target?.focus()
+  return target !== null
+}
+
+/** A question before an action that cannot be taken back. */
 function Confirm({
   open,
   title,
   description,
   confirm,
   pending,
-  opener,
+  onCloseFocus,
   onConfirm,
   onClose,
 }: {
@@ -36,7 +58,9 @@ function Confirm({
   description: string
   confirm: string
   pending: boolean
-  opener: RefObject<HTMLElement | null>
+  /** Puts the focus back on close, answering whether it did: an item of «Altre azioni»
+   *  has left the page by then. */
+  onCloseFocus: () => boolean
   onConfirm: () => void
   onClose: () => void
 }) {
@@ -44,10 +68,7 @@ function Confirm({
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent
         onCloseAutoFocus={(event) => {
-          const target = opener.current
-          if (!target?.isConnected) return
-          event.preventDefault()
-          target.focus()
+          if (onCloseFocus()) event.preventDefault()
         }}
       >
         <DialogHeader>
@@ -95,31 +116,61 @@ export function AdminContratti() {
   // clears it, whether it is the one that failed before or another one, so a stale
   // error never sits next to a later action's success, and the framework agreement's
   // own errors show under its card rather than under the matches (REB-407).
-  const [actionFailure, setActionFailure] = useState<{ section: 'quadro' | 'match'; message: string } | null>(
-    null,
-  )
+  const [actionFailure, setActionFailure] = useState<{ section: Section; message: string } | null>(null)
   const [confirming, setConfirming] = useState<Match | null>(null)
+  const [closing, setClosing] = useState<Match | null>(null)
   const [confirmingQuadro, setConfirmingQuadro] = useState<'annulla' | 'disdetta' | null>(null)
+  // The control the last action started from, and, once its request left, the headings
+  // to land on should the refetched page no longer have that control.
   const opener = useRef<HTMLElement | null>(null)
-  const asking = (open: () => void) => (from: HTMLElement | null) => {
-    opener.current = from
-    open()
-  }
+  const landing = useRef<string[]>([])
+  useEffect(() => {
+    if (landing.current.length === 0) return
+    const active = document.activeElement
+    // A question still open gives the focus back itself when it closes.
+    if (active?.closest('[role="dialog"]')) return
+    if (active === null || active === document.body) focusBack(opener.current, landing.current)
+    landing.current = []
+  }, [contracts.dataUpdatedAt])
   const refresh = () => void client.invalidateQueries({ queryKey: ['contracts', id] })
   const saying = (sentence: string) => () => {
     setMessage(sentence)
     refresh()
   }
-  const fail = (section: 'quadro' | 'match') => (error: unknown) =>
-    setActionFailure({
-      section,
-      message: error instanceof ApiError ? error.message : 'Non riesco a completare l’operazione.',
-    })
-  const starting = (section: 'quadro' | 'match') => {
+  const quiet = () => {
     setMessage(null)
     setActionFailure(null)
-    return { onError: fail(section) }
   }
+  const starting = (section: Section, card: string) => {
+    quiet()
+    landing.current = [card, SECTION_HEADING[section]]
+    return {
+      onError: (error: unknown) => {
+        landing.current = []
+        setActionFailure({
+          section,
+          message: error instanceof ApiError ? error.message : 'Non riesco a completare l’operazione.',
+        })
+      },
+    }
+  }
+  // What a card's control runs: a question first, which only remembers the control, or
+  // a request, which also starts the action for its card.
+  const from = (ask: () => void) => (control: HTMLElement | null) => {
+    opener.current = control
+    ask()
+  }
+  const request =
+    <T,>(
+      mutation: { mutate: (variables: T, options: ReturnType<typeof starting>) => void },
+      variables: T,
+      section: Section,
+      card: string,
+    ) =>
+    (control: HTMLElement | null) => {
+      opener.current = control
+      mutation.mutate(variables, starting(section, card))
+    }
   const send = useMutation({
     mutationFn: (matchId: string) => admin.sendMatch(matchId),
     onSuccess: (report) => {
@@ -153,52 +204,63 @@ export function AdminContratti() {
   const quadro = data.quadro
   const name = person.data ? `${person.data.nome} ${person.data.cognome}` : ''
   const busy = actions.some((action) => action.isPending)
+  const focusOnClose = () => focusBack(opener.current, landing.current)
 
   // The signing actions a document has, shared by the framework agreement's card and a
   // match's, which reaches them on its letter.
-  const signing = (document: ContractDocument, section: 'quadro' | 'match'): ActionHandles => ({
+  const signing = (document: ContractDocument, section: Section, card: string): ActionHandles => ({
     reinvia_email: {
       label: `${ACTION_LABELS.reinvia_email} ${whatOf(document)}`,
-      run: () => resend.mutate(document.id, starting(section)),
+      pendingLabel: `Reinvio l’email ${whatOf(document)}`,
+      run: request(resend, document.id, section, card),
       pending: runningFor(resend, document.id),
     },
     aggiorna_stato: {
       label: `${ACTION_LABELS.aggiorna_stato} ${whatOf(document)}`,
-      run: () => update.mutate(document.id, starting(section)),
+      pendingLabel: `Aggiorno lo stato ${whatOf(document)}`,
+      run: request(update, document.id, section, card),
       pending: runningFor(update, document.id),
     },
   })
   const quadroHandles = (document: ContractDocument): ActionHandles => ({
-    ...signing(document, 'quadro'),
+    ...signing(document, 'quadro', QUADRO_HEADING_ID),
     annulla: {
       label: 'Annulla il contratto quadro',
-      run: asking(() => setConfirmingQuadro('annulla')),
+      pendingLabel: 'Annullo il contratto quadro',
+      run: from(() => setConfirmingQuadro('annulla')),
       pending: runningFor(cancelQuadro, document.id),
     },
     registra_disdetta: {
       label: `${ACTION_LABELS.registra_disdetta} ${whatOf(document)}`,
-      run: asking(() => setConfirmingQuadro('disdetta')),
+      pendingLabel: `Registro la disdetta ${whatOf(document)}`,
+      run: from(() => setConfirmingQuadro('disdetta')),
       pending: runningFor(recordNotice, document.id),
     },
   })
-  const matchHandles = (match: Match): ActionHandles => ({
-    ...signing(match.lettera, 'match'),
-    invia: {
-      label: `${ACTION_LABELS.invia} il match con ${match.nome_azienda}`,
-      run: () => send.mutate(match.id, starting('match')),
-      pending: runningFor(send, match.id),
-    },
-    annulla: {
-      label: `Annulla il match con ${match.nome_azienda}`,
-      run: asking(() => setConfirming(match)),
-      pending: runningFor(cancel, match.id),
-    },
-    chiudi: {
-      label: `Chiudi il match con ${match.nome_azienda}`,
-      run: () => close.mutate(match.id, starting('match')),
-      pending: runningFor(close, match.id),
-    },
-  })
+  const matchHandles = (match: Match): ActionHandles => {
+    const which = matchOf(match)
+    return {
+      ...signing(match.lettera, 'match', matchHeadingId(match.id)),
+      invia: {
+        label: `${ACTION_LABELS.invia} ${which}`,
+        pendingLabel: `Invio per la firma ${which}`,
+        run: request(send, match.id, 'match', matchHeadingId(match.id)),
+        pending: runningFor(send, match.id),
+      },
+      annulla: {
+        label: `Annulla ${which}`,
+        pendingLabel: `Annullo ${which}`,
+        run: from(() => setConfirming(match)),
+        pending: runningFor(cancel, match.id),
+      },
+      chiudi: {
+        label: `Chiudi ${which}`,
+        pendingLabel: `Chiudo ${which}`,
+        run: from(() => setClosing(match)),
+        pending: runningFor(close, match.id),
+      },
+    }
+  }
 
   return (
     <>
@@ -227,7 +289,7 @@ export function AdminContratti() {
           busy={busy}
           error={actionFailure?.section === 'match' ? actionFailure.message : null}
         />
-        <FiscalSection freelancerId={id} fiscale={data.fiscale} onSaved={refresh} />
+        <FiscalSection freelancerId={id} fiscale={data.fiscale} onSaving={quiet} onSaved={refresh} />
         <p>
           <Link
             to="/admin/freelance/$id"
@@ -244,11 +306,31 @@ export function AdminContratti() {
         description={confirming ? cancelDescription(confirming) : ''}
         confirm={cancel.isPending ? 'Annullo…' : 'Annulla il match'}
         pending={cancel.isPending}
-        opener={opener}
+        onCloseFocus={focusOnClose}
         onConfirm={() => {
-          if (confirming) cancel.mutate(confirming.id, { ...starting('match'), onSettled: () => setConfirming(null) })
+          if (confirming)
+            cancel.mutate(confirming.id, {
+              ...starting('match', matchHeadingId(confirming.id)),
+              onSettled: () => setConfirming(null),
+            })
         }}
         onClose={() => setConfirming(null)}
+      />
+      <Confirm
+        open={closing !== null}
+        title="Chiudere il match?"
+        description={closing ? closeDescription(closing) : ''}
+        confirm={close.isPending ? 'Chiudo…' : 'Sì, chiudi il match'}
+        pending={close.isPending}
+        onCloseFocus={focusOnClose}
+        onConfirm={() => {
+          if (closing)
+            close.mutate(closing.id, {
+              ...starting('match', matchHeadingId(closing.id)),
+              onSettled: () => setClosing(null),
+            })
+        }}
+        onClose={() => setClosing(null)}
       />
       <Confirm
         open={confirmingQuadro === 'annulla'}
@@ -256,10 +338,13 @@ export function AdminContratti() {
         description="Se è già partito, viene annullato anche sul sito di firma e il link ricevuto dal freelance smette di funzionare. Le lettere che lo aspettano restano in attesa: «Invia per la firma» sul loro match ne genera uno nuovo."
         confirm={cancelQuadro.isPending ? 'Annullo…' : 'Sì, annulla il contratto quadro'}
         pending={cancelQuadro.isPending}
-        opener={opener}
+        onCloseFocus={focusOnClose}
         onConfirm={() => {
           if (quadro)
-            cancelQuadro.mutate(quadro.id, { ...starting('quadro'), onSettled: () => setConfirmingQuadro(null) })
+            cancelQuadro.mutate(quadro.id, {
+              ...starting('quadro', QUADRO_HEADING_ID),
+              onSettled: () => setConfirmingQuadro(null),
+            })
         }}
         onClose={() => setConfirmingQuadro(null)}
       />
@@ -269,9 +354,13 @@ export function AdminContratti() {
         description="Da oggi il contratto quadro non è più attivo, e il prossimo match ne genera uno nuovo. Si registra quando il freelance o rebase ha dato disdetta, o uno dei due ha receduto."
         confirm={recordNotice.isPending ? 'Registro…' : 'Sì, registra la disdetta'}
         pending={recordNotice.isPending}
-        opener={opener}
+        onCloseFocus={focusOnClose}
         onConfirm={() => {
-          if (quadro) recordNotice.mutate(quadro.id, { ...starting('quadro'), onSettled: () => setConfirmingQuadro(null) })
+          if (quadro)
+            recordNotice.mutate(quadro.id, {
+              ...starting('quadro', QUADRO_HEADING_ID),
+              onSettled: () => setConfirmingQuadro(null),
+            })
         }}
         onClose={() => setConfirmingQuadro(null)}
       />

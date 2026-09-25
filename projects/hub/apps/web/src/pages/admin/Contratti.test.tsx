@@ -100,7 +100,7 @@ const MATCH = {
   cancelled_at: null,
   updated_at: '2026-09-23T10:00:00Z',
   lettera: LETTERA,
-  situazione: 'Da inviare: la lettera n. 2026-001 è pronta, il freelance non ha ancora ricevuto nulla.',
+  situazione: 'La lettera n. 2026-001 è pronta: il freelance non ha ancora ricevuto nulla.',
   prossima_azione: 'invia',
   altre_azioni: ['annulla'],
 }
@@ -214,7 +214,7 @@ describe('«Match e contratti» as cards (REB-477)', () => {
     {
       stato: 'generato',
       pill: 'Pronto, non inviato',
-      situazione: 'Pronto, non ancora inviato: parte con «Invia per la firma» sul match.',
+      situazione: 'Parte con «Invia per la firma» sul suo match.',
       prossima_azione: null,
       altre_azioni: ['annulla'],
       primary: [],
@@ -285,8 +285,8 @@ describe('«Match e contratti» as cards (REB-477)', () => {
       situazione: MATCH.situazione,
       prossima_azione: 'invia',
       altre_azioni: ['annulla'],
-      primary: ['Invia per la firma il match con Rossi Studio'],
-      more: ['Annulla il match con Rossi Studio'],
+      primary: ['Invia per la firma il match con Rossi Studio come Backend developer'],
+      more: ['Annulla il match con Rossi Studio come Backend developer'],
     },
     {
       name: 'a letter waiting for a framework agreement out for signature',
@@ -297,7 +297,7 @@ describe('«Match e contratti» as cards (REB-477)', () => {
       prossima_azione: null,
       altre_azioni: ['annulla'],
       primary: [],
-      more: ['Annulla il match con Rossi Studio'],
+      more: ['Annulla il match con Rossi Studio come Backend developer'],
     },
     {
       name: 'a letter out for signature',
@@ -308,25 +308,25 @@ describe('«Match e contratti» as cards (REB-477)', () => {
       prossima_azione: 'reinvia_email',
       altre_azioni: ['aggiorna_stato', 'annulla'],
       primary: ['Reinvia email della lettera n. 2026-001'],
-      more: ['Aggiorna stato della lettera n. 2026-001', 'Annulla il match con Rossi Studio'],
+      more: ['Aggiorna stato della lettera n. 2026-001', 'Annulla il match con Rossi Studio come Backend developer'],
     },
     {
       name: 'an active match',
       stato: 'attivo',
       lettera: { stato: 'firmato', ha_pdf_firmato: true },
       pill: 'Attivo',
-      situazione: 'Attivo: lettera n. 2026-001 firmata il 1° ottobre 2026, dal 1° ottobre 2026.',
+      situazione: 'Lettera n. 2026-001 firmata il 1° ottobre 2026, dal 1° ottobre 2026.',
       prossima_azione: null,
       altre_azioni: ['chiudi'],
       primary: [],
-      more: ['Chiudi il match con Rossi Studio'],
+      more: ['Chiudi il match con Rossi Studio come Backend developer'],
     },
     {
       name: 'a closed match',
       stato: 'concluso',
       lettera: { stato: 'firmato', ha_pdf_firmato: true },
       pill: 'Concluso',
-      situazione: 'Concluso: lettera n. 2026-001, dal 1° ottobre 2026 al 31 dicembre 2026.',
+      situazione: 'Lettera n. 2026-001, dal 1° ottobre 2026 al 31 dicembre 2026.',
       prossima_azione: null,
       altre_azioni: [],
       primary: [],
@@ -337,8 +337,7 @@ describe('«Match e contratti» as cards (REB-477)', () => {
       stato: 'annullato',
       lettera: { stato: 'annullato', cancel_reason: 'Rifiutato dal freelance: il compenso è sbagliato' },
       pill: 'Annullato',
-      situazione:
-        'Annullato: la lettera n. 2026-001 non va più firmata. Rifiutato dal freelance: il compenso è sbagliato.',
+      situazione: 'La lettera n. 2026-001 non va più firmata. Rifiutato dal freelance: il compenso è sbagliato.',
       prossima_azione: null,
       altre_azioni: [],
       primary: [],
@@ -358,9 +357,9 @@ describe('«Match e contratti» as cards (REB-477)', () => {
       const card = await matchCard()
       expect(within(card).getByText(pill)).toBeInTheDocument()
       expect(within(card).getByText(situazione)).toBeInTheDocument()
-      const trigger = more.length ? ['Altre azioni del match con Rossi Studio'] : []
+      const trigger = more.length ? ['Altre azioni del match con Rossi Studio come Backend developer'] : []
       expect(buttonNames(card)).toEqual([...primary, ...trigger])
-      if (more.length) expect(await openMore(card, 'Altre azioni del match con Rossi Studio')).toEqual(more)
+      if (more.length) expect(await openMore(card, 'Altre azioni del match con Rossi Studio come Backend developer')).toEqual(more)
     },
   )
 
@@ -397,7 +396,7 @@ describe('«Match e contratti» as cards (REB-477)', () => {
       },
     })
     mount('/admin/freelance/f1/contracts')
-    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio come Backend developer' }))
     await waitFor(() => expect(spy).toHaveBeenCalledWith('/api/hub/matches/m1/send', expect.objectContaining({ method: 'POST' })))
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Partito il contratto quadro: la lettera n. 2026-001 partirà da sola dopo la sua firma.',
@@ -417,7 +416,7 @@ describe('«Match e contratti» as cards (REB-477)', () => {
                   ...MATCH,
                   stato: 'annullato',
                   lettera: { ...LETTERA, stato: 'annullato' },
-                  situazione: 'Annullato: la lettera n. 2026-001 non va più firmata.',
+                  situazione: 'La lettera n. 2026-001 non va più firmata.',
                   prossima_azione: null,
                   altre_azioni: [],
                 },
@@ -430,14 +429,36 @@ describe('«Match e contratti» as cards (REB-477)', () => {
       },
     })
     mount('/admin/freelance/f1/contracts')
-    await openMore(await matchCard(), 'Altre azioni del match con Rossi Studio')
-    await userEvent.click(screen.getByRole('menuitem', { name: 'Annulla il match con Rossi Studio' }))
+    await openMore(await matchCard(), 'Altre azioni del match con Rossi Studio come Backend developer')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Annulla il match con Rossi Studio come Backend developer' }))
     expect(await screen.findByRole('dialog', { name: 'Annullare il match?' })).toBeInTheDocument()
     expect(spy).not.toHaveBeenCalledWith('/api/hub/matches/m1/cancel', expect.anything())
     await userEvent.click(screen.getByRole('button', { name: 'Annulla il match' }))
     await waitFor(() => expect(spy).toHaveBeenCalledWith('/api/hub/matches/m1/cancel', expect.objectContaining({ method: 'POST' })))
-    expect(await screen.findByText('Annullato: la lettera n. 2026-001 non va più firmata.')).toBeInTheDocument()
+    expect(await screen.findByText('La lettera n. 2026-001 non va più firmata.')).toBeInTheDocument()
     expect(within(await matchCard()).getByText('Annullato')).toBeInTheDocument()
+    // «Altre azioni» went with the match's last action: the focus lands on its card.
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Rossi Studio · Backend developer' })).toHaveFocus(),
+    )
+  })
+
+  it('puts the focus on the «Match» heading when the card itself is gone after a confirmed action', async () => {
+    let cancelled = false
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': () => (cancelled ? { ...PAGE, matches: [] } : PAGE),
+      'POST /api/hub/matches/m1/cancel': () => {
+        cancelled = true
+        return { ...MATCH, stato: 'annullato' }
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    await openMore(await matchCard(), 'Altre azioni del match con Rossi Studio come Backend developer')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Annulla il match con Rossi Studio come Backend developer' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Annulla il match' }))
+    expect(await screen.findByText('Nessun match per questa persona.')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Match', level: 2 })).toHaveFocus())
   })
 
   it('gives the focus back to «Altre azioni» when the question is dismissed, since the item that asked is gone', async () => {
@@ -472,12 +493,12 @@ describe('«Match e contratti» as cards (REB-477)', () => {
       },
     })
     mount('/admin/freelance/f1/contracts')
-    await openMore(await matchCard(), 'Altre azioni del match con Rossi Studio')
-    await userEvent.click(screen.getByRole('menuitem', { name: 'Annulla il match con Rossi Studio' }))
+    await openMore(await matchCard(), 'Altre azioni del match con Rossi Studio come Backend developer')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Annulla il match con Rossi Studio come Backend developer' }))
     expect(await screen.findByText(/il link ricevuto dal freelance smette di funzionare/)).toBeInTheDocument()
   })
 
-  it('closes an active match from «Altre azioni»', async () => {
+  it('closes an active match from «Altre azioni» only after asking, since the page cannot reopen it', async () => {
     const spy = routeFetch({
       'GET /api/hub/freelancers/f1': PERSON,
       'GET /api/hub/freelancers/f1/matches': {
@@ -487,9 +508,51 @@ describe('«Match e contratti» as cards (REB-477)', () => {
       'POST /api/hub/matches/m1/close': { ...MATCH, stato: 'concluso' },
     })
     mount('/admin/freelance/f1/contracts')
-    await openMore(await matchCard(), 'Altre azioni del match con Rossi Studio')
-    await userEvent.click(screen.getByRole('menuitem', { name: 'Chiudi il match con Rossi Studio' }))
+    await openMore(await matchCard(), 'Altre azioni del match con Rossi Studio come Backend developer')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Chiudi il match con Rossi Studio come Backend developer' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Chiudere il match?' })
+    expect(dialog).toHaveTextContent('diventa «Concluso»')
+    expect(dialog).toHaveTextContent('La lettera n. 2026-001 e il contratto quadro restano come sono.')
+    expect(spy).not.toHaveBeenCalledWith('/api/hub/matches/m1/close', expect.anything())
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Sì, chiudi il match' }))
     await waitFor(() => expect(spy).toHaveBeenCalledWith('/api/hub/matches/m1/close', expect.objectContaining({ method: 'POST' })))
+  })
+
+  it('names each match by company and role, so two matches with one company read apart', async () => {
+    const second = {
+      ...MATCH,
+      id: 'm2',
+      figura_richiesta: 'Designer',
+      lettera: { ...LETTERA, id: 'd3', match_id: 'm2', numero: '2026-002' },
+    }
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, matches: [second, MATCH] },
+    })
+    mount('/admin/freelance/f1/contracts')
+    expect(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio come Designer' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Invia per la firma il match con Rossi Studio come Backend developer' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Altre azioni del match con Rossi Studio come Designer' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Altre azioni del match con Rossi Studio come Backend developer' })).toBeInTheDocument()
+  })
+
+  it('leaves out, without failing, an action the card has no call for and one it does not know', async () => {
+    const quadro = { ...OUT, prossima_azione: 'chiudi', altre_azioni: ['invia', 'sospendi', 'aggiorna_stato'] }
+    const match = { ...MATCH, prossima_azione: 'sospendi', altre_azioni: ['registra_disdetta', 'sospendi', 'annulla'] }
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, quadro, quadri: [quadro], matches: [match] },
+    })
+    mount('/admin/freelance/f1/contracts')
+    const framework = await quadroCard()
+    expect(buttonNames(framework)).toEqual(['Altre azioni del contratto quadro'])
+    expect(await openMore(framework, 'Altre azioni del contratto quadro')).toEqual(['Aggiorna stato del contratto quadro'])
+    await userEvent.keyboard('{Escape}')
+    const card = await matchCard()
+    expect(buttonNames(card)).toEqual(['Altre azioni del match con Rossi Studio come Backend developer'])
+    expect(await openMore(card, 'Altre azioni del match con Rossi Studio come Backend developer')).toEqual([
+      'Annulla il match con Rossi Studio come Backend developer',
+    ])
   })
 
   it('resends a letter’s mail and reads its state from its match’s card', async () => {
@@ -511,7 +574,7 @@ describe('«Match e contratti» as cards (REB-477)', () => {
     mount('/admin/freelance/f1/contracts')
     await userEvent.click(within(await matchCard()).getByRole('button', { name: 'Reinvia email della lettera n. 2026-001' }))
     expect(await screen.findByText('Mail inviata di nuovo.')).toBeInTheDocument()
-    await openMore(await matchCard(), 'Altre azioni del match con Rossi Studio')
+    await openMore(await matchCard(), 'Altre azioni del match con Rossi Studio come Backend developer')
     await userEvent.click(screen.getByRole('menuitem', { name: 'Aggiorna stato della lettera n. 2026-001' }))
     expect(await screen.findByText('Stato letto da Documenso.')).toBeInTheDocument()
     expect(spy).toHaveBeenCalledWith('/api/hub/contract-documents/d2/resend', expect.objectContaining({ method: 'POST' }))
@@ -591,7 +654,7 @@ describe('«Match e contratti» as cards (REB-477)', () => {
         }),
     })
     mount('/admin/freelance/f1/contracts')
-    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio come Backend developer' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('ancora una bozza')
   })
 
@@ -607,7 +670,7 @@ describe('«Match e contratti» as cards (REB-477)', () => {
       'POST /api/hub/contract-documents/d1/resend': OUT,
     })
     mount('/admin/freelance/f1/contracts')
-    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia per la firma il match con Rossi Studio come Backend developer' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('ancora una bozza')
 
     await userEvent.click(screen.getByRole('button', { name: 'Reinvia email del contratto quadro' }))
@@ -653,11 +716,14 @@ describe('«Match e contratti» as cards (REB-477)', () => {
 
     expect(await screen.findByText('Aggiorno…')).toBeInTheDocument()
     expect(button).toBeDisabled()
+    // What a screen reader hears says the same progress as the words on the button.
+    expect(button).toHaveAccessibleName('Aggiorno lo stato del contratto quadro')
     expect(screen.getByRole('button', { name: 'Altre azioni del contratto quadro' })).toBeDisabled()
 
     late.resolve(answer(200, waiting))
     expect(await screen.findByText('Stato letto da Documenso.')).toBeInTheDocument()
     expect(button).toHaveTextContent('Aggiorna stato')
+    expect(button).toHaveAccessibleName('Aggiorna stato del contratto quadro')
   })
 
   it('says on «Altre azioni» that an action picked from it is running, since its menu has closed', async () => {
@@ -668,17 +734,19 @@ describe('«Match e contratti» as cards (REB-477)', () => {
       'POST /api/hub/contract-documents/d1/refresh': () => late.promise,
     })
     mount('/admin/freelance/f1/contracts')
+    const trigger = within(await quadroCard()).getByRole('button', { name: 'Altre azioni del contratto quadro' })
     await openMore(await quadroCard(), 'Altre azioni del contratto quadro')
     await userEvent.click(screen.getByRole('menuitem', { name: 'Aggiorna stato del contratto quadro' }))
 
-    const trigger = screen.getByRole('button', { name: 'Altre azioni del contratto quadro' })
     await waitFor(() => expect(trigger).toHaveTextContent('Aggiorno…'))
+    expect(trigger).toHaveAccessibleName('Aggiorno lo stato del contratto quadro')
     expect(trigger).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Reinvia email del contratto quadro' })).toBeDisabled()
 
     late.resolve(answer(200, OUT))
     expect(await screen.findByText('Stato letto da Documenso.')).toBeInTheDocument()
     expect(trigger).toHaveTextContent('Altre azioni')
+    expect(trigger).toHaveAccessibleName('Altre azioni del contratto quadro')
   })
 
   it('keeps the tax data in a closed «Dati fiscali» that says what is saved, and saves them from there', async () => {
@@ -750,6 +818,26 @@ describe('«Match e contratti» as cards (REB-477)', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Reinvia email del contratto quadro' }))
     expect(await screen.findByText('Mail inviata di nuovo.')).toBeInTheDocument()
+    expect(screen.queryByText(sentence)).toBeNull()
+  })
+
+  it('drops the page’s last sentence when the tax data start saving, as any other action does', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': PAGE,
+      'PUT /api/hub/freelancers/f1/fiscal': FISCALE,
+    })
+    const router = mount('/admin/freelance/f1/match/new')
+    await screen.findByText('nuovo match')
+    const sentence = 'Bozza salvata: la trovi qui sotto, da inviare.'
+    await act(() =>
+      router.navigate({ to: '/admin/freelance/$id/contracts', params: { id: 'f1' }, state: { notice: sentence } }),
+    )
+    expect(await screen.findByText(sentence)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('Dati fiscali'))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva i dati fiscali' }))
+    expect(await screen.findByText('Dati fiscali salvati.')).toBeInTheDocument()
     expect(screen.queryByText(sentence)).toBeNull()
   })
 })

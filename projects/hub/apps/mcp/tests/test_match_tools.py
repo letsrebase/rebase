@@ -143,7 +143,8 @@ async def test_get_match_answers_the_letter_and_the_framework_with_links(
             body = _payload(await client.call_tool("get_match", {"match_id": match}))
             missing = await client.call_tool("get_match", {"match_id": str(UUID(int=7))})
         assert body["stato"] == "bozza"
-        assert body["situazione"].startswith("Da inviare: la lettera n. ")
+        assert body["situazione"].startswith("La lettera n. ")
+        assert body["situazione"].endswith(" è pronta: il freelance non ha ancora ricevuto nulla.")
         assert (body["prossima_azione"], body["altre_azioni"]) == ("invia", ["annulla"])
         assert (
             body["lettera"]["pdf_url"] == f"/api/hub/contract-documents/{body['lettera']['id']}/pdf"

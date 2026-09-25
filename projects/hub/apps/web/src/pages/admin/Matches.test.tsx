@@ -54,7 +54,7 @@ const MATCH_A = {
   created_at: '2026-09-20T10:00:00Z',
   created_by_nome: 'Ivan',
   created_by_email: 'ivan@rebase.it',
-  situazione: 'Da inviare: la lettera n. 2026-001 è pronta, il freelance non ha ancora ricevuto nulla.',
+  situazione: 'La lettera n. 2026-001 è pronta: il freelance non ha ancora ricevuto nulla.',
 }
 
 const MATCH_B = {
@@ -69,7 +69,7 @@ const MATCH_B = {
   lettera_numero: '2026-002',
   lettera_stato: 'firmato',
   created_at: '2026-09-10T10:00:00Z',
-  situazione: 'Attivo: lettera n. 2026-002 firmata il 12 settembre 2026, dal 1° ottobre 2026.',
+  situazione: 'Lettera n. 2026-002 firmata il 12 settembre 2026, dal 1° ottobre 2026.',
 }
 
 /** Mirrors `lists.test.tsx`'s own `mount`: a pathless `signedIn` id, `/admin/matches`
