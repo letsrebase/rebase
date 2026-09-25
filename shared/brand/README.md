@@ -113,11 +113,12 @@ own screenshot scaled to 260 pixels tall in the same page, 600 per inch at the 1
 contract prints it at: Typst embeds a picture's own pixels whatever size it prints it
 at, so the full file would add about 250 KB to every contract. All seven are drawn by
 `tools/build-echo.mjs` from `palette.css` and the committed woff2, so a change of colour
-or of face is a redraw and never an edit in a design tool. The script's header lists the rules that make it look
-right (the outline traced from the letter's edge rather than stroked, and what a letter
-covers), and a directory as its argument renders there without touching the committed
-files. Glyph rasterisation differs between macOS and Linux, so a redraw on another
-machine is a binary diff with no visible change: quote the chromium line it prints.
+or of face is a redraw and never an edit in a design tool. The script's header lists the
+rules that make it look right (the outline traced from the letter's edge rather than
+stroked, and what a letter covers), and a directory as its argument renders there
+without touching the committed files. Glyph rasterisation differs between macOS and
+Linux, so a redraw on another machine is a binary diff with no visible change: quote the
+chromium line it prints.
 
 Two things are still open on ORB-199, deliberately not settled here. The echo is set in
 Outfit 700, while the wordmark above is Space Grotesk 700 (ORB-197), so one of the two
