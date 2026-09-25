@@ -2,7 +2,8 @@ import { useCanWrite } from '@/lib/auth'
 
 /**
  * The sentence a Google consent flow came back with (`?esito=`), on whichever page the
- * callback landed: Impostazioni → Gmail or → Drive, the Home, «Primi passi». The sentence
+ * callback landed: Impostazioni → Gmail or → Drive (a non-admin reads the Drive one above
+ * the settings gate), the Home, «Primi passi». The sentence
  * is looked up by the caller in its product's fixed table (`features/gmail/esito.ts`,
  * `features/drive/esito.ts`), never rendered from the address bar.
  *
