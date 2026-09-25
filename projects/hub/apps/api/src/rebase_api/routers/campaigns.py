@@ -2,6 +2,7 @@
 `List-Unsubscribe` header point at; `router` (Task 17) is the admin's."""
 
 from typing import Annotated
+from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -34,8 +35,11 @@ Token = Annotated[str, Query(min_length=1, max_length=TOKEN_MAX_LENGTH)]
 def unsubscribe_page(t: Token, settings: SettingsDep) -> RedirectResponse:
     """A GET changes nothing: mail scanners fetch links. It sends the person to the page,
     where a button posts."""
+    # FastAPI hands `t` over decoded: encode it again, so a mangled link cannot add a
+    # parameter or a line break to the `Location` header.
     return RedirectResponse(
-        f"{settings.hub_url.rstrip('/')}/disiscrizione?t={t}", status_code=status.HTTP_303_SEE_OTHER
+        f"{settings.hub_url.rstrip('/')}/disiscrizione?t={quote(t, safe='')}",
+        status_code=status.HTTP_303_SEE_OTHER,
     )
 
 

@@ -31,6 +31,18 @@ def test_the_header_url_fetched_by_get_only_redirects_to_the_page(
     assert tidy.query(CampaignOptout).count() == 0
 
 
+def test_a_mangled_token_stays_one_encoded_parameter_of_the_redirect(
+    client: TestClient,
+) -> None:
+    """The token reaches the route decoded; written back raw, `a%26x%3D1` would become a
+    second parameter and `%0D%0A` a line break in the `Location` header."""
+    answer = client.get("/api/hub/campagne/disiscrizione?t=a%26x%3D1", follow_redirects=False)
+    assert answer.headers["location"] == "https://letsrebase.com/hub/disiscrizione?t=a%26x%3D1"
+    broken = client.get("/api/hub/campagne/disiscrizione?t=a%0D%0Ab", follow_redirects=False)
+    assert broken.status_code == 303
+    assert broken.headers["location"].endswith("/disiscrizione?t=a%0D%0Ab")
+
+
 def test_the_one_click_post_opts_out_and_a_wrong_token_answers_the_same(
     client: TestClient,
     tidy: Session,  # noqa: F811  (fixture)
