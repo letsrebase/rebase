@@ -244,8 +244,10 @@ class DocumensoClient:
 
     def ping(self) -> None:
         """One page of the team's envelopes, read and dropped: whether the instance
-        answers and the token opens it (`rebase documenso-check`, REB-393)."""
-        self._call("GET", "/envelope")
+        answers and the token opens it (`rebase documenso-check`, REB-393). Parsed as
+        JSON like every other call, so a 200 that is not Documenso (a captive portal, a
+        login page at the wrong URL) does not pass as reachable."""
+        self._json("GET", "/envelope")
 
     def _call(
         self, method: str, path: str, body: bytes = b"", content_type: str | None = None

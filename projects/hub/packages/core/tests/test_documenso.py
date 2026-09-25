@@ -254,6 +254,23 @@ def test_the_check_says_whether_this_environment_reaches_documenso_with_its_toke
     assert "accetta il token" in capsys.readouterr().out
     wrong = Settings(_env_file=None, documenso_url=BASE, documenso_api_token="api_sbagliato")  # type: ignore[call-arg]
     assert documenso_check(wrong, http=fake) == 1
-    assert "Invalid session or API token" in capsys.readouterr().err
+    # `exc.detail` never holds the token: printed alongside the sentence so a 401, a
+    # 404, a 502 or a DNS failure can be told apart on the terminal (REB-393).
+    err = capsys.readouterr().err
+    assert "Invalid session or API token" in err
+    assert "HTTP 401" in err
     assert documenso_check(Settings(_env_file=None), http=fake) == 1  # type: ignore[call-arg]
     assert "la firma è spenta" in capsys.readouterr().err
+
+
+def test_ping_refuses_a_200_that_is_not_json() -> None:
+    """A `REBASE_DOCUMENSO_URL` that reaches something other than Documenso -- a captive
+    portal, a login page at the wrong host -- can still answer 200: `ping` parses the
+    body as JSON like every other call, so that does not pass as reachable (REB-393)."""
+
+    def html_200(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        return 200, b"<html><body>not documenso</body></html>"
+
+    client = DocumensoClient(BASE, TOKEN, http=html_200)
+    with pytest.raises(DocumensoFailed):
+        client.ping()

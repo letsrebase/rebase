@@ -197,6 +197,10 @@ def documenso_check(settings: Settings, http: HttpCall | None = None) -> int:
         client.ping()
     except DocumensoFailed as exc:
         print(exc.message, file=sys.stderr)
+        # Never the token: a 301, a 404, a 502 or a DNS failure look alike from
+        # `exc.message` alone, and this detail is what tells them apart.
+        if exc.detail:
+            print(exc.detail, file=sys.stderr)
         return 1
     print(f"Documenso risponde a {settings.documenso_url} e accetta il token.")
     return 0

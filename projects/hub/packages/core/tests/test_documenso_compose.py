@@ -80,12 +80,11 @@ def test_every_variable_documenso_requires_is_in_the_env_example_and_commented()
 def test_the_hub_compose_file_runs_the_sweep_on_a_loop_with_no_port() -> None:
     """`rebase contracts-sweep` (REB-391) scheduled by this repository, on both stacks
     (REB-393): a loop, since `_deploy-compose.yml` fails a deploy on any container not
-    `running`, and no port, like `db` between `db` and `api` publishes for nothing else."""
-    text = _compose()
-    assert "while :; do sleep 600; uv run --no-sync rebase contracts-sweep; done" in text
-    assert "init: true" in text
-    services = text.split("\nservices:", 1)[1]
+    `running`, and no port, since nothing ever calls the sweep directly."""
+    services = _compose().split("\nservices:", 1)[1]
     sweep = services.split("\n  sweep:", 1)[1].split("\n  web:", 1)[0]
+    assert "while :; do sleep 600; uv run --no-sync rebase contracts-sweep; done" in sweep
+    assert "init: true" in sweep
     assert "environment: *api-environment" in sweep
     assert "ports:" not in sweep
 

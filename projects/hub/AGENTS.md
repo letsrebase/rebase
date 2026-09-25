@@ -188,7 +188,7 @@ Ports, loopback only, from the table in `docs/adding-a-project.md` §7: producti
 (api): `projects/website/deploy/letsrebase.conf` proxies them to production on the host
 vhost, and `projects/website/deploy/preview.letsrebase.conf` proxies the same paths to
 the preview stack at `preview.letsrebase.com` (`location ^~ /api/hub/`,
-`preview.letsrebase.conf:81-85`, 127.0.0.1:8086 for its api) -- which is why the
+`preview.letsrebase.conf`, 127.0.0.1:8086 for its api) -- which is why the
 preview's Documenso webhook, at `https://preview.letsrebase.com/api/hub/documenso/webhook`,
 depends on that vhost rather than reaching the preview api directly. The member area's
 mail needs `REBASE_RESEND_API_KEY` and `REBASE_MAIL_FROM` in the host `.env`; without
