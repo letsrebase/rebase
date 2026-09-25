@@ -1,4 +1,4 @@
-# Campaigns, phase 1: build a list and send it — Implementation Plan
+# Campaigns, phase 1: build a list and send it (implementation plan)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -182,7 +182,7 @@ Ops and docs:
 
 ---
 
-## Group A — Store campaigns, recipients and opt-outs, and read the journey states
+## Group A. Store campaigns, recipients and opt-outs, and read the journey states
 
 ### Task 1: The three tables and migration 0020
 
@@ -1076,7 +1076,7 @@ git commit -m "feat(hub): the journey states a campaign's list can start from" -
 
 ---
 
-## Group B — Build a campaign's list: templates, exclusions, the action already done
+## Group B. Build a campaign's list: templates, exclusions, the action already done
 
 ### Task 4: The state templates
 
@@ -1814,7 +1814,7 @@ git commit -m "feat(hub): a campaign's list from a state or filters, with who is
 
 ---
 
-## Group C — Render a campaign mail and send it through Resend idempotently
+## Group C. Render a campaign mail and send it through Resend idempotently
 
 ### Task 7: The mail
 
@@ -2299,7 +2299,7 @@ git commit -m "feat(hub): send a campaign mail through Resend, one idempotent ca
 
 ---
 
-## Group D — Draft, test, schedule and cancel a campaign
+## Group D. Draft, test, schedule and cancel a campaign
 
 ### Task 9: The service's drafts, list and detail
 
@@ -3040,7 +3040,7 @@ git commit -m "feat(hub): test, schedule in Rome time, return to draft and cance
 
 ---
 
-## Group E — Send due campaigns from a loop service
+## Group E. Send due campaigns from a loop service
 
 ### Task 11: The tick
 
@@ -3479,7 +3479,7 @@ git commit -m "feat(hub): a loop service sends the campaigns whose time has come
 
 ---
 
-## Group F — Let a person unsubscribe in one click
+## Group F. Let a person unsubscribe in one click
 
 ### Task 13: The opt-out service
 
@@ -3865,7 +3865,7 @@ git commit -m "feat(hub): a person leaves every campaign in one click" -m "REB-4
 
 ---
 
-## Group G — Record delivery, bounces and complaints from Resend's webhook
+## Group G. Record delivery, bounces and complaints from Resend's webhook
 
 ### Task 15: Verify and apply an event
 
@@ -4269,7 +4269,7 @@ git commit -m "feat(hub): Resend's signed webhook writes delivery, bounces and c
 
 ---
 
-## Group H — Serve campaigns to the admin over the API
+## Group H. Serve campaigns to the admin over the API
 
 ### Task 17: The admin routes
 
@@ -4496,7 +4496,7 @@ git commit -m "feat(hub): the admin's campaign routes" -m "REB-471."
 
 ---
 
-## Group I — «Campagne» in the admin: the list and the four-step wizard
+## Group I. «Campagne» in the admin: the list and the four-step wizard
 
 ### Task 18: The client, the labels, `personalise`
 
@@ -5152,7 +5152,7 @@ git commit -m "feat(hub): «Nuova campagna», from a list to a scheduled send in
 
 ---
 
-## Group J — The campaign page, and the video of the whole flow
+## Group J. The campaign page, and the video of the whole flow
 
 ### Task 21: The campaign page
 

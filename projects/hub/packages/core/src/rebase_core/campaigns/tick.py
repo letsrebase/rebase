@@ -3,7 +3,7 @@ that a previous pass left `in_invio`, sent one recipient at a time with the send
 checks of § 5.3. A session advisory lock keeps two passes from ever running together.
 
 Controller ruling (R12/R13): the campaigns a first, unlocked `SELECT` finds are only
-ids — never held onto as ORM objects across the loop. Each one is re-read and locked
+ids, never held onto as ORM objects across the loop. Each one is re-read and locked
 (`FOR UPDATE SKIP LOCKED`) right before it is claimed, so a row someone else is already
 holding is skipped this pass rather than raced, and a row this pass finds no longer
 due (moved back to `bozza`, already claimed and moving, or something else entirely) is
@@ -11,7 +11,7 @@ left alone. Claiming commits immediately, releasing the campaign's own lock for 
 rest of the send: the campaign is never locked for the whole run, only for the moment
 that flips it to `in_invio`, so a `cancel()` from elsewhere can land between two of its
 rows. The final transition back out of `in_invio` re-reads and re-locks the campaign
-once more and only moves it to `inviata` if it is still there — a campaign a `cancel()`
+once more and only moves it to `inviata` if it is still there: a campaign a `cancel()`
 already moved to `annullata` stays there.
 
 The session advisory lock (`pg_try_advisory_lock`/`pg_advisory_unlock`) is a per
@@ -26,7 +26,7 @@ whatever `session` does with its own connections.
 
 Controller ruling R14: nothing else isolates an exception per campaign or per row, so
 one bad row or one bad campaign must not be able to wedge every campaign after it,
-forever. Two backstops, both narrow on purpose — they catch what preparing a mail can
+forever. Two backstops, both narrow on purpose: they catch what preparing a mail can
 raise on data this pass didn't choose (a `pigro` button phase 1 refuses, a recipient's
 own broken `prima` snapshot, corrupt stored `filtri`), not bugs in the loop itself:
 a row whose checks or `render` raise is marked `fallita` with a short, address-free
@@ -117,14 +117,14 @@ def _claim(session: Session, campaign_id: UUID, now: datetime) -> Campaign | Non
     """Re-reads and locks one campaign the unlocked scan above found due. Returns it,
     moved to `in_invio` and the move already committed (releasing the lock), only if it
     is still claimable under the lock; otherwise releases the lock and returns `None`
-    without touching the row — someone else has it (`SKIP LOCKED` found nothing), or it
+    without touching the row: someone else has it (`SKIP LOCKED` found nothing), or it
     moved on since the scan (back to `bozza`, cancelled, already `in_invio`).
 
     `populate_existing=True`: this session may already hold this campaign in its
     identity map (`expire_on_commit=False`, and a pass touches several rows without
     ever expiring the objects it already has). Without it, a `Campaign` this session
     saw before would keep its old, in-memory `stato` instead of the one this very
-    `SELECT ... FOR UPDATE` just locked and read — the one write this function is about
+    `SELECT ... FOR UPDATE` just locked and read, the one write this function is about
     to gate on."""
     campaign = session.scalars(
         select(Campaign)

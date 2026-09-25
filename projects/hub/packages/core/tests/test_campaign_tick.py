@@ -51,7 +51,7 @@ def scheduled_filtri(session: Session, clock: Clock, *emails: str) -> Campaign:
     for email in emails:
         # A card *with* a CV: a filtri campaign (no completeness filter) reaches it
         # regardless, but it must not also match a `manca_cv` stato campaign scheduled
-        # afterwards in the same test — the two would otherwise double-book the address.
+        # afterwards in the same test: the two would otherwise double-book the address.
         person(session, email)
     created = service.create(
         who.id,
@@ -226,7 +226,7 @@ def test_a_campaign_moved_back_to_draft_before_claiming_is_left_alone(
     """Controller ruling R12: the unlocked scan that finds a due campaign never flips it
     itself. Between that scan and the claim, an admin can still take it back to `bozza`
     (deleting its frozen list); the claim re-reads the row under its own lock and, no
-    longer seeing `programmata` and due, leaves it exactly where the admin put it —
+    longer seeing `programmata` and due, leaves it exactly where the admin put it,
     never `in_invio`. Calls the internal claim directly with the campaign's id, which is
     all a real tick pass carries between the scan and the claim."""
     clock = Clock(NOW)
@@ -248,7 +248,7 @@ def test_a_campaign_cancelled_between_two_rows_ends_annullata_not_inviata(
     from a second session can land between two rows of the same send. The row already
     sent stays `inviata`; the one still queued when the cancel lands is turned
     `saltata`; the campaign itself ends `annullata`, never `inviata`. The `pause` hook
-    — the same one that throttles real sends between rows — is where that second
+    (the same one that throttles real sends between rows) is where that second
     session's call lands, deterministically, after the first row and before the
     second."""
     clock = Clock(NOW)

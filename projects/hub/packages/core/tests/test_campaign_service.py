@@ -354,12 +354,12 @@ def test_a_second_call_blocked_on_the_lock_then_sees_the_fresh_state_not_a_stale
     """A true two-session race (Fix round 1, controller ruling R12, optional):
     reproduces the finding's exact shape. `clean` stands in for a concurrent actor
     (e.g. the future send loop) that has already moved the campaign to `annullata`,
-    locked, uncommitted — exactly like the tick that moves a campaign to `in_invio`
+    locked, uncommitted, exactly like the tick that moves a campaign to `in_invio`
     mid-way through `back_to_draft`'s read. A second `cancel()` call must block on the
-    locked read and, once `clean` commits, see the FRESH state and raise `InvalidState`
-    — never read the stale `programmata` and silently overwrite `clean`'s change, which
+    locked read and, once `clean` commits, see the FRESH state and raise `InvalidState`,
+    never read the stale `programmata` and silently overwrite `clean`'s change, which
     is what `_require` (no lock) would do: the plain read does not wait, the check
-    passes on stale data, and only the final commit blocks — succeeding once the lock
+    passes on stale data, and only the final commit blocks, succeeding once the lock
     is released and clobbering the concurrent write instead of refusing."""
     clock = Clock(NOW)
     service = CampaignService(clean, SETTINGS, clock=clock)
