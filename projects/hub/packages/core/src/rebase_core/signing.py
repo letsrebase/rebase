@@ -53,6 +53,7 @@ Documenso before the row, and «Registra disdetta» (`record_notice`).
 import logging
 from collections.abc import Callable, Mapping
 from datetime import date, datetime
+from typing import NamedTuple
 from uuid import UUID
 
 from sqlalchemy import exists, or_, select
@@ -161,6 +162,25 @@ def _refuse_blanks(blank: list[str]) -> None:
             f"Il documento lascerebbe in bianco {', '.join(unfilled)}: completali prima di "
             "inviarlo."
         )
+
+
+class SweepResult(NamedTuple):
+    """`SigningService.sweep`'s own count (REB-431): `touched` is REB-433's, how many
+    documents actually moved; `unconfirmed` is how many stayed `inviato` because
+    Documenso itself could not be asked -- a refusal (an expired, revoked or wrong
+    token, an envelope answering 404) or an unreachable instance, never a document
+    merely not completed yet, and never a routine no-Documenso environment."""
+
+    touched: int
+    unconfirmed: int
+
+
+class _FinishOutcome(NamedTuple):
+    """What one `finish` call did to one document, before `sweep` sums it into a
+    `SweepResult` across every document it visits."""
+
+    moved: bool
+    unconfirmed: bool
 
 
 class SigningService:
@@ -438,8 +458,19 @@ class SigningService:
         «Aggiorna stato», or `sweep`); the others still run. Returns whether this call
         actually moved anything -- the confirmation, a stored copy, an accepted mail, a
         released letter -- so `sweep` counts only documents it truly advanced (REB-433),
-        not one still waiting on Documenso or a mail provider that keeps refusing."""
-        moved = self._confirm_completion(document_id)
+        not one still waiting on Documenso or a mail provider that keeps refusing. See
+        `_finish_outcome` for whether Documenso itself could not be asked at all."""
+        return self._finish_outcome(document_id).moved
+
+    def _finish_outcome(self, document_id: UUID) -> _FinishOutcome:
+        """As `finish`, but also says whether the confirmation step itself could not
+        reach Documenso for an answer (REB-431): a refusal or an unreachable instance,
+        not the routine "not completed yet" or "no Documenso configured here". `sweep`
+        reads this so a real failure is visible instead of silently retried every ten
+        minutes forever; `finish` itself still answers a plain bool, unchanged, for its
+        other callers (the webhook's background task, «Aggiorna stato»)."""
+        confirmed = self._confirm_completion(document_id)
+        moved = confirmed is True
         try:
             moved = self._store_signed_copy(document_id) is not None or moved
         except (DocumensoFailed, SigningUnavailable, NotFound):
@@ -451,9 +482,9 @@ class SigningService:
         document = self.session.get(ContractDocument, document_id, populate_existing=True)
         if document is not None and is_active(document):
             moved = self._release_letters(document) or moved
-        return moved
+        return _FinishOutcome(moved=moved, unconfirmed=confirmed is None)
 
-    def _confirm_completion(self, document_id: UUID) -> bool:
+    def _confirm_completion(self, document_id: UUID) -> bool | None:
         """Before a document counts as signed: Documenso's own word on the envelope,
         read with no row lock held (a network call), so a forged webhook alone can no
         longer move a document to `firmato` -- a forged event now needs the hub's own
@@ -467,12 +498,15 @@ class SigningService:
         this call already read, so a rejection or a cancellation a webhook never
         delivered is recovered by the next `finish` or `sweep` too, not just a missed
         signature (REB-431). Still `PENDING` (or `DRAFT`) leaves the row `inviato`,
-        logged at info level, tried again next time. Documenso unreachable
-        (`DocumensoFailed`) or not configured on this environment at all
-        (`SigningUnavailable`, `self._documenso()`'s own refusal) is logged once and
-        left for the next call rather than raised, so the sweep never logs a traceback
-        merely for running where signing is off. Returns whether this call moved the
-        document."""
+        logged at info level, tried again next time. Documenso not configured on this
+        environment at all (`SigningUnavailable`, `self._documenso()`'s own refusal) is
+        a routine, expected state (a preview with signing off, say) and is logged once
+        and left for the next call, returning `False` like every other no-op. Documenso
+        itself refusing or not answering (`DocumensoFailed`: an expired, revoked or
+        wrong token, an envelope answering 404, or the instance unreachable) is also
+        logged and left for the next call, but returns `None` rather than `False`, so
+        `sweep` can tell a real failure apart from a benign one and count it. Returns
+        `True` only when this call actually moved the document."""
         document = self._document(document_id)
         if document.stato != "inviato" or document.documenso_id is None:
             return False
@@ -495,7 +529,7 @@ class SigningService:
                 document_id,
                 exc_info=True,
             )
-            return False
+            return None
         outcome = outcome_from_envelope(envelope)
         self.matches.lock_freelancer(document.freelancer_id)
         match = (
@@ -523,27 +557,34 @@ class SigningService:
         self.session.commit()
         return True
 
-    def sweep(self) -> int:
+    def sweep(self) -> SweepResult:
         """`rebase contracts-sweep` (REB-391): redoes what a lost background task or a
         restart left behind, for every document `finish` still has something to do for.
-        Each document runs in its own transaction, through `finish` itself, so the two
+        Each document runs in its own transaction, through `_finish_outcome`, so the two
         steps stay exactly as idempotent as the webhook's own recovery; a failure is
-        logged and the next document is still tried. Returns how many `finish` actually
-        moved (REB-433), not how many it merely looked at -- a document still waiting on
-        Documenso, tried again next time, does not count."""
+        logged and the next document is still tried, counted in neither number.
+        `touched` is how many `finish` actually moved (REB-433), not how many it merely
+        looked at -- a document still waiting on Documenso, tried again next time, does
+        not count. `unconfirmed` is how many stayed `inviato` because Documenso itself
+        refused the confirmation or could not be reached (REB-431): failed silently
+        before, now visible so a stuck token or a wrong URL is not read as "nothing to
+        do" forever."""
         touched = 0
+        unconfirmed = 0
         for document_id in self._to_finish():
             try:
-                moved = self.finish(document_id)
+                outcome = self._finish_outcome(document_id)
             except Exception:
                 self.session.rollback()
                 _log.warning(
                     "contracts-sweep: document %s could not be finished", document_id, exc_info=True
                 )
                 continue
-            if moved:
+            if outcome.moved:
                 touched += 1
-        return touched
+            if outcome.unconfirmed:
+                unconfirmed += 1
+        return SweepResult(touched=touched, unconfirmed=unconfirmed)
 
     def _to_finish(self) -> list[UUID]:
         """Every document a sweep must run `finish` on: a document `inviato` with an

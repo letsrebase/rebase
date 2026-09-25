@@ -162,7 +162,11 @@ def contracts_sweep() -> int:
     Runs `SigningService.sweep()` with this environment's own collaborators -- the same
     ones `SigningDep` builds for a request, gathered here by hand since this command has
     no request to build one from. Runs every ten minutes on production and the preview
-    alike, from the `sweep` service in `docker-compose.yml` (REB-393)."""
+    alike, from the `sweep` service in `docker-compose.yml` (REB-393). Prints the
+    `unconfirmed` count only when it is not zero (REB-431): an expired, revoked or
+    wrong token, or Documenso itself unreachable, otherwise failed silently, leaving a
+    document `inviato` and «0 documenti ripresi» printed every ten minutes with nothing
+    to say why."""
     settings = get_settings()
     session = session_factory(create_engine_from_settings(settings))()
     try:
@@ -175,10 +179,13 @@ def contracts_sweep() -> int:
             contracts_mail=settings.contracts_mail,
             allow_draft=settings.contracts_allow_draft,
         )
-        touched = signing.sweep()
+        result = signing.sweep()
     finally:
         session.close()
-    print(f"{touched} documenti ripresi")
+    line = f"{result.touched} documenti ripresi"
+    if result.unconfirmed:
+        line += f", {result.unconfirmed} non confermati"
+    print(line)
     return 0
 
 

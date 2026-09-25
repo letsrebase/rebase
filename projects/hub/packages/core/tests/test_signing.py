@@ -36,7 +36,7 @@ from rebase_core.fiscal import FiscalService
 from rebase_core.mail import EmailSender, Mail, RecordingSender
 from rebase_core.matches import MatchService
 from rebase_core.models import ContractDocument, Freelancer, Match
-from rebase_core.signing import SigningService
+from rebase_core.signing import SigningService, SweepResult
 
 # 23:30 UTC on 30 September is already 1 October in Rome.
 SIGNED_AT = datetime(2026, 9, 30, 23, 30, tzinfo=UTC)
@@ -771,15 +771,15 @@ def test_the_sweep_picks_up_an_inviato_document_whose_envelope_is_completed(
     envelope = _envelope_of(_framework_of(clean, freelancer_id))
     fake.sign(envelope, SIGNED_AT)
 
-    touched = _signing(clean, renderer, fake, sender).sweep()
+    result = _signing(clean, renderer, fake, sender).sweep()
 
-    assert touched == 1
+    assert result == SweepResult(touched=1, unconfirmed=0)
     quadro = _framework_of(clean, freelancer_id)
     assert (quadro.stato, quadro.signed_at) == ("firmato", SIGNED_AT)
 
 
 def test_the_sweep_recovers_a_rejection_the_webhook_never_delivered(clean: Session) -> None:
-    """REB-431/M8: a rejection, not only a completion, can be lost the same way (probe
+    """REB-431: a rejection, not only a completion, can be lost the same way (probe
     § 11.3). `_confirm_completion` already holds the envelope it read for the
     completion check; applying a `REJECTED` outcome from that same envelope, the way
     `apply` itself would, means the sweep recovers this too, instead of warning about
@@ -790,9 +790,9 @@ def test_the_sweep_recovers_a_rejection_the_webhook_never_delivered(clean: Sessi
     envelope = _envelope_of(_framework_of(clean, freelancer_id))
     fake.reject(envelope, "La PEC indicata non è la mia")
 
-    touched = _signing(clean, renderer, fake, sender).sweep()
+    result = _signing(clean, renderer, fake, sender).sweep()
 
-    assert touched == 1
+    assert result == SweepResult(touched=1, unconfirmed=0)
     quadro = _framework_of(clean, freelancer_id)
     assert (quadro.stato, quadro.cancel_reason) == (
         "annullato",
@@ -801,16 +801,16 @@ def test_the_sweep_recovers_a_rejection_the_webhook_never_delivered(clean: Sessi
 
 
 def test_the_sweep_recovers_a_cancellation_the_webhook_never_delivered(clean: Session) -> None:
-    """REB-431/M8: the same recovery for a cancellation made directly on Documenso."""
+    """REB-431: the same recovery for a cancellation made directly on Documenso."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
     envelope = _envelope_of(_framework_of(clean, freelancer_id))
     fake.client().cancel(envelope, "Annullato a mano.")
 
-    touched = _signing(clean, renderer, fake, sender).sweep()
+    result = _signing(clean, renderer, fake, sender).sweep()
 
-    assert touched == 1
+    assert result == SweepResult(touched=1, unconfirmed=0)
     quadro = _framework_of(clean, freelancer_id)
     assert (quadro.stato, quadro.cancel_reason) == ("annullato", "Annullato su Documenso.")
 
@@ -818,9 +818,9 @@ def test_the_sweep_recovers_a_cancellation_the_webhook_never_delivered(clean: Se
 def test_documenso_unreachable_during_the_confirmation_leaves_it_inviato_and_raises_nothing(
     clean: Session,
 ) -> None:
-    """M7: Documenso not answering at all while `_confirm_completion` tries to read the
-    envelope (`DocumensoFailed`, probe § 5's own UNREACHABLE) is logged and left for the
-    next `finish` or `sweep`; it must not raise past `finish`."""
+    """REB-431: Documenso not answering at all while `_confirm_completion` tries to read
+    the envelope (`DocumensoFailed`, probe § 5's own UNREACHABLE) is logged and left for
+    the next `finish` or `sweep`; it must not raise past `finish`."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
@@ -841,7 +841,7 @@ def test_documenso_unreachable_during_the_confirmation_leaves_it_inviato_and_rai
 def test_no_documenso_configured_during_the_confirmation_leaves_it_inviato_and_raises_nothing(
     clean: Session,
 ) -> None:
-    """M4: `self._documenso()` itself refuses (`SigningUnavailable`) when this
+    """REB-431: `self._documenso()` itself refuses (`SigningUnavailable`) when this
     environment has no Documenso configured at all -- a routine state (a preview with
     signing off), not a failure worth a traceback on every sweep run. `finish` swallows
     it the same way, moves nothing, and returns False."""
@@ -1521,9 +1521,9 @@ def test_sweep_finishes_a_signature_a_crashed_background_task_left_undone(
     assert _framework_of(clean, freelancer_id).signed_pdf is None
     assert _letter_of(clean, match.id).stato == "in_attesa"
 
-    touched = signing.sweep()
+    result = signing.sweep()
 
-    assert touched == 1
+    assert result == SweepResult(touched=1, unconfirmed=0)
     quadro = _framework_of(clean, freelancer_id)
     assert quadro.stato == "firmato"
     assert quadro.signed_pdf == fake.signed_pdf(envelope)
@@ -1564,25 +1564,26 @@ def test_sweep_releases_a_waiting_letter_of_an_already_finished_framework(
     second_match.stato = "in_firma"
     clean.commit()
 
-    touched = signing.sweep()
+    result = signing.sweep()
 
     # 1, not 2: the first match's own letter, released by the `finish` above, is
     # itself `inviato` with an envelope still pending on Documenso, so REB-431's wider
     # `_to_finish` visits it too, but nothing moves for it, and REB-433 counts only
     # what actually moved.
-    assert touched == 1
+    assert result == SweepResult(touched=1, unconfirmed=0)
     assert _letter_of(clean, second.id).stato == "inviato"
 
 
 def test_sweep_with_nothing_left_to_do_returns_zero(clean: Session) -> None:
     """A document still `inviato`, not yet signed on Documenso, is in `_to_finish` now
     too (REB-431): `finish` confirms nothing and moves nothing, so it still counts for
-    zero (REB-433)."""
+    zero (REB-433); still `PENDING` on Documenso is not a failed confirmation either, so
+    `unconfirmed` stays zero too."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
 
-    assert _signing(clean, renderer, fake, sender).sweep() == 0
+    assert _signing(clean, renderer, fake, sender).sweep() == SweepResult(touched=0, unconfirmed=0)
     assert _framework_of(clean, freelancer_id).stato == "inviato"
 
 
@@ -1603,7 +1604,9 @@ def test_sweep_does_not_keep_counting_a_document_stuck_on_a_failing_download(
 
     first = signing.sweep()
 
-    assert first == 1  # the confirmation to `firmato` itself moved something
+    # the confirmation to `firmato` itself moved something, and it succeeded, so
+    # unconfirmed stays zero even though the download that follows keeps failing.
+    assert first == SweepResult(touched=1, unconfirmed=0)
     quadro = _framework_of(clean, freelancer_id)
     assert (quadro.stato, quadro.signed_pdf) == ("firmato", None)
 
@@ -1611,8 +1614,63 @@ def test_sweep_does_not_keep_counting_a_document_stuck_on_a_failing_download(
 
     second = signing.sweep()
 
-    assert second == 0  # already confirmed; only the still-failing download was tried
+    # already confirmed; only the still-failing download was tried, and that is not a
+    # confirmation failure, so unconfirmed stays zero too.
+    assert second == SweepResult(touched=0, unconfirmed=0)
     assert _framework_of(clean, freelancer_id).signed_pdf is None
+
+
+def test_sweep_counts_an_unreachable_documenso_as_unconfirmed_not_touched(
+    clean: Session,
+) -> None:
+    """REB-431: Documenso not answering at all during the confirmation still leaves the
+    document `inviato`, as before, but the sweep no longer looks the same as one with
+    nothing to do: the attempt counts as `unconfirmed`, not `touched`, so a dead network
+    shows up instead of «0 documenti ripresi» printed every ten minutes with nothing to
+    say why."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    fake.down("get")
+
+    result = _signing(clean, renderer, fake, sender).sweep()
+
+    assert result == SweepResult(touched=0, unconfirmed=1)
+    assert _framework_of(clean, freelancer_id).stato == "inviato"
+
+
+def test_sweep_counts_a_refused_token_as_unconfirmed_not_touched(clean: Session) -> None:
+    """REB-431: an expired, revoked or wrong token, or an envelope Documenso itself no
+    longer knows (404), refuses the same GET the confirmation reads with an HTTP error --
+    counted the same way as an unreachable instance, never silently as nothing to do."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    fake.fail("get", 401, "Invalid session or API token.")
+
+    result = _signing(clean, renderer, fake, sender).sweep()
+
+    assert result == SweepResult(touched=0, unconfirmed=1)
+    assert _framework_of(clean, freelancer_id).stato == "inviato"
+
+
+def test_sweep_on_an_environment_with_no_documenso_configured_counts_nothing(
+    clean: Session,
+) -> None:
+    """REB-431: a preview with signing off is a routine state, not a failure -- it must
+    not inflate `unconfirmed` merely because every document `_to_finish` finds stays
+    `inviato`."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+
+    result = _signing(clean, renderer, None, sender).sweep()
+
+    assert result == SweepResult(touched=0, unconfirmed=0)
 
 
 # ---- the recovery actions (REB-407) ------------------------------------------------------

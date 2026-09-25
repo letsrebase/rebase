@@ -106,9 +106,10 @@ a secret leaked to somebody who never held the token still cannot forge a signat
 Production's webhook points at
 `http://api:8000/api/hub/documenso/webhook` inside the compose network, preview's at
 `https://preview.letsrebase.com/api/hub/documenso/webhook`. Documenso retries a failed
-delivery only at once, so an event lost while the API restarts stays lost: «Aggiorna
-stato» on «Match e contratti» reads the envelope and applies it, and an admin presses it
-on a document that has waited for its signature longer than expected. Without
+delivery only at once, so an event lost while the API restarts is not lost for good: the
+sweep (below) reads the envelope and applies it on its own, every ten minutes, and
+«Aggiorna stato» on «Match e contratti» does the same thing at once, for an admin who
+does not want to wait for the next sweep. Without
 `REBASE_DOCUMENSO_URL` and `REBASE_DOCUMENSO_API_TOKEN` signing answers 503, and a text
 whose front matter says `status: draft` never leaves unless `REBASE_CONTRACTS_ALLOW_DRAFT`
 is true; only the preview's `.env` sets it, and even there it stays false while both
@@ -124,7 +125,9 @@ leaves whichever step ran undone. `rebase contracts-sweep` redoes anything a res
 a mail the provider refused, left behind, and runs every ten minutes on production and
 the preview alike, from the `sweep` service in `docker-compose.yml` (REB-393). Read what
 it did with `docker logs rebase-sweep-1` (production) or `docker logs
-rebase-preview-sweep-1` (preview).
+rebase-preview-sweep-1` (preview): each run prints «N documenti ripresi», and, when
+Documenso itself refused a confirmation or could not be reached (an expired, revoked or
+wrong token among them, REB-431), «, M non confermati» on the same line.
 
 ## Running it
 

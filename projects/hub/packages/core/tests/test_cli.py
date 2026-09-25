@@ -13,26 +13,29 @@ import pytest
 from rebase_core import cli
 from rebase_core.cli import main
 from rebase_core.config import Settings
+from rebase_core.signing import SweepResult
 
 
 class _FakeSigningService:
     """Records the session and the collaborators `contracts_sweep` built it with, and
-    answers `sweep()` with a canned count."""
+    answers `sweep()` with a canned result."""
 
     instances: list["_FakeSigningService"] = []
+    result = SweepResult(touched=3, unconfirmed=0)
 
     def __init__(self, session: object, **kwargs: Any) -> None:
         self.session = session
         self.kwargs = kwargs
         _FakeSigningService.instances.append(self)
 
-    def sweep(self) -> int:
-        return 3
+    def sweep(self) -> SweepResult:
+        return _FakeSigningService.result
 
 
 @pytest.fixture(autouse=True)
 def _reset() -> None:
     _FakeSigningService.instances = []
+    _FakeSigningService.result = SweepResult(touched=3, unconfirmed=0)
 
 
 def test_the_contracts_sweep_command_builds_the_signing_service_and_prints_the_count(
@@ -46,6 +49,22 @@ def test_the_contracts_sweep_command_builds_the_signing_service_and_prints_the_c
     assert len(_FakeSigningService.instances) == 1
     out = capsys.readouterr().out
     assert out.strip() == "3 documenti ripresi"
+
+
+def test_the_contracts_sweep_command_also_prints_the_unconfirmed_count_when_it_is_not_zero(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """REB-431: a refusal or an unreachable Documenso during the confirmation step
+    leaves a document `inviato` -- not silently, any more. Left off the line entirely
+    when it is zero, so the ordinary run reads exactly as it always has."""
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli, "SigningService", _FakeSigningService)
+    _FakeSigningService.result = SweepResult(touched=1, unconfirmed=2)
+
+    assert main(["contracts-sweep"]) == 0
+
+    out = capsys.readouterr().out
+    assert out.strip() == "1 documenti ripresi, 2 non confermati"
 
 
 def test_the_documenso_check_command_dispatches_to_documenso_check(
