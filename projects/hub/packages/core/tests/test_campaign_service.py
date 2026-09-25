@@ -182,6 +182,47 @@ def test_scheduling_freezes_the_list_minus_the_unticked_and_the_excluded(
     assert rows[0].prima["ha_cv"] is False and len(rows[0].disiscrizione_token) >= 40
 
 
+def test_an_odd_unticked_address_does_not_stop_the_send(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    everyone = ScheduleRequest.model_validate(
+        {"esclusi": [" NoCV@Studio.it ", "OTHER@studio.it", "odd..legacy@studio.it"]}
+    )
+    with pytest.raises(ValidationFailed, match="nessuno riceverebbe"):
+        service.schedule(campaign.id, everyone)
+    odd_only = ScheduleRequest.model_validate({"esclusi": ["odd..legacy@studio.it"]})
+    assert service.schedule(campaign.id, odd_only).stato == "programmata"
+    rows = clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).all()
+    assert sorted(r.email for r in rows) == ["nocv@studio.it", "other@studio.it"]
+
+
+def test_renaming_a_draft_moves_its_slug_to_the_new_name(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """A filtered campaign is created as «Campagna da filtri» before the admin names
+    it in Cosa: the slug (the button's `utm_campaign`, Resend's tag) follows the name
+    it is sent with, keeping the day it was created, and never collides with itself."""
+    service = CampaignService(clean, SETTINGS, clock=Clock(NOW))
+    who = admin(clean)
+    filtri = TalentiFiltri(lista="talenti")
+    created = service.create(
+        who.id, draft(nome="Campagna da filtri", fonte="filtri", stato_percorso=None, filtri=filtri)
+    )
+    day = f"{created.created_at.astimezone(UTC):%Y-%m-%d}"
+    renamed = service.update(created.id, CampaignPatch(nome="Richiamo di ottobre"))
+    assert renamed.slug == f"c-{day}-richiamo-di-ottobre"
+    again = service.update(created.id, CampaignPatch(nome="Richiamo di ottobre", oggetto="x"))
+    assert again.slug == renamed.slug
+    second = service.create(who.id, draft(nome="Altra"))
+    clash = service.update(second.id, CampaignPatch(nome="Richiamo di ottobre"))
+    assert clash.slug == f"c-{day}-richiamo-di-ottobre-2"
+    untouched = service.update(created.id, CampaignPatch(oggetto="y"))
+    assert untouched.slug == renamed.slug
+
+
 @pytest.mark.parametrize(
     ("giorno", "ora", "utc"),
     [

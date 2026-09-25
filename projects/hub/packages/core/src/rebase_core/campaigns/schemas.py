@@ -5,7 +5,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, computed_field
 
 from rebase_core.models import (
     CAMPAIGN_BUTTON_MAX_LENGTH,
@@ -82,13 +82,19 @@ class CampaignPatch(BaseModel):
     azione: Azione | None = None
 
 
+# An address as the list holds it, not as `EmailStr` would have it: the unticked are
+# only compared with the list's own lowercase addresses, never mailed, so a legacy
+# address `EmailStr` rejects must not 422 the whole send.
+Unticked = Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True, max_length=320)]
+
+
 class ScheduleRequest(BaseModel):
     """`giorno` and `ora` are Europe/Rome wall-clock time, both or neither; neither is
     «Invia adesso». `esclusi` are the addresses the admin unticked on step 1."""
 
     giorno: date | None = None
     ora: time | None = None
-    esclusi: list[EmailStr] = []
+    esclusi: list[Unticked] = []
 
 
 class NeverWriteRequest(BaseModel):

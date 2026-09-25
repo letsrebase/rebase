@@ -109,6 +109,17 @@ class CampaignService:
         changes = data.model_dump(exclude_unset=True)
         if "filtri" in changes and data.filtri is not None:
             changes["filtri"] = data.filtri.model_dump(mode="json", exclude_none=True)
+        if data.nome is not None:
+            changes["nome"] = data.nome.strip()
+            if changes["nome"] != campaign.nome:
+                # The slug is the button's `utm_campaign` and Resend's tag: it follows
+                # the name a draft will be sent with (a filtered campaign starts as
+                # «Campagna da filtri»), keeping the day it was created.
+                created = campaign.created_at.astimezone(UTC)
+                campaign.slug = self._unique_slug(
+                    f"c-{created:%Y-%m-%d}-{_slugify(changes['nome'])}"[:70],
+                    exclude=campaign.id,
+                )
         for field, value in changes.items():
             setattr(campaign, field, value)
         if campaign.fonte == "filtri":
@@ -208,7 +219,7 @@ class CampaignService:
             raise InvalidState(NEED_TEST)
         now = self.clock()
         when = self._when(data, now)
-        unticked = {str(e).lower() for e in data.esclusi}
+        unticked = set(data.esclusi)  # already stripped and lowercased
         rows = [
             r
             for r in build_audience(
@@ -303,10 +314,13 @@ class CampaignService:
         if azione == "pigro_cliente":
             raise ValidationFailed(ENTITY, "azione", PIGRO_LATER)
 
-    def _unique_slug(self, base: str) -> str:
-        taken = set(
-            self.session.scalars(select(Campaign.slug).where(Campaign.slug.startswith(base)))
-        )
+    def _unique_slug(self, base: str, *, exclude: UUID | None = None) -> str:
+        """`base`, or `base-2`, `base-3`… if another campaign holds it. `exclude` is
+        the campaign being renamed: its own slug is never a collision."""
+        query = select(Campaign.slug).where(Campaign.slug.startswith(base))
+        if exclude is not None:
+            query = query.where(Campaign.id != exclude)
+        taken = set(self.session.scalars(query))
         if base not in taken:
             return base
         n = 2
