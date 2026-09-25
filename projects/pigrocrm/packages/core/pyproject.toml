@@ -31,7 +31,7 @@ dependencies = [
   # default: a base image is not guaranteed to ship the IANA tz database at all
   # (Python's own docs recommend this exact package for that reason), so emission's
   # notion of "today in the issuer's calendar" cannot depend on the host having it.
-  "tzdata==2026.3",
+  "tzdata==2026.4",
   # The XLSX writer. Declared on **core**, not on apps/api, because
   # packages/core/tests/test_architecture.py derives its import allowlist from this
   # list and the workbook builder is a domain function -- the API image installs
