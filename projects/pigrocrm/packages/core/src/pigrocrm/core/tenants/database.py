@@ -20,18 +20,20 @@ def tenants_database_url(settings: Settings) -> URL:
 
 def ensure_tenants_database(settings: Settings) -> Engine:
     """Idempotent. The registry exists and has every one of its tables when this
-    returns -- `Tenant` and, since REB-376, `Identity`/`IdentityLinkToken`/
-    `IdentitySession` too. `TenantsBase.metadata.create_all` below only creates the
+    returns -- `Tenant`; since REB-376, `Identity`/`IdentityLinkToken`/
+    `IdentitySession`; and since REB-491, `RebaseEngagement` (the engagements door's
+    row per hub match). `TenantsBase.metadata.create_all` below only creates the
     tables of classes Python has actually imported by the time it runs: `Tenant`
     lives in the same module as `TenantsBase` itself, so importing one always
-    defines the other, but `pigrocrm.core.identity.models` is a sibling package and
-    has no reason to be on any particular caller's own import path (the CLI's
-    `ensure-space-defaults`, the boot step that calls this in a fresh process,
-    imports only `pigrocrm.core.tenants` -- REB-376's own tables would silently
-    never be created there otherwise, the exact trap `models_registry.py` exists to
-    close for the per-space `Base`). The module-level import above is this
-    function's own equivalent, kept beside the one function that actually calls
-    `create_all` against this metadata."""
+    defines the other, but `pigrocrm.core.identity.models` and
+    `pigrocrm.core.engagements.models` are sibling packages and have no reason to be
+    on any particular caller's own import path (the CLI's `ensure-space-defaults`,
+    the boot step that calls this in a fresh process, imports only
+    `pigrocrm.core.tenants` -- their tables would silently never be created there
+    otherwise, the exact trap `models_registry.py` exists to close for the per-space
+    `Base`). The two module-level imports above are this function's own equivalent,
+    kept beside the one function that actually calls `create_all` against this
+    metadata."""
     return ensure_sidecar_database(settings, tenants_database_url(settings), TenantsBase.metadata)
 
 
