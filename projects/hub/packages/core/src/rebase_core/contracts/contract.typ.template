@@ -17,8 +17,8 @@
 // the page's top-left corner, which `render.signature_blanks` reads back with
 // `typst query`.
 //
-// The title block carries the echo logo (REB-479), the brand's
-// `echo/echo-ink-watermelon-outlines.png` scaled by `render.py` and copied beside this
+// The title block carries the echo logo (REB-479): the brand's document-size copy,
+// `echo/echo-ink-watermelon-outlines-260.png`, which `render.py` copies beside this
 // source under the name the `echo` variable holds. The running header keeps the words
 // without a picture: the echo has no compact variant, and at 8 pt it would be a smudge.
 
@@ -113,7 +113,7 @@
 #show table.cell.where(y: 0): set text(weight: 500)
 
 #block(below: 1.8em)[
-  #image("$echo$", height: 11mm)
+  #image("$echo$", height: 11mm, alt: "rebase")
   #v(10pt)
   #text(size: 22pt, weight: 500)[$title$]
   $if(subtitle)$

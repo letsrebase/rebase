@@ -147,7 +147,7 @@
         "projects/hub/packages/core/tests/test_contract_render.py",
         "shared/brand/palette.css",
         "shared/brand/fonts/**",
-        "shared/brand/echo/echo-ink-watermelon-outlines.png"
+        "shared/brand/echo/echo-ink-watermelon-outlines-260.png"
       ],
       "why": "Typesets both contracts with pandoc and Typst twice: through the laptop script into the ignored content/contratti/dist/, and through rebase_core.contracts the way the API renders them, the signature query included. Nothing is committed, so nothing can go stale; what this catches is a Markdown edit, a marker or a template change that no longer compiles."
     },
@@ -325,7 +325,7 @@
         "uv.lock",
         "shared/brand/palette.css",
         "shared/brand/fonts/**",
-        "shared/brand/echo/echo-ink-watermelon-outlines.png",
+        "shared/brand/echo/echo-ink-watermelon-outlines-260.png",
         "projects/hub/packages/core/pyproject.toml",
         "projects/hub/packages/core/src/rebase_core/contracts/**"
       ],

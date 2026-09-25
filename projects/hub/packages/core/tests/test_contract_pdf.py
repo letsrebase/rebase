@@ -10,6 +10,7 @@ is `test_contract_render.py`.
 
 import json
 import os
+import struct
 import subprocess
 import sys
 from datetime import date
@@ -196,7 +197,7 @@ def test_the_echo_is_read_from_the_checkout_or_from_the_directory_nix_names(
     it; the Nix `hub-api` package names another brand directory with
     `REBASE_CONTRACTS_BRAND_DIR` (REB-403). `brand` reads the variable once, when it is
     imported, so a fresh interpreter is what shows the second case."""
-    name = Path("echo") / "echo-ink-watermelon-outlines.png"
+    name = Path("echo") / "echo-ink-watermelon-outlines-260.png"
     assert brand.REPO / "shared" / "brand" / name == brand.ECHO
     assert brand.ECHO.is_file()
     printed = subprocess.run(
@@ -207,6 +208,24 @@ def test_the_echo_is_read_from_the_checkout_or_from_the_directory_nix_names(
         check=True,
     ).stdout.strip()
     assert Path(printed) == tmp_path / name
+
+
+def _png_size(path: Path) -> tuple[int, int]:
+    """A PNG's width and height in pixels, from its header chunk."""
+    width, height = struct.unpack(">II", path.read_bytes()[16:24])
+    return width, height
+
+
+def test_the_echo_a_contract_prints_is_the_brands_own_drawing_at_document_size() -> None:
+    """Typst embeds a picture's own pixels, so the contracts take the copy
+    `shared/brand/tools/build-echo.mjs` draws 260 pixels tall, 600 per inch at the 11 mm
+    the title block prints it at, rather than the 2572x1222 file (REB-479). It is the
+    same drawing: the full file's proportions, to within a pixel."""
+    full = brand.REPO / "shared" / "brand" / "echo" / "echo-ink-watermelon-outlines.png"
+    width, height = _png_size(brand.ECHO)
+    full_width, full_height = _png_size(full)
+    assert height == 260
+    assert abs(width - full_width * height / full_height) < 1
 
 
 def test_the_signer_setting_fills_only_rebases_own_fields() -> None:

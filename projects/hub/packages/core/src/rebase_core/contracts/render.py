@@ -4,9 +4,9 @@ The toolchain is PigroCRM's and the guide's: pandoc for Markdown to Typst, Typst
 compile, `--creation-timestamp 0` so the same data give the same bytes. The texts, the
 template and rebase's own defaults are this package's data, so the API image needs
 nothing from `content/` or `tools/`. Every call works in a directory of its own, removed
-when it returns; the static fonts and the scaled echo are the two things shared
-(`brand.built_once`), and the echo is copied into each call's directory, since Typst
-reads a picture only from inside its `--root`.
+when it returns; the static fonts are the one thing shared (`brand.fonts_dir`), and the
+echo is copied into each call's directory, since Typst reads a picture only from inside
+its `--root`.
 
 `signature_blanks` compiles the same source and asks `typst query` for every
 `<signature-blank>` the template left behind: the page and the box, in points from the
@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from rebase_core.contracts.brand import ECHO, built_once, fonts_dir, palette
+from rebase_core.contracts.brand import ECHO, fonts_dir, palette
 from rebase_core.contracts.fields import (
     ContractFailed,
     Value,
@@ -47,10 +47,6 @@ TOOL_TIMEOUT_SECONDS = 60
 # The page the template sets (`paper: "a4"`), in points.
 A4_WIDTH_PT = 595.2756
 A4_HEIGHT_PT = 841.8898
-# The echo in the title block is 11 mm tall (the template's `image`). Typst embeds a
-# picture's own pixels whatever size it prints it at, and the brand's 2572x1222 would add
-# about 250 KB to every contract; 260 pixels tall is 600 per inch at 11 mm, about 60 KB.
-ECHO_HEIGHT_PX = 260
 
 
 @dataclass(frozen=True)
@@ -139,52 +135,13 @@ def company_defaults() -> dict[str, Value]:
     return read_layer(COMPANY_DEFAULTS.read_text(encoding="utf-8"), COMPANY_DEFAULTS.name)
 
 
-def _run(args: list[str], what: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+def _run(args: list[str], what: str) -> subprocess.CompletedProcess[str]:
     try:
-        return subprocess.run(
-            args, input=stdin, capture_output=True, text=True, timeout=TOOL_TIMEOUT_SECONDS
-        )
+        return subprocess.run(args, capture_output=True, text=True, timeout=TOOL_TIMEOUT_SECONDS)
     except FileNotFoundError as exc:
         raise ContractFailed(f"{args[0]} is not on PATH: contracts need pandoc and typst") from exc
     except subprocess.TimeoutExpired as exc:
         raise ContractFailed(f"{what} took longer than {TOOL_TIMEOUT_SECONDS} seconds") from exc
-
-
-def scaled_echo(into: Path) -> None:
-    """The brand's echo at `ECHO_HEIGHT_PX` pixels tall, drawn by Typst's own PNG export
-    on a transparent page the picture's size: the one scaler every machine that renders
-    a contract already has, and the same pixels on every run."""
-    if not ECHO.is_file():
-        raise ContractFailed(f"{ECHO} is missing: the API image copies it from shared/brand/echo")
-    page = (
-        "#set page(width: auto, height: auto, margin: 0pt, fill: none)\n"
-        f'#image("{ECHO.name}", height: {ECHO_HEIGHT_PX}pt)\n'
-    )
-    scaled = _run(
-        [
-            "typst",
-            "compile",
-            "--root",
-            str(ECHO.parent),
-            "--ignore-system-fonts",
-            "--format",
-            "png",
-            # At 72 pixels per inch a point is a pixel.
-            "--ppi",
-            "72",
-            "-",
-            str(into / ECHO.name),
-        ],
-        f"typst scaling {ECHO.name}",
-        stdin=page,
-    )
-    if scaled.returncode != 0:
-        raise ContractFailed(f"typst failed scaling {ECHO.name}:\n{scaled.stderr.strip()}")
-
-
-def echo() -> Path:
-    """The scaled echo, made once per process."""
-    return built_once("echo", (ECHO.name,), scaled_echo) / ECHO.name
 
 
 def _typst_world(workdir: Path) -> list[str]:
@@ -231,7 +188,10 @@ def _typst_source(
     survived(markdown, written, source.name)
     typst, blank = fill(written, checked(dict(data)))
     intermediate.write_text(mark_proposals(typst, source.name, draft), encoding="utf-8")
-    shutil.copyfile(echo(), workdir / ECHO.name)
+    try:
+        shutil.copyfile(ECHO, workdir / ECHO.name)
+    except OSError as exc:
+        raise ContractFailed(f"cannot read {ECHO}: {exc}") from exc
     return intermediate, blank, version, draft
 
 

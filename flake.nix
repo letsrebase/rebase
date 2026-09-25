@@ -308,8 +308,8 @@
                     "$out/share/hub-api/brand/palette.css"
                   install -Dm444 ${./shared/brand/fonts/outfit-variable-latin.woff2} \
                     "$out/share/hub-api/brand/fonts/outfit-variable-latin.woff2"
-                  install -Dm444 ${./shared/brand/echo/echo-ink-watermelon-outlines.png} \
-                    "$out/share/hub-api/brand/echo/echo-ink-watermelon-outlines.png"
+                  install -Dm444 ${./shared/brand/echo/echo-ink-watermelon-outlines-260.png} \
+                    "$out/share/hub-api/brand/echo/echo-ink-watermelon-outlines-260.png"
                 '')
               ];
               nativeBuildInputs = [ pkgs.makeWrapper ];

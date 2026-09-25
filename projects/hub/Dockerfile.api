@@ -41,7 +41,7 @@ COPY projects/hub/packages ./projects/hub/packages
 # `rebase_core.contracts.brand` reads them from: the image mirrors the repository.
 COPY shared/brand/palette.css shared/brand/palette.css
 COPY shared/brand/fonts/outfit-variable-latin.woff2 shared/brand/fonts/outfit-variable-latin.woff2
-COPY shared/brand/echo/echo-ink-watermelon-outlines.png shared/brand/echo/echo-ink-watermelon-outlines.png
+COPY shared/brand/echo/echo-ink-watermelon-outlines-260.png shared/brand/echo/echo-ink-watermelon-outlines-260.png
 COPY projects/hub/apps/api ./projects/hub/apps/api
 COPY projects/hub/apps/mcp ./projects/hub/apps/mcp
 RUN uv sync --frozen --no-dev --package rebase-api --package rebase-mcp

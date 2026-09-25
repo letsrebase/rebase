@@ -23,10 +23,8 @@ from rebase_core.contracts.render import (
     A4_HEIGHT_PT,
     A4_WIDTH_PT,
     DOCUMENTS,
-    ECHO_HEIGHT_PX,
     ContractRenderer,
     company_defaults,
-    echo,
     render,
     signature_blanks,
     text_is_draft,
@@ -172,22 +170,11 @@ def _pictures(pdf: bytes) -> list[list[tuple[int, int]]]:
     return pages
 
 
-def test_the_echo_is_scaled_once_to_the_pixels_the_title_block_needs() -> None:
-    """Typst embeds a picture's own pixels, so the brand's 2572x1222 would weigh on every
-    contract: the renderer scales it once per process, keeping its proportions."""
-    scaled = echo()
-    width, height = _png_size(scaled.read_bytes())
-    source_width, source_height = _png_size(brand.ECHO.read_bytes())
-    assert height == ECHO_HEIGHT_PX
-    assert abs(width - source_width * ECHO_HEIGHT_PX / source_height) < 1
-    assert echo() == scaled
-
-
 def test_the_echo_heads_the_first_page_and_no_other() -> None:
-    """The title block prints the scaled echo (REB-479); the running header on the pages
-    after the first keeps the words and draws no picture, since the echo has no compact
-    variant."""
-    expected = _png_size(echo().read_bytes())
+    """The title block prints the echo's document-size copy (REB-479), embedded as it is;
+    the running header on the pages after the first keeps the words and draws no
+    picture, since the echo has no compact variant."""
+    expected = _png_size(brand.ECHO.read_bytes())
     for document in DOCUMENTS:
         pages = _pictures(render(document, _example()).pdf)
         assert len(pages) >= 2, document
