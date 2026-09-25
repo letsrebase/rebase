@@ -218,6 +218,13 @@ signed on Documenso"); this section is the container's own.
 
 - **Image**: `documenso/documenso:v2.18.0`, pinned by digest, the one phase 1 probed. An
   upgrade is a pull request that moves the pin, after reading the release notes.
+- **Rolling back past this release**: `COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml`
+  lives in `/opt/hub/.env` on the server, not in the checkout, so redeploying an older
+  tag rsyncs `docker-compose.documenso.yml` away while `.env` still names it, and compose
+  refuses to come up. Remove the `COMPOSE_FILE` line from `/opt/hub/.env` before rolling
+  back past this release. `documenso` and `documenso-db` are not stopped by that: they
+  keep running as orphans, unmanaged by the older compose project, until stopped by hand
+  (`docker stop rebase-documenso-1 rebase-documenso-db-1`).
 - **Name and port**: `https://firma.letsrebase.com`, the vhost `deploy/firma.letsrebase.conf`
   (its own certificate) in front of 127.0.0.1:8090.
 - **Data**: its own Postgres, `documenso-db`, on `REBASE_DOCUMENSO_DATA_DIR`
@@ -245,6 +252,15 @@ signed on Documenso"); this section is the container's own.
   the preview's as `https://firma.letsrebase.com`. `docker exec rebase-api-1 uv run
   --no-sync rebase documenso-check` (and `rebase-preview-api-1`) says whether each hub
   reaches Documenso with its token.
+
+  Step 5 of the rollout opens `DOCUMENSO_DISABLE_SIGNUP` for the tens of minutes the two
+  environments' users take to be made, on a name already in certificate transparency
+  logs, so `NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS` (`DOCUMENSO_SIGNUP_DOMAINS` in `.env`,
+  defaulting to `letsrebase.com`) refuses any other domain on the server itself, whether
+  or not the window is open, so an account made in that window cannot outlive it. Check
+  nobody else got in before closing the window: `docker exec rebase-documenso-db-1 psql
+  -U documenso -d documenso -tAc 'SELECT email FROM "User"'` must list exactly the two
+  `@letsrebase.com` addresses above.
 - **What still stops a real signature**: the `rebase-*` fields of `REBASE_SIGNER_JSON`,
   which wait for the SRL (roadmap #284). Until they are there «Invia per la firma»
   refuses with a sentence.

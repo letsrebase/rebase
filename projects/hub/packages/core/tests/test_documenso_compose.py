@@ -56,6 +56,18 @@ def test_nobody_opens_an_account_and_the_webhook_reaches_the_api_by_name() -> No
     assert "NEXT_PUBLIC_UPLOAD_TRANSPORT: database" in text
 
 
+def test_the_signup_window_is_gated_to_letsrebase_com_on_the_server_side() -> None:
+    """REB-393: `DOCUMENSO_DISABLE_SIGNUP` alone leaves a window, while it is `false`,
+    where a name already in certificate transparency logs could sign up; the image's own
+    `NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS` (`isEmailDomainAllowedForSignup`, read from the
+    image, read-only) closes it, since both planned users are `@letsrebase.com`."""
+    text = _documenso()
+    assert (
+        "NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS: ${DOCUMENSO_SIGNUP_DOMAINS:-letsrebase.com}"
+        in text
+    )
+
+
 def test_every_variable_documenso_requires_is_in_the_env_example_and_commented() -> None:
     required = set(re.findall(r"\$\{([A-Z0-9_]+):\?", _documenso()))
     assert required >= {

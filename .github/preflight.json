@@ -331,6 +331,15 @@
       "why": "The one project whose images were verified on no tier before the trunk: ci.yml builds them on push only, so a broken Dockerfile here reached main before anything said so. `-p rebase` because that is the project name the deploy passes (docs/adding-a-project.md section 7) and the name decides the image tags. Serial for the same reason as the other two: a docker build saturates the box. Then it typesets both contracts inside the built image (`rebase contracts-check`), which is the one place pandoc, Typst, fontTools and the brand files all have to be present at once."
     },
     {
+      "id": "hub-documenso-compose",
+      "run": "cd projects/hub && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api db mcp sweep web ' ] && [ \"$(POSTGRES_PASSWORD=x REBASE_DATA_DIR=. REBASE_DOCUMENSO_DATA_DIR=. DOCUMENSO_DB_PASSWORD=x DOCUMENSO_NEXTAUTH_SECRET=x DOCUMENSO_ENCRYPTION_KEY=x DOCUMENSO_ENCRYPTION_SECONDARY_KEY=x DOCUMENSO_SIGNING_PASSPHRASE=x DOCUMENSO_SIGNING_CERT_BASE64=x REBASE_RESEND_API_KEY=x COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml docker compose -p rebase config --services | sort | tr '\\n' ' ')\" = 'api db documenso documenso-db mcp sweep web ' ]",
+      "when": [
+        "projects/hub/docker-compose.yml",
+        "projects/hub/docker-compose.documenso.yml"
+      ],
+      "why": "Nothing in CI or preflight otherwise reads docker-compose.documenso.yml (REB-393): the preview's deploy and CI's hub-images build never set COMPOSE_FILE, so a variable renamed or removed in either file only breaks a real deploy. This asks compose to resolve both shapes with throwaway values -- preview's, the plain file alone, and production's, both files together -- and checks the exact service list each one starts, so a Documenso service left out of the second shape or leaked into the first fails here instead of on the server."
+    },
+    {
       "id": "nix-packages",
       "run": "nix build --no-link .#packages.x86_64-linux.pigrocrm-api .#packages.x86_64-linux.pigrocrm-web .#packages.x86_64-linux.hub-api .#packages.x86_64-linux.hub-web .#packages.x86_64-linux.website",
       "when": [

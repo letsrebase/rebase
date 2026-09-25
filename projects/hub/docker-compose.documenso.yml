@@ -62,8 +62,14 @@ services:
       NEXT_PRIVATE_SMTP_FROM_NAME: rebase
       NEXT_PRIVATE_SMTP_FROM_ADDRESS: ${DOCUMENSO_MAIL_FROM:-ciao@letsrebase.com}
       # Nobody opens an account on the public instance. The rollout opens it for the
-      # minutes the two environments' users take, then closes it again.
+      # minutes the two environments' users take, then closes it again. For that
+      # window a name already in certificate transparency logs is reachable, so the
+      # server itself also refuses a signup outside these domains
+      # (`isEmailDomainAllowedForSignup`, the image's own `packages/lib/constants/auth`):
+      # both planned users are `@letsrebase.com`, and an account made in the window
+      # would otherwise survive the close.
       NEXT_PUBLIC_DISABLE_SIGNUP: ${DOCUMENSO_DISABLE_SIGNUP:-true}
+      NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS: ${DOCUMENSO_SIGNUP_DOMAINS:-letsrebase.com}
       # Production's webhook is `http://api:8000/...`, a name that resolves to a private
       # address: Documenso refuses to call it unless the name is listed (probe § 5).
       NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS: ${DOCUMENSO_WEBHOOK_BYPASS_HOSTS:-api}
