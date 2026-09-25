@@ -266,11 +266,13 @@ test.describe('the gallery renders the system', () => {
     await page.goto('/')
     // The gallery renders two instances (inline, then standalone), so scope to one:
     // the query would otherwise concatenate 4 tiles per instance.
-    const tiles = await page.evaluate(() =>
-      [...document.querySelectorAll('[data-slot="loader"]')[0].querySelectorAll(':scope > span')].map(
+    const tiles = await page.evaluate(() => {
+      const first = document.querySelector('[data-slot="loader"]')
+      if (!first) throw new Error('[data-slot="loader"] is not on the page')
+      return [...first.querySelectorAll(':scope > span')].map(
         (el) => getComputedStyle(el).backgroundColor,
-      ),
-    )
+      )
+    })
     expect(tiles).toEqual([
       rgbOf('prussian-blue'),
       rgbOf('royal-gold'),

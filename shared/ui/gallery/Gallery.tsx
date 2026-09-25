@@ -300,13 +300,16 @@ export function Gallery() {
           note="The brand's own four-tile mark, animated: one tile lit at a time in reading order, an 800ms loop, inert behind prefers-reduced-motion."
         >
           <Row label="inline, size-3 (default)">
-            <span className="inline-flex items-center gap-2 text-sm">
+            <span role="status" className="inline-flex items-center gap-2 text-sm">
               <Loader />
               Caricamento…
             </span>
           </Row>
           <Row label="standalone, size-12">
-            <Loader className="size-12" />
+            <span role="status">
+              <Loader className="size-12" />
+              <span className="sr-only">Caricamento…</span>
+            </span>
           </Row>
         </Section>
 
