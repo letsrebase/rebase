@@ -67,12 +67,18 @@ They are evaluated when the list is shown and again at send time (§ 5.3).
 | State (UI label) | Who | Action measured |
 |---|---|---|
 | `lead` «Lead senza profilo» | a `signups` row whose lower(email) has no non-deleted freelancer card | d, profile created |
-| `scheda_vuota_nuovi` «Scheda vuota, mai entrati» | a card with no CV and no rate or no work mode, and no `logins` row | c, card completed |
+| `scheda_vuota_nuovi` «Scheda vuota, mai entrati» | a card that misses more than the CV among the four fields below, and no `logins` row | c, card completed |
 | `scheda_vuota_entrati` «Scheda vuota, già entrati» | the same card state, with at least one login | c, card completed |
-| `manca_cv` «Manca solo il CV» | a card with rate and work mode and no CV | b, CV uploaded |
-| `completo` «Profilo completo» | a card with CV, rate and work mode | a, entered the area |
+| `manca_cv` «Manca solo il CV» | a card whose only missing field of the four is the CV | b, CV uploaded |
+| `completo` «Profilo completo» | a complete card | a, entered the area |
 | `pigro_vuoto` «Spazio Pigro vuoto» | the owner of a PigroCRM space with no customer (one row per owner, their slugs attached) | f, first customer |
-| `azienda_aperta` «Azienda con richiesta aperta» | the referente of a company request in `nuovo`, `contattato` or `in_corso` | e, request updated |
+| `azienda_aperta` «Azienda con richiesta aperta» | the referente of one or more company requests in `nuovo`, `contattato` or `in_corso` (one row per person, every open request attached) | e, request updated |
+
+A complete card is what `_is_complete` says (`rebase_core/schemas.py`): CV, rate,
+position and work mode all there. It is the one definition the admin's «Da
+completare», the member area's notice and the welcome mail already read, and a campaign
+never derives its own. `manca_cv` is a card where the CV is the only one of the four
+missing; the card states take everything else.
 
 «Wizard iniziato», a group of the second wave, is not a state: the hub never learns
 that a wizard was started, since only the browser knows (§ 11).
@@ -112,11 +118,15 @@ Migration 0020, one commit of its own.
 - `codice`: the 8-hex person code the waves used (sha1 of the address), so a person
   reads the same across campaigns and PostHog.
 - `prima`: JSONB, the state the action is measured against, taken when the row is
-  written (has a card, has a CV, card complete, company `updated_at`, Pigro customers).
+  written: has a card, has a CV, card complete, Pigro customers, and for a referente
+  every open request's id with its `updated_at`.
 - `stato`: `in_coda`, `inviata`, `saltata`, `fallita`; `motivo` (why skipped or failed);
   `tentativi`.
 - `resend_id` (unique, nullable), `inviata_at`, `consegnata_at`, `rimbalzata_at`,
-  `primo_clic_at`, `clic` (count), `reclamo_at`.
+  `primo_clic_at`, `reclamo_at`: first times only, never counts, so a webhook event
+  delivered twice changes nothing.
+- `entrato_at`, `azione_at`: when the person entered and did the action, written once
+  (§ 6.2).
 - `disiscrizione_hash`: the sha256 of the one-click token (§ 7), the raw value only in
   the mail, as the magic links do.
 
@@ -125,9 +135,9 @@ Migration 0020, one commit of its own.
   `campaign_id` (nullable).
 
 No events table. The webhook (§ 6.1) writes the first delivery, bounce, click and
-complaint onto the recipient row and counts clicks, and repeating an event changes
-nothing. The actions (§ 6.2) are read live from the tables that already record them,
-never copied.
+complaint onto the recipient row, and repeating an event changes nothing. The page
+shows «clicked», never a number of clicks. The actions (§ 6.2) are read from the
+tables that already record them, and only their first time is kept.
 
 ## 4. Admin screens
 
@@ -189,14 +199,19 @@ delivered, clicked, entered and action done. Newest first; a draft reads «bozza
 - The footer: «Non vuoi più ricevere queste mail? Disiscriviti» (§ 7).
 - The headers: `List-Unsubscribe: <https://letsrebase.com/api/hub/campagne/disiscrizione?t=...>`
   and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`.
-- Resend tags `campaign=<slug>`, `azione=<azione>`, `kind=real|test`.
+- Resend tags `campaign=<slug>`, `azione=<azione>`, `kind=real|test` and
+  `r=<recipient id>`, the last so the webhook finds its row without waiting for the
+  `resend_id` to be committed (§ 6.1).
 - Text is escaped. No HTML is accepted from the admin.
 
 ### 5.2 The test
 
-To the signed-in admin's address, with the subject prefixed «[prova]», tagged
-`kind=test` and rendered for the first recipient but with the admin's own code. It
-never writes a recipient row and never counts in the outcome.
+To the signed-in admin's address, with the subject prefixed «[prova]» and tagged
+`kind=test`. It is rendered for the admin, never for a recipient: the admin's own first
+name and code, and for a `pigro` button the first space the admin owns, or PigroCRM's
+front page when there is none, so no test link opens a member's space. The preview on
+screen shows the first recipient instead, and links nowhere. A test never writes a
+recipient row and never counts in the outcome.
 
 ### 5.3 The checks at send time
 
@@ -206,21 +221,28 @@ when:
 - it hard-bounced in any campaign;
 - another campaign reached it in the last `campaign_gap_days` (default 3);
 - it already did this campaign's action since `prima` was taken («già fatto»), the rule
-  the second wave's script applied.
+  the second wave's script applied;
+- for `fonte = stato` or `filtri`, it no longer belongs to the state or the filters
+  («non più in lista»): a rate cleared after a `manca_cv` list was frozen means the
+  mail would be wrong, so it does not leave. A `lista` is not re-checked this way,
+  since the person was chosen by name.
 
 ### 5.4 The loop
 
 A compose service `campaigns`, the same image as the API and the same shape as `sweep`
 (REB-391): `while :; do sleep 60; uv run --no-sync rebase campaigns-tick; done`, with
 `init: true`. Each tick:
-- takes the campaigns `programmata` with `programmata_per <= now()` under
-  `SELECT ... FOR UPDATE SKIP LOCKED` and moves them to `in_invio`;
+- takes, under `SELECT ... FOR UPDATE SKIP LOCKED`, the campaigns `programmata` with
+  `programmata_per <= now()`, and moves them to `in_invio`. It also takes the ones
+  already `in_invio` with rows still `in_coda`, so a send cut short by a deploy or a
+  restart resumes on the next tick instead of staying stuck;
 - sends their `in_coda` rows through Resend's batch endpoint, 50 at a time, each call
   with an `Idempotency-Key` of the campaign id and the batch's first recipient id, so a
   tick that dies between Resend's answer and the commit cannot send twice;
 - records the `resend_id` per row; a failed call leaves its rows `in_coda` with
   `tentativi + 1`, and the third failure marks them `fallita`;
-- moves the campaign to `inviata` when no row is left `in_coda`.
+- moves the campaign to `inviata` when no row is left `in_coda`;
+- stamps the outcome of campaigns sent in the last 30 days (§ 6.2).
 
 That the batch endpoint takes tags, custom headers and an `Idempotency-Key` is checked
 against Resend's reference when the plan is written. If one of the three is missing
@@ -240,16 +262,27 @@ does today on the preview.
   `REBASE_RESEND_WEBHOOK_SECRET`. It refuses a timestamp more than five minutes off
   with 401, and a bad signature with 401. An unset secret answers 503, like the
   Documenso webhook.
-- `email.delivered`, `email.bounced`, `email.clicked` and `email.complained` update the
-  row whose `resend_id` is `data.email_id`. A complaint also writes an opt-out
+- `email.delivered`, `email.bounced`, `email.clicked` and `email.complained` find their
+  row by the `r` tag the mail was sent with (§ 5.1), and by `resend_id` when the payload
+  carries no tags. So an event that reaches the hub before the tick has committed the
+  `resend_id` still finds its row.
+- Each event writes its first time only (`consegnata_at`, `rimbalzata_at`,
+  `primo_clic_at`, `reclamo_at`). A complaint also writes an opt-out
   (`fonte = reclamo`).
-- Any other id (a magic link, a welcome mail) and any other event type answer 200 and
-  change nothing, so Resend stops retrying.
+- An event tagged with a campaign whose row cannot be found answers 503, so Resend
+  retries it on its own schedule. It never answers 200 and loses a bounce.
+- An untagged event with an unknown id (a magic link, a welcome mail) answers 200 and
+  changes nothing. So does any other event type.
+
+That Resend's event payload carries the mail's tags gets checked against its reference
+when the plan is written. If it does not, an event with an unknown id is kept for a day
+in a small `campaign_unmatched_events` table. The tick matches it as soon as it commits
+the `resend_id` it belongs to, so nothing that arrives early is lost.
 
 The webhook is created once per environment in Resend, pointing at that environment's
 URL (§ 8).
 
-### 6.2 Actions a to e: read live from the hub
+### 6.2 Actions a to e: read from the hub, stamped once
 
 For a sent row, with `t0 = inviata_at`:
 - **a, `entrato`**: a `logins` row of the person's user after `t0`. «Dalla mail» when
@@ -258,12 +291,23 @@ For a sent row, with `t0 = inviata_at`:
 - **c, `scheda_completa`**: the card is complete now and was not in `prima`.
 - **d, `profilo_creato`**: a card exists for the address, created after `t0`. «Dalla
   mail» when its stored `utm_campaign` is the slug.
-- **e, `richiesta_aggiornata`**: the company request's `updated_at` is later than
-  `prima`'s and `t0`.
+- **e, `richiesta_aggiornata`**: any of the open requests listed in `prima` has an
+  `updated_at` later than its value there and than `t0`. One row per referente
+  measures all of that person's requests.
 
-«When» is the first comment the person wrote on their own card after `t0` (the member
-service writes one on every self-edit), or the row's own timestamp for d and e. The
-queries run per campaign page, over at most a few hundred rows.
+The tick (§ 5.4) evaluates the sent rows of campaigns sent in the last 30 days. It
+writes `entrato_at` and `azione_at` the first time it finds them, and never again.
+Where the source has its own time, that time is written:
+- a, the login's `logged_at`;
+- b, the «CV caricato dalla persona» comment the member service writes;
+- d, the card's `created_at`;
+- e, the earliest qualifying `updated_at`;
+- f, the CRM's `first_customer_at`.
+
+Only c, a card becoming complete, has no record of the edit that completed it (the
+thread lists every self-edit, not the one that tipped the card). Its `azione_at` is
+the tick that first saw the card complete, so it is precise to the minute. The page
+reads the stamped columns and runs no action query itself.
 
 ### 6.3 Action f: the CRM's usage endpoint
 
@@ -275,10 +319,11 @@ ran by hand. The hub asks it:
 - for the `pigro_vuoto` state;
 - for `prima`;
 - for the send-time check;
-- for the campaign page, cached for 60 seconds.
+- for the tick's stamping, at most once every ten minutes.
 
 **f, `pigro_cliente`**: `customers > 0` now, with `first_customer_at` after `t0`. When
-the CRM does not answer, the page says so on that column instead of showing zero.
+the CRM does not answer, the tick leaves f unstamped and tries again. The page says
+«Pigro non raggiungibile» on that column rather than showing no one.
 
 ## 7. Unsubscribe and «non scrivere mai»
 
@@ -349,10 +394,12 @@ the CRM does not answer, the page says so on that column instead of showing zero
    - Migration 0020 and the states except `pigro_vuoto`.
    - Filters, the four steps, the test, «Invia adesso» and «Programma».
    - The `campaigns` loop, the send-time checks, unsubscribe and «non scrivere mai».
-   - The list page, and the campaign page with sent, skipped and failed.
+   - The Resend webhook for delivery, bounces and complaints, here and not later: the
+     hard-bounce exclusion of § 5.3 needs it from the first campaign on.
+   - The list page, and the campaign page with sent, skipped, failed, delivered and
+     bounced.
 2. **Read the outcome.**
-   - The Resend webhook with bounces and complaints feeding the exclusions.
-   - Actions a to e.
+   - Clicks, and actions a to e with the tick's stamping.
    - The full campaign page and «Riscrivi a chi non ha fatto niente».
    - Two read-only hub MCP tools, `list_campagne` and `get_campagna`, so an agent
      reports without a terminal.
