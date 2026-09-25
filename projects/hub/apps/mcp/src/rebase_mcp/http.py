@@ -30,9 +30,11 @@ from starlette.types import ASGIApp
 
 from rebase_core.admin_tokens import INVALID_TOKEN, AdminRead, AdminTokenService, is_token
 from rebase_core.config import Settings, get_settings
+from rebase_core.contracts.render import ContractRenderer
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.errors import DomainError
 from rebase_core.http import HttpCall, urllib_call
+from rebase_core.signing import signing_from_settings
 from rebase_mcp.actor import ADMIN_STATE_KEY, AdminFromRequest, request_admin
 from rebase_mcp.server import build_server
 
@@ -65,12 +67,15 @@ class McpHttpApp:
 
     def _server(self) -> ASGIApp:
         if self._app is None:
+            renderer = ContractRenderer()
             server = build_server(
                 self._factory(),
                 request_admin,
                 settings=self._settings,
                 http=self._http,
                 middleware=[AdminFromRequest()],
+                renderer=renderer,
+                signing=signing_from_settings(self._settings, renderer),
             )
             self._starlette = server.streamable_http_app(
                 streamable_http_path=MCP_PATH,

@@ -14,8 +14,8 @@ surface.
 | `lockup.svg` | The mark at cap height, the word, then the graft | The same, plus the social pictures |
 | `wordmark-paper.svg`, `lockup-paper.svg` | The same two on a dark ground | The landing's dark bands, a dark slide |
 | `tools/build-wordmark.py` | How the four SVGs were drawn, and the only way to redraw them | Nobody at build time: run it by hand when the face changes |
-| `echo/` | The echo logo: «rebase» solid under three outlined copies of itself, six colourways as PNG | Covers, slides, social pictures; nothing yet at header size |
-| `tools/build-echo.mjs` | How the six PNGs were drawn, and the only way to redraw them | Nobody at build time: `pnpm --filter @rebase/brand build:echo` |
+| `echo/` | The echo logo: «rebase» solid under three outlined copies of itself, six colourways as PNG, and the default again at document size | Covers, slides, social pictures, the signing site's branding and the contract PDFs' title block; nothing yet at header size |
+| `tools/build-echo.mjs` | How the seven PNGs were drawn, and the only way to redraw them | Nobody at build time: `pnpm --filter @rebase/brand build:echo` |
 | `print/` | The business card, the stickers and the temporary tattoo, as HTML in millimetres with a render script each (`print/README.md`) | Nobody at build time: run by hand for the print shop |
 
 ## Why a package rather than a file in one of the projects
@@ -106,16 +106,30 @@ branch being replayed, which the plain wordmark does not say.
 | `echo/echo-watermelon.png` | light grounds, one colour | `--color-watermelon` | `--color-watermelon` |
 | `echo/echo-watermelon-white-outlines.png` | dark grounds | `--color-watermelon` | white |
 | `echo/echo-black.png` | print, and a light ground that is not ours, one colour | black | black |
+| `echo/echo-ink-watermelon-outlines-260.png` | the default at document size, 547x260: the contract PDFs' title block | `--color-prussian-blue` | `--color-watermelon` |
 
-All six are transparent, 2572x1222, and drawn by `tools/build-echo.mjs` from
-`palette.css` and the committed woff2, so a change of colour or of face is a redraw and
-never an edit in a design tool. The script's header lists the rules that make it look
-right (the outline traced from the letter's edge rather than stroked, and what a letter
-covers), and a directory as its argument renders there without touching the committed
-files. Glyph rasterisation differs between macOS and Linux, so a redraw on another
-machine is a binary diff with no visible change: quote the chromium line it prints.
+The six colourways are transparent, 2572x1222. The document-size copy is the default's
+own screenshot scaled to 260 pixels tall in the same page, 600 per inch at the 11 mm a
+contract prints it at: Typst embeds a picture's own pixels whatever size it prints it
+at, so the full file would add about 250 KB to every contract. All seven are drawn by
+`tools/build-echo.mjs` from `palette.css` and the committed woff2, so a change of colour
+or of face is a redraw and never an edit in a design tool. The script's header lists the
+rules that make it look right (the outline traced from the letter's edge rather than
+stroked, and what a letter covers), and a directory as its argument renders there
+without touching the committed files. Glyph rasterisation differs between macOS and
+Linux, so a redraw on another machine is a binary diff with no visible change: quote the
+chromium line it prints.
 
 Two things are still open on ORB-199, deliberately not settled here. The echo is set in
 Outfit 700, while the wordmark above is Space Grotesk 700 (ORB-197), so one of the two
 faces has to give. And the stack is a picture: at the 18px of the header chip the copies
 crowd the word, so the lockup, the header and an avatar need a compact variant.
+
+Where it goes (Ivan, 2026-09-25: «il logo è sbagliato nel brand è quello con l'eco quello
+giusto», then «Solo firma e documenti»): the signing surfaces and the documents carry the
+echo; the site's header, the hub's header and the business cards keep the lockup. Today
+that is the signing site's branding (Documenso, `projects/hub/AGENTS.md`), with
+`echo-ink-watermelon-outlines.png`, and the contract PDFs' title block, 11 mm tall, with
+`echo-ink-watermelon-outlines-260.png`. A contract's running header keeps the word without
+the tiles until a compact variant exists. The guide's PDF, locked on its own, still prints
+the four-tile mark.

@@ -290,7 +290,7 @@ const adminFreelanceContracts = createRoute({
   path: '/freelance/$id/contracts',
   component: AdminContratti,
 })
-// REB-387: the five-step «Crea match», from the talent row's menu and the contracts page.
+// REB-387, REB-476: the three-step «Crea match», from the talent row's menu and the contracts page.
 const adminFreelanceMatchNew = createRoute({
   getParentRoute: () => adminArea,
   path: '/freelance/$id/match/new',
@@ -443,5 +443,10 @@ export const router = createRouter({ routeTree, basepath: '/hub' })
 declare module '@tanstack/react-router' {
   interface Register {
     router: typeof router
+  }
+  interface HistoryState {
+    /** A sentence the page navigated to shows on arrival: «Crea match» leaves the send
+     *  report's, or that the draft is saved, for «Match e contratti» (REB-476). */
+    notice?: string
   }
 }

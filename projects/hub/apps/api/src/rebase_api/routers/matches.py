@@ -22,6 +22,7 @@ from rebase_core.contract_schemas import (
     FiscalData,
     FiscalRead,
     FreelancerContracts,
+    MatchCheck,
     MatchCreate,
     MatchList,
     MatchPrefill,
@@ -33,18 +34,16 @@ from rebase_core.contracts.render import Renderer
 from rebase_core.errors import NotFound
 from rebase_core.fiscal import FiscalService
 from rebase_core.matches import (
-    ENTITY,
     LIST_LIMIT_DEFAULT,
     LIST_LIMIT_MAX,
     MatchService,
-    require_live_freelancer,
+    require_live_document,
+    require_live_match,
 )
-from rebase_core.models import ContractDocument, Match
 from rebase_core.search import SEARCH_MAX_LENGTH
 
 router = APIRouter(prefix="/api/hub", tags=["hub-admin"])
 
-DOCUMENT_ENTITY = "documento"
 NO_SIGNED_COPY = "Questo documento non ha ancora una copia firmata."
 
 Limit = Annotated[int, Query(ge=1, le=LIST_LIMIT_MAX)]
@@ -59,16 +58,6 @@ def _writing(session: Session, settings: Settings, renderer: Renderer) -> MatchS
     return MatchService(session, renderer, signer_data(settings.signer_json))
 
 
-def _document_guard(session: Session, document_id: UUID) -> ContractDocument:
-    """404 when the document itself is gone or its freelancer is soft-deleted, before a
-    signing action -- or `download_contract` -- reaches the service."""
-    document = session.get(ContractDocument, document_id)
-    if document is None:
-        raise NotFound(DOCUMENT_ENTITY, document_id)
-    require_live_freelancer(session, document.freelancer_id, DOCUMENT_ENTITY, document_id)
-    return document
-
-
 @router.get("/freelancers/{freelancer_id}/fiscal", response_model=FiscalRead | None)
 def get_fiscal(_: AdminDep, session: SessionDep, freelancer_id: UUID) -> FiscalRead | None:
     return FiscalService(session).get(freelancer_id)
@@ -78,7 +67,8 @@ def get_fiscal(_: AdminDep, session: SessionDep, freelancer_id: UUID) -> FiscalR
 def save_fiscal(
     admin: AdminDep, session: SessionDep, freelancer_id: UUID, payload: FiscalData
 ) -> FiscalRead:
-    """Step 2 of «Crea match» and the form on «Match e contratti»: saved for next time."""
+    """«Chi e per chi», step 1 of «Crea match», and the form on «Match e contratti»:
+    saved for next time."""
     return FiscalService(session).save(freelancer_id, payload, admin.id)
 
 
@@ -106,9 +96,21 @@ def preview_match_document(
     payload: MatchCreate,
     documento: Literal["lettera", "quadro"] = "lettera",
 ) -> Response:
-    """Step 5's preview: one document, typeset now, saved nowhere, numbered never."""
+    """The previews of «Controlla e invia», step 3 of «Crea match»: one document,
+    typeset now, saved nowhere, numbered never."""
     pdf = _writing(session, settings, renderer).preview(freelancer_id, payload, documento)
     return pdf_response(pdf.filename, pdf.content)
+
+
+@router.post("/freelancers/{freelancer_id}/matches/check", response_model=MatchCheck)
+def check_match(
+    _: AdminDep, session: SessionDep, freelancer_id: UUID, payload: MatchCreate
+) -> MatchCheck:
+    """«Controlla e invia», step 3 of «Crea match» (REB-476): what saving would do, in
+    sentences, with nothing written and no number taken. 422 naming the field as
+    `create` does, `company_id` for a closed request; missing tax data are reported
+    (`dati_fiscali_mancanti`), not refused."""
+    return MatchService(session).check(freelancer_id, payload)
 
 
 @router.post(
@@ -124,7 +126,7 @@ def create_match(
     freelancer_id: UUID,
     payload: MatchCreate,
 ) -> MatchRead:
-    """«Salva come bozza»: the draft match with its numbered letter and, when needed,
+    """«Salva senza inviare»: the draft match with its numbered letter and, when needed,
     the framework agreement. 422 naming `fiscale` without tax data, `company_id` for a
     closed request. `payload.id`, when given, makes a retry idempotent (REB-406): the
     match already written under it comes back instead of a second one, and the same id
@@ -150,9 +152,8 @@ def list_matches(
 
 @router.get("/matches/{match_id}", response_model=MatchRead)
 def get_match(_: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
-    match = MatchService(session).get(match_id)
-    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
-    return match
+    require_live_match(session, match_id)
+    return MatchService(session).get(match_id)
 
 
 @router.post("/matches/{match_id}/cancel", response_model=MatchRead)
@@ -161,19 +162,13 @@ def cancel_match(
 ) -> MatchRead:
     """A draft; or a match in signature, whose letter's envelope is cancelled on
     Documenso too (REB-407)."""
-    match = session.get(Match, match_id)
-    if match is None:
-        raise NotFound(ENTITY, match_id)
-    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    require_live_match(session, match_id)
     return signing(session).cancel_match(match_id, admin.id)
 
 
 @router.post("/matches/{match_id}/close", response_model=MatchRead)
 def close_match(admin: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
-    match = session.get(Match, match_id)
-    if match is None:
-        raise NotFound(ENTITY, match_id)
-    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    require_live_match(session, match_id)
     return MatchService(session).close(match_id, admin.id)
 
 
@@ -185,10 +180,7 @@ def send_match(
     freelancer gets its mail; a letter whose framework agreement is not signed yet waits
     for it. 503 when this environment cannot sign, 502 when Documenso refuses, 409 for a
     draft text or a match with nothing left to send."""
-    match = session.get(Match, match_id)
-    if match is None:
-        raise NotFound(ENTITY, match_id)
-    require_live_freelancer(session, match.freelancer_id, ENTITY, match_id)
+    require_live_match(session, match_id)
     return signing(session).send_match(match_id, admin.id)
 
 
@@ -198,7 +190,7 @@ def refresh_contract(
 ) -> ContractDocumentRead:
     """«Aggiorna stato»: what Documenso says about the envelope, applied as the webhook
     would, and whatever a signature still leaves to do (REB-407)."""
-    _document_guard(session, document_id)
+    require_live_document(session, document_id)
     return signing(session).refresh(document_id)
 
 
@@ -207,7 +199,7 @@ def resend_contract(
     admin: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
 ) -> ContractDocumentRead:
     """«Reinvia email»: the signing mail again, for a document still waiting."""
-    _document_guard(session, document_id)
+    require_live_document(session, document_id)
     return signing(session).resend_mail(document_id, admin.id)
 
 
@@ -216,7 +208,7 @@ def cancel_contract(
     admin: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
 ) -> ContractDocumentRead:
     """«Annulla» on a framework agreement not signed yet; a letter goes with its match."""
-    _document_guard(session, document_id)
+    require_live_document(session, document_id)
     return signing(session).cancel_document(document_id, admin.id)
 
 
@@ -225,7 +217,7 @@ def record_contract_notice(
     admin: AdminDep, session: SessionDep, signing: SigningDep, document_id: UUID
 ) -> ContractDocumentRead:
     """«Registra disdetta» on an active framework agreement."""
-    _document_guard(session, document_id)
+    require_live_document(session, document_id)
     return signing(session).record_notice(document_id, admin.id)
 
 
@@ -237,7 +229,7 @@ def download_contract(
     `firmato=true`, there is no signed copy yet -- in plain Italian, since the core's
     own sentence for that last case ("documento firmato ... non trovato") reads oddly
     to an admin."""
-    _document_guard(session, document_id)
+    require_live_document(session, document_id)
     try:
         pdf = MatchService(session).document_pdf(document_id, signed=firmato)
     except NotFound as exc:

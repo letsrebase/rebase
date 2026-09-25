@@ -12,9 +12,11 @@ import sys
 
 from rebase_core.admin_tokens import AdminTokenService
 from rebase_core.config import get_settings
+from rebase_core.contracts.render import ContractRenderer
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.errors import DomainError
 from rebase_core.http import urllib_call
+from rebase_core.signing import signing_from_settings
 from rebase_mcp.server import build_server
 
 TOKEN_VARIABLE = "REBASE_MCP_TOKEN"
@@ -35,7 +37,15 @@ def main() -> int:
         return 1
     finally:
         session.close()
-    build_server(factory, lambda: admin, settings=settings, http=urllib_call).run("stdio")
+    renderer = ContractRenderer()
+    build_server(
+        factory,
+        lambda: admin,
+        settings=settings,
+        http=urllib_call,
+        renderer=renderer,
+        signing=signing_from_settings(settings, renderer),
+    ).run("stdio")
     return 0
 
 

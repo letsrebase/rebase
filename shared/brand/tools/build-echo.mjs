@@ -6,8 +6,14 @@
  * Not part of any build, and run by hand: `pnpm --filter @rebase/brand build:echo`.
  * The PNGs are committed, so a surface that shows the logo never waits on a render and
  * the file that ships is the file somebody looked at. A directory given as the first
- * argument receives the six files instead, so what this draws today can be compared
- * with what is committed without overwriting it.
+ * argument receives the files instead, so what this draws today can be compared with
+ * what is committed without overwriting it.
+ *
+ * Besides the six, the default variant gets a document-size copy, 260px tall
+ * (`DOCUMENT_COPIES`): the contract PDFs print the echo 11 mm tall, 600 pixels per inch,
+ * and Typst embeds a picture's own pixels whatever size it prints it at, so the full
+ * file would add about 250 KB to every contract (REB-479). The copy is the full
+ * screenshot scaled down in the same page, so it can never show a different drawing.
  *
  * The colours come out of `palette.css` and the face out of `fonts/`, never restated
  * here. The two literals are white and black, which the palette does not carry
@@ -57,6 +63,11 @@ export const VARIANTS = [
   { file: 'echo-watermelon.png', word: watermelon, outline: watermelon, ground: 'light' },
   { file: 'echo-watermelon-white-outlines.png', word: watermelon, outline: white, ground: 'dark' },
   { file: 'echo-black.png', word: black, outline: black, ground: 'light' },
+]
+
+/** Smaller copies of a variant, for surfaces that print it small: `height` in pixels. */
+export const DOCUMENT_COPIES = [
+  { from: 'echo-ink-watermelon-outlines.png', file: 'echo-ink-watermelon-outlines-260.png', height: 260 },
 ]
 
 function markup({ word, outline }) {
@@ -208,10 +219,36 @@ for (const variant of VARIANTS) {
   page.on('pageerror', (error) => console.error(error.message))
   await page.setContent(markup(variant), { waitUntil: 'load' })
   await page.evaluate(() => window.drawn)
+  const png = await page.locator('#logo').screenshot({ omitBackground: true })
   // Snyk Code javascript/PT here is a false positive: a developer's script, writing
   // where the developer running it asks it to.
-  writeFileSync(join(out, variant.file), await page.locator('#logo').screenshot({ omitBackground: true }))
-  await page.close()
+  writeFileSync(join(out, variant.file), png)
   console.log(`${variant.file}: chromium ${engine} on ${process.platform} -> ${out}`)
+  for (const copy of DOCUMENT_COPIES.filter((c) => c.from === variant.file)) {
+    // The browser's own high-quality resize, on premultiplied pixels so the transparent
+    // ground does not darken the edges, then written back out as a PNG.
+    const small = await page.evaluate(
+      async ({ source, height }) => {
+        const bytes = Uint8Array.from(atob(source), (c) => c.charCodeAt(0))
+        const full = await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
+        const width = Math.round((full.width * height) / full.height)
+        const scaled = await createImageBitmap(full, {
+          resizeWidth: width,
+          resizeHeight: height,
+          resizeQuality: 'high',
+          premultiplyAlpha: 'premultiply',
+        })
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        canvas.getContext('2d').drawImage(scaled, 0, 0)
+        return canvas.toDataURL('image/png').split(',')[1]
+      },
+      { source: png.toString('base64'), height: copy.height },
+    )
+    writeFileSync(join(out, copy.file), Buffer.from(small, 'base64'))
+    console.log(`${copy.file}: ${copy.height}px tall from ${copy.from} -> ${out}`)
+  }
+  await page.close()
 }
 await browser.close()
