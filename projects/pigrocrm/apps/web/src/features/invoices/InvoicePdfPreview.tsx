@@ -1,7 +1,8 @@
 import { FileText } from 'lucide-react'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useRef } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { toProblem } from '@/lib/api'
+import { useCan } from '@/lib/auth'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { useInvoicePdf, type Invoice } from './queries'
 
@@ -14,8 +15,10 @@ import { useInvoicePdf, type Invoice } from './queries'
  * not carry the tenant prefix and the refresh, and the route answers
  * `Content-Disposition: attachment`, which a frame would turn into a download.
  *
- * The object URL is made here from the cached Blob and revoked when this component
- * leaves: cached in the query instead, it would come back revoked on the next mount.
+ * The object URL is made here from the cached Blob and revoked when the frame leaves:
+ * cached in the query instead, it would come back revoked on the next mount. It is made
+ * in `PdfFrame`'s effect, after the render commits, never during a render: a render
+ * React throws away runs no cleanup, so a URL made there would never be revoked.
  *
  * Only a PDF reaches the frame (REB-463). The Blob's type is the response's
  * `Content-Type`, which is the current version's own, and anyone who may write can add
@@ -28,13 +31,6 @@ import { useInvoicePdf, type Invoice } from './queries'
 export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
   const pdf = useInvoicePdf(invoice)
   const blob = pdf.data
-  const notPdf = blob !== undefined && !isPdf(blob)
-  // Derived from the bytes, revoked when they change or the component leaves.
-  const url = useMemo(() => (blob && isPdf(blob) ? URL.createObjectURL(blob) : undefined), [blob])
-  useEffect(() => {
-    if (!url) return
-    return () => URL.revokeObjectURL(url)
-  }, [url])
 
   const empty = invoice.pdf_document_id === null
   return (
@@ -58,27 +54,36 @@ export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
             <QueryErrorBanner error={pdf.error} />
           </div>
         )
-      ) : notPdf ? (
-        <NotPdf invoice={invoice} />
-      ) : !url ? (
+      ) : !blob ? (
         <>
           <p className="sr-only">Caricamento del PDF…</p>
           <Skeleton className="m-4 flex-1" />
         </>
+      ) : !isPdf(blob) ? (
+        <NotPdf invoice={invoice} />
       ) : (
-        <iframe
-          title={`Anteprima PDF ${invoice.tipo === 'proforma' ? 'proforma' : 'fattura'}`}
-          // A hint for the viewer's chrome: Chromium honours it, Firefox and Safari
-          // ignore it. The bar's own «PDF» button is the download either way.
-          // Snyk Code flags this as javascript/DOMXSS. It was real until REB-463: an
-          // XHTML version of the invoice's document rendered here as the app. Now `url`
-          // only exists for an application/pdf Blob (`isPdf` below).
-          src={`${url}#toolbar=0&navpanes=0`}
-          className="h-full w-full flex-1 border-0"
-        />
+        <PdfFrame blob={blob} title={`Anteprima PDF ${invoice.tipo === 'proforma' ? 'proforma' : 'fattura'}`} />
       )}
     </aside>
   )
+}
+
+/** Only ever given an `application/pdf` Blob: the caller checks `isPdf` first. */
+function PdfFrame({ blob, title }: { blob: Blob; title: string }) {
+  const frame = useRef<HTMLIFrameElement>(null)
+  useEffect(() => {
+    const node = frame.current
+    if (!node) return
+    const url = URL.createObjectURL(blob)
+    // A hint for the viewer's chrome: Chromium honours it, Firefox and Safari ignore
+    // it. The bar's own «PDF» button is the download either way.
+    // Snyk Code flags this as javascript/DOMXSS. It was real until REB-463: an XHTML
+    // version of the invoice's document rendered here as the app. Now only an
+    // application/pdf Blob reaches this component.
+    node.src = `${url}#toolbar=0&navpanes=0`
+    return () => URL.revokeObjectURL(url)
+  }, [blob])
+  return <iframe ref={frame} title={title} className="h-full w-full flex-1 border-0" />
 }
 
 /**
@@ -105,16 +110,21 @@ function Empty({ invoice }: { invoice: Invoice }) {
  * (`invoice_artifact <uuid>#pdf not found`, `document_blob <key> not found`), so this says
  * it in Italian instead (REB-168), in the same voice as `Empty`, and names «Rigenera
  * documenti» only where it is on the page: an issued fattura of ours, since that button
- * repairs a lost file with identical bytes. A proforma's «Genera PDF proforma» is not
- * shown while the row carries an id, and an imported invoice has no rendering of ours.
+ * repairs a lost file with identical bytes, and only to a role that has it (REB-294
+ * hides it from a readonly one, and `InvoiceActions` words it the same way). A
+ * proforma's «Genera PDF proforma» is not shown while the row carries an id, and an
+ * imported invoice has no rendering of ours.
  */
 function Missing({ invoice }: { invoice: Invoice }) {
+  const regenerate = useRegenerateHint(invoice)
   const text =
     invoice.tipo === 'proforma'
       ? 'Il PDF di questa proforma non è disponibile.'
-      : invoice.stato === 'emessa' && invoice.importata_da == null
+      : regenerate === 'press'
         ? 'Il PDF di questa fattura non è disponibile. «Rigenera documenti» lo genera di nuovo.'
-        : 'Il PDF di questa fattura non è disponibile.'
+        : regenerate === 'role'
+          ? 'Il PDF di questa fattura non è disponibile. Si genera di nuovo con «Rigenera documenti», che il tuo ruolo non può usare.'
+          : 'Il PDF di questa fattura non è disponibile.'
   return <Notice text={text} />
 }
 
@@ -125,10 +135,28 @@ function Missing({ invoice }: { invoice: Invoice }) {
  * the document's next version; elsewhere nothing on the page makes one.
  */
 function NotPdf({ invoice }: { invoice: Invoice }) {
+  const regenerate = useRegenerateHint(invoice)
   const which = invoice.tipo === 'proforma' ? 'questa proforma' : 'questa fattura'
   const why = `Il file archiviato per ${which} non è un PDF, quindi l’anteprima non lo mostra.`
+  const how =
+    regenerate === 'press'
+      ? ' «Rigenera documenti» genera di nuovo il PDF.'
+      : regenerate === 'role'
+        ? ' Si genera di nuovo con «Rigenera documenti», che il tuo ruolo non può usare.'
+        : ''
+  return <Notice text={why + how} />
+}
+
+/**
+ * Whether «Rigenera documenti» is the way out of a missing or wrong file: `press` when
+ * it is on this person's bar, `role` when it would be but their role hides it, `null`
+ * when it is on nobody's bar (a proforma, a draft, an imported fattura).
+ */
+function useRegenerateHint(invoice: Invoice): 'press' | 'role' | null {
+  const mayProduce = useCan('produce_invoice_artifacts')
   const ours = invoice.tipo !== 'proforma' && invoice.stato === 'emessa' && invoice.importata_da == null
-  return <Notice text={ours ? `${why} «Rigenera documenti» genera di nuovo il PDF.` : why} />
+  if (!ours) return null
+  return mayProduce ? 'press' : 'role'
 }
 
 function Notice({ text }: { text: string }) {

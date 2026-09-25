@@ -10,6 +10,9 @@ vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
   return { ...actual, fetchWithRefresh: vi.fn() }
 })
+// «Rigenera documenti» is named only to a role that has it (REB-294), as on the bar.
+const mockAuth = vi.hoisted(() => ({ may: true }))
+vi.mock('@/lib/auth', () => ({ useCan: () => mockAuth.may }))
 
 const ISSUED = {
   id: 'inv-1',
@@ -31,6 +34,7 @@ function pdfResponse() {
 
 beforeEach(() => {
   vi.mocked(fetchWithRefresh).mockReset()
+  mockAuth.may = true
   // jsdom has neither: the browser turns a Blob into a URL its viewer can open.
   let n = 0
   URL.createObjectURL = vi.fn(() => `blob:pdf-${++n}`)
@@ -96,6 +100,21 @@ describe('InvoicePdfPreview', () => {
     )
     expect(screen.queryByTitle(/Anteprima PDF/)).not.toBeInTheDocument()
     expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('tells a readonly role which button fixes a file that is not a PDF, and that it cannot press it', async () => {
+    mockAuth.may = false
+    vi.mocked(fetchWithRefresh).mockResolvedValue(
+      new Response('<note/>', { status: 200, headers: { 'Content-Type': 'application/xml' } }),
+    )
+    wrap(<InvoicePdfPreview invoice={ISSUED} />)
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Il file archiviato per questa fattura non è un PDF, quindi l’anteprima non lo mostra. Si genera di nuovo con «Rigenera documenti», che il tuo ruolo non può usare.',
+        ),
+      ).toBeInTheDocument(),
+    )
   })
 
   it('names no button for a proforma whose file is not a PDF', async () => {
@@ -174,6 +193,23 @@ describe('InvoicePdfPreview', () => {
     )
     expect(screen.queryByText(/invoice_artifact/)).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('does not send a readonly role to a button its bar does not show when the PDF is missing', async () => {
+    mockAuth.may = false
+    vi.mocked(fetchWithRefresh).mockResolvedValue(
+      new Response(JSON.stringify({ code: 'not_found', detail: 'document_blob k not found' }), {
+        status: 404,
+      }),
+    )
+    wrap(<InvoicePdfPreview invoice={ISSUED} />)
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Il PDF di questa fattura non è disponibile. Si genera di nuovo con «Rigenera documenti», che il tuo ruolo non può usare.',
+        ),
+      ).toBeInTheDocument(),
+    )
   })
 
   it('names no button for a lost proforma PDF, since «Genera PDF proforma» is not on its page', async () => {
