@@ -1,8 +1,9 @@
 """Journey states (spec § 2): where a person stopped between a sign-up and a used card.
 
 Each state is a query over the hub's own tables, evaluated when the list is shown and
-again when a mail is about to leave. A card's state reads the four fields
-`_is_complete` reads (`schemas.py`): the CV, the rate, the position and the work mode.
+again when a mail is about to leave. A card's state reads the same four fields
+`card_is_complete` reads (`schemas.py`, the function `_is_complete` itself calls): the
+CV, the rate, the position and the work mode. Completeness is never re-derived here.
 """
 
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.errors import ValidationFailed
 from rebase_core.models import Company, Freelancer, Login, Signup, User
+from rebase_core.schemas import card_is_complete
 
 ENTITY = "campagna"
 
@@ -60,17 +62,19 @@ def display_name(nome: str | None) -> str | None:
     return value
 
 
+_ANY_CV_SIZE = 0  # a stand-in non-None value: only the other three fields matter below
+
+
 def card_state(
     cv_size: int | None,
     tariffa: Decimal | None,
     posizione: str | None,
     remoto: str | None,
 ) -> CardState:
-    missing_cv = cv_size is None
-    missing_other = tariffa is None or posizione is None or remoto is None
-    if not missing_cv and not missing_other:
+    if card_is_complete(cv_size, tariffa, posizione, remoto):
         return "completo"
-    if missing_cv and not missing_other:
+    others_complete = card_is_complete(_ANY_CV_SIZE, tariffa, posizione, remoto)
+    if cv_size is None and others_complete:
         return "manca_cv"
     return "scheda"
 
