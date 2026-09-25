@@ -13,8 +13,11 @@ from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_campaign_sender
 from rebase_core.campaigns.sender import RecordingCampaignSender
+from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
-from rebase_core.models import CampaignOptout, Freelancer, User
+from rebase_core.models import Campaign, CampaignOptout, Freelancer, User
+
+WEBHOOK_SECRET = "whsec_" + "c2VncmV0bw=="
 
 
 def test_the_header_url_fetched_by_get_only_redirects_to_the_page(
@@ -87,6 +90,32 @@ def a_card_without_cv(session: Session, email: str) -> None:
     session.commit()
 
 
+def with_webhook(client: TestClient) -> None:
+    """This environment has Resend's webhook secret, as production does."""
+    client.app.dependency_overrides[get_settings] = lambda: Settings(  # type: ignore[attr-defined]
+        _env_file=None,  # type: ignore[call-arg]
+        resend_webhook_secret=WEBHOOK_SECRET,
+    )
+
+
+def a_draft(client: TestClient) -> str:
+    created = client.post(
+        "/api/hub/campaigns",
+        json={
+            "nome": "X",
+            "fonte": "stato",
+            "stato_percorso": "completo",
+            "oggetto": "o",
+            "testo": "t",
+            "bottone_testo": "b",
+            "bottone_meta": "area",
+            "azione": "entrato",
+        },
+    )
+    assert created.status_code == 201, created.text
+    return str(created.json()["id"])
+
+
 def test_every_campaign_route_wants_an_admin(
     client: TestClient,
     tidy: Session,  # noqa: F811  (fixture)
@@ -118,6 +147,7 @@ def test_the_admin_drafts_tests_and_schedules_a_campaign(
     login_admin(client, sender, tidy)
     recording = RecordingCampaignSender()
     client.app.dependency_overrides[get_campaign_sender] = lambda: recording  # type: ignore[attr-defined]
+    with_webhook(client)
     a_card_without_cv(tidy, "ada@studio.it")
     templates = client.get("/api/hub/campaigns/templates").json()
     cv = next(t for t in templates if t["stato_percorso"] == "manca_cv")
@@ -167,21 +197,35 @@ def test_without_a_resend_key_the_test_is_a_503_sentence(
 ) -> None:
     login_admin(client, sender, tidy)
     client.app.dependency_overrides[get_campaign_sender] = lambda: None  # type: ignore[attr-defined]
-    created = client.post(
-        "/api/hub/campaigns",
-        json={
-            "nome": "X",
-            "fonte": "stato",
-            "stato_percorso": "completo",
-            "oggetto": "o",
-            "testo": "t",
-            "bottone_testo": "b",
-            "bottone_meta": "area",
-            "azione": "entrato",
-        },
-    ).json()
-    answer = client.post(f"/api/hub/campaigns/{created['id']}/test")
-    assert answer.status_code == 503 and "non è configurato" in answer.json()["detail"]
+    campaign_id = a_draft(client)
+    for verb, body in (("test", None), ("schedule", {"esclusi": []})):
+        answer = client.post(f"/api/hub/campaigns/{campaign_id}/{verb}", json=body)
+        assert answer.status_code == 503 and "non è configurato" in answer.json()["detail"]
+
+
+def test_a_key_without_the_webhook_secret_refuses_test_and_schedule(
+    client: TestClient,
+    tidy: Session,  # noqa: F811  (fixture)
+    sender: RecordingSender,
+) -> None:
+    """With a Resend key but no REBASE_RESEND_WEBHOOK_SECRET a campaign would leave
+    and nobody would ever read its deliveries, bounces or complaints: both verbs
+    refuse with a sentence, before touching the campaign."""
+    login_admin(client, sender, tidy)
+    recording = RecordingCampaignSender()
+    client.app.dependency_overrides[get_campaign_sender] = lambda: recording  # type: ignore[attr-defined]
+    campaign_id = a_draft(client)
+    for verb, body in (("test", None), ("schedule", {"esclusi": []})):
+        answer = client.post(f"/api/hub/campaigns/{campaign_id}/{verb}", json=body)
+        assert answer.status_code == 503, answer.text
+        assert answer.json()["detail"] == (
+            "Manca il webhook di Resend: configuralo prima di inviare, vedi AGENTS.md."
+        )
+    assert recording.sent == []
+    tidy.expire_all()
+    campaign = tidy.get(Campaign, campaign_id)
+    assert campaign is not None
+    assert (campaign.stato, campaign.prova_inviata_at) == ("bozza", None)
 
 
 def test_never_write_records_the_address(

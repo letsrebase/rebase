@@ -20,7 +20,9 @@ from rebase_core.campaigns.schemas import (
     ScheduleRequest,
     TemplateRead,
 )
+from rebase_core.campaigns.sender import CampaignSender
 from rebase_core.campaigns.service import CampaignService
+from rebase_core.config import Settings
 from rebase_core.schemas import Ack
 
 public = APIRouter(prefix="/api/hub/campagne", tags=["hub-campaigns-public"])
@@ -52,6 +54,19 @@ def unsubscribe(t: Token, session: SessionDep) -> Ack:
 
 router = APIRouter(prefix="/api/hub/campaigns", tags=["hub-admin"])
 NO_SENDER = "L'invio di mail non è configurato su questo ambiente."
+NO_WEBHOOK = "Manca il webhook di Resend: configuralo prima di inviare, vedi AGENTS.md."
+
+
+def _ready_to_send(sender: CampaignSender | None, settings: Settings) -> CampaignSender:
+    """What «Mandami una prova» and «Invia»/«Programma» need before touching the
+    campaign: a Resend key, and the webhook secret that lets this environment read
+    what became of each mail. A key alone would send campaigns whose deliveries,
+    bounces and complaints nobody ever records."""
+    if sender is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_SENDER)
+    if not settings.resend_webhook_secret:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_WEBHOOK)
+    return sender
 
 
 @router.get("", response_model=CampaignList)
@@ -106,9 +121,8 @@ def send_test(
     sender: CampaignSenderDep,
     campaign_id: UUID,
 ) -> CampaignRead:
-    if sender is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_SENDER)
-    return CampaignService(session, settings).send_test(campaign_id, admin, sender)
+    ready = _ready_to_send(sender, settings)
+    return CampaignService(session, settings).send_test(campaign_id, admin, ready)
 
 
 @router.post("/{campaign_id}/schedule", response_model=CampaignRead)
@@ -120,8 +134,7 @@ def schedule(
     campaign_id: UUID,
     data: ScheduleRequest,
 ) -> CampaignRead:
-    if sender is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_SENDER)
+    _ready_to_send(sender, settings)
     return CampaignService(session, settings).schedule(campaign_id, data)
 
 
