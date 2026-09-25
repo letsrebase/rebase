@@ -16,6 +16,11 @@
 // leaves a `metadata` labelled `<signature-blank>` with its page and box, in points from
 // the page's top-left corner, which `render.signature_blanks` reads back with
 // `typst query`.
+//
+// The title block carries the echo logo (REB-479), the brand's
+// `echo/echo-ink-watermelon-outlines.png` scaled by `render.py` and copied beside this
+// source under the name the `echo` variable holds. The running header keeps the words
+// without a picture: the echo has no compact variant, and at 8 pt it would be a smudge.
 
 #let ink = rgb("$ink$")
 #let inkquiet = rgb("$inkquiet$")
@@ -29,17 +34,6 @@
 // the blanks the signing site fills are laid out and left undrawn, so the signature and
 // the date do not sit on them and every blank keeps its place (probe § 11.9).
 #let for-signing = $forsigning$
-
-// The four tiles of the mark, in the order `shared/brand/mark.ts` fixes.
-#let mark(size: 3pt) = {
-  let tile(c) = rect(width: size, height: size, fill: c, stroke: none)
-  box(baseline: 15%, grid(
-    columns: (size, size),
-    rows: (size, size),
-    tile(ink), tile(gold),
-    tile(cta), tile(ink),
-  ))
-}
 
 // A blank to fill in: a rule with the field's name under the reader's pen. A signature
 // gets the room a pen needs above its rule, and a blank the signing site fills carries a
@@ -82,7 +76,7 @@
       set text(size: 8pt, fill: inkquiet)
       grid(
         columns: (1fr, auto),
-        [#mark() #h(3pt) rebase · $title$],
+        [rebase · $title$],
         [Versione $version$#if draft [ · bozza]],
       )
     }
@@ -119,7 +113,7 @@
 #show table.cell.where(y: 0): set text(weight: 500)
 
 #block(below: 1.8em)[
-  #text(size: 9pt, weight: 500)[#mark() #h(3pt) rebase]
+  #image("$echo$", height: 11mm)
   #v(10pt)
   #text(size: 22pt, weight: 500)[$title$]
   $if(subtitle)$

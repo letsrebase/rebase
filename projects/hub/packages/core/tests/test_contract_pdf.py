@@ -9,6 +9,9 @@ is `test_contract_render.py`.
 """
 
 import json
+import os
+import subprocess
+import sys
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -184,6 +187,26 @@ def test_the_contracts_read_the_brand_exactly_as_the_guide_does() -> None:
     assert brand.PALETTE == build_guide_pdf.PALETTE
     assert brand.FONT == build_guide_pdf.FONT
     assert brand.palette() == build_guide_pdf.palette()
+
+
+def test_the_echo_is_read_from_the_checkout_or_from_the_directory_nix_names(
+    tmp_path: Path,
+) -> None:
+    """The echo is `shared/brand`'s own file in a checkout and in the image, which mirrors
+    it; the Nix `hub-api` package names another brand directory with
+    `REBASE_CONTRACTS_BRAND_DIR` (REB-403). `brand` reads the variable once, when it is
+    imported, so a fresh interpreter is what shows the second case."""
+    name = Path("echo") / "echo-ink-watermelon-outlines.png"
+    assert brand.REPO / "shared" / "brand" / name == brand.ECHO
+    assert brand.ECHO.is_file()
+    printed = subprocess.run(
+        [sys.executable, "-c", "from rebase_core.contracts import brand; print(brand.ECHO)"],
+        env={**os.environ, "REBASE_CONTRACTS_BRAND_DIR": str(tmp_path)},
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert Path(printed) == tmp_path / name
 
 
 def test_the_signer_setting_fills_only_rebases_own_fields() -> None:
