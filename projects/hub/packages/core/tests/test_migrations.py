@@ -349,8 +349,9 @@ def test_migration_0020_can_run_again_and_roll_back() -> None:
 
 
 def test_the_campaign_constraints_are_installed(hub_engine: Engine) -> None:
-    """A campaign's source and its source's field go together, and every enum column
-    refuses a value outside its list: proven with raw SQL, rolled back."""
+    """A campaign's source and its source's field go together, and every enum column of
+    the three tables refuses a value outside its list: all ten `CHECK` constraints,
+    each proven with raw SQL that bypasses the schema entirely, rolled back."""
     with hub_engine.connect() as connection:
         outer = connection.begin()
         user_id = connection.execute(
@@ -362,30 +363,71 @@ def test_the_campaign_constraints_are_installed(hub_engine: Engine) -> None:
         ).scalar_one()
         base = (
             "INSERT INTO campaigns (id, created_by, nome, slug, fonte, stato_percorso, filtri, "
-            "oggetto, testo, bottone_testo, bottone_meta, azione, stato, contenuto_at, "
-            "created_at, updated_at) VALUES (gen_random_uuid(), :u, 'n', :slug, :fonte, :sp, "
-            "CAST(:filtri AS JSONB), '', '', '', 'area', :azione, 'bozza', now(), now(), now())"
+            "segue_id, oggetto, testo, bottone_testo, bottone_meta, azione, stato, "
+            "contenuto_at, created_at, updated_at) VALUES (gen_random_uuid(), :u, 'n', :slug, "
+            ":fonte, :sp, CAST(:filtri AS JSONB), :segue, '', '', '', :bottone_meta, :azione, "
+            ":stato, now(), now(), now())"
         )
+        valid = {
+            "fonte": "stato",
+            "sp": "lead",
+            "filtri": None,
+            "segue": None,
+            "bottone_meta": "area",
+            "azione": "cv",
+            "stato": "bozza",
+        }
         bad = (
-            {"slug": "a", "fonte": "stato", "sp": None, "filtri": None, "azione": "cv"},
-            {"slug": "b", "fonte": "filtri", "sp": None, "filtri": None, "azione": "cv"},
-            {"slug": "c", "fonte": "stato", "sp": "lead", "filtri": None, "azione": "vola"},
-            {"slug": "d", "fonte": "nuvola", "sp": None, "filtri": None, "azione": "cv"},
+            {**valid, "slug": "a", "sp": None},  # ck_campaigns_stato_percorso
+            {**valid, "slug": "b", "fonte": "filtri"},  # ck_campaigns_filtri
+            {**valid, "slug": "c", "azione": "vola"},  # ck_campaigns_azione
+            {**valid, "slug": "d", "fonte": "nuvola"},  # ck_campaigns_fonte
+            {**valid, "slug": "e", "stato": "volante"},  # ck_campaigns_stato
+            {**valid, "slug": "f", "bottone_meta": "cielo"},  # ck_campaigns_bottone_meta
+            # ck_campaigns_segue
+            {**valid, "slug": "g", "fonte": "lista", "sp": None, "filtri": None},
         )
         for values in bad:
             savepoint = connection.begin_nested()
             with pytest.raises(IntegrityError):
                 connection.execute(text(base), {"u": user_id, **values})
             savepoint.rollback()
+        campaign_id = connection.execute(
+            text(base + " RETURNING id"), {"u": user_id, "slug": "ok", **valid}
+        ).scalar_one()
+
+        recipient = (
+            "INSERT INTO campaign_recipients (id, campaign_id, email, tipo, pigro_slugs, "
+            "codice, prima, stato, tentativi, disiscrizione_token, created_at) VALUES "
+            "(gen_random_uuid(), :campaign_id, :email, :tipo, '[]', 'abc12345', '{}', "
+            ":stato, 0, :token, now())"
+        )
+        for values in (
+            # ck_campaign_recipients_tipo
+            {"email": "r1@rebase.it", "tipo": "volante", "stato": "in_coda", "token": "t1"},
+            # ck_campaign_recipients_stato
+            {"email": "r2@rebase.it", "tipo": "lead", "stato": "spedita", "token": "t2"},
+        ):
+            savepoint = connection.begin_nested()
+            with pytest.raises(IntegrityError):
+                connection.execute(text(recipient), {"campaign_id": campaign_id, **values})
+            savepoint.rollback()
         connection.execute(
-            text(base),
+            text(recipient),
             {
-                "u": user_id,
-                "slug": "ok",
-                "fonte": "stato",
-                "sp": "lead",
-                "filtri": None,
-                "azione": "cv",
+                "campaign_id": campaign_id,
+                "email": "r3@rebase.it",
+                "tipo": "lead",
+                "stato": "in_coda",
+                "token": "t3",
             },
         )
+
+        optout = "INSERT INTO campaign_optouts (email, fonte) VALUES (:email, :fonte)"
+        savepoint = connection.begin_nested()  # ck_campaign_optouts_fonte
+        with pytest.raises(IntegrityError):
+            connection.execute(text(optout), {"email": "o1@rebase.it", "fonte": "spam"})
+        savepoint.rollback()
+        connection.execute(text(optout), {"email": "o2@rebase.it", "fonte": "link"})
+
         outer.rollback()
