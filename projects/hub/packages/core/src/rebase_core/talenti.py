@@ -34,7 +34,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Select, Subquery, exists, func, select
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, aliased, defer
 
 from rebase_core.freelancers import LEAD_STATE
 from rebase_core.models import FREELANCER_STATES, Freelancer, Login, Signup, User
@@ -263,8 +263,12 @@ class TalentiService:
                 stmt = stmt.where(
                     keyset_predicate(sort_col, Freelancer.id, cursor_bound[0], cursor_bound[1])
                 )
+            # A row reads `cv_size` and the file's name, never the PDF itself: a page of
+            # 100 cards (or a campaign's whole list, P-REB-41) must not carry 100 CVs.
             rows = self.session.execute(
-                stmt.order_by(sort_col.desc(), Freelancer.id.desc()).limit(limit + 1)
+                stmt.order_by(sort_col.desc(), Freelancer.id.desc())
+                .limit(limit + 1)
+                .options(defer(Freelancer.cv_bytes))
             ).all()
             for row in rows:
                 card, user = row[0], row[1]

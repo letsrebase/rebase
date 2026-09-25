@@ -1,0 +1,173 @@
+"""Rows the campaign tests build on: people in every state, leads, company requests,
+and a clean table after each test. Imported by name, like `fakes_contracts.py`."""
+
+from collections.abc import Iterator
+from datetime import UTC, date, datetime
+from decimal import Decimal
+
+import pytest
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from rebase_core.admin_tokens import AdminRead
+from rebase_core.campaigns.schemas import CampaignDraft
+from rebase_core.campaigns.states import Candidate
+from rebase_core.config import Settings
+from rebase_core.models import Campaign, Company, Freelancer, Login, Signup, User
+
+CAMPAIGN_TABLES = ("campaign_optouts", "campaign_recipients", "campaigns")
+PEOPLE_TABLES = ("logins", "comments", "freelancers", "companies", "signups", "users")
+
+T0 = datetime(2026, 9, 25, 7, 30, tzinfo=UTC)
+
+
+@pytest.fixture
+def clean(hub_session: Session) -> Iterator[Session]:
+    yield hub_session
+    hub_session.rollback()
+    for table in (*CAMPAIGN_TABLES, *PEOPLE_TABLES):
+        hub_session.execute(text(f"DELETE FROM {table}"))
+    hub_session.commit()
+
+
+def person(
+    session: Session,
+    email: str,
+    *,
+    nome: str = "Ada",
+    cv: bool = True,
+    tariffa: bool = True,
+    posizione: bool = True,
+    remoto: bool = True,
+    deleted: bool = False,
+    role: str = "member",
+    logins: int = 0,
+) -> Freelancer:
+    user = User(email=email, nome=nome, cognome="Lovelace", role=role)
+    session.add(user)
+    session.flush()
+    card = Freelancer(
+        user_id=user.id,
+        cv_bytes=b"%PDF" if cv else None,
+        cv_filename="cv.pdf" if cv else None,
+        cv_mime="application/pdf" if cv else None,
+        cv_size=4 if cv else None,
+        tariffa_giornaliera=Decimal("450") if tariffa else None,
+        posizione="Backend developer" if posizione else None,
+        remoto="remoto" if remoto else None,
+        links=[],
+    )
+    if deleted:
+        card.deleted_at = datetime.now(UTC)
+    session.add(card)
+    session.flush()
+    for _ in range(logins):
+        session.add(Login(user_id=user.id))
+    session.commit()
+    return card
+
+
+def lead(session: Session, email: str, nome: str | None = "giulia") -> Signup:
+    row = Signup(email=email, nome=nome, cognome="Branda")
+    session.add(row)
+    session.commit()
+    return row
+
+
+def company(
+    session: Session, email: str, *, stato: str = "nuovo", deleted: bool = False
+) -> Company:
+    user = session.query(User).filter(User.email == email).one_or_none()
+    if user is None:
+        user = User(email=email, nome="Ciro", cognome="Aurelio")
+        session.add(user)
+        session.flush()
+    row = Company(
+        user_id=user.id,
+        nome_azienda="Block Buy SRL",
+        figura_richiesta="Developer",
+        progetto="ASP.NET Core e React",
+        periodo_da=date(2026, 10, 1),
+        durata="12 mesi",
+        budget_giornaliero=Decimal("320"),
+        remoto="remoto",
+        numero_risorse=1,
+        stato=stato,
+    )
+    if deleted:
+        row.deleted_at = datetime.now(UTC)
+    session.add(row)
+    session.commit()
+    return row
+
+
+def emails(candidates: list[Candidate]) -> list[str]:
+    return [c.email for c in candidates]
+
+
+ADMIN_EMAIL = "ivan@rebase.it"
+
+
+def admin(session: Session) -> User:
+    """The admin every campaign test acts as: one row, whoever asks first makes it."""
+    user = session.query(User).filter(User.email == ADMIN_EMAIL).one_or_none()
+    if user is None:
+        user = User(email=ADMIN_EMAIL, nome="Ivan", cognome="Sala", role="admin")
+        session.add(user)
+        session.commit()
+    return user
+
+
+def campaign_row(session: Session, **fields: object) -> Campaign:
+    """A campaign row written straight to the table, for the tests below the service."""
+    values: dict[str, object] = {
+        "created_by": admin(session).id,
+        "nome": "Prova",
+        "slug": f"c-prova-{session.query(Campaign).count()}",
+        "fonte": "stato",
+        "stato_percorso": "manca_cv",
+        "oggetto": "o",
+        "testo": "Ciao {nome},",
+        "bottone_testo": "Vai",
+        "bottone_meta": "area",
+        "azione": "cv",
+        "contenuto_at": T0,
+    }
+    values.update(fields)
+    campaign = Campaign(**values)
+    session.add(campaign)
+    session.commit()
+    return campaign
+
+
+SETTINGS = Settings(_env_file=None)  # type: ignore[call-arg]
+NOW = datetime(2026, 9, 25, 7, 0, tzinfo=UTC)
+
+
+class Clock:
+    """A clock a test moves by hand: the service and the tick take one."""
+
+    def __init__(self, at: datetime) -> None:
+        self.at = at
+
+    def __call__(self) -> datetime:
+        return self.at
+
+
+def as_admin(user: User) -> AdminRead:
+    return AdminRead.model_validate(user)
+
+
+def draft(**fields: object) -> CampaignDraft:
+    values: dict[str, object] = {
+        "nome": "Manca il CV",
+        "fonte": "stato",
+        "stato_percorso": "manca_cv",
+        "oggetto": "Manca solo il CV",
+        "testo": "Ciao {nome},\n\ntesto.",
+        "bottone_testo": "Carica il CV",
+        "bottone_meta": "area",
+        "azione": "cv",
+    }
+    values.update(fields)
+    return CampaignDraft(**values)  # type: ignore[arg-type]
