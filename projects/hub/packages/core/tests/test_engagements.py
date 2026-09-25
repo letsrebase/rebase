@@ -965,6 +965,25 @@ def test_report_answers_the_whole_engagement_by_default(clean: Session) -> None:
     assert _asked(http)[-1] == ("2026-09-20", "2026-09-20")
 
 
+def test_report_of_a_letter_that_starts_tomorrow_is_empty(clean: Session) -> None:
+    """A letter signed before its start: `da` would come after `a`, which the CRM
+    refuses with a 422. Today alone is asked for, and the report is empty."""
+    today = date(2026, 9, 30)
+    match_id = _linked_match(clean, today + timedelta(days=1))
+    http = RecordedPigro([(200, json.dumps(_crm([])).encode())])
+
+    report = _service(clean, http, today=today).report(match_id)
+
+    assert _asked(http) == [(today.isoformat(), today.isoformat())]
+    assert (report.totale_ore, report.avanzamento) == (Decimal("0.00"), Decimal("0.00"))
+    assert (report.per_giorno, report.per_settimana, report.per_mese, report.fatture) == (
+        [],
+        [],
+        [],
+        [],
+    )
+
+
 def test_report_default_start_for_an_older_match(clean: Session) -> None:
     """A match written before migration 0021 has no `lettera_data_inizio`: the report
     starts where its letter printed the start, and, for a letter that printed none, on

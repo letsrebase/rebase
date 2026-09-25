@@ -574,8 +574,10 @@ class EngagementService:
         self.session.rollback()
         if da is not None and da > a:
             raise ValidationFailed(ENTITY, "da", "il periodo inizia dopo la sua fine")
-        # A letter that starts after today has no hours yet: the CRM is still asked for
-        # today's, so a deal gone or a CRM down shows here as everywhere else.
+        # `da = min(start, a)`: a letter signed before its start would otherwise send a
+        # `da` after `a`, which the CRM refuses with a 422. It has no hours yet, so today
+        # alone is asked for and the report is empty, while a deal gone or a CRM down
+        # still shows here as everywhere else.
         windows = [
             self._window(match_id, first, last) for first, last in _windows(min(start, a), a)
         ]
