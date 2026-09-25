@@ -36,6 +36,11 @@ x-api-environment: &api-environment
   # A draft text never leaves for signature; only the preview sets this true. Not an
   # empty default: a bool field fails at start-up on an empty value.
   REBASE_CONTRACTS_ALLOW_DRAFT: ${REBASE_CONTRACTS_ALLOW_DRAFT:-false}
+  # Claude, the team builder's seam (llm.py, REB-508): the card and the proposal. Empty
+  # key: no card is written and the builder answers 503.
+  REBASE_ANTHROPIC_API_KEY: ${REBASE_ANTHROPIC_API_KEY:-}
+  REBASE_TEAM_BUILDER_MODEL: ${REBASE_TEAM_BUILDER_MODEL:-claude-opus-5}
+  REBASE_TEAM_BUILDER_ENABLED: ${REBASE_TEAM_BUILDER_ENABLED:-true}
 
 services:
   db:

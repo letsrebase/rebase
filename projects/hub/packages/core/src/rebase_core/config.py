@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -101,6 +102,19 @@ class Settings(BaseSettings):
     # preview, whose own `.env` sets this true so a text still being drafted can still be
     # sent end to end without waiting for it to lose its `draft` status.
     contracts_allow_draft: bool = False
+
+    # --- Claude: the team builder's seam (`llm.py`, REB-508) --------------------------
+    # `AnthropicCall`'s key, for its two callers: the anonymous card (spec § 5.1) and the
+    # team proposal (spec § 3.4). Empty: `call_from_settings` answers `None` and each
+    # caller refuses with its own sentence, the same shape as `resend_api_key` and
+    # `documenso_api_token`. `repr=False` so the key never shows up in a logged
+    # `Settings()` or a stack trace, unlike the other secrets above -- this one is new
+    # enough to start the habit the rest never had.
+    anthropic_api_key: str = Field(default="", repr=False)
+    team_builder_model: str = "claude-opus-5"
+    # Off switches the feature without touching the key above: the two callers read it,
+    # this file only declares it.
+    team_builder_enabled: bool = True
 
 
 @lru_cache(maxsize=1)
