@@ -111,6 +111,8 @@ Migration 0020, one commit of its own.
   `richiesta_aggiornata` or `pigro_cliente`.
 - `stato`: `bozza`, `programmata`, `in_invio`, `inviata`, `annullata`.
   `programmata_per` (timestamptz), `prova_inviata_at`, `inviata_at`.
+- `pigro_letto_at`, `pigro_errore_at`: the last time the tick read the CRM's usage for
+  this campaign successfully, and the last time it failed (§ 6.3).
 
 `campaign_recipients`, one row per person per campaign, unique `(campaign_id, email)`
 - `email` (lowercase), `nome`, `tipo` (`freelancer`, `lead`, `azienda`, `proprietario`),
@@ -236,17 +238,19 @@ A compose service `campaigns`, the same image as the API and the same shape as `
   `programmata_per <= now()`, and moves them to `in_invio`. It also takes the ones
   already `in_invio` with rows still `in_coda`, so a send cut short by a deploy or a
   restart resumes on the next tick instead of staying stuck;
-- sends their `in_coda` rows through Resend's batch endpoint, 50 at a time, each call
-  with an `Idempotency-Key` of the campaign id and the batch's first recipient id, so a
-  tick that dies between Resend's answer and the commit cannot send twice;
-- records the `resend_id` per row; a failed call leaves its rows `in_coda` with
-  `tentativi + 1`, and the third failure marks them `fallita`;
+- sends their `in_coda` rows one call per mail, at Resend's two a second, each with an
+  `Idempotency-Key` equal to the recipient row's id. The key never changes, however the
+  rows around it change between two ticks. If a tick dies after Resend accepted a mail
+  and before the commit, the next tick sends the same key and Resend answers with the
+  mail it already accepted instead of sending it again. Resend keeps keys for 24 hours,
+  far longer than a tick's retry;
+- records the `resend_id` per row; a failed call leaves its row `in_coda` with
+  `tentativi + 1`, and the third failure marks it `fallita`;
 - moves the campaign to `inviata` when no row is left `in_coda`;
 - stamps the outcome of campaigns sent in the last 30 days (§ 6.2).
 
-That the batch endpoint takes tags, custom headers and an `Idempotency-Key` is checked
-against Resend's reference when the plan is written. If one of the three is missing
-there, the loop sends one mail per call at two per second, as the waves did.
+One call per mail is also what the two waves did: 60 mails take half a minute, and the
+batch endpoint's saving is not worth a key that depends on which rows share a batch.
 
 «Invia adesso» only sets `programmata_per` to now. An environment with no Resend key
 refuses «Invia», «Programma» and «Mandami una prova» with a message, as the magic link
@@ -271,6 +275,7 @@ does today on the preview.
   (`fonte = reclamo`).
 - An event tagged with a campaign whose row cannot be found answers 503, so Resend
   retries it on its own schedule. It never answers 200 and loses a bounce.
+- An event tagged `kind=test` answers 200 and changes nothing: a test has no row.
 - An untagged event with an unknown id (a magic link, a welcome mail) answers 200 and
   changes nothing. So does any other event type.
 
@@ -322,8 +327,11 @@ ran by hand. The hub asks it:
 - for the tick's stamping, at most once every ten minutes.
 
 **f, `pigro_cliente`**: `customers > 0` now, with `first_customer_at` after `t0`. When
-the CRM does not answer, the tick leaves f unstamped and tries again. The page says
-«Pigro non raggiungibile» on that column rather than showing no one.
+the CRM does not answer, the tick leaves f unstamped, writes `pigro_errore_at` and tries
+again on the next read. While `pigro_errore_at` is later than `pigro_letto_at`, the
+page heads the f column with «Pigro non raggiungibile dalle <ora>», and an unstamped row
+there reads «da verificare» instead of «no». An outage never looks like a person who
+did nothing.
 
 ## 7. Unsubscribe and «non scrivere mai»
 
@@ -368,13 +376,14 @@ the CRM does not answer, the tick leaves f unstamped and tries again. The page s
   - `render`: escaping, `{nome}` with and without a name, each destination's URL and
     utm, the footer and headers;
   - the send-time checks, each reason;
-  - the tick: a batch failure and retry, the third failure, idempotency keys, a
+  - the tick: a failed call and its retry, the third failure, a tick that dies after
+    Resend accepted a mail (the same key, no second mail), a stuck `in_invio`, a
     campaign moving to `inviata`;
   - each action a to f against `prima`.
 - **API**:
   - admin-only routes refuse a member and an anonymous caller;
   - the webhook with a good signature, a bad one, a stale timestamp, an unknown
-    `email_id`, a repeated event and a complaint;
+    `email_id`, a repeated event, a complaint, a `kind=test` event and an early event;
   - unsubscribe with a good token, an unknown one and the one-click POST;
   - the CRM usage client with the CRM down.
 - **CRM API**: `/api/tenants/usage` refuses without the registry token and counts a
