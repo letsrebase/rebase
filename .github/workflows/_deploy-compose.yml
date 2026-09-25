@@ -248,16 +248,26 @@ jobs:
                   exit 1
                 fi
                 not_running=""
+                not_running_services=""
                 while IFS="$(printf '\t')" read -r service state labels; do
                   [ -z "${service}" ] && continue
                   case "${labels}" in *com.docker.compose.oneoff=True*) continue ;; esac
                   if [ "${state}" != "running" ]; then
                     not_running="${not_running}${not_running:+, }${service}: ${state}"
+                    not_running_services="${not_running_services} ${service}"
                   fi
                 done < <(printf '%s\n' "${states}")
                 if [ -n "$not_running" ]; then
                   echo "::error::Service(s) not running for ${COMPOSE_PROJECT}: ${not_running}"
-                  docker compose -p "${COMPOSE_PROJECT}" logs --tail 50
+                  # Only the services that failed, never `documenso`: its lines can
+                  # carry a `/sign/<token>` path, and this log is a public Actions log.
+                  for service in ${not_running_services}; do
+                    if [ "${service}" = documenso ]; then
+                      echo "documenso's own logs are not dumped here; read them on the host with: docker compose -p ${COMPOSE_PROJECT} logs documenso"
+                    else
+                      docker compose -p "${COMPOSE_PROJECT}" logs --tail 50 "${service}"
+                    fi
+                  done
                   exit 1
                 fi
                 exit 0
@@ -270,7 +280,24 @@ jobs:
               echo "::error::${HEALTH_URL} did not answer 200 within 150 seconds (last: ${code})."
             fi
             docker compose -p "${COMPOSE_PROJECT}" ps -a --format 'table {{.Name}}\t{{.Status}}' || true
-            docker compose -p "${COMPOSE_PROJECT}" logs --tail 50 || true
+            states=$(docker compose -p "${COMPOSE_PROJECT}" ps -a --format '{{.Service}}\t{{.State}}\t{{.Labels}}') || true
+            all_services=""
+            while IFS="$(printf '\t')" read -r service state labels; do
+              [ -z "${service}" ] && continue
+              case "${labels}" in *com.docker.compose.oneoff=True*) continue ;; esac
+              all_services="${all_services} ${service}"
+            done < <(printf '%s\n' "${states}")
+            # Every service, running or not: the health URL itself is what failed here, so
+            # a container that reports running can still be the one to blame. Never
+            # `documenso`: its lines can carry a `/sign/<token>` path, and this log is a
+            # public Actions log.
+            for service in ${all_services}; do
+              if [ "${service}" = documenso ]; then
+                echo "documenso's own logs are not dumped here; read them on the host with: docker compose -p ${COMPOSE_PROJECT} logs documenso"
+              else
+                docker compose -p "${COMPOSE_PROJECT}" logs --tail 50 "${service}" || true
+              fi
+            done
             exit 1
           SSH
 

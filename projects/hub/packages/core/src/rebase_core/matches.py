@@ -21,6 +21,7 @@ from datetime import date
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
 from rebase_core.audit import AdminActionService, utcnow
@@ -114,6 +115,21 @@ def _request_fingerprint(data: MatchCreate) -> str:
     keys make the digest the same however Python happened to build the model."""
     canonical = json.dumps(data.model_dump(mode="json", exclude={"id"}), sort_keys=True)
     return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+MATCH_ID_CONSTRAINT = "matches_pkey"
+
+
+def _violates_match_id(exc: IntegrityError) -> bool:
+    """Whether an `IntegrityError` at the match's own flush is the id's own primary key
+    (`matches_pkey`, migration 0017's `id UUID PRIMARY KEY`) -- the one thing two
+    different freelancers' `create()` calls can genuinely race past the id check on
+    (REB-433). Read from the DBAPI's own diagnostics (`psycopg`'s `.diag`), not from
+    the message, which is English and not meant for an admin. Any other integrity
+    error at that same flush (a freelancer or a company gone missing mid-transaction,
+    say) is not this race and must not be swallowed into the same sentence."""
+    diag = getattr(exc.orig, "diag", None)
+    return getattr(diag, "constraint_name", None) == MATCH_ID_CONSTRAINT
 
 
 class MatchService:
@@ -379,7 +395,15 @@ class MatchService:
         a changed one -- an admin who corrected the company or the letter before retrying
         -- is a 409 too, never the stale match returned as if nothing had changed; a
         match with no fingerprint stored (written before this check existed) is treated
-        the same as a mismatch, since there is nothing to compare it against."""
+        the same as a mismatch, since there is nothing to compare it against.
+
+        Two different freelancers' browsers sending the same id at the same moment can
+        both read "nothing written yet" here, since neither has committed: the id's own
+        primary key is what actually catches the second one, at the flush right below,
+        never a 500 -- an `IntegrityError` there, but only when it is that same
+        primary key (`_violates_match_id`), is the same 409 the check above gives; any
+        other integrity error at that flush is not this race and is left to propagate,
+        an admin's own failure, not a freelancer's (REB-433)."""
         renderer = self._renderer()
         fingerprint = _request_fingerprint(data)
         try:
@@ -435,7 +459,19 @@ class MatchService:
                 request_fingerprint=fingerprint,
             )
             self.session.add(match)
-            self.session.flush()
+            try:
+                self.session.flush()
+            except IntegrityError as exc:
+                if data.id is None or not _violates_match_id(exc):
+                    raise
+                # The id check above read "nothing written yet" because the other
+                # freelancer's write had not committed either: the primary key is the
+                # one thing that actually serializes the two, and it is this insert
+                # that loses the race, not the winner's (REB-433).
+                self.session.rollback()
+                raise InvalidState(
+                    "Questo id di match appartiene già a un altro freelance."
+                ) from exc
             numero = next_letter_number(self.session, today.year)
             documents.append(
                 self._document(

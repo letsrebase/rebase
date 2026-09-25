@@ -48,7 +48,7 @@ def test_both_contracts_typeset_into_a_pdf_that_carries_its_version() -> None:
         rendered = render(document, _example())
         assert rendered.pdf.startswith(b"%PDF-"), document
         assert rendered.version == text_version(document), document
-        assert rendered.draft is True, document
+        assert rendered.draft is False, document
 
 
 def test_a_filled_letter_leaves_blank_only_what_nobody_typed_ahead() -> None:

@@ -98,26 +98,36 @@ Since REB-387 phase 3 «Invia per la firma» sends a match's documents through D
 itself: Documenso sends no mail of its own. Documenso calls back
 `POST /api/hub/documenso/webhook` with `X-Documenso-Secret` equal to
 `REBASE_DOCUMENSO_WEBHOOK_SECRET`, which must be long and random (`openssl rand -hex
-32`): the route sits public behind `/api/hub/` with no rate limit, and the secret is the
-only thing standing between it and a forged signature event. Production's webhook points
-at
+32`): the route sits public behind `/api/hub/` with no rate limit, and for a rejection
+or a cancellation the secret is the only guard. A completion is not moved on the secret
+alone (REB-431): the webhook only marks which document to confirm, and `finish` reads
+the envelope back with the hub's own API token before the document counts as signed, so
+a secret leaked to somebody who never held the token still cannot forge a signature.
+Production's webhook points at
 `http://api:8000/api/hub/documenso/webhook` inside the compose network, preview's at
 `https://preview.letsrebase.com/api/hub/documenso/webhook`. Documenso retries a failed
-delivery only at once, so an event lost while the API restarts stays lost: «Aggiorna
-stato» on «Match e contratti» reads the envelope and applies it, and an admin presses it
-on a document that has waited for its signature longer than expected. Without
+delivery only at once, so an event lost while the API restarts is not lost for good: the
+sweep (below) reads the envelope and applies it on its own, every ten minutes, and
+«Aggiorna stato» on «Match e contratti» does the same thing at once, for an admin who
+does not want to wait for the next sweep. Without
 `REBASE_DOCUMENSO_URL` and `REBASE_DOCUMENSO_API_TOKEN` signing answers 503, and a text
 whose front matter says `status: draft` never leaves unless `REBASE_CONTRACTS_ALLOW_DRAFT`
-is true, which only the preview's `.env` sets. Documenso reaches `api` only if
+is true; only the preview's `.env` sets it, and even there it stays false while both
+texts are `status: final`, ready again for the next draft. Documenso reaches `api` only if
 `NEXT_PRIVATE_WEBHOOK_SSRF_BYPASS_HOSTS` lists it (probe § 5); the secret travels in
 clear, so the webhook URL stays on the compose network or is HTTPS.
 
-The webhook's own follow-up (the sealed copy's download and mails, a framework
-agreement's waiting letters) runs in the background, after the response: a restart
-between the webhook's commit and that background task leaves it undone. `rebase
-contracts-sweep` redoes anything a restart, or a mail the provider refused, left behind,
-and production runs it every ten minutes (the schedule itself is to be scheduled with the
-Documenso rollout).
+The webhook's own follow-up starts with that confirmation, then the sealed copy's
+download and mails, a framework agreement's waiting letters, all in the background,
+after the response: a restart caught mid-confirmation leaves a signed document plain
+`inviato`, not even `firmato` yet, until the next sweep tries it again; caught later, it
+leaves whichever step ran undone. `rebase contracts-sweep` redoes anything a restart, or
+a mail the provider refused, left behind, and runs every ten minutes on production and
+the preview alike, from the `sweep` service in `docker-compose.yml` (REB-393). Read what
+it did with `docker logs rebase-sweep-1` (production) or `docker logs
+rebase-preview-sweep-1` (preview): each run prints «N documenti ripresi», and, when
+Documenso itself refused a confirmation or could not be reached (an expired, revoked or
+wrong token among them, REB-431), «, M non confermati» on the same line.
 
 ## Running it
 
@@ -176,14 +186,18 @@ repository. `REBASE_DATA_DIR` has no default in the compose file, so a `.env` th
 forgets it fails the stack instead of mounting an empty directory.
 
 Ports, loopback only, from the table in `docs/adding-a-project.md` §7: production api
-8084, web 8085, Postgres 55435; preview 8086, 8087, 55436. The public paths are `/hub/`
-(web) and `/api/hub/` + `/api/orbiters/signups` (api): `projects/website/deploy/letsrebase.conf`
-proxies them to production on the host vhost, and `projects/website/deploy/preview.letsrebase.conf`
-proxies the same paths to the preview stack (127.0.0.1:8086 for its api), which is why
-the preview's Documenso webhook reaches it too. The member area's mail needs
-`REBASE_RESEND_API_KEY` and `REBASE_MAIL_FROM` in the host `.env`; without the key
-`/hub/login` answers 503 with a sentence. A preview stack that gets a key must also set
-`REBASE_HUB_URL` to its own address, or every link it mints points at production.
+8084, web 8085, mcp 8088, Postgres 55435, Documenso 8090; preview 8086, 8087, 8089,
+55436. The public paths are `/hub/` (web) and `/api/hub/` + `/api/orbiters/signups`
+(api): `projects/website/deploy/letsrebase.conf` proxies them to production on the host
+vhost, and `projects/website/deploy/preview.letsrebase.conf` proxies the same paths to
+the preview stack at `preview.letsrebase.com` (`location ^~ /api/hub/`,
+`preview.letsrebase.conf`, 127.0.0.1:8086 for its api) -- which is why the
+preview's Documenso webhook, at `https://preview.letsrebase.com/api/hub/documenso/webhook`,
+depends on that vhost rather than reaching the preview api directly. The member area's
+mail needs `REBASE_RESEND_API_KEY` and `REBASE_MAIL_FROM` in the host `.env`; without
+the key `/hub/login` answers 503 with a sentence. A preview stack that gets a key must
+also set `REBASE_HUB_URL` to its own address, or every link it mints points at
+production.
 
 «Istanze Pigro» in the admin area (ORB-142) reads PigroCRM's registry of spaces through
 the CRM's API, never its database: `REBASE_PIGRO_API_URL` (the CRM's public origin,
@@ -192,3 +206,65 @@ the `PIGROCRM_REGISTRY_TOKEN` in the CRM's own host `.env`. One value, set by ha
 both files, generated once; without it the page answers 503 with a sentence and the CRM
 side does not even have the route. The call goes through `rebase_core.http`, the seam
 the mail uses, so the tests hand a fake and never reach a CRM.
+
+### Documenso, the signing site
+
+Since REB-393 Documenso runs beside production in the `rebase` compose project, from
+`docker-compose.documenso.yml`, which only production's `.env` loads with
+`COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml`. Compose interpolates
+every service of every file it reads, profiles or not, so the Documenso services in
+`docker-compose.yml` would fail the preview's deploy and CI's build on their secrets.
+Anything you run by hand against production passes `-p rebase --env-file
+"${DEPLOY_PATH}/.env"` from `projects/hub`, or compose sees neither file nor stack. The
+webhook, its SSRF bypass and `REBASE_DOCUMENSO_*` are described above (§ "Contracts are
+signed on Documenso"); this section is the container's own.
+
+- **Image**: `documenso/documenso:v2.18.0`, pinned by digest, the one phase 1 probed. An
+  upgrade is a pull request that moves the pin, after reading the release notes.
+- **Rolling back past this release**: `COMPOSE_FILE=docker-compose.yml:docker-compose.documenso.yml`
+  lives in `/opt/hub/.env` on the server, not in the checkout, so redeploying an older
+  tag rsyncs `docker-compose.documenso.yml` away while `.env` still names it, and compose
+  refuses to come up. Remove the `COMPOSE_FILE` line from `/opt/hub/.env` before rolling
+  back past this release. `documenso` and `documenso-db` are not stopped by that: they
+  keep running as orphans, unmanaged by the older compose project, until stopped by hand
+  (`docker stop rebase-documenso-1 rebase-documenso-db-1`).
+- **Name and port**: `https://firma.letsrebase.com`, the vhost `deploy/firma.letsrebase.conf`
+  (its own certificate) in front of 127.0.0.1:8090.
+- **Data**: its own Postgres, `documenso-db`, on `REBASE_DOCUMENSO_DATA_DIR`
+  (`/srv/rebase-data/documenso-postgres`), with every uploaded and sealed PDF in it:
+  back it up with the hub's own data. About 630 MiB of memory once warm, 80 MiB for its
+  Postgres.
+- **Certificate**: self-signed, made on the host with OpenSSL, in the `.env` as the
+  `.p12` on one line of base64 with its passphrase. The seal is valid and PDF readers say
+  its issuer is not trusted; a certificate on Adobe's trust list is a later purchase.
+- **Mail**: Documenso sends only its own account mails, through Resend with the hub's
+  key; every signing mail is the hub's.
+- **Accounts**: public sign-up is off (`DOCUMENSO_DISABLE_SIGNUP` defaults to true). One
+  Documenso user per environment, each with its own organisation, team, API token and
+  webhook, because a token reads and cancels every envelope of its user's teams
+  (probe § 8):
+
+  | Environment | Documenso user | Team | Webhook URL |
+  |---|---|---|---|
+  | production | `ciao+firma@letsrebase.com` | `rebase` | `http://api:8000/api/hub/documenso/webhook` |
+  | preview | `ciao+firma-preview@letsrebase.com` | `rebase-preview` | `https://preview.letsrebase.com/api/hub/documenso/webhook` |
+
+  Both webhooks send `document.completed`, `document.rejected` and `document.cancelled`,
+  each with its own secret, which is that hub's `REBASE_DOCUMENSO_WEBHOOK_SECRET`.
+  Production's hub reaches Documenso as `REBASE_DOCUMENSO_URL=http://documenso:3000`,
+  the preview's as `https://firma.letsrebase.com`. `docker exec rebase-api-1 uv run
+  --no-sync rebase documenso-check` (and `rebase-preview-api-1`) says whether each hub
+  reaches Documenso with its token.
+
+  Step 5 of the rollout opens `DOCUMENSO_DISABLE_SIGNUP` for the tens of minutes the two
+  environments' users take to be made, on a name already in certificate transparency
+  logs, so `NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS` (`DOCUMENSO_SIGNUP_DOMAINS` in `.env`,
+  defaulting to `letsrebase.com`) refuses any other domain on the server itself, whether
+  or not the window is open, so an account made in that window cannot outlive it. Check
+  nobody else got in before closing the window: `docker exec rebase-documenso-db-1 psql
+  -U documenso -d documenso -tAc 'SELECT email FROM "User"'` must list exactly the two
+  `@letsrebase.com` addresses above.
+- **Who signs for rebase**: the `rebase-*` fields of `REBASE_SIGNER_JSON`, in the host's
+  `.env`, never in the repository. With both texts `status: final`, production signs
+  with whoever's data is there, which until the SRL exists (roadmap #284) is a person's,
+  not the company's yet.

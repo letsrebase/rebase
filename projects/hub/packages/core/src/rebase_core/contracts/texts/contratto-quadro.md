@@ -1,9 +1,9 @@
 ---
 title: Contratto quadro
 subtitle: Le regole di ogni lavoro che un membro della community svolge tramite rebase
-version: "0.1"
-date: 23 settembre 2026
-status: draft
+version: "1.0"
+date: 24 settembre 2026
+status: final
 ---
 
 Tra **{{rebase-ragione-sociale}}**, con sede in {{rebase-sede}}, codice fiscale
@@ -159,7 +159,7 @@ o nel modo indicato da rebase, con le giornate o le ore lavorate e una breve
 descrizione delle attività.
 
 6.2 rebase sottopone il Rendiconto al Cliente e comunica l'esito al Professionista entro
-[[sette]] giorni lavorativi dal ricevimento. Se in quel termine non arriva una
+sette giorni lavorativi dal ricevimento. Se in quel termine non arriva una
 contestazione motivata, il Rendiconto si considera approvato. Se il Cliente contesta una
 parte del Rendiconto, rebase lo dice subito al Professionista, con i motivi, e la parte
 non contestata si fattura comunque.
@@ -167,7 +167,7 @@ non contestata si fattura comunque.
 6.3 Approvato il Rendiconto, il Professionista emette a rebase fattura elettronica, con i
 dati e il codice destinatario indicati in apertura, per il Compenso del mese. Per gli Incarichi a corpo fattura alle scadenze indicate nella
 Lettera di incarico, dopo che il Cliente ha accettato i risultati o, se non arriva una
-contestazione motivata, [[dieci]] giorni lavorativi dopo la consegna.
+contestazione motivata, dieci giorni lavorativi dopo la consegna.
 
 6.4 rebase opera la ritenuta d'acconto quando la legge la prevede. Il Professionista
 indica nell'Area riservata il proprio regime fiscale e lo tiene aggiornato.
@@ -232,7 +232,7 @@ secondo l'articolo 10.
 ## 10. Recesso da un Incarico
 
 10.1 Ciascuna Parte può recedere da un Incarico con il preavviso indicato nella Lettera
-di incarico o, se la Lettera non lo indica, con [[30]] giorni di preavviso.
+di incarico o, se la Lettera non lo indica, con 30 giorni di preavviso.
 
 10.2 Se il Cliente interrompe il progetto, rebase può chiudere l'Incarico prima che
 scada il preavviso dell'articolo 10.1, pagando al Professionista il Compenso delle
@@ -241,7 +241,7 @@ Lettera di incarico. Ne avvisa il Professionista appena lo sa. Ridurre l'impegno
 modifica dell'Incarico e segue l'articolo 3.4.
 
 10.3 Se la Lettera di incarico prevede un periodo iniziale di verifica, durante quel
-periodo ciascuna Parte può chiudere l'Incarico con [[due]] giorni lavorativi di
+periodo ciascuna Parte può chiudere l'Incarico con due giorni lavorativi di
 preavviso.
 
 10.4 Quando un Incarico si chiude, per qualunque ragione, il Professionista ha diritto
@@ -249,7 +249,7 @@ al Compenso per tutto il lavoro svolto fino all'ultimo giorno e, nel caso dell'a
 10.2, a quello del preavviso mancante; nessuna Parte deve altro all'altra per il solo
 fatto della chiusura. Il Professionista consegna il lavoro
 fatto fino a quel momento e, se rebase lo chiede, dedica al passaggio di consegne fino
-a [[due]] giornate, pagate.
+a due giornate, pagate.
 
 ## 11. Risoluzione
 
@@ -313,7 +313,7 @@ Professionista, che il Professionista conosceva già o riceve lecitamente da alt
 che deve comunicare per legge o per ordine di un'autorità, nel qual caso avvisa prima
 rebase quando è possibile.
 
-13.3 L'obbligo dura per tutto il Contratto e per i [[tre]] anni successivi alla fine
+13.3 L'obbligo dura per tutto il Contratto e per i tre anni successivi alla fine
 dell'ultimo Incarico. Per i segreti commerciali e i dati personali dura finché restano
 tali.
 
@@ -413,7 +413,7 @@ restano regolati dalla versione con cui sono stati firmati.
 18.2 Prima di rivolgersi a un giudice, le Parti cercano un accordo, incontrandosi entro
 15 giorni dalla richiesta scritta di una di loro.
 
-18.3 Per ogni controversia è competente in via esclusiva il foro di [[Milano]].
+18.3 Per ogni controversia è competente in via esclusiva il foro di Milano.
 
 ## 19. Disposizioni finali
 

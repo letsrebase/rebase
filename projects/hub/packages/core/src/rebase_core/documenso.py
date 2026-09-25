@@ -1,4 +1,5 @@
-"""Documenso, the signing site, over API v2: the five calls the hub makes (REB-387).
+"""Documenso, the signing site, over API v2: the six calls the hub makes (REB-387,
+REB-432).
 
 The shapes are the ones phase 1 saw a self-hosted `documenso/documenso:v2.18.0` answer
 (`docs/superpowers/specs/2026-09-23-documenso-probe.md` § 4 and § 5). The hub creates an
@@ -242,6 +243,26 @@ class DocumensoClient:
         if answer.get("success") is not True:
             raise DocumensoFailed(UNREADABLE, f"cancel answered {answer!r}")
 
+    def delete(self, envelope_id: str) -> None:
+        """Documenso hard-deletes a draft or a pending envelope outright, and merely
+        soft-deletes (kept, `deletedAt` set) a completed one, answering success either
+        way: unlike `cancel`, nothing in its v2.18.0 source refuses on the envelope's
+        state (probe § 4, confirmed against `/api/v2/openapi.json` and the image's
+        bundled `deleteEnvelopeRoute`/`delete-document.js`, REB-432). A refusal here is
+        `DocumensoFailed` the same as every other call: the envelope no longer existing,
+        or this token having no access to it, are what it actually refuses on."""
+        body = _json_body({"envelopeId": envelope_id})
+        answer = self._json("POST", "/envelope/delete", body)
+        if answer.get("success") is not True:
+            raise DocumensoFailed(UNREADABLE, f"delete answered {answer!r}")
+
+    def ping(self) -> None:
+        """One page of the team's envelopes, read and dropped: whether the instance
+        answers and the token opens it (`rebase documenso-check`, REB-393). Parsed as
+        JSON like every other call, so a 200 that is not Documenso (a captive portal, a
+        login page at the wrong URL) does not pass as reachable."""
+        self._json("GET", "/envelope")
+
     def _call(
         self, method: str, path: str, body: bytes = b"", content_type: str | None = None
     ) -> tuple[int, bytes]:
@@ -275,11 +296,16 @@ class DocumensoClient:
         return parsed
 
 
-def client_from_settings(settings: Settings) -> DocumensoClient | None:
-    """`None` without a URL or a token: signing is off on this environment, and says so."""
+def client_from_settings(
+    settings: Settings, http: HttpCall | None = None
+) -> DocumensoClient | None:
+    """`None` without a URL or a token: signing is off on this environment, and says so.
+    `http` is the seam, for the check command's test."""
     if not settings.documenso_url or not settings.documenso_api_token:
         return None
-    return DocumensoClient(settings.documenso_url, settings.documenso_api_token)
+    return DocumensoClient(
+        settings.documenso_url, settings.documenso_api_token, http or urllib_download_call
+    )
 
 
 # ---- what an envelope's outcome is --------------------------------------------------------

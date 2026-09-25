@@ -13,6 +13,7 @@ import pytest
 from fakes_contracts import FailingRenderer, FakeRenderer
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import Engine, func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from rebase_core import matches as matches_module
@@ -27,6 +28,7 @@ from rebase_core.contract_schemas import (
 )
 from rebase_core.contracts.fields import FIELD, TERM, ContractFailed, Value
 from rebase_core.contracts.render import Rendered, Renderer, text_path
+from rebase_core.contracts.render import text_version as current_text_version
 from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
@@ -37,6 +39,9 @@ from rebase_core.schemas import CompanyCreate, FreelancerCreate, StatusChange
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 TODAY = date(2026, 9, 23)
+# The framework agreement's version today, read once from the real text so a future
+# version bump does not silently make `_framework`'s default a stale literal.
+QUADRO_VERSION = current_text_version("contratto-quadro")
 # Fiction, like the public example: rebase's own fields as the setting would carry them.
 SIGNER: dict[str, Value] = {
     "rebase-sede": "Milano",
@@ -166,7 +171,7 @@ def _framework(
     stato: str = "firmato",
     signed_at: datetime | None = datetime(2026, 10, 1, 9, 0, tzinfo=UTC),
     notice_at: datetime | None = None,
-    text_version: str = "0.1",
+    text_version: str = QUADRO_VERSION,
 ) -> ContractDocument:
     """A framework agreement as phase 3 will leave one: only a signature makes these."""
     document = ContractDocument(
@@ -211,7 +216,7 @@ def test_the_first_match_writes_the_framework_agreement_and_a_letter_that_waits_
         None,
         None,
     )
-    assert (quadro.text_version, quadro.testo_bozza) == ("0.1", True)
+    assert (quadro.text_version, quadro.testo_bozza) == (QUADRO_VERSION, True)
     assert (lettera.kind, lettera.match_id) == ("lettera", match.id)
     assert lettera.data["data-contratto-quadro"] is None
     assert [document for document, _ in renderer.calls] == [
@@ -327,6 +332,141 @@ def test_a_repeated_id_already_used_by_another_freelancer_is_refused(clean: Sess
     with pytest.raises(InvalidState, match="un altro freelance"):
         service.create(other_freelancer_id, other_body, admin_id)
     assert len(_documents(clean, other_freelancer_id, "lettera")) == 0
+
+
+def test_two_freelancers_racing_the_same_match_id_get_a_409_not_a_500(
+    monkeypatch: pytest.MonkeyPatch, hub_engine: Engine, clean: Session
+) -> None:
+    """REB-433: the check above (`existing is None`) reads before either session has
+    committed, so two different freelancers' browsers sending the same client-generated
+    id at the same moment can both read "nothing written yet" and both proceed to the
+    insert; only the id's own primary key actually catches the second one. The gate
+    technique of
+    `test_two_admins_matching_the_same_freelancer_at_once_never_leave_two_open_frameworks`:
+    `next_letter_number`, the statement right after the Match itself is flushed, pauses
+    the first session there, its insert still uncommitted, so the second genuinely races
+    it at the database rather than merely following a thread schedule. Postgres blocks
+    the second session's own insert of the same id until the first's is decided; once it
+    commits, the second's raises `IntegrityError`, which `create` must turn into the same
+    409 the check above gives, never an unhandled 500."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    other_freelancer_id = _second_card(clean)
+    _fiscal(clean, other_freelancer_id, admin_id)
+    other_company_id = _request(clean, nome_azienda="Bianchi Srl", figura_richiesta="Designer")
+    given_id = uuid4()
+    factory = session_factory(hub_engine)
+    first, second = factory(), factory()
+    paused = threading.Event()
+    release = threading.Event()
+    real_next_letter_number = matches_module.next_letter_number
+
+    def paced_next_letter_number(session: Session, year: int) -> str:
+        if session is first:
+            paused.set()
+            assert release.wait(timeout=5), "the test never released the first create()"
+        return real_next_letter_number(session, year)
+
+    monkeypatch.setattr(matches_module, "next_letter_number", paced_next_letter_number)
+    first_errors: list[BaseException] = []
+    second_errors: list[BaseException] = []
+
+    def run_first() -> None:
+        try:
+            MatchService(first, FakeRenderer(), SIGNER, today=lambda: TODAY).create(
+                freelancer_id, _body(company_id).model_copy(update={"id": given_id}), admin_id
+            )
+        except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
+            first_errors.append(exc)
+
+    def run_second() -> None:
+        try:
+            MatchService(second, FakeRenderer(), SIGNER, today=lambda: TODAY).create(
+                other_freelancer_id,
+                _body(other_company_id).model_copy(update={"id": given_id}),
+                admin_id,
+            )
+        except BaseException as exc:  # noqa: BLE001 -- surfaced on the main thread below
+            second_errors.append(exc)
+
+    try:
+        first_worker = threading.Thread(target=run_first)
+        first_worker.start()
+        assert paused.wait(timeout=5), "the first create() never reached next_letter_number"
+
+        second_worker = threading.Thread(target=run_second)
+        second_worker.start()
+        second_worker.join(timeout=0.5)
+        assert second_worker.is_alive(), (
+            "the second create() did not block on the first's uncommitted insert of the "
+            "same match id"
+        )
+
+        release.set()
+        first_worker.join(timeout=5)
+        second_worker.join(timeout=5)
+        assert not first_worker.is_alive()
+        assert not second_worker.is_alive()
+    finally:
+        first.close()
+        second.close()
+
+    assert not first_errors, first_errors
+    assert len(second_errors) == 1
+    assert isinstance(second_errors[0], InvalidState)
+    assert "un altro freelance" in second_errors[0].message
+    # The second session's own id check never ran into the row at all (it read "nothing
+    # written yet" too): this 409 came from the primary key's own IntegrityError, caught
+    # at the flush, not from the ordinary cross-freelancer check above it.
+    assert isinstance(second_errors[0].__cause__, IntegrityError)
+    clean.expire_all()
+    written = clean.get(Match, given_id)
+    assert written is not None and written.freelancer_id == freelancer_id
+    assert len(_documents(clean, other_freelancer_id, "lettera")) == 0
+
+
+class _FakeDiag:
+    def __init__(self, constraint_name: str) -> None:
+        self.constraint_name = constraint_name
+
+
+class _FakeOrig(Exception):
+    """Stands in for the DBAPI exception `IntegrityError.orig` carries, with a
+    `.diag.constraint_name` of a constraint that is not the match's own primary key."""
+
+    def __init__(self, constraint_name: str) -> None:
+        super().__init__("una violazione diversa")
+        self.diag = _FakeDiag(constraint_name)
+
+
+def test_a_different_integrity_error_at_the_same_flush_still_propagates(
+    monkeypatch: pytest.MonkeyPatch, clean: Session
+) -> None:
+    """REB-433: `create`'s catch is narrow on purpose -- only the match's own primary
+    key (`matches_pkey`) is the freelancer race it exists for. An integrity error at
+    the same flush over a different constraint (a foreign key gone missing
+    mid-transaction, say) is not that race and must not be swallowed into "un altro
+    freelance": it propagates unconverted, the admin's own failure to look into. The
+    request carries an id (REB-406's idempotency key) so this actually exercises
+    `_violates_match_id`'s own constraint-name check, not just the `data.id is None`
+    guard ahead of it."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    real_flush = Session.flush
+
+    def flush_raising_a_different_constraint(
+        self: Session, *args: object, **kwargs: object
+    ) -> None:
+        if any(isinstance(obj, Match) for obj in self.new):
+            raise IntegrityError(
+                "INSERT INTO matches (id, ...)", {}, _FakeOrig("matches_company_id_fkey")
+            )
+        real_flush(self, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "flush", flush_raising_a_different_constraint)
+
+    body = _body(company_id).model_copy(update={"id": uuid4()})
+    with pytest.raises(IntegrityError):
+        service.create(freelancer_id, body, admin_id)
 
 
 def test_a_repeated_id_with_changed_data_is_refused_not_returned(clean: Session) -> None:
@@ -625,7 +765,7 @@ def test_a_document_downloads_as_its_own_pdf_and_a_missing_signed_copy_is_not_fo
     pdf = service.document_pdf(match.lettera.id)
     assert (pdf.filename, pdf.content[:5]) == ("lettera-di-incarico-2026-001.pdf", b"%PDF-")
     quadro = _documents(clean, freelancer_id, "quadro")[0]
-    assert service.document_pdf(quadro.id).filename == "contratto-quadro-v0.1.pdf"
+    assert service.document_pdf(quadro.id).filename == f"contratto-quadro-v{QUADRO_VERSION}.pdf"
     with pytest.raises(NotFound):
         service.document_pdf(match.lettera.id, signed=True)
 

@@ -4,7 +4,7 @@ import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { member, type MemberContract } from '@/lib/api'
 import { whatOf } from '@/lib/contracts'
-import { formatDate, memberDocumentStateLabel } from '@/lib/format'
+import { formatDate, formatDateTime, memberDocumentStateLabel } from '@/lib/format'
 
 function Actions({ document }: { document: MemberContract }) {
   // «Firma» wants «il contratto quadro» / «la lettera n. X», its direct object; the
@@ -26,7 +26,12 @@ function Actions({ document }: { document: MemberContract }) {
         <Button asChild variant="outline" size="sm">
           <a
             href={member.contractPdfUrl(document.id)}
-            aria-label={`Scarica la copia firmata ${whatOf(document)}`}
+            // `whatOf` alone repeats «del contratto quadro» for the current framework
+            // agreement and each one under «Contratti quadro precedenti»: the signature
+            // time, not only the date, tells the links apart by name -- two can fall on
+            // the same day (REB-433). `ha_pdf_firmato` never holds without `signed_at`
+            // set first, whichever step moved the document there.
+            aria-label={`Scarica la copia firmata ${whatOf(document)} del ${formatDateTime(document.signed_at!)}`}
           >
             <Download className="mr-2 size-4" aria-hidden="true" />
             Copia firmata

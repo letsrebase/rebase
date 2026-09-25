@@ -13,7 +13,16 @@ from fakes_documenso import FakeDocumenso
 from sqlalchemy import Engine, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
-from test_matches import SIGNER, TABLES, TODAY, _body, _documents, _framework, _setup
+from test_matches import (
+    QUADRO_VERSION,
+    SIGNER,
+    TABLES,
+    TODAY,
+    _body,
+    _documents,
+    _framework,
+    _setup,
+)
 
 from rebase_core import signing as signing_module
 from rebase_core.audit import AdminActionService
@@ -27,7 +36,7 @@ from rebase_core.fiscal import FiscalService
 from rebase_core.mail import EmailSender, Mail, RecordingSender
 from rebase_core.matches import MatchService
 from rebase_core.models import ContractDocument, Freelancer, Match
-from rebase_core.signing import SigningService
+from rebase_core.signing import SigningService, SweepResult
 
 # 23:30 UTC on 30 September is already 1 October in Rome.
 SIGNED_AT = datetime(2026, 9, 30, 23, 30, tzinfo=UTC)
@@ -132,7 +141,7 @@ def _active_framework(
     document = ContractDocument(
         kind="quadro",
         freelancer_id=freelancer_id,
-        text_version="0.1",
+        text_version=QUADRO_VERSION,
         testo_bozza=False,
         data={},
         pdf=b"%PDF-quadro",
@@ -164,7 +173,7 @@ def test_the_first_send_hands_documenso_the_framework_and_the_letter_waits(
     assert (quadro.sent_at, quadro.sent_by) == (NOW, admin_id)
     assert envelope.payload["title"] == "Contratto quadro rebase"
     assert envelope.payload["externalId"] == str(quadro.id)
-    assert envelope.filename == "contratto-quadro-v0.1.pdf"
+    assert envelope.filename == f"contratto-quadro-v{QUADRO_VERSION}.pdf"
     assert envelope.payload["meta"]["distributionMethod"] == "NONE"
     assert not any(envelope.payload["meta"]["emailSettings"].values())
     fields = envelope.payload["recipients"][0]["fields"]
@@ -581,17 +590,38 @@ def test_an_empty_signer_setting_still_refuses_to_send_with_blank_signer_fields(
     assert fake.calls == []
 
 
-def test_a_refused_distribute_cancels_the_orphaned_envelope(
+def test_a_refused_distribute_deletes_the_orphaned_envelope(clean: Session) -> None:
+    """REB-432: `create` leaves a still-`DRAFT` envelope on Documenso, `distribute` is
+    refused. The fix's best-effort delete removes it outright -- Documenso deletes a
+    draft or a pending envelope with no refusal by its state (probe § 4) -- so a
+    retried send does not pile up drafts under the same externalId, and the admin
+    reads the original refusal alone. The card's «Done when»: no envelope is left on
+    the fake."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    fake.fail("distribute", 400, "Recipient is missing a signature field")
+
+    with pytest.raises(DocumensoFailed) as caught:
+        _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
+
+    assert caught.value.message == (
+        "Documenso ha rifiutato la richiesta: Recipient is missing a signature field"
+    )
+    assert fake.envelopes == {}
+
+
+def test_a_refused_delete_falls_back_to_cancelling_the_orphan(
     clean: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """REB-406: `get` succeeds (the envelope already exists on
-    Documenso, as after a real create) and this test then moves it to `PENDING` itself,
-    simulating Documenso having processed the distribute server-side even though the
-    client's own parsing of the answer fails -- `FakeDocumenso.cancel` (probe § 4: only
-    a `PENDING` envelope accepts one) would otherwise refuse a cancel just as the real
-    API would for a still-`DRAFT` envelope, which `fake.fail('distribute', ...)` alone
-    never advances past. The fix's best-effort cancel succeeds here, and the original
-    refusal is still what reaches the admin."""
+    """REB-432: a delete Documenso refuses for any reason falls back to a cancel, which
+    a still-`PENDING` envelope still answers (probe § 4). `get` succeeds (the envelope
+    already exists on Documenso, as after a real create) and this test then moves it to
+    `PENDING` itself, simulating Documenso having processed the distribute server-side
+    even though the client's own parsing of the answer fails -- the same setup REB-406's
+    own orphan test used, since `fake.fail('distribute', ...)` alone never advances the
+    envelope past `DRAFT`. The delete is then forced to fail too, so the fallback runs;
+    the original refusal is still what reaches the admin."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
@@ -604,6 +634,7 @@ def test_a_refused_distribute_cancels_the_orphaned_envelope(
 
     monkeypatch.setattr(fake, "_get", get_then_mark_pending)
     fake.fail("distribute", 400, "Recipient is missing a signature field")
+    fake.fail("delete", 500, "Internal server error")
 
     with pytest.raises(DocumensoFailed) as caught:
         _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
@@ -660,11 +691,12 @@ def _try_lock_nowait(session: Session, document_id: UUID) -> bool:
         return False
 
 
-def test_a_completion_signs_the_document_with_the_signers_date_and_calls_nobody(
+def test_apply_alone_leaves_a_completion_unconfirmed_and_calls_nobody(
     clean: Session,
 ) -> None:
-    """The webhook's transaction moves the row and nothing else: Documenso gets its
-    answer before any download or mail (probe § 11.2)."""
+    """The webhook's own transaction moves nothing for a completion (REB-431):
+    Documenso gets its answer before any confirmation, download or mail (probe §
+    11.2). It only names the document for `finish`, which confirms and signs it."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
@@ -678,15 +710,167 @@ def test_a_completion_signs_the_document_with_the_signers_date_and_calls_nobody(
 
     quadro = _framework_of(clean, freelancer_id)
     assert signed == quadro.id
-    assert (quadro.stato, quadro.signed_at, quadro.signed_pdf) == ("firmato", SIGNED_AT, None)
+    assert (quadro.stato, quadro.signed_at, quadro.signed_pdf) == ("inviato", None, None)
     assert (len(fake.calls), len(sender.sent)) == (calls, mails)
+
+
+def test_a_forged_completion_for_an_envelope_still_pending_leaves_it_inviato_and_mails_nothing(
+    clean: Session,
+) -> None:
+    """REB-431's own case: a `DOCUMENT_COMPLETED` event whose envelope Documenso still
+    reports `PENDING` -- the secret alone, without the hub's own API token, can no
+    longer move a document to `firmato`."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    before = len(sender.sent)
+
+    signing.finish(signed)
+
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.stato, quadro.signed_at, quadro.signed_pdf) == ("inviato", None, None)
+    assert len(sender.sent) == before
+
+
+def test_the_next_finish_after_the_fake_is_actually_signed_confirms_and_signs_it(
+    clean: Session,
+) -> None:
+    """The same document as above, still `inviato` because the forged event changed
+    nothing: once Documenso genuinely reports it `COMPLETED`, the next `finish` (or
+    `sweep`) confirms it, with the signer's own date."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    signing.finish(signed)
+    assert _framework_of(clean, freelancer_id).stato == "inviato"
+
+    fake.sign(envelope, SIGNED_AT)
+    signing.finish(signed)
+
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.stato, quadro.signed_at) == ("firmato", SIGNED_AT)
+
+
+def test_the_sweep_picks_up_an_inviato_document_whose_envelope_is_completed(
+    clean: Session,
+) -> None:
+    """REB-431: a webhook the hub missed entirely, not merely one whose own follow-up
+    died -- `_to_finish` must still find a document `inviato` with an envelope, so the
+    sweep confirms and signs it (probe § 11.3)."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+
+    result = _signing(clean, renderer, fake, sender).sweep()
+
+    assert result == SweepResult(touched=1, unconfirmed=0)
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.stato, quadro.signed_at) == ("firmato", SIGNED_AT)
+
+
+def test_the_sweep_recovers_a_rejection_the_webhook_never_delivered(clean: Session) -> None:
+    """REB-431: a rejection, not only a completion, can be lost the same way (probe
+    § 11.3). `_confirm_completion` already holds the envelope it read for the
+    completion check; applying a `REJECTED` outcome from that same envelope, the way
+    `apply` itself would, means the sweep recovers this too, instead of warning about
+    the same envelope forever."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.reject(envelope, "La PEC indicata non è la mia")
+
+    result = _signing(clean, renderer, fake, sender).sweep()
+
+    assert result == SweepResult(touched=1, unconfirmed=0)
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.stato, quadro.cancel_reason) == (
+        "annullato",
+        "Rifiutato dal freelance: La PEC indicata non è la mia",
+    )
+
+
+def test_the_sweep_recovers_a_cancellation_the_webhook_never_delivered(clean: Session) -> None:
+    """REB-431: the same recovery for a cancellation made directly on Documenso."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.client().cancel(envelope, "Annullato a mano.")
+
+    result = _signing(clean, renderer, fake, sender).sweep()
+
+    assert result == SweepResult(touched=1, unconfirmed=0)
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.stato, quadro.cancel_reason) == ("annullato", "Annullato su Documenso.")
+
+
+def test_documenso_unreachable_during_the_confirmation_leaves_it_inviato_and_raises_nothing(
+    clean: Session,
+) -> None:
+    """REB-431: Documenso not answering at all while `_confirm_completion` tries to read
+    the envelope (`DocumensoFailed`, probe § 5's own UNREACHABLE) is logged and left for
+    the next `finish` or `sweep`; it must not raise past `finish`."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    fake.down("get")
+
+    moved = signing.finish(signed)
+
+    assert moved is False
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.stato, quadro.signed_at, quadro.signed_pdf) == ("inviato", None, None)
+
+
+def test_no_documenso_configured_during_the_confirmation_leaves_it_inviato_and_raises_nothing(
+    clean: Session,
+) -> None:
+    """REB-431: `self._documenso()` itself refuses (`SigningUnavailable`) when this
+    environment has no Documenso configured at all -- a routine state (a preview with
+    signing off), not a failure worth a traceback on every sweep run. `finish` swallows
+    it the same way, moves nothing, and returns False."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signed = _signing(clean, renderer, fake, sender).apply(
+        _webhook(fake, envelope, "DOCUMENT_COMPLETED")
+    )
+    assert signed is not None
+
+    moved = _signing(clean, renderer, None, sender).finish(signed)
+
+    assert moved is False
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.stato, quadro.signed_at, quadro.signed_pdf) == ("inviato", None, None)
 
 
 def test_a_second_delivery_waits_for_the_first_and_changes_nothing(
     hub_engine: Engine, clean: Session
 ) -> None:
-    """REB-391: Documenso retries at once, and even while a slow first delivery is
-    still running (probe § 5). The second waits on the row, then finds it signed."""
+    """REB-391: Documenso retries at once, and even while a slow first caller still
+    holds the row uncommitted (probe § 5). The row here is forged into `firmato`
+    directly, standing in for what `finish`'s own confirmation would eventually commit
+    (`apply` itself never writes `firmato` for a completion any more, REB-431): the
+    point is `apply`'s own guard, that a row no longer `inviato`, however it got there,
+    is nothing left for a second, redundant delivery to do."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
@@ -702,7 +886,8 @@ def test_a_second_delivery_waits_for_the_first_and_changes_nothing(
         results.append(_signing(second, renderer, fake, sender).apply(outcome))
 
     try:
-        # The first delivery, caught holding the row with its transition not committed.
+        # Stands in for `finish`'s own confirmation, mid-transaction and not yet
+        # committed.
         held = first.scalars(
             select(ContractDocument).where(ContractDocument.id == framework.id).with_for_update()
         ).one()
@@ -728,8 +913,10 @@ def test_apply_locks_the_freelancer_row_before_the_document(
     thread and must block there -- proven not just by staying alive, but by a fourth
     session managing to lock the letter's own document row with `FOR UPDATE NOWAIT`
     while the gate holds: if `apply` had taken the document first (the old order), that
-    NOWAIT probe would fail. Releasing the gate lets `apply` finish: the letter signs and
-    its match turns active."""
+    NOWAIT probe would fail. Releasing the gate lets `apply` finish -- `apply` itself
+    still takes this same lock order even though a completion no longer moves the row
+    there (REB-431); `finish`, called after, is what actually signs the letter and
+    turns its match active."""
     admin_id, freelancer_id, company_id = _setup(clean)
     _active_framework(clean, freelancer_id, admin_id)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
@@ -766,26 +953,86 @@ def test_apply_locks_the_freelancer_row_before_the_document(
         probe.close()
     assert results == [letter.id]
     clean.expire_all()
+    assert _letter_of(clean, match.id).stato == "inviato"
+
+    _signing(clean, renderer, fake, sender).finish(letter.id)
+
+    clean.expire_all()
     assert _letter_of(clean, match.id).stato == "firmato"
     assert clean.get(Match, match.id).stato == "attivo"  # type: ignore[union-attr]
+
+
+def test_finish_confirms_only_after_locking_the_freelancer_row(
+    hub_engine: Engine, clean: Session
+) -> None:
+    """REB-431: the same deterministic gate proof, for `_confirm_completion`'s own lock
+    order. A gate session holds the freelancer's row; `finish`, on a document still
+    `inviato`, must wait there before it ever locks the document itself -- proven not
+    just by staying alive, but by a probe session managing to lock the document's own
+    row with `FOR UPDATE NOWAIT` while the gate holds: if `_confirm_completion` had
+    locked the document first, that NOWAIT probe would fail. Releasing the gate lets it
+    confirm the envelope, sign the document, then run the rest of `finish` as usual."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    framework = _framework_of(clean, freelancer_id)
+    envelope = _envelope_of(framework)
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
+    factory = session_factory(hub_engine)
+    gate, worker_session, probe = factory(), factory(), factory()
+
+    def run_finish() -> None:
+        _signing(worker_session, renderer, fake, sender).finish(signed)
+
+    try:
+        gate.execute(select(Freelancer.id).where(Freelancer.id == freelancer_id).with_for_update())
+        worker = threading.Thread(target=run_finish)
+        worker.start()
+        worker.join(timeout=0.5)
+        assert worker.is_alive(), "finish did not wait on the freelancer's row to confirm"
+        assert _try_lock_nowait(probe, signed), (
+            "_confirm_completion already held the document's row before the freelancer's"
+        )
+        probe.rollback()
+        gate.commit()
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+    finally:
+        gate.close()
+        worker_session.close()
+        probe.close()
+    clean.expire_all()
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.stato, quadro.signed_at) == ("firmato", SIGNED_AT)
 
 
 def test_finish_releases_a_waiting_letter_only_after_locking_the_freelancer_row(
     hub_engine: Engine, clean: Session
 ) -> None:
-    """REB-391: the same gate proof for `finish` -> `_send_waiting`. A
-    framework just signed, its letter still waiting: while another session holds the
-    freelancer's row, the letter's own row is still free to a `FOR UPDATE NOWAIT` probe
-    (proving `_send_waiting` has not reached it yet); releasing the gate lets it go, and
-    the letter leaves."""
+    """REB-391: the same gate proof for `finish` -> `_send_waiting`. A framework
+    already confirmed `firmato` (its own confirmation is `_confirm_completion`'s own
+    gate test below, not this one), its letter still waiting: while another session
+    holds the freelancer's row, the letter's own row is still free to a `FOR UPDATE
+    NOWAIT` probe (proving `_send_waiting` has not reached it yet); releasing the gate
+    lets it go, and the letter leaves.
+
+    Committing `firmato` directly, rather than through `apply` then `finish`'s own
+    confirmation (REB-431), keeps this test about `_send_waiting`'s lock order alone:
+    `_confirm_completion` finds the row already signed and returns at once, without
+    itself touching the freelancer's row, so the gate can isolate `_send_waiting`'s own
+    first lock the way it always did."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
-    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    framework = _framework_of(clean, freelancer_id)
+    envelope = _envelope_of(framework)
     fake.sign(envelope, SIGNED_AT)
-    signing = _signing(clean, renderer, fake, sender)
-    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
-    assert signed is not None
+    framework.stato, framework.signed_at = "firmato", SIGNED_AT
+    clean.commit()
+    signed = framework.id
     letter = _letter_of(clean, match.id)
     factory = session_factory(hub_engine)
     gate, worker_session, probe = factory(), factory(), factory()
@@ -900,7 +1147,7 @@ def test_finish_downloads_and_mails_the_signed_copy_once(clean: Session) -> None
         (CONTRACTS_MAIL, "Firmato da Ada Lovelace: contratto quadro rebase"),
     ]
     assert all(
-        mail.attachments[0].filename == "contratto-quadro-v0.1-firmato.pdf"
+        mail.attachments[0].filename == f"contratto-quadro-v{QUADRO_VERSION}-firmato.pdf"
         and mail.attachments[0].content == quadro.signed_pdf
         for mail in copies
     )
@@ -1016,8 +1263,11 @@ def test_a_signed_letter_turns_its_match_active(clean: Session) -> None:
     match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
     envelope = _envelope_of(_letter_of(clean, match.id))
     fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    assert signed is not None
 
-    _signing(clean, renderer, fake, sender).apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
+    signing.finish(signed)
 
     clean.expire_all()
     assert clean.get(Match, match.id).stato == "attivo"  # type: ignore[union-attr]
@@ -1190,18 +1440,27 @@ def test_two_concurrent_finishes_download_and_mail_the_signed_copy_once(
     """REB-391: the webhook's own `finish` and an admin's «Aggiorna stato»
     refresh can overlap on the same freshly signed document. `_store_signed_copy`'s row
     lock serialises them: exactly one download, and exactly one pair of signed-copy
-    mails (to the freelancer and to rebase), however many callers race for it."""
+    mails (to the freelancer and to rebase), however many callers race for it.
+
+    Committing `firmato` directly, rather than through `apply` then `finish`'s own
+    confirmation (REB-431), keeps this test about `_store_signed_copy`'s own lock: a
+    document still `inviato` would instead serialise the two calls inside
+    `_confirm_completion`, at the freelancer's row, before either ever reaches
+    `_store_signed_copy`."""
     admin_id, freelancer_id, company_id = _setup(clean)
     _active_framework(clean, freelancer_id, admin_id)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
     _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
-    envelope = _envelope_of(_letter_of(clean, match.id))
+    letter = _letter_of(clean, match.id)
+    envelope = _envelope_of(letter)
     fake.sign(envelope, SIGNED_AT)
     signed = _signing(clean, renderer, fake, sender).apply(
         _webhook(fake, envelope, "DOCUMENT_COMPLETED")
     )
     assert signed is not None
+    letter.stato, letter.signed_at = "firmato", SIGNED_AT
+    clean.commit()
     factory = session_factory(hub_engine)
     gate, first_session, second_session = factory(), factory(), factory()
     before = len(sender.sent)
@@ -1245,10 +1504,11 @@ def test_two_concurrent_finishes_download_and_mail_the_signed_copy_once(
 def test_sweep_finishes_a_signature_a_crashed_background_task_left_undone(
     clean: Session,
 ) -> None:
-    """The webhook's own `apply` committed `firmato`; its background `finish` never ran
-    (the process died first). `sweep` finds the document through `_to_finish` and runs
-    `finish` on it: the sealed copy stored and mailed, and the letter that waited for
-    this framework agreement released."""
+    """The webhook's own `apply` committed, but left the document `inviato` for
+    `finish` to confirm (REB-431); its background `finish` never ran (the process died
+    first). `sweep` finds the document through `_to_finish` and runs `finish` on it:
+    confirmed `firmato`, its sealed copy stored and mailed, and the letter that waited
+    for this framework agreement released."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match = _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
@@ -1257,13 +1517,15 @@ def test_sweep_finishes_a_signature_a_crashed_background_task_left_undone(
     signing = _signing(clean, renderer, fake, sender)
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
+    assert _framework_of(clean, freelancer_id).stato == "inviato"
     assert _framework_of(clean, freelancer_id).signed_pdf is None
     assert _letter_of(clean, match.id).stato == "in_attesa"
 
-    touched = signing.sweep()
+    result = signing.sweep()
 
-    assert touched == 1
+    assert result == SweepResult(touched=1, unconfirmed=0)
     quadro = _framework_of(clean, freelancer_id)
+    assert quadro.stato == "firmato"
     assert quadro.signed_pdf == fake.signed_pdf(envelope)
     assert (quadro.signed_copy_to_freelancer_at, quadro.signed_copy_to_rebase_at) == (NOW, NOW)
     assert _letter_of(clean, match.id).stato == "inviato"
@@ -1302,18 +1564,113 @@ def test_sweep_releases_a_waiting_letter_of_an_already_finished_framework(
     second_match.stato = "in_firma"
     clean.commit()
 
-    touched = signing.sweep()
+    result = signing.sweep()
 
-    assert touched == 1
+    # 1, not 2: the first match's own letter, released by the `finish` above, is
+    # itself `inviato` with an envelope still pending on Documenso, so REB-431's wider
+    # `_to_finish` visits it too, but nothing moves for it, and REB-433 counts only
+    # what actually moved.
+    assert result == SweepResult(touched=1, unconfirmed=0)
     assert _letter_of(clean, second.id).stato == "inviato"
 
 
 def test_sweep_with_nothing_left_to_do_returns_zero(clean: Session) -> None:
+    """A document still `inviato`, not yet signed on Documenso, is in `_to_finish` now
+    too (REB-431): `finish` confirms nothing and moves nothing, so it still counts for
+    zero (REB-433); still `PENDING` on Documenso is not a failed confirmation either, so
+    `unconfirmed` stays zero too."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
 
-    assert _signing(clean, renderer, fake, sender).sweep() == 0
+    assert _signing(clean, renderer, fake, sender).sweep() == SweepResult(touched=0, unconfirmed=0)
+    assert _framework_of(clean, freelancer_id).stato == "inviato"
+
+
+def test_sweep_does_not_keep_counting_a_document_stuck_on_a_failing_download(
+    clean: Session,
+) -> None:
+    """REB-433: `rebase contracts-sweep` must not print one more «documento ripreso»
+    for a document that keeps failing the same way every ten minutes -- only a sweep
+    that actually moves something (here, the confirmation to `firmato`, on the first
+    run) counts."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    signing = _signing(clean, renderer, fake, sender)
+    fake.fail("download", 500, "Internal server error")
+
+    first = signing.sweep()
+
+    # the confirmation to `firmato` itself moved something, and it succeeded, so
+    # unconfirmed stays zero even though the download that follows keeps failing.
+    assert first == SweepResult(touched=1, unconfirmed=0)
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.stato, quadro.signed_pdf) == ("firmato", None)
+
+    fake.fail("download", 500, "Internal server error")
+
+    second = signing.sweep()
+
+    # already confirmed; only the still-failing download was tried, and that is not a
+    # confirmation failure, so unconfirmed stays zero too.
+    assert second == SweepResult(touched=0, unconfirmed=0)
+    assert _framework_of(clean, freelancer_id).signed_pdf is None
+
+
+def test_sweep_counts_an_unreachable_documenso_as_unconfirmed_not_touched(
+    clean: Session,
+) -> None:
+    """REB-431: Documenso not answering at all during the confirmation still leaves the
+    document `inviato`, as before, but the sweep no longer looks the same as one with
+    nothing to do: the attempt counts as `unconfirmed`, not `touched`, so a dead network
+    shows up instead of «0 documenti ripresi» printed every ten minutes with nothing to
+    say why."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    fake.down("get")
+
+    result = _signing(clean, renderer, fake, sender).sweep()
+
+    assert result == SweepResult(touched=0, unconfirmed=1)
+    assert _framework_of(clean, freelancer_id).stato == "inviato"
+
+
+def test_sweep_counts_a_refused_token_as_unconfirmed_not_touched(clean: Session) -> None:
+    """REB-431: an expired, revoked or wrong token, or an envelope Documenso itself no
+    longer knows (404), refuses the same GET the confirmation reads with an HTTP error --
+    counted the same way as an unreachable instance, never silently as nothing to do."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    envelope = _envelope_of(_framework_of(clean, freelancer_id))
+    fake.sign(envelope, SIGNED_AT)
+    fake.fail("get", 401, "Invalid session or API token.")
+
+    result = _signing(clean, renderer, fake, sender).sweep()
+
+    assert result == SweepResult(touched=0, unconfirmed=1)
+    assert _framework_of(clean, freelancer_id).stato == "inviato"
+
+
+def test_sweep_on_an_environment_with_no_documenso_configured_counts_nothing(
+    clean: Session,
+) -> None:
+    """REB-431: a preview with signing off is a routine state, not a failure -- it must
+    not inflate `unconfirmed` merely because every document `_to_finish` finds stays
+    `inviato`."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    _sent(clean, renderer, fake, sender, freelancer_id, company_id, admin_id)
+
+    result = _signing(clean, renderer, None, sender).sweep()
+
+    assert result == SweepResult(touched=0, unconfirmed=0)
 
 
 # ---- the recovery actions (REB-407) ------------------------------------------------------
@@ -1355,19 +1712,22 @@ def test_refresh_applies_a_signature_the_webhook_never_delivered(clean: Session)
 def test_refresh_of_a_firmato_document_with_no_stored_copy_downloads_and_stores_it(
     clean: Session,
 ) -> None:
-    """The recovery path when the process died between `apply` committing `firmato` and
-    its own background `finish` ever downloading the sealed copy: `refresh`'s own read
-    of the envelope changes nothing here (`apply` is a no-op on a document that is not
-    `inviato` any more), but `refresh` still calls `finish` unconditionally, which is
-    what actually stores the copy this time."""
+    """The recovery path when a document was already confirmed `firmato` but its
+    download failed on the first `finish` (a crash, or Documenso refusing that one
+    call): `refresh`'s own read of the envelope applies nothing new (`apply` is a
+    no-op on a document that is not `inviato` any more); `finish`, called
+    unconditionally, is what retries the download and stores the copy this time."""
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     _admin_id, freelancer_id, _match, envelope = _signed_framework(clean, renderer, fake, sender)
     signing = _signing(clean, renderer, fake, sender)
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
-    assert _framework_of(clean, freelancer_id).signed_pdf is None
+    fake.fail("download", 500, "Internal server error")
+    signing.finish(signed)
+    quadro = _framework_of(clean, freelancer_id)
+    assert (quadro.stato, quadro.signed_pdf) == ("firmato", None)
 
-    read = signing.refresh(_framework_of(clean, freelancer_id).id)
+    read = signing.refresh(quadro.id)
 
     assert (read.stato, read.ha_pdf_firmato) == ("firmato", True)
     assert _framework_of(clean, freelancer_id).signed_pdf == fake.signed_pdf(envelope)

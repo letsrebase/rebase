@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import pytest
 from fakes_documenso import BASE, TOKEN, FakeDocumenso
 
+from rebase_core.cli import documenso_check
 from rebase_core.config import Settings
 from rebase_core.contracts.fields import ContractFailed
 from rebase_core.contracts.render import SignatureBlank
@@ -146,6 +147,28 @@ def test_cancel_takes_only_an_envelope_out_for_signature() -> None:
     assert client.get(envelope_id).status == "CANCELLED"
 
 
+def test_delete_removes_the_envelope_whatever_its_state() -> None:
+    """REB-432: unlike `cancel`, `delete` refuses on nothing but the envelope's own
+    existence (probe § 4, confirmed against the v2.18.0 image's own OpenAPI description
+    and its bundled source): a still-`DRAFT` envelope deletes as readily as one already
+    `PENDING`."""
+    fake = FakeDocumenso()
+    draft_id = _create(fake)
+    pending_id = _create(fake)
+    fake.client().distribute(pending_id)
+    client = fake.client()
+
+    client.delete(draft_id)
+    assert json.loads(fake.bodies[-1]) == {"envelopeId": draft_id}
+    assert draft_id not in fake.envelopes
+
+    client.delete(pending_id)
+    assert pending_id not in fake.envelopes
+
+    with pytest.raises(DocumensoFailed, match="Envelope not found"):
+        client.get(draft_id)
+
+
 def test_a_refusal_carries_documensos_sentence_and_never_its_stack() -> None:
     fake = FakeDocumenso()
     envelope_id = _create(fake)
@@ -239,3 +262,37 @@ def test_no_url_or_no_token_means_no_client() -> None:
     both = Settings(_env_file=None, documenso_url=BASE, documenso_api_token=TOKEN)  # type: ignore[call-arg]
     assert isinstance(client_from_settings(both), DocumensoClient)
     assert Settings(_env_file=None).contracts_mail == "ciao@letsrebase.com"  # type: ignore[call-arg]
+
+
+def test_the_check_says_whether_this_environment_reaches_documenso_with_its_token(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """`rebase documenso-check`, run inside the api container after the settings change
+    (REB-393): one page of the team's envelopes, read and dropped."""
+    fake = FakeDocumenso()
+    both = Settings(_env_file=None, documenso_url=BASE, documenso_api_token=TOKEN)  # type: ignore[call-arg]
+    assert documenso_check(both, http=fake) == 0
+    assert fake.calls == [("GET", "/envelope")]
+    assert "accetta il token" in capsys.readouterr().out
+    wrong = Settings(_env_file=None, documenso_url=BASE, documenso_api_token="api_sbagliato")  # type: ignore[call-arg]
+    assert documenso_check(wrong, http=fake) == 1
+    # `exc.detail` never holds the token: printed alongside the sentence so a 401, a
+    # 404, a 502 or a DNS failure can be told apart on the terminal (REB-393).
+    err = capsys.readouterr().err
+    assert "Invalid session or API token" in err
+    assert "HTTP 401" in err
+    assert documenso_check(Settings(_env_file=None), http=fake) == 1  # type: ignore[call-arg]
+    assert "la firma è spenta" in capsys.readouterr().err
+
+
+def test_ping_refuses_a_200_that_is_not_json() -> None:
+    """A `REBASE_DOCUMENSO_URL` that reaches something other than Documenso -- a captive
+    portal, a login page at the wrong host -- can still answer 200: `ping` parses the
+    body as JSON like every other call, so that does not pass as reachable (REB-393)."""
+
+    def html_200(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
+        return 200, b"<html><body>not documenso</body></html>"
+
+    client = DocumensoClient(BASE, TOKEN, http=html_200)
+    with pytest.raises(DocumensoFailed):
+        client.ping()

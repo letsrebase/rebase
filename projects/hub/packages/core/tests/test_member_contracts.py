@@ -10,7 +10,7 @@ from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from test_matches import _second_card
+from test_matches import QUADRO_VERSION, _second_card
 from test_signing import (
     SIGNED_AT,
     TABLES,
@@ -110,7 +110,7 @@ def test_a_signed_framework_shows_its_dates_its_copy_and_no_link(clean: Session)
     )
     copy = _service(clean).signed_pdf(user_id, signed)
     assert copy.content == fake.signed_pdf(envelope)
-    assert copy.filename == "contratto-quadro-v0.1-firmato.pdf"
+    assert copy.filename == f"contratto-quadro-v{QUADRO_VERSION}-firmato.pdf"
     [lettera] = mine.lettere
     assert lettera.stato == "inviato" and lettera.signing_url is not None
 

@@ -187,8 +187,26 @@ answers `{"success": true}` and fires `DOCUMENT_CANCELLED`. It accepts only `PEN
 envelopes: a draft answers 400 «Only pending documents can be cancelled». After a cancel
 the signing URL still opens the document and the signature pad; inserting the field fails
 with «An error occurred while signing the field.», nothing is signed, the status stays
-`CANCELLED`, and opening the page still fires `DOCUMENT_OPENED`. `POST /envelope/delete`
-exists and was not needed.
+`CANCELLED`, and opening the page still fires `DOCUMENT_OPENED`.
+
+**Delete** (REB-432, confirmed after this probe: a throwaway local stack, no account or
+token created, torn down afterwards). `POST /envelope/delete`, JSON
+`{"envelopeId": "..."}`, answers `{"success": true}`. Read from the v2.18.0 image's own
+`GET /api/v2/openapi.json` on a throwaway local stack (`documenso/documenso:v2.18.0` at
+the digest in § 1, no signup, no token, torn down with its data afterwards) and confirmed
+against the same image's bundled source: `deleteEnvelopeRoute`
+(`packages/trpc/server/envelope-router/delete-envelope.js` and
+`delete-envelope.types.js`, whose `meta.openapi` is exactly `POST /envelope/delete`) calls
+`deleteDocument` (`packages/lib/server-only/document/delete-document.js`). Unlike cancel,
+the OpenAPI description says only «Delete an envelope», naming no state, and the source
+shows why: it hard-deletes any envelope whose status is not `COMPLETED` (draft, pending,
+rejected or cancelled alike, its audit log kept, a `DOCUMENT_CANCELLED` webhook fired) and
+only soft-deletes (`deletedAt` set, the row kept) a `COMPLETED` one -- both branches answer
+`{"success": true}`, neither refuses by state. So a still-`DRAFT` orphan the hub never
+finished dispatching deletes exactly as a `PENDING` one would; what it does refuse on is
+the envelope not existing, or this token having no access to it. Its behaviour on a real
+`DRAFT` and a real `PENDING` envelope is checked with real tokens during the rollout
+(REB-408 Step 10).
 
 ## 5. The webhook
 

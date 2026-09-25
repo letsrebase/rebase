@@ -21,8 +21,9 @@ from rebase_core.contracts.render import (
 from rebase_core.conversions import pixel_from_settings
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.documenso import client_from_settings
-from rebase_core.errors import DomainError
+from rebase_core.errors import DocumensoFailed, DomainError
 from rebase_core.freelancers import freelancer_read
+from rebase_core.http import HttpCall
 from rebase_core.mail import CardSummary, EmailSender, sender_from_settings, welcome_mail
 from rebase_core.models import USER_ROLES, Freelancer, Signup, User
 from rebase_core.signing import SigningService
@@ -160,8 +161,12 @@ def contracts_sweep() -> int:
 
     Runs `SigningService.sweep()` with this environment's own collaborators -- the same
     ones `SigningDep` builds for a request, gathered here by hand since this command has
-    no request to build one from. Meant to run in production every ten minutes, to be
-    scheduled with the Documenso rollout."""
+    no request to build one from. Runs every ten minutes on production and the preview
+    alike, from the `sweep` service in `docker-compose.yml` (REB-393). Prints the
+    `unconfirmed` count only when it is not zero (REB-431): an expired, revoked or
+    wrong token, or Documenso itself unreachable, otherwise failed silently, leaving a
+    document `inviato` and «0 documenti ripresi» printed every ten minutes with nothing
+    to say why."""
     settings = get_settings()
     session = session_factory(create_engine_from_settings(settings))()
     try:
@@ -174,10 +179,37 @@ def contracts_sweep() -> int:
             contracts_mail=settings.contracts_mail,
             allow_draft=settings.contracts_allow_draft,
         )
-        touched = signing.sweep()
+        result = signing.sweep()
     finally:
         session.close()
-    print(f"{touched} documenti aggiornati")
+    line = f"{result.touched} documenti ripresi"
+    if result.unconfirmed:
+        line += f", {result.unconfirmed} non confermati"
+    print(line)
+    return 0
+
+
+def documenso_check(settings: Settings, http: HttpCall | None = None) -> int:
+    """`rebase documenso-check`: does this environment reach its Documenso, and does its
+    token open it? Reads one page of the team's envelopes and prints none of them. Run
+    inside the api container after `REBASE_DOCUMENSO_*` change (REB-393)."""
+    client = client_from_settings(settings, http)
+    if client is None:
+        print(
+            "REBASE_DOCUMENSO_URL o REBASE_DOCUMENSO_API_TOKEN mancano: la firma è spenta.",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        client.ping()
+    except DocumensoFailed as exc:
+        print(exc.message, file=sys.stderr)
+        # Never the token: a 301, a 404, a 502 or a DNS failure look alike from
+        # `exc.message` alone, and this detail is what tells them apart.
+        if exc.detail:
+            print(exc.detail, file=sys.stderr)
+        return 1
+    print(f"Documenso risponde a {settings.documenso_url} e accetta il token.")
     return 0
 
 
@@ -288,6 +320,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Compone i due contratti con pandoc e Typst: questa macchina li sa generare?",
     )
     sub.add_parser(
+        "documenso-check",
+        help="Documenso risponde, e il token di questo ambiente lo apre?",
+    )
+    sub.add_parser(
         "contracts-sweep",
         help="Rifà quanto un riavvio o una mail rifiutata hanno lasciato indietro",
     )
@@ -314,6 +350,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return conversions_check()
     if args.command == "contracts-check":
         return contracts_check()
+    if args.command == "documenso-check":
+        return documenso_check(get_settings())
     if args.command == "contracts-sweep":
         return contracts_sweep()
     if args.command == "createtoken":

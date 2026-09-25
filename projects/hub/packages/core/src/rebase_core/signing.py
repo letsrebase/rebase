@@ -9,7 +9,8 @@ rebase il ...», spec § 5) and the labels under the signing blanks left undrawn
 gets the PDF with the freelancer as its one signer (`rebase_core.documenso`), and the hub
 mails the link itself, one mail per document. A text that says `status: draft` never
 leaves (spec § 1f), unless `allow_draft` is true, which only the preview's `.env` sets
-through `REBASE_CONTRACTS_ALLOW_DRAFT`. If Documenso refuses or does not answer, the
+through `REBASE_CONTRACTS_ALLOW_DRAFT`; with both texts `status: final` the preview
+leaves it false too, kept for the next draft. If Documenso refuses or does not answer, the
 transaction rolls back and nothing is marked sent; if only the mail fails, the document
 is `inviato` and the report says so, for «Reinvia email».
 
@@ -18,22 +19,30 @@ Every write locks the freelancer's row first, as `MatchService.create` and
 the webhook and «Aggiorna stato» can reach the same freelancer's documents at once.
 
 The webhook's side is `apply` and `finish`. `apply` locks the freelancer's row, its match
-(when it has one) and the document, in that order, moves the document and commits, so
-Documenso gets its answer long before its ten seconds (probe § 5), and a
-second delivery of the same event, which can arrive while the first is still running,
-waits on the lock and finds nothing left to do. `finish` runs after that commit, in the
-webhook's background task or under «Aggiorna stato»: the sealed copy downloaded and
-stored, the two mails (the freelancer's and rebase's) sent, each recorded on its own
-once accepted (`signed_copy_to_freelancer_at`, `signed_copy_to_rebase_at`), then, for a
-framework agreement, the letters that waited for it typeset with its signature date and
-sent. Each step checks under the document's own row lock whether it is still to do, so
-running `finish` twice does everything once; a lost background task or a restart
-between steps leaves whichever of the two columns is unset, which the next `finish`
-reads as still to do for that recipient alone (REB-391).
+(when it has one) and the document, in that order, and commits, so Documenso gets its
+answer long before its ten seconds (probe § 5). A rejection or a cancellation is moved
+and recorded there and then, the harm of forging one being small, so a second delivery of
+the same event waits on the lock and finds it already `annullato`. A completion is not
+moved by `apply`: the webhook's secret travels in clear (probe § 5), so `apply` only
+notes which document to confirm and leaves it `inviato` -- a second delivery of the same
+`DOCUMENT_COMPLETED`, arriving before the first's own confirmation has run, reads the
+same `inviato` row and schedules its own `finish` too. `finish` runs after `apply`'s
+commit, in the webhook's background task or under «Aggiorna stato»: it first confirms a
+still-`inviato` document with Documenso itself, over the hub's own API token, and only
+moves it to `firmato` (or, for a rejection or a cancellation the webhook never delivered,
+`annullato`) once Documenso says so (REB-431, a forged completion then needs the token
+too); then the sealed copy is downloaded and stored, the two mails (the freelancer's and
+rebase's) sent, each recorded on its own once accepted (`signed_copy_to_freelancer_at`,
+`signed_copy_to_rebase_at`), then, for a framework agreement, the letters that waited for
+it typeset with its signature date and sent. Each step checks under the document's own
+row lock whether it is still to do, so running `finish` twice -- two overlapping
+deliveries' own background tasks among them -- does everything once; a lost background
+task or a restart between steps leaves whichever of the two mail columns is unset, which
+the next `finish` reads as still to do for that recipient alone (REB-391).
 
-`sweep` is the recovery `rebase contracts-sweep` runs, meant every ten minutes once
-production schedules it with the Documenso rollout: `finish` again, for every document a
-webhook or an admin's «Aggiorna stato» never reached.
+`sweep` is the recovery `rebase contracts-sweep` runs, every ten minutes on production and
+the preview alike, from the `sweep` service in `docker-compose.yml` (REB-393): `finish`
+again, for every document a webhook or an admin's «Aggiorna stato» never reached.
 
 The recovery actions are the admin's: «Aggiorna stato» (`refresh`) for the event
 Documenso gave up on, «Reinvia email» (`resend_mail`), «Annulla» on a framework agreement
@@ -44,6 +53,7 @@ Documenso before the row, and «Registra disdetta» (`record_notice`).
 import logging
 from collections.abc import Callable, Mapping
 from datetime import date, datetime
+from typing import NamedTuple
 from uuid import UUID
 
 from sqlalchemy import exists, or_, select
@@ -152,6 +162,25 @@ def _refuse_blanks(blank: list[str]) -> None:
             f"Il documento lascerebbe in bianco {', '.join(unfilled)}: completali prima di "
             "inviarlo."
         )
+
+
+class SweepResult(NamedTuple):
+    """`SigningService.sweep`'s own count (REB-431): `touched` is REB-433's, how many
+    documents actually moved; `unconfirmed` is how many stayed `inviato` because
+    Documenso itself could not be asked -- a refusal (an expired, revoked or wrong
+    token, an envelope answering 404) or an unreachable instance, never a document
+    merely not completed yet, and never a routine no-Documenso environment."""
+
+    touched: int
+    unconfirmed: int
+
+
+class _FinishOutcome(NamedTuple):
+    """What one `finish` call did to one document, before `sweep` sums it into a
+    `SweepResult` across every document it visits."""
+
+    moved: bool
+    unconfirmed: bool
 
 
 class SigningService:
@@ -276,8 +305,9 @@ class SigningService:
         inside the caller's transaction: nothing here commits, so a refusal at any step
         leaves the document as it was. The caller must already hold the freelancer's row
         lock. If `get` or `distribute` fails after `create` already left an envelope on
-        Documenso, a best-effort cancel follows it (`_cancel_orphan`, REB-406), so a retried
-        send does not pile up drafts under the same externalId."""
+        Documenso, a best-effort delete follows it (`_remove_orphan`, REB-406, REB-432;
+        a cancel only when the delete itself is refused), so a retried send does not
+        pile up drafts under the same externalId."""
         self._signer()
         renderer, documenso = self._renderer(), self._documenso()
         name = DOCUMENT_BY_KIND[document.kind]
@@ -302,7 +332,7 @@ class SigningService:
             envelope = documenso.get(envelope_id)
             signing_url = documenso.distribute(envelope_id)
         except Exception:
-            self._cancel_orphan(documenso, envelope_id)
+            self._remove_orphan(documenso, envelope_id)
             raise
         document.data = dict(data)
         document.pdf = rendered.pdf
@@ -315,16 +345,31 @@ class SigningService:
         document.sent_at = self.now()
         document.sent_by = sent_by
 
-    def _cancel_orphan(self, documenso: DocumensoClient, envelope_id: str) -> None:
+    def _remove_orphan(self, documenso: DocumensoClient, envelope_id: str) -> None:
         """`get` or `distribute` failed after `create` already left an envelope on
-        Documenso: a best-effort cancel, so a retried send does not pile up drafts under
-        the same externalId. A failure of this cancel (a still-draft envelope refuses
-        one, probe § 4) is logged and never raised over the failure the admin already
-        sees (REB-406)."""
+        Documenso: a best-effort delete, so a retried send does not pile up drafts under
+        the same externalId. Documenso deletes a draft or a pending envelope outright,
+        with no refusal by the envelope's state (its own v2.18.0 source, probe § 4,
+        REB-432); a delete this token cannot make -- the envelope already gone, no
+        access to it, or any other refusal -- falls back to a cancel, which a still-
+        `PENDING` envelope still answers. Both are best effort: a failure of either is
+        logged with the envelope id and never raised over the failure the admin already
+        sees (REB-406, REB-432)."""
+        try:
+            documenso.delete(envelope_id)
+            return
+        except Exception:
+            _log.warning(
+                "could not delete the orphaned envelope %s, trying to cancel it instead",
+                envelope_id,
+                exc_info=True,
+            )
         try:
             documenso.cancel(envelope_id, "invio non completato: annullo l'envelope orfano")
         except Exception:
-            _log.warning("could not cancel the orphaned envelope %s", envelope_id, exc_info=True)
+            _log.warning(
+                "could not cancel the orphaned envelope %s either", envelope_id, exc_info=True
+            )
 
     def _cancel_envelope(self, envelope_id: str, reason: str) -> None:
         """«Annulla», on a document or on a match's letter: Documenso refuses to cancel
@@ -367,8 +412,15 @@ class SigningService:
         anything moved while this delivery waited: only a document still `inviato`
         moves, and an unknown envelope (the other environment's, or one the hub never
         recorded) and a document already signed or cancelled are acknowledged and left
-        alone. No call leaves this method. Returns the id of a document that has just
-        been signed, for `finish` after the commit; `None` otherwise."""
+        alone. No call leaves this method.
+
+        A rejection or a cancellation is moved and recorded here, same as before: the
+        harm of forging one is small, and both only ever cancel. A completion is not
+        moved here (REB-431): the webhook's own secret travels in clear (probe § 5), so a
+        forged `DOCUMENT_COMPLETED` must not by itself turn a document `firmato`. This
+        only returns the document's id, for `finish` after the commit, which confirms the
+        completion with Documenso itself before it counts. Returns `None` when nothing
+        needs `finish`."""
         found = self.session.execute(
             select(
                 ContractDocument.id, ContractDocument.freelancer_id, ContractDocument.match_id
@@ -379,19 +431,16 @@ class SigningService:
             return None
         document_id, freelancer_id, match_id = found
         self.matches.lock_freelancer(freelancer_id)
-        match = self.matches.lock_match(match_id) if match_id is not None else None
+        if match_id is not None:
+            self.matches.lock_match(match_id)
         document = self._lock(document_id)
         if document.stato != "inviato":
             self.session.rollback()
             return None
         signed: UUID | None = None
         if outcome.kind == COMPLETED:
-            document.stato = "firmato"
-            # The signer's own date; the moment the hub heard of it only if Documenso
-            # said nothing, which a completed envelope never does.
-            document.signed_at = outcome.signed_at or self.now()
-            if match is not None and match.stato == "in_firma":
-                match.stato = "attivo"
+            # Left `inviato` on purpose: `finish` confirms it with Documenso itself
+            # before moving it (REB-431).
             signed = document.id
         else:
             document.stato = "annullato"
@@ -399,49 +448,157 @@ class SigningService:
         self.session.commit()
         return signed
 
-    def finish(self, document_id: UUID) -> None:
+    def finish(self, document_id: UUID) -> bool:
         """What a signature leaves to do once it is committed, each step idempotent: the
-        sealed copy downloaded and stored; the signed-copy mails sent, once; for an
-        active framework agreement, the letters that waited for it released. A step
-        that fails is logged and left for the next call (the next «Aggiorna stato», or
-        `sweep`); the others still run."""
+        outcome confirmed with Documenso itself and the document moved to `firmato`, or
+        to `annullato` for a rejection or a cancellation the webhook never delivered
+        (REB-431); the sealed copy downloaded and stored; the signed-copy mails sent,
+        once; for an active framework agreement, the letters that waited for it
+        released. A step that fails is logged and left for the next call (the next
+        «Aggiorna stato», or `sweep`); the others still run. Returns whether this call
+        actually moved anything -- the confirmation, a stored copy, an accepted mail, a
+        released letter -- so `sweep` counts only documents it truly advanced (REB-433),
+        not one still waiting on Documenso or a mail provider that keeps refusing. See
+        `_finish_outcome` for whether Documenso itself could not be asked at all."""
+        return self._finish_outcome(document_id).moved
+
+    def _finish_outcome(self, document_id: UUID) -> _FinishOutcome:
+        """As `finish`, but also says whether the confirmation step itself could not
+        reach Documenso for an answer (REB-431): a refusal or an unreachable instance,
+        not the routine "not completed yet" or "no Documenso configured here". `sweep`
+        reads this so a real failure is visible instead of silently retried every ten
+        minutes forever; `finish` itself still answers a plain bool, unchanged, for its
+        other callers (the webhook's background task, «Aggiorna stato»)."""
+        confirmed = self._confirm_completion(document_id)
+        moved = confirmed is True
         try:
-            self._store_signed_copy(document_id)
+            moved = self._store_signed_copy(document_id) is not None or moved
         except (DocumensoFailed, SigningUnavailable, NotFound):
             self.session.rollback()
             _log.warning(
                 "the signed copy of document %s is not stored yet", document_id, exc_info=True
             )
-        self._mail_signed_copy_once(document_id)
+        moved = self._mail_signed_copy_once(document_id) or moved
         document = self.session.get(ContractDocument, document_id, populate_existing=True)
         if document is not None and is_active(document):
-            self._release_letters(document)
+            moved = self._release_letters(document) or moved
+        return _FinishOutcome(moved=moved, unconfirmed=confirmed is None)
 
-    def sweep(self) -> int:
+    def _confirm_completion(self, document_id: UUID) -> bool | None:
+        """Before a document counts as signed: Documenso's own word on the envelope,
+        read with no row lock held (a network call), so a forged webhook alone can no
+        longer move a document to `firmato` -- a forged event now needs the hub's own
+        API token too (REB-431). Nothing to confirm for a document not `inviato`, or
+        with no envelope. The freelancer's row, the document's match (when it has one)
+        and the document itself are then locked in that order, the global rule, and the
+        document re-read: only one still `inviato` moves. A `COMPLETED` envelope signs
+        it, with the signer's own date (`outcome_from_envelope(envelope).signed_at`),
+        turning its match `attivo` as `apply` used to; a `REJECTED` or `CANCELLED` one
+        is applied the same way `refresh` already applies one, from the same envelope
+        this call already read, so a rejection or a cancellation a webhook never
+        delivered is recovered by the next `finish` or `sweep` too, not just a missed
+        signature (REB-431). Still `PENDING` (or `DRAFT`) leaves the row `inviato`,
+        logged at info level, tried again next time. Documenso not configured on this
+        environment at all (`SigningUnavailable`, `self._documenso()`'s own refusal) is
+        a routine, expected state (a preview with signing off, say) and is logged once
+        and left for the next call, returning `False` like every other no-op. Documenso
+        itself refusing or not answering (`DocumensoFailed`: an expired, revoked or
+        wrong token, an envelope answering 404, or the instance unreachable) is also
+        logged and left for the next call, but returns `None` rather than `False`, so
+        `sweep` can tell a real failure apart from a benign one and count it. Returns
+        `True` only when this call actually moved the document."""
+        document = self._document(document_id)
+        if document.stato != "inviato" or document.documenso_id is None:
+            return False
+        envelope_id = document.documenso_id
+        try:
+            envelope = self._documenso().get(envelope_id)
+        except SigningUnavailable:
+            # No REBASE_DOCUMENSO_URL/REBASE_DOCUMENSO_API_TOKEN on this environment: a
+            # routine, expected state (a preview with signing off, say), not a failure
+            # worth a traceback on every sweep run.
+            _log.info(
+                "no Documenso configured on this environment: document %s stays inviato",
+                document_id,
+            )
+            return False
+        except DocumensoFailed:
+            _log.warning(
+                "could not confirm envelope %s of document %s with Documenso",
+                envelope_id,
+                document_id,
+                exc_info=True,
+            )
+            return None
+        outcome = outcome_from_envelope(envelope)
+        self.matches.lock_freelancer(document.freelancer_id)
+        match = (
+            self.matches.lock_match(document.match_id) if document.match_id is not None else None
+        )
+        document = self._lock(document_id)
+        if document.stato != "inviato":
+            self.session.rollback()
+            return False
+        if outcome is None:
+            self.session.rollback()
+            _log.info("envelope %s of document %s is not completed yet", envelope_id, document_id)
+            return False
+        if outcome.kind != COMPLETED:
+            document.stato = "annullato"
+            document.cancel_reason = _cancel_reason(outcome)
+            self.session.commit()
+            return True
+        document.stato = "firmato"
+        # The signer's own date; the moment the hub heard of it only if Documenso said
+        # nothing, which a completed envelope never does.
+        document.signed_at = outcome.signed_at or self.now()
+        if match is not None and match.stato == "in_firma":
+            match.stato = "attivo"
+        self.session.commit()
+        return True
+
+    def sweep(self) -> SweepResult:
         """`rebase contracts-sweep` (REB-391): redoes what a lost background task or a
         restart left behind, for every document `finish` still has something to do for.
-        Each document runs in its own transaction, through `finish` itself, so the two
+        Each document runs in its own transaction, through `_finish_outcome`, so the two
         steps stay exactly as idempotent as the webhook's own recovery; a failure is
-        logged and the next document is still tried. Returns how many it touched."""
+        logged and the next document is still tried, counted in neither number.
+        `touched` is how many `finish` actually moved (REB-433), not how many it merely
+        looked at -- a document still waiting on Documenso, tried again next time, does
+        not count. `unconfirmed` is how many stayed `inviato` because Documenso itself
+        refused the confirmation or could not be reached (REB-431): failed silently
+        before, now visible so a stuck token or a wrong URL is not read as "nothing to
+        do" forever."""
         touched = 0
+        unconfirmed = 0
         for document_id in self._to_finish():
             try:
-                self.finish(document_id)
+                outcome = self._finish_outcome(document_id)
             except Exception:
                 self.session.rollback()
                 _log.warning(
                     "contracts-sweep: document %s could not be finished", document_id, exc_info=True
                 )
                 continue
-            touched += 1
-        return touched
+            if outcome.moved:
+                touched += 1
+            if outcome.unconfirmed:
+                unconfirmed += 1
+        return SweepResult(touched=touched, unconfirmed=unconfirmed)
 
     def _to_finish(self) -> list[UUID]:
-        """Every document a sweep must run `finish` on: a signature or a notice whose
-        sealed copy is missing or not yet mailed to either recipient, and every active
+        """Every document a sweep must run `finish` on: a document `inviato` with an
+        envelope, whose outcome (a completion, a rejection or a cancellation) a lost
+        webhook delivery never confirmed (REB-431); a signature or a notice whose sealed
+        copy is missing or not yet mailed to either recipient; and every active
         framework agreement that still has a letter `in_attesa` on a match `in_firma` (a
-        release `finish` itself missed, or never ran for). `finish` is idempotent either
-        way, so the two sets are simply run together."""
+        release `finish` itself missed, or never ran
+        for). `finish` is idempotent either way, so the three sets are simply run
+        together. The first costs one GET to Documenso per waiting document per sweep --
+        acceptable at the hub's volume."""
+        awaiting_confirmation = select(ContractDocument.id).where(
+            ContractDocument.stato == "inviato", ContractDocument.documenso_id.is_not(None)
+        )
         unfinished_signatures = select(ContractDocument.id).where(
             ContractDocument.stato.in_(("firmato", "disdetto")),
             or_(
@@ -467,7 +624,8 @@ class SigningService:
                 )
             ),
         )
-        ids = set(self.session.scalars(unfinished_signatures).all())
+        ids = set(self.session.scalars(awaiting_confirmation).all())
+        ids.update(self.session.scalars(unfinished_signatures).all())
         ids.update(self.session.scalars(frameworks_with_waiting_letters).all())
         return sorted(ids, key=str)
 
@@ -489,14 +647,16 @@ class SigningService:
         self.session.commit()
         return document
 
-    def _mail_signed_copy_once(self, document_id: UUID) -> None:
+    def _mail_signed_copy_once(self, document_id: UUID) -> bool:
         """The signed-copy mails, the freelancer's and rebase's, each sent at most once
         and recorded on its own: one recipient's provider refusing forever must not
-        keep the other from ever getting theirs again once `finish` runs next (REB-391)."""
-        self._mail_signed_copy_to(document_id, to_freelancer=True)
-        self._mail_signed_copy_to(document_id, to_freelancer=False)
+        keep the other from ever getting theirs again once `finish` runs next (REB-391).
+        Returns whether either mail was actually accepted this call (REB-433)."""
+        freelancer_mailed = self._mail_signed_copy_to(document_id, to_freelancer=True)
+        rebase_mailed = self._mail_signed_copy_to(document_id, to_freelancer=False)
+        return freelancer_mailed or rebase_mailed
 
-    def _mail_signed_copy_to(self, document_id: UUID, *, to_freelancer: bool) -> None:
+    def _mail_signed_copy_to(self, document_id: UUID, *, to_freelancer: bool) -> bool:
         """One recipient's own signed-copy mail, locked under the document's own row,
         same as `_store_signed_copy`, so two concurrent `finish` calls mail this
         recipient once. Nothing to mail yet (no stored copy) or this recipient already
@@ -504,7 +664,8 @@ class SigningService:
         (`signed_copy_to_freelancer_at` or `signed_copy_to_rebase_at`) is set, and
         committed, only once their mail is accepted, still under this lock, so a refusal
         is retried on the next `finish` without repeating the other recipient's mail,
-        already accepted and recorded under its own column (REB-391)."""
+        already accepted and recorded under its own column (REB-391). Returns whether
+        this recipient's mail was accepted and recorded now (REB-433)."""
         document = self._lock(document_id)
         mailed_at = (
             document.signed_copy_to_freelancer_at
@@ -513,13 +674,13 @@ class SigningService:
         )
         if document.signed_pdf is None or mailed_at is not None:
             self.session.rollback()
-            return
+            return False
         if self.sender is None:
             self.session.rollback()
             _log.warning(
                 "no mail sender: the signed copy of document %s was not mailed", document.id
             )
-            return
+            return False
         user = self._owner(document.freelancer_id)
         pdf = self.matches.document_pdf(document.id, signed=True)
         attachment = Attachment(filename=pdf.filename, content=pdf.content)
@@ -540,14 +701,15 @@ class SigningService:
                 "freelancer" if to_freelancer else "rebase",
             )
             self.session.rollback()
-            return
+            return False
         if to_freelancer:
             document.signed_copy_to_freelancer_at = self.now()
         else:
             document.signed_copy_to_rebase_at = self.now()
         self.session.commit()
+        return True
 
-    def _release_letters(self, framework: ContractDocument) -> None:
+    def _release_letters(self, framework: ContractDocument) -> bool:
         """The letters that waited for this framework agreement (spec § 1e), each in a
         transaction of its own and mailed after its commit: a Documenso refusal leaves
         that letter waiting for the next `finish` and lets the others go. Only matches an
@@ -555,13 +717,15 @@ class SigningService:
 
         `send_match` refuses up front without a mail sender (`_sender`), so a release
         must not dispatch a letter to Documenso either when nobody could then be told
-        about it (REB-391): checked before any letter is even read."""
+        about it (REB-391): checked before any letter is even read. Returns whether at
+        least one letter was actually released this call (REB-433); its own signing-mail
+        need not have been accepted to count, the same as `send_match`'s own report."""
         if self.sender is None:
             _log.warning(
                 "no mail sender: the letters waiting on framework agreement %s stay waiting",
                 framework.id,
             )
-            return
+            return False
         waiting = list(
             self.session.execute(
                 select(ContractDocument.id, ContractDocument.match_id)
@@ -579,6 +743,7 @@ class SigningService:
         sent_by = framework.sent_by or framework.created_by
         freelancer_id = framework.freelancer_id
         self.session.rollback()
+        released = False
         for letter_id, match_id in waiting:
             try:
                 letter = self._send_waiting(
@@ -591,6 +756,7 @@ class SigningService:
                 )
                 continue
             if letter is not None:
+                released = True
                 mailed = self._mail_signing_request(letter)
                 # A letter released this way leaves the same trail `send_match` leaves
                 # for one it sends itself, attributed to whoever sent the framework
@@ -602,6 +768,7 @@ class SigningService:
                     sent_by,
                     {"documento": letter.id, "kind": LETTERA, "mail": mailed},
                 )
+        return released
 
     def _send_waiting(
         self,
@@ -638,7 +805,14 @@ class SigningService:
         """«Aggiorna stato»: Documenso's own word on the envelope, applied the way the
         webhook applies it, then whatever a signature still leaves to do (spec § 6, probe
         § 11.3). The net for an event Documenso gave up on, a copy not downloaded yet, a
-        letter whose release failed."""
+        letter whose release failed.
+
+        This reads the envelope twice for a completion: once here, to apply a
+        rejection or a cancellation the same way «Aggiorna stato» always has, and again
+        inside `finish`'s own confirmation (REB-431), which a webhook's background task
+        and `sweep` also go through and must not need an envelope handed in from
+        somewhere else. An admin's own click, not a per-event webhook, pays that second
+        GET; simpler than giving `finish` a second signature for one caller."""
         document = self._document(document_id)
         if document.documenso_id is None:
             raise InvalidState(
