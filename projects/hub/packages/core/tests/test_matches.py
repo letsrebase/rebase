@@ -445,7 +445,10 @@ def test_a_different_integrity_error_at_the_same_flush_still_propagates(
     key (`matches_pkey`) is the freelancer race it exists for. An integrity error at
     the same flush over a different constraint (a foreign key gone missing
     mid-transaction, say) is not that race and must not be swallowed into "un altro
-    freelance": it propagates unconverted, the admin's own failure to look into."""
+    freelance": it propagates unconverted, the admin's own failure to look into. The
+    request carries an id (REB-406's idempotency key) so this actually exercises
+    `_violates_match_id`'s own constraint-name check, not just the `data.id is None`
+    guard ahead of it."""
     admin_id, freelancer_id, company_id = _setup(clean)
     service = _service(clean)
     real_flush = Session.flush
@@ -461,8 +464,9 @@ def test_a_different_integrity_error_at_the_same_flush_still_propagates(
 
     monkeypatch.setattr(Session, "flush", flush_raising_a_different_constraint)
 
+    body = _body(company_id).model_copy(update={"id": uuid4()})
     with pytest.raises(IntegrityError):
-        service.create(freelancer_id, _body(company_id), admin_id)
+        service.create(freelancer_id, body, admin_id)
 
 
 def test_a_repeated_id_with_changed_data_is_refused_not_returned(clean: Session) -> None:

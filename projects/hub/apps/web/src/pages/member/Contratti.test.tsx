@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { formatDate } from '@/lib/format'
+import { formatDate, formatDateTime } from '@/lib/format'
 import { MemberContratti } from './Contratti'
 
 function answer(status: number, body: unknown) {
@@ -90,7 +90,7 @@ describe('«Contratti» in the member area (REB-392)', () => {
     })
     expect(
       await screen.findByRole('link', {
-        name: `Scarica la copia firmata del contratto quadro del ${formatDate('2026-10-01T09:00:00Z')}`,
+        name: `Scarica la copia firmata del contratto quadro del ${formatDateTime('2026-10-01T09:00:00Z')}`,
       }),
     ).toHaveAttribute('href', '/api/hub/me/contracts/d1/pdf')
     expect(screen.queryByRole('link', { name: /Firma/ })).toBeNull()
@@ -116,12 +116,13 @@ describe('«Contratti» in the member area (REB-392)', () => {
   })
 
   it('lists an earlier signed framework agreement under the current one, with its own copy', async () => {
+    // Both signed the same day (REB-433): only the time tells the two links apart.
     const PREVIOUS = {
       ...QUADRO,
       id: 'd3',
       stato: 'disdetto',
       signing_url: null,
-      signed_at: '2026-01-01T09:00:00Z',
+      signed_at: '2026-10-01T15:00:00Z',
       ha_pdf_firmato: true,
       attivo: false,
     }
@@ -141,13 +142,13 @@ describe('«Contratti» in the member area (REB-392)', () => {
 
     expect(await screen.findByText('Contratti quadro precedenti')).toBeInTheDocument()
     // The current and the earlier framework agreement each offer «Copia firmata»: their
-    // own signature date tells the two links apart by name (REB-433).
+    // own signature date and time tell the two links apart by name (REB-433).
     const current = screen.getByRole('link', {
-      name: `Scarica la copia firmata del contratto quadro del ${formatDate('2026-10-01T09:00:00Z')}`,
+      name: `Scarica la copia firmata del contratto quadro del ${formatDateTime('2026-10-01T09:00:00Z')}`,
     })
     expect(current).toHaveAttribute('href', '/api/hub/me/contracts/d4/pdf')
     const previous = screen.getByRole('link', {
-      name: `Scarica la copia firmata del contratto quadro del ${formatDate('2026-01-01T09:00:00Z')}`,
+      name: `Scarica la copia firmata del contratto quadro del ${formatDateTime('2026-10-01T15:00:00Z')}`,
     })
     expect(previous).toHaveAttribute('href', '/api/hub/me/contracts/d3/pdf')
     expect(screen.queryByRole('link', { name: /Firma/ })).toBeNull()
