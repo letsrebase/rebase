@@ -26,6 +26,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSy
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+import { matchesRemote } from "./retrofit-remote-matches.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_DIR = join(HERE, "template");
@@ -310,8 +311,7 @@ function retrofitRemoteMatches(dir, org, repo) {
   } catch {
     return false;
   }
-  const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`[:/]${escapeRegex(org)}/${escapeRegex(repo)}(\\.git)?$`).test(remote);
+  return matchesRemote(remote, org, repo);
 }
 
 const runnerPoolReady = addToRunnerPool(args.org, args.repo);
