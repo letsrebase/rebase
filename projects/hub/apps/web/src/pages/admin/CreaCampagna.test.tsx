@@ -172,6 +172,8 @@ describe('«Nuova campagna»', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     expect(await screen.findByText('amministratore')).toBeInTheDocument()
     expect(screen.getByRole('checkbox', { name: 'ivan@rebase.it' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'ivan@rebase.it' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'ada@studio.it' })).toBeChecked()
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // to Cosa
     expect(screen.getByLabelText('Oggetto')).toHaveValue('Manca solo il CV')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // to Prova

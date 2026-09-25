@@ -233,7 +233,8 @@ function AudienceTable({
           <TableBody>
             {audience.righe.map((row) => {
               const forced = row.escluso !== null
-              const checked = forced || !esclusi.includes(row.email)
+              // A row the rules leave out is never «Includi»: unticked and disabled.
+              const checked = !forced && !esclusi.includes(row.email)
               return (
                 <TableRow key={row.email}>
                   <TableCell>{row.nome ?? '—'}</TableCell>
