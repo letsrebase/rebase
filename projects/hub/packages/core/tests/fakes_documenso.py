@@ -1,7 +1,7 @@
 """A Documenso in a dict, behind the `HttpCall` seam (REB-387): the signing tests' fake,
 the way `RecordingSender` is the mail's.
 
-It answers the five calls the hub makes, in the shapes the phase 1 probe recorded
+It answers the six calls the hub makes, in the shapes the phase 1 probe recorded
 (`docs/superpowers/specs/2026-09-23-documenso-probe.md` § 4), keeps what every create
 carried, and plays the rest of the world on request: the signer (`sign`, `reject`), a
 refusal with Documenso's error body (`fail`), a dead network (`down`), and the body
@@ -148,6 +148,8 @@ class FakeDocumenso:
             return self._distribute(body)
         if operation == "cancel":
             return self._cancel(body)
+        if operation == "delete":
+            return self._delete(body)
         if operation == "download":
             return self._download(path.split("/")[-2], parts.query)
         if operation == "get":
@@ -160,6 +162,7 @@ class FakeDocumenso:
             "/envelope/create",
             "/envelope/distribute",
             "/envelope/cancel",
+            "/envelope/delete",
         ):
             return path.rsplit("/", 1)[-1]
         if method == "GET" and path == "/envelope":
@@ -234,6 +237,17 @@ class FakeDocumenso:
         if envelope.status != "PENDING":
             return 400, _error("Only pending documents can be cancelled", 400)
         envelope.status, envelope.completed_at = "CANCELLED", datetime.now(UTC)
+        return 200, json.dumps({"success": True}).encode()
+
+    def _delete(self, body: bytes) -> tuple[int, bytes]:
+        """Documenso's own v2.18.0 source deletes a draft or a pending envelope outright
+        whatever its state, and only refuses on one Documenso itself never accepted
+        (REB-432): the envelope not found. A completed one is out of scope here -- the
+        hub only ever deletes an orphan `create` just left, never a signed document."""
+        envelope_id = json.loads(body)["envelopeId"]
+        if envelope_id not in self.envelopes:
+            return 404, _error("Envelope not found", 404)
+        del self.envelopes[envelope_id]
         return 200, json.dumps({"success": True}).encode()
 
     def _download(self, item_id: str, query: str) -> tuple[int, bytes]:

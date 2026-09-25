@@ -147,6 +147,28 @@ def test_cancel_takes_only_an_envelope_out_for_signature() -> None:
     assert client.get(envelope_id).status == "CANCELLED"
 
 
+def test_delete_removes_the_envelope_whatever_its_state() -> None:
+    """REB-432: unlike `cancel`, `delete` refuses on nothing but the envelope's own
+    existence (probe § 4, confirmed against the v2.18.0 image's own OpenAPI description
+    and its bundled source): a still-`DRAFT` envelope deletes as readily as one already
+    `PENDING`."""
+    fake = FakeDocumenso()
+    draft_id = _create(fake)
+    pending_id = _create(fake)
+    fake.client().distribute(pending_id)
+    client = fake.client()
+
+    client.delete(draft_id)
+    assert json.loads(fake.bodies[-1]) == {"envelopeId": draft_id}
+    assert draft_id not in fake.envelopes
+
+    client.delete(pending_id)
+    assert pending_id not in fake.envelopes
+
+    with pytest.raises(DocumensoFailed, match="Envelope not found"):
+        client.get(draft_id)
+
+
 def test_a_refusal_carries_documensos_sentence_and_never_its_stack() -> None:
     fake = FakeDocumenso()
     envelope_id = _create(fake)

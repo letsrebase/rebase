@@ -590,17 +590,38 @@ def test_an_empty_signer_setting_still_refuses_to_send_with_blank_signer_fields(
     assert fake.calls == []
 
 
-def test_a_refused_distribute_cancels_the_orphaned_envelope(
+def test_a_refused_distribute_deletes_the_orphaned_envelope(clean: Session) -> None:
+    """REB-432: `create` leaves a still-`DRAFT` envelope on Documenso, `distribute` is
+    refused. The fix's best-effort delete removes it outright -- Documenso deletes a
+    draft or a pending envelope with no refusal by its state (probe § 4) -- so a
+    retried send does not pile up drafts under the same externalId, and the admin
+    reads the original refusal alone. The card's «Done when»: no envelope is left on
+    the fake."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
+    fake.fail("distribute", 400, "Recipient is missing a signature field")
+
+    with pytest.raises(DocumensoFailed) as caught:
+        _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)
+
+    assert caught.value.message == (
+        "Documenso ha rifiutato la richiesta: Recipient is missing a signature field"
+    )
+    assert fake.envelopes == {}
+
+
+def test_a_refused_delete_falls_back_to_cancelling_the_orphan(
     clean: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """REB-406: `get` succeeds (the envelope already exists on
-    Documenso, as after a real create) and this test then moves it to `PENDING` itself,
-    simulating Documenso having processed the distribute server-side even though the
-    client's own parsing of the answer fails -- `FakeDocumenso.cancel` (probe § 4: only
-    a `PENDING` envelope accepts one) would otherwise refuse a cancel just as the real
-    API would for a still-`DRAFT` envelope, which `fake.fail('distribute', ...)` alone
-    never advances past. The fix's best-effort cancel succeeds here, and the original
-    refusal is still what reaches the admin."""
+    """REB-432: a delete Documenso refuses for any reason falls back to a cancel, which
+    a still-`PENDING` envelope still answers (probe § 4). `get` succeeds (the envelope
+    already exists on Documenso, as after a real create) and this test then moves it to
+    `PENDING` itself, simulating Documenso having processed the distribute server-side
+    even though the client's own parsing of the answer fails -- the same setup REB-406's
+    own orphan test used, since `fake.fail('distribute', ...)` alone never advances the
+    envelope past `DRAFT`. The delete is then forced to fail too, so the fallback runs;
+    the original refusal is still what reaches the admin."""
     admin_id, freelancer_id, company_id = _setup(clean)
     renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
     match = _draft(clean, renderer, freelancer_id, company_id, admin_id)
@@ -613,6 +634,7 @@ def test_a_refused_distribute_cancels_the_orphaned_envelope(
 
     monkeypatch.setattr(fake, "_get", get_then_mark_pending)
     fake.fail("distribute", 400, "Recipient is missing a signature field")
+    fake.fail("delete", 500, "Internal server error")
 
     with pytest.raises(DocumensoFailed) as caught:
         _signing(clean, renderer, fake, sender).send_match(match.id, admin_id)

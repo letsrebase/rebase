@@ -285,8 +285,9 @@ class SigningService:
         inside the caller's transaction: nothing here commits, so a refusal at any step
         leaves the document as it was. The caller must already hold the freelancer's row
         lock. If `get` or `distribute` fails after `create` already left an envelope on
-        Documenso, a best-effort cancel follows it (`_cancel_orphan`, REB-406), so a retried
-        send does not pile up drafts under the same externalId."""
+        Documenso, a best-effort delete follows it (`_remove_orphan`, REB-406, REB-432;
+        a cancel only when the delete itself is refused), so a retried send does not
+        pile up drafts under the same externalId."""
         self._signer()
         renderer, documenso = self._renderer(), self._documenso()
         name = DOCUMENT_BY_KIND[document.kind]
@@ -311,7 +312,7 @@ class SigningService:
             envelope = documenso.get(envelope_id)
             signing_url = documenso.distribute(envelope_id)
         except Exception:
-            self._cancel_orphan(documenso, envelope_id)
+            self._remove_orphan(documenso, envelope_id)
             raise
         document.data = dict(data)
         document.pdf = rendered.pdf
@@ -324,16 +325,31 @@ class SigningService:
         document.sent_at = self.now()
         document.sent_by = sent_by
 
-    def _cancel_orphan(self, documenso: DocumensoClient, envelope_id: str) -> None:
+    def _remove_orphan(self, documenso: DocumensoClient, envelope_id: str) -> None:
         """`get` or `distribute` failed after `create` already left an envelope on
-        Documenso: a best-effort cancel, so a retried send does not pile up drafts under
-        the same externalId. A failure of this cancel (a still-draft envelope refuses
-        one, probe § 4) is logged and never raised over the failure the admin already
-        sees (REB-406)."""
+        Documenso: a best-effort delete, so a retried send does not pile up drafts under
+        the same externalId. Documenso deletes a draft or a pending envelope outright,
+        with no refusal by the envelope's state (its own v2.18.0 source, probe § 4,
+        REB-432); a delete this token cannot make -- the envelope already gone, no
+        access to it, or any other refusal -- falls back to a cancel, which a still-
+        `PENDING` envelope still answers. Both are best effort: a failure of either is
+        logged with the envelope id and never raised over the failure the admin already
+        sees (REB-406, REB-432)."""
+        try:
+            documenso.delete(envelope_id)
+            return
+        except Exception:
+            _log.warning(
+                "could not delete the orphaned envelope %s, trying to cancel it instead",
+                envelope_id,
+                exc_info=True,
+            )
         try:
             documenso.cancel(envelope_id, "invio non completato: annullo l'envelope orfano")
         except Exception:
-            _log.warning("could not cancel the orphaned envelope %s", envelope_id, exc_info=True)
+            _log.warning(
+                "could not cancel the orphaned envelope %s either", envelope_id, exc_info=True
+            )
 
     def _cancel_envelope(self, envelope_id: str, reason: str) -> None:
         """«Annulla», on a document or on a match's letter: Documenso refuses to cancel
