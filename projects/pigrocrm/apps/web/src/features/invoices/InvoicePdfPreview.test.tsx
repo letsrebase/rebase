@@ -74,6 +74,55 @@ describe('InvoicePdfPreview', () => {
     expect(fetchWithRefresh).toHaveBeenCalledTimes(1)
   })
 
+  /**
+   * REB-463: a `blob:` URL has the page's origin. `application/xml` is the one a writer
+   * can really store on the invoice's document today (an XHTML root renders as a page);
+   * `text/html` is refused all the same.
+   */
+  it.each([
+    ['application/xml', '<html xmlns="http://www.w3.org/1999/xhtml"><script>parent.alert(1)</script></html>'],
+    ['text/html', '<script>parent.alert(1)</script>'],
+  ])('refuses to frame a %s body, and says so in Italian', async (type, body) => {
+    vi.mocked(fetchWithRefresh).mockResolvedValue(
+      new Response(body, { status: 200, headers: { 'Content-Type': type } }),
+    )
+    wrap(<InvoicePdfPreview invoice={ISSUED} />)
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'Il file archiviato per questa fattura non è un PDF, quindi l’anteprima non lo mostra. «Rigenera documenti» genera di nuovo il PDF.',
+        ),
+      ).toBeInTheDocument(),
+    )
+    expect(screen.queryByTitle(/Anteprima PDF/)).not.toBeInTheDocument()
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('names no button for a proforma whose file is not a PDF', async () => {
+    vi.mocked(fetchWithRefresh).mockResolvedValue(
+      new Response('<note/>', { status: 200, headers: { 'Content-Type': 'application/xml' } }),
+    )
+    wrap(<InvoicePdfPreview invoice={{ ...PROFORMA, pdf_document_id: 'doc-3' } as Invoice} />)
+    await waitFor(() =>
+      expect(
+        screen.getByText('Il file archiviato per questa proforma non è un PDF, quindi l’anteprima non lo mostra.'),
+      ).toBeInTheDocument(),
+    )
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('still frames a PDF whose Content-Type carries a parameter', async () => {
+    vi.mocked(fetchWithRefresh).mockResolvedValue(
+      new Response('%PDF-1.7', {
+        status: 200,
+        headers: { 'Content-Type': 'application/pdf; name=fattura-2026-1.pdf' },
+      }),
+    )
+    wrap(<InvoicePdfPreview invoice={ISSUED} />)
+    const frame = await screen.findByTitle('Anteprima PDF fattura')
+    expect(frame).toHaveAttribute('src', expect.stringMatching(/^blob:pdf-1#/))
+  })
+
   it('asks the server for nothing when there is no PDF yet, and says why', async () => {
     wrap(<InvoicePdfPreview invoice={DRAFT} />)
     await waitFor(() => expect(screen.getByText(/si genera all’emissione/)).toBeInTheDocument())

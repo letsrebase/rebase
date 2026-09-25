@@ -16,12 +16,21 @@ import { useInvoicePdf, type Invoice } from './queries'
  *
  * The object URL is made here from the cached Blob and revoked when this component
  * leaves: cached in the query instead, it would come back revoked on the next mount.
+ *
+ * Only a PDF reaches the frame (REB-463). The Blob's type is the response's
+ * `Content-Type`, which is the current version's own, and anyone who may write can add
+ * a version of any allowed type to the invoice's document, `application/xml` among
+ * them. A `blob:` URL has this page's origin, so an XML file in the XHTML namespace
+ * rendered here as a page of the app: its markup always, a form included, and its
+ * script wherever no CSP forbids inline script. Anything that is not `application/pdf`
+ * gets no object URL at all, and the pane says so instead.
  */
 export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
   const pdf = useInvoicePdf(invoice)
   const blob = pdf.data
+  const notPdf = blob !== undefined && !isPdf(blob)
   // Derived from the bytes, revoked when they change or the component leaves.
-  const url = useMemo(() => (blob ? URL.createObjectURL(blob) : undefined), [blob])
+  const url = useMemo(() => (blob && isPdf(blob) ? URL.createObjectURL(blob) : undefined), [blob])
   useEffect(() => {
     if (!url) return
     return () => URL.revokeObjectURL(url)
@@ -49,6 +58,8 @@ export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
             <QueryErrorBanner error={pdf.error} />
           </div>
         )
+      ) : notPdf ? (
+        <NotPdf invoice={invoice} />
       ) : !url ? (
         <>
           <p className="sr-only">Caricamento del PDF…</p>
@@ -59,6 +70,9 @@ export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
           title={`Anteprima PDF ${invoice.tipo === 'proforma' ? 'proforma' : 'fattura'}`}
           // A hint for the viewer's chrome: Chromium honours it, Firefox and Safari
           // ignore it. The bar's own «PDF» button is the download either way.
+          // Snyk Code flags this as javascript/DOMXSS. It was real until REB-463: an
+          // XHTML version of the invoice's document rendered here as the app. Now `url`
+          // only exists for an application/pdf Blob (`isPdf` below).
           src={`${url}#toolbar=0&navpanes=0`}
           className="h-full w-full flex-1 border-0"
         />
@@ -82,12 +96,7 @@ function Empty({ invoice }: { invoice: Invoice }) {
         : invoice.importata_da != null
           ? 'Fattura importata: il PDF originale non è archiviato qui.'
           : 'Nessun PDF archiviato per questo documento. «Rigenera documenti» lo produce.'
-  return (
-    <div className="text-muted-foreground m-auto flex max-w-xs flex-col items-center gap-3 p-6 text-center text-sm">
-      <FileText className="size-8" aria-hidden="true" />
-      <p>{text}</p>
-    </div>
-  )
+  return <Notice text={text} />
 }
 
 /**
@@ -106,10 +115,32 @@ function Missing({ invoice }: { invoice: Invoice }) {
       : invoice.stato === 'emessa' && invoice.importata_da == null
         ? 'Il PDF di questa fattura non è disponibile. «Rigenera documenti» lo genera di nuovo.'
         : 'Il PDF di questa fattura non è disponibile.'
+  return <Notice text={text} />
+}
+
+/**
+ * The server answered with bytes that are not a PDF (REB-463): somebody added a version
+ * of another type to the invoice's document. It names «Rigenera documenti» where
+ * `Missing` does, since on an issued fattura of ours that button stores a fresh PDF as
+ * the document's next version; elsewhere nothing on the page makes one.
+ */
+function NotPdf({ invoice }: { invoice: Invoice }) {
+  const which = invoice.tipo === 'proforma' ? 'questa proforma' : 'questa fattura'
+  const why = `Il file archiviato per ${which} non è un PDF, quindi l’anteprima non lo mostra.`
+  const ours = invoice.tipo !== 'proforma' && invoice.stato === 'emessa' && invoice.importata_da == null
+  return <Notice text={ours ? `${why} «Rigenera documenti» genera di nuovo il PDF.` : why} />
+}
+
+function Notice({ text }: { text: string }) {
   return (
     <div className="text-muted-foreground m-auto flex max-w-xs flex-col items-center gap-3 p-6 text-center text-sm">
       <FileText className="size-8" aria-hidden="true" />
       <p>{text}</p>
     </div>
   )
+}
+
+/** `application/pdf` by its essence: a parameter after `;` does not make it another type. */
+function isPdf(blob: Blob): boolean {
+  return (blob.type.split(';', 1)[0] ?? '').trim().toLowerCase() === 'application/pdf'
 }
