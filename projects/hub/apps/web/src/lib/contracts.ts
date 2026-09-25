@@ -44,7 +44,8 @@ export function toFiscalData(draft: FiscalDraft): FiscalData {
   }
 }
 
-/** Saved tax data as «Chi e per chi» shows them instead of their four fields. */
+/** Saved tax data in one line: «Chi e per chi» shows it instead of their four fields,
+ *  and «Dati fiscali» on «Match e contratti» in its closed summary. */
 export function fiscalLine(fiscal: FiscalData): string {
   return `Salvati: CF ${fiscal.codice_fiscale} · P.IVA ${fiscal.partita_iva}`
 }

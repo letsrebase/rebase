@@ -1,3 +1,5 @@
+import type { Action } from './api'
+
 const euro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', useGrouping: 'always' })
 const day = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })
 const moment = new Intl.DateTimeFormat('it-IT', {
@@ -46,21 +48,42 @@ export const STATE_LABELS: Record<string, string> = {
 
 /** REB-413: the state chips on the «Match» list, in the order the brief gives them. */
 export const MATCH_STATES = ['bozza', 'in_firma', 'attivo', 'concluso', 'annullato'] as const
-/** REB-387: what a match and a contract document are, in the admin's words. */
+/** What a match and a contract document are, in the admin's words: the same as the
+ *  core's `MATCH_STATE_LABELS` and `DOCUMENT_STATE_LABELS` (`match_words.py`), which the
+ *  MCP tools answer, so keep the two identical (REB-477). */
 export const MATCH_STATE_LABELS: Record<string, string> = {
-  bozza: 'Bozza',
-  in_firma: 'In firma',
+  bozza: 'Da inviare',
+  in_firma: 'In attesa di firma',
   attivo: 'Attivo',
   concluso: 'Concluso',
   annullato: 'Annullato',
 }
 export const DOCUMENT_STATE_LABELS: Record<string, string> = {
-  generato: 'Generato',
-  in_attesa: 'In attesa del contratto quadro',
-  inviato: 'Inviato',
+  generato: 'Pronto, non inviato',
+  in_attesa: 'Parte dopo il contratto quadro',
+  inviato: 'Da firmare',
   firmato: 'Firmato',
   annullato: 'Annullato',
   disdetto: 'Disdetto',
+}
+
+/** The words on the button for each step the core names (REB-477). */
+export const ACTION_LABELS: Record<Action, string> = {
+  invia: 'Invia per la firma',
+  reinvia_email: 'Reinvia email',
+  aggiorna_stato: 'Aggiorna stato',
+  annulla: 'Annulla',
+  chiudi: 'Chiudi match',
+  registra_disdetta: 'Registra disdetta',
+}
+/** The same button while its request runs. */
+export const ACTION_PENDING_LABELS: Record<Action, string> = {
+  invia: 'Invio…',
+  reinvia_email: 'Reinvio…',
+  aggiorna_stato: 'Aggiorno…',
+  annulla: 'Annullo…',
+  chiudi: 'Chiudo…',
+  registra_disdetta: 'Registro…',
 }
 
 /** REB-392: a contract's state in the freelancer's own words, gendered to the document:

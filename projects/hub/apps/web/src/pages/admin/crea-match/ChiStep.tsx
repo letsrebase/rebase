@@ -14,7 +14,7 @@ import {
   type FiscalDraft,
 } from '@/lib/contracts'
 import { formatDate } from '@/lib/format'
-import { FiscalFields } from '../Contratti'
+import { FiscalFields } from '../contratti/Fiscal'
 import { StepFooter } from './StepFooter'
 
 const SEARCH_DEBOUNCE_MS = 300
