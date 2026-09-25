@@ -88,13 +88,14 @@ export function FiscalSection({
   const save = useMutation({
     mutationFn: (data: FiscalData) => admin.saveFiscal(freelancerId, data),
     onSuccess: (record, sent) => {
-      // The fields saved as they read now take the record the save answered, at once;
-      // one typed in again while the save was on its way keeps its text. From here only a
-      // record newer than this one refills the form.
+      // The fields saved as they read now take the record the save answered, at once, or
+      // the newer one the form already holds when the answer is older; one typed in again
+      // while the save was on its way keeps its text. From here only a record newer than
+      // the one held refills the form.
       setForm((current) => {
         const typed = typedAfterSave(current.draft, current.typed, sent)
-        if (!newerFiscal(record, current.held)) return { ...current, typed }
-        return { draft: refillFiscal(current.draft, record, typed), typed, held: record }
+        const held = newerFiscal(record, current.held) ? record : current.held
+        return { draft: refillFiscal(current.draft, held, typed), typed, held }
       })
       setSaved(true)
       onSaved()

@@ -119,6 +119,34 @@ describe('«Dati fiscali» on «Match e contratti»', () => {
     expect(screen.getByLabelText('Partita IVA')).toHaveValue('01234567899')
   })
 
+  it('shows the newer record, not its own text, in a field an older save answered for', async () => {
+    let answer!: (response: Response) => void
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        new Promise<Response>((settle) => {
+          answer = settle
+        }),
+    )
+    const show = mount(SAVED)
+    await userEvent.click(screen.getByText('Dati fiscali'))
+    const domicilio = screen.getByLabelText('Domicilio professionale')
+    const pec = screen.getByLabelText('PEC, se ce l’ha')
+    await userEvent.clear(domicilio)
+    await userEvent.type(domicilio, 'Corso Como 1, Milano')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva i dati fiscali' }))
+    // While the save is on its way, somebody else saves a newer record, and the admin
+    // types in another field.
+    show(NEWER)
+    await userEvent.type(pec, 'ada@pec.it')
+    const older = { ...SAVED, domicilio: 'Corso Como 1, Milano', updated_at: '2026-09-24T12:00:00Z' }
+    answer(new Response(JSON.stringify(older), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    expect(await screen.findByText('Dati fiscali salvati.')).toBeInTheDocument()
+
+    expect(domicilio).toHaveValue('Via Po 2, 10121 Torino')
+    expect(screen.getByLabelText('Partita IVA')).toHaveValue('01234567899')
+    expect(pec).toHaveValue('ada@pec.it')
+  })
+
   it('fills the form once the first record is saved elsewhere', () => {
     const show = mount(null)
     expect(screen.getByLabelText('Codice fiscale')).toHaveValue('')
