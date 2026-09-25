@@ -25,8 +25,7 @@ def armed(client: TestClient) -> Iterator[TestClient]:
     yield client
 
 
-def post(client: TestClient, payload: dict[str, object], *, secret: str = SECRET) -> int:
-    body = json.dumps(payload).encode()
+def post_body(client: TestClient, body: bytes, *, secret: str = SECRET) -> int:
     stamp = str(int(time.time()))
     mac = hmac.new(
         base64.b64decode(secret.removeprefix("whsec_")),
@@ -41,6 +40,10 @@ def post(client: TestClient, payload: dict[str, object], *, secret: str = SECRET
     return client.post("/api/hub/webhooks/resend", content=body, headers=headers).status_code
 
 
+def post(client: TestClient, payload: dict[str, object], *, secret: str = SECRET) -> int:
+    return post_body(client, json.dumps(payload).encode(), secret=secret)
+
+
 def test_without_the_secret_the_webhook_is_off(client: TestClient) -> None:
     assert client.post("/api/hub/webhooks/resend", content=b"{}").status_code == 503
 
@@ -48,6 +51,18 @@ def test_without_the_secret_the_webhook_is_off(client: TestClient) -> None:
 def test_a_bad_signature_is_refused(armed: TestClient) -> None:
     other = "whsec_" + base64.b64encode(b"x" * 24).decode()
     assert post(armed, {"type": "email.delivered", "data": {}}, secret=other) == 401
+
+
+def test_missing_svix_headers_are_refused(armed: TestClient) -> None:
+    assert armed.post("/api/hub/webhooks/resend", content=b"{}").status_code == 401
+
+
+def test_a_correctly_signed_non_json_body_is_refused(armed: TestClient) -> None:
+    assert post_body(armed, b"not json") == 400
+
+
+def test_a_correctly_signed_json_array_is_refused_not_crashed(armed: TestClient) -> None:
+    assert post_body(armed, b"[]") == 400
 
 
 def test_a_stranger_is_acknowledged_and_an_early_tagged_event_is_retried(
