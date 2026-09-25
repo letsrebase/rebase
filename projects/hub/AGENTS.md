@@ -270,14 +270,18 @@ signed on Documenso"); this section is the container's own.
   or not the window is open, so an account made in that window cannot outlive it. Check
   nobody else got in before closing the window: `docker exec rebase-documenso-db-1 psql
   -U documenso -d documenso -tAc 'SELECT email FROM "User"'` must list exactly the two
-  `@letsrebase.com` addresses above, beside Documenso's own two internal accounts
-  (`serviceaccount@` and `deleted-account@firma.letsrebase.com`).
+  `@letsrebase.com` addresses above, beside Documenso's own two internal accounts,
+  `serviceaccount@firma.letsrebase.com` and `deleted-account@firma.letsrebase.com`.
 - **Who signs for rebase**: the `rebase-*` fields of `REBASE_SIGNER_JSON`, in the host's
   `.env`, never in the repository. With both texts `status: final`, production signs
   with whoever's data is there, which until the SRL exists (roadmap #284) is a person's,
-  not the company's yet. The value goes into `.env` as plain JSON with no outer quotes:
-  compose's `.env` parser refuses shell-style quoting (`'...'"'"'...'`), which an
-  apostrophe in an address produces (the patch tag of 2026-09-25 failed on it once).
+  not the company's yet. The value is one line of compact JSON. Compose's `.env` parser
+  refuses shell-style quoting (`'...'"'"'...'`), which an apostrophe in an address
+  produces (the patch tag of 2026-09-25 failed on it once). Unquoted JSON works as long as
+  it holds no ` #` (the rest of the line would become a comment) and no `$` (compose would
+  interpolate it); otherwise wrap the value in double quotes and escape every inner `"`,
+  `\` and `$` as `\"`, `\\` and `$$`. Check with `docker compose -p rebase --env-file
+  /opt/hub/.env config | grep REBASE_SIGNER_JSON` before any tag.
 - **The preview sends real mail**: its `.env` carries `REBASE_RESEND_API_KEY` since
   2026-09-25, because «Invia per la firma» refuses without a mail sender; its signer is
   fiction, and its contracts mail is `ciao+firma-preview@letsrebase.com`.
