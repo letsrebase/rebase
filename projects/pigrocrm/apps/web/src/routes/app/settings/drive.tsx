@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { DrivePanel } from '@/features/drive/DrivePanel'
-import { messaggioEsito } from '@/features/drive/esito'
+import { ConsentOutcome } from '@/components/ConsentOutcome'
+import { messaggioEsito, riprovaEsito } from '@/features/drive/esito'
 
 /**
  * Where `GET /api/drive/oauth/callback` lands the browser after a consent flow --
@@ -15,14 +16,9 @@ import { messaggioEsito } from '@/features/drive/esito'
  */
 function DriveSettingsRoute() {
   const { esito } = Route.useSearch()
-  const messaggio = messaggioEsito(esito)
   return (
     <div className="space-y-4">
-      {messaggio ? (
-        <p role="status" className="border bg-muted/50 px-3 py-2 text-sm">
-          {messaggio}
-        </p>
-      ) : null}
+      <ConsentOutcome messaggio={messaggioEsito(esito)} riprova={riprovaEsito(esito)} />
       <DrivePanel />
     </div>
   )

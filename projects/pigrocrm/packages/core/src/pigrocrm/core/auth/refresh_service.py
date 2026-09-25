@@ -184,6 +184,29 @@ class RefreshTokenService:
         record.consumed_at = now
         self.session.commit()
 
+    def is_live(self, jti: UUID, user_id: UUID) -> bool:
+        """Whether this token could still be rotated: its row exists for this user, has
+        not been consumed and has not expired. A read and nothing else: no lock, no
+        write, no revocation, so asking it never changes the session it asks about.
+
+        Its one caller is the Google consent's way back (`deps.callback_actor`, REB-446),
+        a top-level navigation that has to know whose browser came back after the access
+        cookie ran out on Google's screens, and that must not rotate the pair the SPA is
+        about to renew on its own: a rotation there would need its new cookies on every
+        answer the callback can give, and one it could not carry them on would leave the
+        browser holding a consumed token, which the next refresh reads as a replay. A
+        consumed token answers False here without burning the family, like an unknown
+        one: this read is not where a replay is judged, `rotate` is.
+        """
+        now = datetime.now(UTC)
+        stmt = select(RefreshToken.id).where(
+            RefreshToken.jti == jti,
+            RefreshToken.user_id == user_id,
+            RefreshToken.consumed_at.is_(None),
+            RefreshToken.expires_at >= now,
+        )
+        return self.session.execute(stmt).first() is not None
+
     def _locked(self, jti: UUID, user_id: UUID, now: datetime) -> RefreshToken:
         """The row for this jti, locked for the rest of the transaction, or a rejection.
 

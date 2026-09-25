@@ -184,6 +184,36 @@ def test_an_expired_refresh_token_row_is_rejected(db_session: Session) -> None:
         RefreshTokenService(db_session).consume(already_expired.jti, user.id)
 
 
+def test_is_live_answers_only_for_an_unspent_unexpired_row_of_that_user(
+    db_session: Session,
+) -> None:
+    """The Google consent's way back asks this (REB-446), and it must answer without
+    touching the session it asks about: a consumed token reads as dead but burns
+    nothing, so the successor it was rotated into still refreshes afterwards."""
+    owner = _make_user(db_session, "owner@live.it")
+    other = _make_user(db_session, "other@live.it")
+    service = RefreshTokenService(db_session)
+    jti = decode_token(service.issue(owner.id, SETTINGS), SETTINGS, expected_type="refresh").jti
+    assert jti is not None
+
+    assert service.is_live(jti, owner.id) is True
+    assert service.is_live(jti, other.id) is False
+    assert service.is_live(uuid4(), owner.id) is False
+
+    successor = service.rotate(jti, owner.id, SETTINGS).refresh_token
+    assert service.is_live(jti, owner.id) is False
+    next_jti = decode_token(successor, SETTINGS, expected_type="refresh").jti
+    assert next_jti is not None
+    assert service.is_live(next_jti, owner.id) is True
+
+    expired = RefreshToken(
+        jti=uuid4(), user_id=owner.id, expires_at=datetime.now(UTC) - timedelta(seconds=1)
+    )
+    db_session.add(expired)
+    db_session.commit()
+    assert service.is_live(expired.jti, owner.id) is False
+
+
 def test_get_active_returns_the_user(db_session: Session) -> None:
     user = _make_user(db_session)
     fetched = UserRepository(db_session).get_active(user.id)

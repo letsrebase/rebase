@@ -6,9 +6,10 @@ configured, because "this installation has no Google" and "you have not connecte
 Drive yet" are both states with no account and no error to report, and the settings
 page has to render the first without the SPA treating the response as a failed query.
 The OAuth callback is a browser navigation and always ends on the settings page with
-one of three outcome codes, never with Google's own `error` (English, and occasionally
-the client id) and never with a `Conflict`'s problem document (which would strand the
-user outside the SPA at the end of a consent flow).
+one of four outcome codes, never with Google's own `error` (English, and occasionally
+the client id), never with a `Conflict`'s problem document (which would strand the
+user outside the SPA at the end of a consent flow), and never with a 401 when the
+session ran out on Google's screens (REB-446).
 
 One thing here is *not* a mirror of Gmail: there is no sync, no backfill, and no route
 that reads back stored correspondence. Slice 9B is only the credential and its two
@@ -26,7 +27,7 @@ from pigrocrm.core.drive.account import GoogleDriveAccountService
 from pigrocrm.core.drive.oauth import GoogleDriveOAuthService
 from pigrocrm.core.drive.schemas import DriveHealth, DriveRootsUpdate, GoogleDriveAccountRead
 from pigrocrm.core.errors import Conflict
-from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, get_actor
+from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, callback_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.oauth_relay import relay_to_space
 from pigrocrm_api.routers.gmail import token_client
@@ -34,13 +35,14 @@ from pigrocrm_api.tenancy import cookie_path
 
 router = APIRouter(prefix="/api/drive", tags=["drive"], responses=PROBLEM_RESPONSES)
 
-# Where the SPA renders the outcome of a consent flow -- the same fixed table of three
+# Where the SPA renders the outcome of a consent flow -- the same fixed table of four
 # codes as `routers/gmail.py`'s own constants, on Drive's own settings tab so that
 # nothing an attacker appends to this URL can put words of their own on the screen.
 _SETTINGS_PAGE = "/app/settings/drive"
 _ESITO_COLLEGATO = "collegato"
 _ESITO_NEGATO = "negato"
 _ESITO_ERRORE = "errore"
+_ESITO_SESSIONE = "sessione"
 
 _ACCOUNT_PATH = "/account"
 _CALLBACK_ROUTE = "/oauth/callback"
@@ -88,7 +90,11 @@ def finish_oauth(
     relayed = relay_to_space(request, settings, _CALLBACK_PATH, code=code, state=state, error=error)
     if relayed is not None:
         return relayed
-    actor = get_actor(request, session, settings)
+    # The refresh cookie counts when the access cookie ran out on Google's screens, and
+    # no session at all is a page with a sentence, not a 401 (REB-446, as in Gmail's).
+    actor = callback_actor(request, session, settings)
+    if actor is None:
+        return _back_to_settings(request, _ESITO_SESSIONE)
     if error is not None or code is None or state is None:
         return _back_to_settings(request, _ESITO_NEGATO)
     try:

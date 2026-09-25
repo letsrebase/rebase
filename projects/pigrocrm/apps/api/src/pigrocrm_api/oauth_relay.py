@@ -10,7 +10,8 @@ cookie and redeems the state against its own database, exactly as it does for a 
 that never left it.
 
 Which is why this runs before the route asks who the caller is: somebody signed in to a
-space only is a stranger to the root, and would get a 401 here instead of their consent.
+space only is a stranger to the root, and would be sent to the root's own page for a
+browser with no session (REB-446) instead of to their consent.
 The slug decides only where the browser goes next. It is checked against the slug rules
 before it becomes a path segment, and the path is always the root-relative
 `/<slug>/api/<product>/oauth/callback`, so no state can turn this into a redirect off

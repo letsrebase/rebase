@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core.actor import Actor, Role
 from pigrocrm.core.auth.pat_service import PAT_PREFIX, PatService
+from pigrocrm.core.auth.refresh_service import RefreshTokenService
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.tokens import decode_token
 from pigrocrm.core.config import Settings, get_settings
@@ -291,6 +292,16 @@ def reset_storage_cache() -> None:
         _storage = None
 
 
+def _bearer_pat(request: Request) -> str | None:
+    """The PAT an `Authorization: Bearer pgc_...` header names, or None for any other
+    header or none at all. One place, so `get_actor` and `callback_actor` cannot drift
+    on which requests are an agent's."""
+    header = request.headers.get("Authorization", "")
+    if header.startswith("Bearer ") and header[7:].startswith(PAT_PREFIX):
+        return header[7:]
+    return None
+
+
 def get_actor(request: Request, session: SessionDep, settings: SettingsDep) -> Actor:
     """Two credentials, one actor: the browser presents a JWT cookie, an agent presents
     a PAT. Everything downstream is identical.
@@ -305,12 +316,12 @@ def get_actor(request: Request, session: SessionDep, settings: SettingsDep) -> A
        that does not start with `pgc_` -- is ignored outright, and resolution falls
        back to the `ACCESS_COOKIE` cookie.
     """
-    header = request.headers.get("Authorization", "")
-    if header.startswith("Bearer ") and header[7:].startswith(PAT_PREFIX):
+    pat = _bearer_pat(request)
+    if pat is not None:
         try:
             # `settings`, so a space's own `mcp_full_access` (Impostazioni → Spazio) is
             # what stamps `Actor.full_access`, not the process environment's.
-            return PatService(session, settings=settings).resolve(header[7:])
+            return PatService(session, settings=settings).resolve(pat)
         except DomainError as exc:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token non valido") from exc
 
@@ -327,6 +338,61 @@ def get_actor(request: Request, session: SessionDep, settings: SettingsDep) -> A
     except DomainError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Utente non attivo") from exc
 
+    role: Role = user.ruolo  # type: ignore[assignment]
+    return Actor(id=user.id, type="user", role=role)
+
+
+def callback_actor(request: Request, session: Session, settings: Settings) -> Actor | None:
+    """The actor a browser brings back from Google's consent screens, or None when it
+    holds no live session here (REB-446).
+
+    The Gmail and Drive callbacks are top-level navigations, so the SPA never gets to
+    renew the session before them, and a person who spends a minute on Google's account
+    chooser and consent comes back after the fifteen-minute access cookie has run out
+    whenever they started near the end of it: the browser then sends no access cookie at
+    all, and `get_actor` alone answered «Autenticazione richiesta» as a JSON document.
+
+    So `get_actor` first, unchanged, and when it refuses the cookie, the refresh cookie
+    this browser holds for the same prefix: the most specific one, signed, of the
+    refresh type, with a row in *this* database that belongs to its user and is neither
+    consumed nor expired, and a user still active. Stricter than `POST
+    /api/auth/refresh`, which answers a token consumed seconds ago with its successor
+    and burns the family for one consumed long ago: here both are refused, and no
+    replay is judged, because this is a read. It is verified, not rotated, and nothing
+    is issued: the SPA the callback lands on meets a 401 on its first request and renews
+    the pair itself, as it does after any idle tab. Minting an access token here without
+    rotating would be a way to renew a session that skips rotation's replay check;
+    rotating here would have to carry the new pair on every answer the callback can
+    give, a 403 problem document included.
+
+    A session opened by a signup alone has no refresh cookie (`routers/tenants.py`,
+    until the welcome link proves the address), so it is not rescued here: it lands on
+    `sessione` like no session at all, on purpose.
+
+    What this does not change: a state is still redeemed against the id of the user this
+    returns (`GmailOAuthService.complete`), in the database of the prefix the request
+    wore, so a code and state from another person's consent, or from another space, are
+    refused exactly as before. A PAT that fails is still a 401, as in `get_actor`: a
+    header that names one is never answered from a cookie.
+    """
+    try:
+        return get_actor(request, session, settings)
+    except HTTPException as exc:
+        if exc.status_code != status.HTTP_401_UNAUTHORIZED or _bearer_pat(request) is not None:
+            raise
+    token = first_cookie(request, REFRESH_COOKIE)
+    if not token:
+        return None
+    try:
+        payload = decode_token(token, settings, expected_type="refresh")
+    except DomainError:
+        return None
+    if payload.jti is None or not RefreshTokenService(session).is_live(payload.jti, payload.sub):
+        return None
+    try:
+        user = UserRepository(session).get_active(payload.sub)
+    except DomainError:
+        return None
     role: Role = user.ruolo  # type: ignore[assignment]
     return Actor(id=user.id, type="user", role=role)
 

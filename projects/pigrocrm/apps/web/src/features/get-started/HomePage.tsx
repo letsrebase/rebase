@@ -29,7 +29,8 @@ import { Button } from '@rebase/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rebase/ui/card'
 import { useCanWrite } from '@/lib/auth'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
-import { messaggioEsito } from '@/features/gmail/esito'
+import { ConsentOutcome } from '@/components/ConsentOutcome'
+import { messaggioEsito, riprovaEsito } from '@/features/gmail/esito'
 import type { DashboardSearch, HomeSearch } from '@/features/dashboard/search'
 import { useFirstSteps, type FirstStepsState } from './firstSteps'
 import { GetStartedPage } from './GetStartedPage'
@@ -51,7 +52,6 @@ export function HomePage({
   const chosen = startPage ?? state.spaceEmpty
   if (chosen === null) return null
   if (chosen) return <GetStartedPage esito={search.esito} />
-  const messaggio = messaggioEsito(search.esito)
   return (
     <DashboardPage
       search={search}
@@ -61,11 +61,11 @@ export function HomePage({
           {/* The consent flow comes back here only if the API read the space as empty
               and this page did not (a read that failed counts as work): the outcome is
               still the person's to read. */}
-          {messaggio ? (
-            <p role="status" className="bg-muted/50 mb-6 border px-3 py-2 text-sm">
-              {messaggio}
-            </p>
-          ) : null}
+          <ConsentOutcome
+            messaggio={messaggioEsito(search.esito)}
+            riprova={riprovaEsito(search.esito)}
+            className="mb-6"
+          />
           {state.loading ? null : <CompleteSpaceCard state={state} canWrite={canWrite} />}
         </>
       }

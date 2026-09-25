@@ -13,20 +13,15 @@ import {
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { toProblem } from '@/lib/api'
-import { tenantPrefix } from '@/lib/tenant'
 import { formatInstant } from './instants'
 import {
+  DRIVE_OAUTH_START,
   useDisconnectDrive,
   useDriveHealth,
   useSetDriveRoots,
   type DriveHealth,
   type GoogleDriveAccountRead,
 } from './queries'
-
-// Under a space, and under the root's own name, the API answers at `/<slug>/api/...` and
-// the session cookie is scoped to that prefix: a plain anchor to `/api/...` reaches the
-// root API with no cookie and answers «Autenticazione richiesta» (live, 2026-09-09).
-const OAUTH_START = `${tenantPrefix}/api/drive/oauth/start`
 
 // The exact pattern `DriveRootsUpdate` validates against
 // (`packages/core/src/pigrocrm/core/drive/schemas.py`): a Drive file id and nothing
@@ -182,7 +177,7 @@ function NotConnected({ account }: { account: GoogleDriveAccountRead | null }) {
         quale può scrivere i documenti generati.
       </p>
       <Button asChild>
-        <a href={OAUTH_START}>Collega Google Drive</a>
+        <a href={DRIVE_OAUTH_START}>Collega Google Drive</a>
       </Button>
     </section>
   )

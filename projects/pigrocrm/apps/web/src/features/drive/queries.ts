@@ -1,10 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
+import { tenantPrefix } from '@/lib/tenant'
 
 export type DriveHealth = components['schemas']['DriveHealth']
 export type GoogleDriveAccountRead = components['schemas']['GoogleDriveAccountRead']
 export type DriveRootsUpdate = components['schemas']['DriveRootsUpdate']
+
+/**
+ * Where a Drive consent flow starts: a plain navigation, never a fetch, because it leaves
+ * for Google. Named here because two places offer it, the settings panel and the
+ * «Riprova» under a consent that came back with no session (REB-446).
+ *
+ * Under a space, and under the root's own name, the API answers at `/<slug>/api/...` and
+ * the session cookie is scoped to that prefix: a plain anchor to `/api/...` reaches the
+ * root API with no cookie and answers «Autenticazione richiesta» (live, 2026-09-09).
+ */
+export const DRIVE_OAUTH_START = `${tenantPrefix}/api/drive/oauth/start`
 
 /**
  * Keyed the same way `gmailKeys` is, and for the same reason: one root under which a
