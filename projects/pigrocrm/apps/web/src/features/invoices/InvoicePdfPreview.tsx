@@ -90,17 +90,24 @@ function PdfFrame({ blob, title }: { blob: Blob; title: string }) {
  * No PDF is not an error, and each case names the button that changes it -- only when
  * such a button exists. A draft gets its PDF at emission; a proforma from «Genera PDF
  * proforma»; an imported invoice has no rendering of ours and never will (the system
- * that issued it holds the original); anything else from «Rigenera documenti».
+ * that issued it holds the original); anything else from «Rigenera documenti». Both
+ * buttons are `produce_invoice_artifacts` on the bar, so a role without it is told the
+ * button exists and is not theirs, as `InvoiceActions` says it.
  */
 function Empty({ invoice }: { invoice: Invoice }) {
+  const mayProduce = useCan('produce_invoice_artifacts')
   const text =
     invoice.tipo === 'proforma'
-      ? 'Il PDF della proforma non è ancora stato generato: «Genera PDF proforma» lo produce.'
+      ? mayProduce
+        ? 'Il PDF della proforma non è ancora stato generato: «Genera PDF proforma» lo produce.'
+        : 'Il PDF della proforma non è ancora stato generato: si produce con «Genera PDF proforma», che il tuo ruolo non può usare.'
       : invoice.stato === 'bozza'
         ? 'Il PDF si genera all’emissione. Fino ad allora la bozza è solo numeri.'
         : invoice.importata_da != null
           ? 'Fattura importata: il PDF originale non è archiviato qui.'
-          : 'Nessun PDF archiviato per questo documento. «Rigenera documenti» lo produce.'
+          : mayProduce
+            ? 'Nessun PDF archiviato per questo documento. «Rigenera documenti» lo produce.'
+            : 'Nessun PDF archiviato per questo documento. Si produce con «Rigenera documenti», che il tuo ruolo non può usare.'
   return <Notice text={text} />
 }
 

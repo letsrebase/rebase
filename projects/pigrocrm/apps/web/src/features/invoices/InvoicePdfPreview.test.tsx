@@ -153,6 +153,16 @@ describe('InvoicePdfPreview', () => {
     expect(screen.getByText(/«Genera PDF proforma» lo produce/)).toBeInTheDocument()
   })
 
+  it('tells a readonly role that the PDF buttons exist and are not theirs', () => {
+    mockAuth.may = false
+    wrap(<InvoicePdfPreview invoice={PROFORMA} />)
+    expect(
+      screen.getByText(
+        'Il PDF della proforma non è ancora stato generato: si produce con «Genera PDF proforma», che il tuo ruolo non può usare.',
+      ),
+    ).toBeInTheDocument()
+  })
+
   it('does not send an imported invoice to a button it does not have', () => {
     const imported = { ...ISSUED, pdf_document_id: null, importata_da: 'esterno' } as Invoice
     wrap(<InvoicePdfPreview invoice={imported} />)
