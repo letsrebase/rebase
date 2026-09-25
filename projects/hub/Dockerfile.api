@@ -1,4 +1,4 @@
-FROM python:3.13-slim-bookworm
+FROM python:3.13-slim-trixie
 
 # The contracts a freelancer signs are typeset at request time since REB-387
 # (`rebase_core.contracts`), with the pair PigroCRM's renderer was verified against:

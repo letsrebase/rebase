@@ -103,8 +103,10 @@ updates:
   # deploy; preflight's image checks are the way to know before the merge.
   #
   # Only nginx moves today. The updater reads `FROM` lines and keeps a tag's
-  # precision, so `3.13-slim-bookworm` is only ever offered a Python minor and
-  # `22-bookworm-slim` a Node major, both ignored below, and the uv binary
+  # precision, so `3.13-slim-trixie` is only ever offered a Python minor and
+  # `22-bookworm-slim` a Node major, both ignored below. It never offers the next
+  # Debian release either: the API images went from bookworm to trixie by hand
+  # (REB-461), and the next one moves the same way. The uv binary
   # (`COPY --from=ghcr.io/astral-sh/uv:...`) is not read at all: it moves by hand,
   # with the `version:` that `setup-uv` is given in `_python-gate.yml` and `ci.yml`.
   # An nginx PR is read against `projects/pigrocrm/deploy/nginx/spa.conf`, which

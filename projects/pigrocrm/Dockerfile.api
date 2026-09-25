@@ -1,4 +1,4 @@
-FROM python:3.13-slim-bookworm
+FROM python:3.13-slim-trixie
 
 # Pinned to the exact versions `pigrocrm.core.render` was built and verified against
 # (real compiles, real PDFs read back with `pdftotext` -- see
@@ -13,7 +13,7 @@ ARG TYPST_VERSION=0.14.2
 ARG PANDOC_VERSION=3.8.2.1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential libpq5 ca-certificates curl xz-utils poppler-utils \
+      libpq5 ca-certificates curl xz-utils poppler-utils \
     && curl -fL "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" \
        | tar -xz -C /tmp \
     && mv /tmp/pandoc-${PANDOC_VERSION}/bin/pandoc /usr/local/bin/pandoc \

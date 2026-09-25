@@ -2,7 +2,7 @@
 
 `date.today()` and `datetime.now()` (no argument) both read the *process's* system
 timezone, and this project does not control that end to end: `Dockerfile.api` pins no
-`TZ`, so the `python:3.13-slim-bookworm` image it starts from runs in UTC by default,
+`TZ`, so the `python:3.13-slim-trixie` image it starts from runs in UTC by default,
 and a developer's own machine can be anywhere at all. The previous system's own defect
 (`formatIsoDate` calling `toISOString()`, which moved an invoice issued at 23:30 CET
 on 31 December into 1 January -- the wrong fiscal year on an immutable document) was a
