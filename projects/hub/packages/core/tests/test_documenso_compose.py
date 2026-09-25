@@ -63,8 +63,7 @@ def test_the_signup_window_is_gated_to_letsrebase_com_on_the_server_side() -> No
     image, read-only) closes it, since both planned users are `@letsrebase.com`."""
     text = _documenso()
     assert (
-        "NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS: ${DOCUMENSO_SIGNUP_DOMAINS:-letsrebase.com}"
-        in text
+        "NEXT_PRIVATE_ALLOWED_SIGNUP_DOMAINS: ${DOCUMENSO_SIGNUP_DOMAINS:-letsrebase.com}" in text
     )
 
 
