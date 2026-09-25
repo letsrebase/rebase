@@ -277,7 +277,7 @@ export function ChiStep({
   selected,
   onSelect,
   loaded,
-  loadFailed,
+  pickAgain,
   cliente,
   onCliente,
   editCliente,
@@ -296,8 +296,9 @@ export function ChiStep({
   onSelect: (company: Company) => void
   /** The prefill of `selected` is in the forms below. */
   loaded: boolean
-  /** Reading the prefill of `selected` failed: the list comes back to pick it again. */
-  loadFailed: boolean
+  /** The list comes back to pick a request again: the prefill of `selected` could not
+   *  be read, or the check found the request closed meanwhile. */
+  pickAgain: boolean
   cliente: ClienteForm
   onCliente: (form: ClienteForm) => void
   editCliente: boolean
@@ -312,15 +313,15 @@ export function ChiStep({
   failure: Failure | null
 }) {
   const [choosing, setChoosing] = useState(selected === null)
-  const listOpen = choosing || selected === null || loadFailed
+  const listOpen = choosing || selected === null || pickAgain
   const changeButton = useRef<HTMLButtonElement>(null)
   const search = useRef<HTMLInputElement>(null)
   const focusNext = useRef<RefObject<HTMLElement | null> | null>(null)
   useEffect(() => {
-    const target = focusNext.current ?? (listOpen && loadFailed ? search : null)
+    const target = focusNext.current ?? (listOpen && pickAgain ? search : null)
     focusNext.current = null
     target?.current?.focus()
-  }, [listOpen, loadFailed])
+  }, [listOpen, pickAgain])
   return (
     <form
       className="space-y-4"

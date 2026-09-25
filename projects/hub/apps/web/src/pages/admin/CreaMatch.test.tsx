@@ -491,7 +491,7 @@ describe('step 1, «Chi e per chi»', () => {
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
-  it('stays on the step when a tax save lands after another request was picked', async () => {
+  it('applies a tax save that lands after another request was picked, and leaves the step as it is', async () => {
     const late = deferred<Response>()
     const spy = routes({ 'PUT /api/hub/freelancers/f1/fiscal': () => late.promise })
     mount()
@@ -503,13 +503,21 @@ describe('step 1, «Chi e per chi»', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await userEvent.click(screen.getByRole('button', { name: 'Cambia richiesta' }))
     await pick(/Verdi Snc/)
-    late.resolve(answer(200, { ...FISCALE, domicilio: 'Via Po 2, Torino' }))
+    // Opened again for the new request, before the save lands.
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
+    expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Roma 1, Milano')
+    // The server's own spelling of what was saved, so the test sees whose values show.
+    late.resolve(answer(200, { ...FISCALE, domicilio: 'Via Po 2, 10121 Torino' }))
 
-    await waitFor(() => expect(bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')).toHaveLength(1))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Avanti' })).toBeEnabled())
+    await waitFor(() => expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Po 2, 10121 Torino'))
+    expect(screen.getByRole('button', { name: 'Avanti' })).toBeEnabled()
     current('1. Chi e per chi')
     expect(screen.getByText('Verdi Snc · P.IVA 11122233344 · Torino')).toBeInTheDocument()
     expect(screen.queryByLabelText('Ruolo')).toBeNull()
+    // Saved already, and shown as saved: «Avanti» does not write it again.
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await screen.findByLabelText('Ruolo')
+    expect(bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')).toHaveLength(1)
   })
 })
 
@@ -768,6 +776,32 @@ describe('step 2, «Condizioni»', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByRole('button', { name: 'Salva senza inviare' })
     expect(bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')[1].cliente.cliente_piva).toBe('01234567890')
+  })
+
+  it('takes the admin back to the list when the check finds the request closed meanwhile', async () => {
+    let checks = 0
+    const spy = routes({
+      'POST /api/hub/freelancers/f1/matches/check': () =>
+        ++checks === 1
+          ? answer(422, { detail: [{ loc: ['body', 'company_id'], msg: 'La richiesta è chiusa: scegline un’altra.' }] })
+          : CHECK,
+    })
+    mount()
+    await toCondizioni()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('La richiesta è chiusa: scegline un’altra.')
+    current('1. Chi e per chi')
+    expect(screen.getByLabelText('Cerca una richiesta')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Verdi Snc/ })).toBeEnabled()
+    expect(screen.queryByRole('heading', { name: 'Cliente sulla lettera' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Avanti' })).toBeDisabled()
+
+    await pick(/Verdi Snc/)
+    expect(screen.queryByRole('alert')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Avanti' }))
+    await screen.findByRole('button', { name: 'Salva senza inviare' })
+    expect(bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')[1].company_id).toBe('c9')
   })
 
   it('forgets a refusal once the admin goes back from «Condizioni»', async () => {

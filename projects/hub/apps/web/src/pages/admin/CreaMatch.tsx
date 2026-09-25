@@ -34,7 +34,9 @@ import { Header } from './lists'
 
 const STEPS = ['Chi e per chi', 'Condizioni', 'Controlla e invia'] as const
 
-const onStepOne = (field: string) => CLIENTE_FIELDS.has(field) || FISCAL_FIELDS.has(field)
+// A request closed after it was picked: `create` and the check refuse it by this name.
+const REQUEST_FIELD = 'company_id'
+const onStepOne = (field: string) => field === REQUEST_FIELD || CLIENTE_FIELDS.has(field) || FISCAL_FIELDS.has(field)
 
 function revoke(review: Review) {
   URL.revokeObjectURL(review.lettera)
@@ -132,11 +134,16 @@ export function AdminCreaMatch() {
   const saveFiscal = useMutation({
     mutationFn: ({ data }: { data: FiscalData; companyId: string }) => admin.saveFiscal(id, data),
     onSuccess: (saved, { companyId }) => {
+      // The tax data are the freelancer's, whichever request is picked now: what the
+      // server saved is what the page shows from here.
       setSavedFiscal(saved)
       setFiscal(draftFromFiscal(saved))
-      setEditFiscal(false)
+      // Closing the section and moving on belong to the request they were saved for;
+      // after a switch the admin may have opened the section again for the new one.
       const now = shown.current
-      if (now.step === 0 && now.company === companyId && now.prefillFor === companyId) setStep(1)
+      if (now.step !== 0 || now.company !== companyId || now.prefillFor !== companyId) return
+      setEditFiscal(false)
+      setStep(1)
     },
   })
   const check = useMutation({
@@ -213,6 +220,8 @@ export function AdminCreaMatch() {
   const nome = person.data?.nome ?? ''
 
   function select(item: Company) {
+    // A check that refused the request picked before is not about this pick.
+    check.reset()
     setCompany(item)
     if (item.id === prefillFor) return
     if (loadPrefill.isPending && loadPrefill.variables === item.id) return
@@ -262,7 +271,7 @@ export function AdminCreaMatch() {
             selected={company}
             onSelect={select}
             loaded={loaded}
-            loadFailed={prefillFailure !== null}
+            pickAgain={prefillFailure !== null || (checkFailure?.fields.includes(REQUEST_FIELD) ?? false)}
             cliente={cliente}
             onCliente={setCliente}
             editCliente={editCliente}
