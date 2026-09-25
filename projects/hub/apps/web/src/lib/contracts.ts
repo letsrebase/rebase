@@ -4,6 +4,7 @@
  * page files, which export components only (`react-refresh/only-export-components`).
  */
 import {
+  ApiError,
   LETTERA_TEXT_KEYS,
   type Cliente,
   type ClienteDraft,
@@ -41,6 +42,22 @@ export function toFiscalData(draft: FiscalDraft): FiscalData {
   }
 }
 
+/** Saved tax data as «Chi e per chi» shows them instead of their four fields. */
+export function fiscalLine(fiscal: FiscalData): string {
+  return `Salvati: CF ${fiscal.codice_fiscale} · P.IVA ${fiscal.partita_iva}`
+}
+
+/** What «Avanti» on «Chi e per chi» saves: the four fields when nothing was saved yet,
+ *  or when the admin opened the saved ones and changed them; `null` otherwise, so data
+ *  only shown are never written again under this admin's name. */
+export function fiscalToSave(saved: FiscalData | null, draft: FiscalDraft, editing: boolean): FiscalData | null {
+  const data = toFiscalData(draft)
+  if (saved === null) return data
+  if (!editing) return null
+  const same = (Object.keys(data) as (keyof FiscalData)[]).every((key) => (saved[key] ?? null) === data[key])
+  return same ? null : data
+}
+
 export type ClienteForm = Record<keyof Cliente, string>
 export const CLIENTE_EMPTY: ClienteForm = { cliente_ragione_sociale: '', cliente_piva: '', cliente_sede: '' }
 
@@ -60,6 +77,16 @@ export function toCliente(form: ClienteForm): Cliente {
   }
 }
 
+/** A client with all three details reads as one line; one missing asks for the fields. */
+export function clienteComplete(form: ClienteForm): boolean {
+  return Object.values(toCliente(form)).every(Boolean)
+}
+
+export function clienteLine(form: ClienteForm): string {
+  const cliente = toCliente(form)
+  return `${cliente.cliente_ragione_sociale} · P.IVA ${cliente.cliente_piva} · ${cliente.cliente_sede}`
+}
+
 export type LetteraForm = Record<LetteraTextKey, string> & {
   data_inizio: string
   data_fine: string
@@ -69,6 +96,8 @@ export type LetteraForm = Record<LetteraTextKey, string> & {
   giorni_preavviso: string
 }
 export type LetteraFieldKey = keyof LetteraForm
+/** A field an input or a textarea holds: every one but `fine_mese`, the checkbox. */
+export type LetteraTextFieldKey = Exclude<LetteraFieldKey, 'fine_mese'>
 
 const TEXT_EMPTY = Object.fromEntries(LETTERA_TEXT_KEYS.map((key) => [key, ''])) as Record<LetteraTextKey, string>
 
@@ -111,18 +140,20 @@ export function toLettera(form: LetteraForm): Lettera {
   }
 }
 
-/** The letter's fields as step 4 names them. The client's budget has no label here,
- *  because it has no field anywhere in this flow (spec § 1h). */
+/** The letter's fields as «Crea match» names them. The client's budget has no label
+ *  here, because it has no field anywhere in this flow (spec § 1h). The page asks
+ *  `modalita` and `unita` as one choice, «Come si paga», and `giorni_pagamento` inside
+ *  its sentence, «Pagamento a … giorni», so those three labels show nowhere on it. */
 export const LETTERA_LABELS: Record<LetteraFieldKey, string> = {
   ruolo: 'Ruolo',
-  attivita: 'Cosa fa il professionista',
-  risultati: 'Risultati da consegnare, solo a corpo',
-  accettazione: 'Come il cliente accetta i risultati, solo a corpo',
+  attivita: 'Cosa farà',
+  risultati: 'Risultati da consegnare',
+  accettazione: 'Come il cliente accetta i risultati',
   data_inizio: 'Inizio',
-  data_fine: 'Fine prevista',
+  data_fine: 'Fine prevista (facoltativa)',
   impegno: 'Impegno',
   periodo_verifica: 'Periodo iniziale di verifica',
-  luogo: 'Luogo',
+  luogo: 'Dove',
   coordinamento: 'Coordinamento concordato con il cliente',
   referente_cliente: 'Referente del cliente',
   referente_rebase: 'Referente di rebase',
@@ -132,8 +163,8 @@ export const LETTERA_LABELS: Record<LetteraFieldKey, string> = {
   lavoro_extra: 'Lavoro festivo o fuori fascia',
   spese: 'Spese',
   giorni_pagamento: 'Giorni di pagamento',
-  fine_mese: 'Contati da fine mese',
-  scadenze_fatturazione: 'Fatture, solo a corpo',
+  fine_mese: 'fine mese',
+  scadenze_fatturazione: 'Scadenze di fatturazione',
   giorni_preavviso: 'Giorni di preavviso',
   dati_personali: 'Tratta dati personali del cliente',
   dati_finalita: 'Natura e finalità del trattamento',
@@ -147,7 +178,7 @@ export const LETTERA_LABELS: Record<LetteraFieldKey, string> = {
   rapporti_precedenti: 'Rapporti precedenti con il cliente',
 }
 
-/** Step 4 in the letter's own sections. */
+/** The letter's own sections, the order «Altre condizioni» keeps. */
 export const LETTERA_GROUPS: readonly { title: string; fields: readonly LetteraFieldKey[] }[] = [
   { title: 'Attività', fields: ['ruolo', 'attivita', 'risultati', 'accettazione'] },
   { title: 'Tempi e impegno', fields: ['data_inizio', 'data_fine', 'impegno', 'periodo_verifica'] },
@@ -180,6 +211,58 @@ export const LETTERA_MULTILINE: ReadonlySet<LetteraFieldKey> = new Set<LetteraFi
   'altre_condizioni',
 ])
 
+/** «Come si paga»: one choice that the letter prints twice, as `modalita` and as the
+ *  fee's `unita` («450,00 € a giornata»), so the page sets both. */
+export type PayMode = 'a giornata' | 'a corpo'
+
+export function payModeOf(form: LetteraForm): PayMode {
+  return form.modalita.trim() === 'a corpo' ? 'a corpo' : 'a giornata'
+}
+
+export function withPayMode(form: LetteraForm, mode: PayMode): LetteraForm {
+  return { ...form, modalita: mode, unita: mode }
+}
+
+/** What only a fixed-price engagement prints, asked right after the fee «A corpo». */
+export const A_CORPO_FIELDS: readonly LetteraTextFieldKey[] = ['risultati', 'accettazione', 'scadenze_fatturazione']
+
+/** What «Condizioni» asks in the open: what changes from one engagement to the next. */
+export const CONDIZIONI_FIELDS: ReadonlySet<LetteraFieldKey> = new Set<LetteraFieldKey>([
+  'ruolo',
+  'attivita',
+  'data_inizio',
+  'data_fine',
+  'impegno',
+  'luogo',
+  'modalita',
+  'unita',
+  'compenso',
+  'giorni_pagamento',
+  'fine_mese',
+  ...A_CORPO_FIELDS,
+])
+
+/** Every other field of the letter, in its own sections and order, inside the closed
+ *  «Altre condizioni (facoltative)». */
+export const ALTRE_CONDIZIONI_GROUPS = LETTERA_GROUPS.map((group) => ({
+  title: group.title,
+  fields: group.fields.filter(
+    (field): field is LetteraTextFieldKey => field !== 'fine_mese' && !CONDIZIONI_FIELDS.has(field),
+  ),
+})).filter((group) => group.fields.length > 0)
+
+export const ALTRE_CONDIZIONI_FIELDS: ReadonlySet<string> = new Set(
+  ALTRE_CONDIZIONI_GROUPS.flatMap((group) => group.fields),
+)
+
+/** The letter as the API takes it. A day rate prints no deliverables, acceptance or
+ *  invoice dates, even ones typed «A corpo» before switching back: the form keeps them
+ *  for a switch back, the letter does not get them. */
+export function letteraToSend(form: LetteraForm): Lettera {
+  if (payModeOf(form) === 'a corpo') return toLettera(form)
+  return toLettera({ ...form, ...Object.fromEntries(A_CORPO_FIELDS.map((field) => [field, ''])) })
+}
+
 /** How a document is named in a button's label or a confirmation, the one place both
  *  the admin's «Match e contratti» (REB-407) and the member area's «Contratti»
  *  (REB-392) name a document: «del contratto quadro», «della lettera n. 2026-001».
@@ -199,6 +282,32 @@ export function cancelDescription(match: Match): string {
   return match.lettera.stato === 'inviato'
     ? `${base} La lettera è già partita: viene annullata anche sul sito di firma, e il link ricevuto dal freelance smette di funzionare.`
     : base
+}
+
+/** The primary button of «Controlla e invia», with the freelancer's first name: «ad»
+ *  before an a, as in «Invia ad Ada per la firma». */
+export function sendLabel(nome: string): string {
+  const name = nome.trim()
+  if (!name) return 'Invia per la firma'
+  return `Invia ${/^[aàAÀ]/.test(name) ? 'ad' : 'a'} ${name} per la firma`
+}
+
+/** What «Match e contratti» says on arrival after «Salva senza inviare». */
+export const DRAFT_SAVED = 'Bozza salvata: la trovi qui sotto, da inviare.'
+
+/** A refused request as a wizard shows it: the sentence, the fields to mark, and whether
+ *  it is a 409, refused for what the row already holds rather than for what the admin
+ *  typed, so the way onward is the row, not a field (REB-406). */
+export interface Failure {
+  message: string
+  fields: string[]
+  conflict: boolean
+}
+
+export function failureOf(error: unknown, fallback: string): Failure | null {
+  if (!error) return null
+  if (error instanceof ApiError) return { message: error.message, fields: error.fields, conflict: error.status === 409 }
+  return { message: fallback, fields: [], conflict: false }
 }
 
 /** The sentence the pages show after «Invia per la firma» (REB-390). */

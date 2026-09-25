@@ -1,15 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import { LETTERA_TEXT_KEYS, type LetteraDraft } from './api'
 import {
+  ALTRE_CONDIZIONI_GROUPS,
+  CONDIZIONI_FIELDS,
   cancelDescription,
+  clienteComplete,
+  clienteLine,
+  FISCAL_EMPTY,
+  fiscalLine,
+  fiscalToSave,
   LETTERA_EMPTY,
   LETTERA_GROUPS,
   LETTERA_LABELS,
+  LETTERA_REQUIRED,
   letteraForm,
+  letteraToSend,
+  payModeOf,
+  sendLabel,
   sendReportMessage,
   toCliente,
   toLettera,
   whatOf,
+  withPayMode,
 } from './contracts'
 
 describe('the letter form (REB-387)', () => {
@@ -53,6 +65,75 @@ describe('the letter form (REB-387)', () => {
       cliente_piva: '01234567890',
       cliente_sede: 'Milano',
     })
+  })
+})
+
+describe('«Crea match» in three steps (REB-476)', () => {
+  it('asks each field of the letter once: on «Condizioni» or in «Altre condizioni», in the letter’s order', () => {
+    const altre = ALTRE_CONDIZIONI_GROUPS.flatMap((group) => group.fields)
+    expect(altre.filter((field) => CONDIZIONI_FIELDS.has(field))).toEqual([])
+    expect(new Set([...CONDIZIONI_FIELDS, ...altre])).toEqual(new Set(Object.keys(LETTERA_LABELS)))
+    const order = LETTERA_GROUPS.flatMap((group) => group.fields).filter((field) => !CONDIZIONI_FIELDS.has(field))
+    expect(altre).toEqual(order)
+    expect(ALTRE_CONDIZIONI_GROUPS.every((group) => group.fields.length > 0)).toBe(true)
+    expect(altre.filter((field) => LETTERA_REQUIRED.has(field))).toEqual([])
+  })
+
+  it('sets modalità and unità together, and reads anything but «a corpo» as a day rate', () => {
+    const corpo = withPayMode(LETTERA_EMPTY, 'a corpo')
+    expect(corpo).toMatchObject({ modalita: 'a corpo', unita: 'a corpo' })
+    expect(payModeOf(corpo)).toBe('a corpo')
+    expect(payModeOf(LETTERA_EMPTY)).toBe('a giornata')
+  })
+
+  it('leaves out the fixed-price fields of a day-rate letter, and keeps them a corpo', () => {
+    const form = {
+      ...LETTERA_EMPTY,
+      data_inizio: '2026-10-01',
+      compenso: '450',
+      giorni_pagamento: '30',
+      risultati: 'Il modulo',
+      accettazione: 'Collaudo',
+      scadenze_fatturazione: 'A consegna',
+    }
+    expect(letteraToSend(withPayMode(form, 'a giornata'))).toMatchObject({
+      risultati: null,
+      accettazione: null,
+      scadenze_fatturazione: null,
+    })
+    expect(letteraToSend(withPayMode(form, 'a corpo'))).toMatchObject({
+      risultati: 'Il modulo',
+      accettazione: 'Collaudo',
+      scadenze_fatturazione: 'A consegna',
+    })
+  })
+
+  it('writes a client as one line only when all three are filled', () => {
+    const client = { cliente_ragione_sociale: 'ACME S.r.l.', cliente_piva: '01234567890', cliente_sede: 'Milano' }
+    expect(clienteComplete(client)).toBe(true)
+    expect(clienteLine(client)).toBe('ACME S.r.l. · P.IVA 01234567890 · Milano')
+    expect(clienteComplete({ ...client, cliente_sede: '  ' })).toBe(false)
+  })
+
+  it('saves tax data only when they were missing, or opened and changed', () => {
+    const saved = { codice_fiscale: 'LVLDAA85T50H501Z', partita_iva: '01234567890', domicilio: 'Milano', pec: null }
+    const draft = { codice_fiscale: 'LVLDAA85T50H501Z', partita_iva: '01234567890', domicilio: 'Milano', pec: '' }
+    expect(fiscalLine(saved)).toBe('Salvati: CF LVLDAA85T50H501Z · P.IVA 01234567890')
+    expect(fiscalToSave(saved, draft, false)).toBeNull()
+    expect(fiscalToSave(saved, { ...draft, domicilio: ' Milano ' }, true)).toBeNull()
+    expect(fiscalToSave(saved, { ...draft, domicilio: 'Torino' }, true)).toEqual({ ...saved, domicilio: 'Torino' })
+    expect(fiscalToSave(null, { ...FISCAL_EMPTY, codice_fiscale: 'X' }, true)).toEqual({
+      codice_fiscale: 'X',
+      partita_iva: '',
+      domicilio: '',
+      pec: null,
+    })
+  })
+
+  it('names the freelancer on the send button, with «ad» before an a', () => {
+    expect(sendLabel('Ada')).toBe('Invia ad Ada per la firma')
+    expect(sendLabel('Marco')).toBe('Invia a Marco per la firma')
+    expect(sendLabel('')).toBe('Invia per la firma')
   })
 })
 
