@@ -2,6 +2,7 @@
 
 import pytest
 from campaign_fixtures import campaign_row, clean  # noqa: F401
+from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from rebase_core.campaigns.optouts import TOKEN_MAX_LENGTH, OptoutService
@@ -49,5 +50,18 @@ def test_invalid_tokens_are_rejected_silently(clean: Session, invalid_token: str
         )
     )
     clean.commit()
-    OptoutService(clean).unsubscribe(invalid_token)
-    assert clean.query(CampaignOptout).count() == 0
+
+    # Count SQL statements to verify the guard prevents database queries
+    statement_count = [0]
+
+    def count_statements(conn, cursor, statement, parameters, context, executemany):  # type: ignore[no-untyped-def]
+        statement_count[0] += 1
+
+    engine = clean.get_bind()
+    event.listen(engine, "before_cursor_execute", count_statements)
+    try:
+        OptoutService(clean).unsubscribe(invalid_token)
+        assert statement_count[0] == 0, f"Expected 0 SQL statements but got {statement_count[0]}"
+        assert clean.query(CampaignOptout).count() == 0
+    finally:
+        event.remove(engine, "before_cursor_execute", count_statements)
