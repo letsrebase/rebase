@@ -11,13 +11,15 @@
  * - ASCII digits only, no sign, no exponent, no spaces or other separators inside.
  *
  * Precision is not the parser's business: the fields refuse more than two decimals
- * themselves (`euroAmount`). */
+ * themselves (`euroAmount`).
+ *
+ * What the web sends is never the parser's output but `sentAmount`'s: two decimals, a dot,
+ * no grouping. A reader that reads the Italian way again (the core's `italian_amount`)
+ * takes «1.500» for 1500, so «1,5» must not leave as «1.500»; «1.50» it cannot misread. */
 const COMMA = /^(?:[0-9]+|[1-9][0-9]{0,2}(?:\.[0-9]{3})+),[0-9]+$/
 const THOUSANDS = /^[1-9][0-9]{0,2}(?:\.[0-9]{3})+$/
 // The core's `_MACHINE`: a decimal point before anything but exactly three digits.
 const MACHINE = /^[0-9]+(?:\.(?:[0-9]{1,2}|[0-9]{4,}))?$/
-// At most the two decimals the API keeps.
-const CENTS = /^[0-9]+(?:\.[0-9]{1,2})?$/
 
 /** The machine form of what was typed, or `null` when it is not an amount. `trim()` drops
  *  whitespace, NBSP and a BOM alike, as the core does. */
@@ -26,16 +28,6 @@ function readAmount(value: string): string | null {
   if (text.includes(',')) return COMMA.test(text) ? text.replaceAll('.', '').replace(',', '.') : null
   if (THOUSANDS.test(text)) return text.replaceAll('.', '')
   return MACHINE.test(text) ? text : null
-}
-
-/** An amount as an Italian types it, in the machine form the API takes: «1.500» is
- *  «1500», «1.234,50» is «1234.50». What is not an amount goes as typed (trimmed), for the
- *  field's own rule or the API to refuse.
- *
- *  Every amount field reads through this module: the day rate, the daily budget, the fee
- *  of a letter of engagement and the list filters. */
-export function machineAmount(value: string): string {
-  return readAmount(value) ?? value.trim()
 }
 
 /** The words every amount field uses for what is not an amount: the wizards, the member
@@ -50,11 +42,30 @@ export function amountNumber(value: string): number {
   return text === null ? Number.NaN : Number(text)
 }
 
+/** Whether a machine form has at most the two decimals the API keeps, trailing zeros
+ *  aside: «1,500» is 1.5 and fits, «12,345» does not. */
+function withinCents(text: string): boolean {
+  const fraction = text.split('.')[1] ?? ''
+  return fraction.replace(/0+$/, '').length <= 2
+}
+
 /** `amountNumber` for a field that sends what it holds: `NaN` too when it has more than
  *  the two decimals the API keeps («12,345»), so the field refuses it before any request. */
 export function euroAmount(value: string): number {
   const text = readAmount(value)
-  return text !== null && CENTS.test(text) ? Number(text) : Number.NaN
+  return text !== null && withinCents(text) ? Number(text) : Number.NaN
+}
+
+/** What every amount field sends: the checked amount with two decimals and a dot, no
+ *  grouping («1.500» is "1500.00", «1,5» is "1.50"), the one form no reader, the web's or
+ *  the core's, can take for another number. What `euroAmount` refuses goes as typed
+ *  (trimmed), for the API to refuse by its field.
+ *
+ *  Every amount field sends through it: the day rate, the daily budget, the fee of a
+ *  letter of engagement and the list filters. */
+export function sentAmount(value: string): string {
+  const number = euroAmount(value)
+  return Number.isFinite(number) ? number.toFixed(2) : value.trim()
 }
 
 /** Whether a day rate or a daily budget is one the API takes: the core's `TARIFFA_MIN` to
@@ -70,5 +81,5 @@ export function acceptedAmount(value: string): boolean {
 export function amountFilter(value: string | undefined): string | undefined {
   if (value === undefined) return undefined
   const number = euroAmount(value)
-  return Number.isFinite(number) && number >= 0 ? machineAmount(value) : undefined
+  return Number.isFinite(number) && number >= 0 ? number.toFixed(2) : undefined
 }

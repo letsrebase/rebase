@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 // The table the core's `test_amounts.py` runs too (REB-485), so the web and the API cannot
 // read an amount two ways. `amount` is `null` for a refusal.
 import CASES from '../../../../packages/core/tests/amount_cases.json'
-import { acceptedAmount, amountFilter, amountNumber, euroAmount, machineAmount } from './amount'
+import { acceptedAmount, amountFilter, amountNumber, euroAmount, sentAmount } from './amount'
 
 describe('amountNumber', () => {
   it.each(CASES)('reads «$typed» as $amount', ({ typed, amount }) => {
@@ -11,22 +11,29 @@ describe('amountNumber', () => {
   })
 })
 
-describe('machineAmount', () => {
-  it('writes an amount in the machine form the API takes', () => {
-    expect(machineAmount('1.500')).toBe('1500')
-    expect(machineAmount('1.234,50')).toBe('1234.50')
-    expect(machineAmount(' 12.000 ')).toBe('12000')
+describe('sentAmount', () => {
+  // Every amount the table accepts with at most two decimals goes out as two decimals and a
+  // dot, no grouping: the core's `test_amounts.py` reads that same form back to the same
+  // amount, so no reader, the web's or the core's, can take it for another number.
+  it.each(CASES.filter(({ typed, amount }) => amount !== null && Number.isFinite(euroAmount(typed))))(
+    'sends «$typed» as $amount with two decimals',
+    ({ typed, amount }) => {
+      expect(sentAmount(typed)).toBe(amount!.toFixed(2))
+    },
+  )
+
+  it('writes «1.500» as 1500.00 and «1,5» as 1.50, never «1.500» for a reader to take as thousands', () => {
+    expect(sentAmount('1.500')).toBe('1500.00')
+    expect(sentAmount('1,5')).toBe('1.50')
+    expect(sentAmount('1,500')).toBe('1.50')
+    expect(sentAmount(' 12.000 ')).toBe('12000.00')
   })
 
-  it('keeps the API’s own two decimals, so a saved amount shown back reads the same', () => {
-    expect(machineAmount('1500.00')).toBe('1500.00')
-    expect(machineAmount('450.00')).toBe('450.00')
-  })
-
-  it('leaves what is not an amount as typed, for the field to refuse', () => {
-    expect(machineAmount('')).toBe('')
-    expect(machineAmount(' tanto ')).toBe('tanto')
-    expect(machineAmount('1,000.00')).toBe('1,000.00')
+  it('leaves what is not an amount it can send as typed, for the field or the API to refuse', () => {
+    expect(sentAmount('')).toBe('')
+    expect(sentAmount(' tanto ')).toBe('tanto')
+    expect(sentAmount('1,000.00')).toBe('1,000.00')
+    expect(sentAmount('12,345')).toBe('12,345')
   })
 })
 
@@ -52,9 +59,9 @@ describe('acceptedAmount', () => {
 
 describe('amountFilter', () => {
   it('sends a list filter in the machine form, and leaves out one that is not an amount', () => {
-    expect(amountFilter('1.500')).toBe('1500')
+    expect(amountFilter('1.500')).toBe('1500.00')
     expect(amountFilter('1.234,50')).toBe('1234.50')
-    expect(amountFilter('0')).toBe('0')
+    expect(amountFilter('0')).toBe('0.00')
     expect(amountFilter(undefined)).toBeUndefined()
     expect(amountFilter('tanto')).toBeUndefined()
     expect(amountFilter('0x10')).toBeUndefined()

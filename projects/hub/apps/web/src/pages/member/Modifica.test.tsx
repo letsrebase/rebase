@@ -123,7 +123,7 @@ describe('/me/edit', () => {
   })
 
   it.each([
-    ['1.500', '1500'],
+    ['1.500', '1500.00'],
     ['1.234,50', '1234.50'],
   ])('saves a rate typed as «%s» as %s (REB-485)', async (typed, sent) => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, PROFILE))

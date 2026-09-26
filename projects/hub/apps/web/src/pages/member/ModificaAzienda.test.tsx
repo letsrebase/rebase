@@ -141,7 +141,7 @@ describe('/me/edit-company', () => {
       progetto: PROFILE.progetto,
       periodo_da: PROFILE.periodo_da,
       durata: '4 mesi',
-      budget_giornaliero: '600',
+      budget_giornaliero: '600.00',
       remoto: PROFILE.azienda_remoto,
       giorni_presenza: PROFILE.azienda_giorni_presenza,
       numero_risorse: PROFILE.azienda_numero_risorse,
@@ -160,7 +160,7 @@ describe('/me/edit-company', () => {
     await user.click(screen.getByRole('button', { name: 'Salva' }))
     await screen.findByRole('heading', { name: 'La tua area' })
     const patch = fetchSpy.mock.calls.find(([, init]) => init?.method === 'PATCH')!
-    expect(JSON.parse(patch[1]!.body as string).budget_giornaliero).toBe('1500')
+    expect(JSON.parse(patch[1]!.body as string).budget_giornaliero).toBe('1500.00')
   })
 
   it('refuses a project description that is too short before it posts', async () => {

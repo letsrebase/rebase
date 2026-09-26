@@ -199,7 +199,7 @@ describe('FreelancerWizard', () => {
     await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
 
     const body = fetchSpy.mock.calls[0]![1]?.body as FormData
-    expect(body.get('tariffa_giornaliera')).toBe('1500')
+    expect(body.get('tariffa_giornaliera')).toBe('1500.00')
   })
 
   it('refuses a rate with three decimals on its own step, before any request (REB-485)', async () => {

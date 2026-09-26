@@ -352,7 +352,7 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
     await screen.findByText('scritta dall’admin, da completare')
     const post = spy.mock.calls.find(([, init]) => init?.method === 'POST')!
     expect(post[0]).toBe('/api/hub/signups/s2/card')
-    expect(JSON.parse(post[1]!.body as string).tariffa_giornaliera).toBe('1500')
+    expect(JSON.parse(post[1]!.body as string).tariffa_giornaliera).toBe('1500.00')
   })
 
   it.each(['1,000.00', '12,345', '1e3'])(
@@ -803,7 +803,7 @@ describe('the euro filters read Italian thousands, whatever the browser’s loca
     { ...TALENTI, label: 'Tariffa max (€/giorno)', param: 'tariffa_max' },
     { ...AZIENDE, label: 'Budget min (€/giorno)', param: 'budget_min' },
     { ...AZIENDE, label: 'Budget max (€/giorno)', param: 'budget_max' },
-  ])('«1.500» in «$label» asks for $param=1500', async ({ path, heading, label, endpoint, param }) => {
+  ])('«1.500» in «$label» asks for $param=1500.00', async ({ path, heading, label, endpoint, param }) => {
     const spy = vi
       .spyOn(globalThis, 'fetch')
       .mockImplementation(async () => answer(200, { totale: 0, items: [], per_stato: {} }))
@@ -812,7 +812,7 @@ describe('the euro filters read Italian thousands, whatever the browser’s loca
 
     await userEvent.type(screen.getByLabelText(label), '1.500')
 
-    await waitFor(() => expect(listCalls(spy, endpoint).at(-1)).toContain(`${param}=1500`))
+    await waitFor(() => expect(listCalls(spy, endpoint).at(-1)).toContain(`${param}=1500.00`))
     expect(screen.getByLabelText(label)).toHaveValue('1.500')
     expect(screen.queryByRole('alert')).toBeNull()
   })

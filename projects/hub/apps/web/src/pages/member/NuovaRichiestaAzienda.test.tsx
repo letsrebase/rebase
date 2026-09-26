@@ -152,7 +152,7 @@ describe('/me/new-company', () => {
       progetto: 'Serve un data engineer per un progetto di sei mesi.',
       periodo_da: '2027-01-15',
       durata: '6 mesi',
-      budget_giornaliero: '650',
+      budget_giornaliero: '650.00',
       remoto: 'remoto',
       giorni_presenza: null,
       numero_risorse: 2,
@@ -179,7 +179,7 @@ describe('/me/new-company', () => {
     const post = fetchSpy.mock.calls.find(
       ([url, init]) => url === '/api/hub/me/company' && init?.method === 'POST',
     )!
-    expect(JSON.parse(post[1]!.body as string).budget_giornaliero).toBe('1500')
+    expect(JSON.parse(post[1]!.body as string).budget_giornaliero).toBe('1500.00')
   })
 
   it('refuses a project description that is too short before it posts', async () => {

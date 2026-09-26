@@ -170,7 +170,7 @@ describe('FreelancerOverrideDialog', () => {
   })
 
   it.each([
-    ['1.500', '1500'],
+    ['1.500', '1500.00'],
     ['1.234,50', '1234.50'],
   ])('sends a rate typed as «%s» as %s, whatever the browser’s locale (REB-485)', async (typed, sent) => {
     const onSave = vi.fn<(data: FreelancerOverride) => void>()
@@ -321,7 +321,7 @@ describe('CompanyOverrideDialog', () => {
     await userEvent.clear(budget)
     await userEvent.type(budget, '1.500')
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
-    expect(onSave.mock.calls[0]![0].budget_giornaliero).toBe('1500')
+    expect(onSave.mock.calls[0]![0].budget_giornaliero).toBe('1500.00')
   })
 
   it('says a budget that is not an amount is not one, and keeps Save off (REB-485)', async () => {

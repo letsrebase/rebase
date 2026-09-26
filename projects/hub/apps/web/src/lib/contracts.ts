@@ -18,7 +18,7 @@ import {
   type Match,
   type SendReport,
 } from './api'
-import { amountNumber, machineAmount } from './amount'
+import { amountNumber, sentAmount } from './amount'
 import { formatDate } from './format'
 
 export type FiscalDraft = Record<keyof FiscalData, string>
@@ -201,7 +201,7 @@ export function toLettera(form: LetteraForm): Lettera {
     ...text,
     data_inizio: form.data_inizio,
     data_fine: form.data_fine || null,
-    compenso: machineAmount(form.compenso),
+    compenso: sentAmount(form.compenso),
     giorni_pagamento: Number(form.giorni_pagamento),
     fine_mese: form.fine_mese,
     giorni_preavviso: form.giorni_preavviso.trim() ? Number(form.giorni_preavviso) : null,

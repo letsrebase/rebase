@@ -110,7 +110,7 @@ describe('CompanyWizard', () => {
       nome_azienda: 'ACME Srl',
       figura_richiesta: 'Backend developer',
       telefono: '+39 345 1234567',
-      budget_giornaliero: '500',
+      budget_giornaliero: '500.00',
       remoto: 'ibrido',
       giorni_presenza: 3,
       numero_risorse: '2',
@@ -148,7 +148,7 @@ describe('CompanyWizard, the budget typed the Italian way (REB-485)', () => {
     await user.click(screen.getByRole('button', { name: /Invia/ }))
     await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
 
-    expect(JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string).budget_giornaliero).toBe('1500')
+    expect(JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string).budget_giornaliero).toBe('1500.00')
   })
 })
 

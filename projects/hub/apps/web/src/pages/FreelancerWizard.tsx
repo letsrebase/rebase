@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { distinctId } from '@rebase/analytics/browser'
-import { AMOUNT_PROBLEM, euroAmount, machineAmount } from '@/lib/amount'
+import { AMOUNT_PROBLEM, euroAmount, sentAmount } from '@/lib/amount'
 import { readPerkParam, useWizardAnalytics } from '@/lib/analytics'
 import { ApiError, applyAsFreelancer, type FreelancerApplication } from '@/lib/api'
 import { isLinkedinName, LINKEDIN_OWN_PROFILE, linkedinFieldValue, linkedinProfile } from '@/lib/linkedin'
@@ -349,7 +349,7 @@ export function FreelancerWizard() {
     setSubmitError(null)
     try {
       await applyAsFreelancer(
-        { ...value, tariffa_giornaliera: machineAmount(value.tariffa_giornaliera) },
+        { ...value, tariffa_giornaliera: sentAmount(value.tariffa_giornaliera) },
         resolveAttribution(searchStr),
         distinctId(),
       )

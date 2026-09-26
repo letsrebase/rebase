@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { distinctId } from '@rebase/analytics/browser'
-import { AMOUNT_PROBLEM, euroAmount, machineAmount } from '@/lib/amount'
+import { AMOUNT_PROBLEM, euroAmount, sentAmount } from '@/lib/amount'
 import { useWizardAnalytics } from '@/lib/analytics'
 import { ApiError, requestPeople, type CompanyRequest } from '@/lib/api'
 import { resolveAttribution } from '@/lib/utm'
@@ -338,7 +338,7 @@ export function CompanyWizard() {
       await requestPeople(
         {
           ...value,
-          budget_giornaliero: machineAmount(value.budget_giornaliero),
+          budget_giornaliero: sentAmount(value.budget_giornaliero),
         },
         resolveAttribution(searchStr),
         distinctId(),

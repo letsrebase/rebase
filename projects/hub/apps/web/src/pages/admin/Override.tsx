@@ -14,7 +14,7 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
-import { AMOUNT_PROBLEM, acceptedAmount, machineAmount } from '@/lib/amount'
+import { AMOUNT_PROBLEM, acceptedAmount, sentAmount } from '@/lib/amount'
 import type { Company, CompanyOverride, Freelancer, FreelancerOverride, Remoto } from '@/lib/api'
 import { REMOTO_LABELS, formatDate } from '@/lib/format'
 
@@ -84,7 +84,7 @@ export function FreelancerOverrideDialog({
       nome: draft.nome.trim(),
       cognome: draft.cognome.trim(),
       linkedin_url: draft.linkedinUrl.trim() || null,
-      tariffa_giornaliera: machineAmount(draft.tariffaGiornaliera) || null,
+      tariffa_giornaliera: sentAmount(draft.tariffaGiornaliera) || null,
       posizione: draft.posizione.trim() || null,
       remoto: draft.remoto === UNSET ? null : draft.remoto,
       links: draft.links
@@ -309,7 +309,7 @@ export function CompanyOverrideDialog({
       progetto: draft.progetto.trim(),
       periodo_da: draft.periodoDa,
       durata: draft.durata.trim(),
-      budget_giornaliero: machineAmount(draft.budgetGiornaliero),
+      budget_giornaliero: sentAmount(draft.budgetGiornaliero),
       remoto: draft.remoto,
       giorni_presenza: draft.remoto === 'ibrido' ? Number(draft.giorniPresenza) : null,
       numero_risorse: Number(draft.numeroRisorse),

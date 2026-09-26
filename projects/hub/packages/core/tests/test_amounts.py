@@ -29,6 +29,26 @@ def test_every_row_of_the_shared_table(typed: str, amount: Decimal | int | None)
         assert italian_amount(typed) == amount
 
 
+CENT = Decimal("0.01")
+
+
+@pytest.mark.parametrize(
+    "amount",
+    [
+        row["amount"]
+        for row in CASES
+        if row["amount"] is not None
+        and Decimal(row["amount"]) == Decimal(row["amount"]).quantize(CENT)
+    ],
+    ids=str,
+)
+def test_what_the_web_sends_is_read_back_as_the_same_amount(amount: Decimal | int) -> None:
+    """The web sends every accepted amount as two decimals and a dot, no grouping
+    (`sentAmount`, «1,5» as "1.50"): the one form this reader cannot take for another
+    number, where «1.500» sent as such would come back as 1500."""
+    assert italian_amount(f"{amount:.2f}") == amount
+
+
 def test_the_decimal_keeps_its_cents_exactly() -> None:
     assert str(italian_amount("1.234,50")) == "1234.50"
 

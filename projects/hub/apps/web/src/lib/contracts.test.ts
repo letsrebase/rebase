@@ -108,7 +108,7 @@ describe('«Crea match» in three steps (REB-476)', () => {
   })
 
   it('reads a fee the Italian way, through the parser every amount field shares (lib/amount.ts)', () => {
-    expect(toLettera({ ...LETTERA_EMPTY, compenso: '12.000' }).compenso).toBe('12000')
+    expect(toLettera({ ...LETTERA_EMPTY, compenso: '12.000' }).compenso).toBe('12000.00')
     expect(toLettera({ ...LETTERA_EMPTY, compenso: '1.234,50' }).compenso).toBe('1234.50')
   })
 
