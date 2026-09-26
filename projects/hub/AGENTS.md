@@ -183,6 +183,13 @@ the tick itself for a card that became complete). A stamp is written once. The l
 ends with `N esiti registrati`. Without a Resend key the tick does not run, so the preview
 stamps nothing.
 
+**«Riscrivi a chi non ha fatto niente»** (`POST /api/hub/campaigns/{id}/follow-up`) makes a
+`bozza` with `fonte = lista` and `segue_id`. It keeps the earlier campaign's action and a
+copy of its mail, and only the mail can change (`LIST_IS_FIXED`). Its list is the earlier
+campaign's sent rows with no action, each checked live with `done_at`. The gap rule
+applies, so a follow-up drafted within `REBASE_CAMPAIGN_GAP_DAYS` of the send lists
+everyone as excluded, with the date.
+
 **Scripts written for one campaign wave never live under `/opt/hub`.** The deploy syncs
 the whole repository there with `rsync -az --delete` (`.github/workflows/
 _deploy-compose.yml`), so anything dropped into the checkout by hand that is not in the

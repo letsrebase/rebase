@@ -11,10 +11,10 @@ from pydantic import TypeAdapter
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from rebase_core.campaigns.actions import done_at
 from rebase_core.campaigns.schemas import AziendeFiltri, Filtri, TalentiFiltri
-from rebase_core.campaigns.states import ENTITY, Candidate, candidates_for_state, display_name
+from rebase_core.campaigns.states import Candidate, candidates_for_state, display_name
 from rebase_core.companies import CompanyService
-from rebase_core.errors import ValidationFailed
 from rebase_core.models import (
     Campaign,
     CampaignOptout,
@@ -35,7 +35,6 @@ REASON_RECENT = "ha ricevuto un'altra campagna il {data}"
 REASON_DONE = "ha già fatto l'azione"
 REASON_NOT_LISTED = "non più in lista"
 REASON_CANCELLED = "campagna annullata"
-LISTA_LATER = "Le liste fisse arrivano con «Riscrivi a chi non ha fatto niente»."
 
 _FILTRI: TypeAdapter[TalentiFiltri | AziendeFiltri] = TypeAdapter(Filtri)
 
@@ -52,7 +51,7 @@ def candidates(session: Session, campaign: Campaign) -> list[Candidate]:
     elif campaign.fonte == "filtri":
         found = _filtered(session, campaign.filtri or {})
     else:
-        raise ValidationFailed(ENTITY, "fonte", LISTA_LATER)
+        found = _not_done(session, campaign)
     seen: set[str] = set()
     unique: list[Candidate] = []
     for candidate in found:
@@ -60,6 +59,40 @@ def candidates(session: Session, campaign: Campaign) -> list[Candidate]:
             seen.add(candidate.email)
             unique.append(candidate)
     return unique
+
+
+def _not_done(session: Session, campaign: Campaign) -> list[Candidate]:
+    """A `lista` (spec § 4.3): whom the earlier campaign reached and who has not done its
+    action. Read live, not from `azione_at` alone: the tick stamps once a minute and
+    only for 30 days after a mail, and whoever acted since must not be written to
+    again (Review Focus 2). Each person keeps the snapshot links the earlier row
+    froze: their user, card, lead and open requests."""
+    parent = session.get(Campaign, campaign.segue_id) if campaign.segue_id else None
+    if parent is None:
+        return []
+    rows = session.scalars(
+        select(CampaignRecipient)
+        .where(
+            CampaignRecipient.campaign_id == parent.id,
+            CampaignRecipient.stato == "inviata",
+            CampaignRecipient.azione_at.is_(None),
+        )
+        .order_by(CampaignRecipient.email)
+    ).all()
+    return [
+        Candidate(
+            email=row.email,
+            nome=row.nome,
+            tipo=row.tipo,
+            user_id=row.user_id,
+            freelancer_id=row.freelancer_id,
+            signup_id=row.signup_id,
+            company_ids=tuple(UUID(key) for key in (row.prima or {}).get("richieste", {})),
+            pigro_slugs=tuple(row.pigro_slugs),
+        )
+        for row in rows
+        if done_at(session, row, parent.azione, since=row.inviata_at) is None
+    ]
 
 
 def _filtered(session: Session, raw: dict[str, Any]) -> list[Candidate]:

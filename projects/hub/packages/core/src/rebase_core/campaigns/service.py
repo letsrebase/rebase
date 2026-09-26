@@ -36,13 +36,27 @@ from rebase_core.campaigns.states import ENTITY, JOURNEY_STATES, PIGRO_LATER
 from rebase_core.campaigns.templates import STATE_TEMPLATES
 from rebase_core.config import Settings
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
-from rebase_core.models import Campaign, CampaignRecipient, Freelancer, Login, User
+from rebase_core.models import (
+    CAMPAIGN_NAME_MAX_LENGTH,
+    Campaign,
+    CampaignRecipient,
+    Freelancer,
+    Login,
+    User,
+)
 
 NOT_A_DRAFT = "Si modifica solo una bozza: riportala in bozza prima."
 ROME = ZoneInfo("Europe/Rome")
 NEED_TEST = "Manda una prova dopo l'ultima modifica, poi invia."
 EMPTY_MAIL = "Oggetto, testo e bottone servono prima della prova."
 PAST_SLACK = timedelta(minutes=1)
+FOLLOW_UP_SUFFIX = " · riscrivi"
+ONLY_SENT = "Si riscrive solo a chi ha ricevuto una campagna già inviata."
+NOTHING_TO_FOLLOW = "Hanno fatto tutti l'azione: non c'è nessuno a cui riscrivere."
+LIST_IS_FIXED = (
+    "Chi riceve una «Riscrivi» e cosa misura li decide la campagna da cui viene: "
+    "si cambia solo la mail."
+)
 # What the test mail showed: the list's source, the mail, and the slug, which is the
 # button link's `utm_campaign` and Resend's tag and follows a renamed draft.
 _CONTENT_FIELDS = (
@@ -115,6 +129,14 @@ class CampaignService:
         changes = data.model_dump(exclude_unset=True)
         if "filtri" in changes and data.filtri is not None:
             changes["filtri"] = data.filtri.model_dump(mode="json", exclude_none=True)
+        if campaign.fonte == "lista":
+            fixed = [
+                field
+                for field in ("fonte", "stato_percorso", "filtri", "azione")
+                if field in changes and changes[field] != getattr(campaign, field)
+            ]
+            if fixed:
+                raise ValidationFailed(ENTITY, fixed[0], LIST_IS_FIXED)
         if data.nome is not None:
             changes["nome"] = data.nome.strip()
             if changes["nome"] != campaign.nome:
@@ -322,6 +344,45 @@ class CampaignService:
         self.session.commit()
         return CampaignRead.model_validate(campaign)
 
+    def follow_up(self, campaign_id: UUID, admin_id: UUID) -> CampaignRead:
+        """«Riscrivi a chi non ha fatto niente» (spec § 4.3): a `bozza` with `fonte =
+        lista` that follows `campaign_id`, with the same action and a copy of its mail to
+        rewrite. Its list is the sent rows with no action, read when shown and frozen
+        when scheduled, like any other."""
+        parent = self._require(campaign_id)
+        if parent.stato != "inviata":
+            raise InvalidState(ONLY_SENT)
+        waiting = self.session.scalar(
+            select(func.count())
+            .select_from(CampaignRecipient)
+            .where(
+                CampaignRecipient.campaign_id == parent.id,
+                CampaignRecipient.stato == "inviata",
+                CampaignRecipient.azione_at.is_(None),
+            )
+        )
+        if not waiting:
+            raise InvalidState(NOTHING_TO_FOLLOW)
+        now = self.clock()
+        nome = f"{parent.nome}{FOLLOW_UP_SUFFIX}"[:CAMPAIGN_NAME_MAX_LENGTH]
+        campaign = Campaign(
+            created_by=admin_id,
+            nome=nome,
+            slug=self._unique_slug(f"c-{now:%Y-%m-%d}-{_slugify(nome)}"[:70]),
+            fonte="lista",
+            segue_id=parent.id,
+            oggetto=parent.oggetto,
+            testo=parent.testo,
+            bottone_testo=parent.bottone_testo,
+            bottone_meta=parent.bottone_meta,
+            azione=parent.azione,
+            stato="bozza",
+            contenuto_at=now,
+        )
+        self.session.add(campaign)
+        self.session.commit()
+        return CampaignRead.model_validate(campaign)
+
     def _when(self, data: ScheduleRequest, now: datetime) -> datetime:
         if data.giorno is None and data.ora is None:
             return now
@@ -350,7 +411,7 @@ class CampaignService:
                 raise ValidationFailed(ENTITY, "stato_percorso", "Scegli uno stato del percorso.")
             if stato_percorso == "pigro_vuoto":
                 raise ValidationFailed(ENTITY, "stato_percorso", PIGRO_LATER)
-        elif not has_filters:
+        elif fonte == "filtri" and not has_filters:
             raise ValidationFailed(ENTITY, "filtri", "Scegli i filtri della lista.")
         if meta == "pigro":
             raise ValidationFailed(ENTITY, "bottone_meta", PIGRO_LATER)

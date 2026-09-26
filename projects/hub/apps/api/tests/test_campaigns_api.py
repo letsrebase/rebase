@@ -1,6 +1,8 @@
 """Campaigns over HTTP: the public unsubscribe (Task 14) and the admin routes (Task 17)."""
 
 import re
+from datetime import UTC, datetime
+from uuid import UUID
 
 from campaign_api_flow import (  # noqa: F401  (fixture)
     admin_user,
@@ -9,13 +11,14 @@ from campaign_api_flow import (  # noqa: F401  (fixture)
     tidy,
 )
 from fastapi.testclient import TestClient
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_campaign_sender
 from rebase_core.campaigns.sender import RecordingCampaignSender
 from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
-from rebase_core.models import Campaign, CampaignOptout, Freelancer, User
+from rebase_core.models import Campaign, CampaignOptout, CampaignRecipient, Freelancer, User
 
 WEBHOOK_SECRET = "whsec_" + "c2VncmV0bw=="
 
@@ -253,3 +256,37 @@ def test_never_write_records_the_address(
         == 200
     )
     assert tidy.get(CampaignOptout, "lorenzo@studio.it").fonte == "admin"  # type: ignore[union-attr]
+
+
+def test_riscrivi_opens_a_lista_draft_and_refuses_a_draft(
+    client: TestClient,
+    tidy: Session,  # noqa: F811  (fixture)
+    sender: RecordingSender,
+) -> None:
+    login_admin(client, sender, tidy)
+    draft_id = a_draft(client)
+    refused = client.post(f"/api/hub/campaigns/{draft_id}/follow-up")
+    assert refused.status_code == 409 and "già inviata" in refused.json()["detail"]
+    tidy.execute(update(Campaign).where(Campaign.id == UUID(draft_id)).values(stato="inviata"))
+    campaign = tidy.get(Campaign, UUID(draft_id))
+    assert campaign is not None
+    tidy.add(
+        CampaignRecipient(
+            campaign_id=campaign.id,
+            email="ada@studio.it",
+            tipo="freelancer",
+            codice="1",
+            prima={},
+            disiscrizione_token="t-riscrivi",
+            stato="inviata",
+            inviata_at=datetime.now(UTC),
+        )
+    )
+    tidy.commit()
+    created = client.post(f"/api/hub/campaigns/{draft_id}/follow-up")
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert (body["fonte"], body["segue_id"], body["stato"]) == ("lista", draft_id, "bozza")
+    detail = client.get(f"/api/hub/campaigns/{draft_id}").json()
+    assert detail["conteggi"]["azioni"] == 0
+    assert detail["destinatari"][0]["entrato_dalla_mail"] is False
