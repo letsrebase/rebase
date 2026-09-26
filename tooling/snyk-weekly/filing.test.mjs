@@ -179,6 +179,24 @@ test("an open card that belongs to another issue is not taken for this issue's p
   assert.deepEqual(github.calls.map((c) => c[0]), ["comment"]);
 });
 
+test("an issue that names a closed card is not paired with another open card", async () => {
+  // REB-580, the card the issue names, is closed; the search finds REB-590, linked to nothing.
+  const github = fakeGithub({ open: openIssue("REB-580") });
+  const linear = fakeLinear({ open: openCard(null) });
+  await run({ github, linear });
+  assert.deepEqual(linear.calls, [], "REB-590 is neither linked nor commented");
+  assert.deepEqual(github.calls.map((c) => c[0]), ["comment"]);
+});
+
+test("an issue and a card that name nobody are both commented on and never joined", async () => {
+  const github = fakeGithub({ open: openIssue(null) });
+  const linear = fakeLinear({ open: openCard(null) });
+  const result = await run({ github, linear });
+  assert.deepEqual(result.failures, []);
+  assert.deepEqual(github.calls.map((c) => c[0]), ["comment"]);
+  assert.deepEqual(linear.calls.map((c) => c[0]), ["comment"]);
+});
+
 test("a clean week says so on what is open and files nothing new", async () => {
   const github = fakeGithub({ open: openIssue("REB-590") });
   const linear = fakeLinear({ open: openCard(400) });

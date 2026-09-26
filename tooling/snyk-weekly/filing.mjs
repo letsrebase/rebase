@@ -86,6 +86,14 @@ function comment({ report, clean, partial, extra = [] }) {
 
 const PRIORITY_NAMES = { 1: "Urgent", 2: "High", 3: "Medium" };
 
+// Neither names another: the issue names this card or none, the card links this issue
+// or none.
+export function isPair(issue, card) {
+  const issueSide = !issue.linearIdentifier || issue.linearIdentifier === card.identifier;
+  const cardSide = card.githubNumber == null || card.githubNumber === issue.number;
+  return issueSide && cardSide;
+}
+
 // The issue body once its missing card exists: the marker names the card, and the
 // "No Linear card" line becomes the link.
 function recordCard(body, card) {
@@ -130,10 +138,11 @@ export async function fileReport({ title, report, summary, priority, scanErrors 
     // A dry run on a machine without the key is a preview, not a failure.
     if (!(dryRun && !linear)) failures.push(`Linear: ${linearError}`);
   }
-  // The marker search can find an open card that belongs to another week's issue, when
-  // the card this issue names was closed; that card is not this issue's pair.
-  if (openGithub && openLinear && openLinear.githubNumber != null && openLinear.githubNumber !== openGithub.number) {
-    log(`${openLinear.identifier} belongs to GitHub issue #${openLinear.githubNumber}, not #${openGithub.number}: left alone`);
+  // The marker search can find an open card that is not this issue's pair: another
+  // week's, when the card this issue names was closed, or one that links another issue.
+  // A card is this issue's pair unless either of them names something else.
+  if (openGithub && openLinear && !isPair(openGithub, openLinear)) {
+    log(`${openLinear.identifier} is not the pair of GitHub issue #${openGithub.number}: left alone`);
     openLinear = null;
   }
   if (openGithub) log(`Open GitHub issue from a previous run: #${openGithub.number} (${openGithub.url})`);
@@ -197,11 +206,11 @@ export async function fileReport({ title, report, summary, priority, scanErrors 
     }
   }
 
-  // 3b. A pair found open but linked one way only (the link back failed last week, or
-  // the card was found by its marker for an issue that never recorded it) is linked
-  // now, rather than staying half-linked for as long as both are open.
+  // 3b. A pair linked one way only (the link back failed an earlier week) is linked
+  // both ways now. Only one way: a card and an issue that name nobody are both
+  // commented on, and never joined on a guess.
   if (openGithub && openLinear && !linearError) {
-    if (openLinear.githubNumber == null) {
+    if (openLinear.githubNumber == null && openGithub.linearIdentifier === openLinear.identifier) {
       act(`link ${openLinear.identifier} to GitHub issue #${openGithub.number}`);
       if (!dryRun) {
         try {
@@ -211,7 +220,7 @@ export async function fileReport({ title, report, summary, priority, scanErrors 
         }
       }
     }
-    if (!openGithub.linearIdentifier) {
+    if (!openGithub.linearIdentifier && openLinear.githubNumber === openGithub.number) {
       act(`record ${openLinear.identifier} on GitHub issue #${openGithub.number}`);
       if (!dryRun) await github.updateBody(openGithub.number, recordCard(openGithub.body, openLinear));
     }
