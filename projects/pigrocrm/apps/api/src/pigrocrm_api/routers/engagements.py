@@ -95,9 +95,7 @@ def _run[T](action: Callable[[], T]) -> T:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, exc.message) from exc
     except SQLAlchemyError as exc:
         logger.warning("engagements: the door's own call failed (%s)", type(exc).__name__)
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, SPAZIO_NON_RAGGIUNGIBILE
-        ) from exc
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SPAZIO_NON_RAGGIUNGIBILE) from exc
 
 
 _HTTP_EXCEPTION_SCHEMA: dict[str, Any] = {

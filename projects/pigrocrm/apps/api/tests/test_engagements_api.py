@@ -260,9 +260,7 @@ def test_put_creates_then_answers_200(door_client: TestClient) -> None:
 def test_put_refuses_an_unknown_field(door_client: TestClient) -> None:
     match_id = uuid4()
     body = {**_upsert(), "extra": "sorpresa"}
-    refused = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=body, headers=_bearer()
-    )
+    refused = door_client.put(f"/api/rebase/engagements/{match_id}", json=body, headers=_bearer())
     assert refused.status_code == 422, refused.text
 
 
@@ -318,17 +316,13 @@ def test_report_of_deleted_deal_is_409(
     with _space(container_settings, linked["slug"]) as space:
         DealService(space).soft_delete(UUID(linked["deal_id"]), Actor.system())
 
-    refused = door_client.get(
-        f"/api/rebase/engagements/{match_id}/report", headers=_bearer()
-    )
+    refused = door_client.get(f"/api/rebase/engagements/{match_id}/report", headers=_bearer())
     assert refused.status_code == 409, refused.text
 
 
 def test_report_of_unknown_match_is_404(door_client: TestClient) -> None:
     unknown = uuid4()
-    refused = door_client.get(
-        f"/api/rebase/engagements/{unknown}/report", headers=_bearer()
-    )
+    refused = door_client.get(f"/api/rebase/engagements/{unknown}/report", headers=_bearer())
     assert refused.status_code == 404, refused.text
     assert refused.json()["code"] == "not_found"
 
@@ -375,7 +369,5 @@ def test_unreachable_space_is_503(door_client: TestClient, container_settings: S
     )
     assert again.status_code == 503, again.text
 
-    report = door_client.get(
-        f"/api/rebase/engagements/{match_id}/report", headers=_bearer()
-    )
+    report = door_client.get(f"/api/rebase/engagements/{match_id}/report", headers=_bearer())
     assert report.status_code == 503, report.text
