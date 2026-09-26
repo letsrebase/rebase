@@ -13,7 +13,7 @@ export function Team() {
           Descrivi il progetto, ti proponiamo il team
         </h1>
         <p className="mt-2 text-muted-foreground">
-          Scrivi cosa va fatto: leggiamo i profili dei talenti di rebase e in meno di un minuto ti
+          Scrivi cosa va fatto: leggiamo i profili dei talenti di rebase e di solito in pochi secondi ti
           proponiamo un team, senza nomi, con una fascia di prezzo. Se ti convince, lo assumi da qui.
         </p>
       </div>
