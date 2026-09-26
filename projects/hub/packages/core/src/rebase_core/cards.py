@@ -42,6 +42,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
+from rebase_core.bands import band_for
 from rebase_core.cv_text import CvText
 from rebase_core.db import SessionOpener
 from rebase_core.errors import LlmUnavailable, NotFound
@@ -259,6 +260,7 @@ class CardWriter:
                 freelancer_id=freelancer_id,
                 card=None,
                 modalita=row.remoto,
+                fascia=band_for(row.tariffa_giornaliera),
                 cv_sha256=None,
                 model=None,
                 generated_at=None,
@@ -268,6 +270,7 @@ class CardWriter:
             freelancer_id=freelancer_id,
             card=Card.model_validate(stored.card) if stored.card is not None else None,
             modalita=row.remoto,
+            fascia=band_for(row.tariffa_giornaliera),
             cv_sha256=stored.cv_sha256,
             model=stored.model,
             generated_at=stored.generated_at,

@@ -848,7 +848,7 @@ export function AdminFreelancerDetail() {
     void client.invalidateQueries({ queryKey: ['freelancers'] })
     void client.invalidateQueries({ queryKey: auditKey })
     // «Scheda anonima» (REB-514): clearing the CV deletes the card, and an override
-    // may change the work mode the section reads beside it.
+    // may change the work mode or the rate, whose band the section reads beside it.
     void client.invalidateQueries({ queryKey: ['freelancer-card', id] })
   }
   const [overrideOpen, setOverrideOpen] = useState(false)
@@ -982,7 +982,7 @@ export function AdminFreelancerDetail() {
         )}
       </div>
       {f.deleted_at === null && (
-        <SchedaAnonima freelancerId={f.id} tariffa={f.tariffa_giornaliera} hasCv={f.cv_filename !== null} />
+        <SchedaAnonima freelancerId={f.id} hasCv={f.cv_filename !== null} />
       )}
       <FreelancerIscrizione utm={f.iscrizione_utm} />
       <RecentEvents

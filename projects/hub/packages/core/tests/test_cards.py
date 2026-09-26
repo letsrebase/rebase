@@ -20,6 +20,7 @@ from fakes_cards import CARD, MODEL, card_response, text_pdf
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from rebase_core.bands import Band
 from rebase_core.cards import (
     CARD_MAX_TOKENS,
     CARD_SCHEMA,
@@ -191,6 +192,26 @@ def test_card_from_a_cv(clean: Session) -> None:
     row.remoto = "ibrido"
     clean.commit()
     assert CardWriter(clean, None).read(freelancer_id).modalita == "ibrido"
+
+
+def test_the_read_carries_the_clients_band_from_the_rate(clean: Session) -> None:
+    """REB-514: the admin's talent page shows the band a company reads, from the rate on
+    file when the card is shown and never stored with it: 450 € a day plus 40% is 630,
+    in «500–650». No rate, no band; and a talent with no card yet still has one."""
+    freelancer_id = _apply(clean)
+    CardWriter(clean, RecordingCall([card_response()]), now=lambda: NOW).write(freelancer_id)
+    assert CardWriter(clean, None).read(freelancer_id).fascia == Band(min=500, max=650)
+
+    row = clean.get(Freelancer, freelancer_id)
+    assert row is not None
+    row.tariffa_giornaliera = None
+    clean.commit()
+    assert CardWriter(clean, None).read(freelancer_id).fascia is None
+
+    without_cv = _apply(clean, email="grace@studio.it", cv=None)
+    read = CardWriter(clean, None).read(without_cv)
+    assert read.card is None
+    assert read.fascia == Band(min=500, max=650)
 
 
 def test_card_follows_the_cv(clean: Session) -> None:

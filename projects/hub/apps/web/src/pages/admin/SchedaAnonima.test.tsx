@@ -25,6 +25,8 @@ const WRITTEN = {
     sintesi: 'Backend developer senior, nove anni fra fintech ed e-commerce.',
   },
   modalita: 'ibrido',
+  // Core's band of the rate on file (450 € a day plus 40% is 630), read with the card.
+  fascia: { min: 500, max: 650 },
   cv_sha256: 'a'.repeat(64),
   model: 'claude-opus-5',
   generated_at: '2026-09-25T10:00:00Z',
@@ -35,17 +37,18 @@ const NONE = {
   freelancer_id: 'f1',
   card: null,
   modalita: null,
+  fascia: null,
   cv_sha256: null,
   model: null,
   generated_at: null,
   error: null,
 }
 
-/** 450 € a day and a CV on file, unless the test says otherwise. */
-function mount({ tariffa = '450.00', hasCv = true }: { tariffa?: string | null; hasCv?: boolean } = {}) {
+/** A CV on file, unless the test says otherwise. */
+function mount({ hasCv = true }: { hasCv?: boolean } = {}) {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <SchedaAnonima freelancerId="f1" tariffa={tariffa} hasCv={hasCv} />
+      <SchedaAnonima freelancerId="f1" hasCv={hasCv} />
     </QueryClientProvider>,
   )
 }
@@ -57,7 +60,7 @@ function section(): HTMLElement {
 afterEach(() => vi.restoreAllMocks())
 
 describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)', () => {
-  it('shows every field of the card, the mode, the band from the rate and when it was written', async () => {
+  it('shows every field of the card, the mode, the band core read and when it was written', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, WRITTEN))
     mount()
 
@@ -72,7 +75,7 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
     expect(within(card).getByText('Torino')).toBeInTheDocument()
     expect(within(card).getByText(WRITTEN.card.sintesi)).toBeInTheDocument()
     expect(within(card).getByText('Ibrido')).toBeInTheDocument()
-    // 450 € a day plus 40% is 630: the band a company reads. The query normalises the
+    // The band as core sent it, in the shared words. The query normalises the
     // non-breaking space before «€» to a plain one, so the text is matched that way.
     expect(within(card).getByText(`500${DASH}650 € al giorno`)).toBeInTheDocument()
     expect(within(card).getByText(/^25 set 2026.*claude-opus-5$/)).toBeInTheDocument()
@@ -81,12 +84,19 @@ describe('«Scheda anonima» on the talent page (REB-514, spec § 2.1, § 5.1)',
 
   it('says «Tariffa da definire» for a talent with no rate, and «—» for what the card leaves empty', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { ...WRITTEN, modalita: null, card: { ...WRITTEN.card, luogo: null, settori: [] } }),
+      answer(200, { ...WRITTEN, modalita: null, fascia: null, card: { ...WRITTEN.card, luogo: null, settori: [] } }),
     )
-    mount({ tariffa: null })
+    mount()
     await screen.findByText('Backend developer')
     expect(within(section()).getByText('Tariffa da definire')).toBeInTheDocument()
     expect(within(section()).getAllByText('—')).toHaveLength(3)
+  })
+
+  it('writes a mode it has no word for as it came', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { ...WRITTEN, modalita: 'altrove' }))
+    mount()
+    await screen.findByText('Backend developer')
+    expect(within(section()).getByText('altrove')).toBeInTheDocument()
   })
 
   it('shows the error sentence when a CV produced no card', async () => {

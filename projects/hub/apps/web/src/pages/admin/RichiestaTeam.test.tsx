@@ -327,6 +327,17 @@ describe('a team request, as the admin reads it (REB-514, spec § 3.5)', () => {
     expect(screen.getByRole('link', { name: 'Ada Lovelace' })).toBeInTheDocument()
   })
 
+  it('shows no team band for a proposal with nobody in it, rather than a rate to define', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { ...REQUEST, proposal: { ...REQUEST.proposal, team: [] }, talenti: [] }),
+    )
+    mount()
+    await screen.findByRole('heading', { level: 1, name: 'Acme S.r.l.' })
+    expect(screen.queryByText('Fascia del team')).toBeNull()
+    expect(screen.queryByText('Tariffa da definire')).toBeNull()
+    expect(screen.getByText('Nessun talento in questa richiesta.')).toBeInTheDocument()
+  })
+
   it('says so when the request does not exist', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(404, { detail: 'Richiesta team non trovata.' }))
     mount()

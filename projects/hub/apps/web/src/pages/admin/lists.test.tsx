@@ -84,7 +84,16 @@ const COMPLETE = {
 /** `GET /api/hub/freelancers/{id}/card` before any card is written (REB-514): the
  *  detail page's «Scheda anonima» reads it beside the card itself. */
 function noCard(id: string) {
-  return { freelancer_id: id, card: null, modalita: null, cv_sha256: null, model: null, generated_at: null, error: null }
+  return {
+    freelancer_id: id,
+    card: null,
+    modalita: null,
+    fascia: null,
+    cv_sha256: null,
+    model: null,
+    generated_at: null,
+    error: null,
+  }
 }
 
 /** A card in `talenti` (REB-282/283): a freelancer already written, `origine` naming
@@ -384,7 +393,7 @@ describe('the freelancer detail', () => {
 })
 
 describe('the anonymous card on the freelancer detail (REB-514)', () => {
-  it('reads the card of a live talent with a CV, with the band from the rate on file', async () => {
+  it('reads the card of a live talent with a CV, and offers to write it again', async () => {
     routeFetch({
       'GET /api/hub/freelancers/f2': COMPLETE,
       'GET /api/hub/freelancers/f2/audit': [],
@@ -408,8 +417,6 @@ describe('the anonymous card on the freelancer detail (REB-514)', () => {
     mount('/admin/freelance/f2')
     const section = await screen.findByRole('region', { name: 'Scheda anonima' })
     expect(await within(section).findByText('Guida team di prodotto da quindici anni.')).toBeInTheDocument()
-    // 500 € a day plus 40% is 700 (the query reads the space before «€» as a plain one).
-    expect(within(section).getByText('650\u2013800 € al giorno')).toBeInTheDocument()
     expect(within(section).getByRole('button', { name: 'Rigenera scheda' })).toBeInTheDocument()
   })
 

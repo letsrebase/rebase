@@ -87,14 +87,17 @@ class Card(BaseModel):
 class FreelancerCardRead(BaseModel):
     """A freelancer's anonymous card as the admin reads it (spec § 5.1): the last card
     written, the CV it came from, the model and when, and the last failure, which may
-    sit beside an older card. `modalita` is not on the card: it is `Freelancer.remoto`,
-    read when the card is shown, so a mode the person edits is right at once (§ 2.1).
-    `card`, `cv_sha256`, `model` and `generated_at` stay `None` until a CV produces a
-    card; `error` is set or not on its own."""
+    sit beside an older card. `modalita` and `fascia` are not on the card: they are
+    `Freelancer.remoto` and the client's band of `Freelancer.tariffa_giornaliera`
+    (`bands.band_for`), read when the card is shown, so a mode or a rate the person
+    edits is right at once (§ 2.1), and the page never computes a band of its own.
+    `fascia` is `None` without a rate. `card`, `cv_sha256`, `model` and `generated_at`
+    stay `None` until a CV produces a card; `error` is set or not on its own."""
 
     freelancer_id: UUID
     card: Card | None
     modalita: str | None
+    fascia: Band | None
     cv_sha256: str | None
     model: str | None
     generated_at: datetime | None
