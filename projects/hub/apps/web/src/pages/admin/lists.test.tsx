@@ -11,6 +11,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CompaniesFilters, Remoto, TalentiFilters } from '@/lib/api'
+import { parseSearch } from '@/lib/search'
 import { strParam } from '@/router'
 import { AdminCompanies, AdminCompanyDetail, AdminFreelancerDetail, AdminTalenti, AdminTalentoLead } from './lists'
 
@@ -241,6 +242,7 @@ function mount(path: string) {
       signedIn.addChildren([talent, talentLead, freelanceDetail, contratti, nuovoMatch, companies, companiesDetail]),
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
+    parseSearch,
   })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -762,10 +764,9 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
   })
 
   it('keeps a purely numeric filter value on a fresh load, not just an in-app navigation', async () => {
-    // The router's default parseSearch runs JSON.parse on every raw query value before
-    // validateSearch sees it, so a digit-only value in the URL arrives as a JS number,
-    // not a string -- exactly what happens opening a shared link or reloading, never
-    // on an in-app navigate(). strParam has to coerce it back.
+    // A digit-only value in the URL must read back as the same text on a shared link or
+    // a reload, never only on an in-app navigate(): the router's parseSearch keeps an
+    // amount filter's raw text, and strParam coerces any other parameter's number back.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
     mount('/admin/talent?tariffa_min=50')
     await screen.findByRole('heading', { name: 'Talenti' })
@@ -840,6 +841,26 @@ describe('the euro filters read Italian thousands, whatever the browser’s loca
       cleanup()
       spy.mockClear()
       mount(href)
+      await screen.findByRole('heading', { name: heading })
+      expect(screen.getByLabelText(label)).toHaveValue('1.500')
+      await waitFor(() => expect(listCalls(spy, endpoint).at(-1)).toContain(`${param}=1500.00`))
+    },
+  )
+
+  it.each([
+    { ...TALENTI, label: 'Tariffa min (€/giorno)', param: 'tariffa_min' },
+    { ...TALENTI, label: 'Tariffa max (€/giorno)', param: 'tariffa_max' },
+    { ...AZIENDE, label: 'Budget min (€/giorno)', param: 'budget_min' },
+    { ...AZIENDE, label: 'Budget max (€/giorno)', param: 'budget_max' },
+  ])(
+    'reads a hand-typed «$param=1.500» as 1500 on a fresh load (REB-531)',
+    async ({ path, heading, label, endpoint, param }) => {
+      // Typed or pasted by hand, the value is not in quotes: the default parseSearch
+      // would read it as the number 1.5 before the page ever saw «1.500».
+      const spy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation(async () => answer(200, { totale: 0, items: [], per_stato: {} }))
+      mount(`${path}?${param}=1.500`)
       await screen.findByRole('heading', { name: heading })
       expect(screen.getByLabelText(label)).toHaveValue('1.500')
       await waitFor(() => expect(listCalls(spy, endpoint).at(-1)).toContain(`${param}=1500.00`))
