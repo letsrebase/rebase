@@ -2,18 +2,21 @@
 
 `Card` is the schema Claude's structured output is validated against, before its JSON
 ever reaches a `freelancer_cards` row; `FreelancerCardRead` and `CardsRefreshed` are
-what the card writer answers (REB-510, `cards.py`). The public and admin read models
--- `TeamProposalRead`, `TeamRequestRead` and the rest of § 3.3 and § 3.5 -- come with
-the tasks that build the routes reading them (C4 to D4), kept out of `schemas.py`,
-already the size of a chapter, the same reasoning `contract_schemas.py` gives for its
-own flow.
+what the card writer answers (REB-510, `cards.py`). `TeamProposalCreate` is what a
+visitor asks the engine for and `TeamProposalRead` what it answers (REB-511,
+`team_builder.py`, § 3.3), with `Band` from `bands.py`. The request's models, § 3.5,
+come with the tasks that build the routes reading them (C5 to D4), kept out of
+`schemas.py`, already the size of a chapter, the same reasoning `contract_schemas.py`
+gives for its own flow.
 """
 
 from datetime import datetime
-from typing import Literal, NamedTuple
+from typing import Any, Literal, NamedTuple
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from rebase_core.bands import Band
 
 # The five enum tuples live once, in `models.py`, the way `contract_schemas.py` and
 # `match_words.py` already import their own shared constants from there rather than
@@ -30,6 +33,7 @@ from rebase_core.validation import SafeStr
 
 __all__ = [
     "CARD_SENIORITIES",
+    "Band",
     "Card",
     "CardsRefreshed",
     "FreelancerCardRead",
@@ -37,6 +41,9 @@ __all__ = [
     "TEAM_PROPOSAL_ORIGINS",
     "TEAM_REQUEST_ORIGINS",
     "TEAM_REQUEST_STATES",
+    "TeamMemberRead",
+    "TeamProposalCreate",
+    "TeamProposalRead",
 ]
 
 
@@ -85,3 +92,59 @@ class CardsRefreshed(NamedTuple):
 
     written: int
     failed: int
+
+
+# ---- the proposal (REB-511, spec § 3.3) ----------------------------------------------------
+
+DESCRIZIONE_MIN_LENGTH = 40
+DESCRIZIONE_MAX_LENGTH = 4000
+NOTA_MAX_LENGTH = 500
+
+
+class TeamProposalCreate(BaseModel):
+    """What a visitor, a cloud user or an admin asks the engine for: the project's
+    description, and on «Rigenera» the proposal it replaces and a note on it («togli il
+    designer»). Stripped before it is measured, so forty spaces are not a description."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    descrizione: SafeStr = Field(
+        min_length=DESCRIZIONE_MIN_LENGTH, max_length=DESCRIZIONE_MAX_LENGTH
+    )
+    nota: SafeStr | None = Field(default=None, max_length=NOTA_MAX_LENGTH)
+    previous_id: UUID | None = None
+
+
+class TeamMemberRead(BaseModel):
+    """One person of a proposed team (§ 3.3): `posizione` is their index in this
+    proposal (1, 2, 3), the only handle the public read gives; `freelancer_id` is
+    `None` there, so a visitor cannot follow a talent across proposals, and so is the
+    card's `luogo`, which only the engine and the admin read. `modalita` is
+    `Freelancer.remoto` and `fascia` the band of their current rate, both read when the
+    proposal is, the way the card is shown everywhere (§ 2.1)."""
+
+    posizione: int
+    freelancer_id: UUID | None
+    ruolo: str
+    motivazione: str
+    giorni_settimana: int | None
+    scheda: Card
+    modalita: str | None
+    fascia: Band | None
+
+
+class TeamProposalRead(BaseModel):
+    """A proposal as the page shows it (§ 3.3). `luogo` is what the engine read about
+    place in the description, `{"locale": bool, "dove": str | None}`, and stays on the
+    public read: it is the visitor's own words. `economia` is `{"giorno": Band | None,
+    "mese": Band | None, "giorni_mese": 22}`, the team's bands from its members',
+    `None` when any member has no rate."""
+
+    id: UUID
+    riassunto: str
+    luogo: dict[str, Any]
+    team: list[TeamMemberRead]
+    economia: dict[str, Any]
+    previous_id: UUID | None
+    origine: str
+    created_at: datetime
