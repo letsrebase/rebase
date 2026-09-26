@@ -539,12 +539,14 @@ class TeamRequestListItem(BaseModel): ...   # id, azienda, origine, stato, creat
 class TeamRequestList(BaseModel): ...       # items, next_cursor
 
 def names_the_company(riassunto: str, azienda: str) -> bool:
-    """Any word of four letters or more of `azienda` that is neither a legal form
+    """The whole `azienda`, trimmed, as a phrase between word boundaries, whatever its
+    length («HP» names HP, «chip» does not), or any word of four letters or more of it that is neither a legal form
     (`srl`, `srls`, `spa`, `snc`, `sas`, with or without their dots) nor a generic word
     of a company's kind the prompt itself asks the summary to use instead (`logistica`,
     `software`, `studio`, `servizi` and their kind), case-insensitively, inside the
     summary as a whole word: «Acme S.r.l.» is named by «ACME rifà il gestionale», but
-    «Logistica Veneta S.r.l.» is not named by «un'azienda di logistica»."""
+    «Logistica Veneta S.r.l.» is not named by «un'azienda di logistica». Tests: «HP»
+    flagged for HP, «chip» not; «IBM Italia» flagged for «IBM Italia S.r.l.»."""
 
 class TeamRequestService:
     def __init__(self, session: Session, *, settings: Settings, sender: EmailSender | None = None, tracker: Tracker | None = None, now=utcnow) -> None: ...
