@@ -118,6 +118,40 @@ describe('CompanyWizard', () => {
   })
 })
 
+describe('CompanyWizard, the budget typed the Italian way (REB-485)', () => {
+  it('refuses a budget whose thousands put it over the ceiling, and posts «1.500» as 1500', async () => {
+    const user = userEvent.setup()
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 201 }),
+    )
+    const router = mount()
+
+    await user.type(await screen.findByLabelText('Azienda'), 'ACME Srl{Enter}')
+    await user.type(screen.getByLabelText('Figura richiesta'), 'Backend developer{Enter}')
+    await user.type(screen.getByLabelText('Nome'), 'Ada')
+    await user.type(screen.getByLabelText('Cognome'), 'Lovelace')
+    await user.type(screen.getByLabelText('Email'), 'ada@acme.it')
+    await user.type(screen.getByLabelText('Telefono'), '+39 345 1234567{Enter}')
+    await user.type(screen.getByLabelText('Progetto'), 'Dobbiamo rifare il backend del portale clienti.')
+    await user.click(screen.getByRole('button', { name: /Avanti/ }))
+    await user.type(screen.getByLabelText('Da quando'), '2026-10-01')
+    await user.type(screen.getByLabelText('Per quanto'), '3 mesi{Enter}')
+    // 150000, over the ceiling: read as 150 it would have gone through.
+    await user.type(screen.getByLabelText('Budget a giornata'), '150.000{Enter}')
+    expect(screen.getByText('Serve una cifra, in euro.')).toBeInTheDocument()
+    // The field is mounted again once it turns invalid, so it is looked up again.
+    await user.clear(screen.getByLabelText('Budget a giornata'))
+    await user.type(screen.getByLabelText('Budget a giornata'), '1.500{Enter}')
+    await user.click(screen.getByRole('radio', { name: /Da remoto/ }))
+    await user.click(screen.getByRole('button', { name: /Avanti/ }))
+    await user.type(screen.getByLabelText('Numero di persone'), '2{Enter}')
+    await user.click(screen.getByRole('button', { name: /Invia/ }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
+
+    expect(JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string).budget_giornaliero).toBe('1500')
+  })
+})
+
 describe('CompanyWizard, the draft and the intro (REB-215)', () => {
   it('introduces rebase above the first question', async () => {
     mount()

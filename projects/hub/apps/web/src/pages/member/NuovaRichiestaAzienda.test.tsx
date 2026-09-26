@@ -162,6 +162,26 @@ describe('/me/new-company', () => {
     expect(fetchSpy.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false)
   })
 
+  it('posts a budget typed as «1.500» as 1500 (REB-485)', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (url, init) =>
+        init?.method === 'POST' && url === '/api/hub/me/company' ? answer(201, PROFILE) : answer(200, PROFILE),
+      )
+    mount()
+    const user = userEvent.setup()
+    await fillValid(user)
+    const budget = screen.getByLabelText('Budget a giornata')
+    await user.clear(budget)
+    await user.type(budget, '1.500')
+    await user.click(screen.getByRole('button', { name: 'Invia la richiesta' }))
+    await screen.findByRole('heading', { name: 'La tua area' })
+    const post = fetchSpy.mock.calls.find(
+      ([url, init]) => url === '/api/hub/me/company' && init?.method === 'POST',
+    )!
+    expect(JSON.parse(post[1]!.body as string).budget_giornaliero).toBe('1500')
+  })
+
   it('refuses a project description that is too short before it posts', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, PROFILE))
     mount()

@@ -19,7 +19,6 @@ import {
   olderFiscal,
   letteraToSend,
   newerFiscal,
-  machineAmount,
   matchOf,
   payModeOf,
   refillFiscal,
@@ -108,16 +107,7 @@ describe('«Crea match» in three steps (REB-476)', () => {
     expect(toLettera({ ...LETTERA_EMPTY, compenso: amountForm('480.50') }).compenso).toBe('480.50')
   })
 
-  it('reads a fee the Italian way: a dot before three digits is a thousands separator, a comma the decimal', () => {
-    expect(machineAmount('12.000')).toBe('12000')
-    expect(machineAmount('1.500')).toBe('1500')
-    expect(machineAmount('1.234,50')).toBe('1234.50')
-    expect(machineAmount('480')).toBe('480')
-    expect(machineAmount('480,50')).toBe('480.50')
-    expect(machineAmount('480.50')).toBe('480.50')
-    expect(machineAmount('480.5')).toBe('480.5')
-    expect(machineAmount('0,5')).toBe('0.5')
-    expect(machineAmount(' 12.000 ')).toBe('12000')
+  it('reads a fee the Italian way, through the parser every amount field shares (lib/amount.ts)', () => {
     expect(toLettera({ ...LETTERA_EMPTY, compenso: '12.000' }).compenso).toBe('12000')
     expect(toLettera({ ...LETTERA_EMPTY, compenso: '1.234,50' }).compenso).toBe('1234.50')
   })

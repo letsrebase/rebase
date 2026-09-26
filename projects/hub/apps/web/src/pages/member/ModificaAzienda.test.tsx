@@ -149,6 +149,20 @@ describe('/me/edit-company', () => {
     })
   })
 
+  it('saves a budget typed as «1.500» as 1500 (REB-485)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, PROFILE))
+    mount()
+    const user = userEvent.setup()
+    const budget = await screen.findByLabelText('Budget a giornata')
+    expect(budget).toHaveValue('500.00')
+    await user.clear(budget)
+    await user.type(budget, '1.500')
+    await user.click(screen.getByRole('button', { name: 'Salva' }))
+    await screen.findByRole('heading', { name: 'La tua area' })
+    const patch = fetchSpy.mock.calls.find(([, init]) => init?.method === 'PATCH')!
+    expect(JSON.parse(patch[1]!.body as string).budget_giornaliero).toBe('1500')
+  })
+
   it('refuses a project description that is too short before it posts', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, PROFILE))
     mount()

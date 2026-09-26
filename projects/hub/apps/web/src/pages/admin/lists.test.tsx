@@ -332,6 +332,29 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
     expect(spy).toHaveBeenCalled()
   })
 
+  it('drafts a card with a rate typed as «1.500» as 1500 (REB-485)', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (init?.method === 'POST') return answer(201, { ...INCOMPLETE, id: 'f9', nome: 'Bob', cognome: 'Ross' })
+      if (url === '/api/hub/freelancers/f9') {
+        return answer(200, { ...INCOMPLETE, id: 'f9', nome: 'Bob', cognome: 'Ross' })
+      }
+      if (url === '/api/hub/freelancers/f9/audit') return answer(200, [])
+      return answer(200, { totale: 1, items: [LEAD_TALENTO], per_stato: { lead: 1 } })
+    })
+    mount('/admin/talent/s2')
+
+    await screen.findByRole('heading', { name: 'Bob Ross' })
+    await userEvent.type(screen.getByLabelText('Tariffa a giornata'), '1.500')
+    await userEvent.type(screen.getByLabelText('Fonti'), 'https://bob.dev')
+    await userEvent.click(screen.getByRole('button', { name: 'Crea scheda' }))
+
+    await screen.findByText('scritta dall’admin, da completare')
+    const post = spy.mock.calls.find(([, init]) => init?.method === 'POST')!
+    expect(post[0]).toBe('/api/hub/signups/s2/card')
+    expect(JSON.parse(post[1]!.body as string).tariffa_giornaliera).toBe('1500')
+  })
+
   it('refuses without at least one source, since a card written from research needs one', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, { totale: 1, items: [LEAD_TALENTO], per_stato: { lead: 1 } }),

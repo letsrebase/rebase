@@ -30,6 +30,7 @@ import {
   type TalentiFilters,
 } from '@/lib/api'
 import { SEARCH_DEBOUNCE_MS, isFilterActive, useDebounce } from '@/lib/adminList'
+import { machineAmount } from '@/lib/amount'
 import {
   COMPANY_STATES,
   FREELANCER_LIST_STATES,
@@ -548,7 +549,7 @@ export function AdminTalentoLead() {
       cognome: draft.cognome.trim(),
       linkedin_url: draft.linkedin_url.trim() || undefined,
       posizione: draft.posizione.trim() || undefined,
-      tariffa_giornaliera: draft.tariffa_giornaliera.replace(',', '.').trim() || undefined,
+      tariffa_giornaliera: machineAmount(draft.tariffa_giornaliera) || undefined,
       remoto: draft.remoto || undefined,
       links: draft.links.split('\n').map((line) => line.trim()).filter(Boolean),
       fonti: draft.fonti.split('\n').map((line) => line.trim()).filter(Boolean),

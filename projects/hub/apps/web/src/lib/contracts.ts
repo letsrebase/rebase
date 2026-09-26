@@ -18,6 +18,7 @@ import {
   type Match,
   type SendReport,
 } from './api'
+import { machineAmount } from './amount'
 import { formatDate } from './format'
 
 export type FiscalDraft = Record<keyof FiscalData, string>
@@ -168,18 +169,6 @@ export const LETTERA_EMPTY: LetteraForm = {
   giorni_pagamento: '',
   fine_mese: false,
   giorni_preavviso: '',
-}
-
-/** A fee as an Italian types it, in the machine form the API takes. With a comma, the
- *  comma is the decimal and every dot a thousands separator («1.234,50» is 1234.50).
- *  Without one, dots that group the digits in threes are thousands too («12.000» is
- *  12000), while a single dot before one or two digits is already the machine form
- *  («480.50»). Anything else goes as typed, for the API to refuse by its field. */
-export function machineAmount(value: string): string {
-  const text = value.trim()
-  if (text.includes(',')) return text.replaceAll('.', '').replace(',', '.')
-  if (/^\d{1,3}(\.\d{3})+$/.test(text)) return text.replaceAll('.', '')
-  return text
 }
 
 /** The API's amount as the fee field shows it, the way the letter writes it: «480» for
