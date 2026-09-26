@@ -1,7 +1,9 @@
 """What a sent mail led to, stamped once by the tick (spec § 6.2)."""
 
-from datetime import timedelta
+import logging
+from datetime import datetime, timedelta
 
+import pytest
 from campaign_fixtures import (  # noqa: F401  (fixture)
     NOW,
     SETTINGS,
@@ -17,6 +19,7 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
+import rebase_core.campaigns.outcome as outcome_module
 from rebase_core.campaigns.actions import CV_COMMENT_PREFIX, done_at
 from rebase_core.campaigns.outcome import STAMP_WINDOW, stamp_outcomes
 from rebase_core.campaigns.schemas import ScheduleRequest
@@ -207,3 +210,62 @@ def test_the_pigro_action_is_left_to_phase_3(clean: Session) -> None:  # noqa: F
         email="a@b.it", tipo="freelancer", codice="1", prima={"t": NOW.isoformat()}
     )
     assert done_at(clean, row, "pigro_cliente", since=NOW) is None
+
+
+def test_a_row_whose_stamping_raises_is_skipped_the_rest_still_stamped(
+    clean: Session,  # noqa: F811  (fixture)
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Review finding: one row's own broken data (a malformed `prima["richieste"]`
+    timestamp, say) must not wedge every other row's stamp for the rest of the pass."""
+    # `hub_engine`'s `upgrade_to_head` runs Alembic's `env.py`, whose `fileConfig`
+    # disables every logger that already existed (the trap `test_campaign_tick.py`
+    # documents): undo it so `caplog` sees this module's line.
+    logging.getLogger("rebase_core.campaigns.outcome").disabled = False
+    clock = Clock(NOW)
+    good = person(clean, "good@studio.it", cv=False)
+    bad = person(clean, "bad@studio.it", cv=False)
+    campaign = sent(clean, clock)  # `manca_cv`, action `cv`
+    at = clock.at + timedelta(hours=3)
+    for card in (good, bad):
+        clean.execute(
+            update(Freelancer).where(Freelancer.id == card.id).values(cv_size=4, cv_bytes=b"%PDF")
+        )
+        clean.add(
+            Comment(
+                entity_type="freelancer",
+                entity_id=card.id,
+                testo=f"{CV_COMMENT_PREFIX}: cv.pdf",
+                autore="Ada",
+                created_at=at,
+            )
+        )
+    clean.commit()
+
+    real_done_at = done_at
+
+    def flaky(
+        session: Session,
+        recipient: CampaignRecipient,
+        azione: str,
+        *,
+        since: datetime | None = None,
+        now: datetime | None = None,
+    ) -> datetime | None:
+        if recipient.email == "bad@studio.it":
+            raise KeyError("t")
+        return real_done_at(session, recipient, azione, since=since, now=now)
+
+    monkeypatch.setattr(outcome_module, "done_at", flaky)
+    with caplog.at_level(logging.ERROR):
+        assert stamp_outcomes(clean, now=at + timedelta(hours=1)) == 1
+
+    clean.expire_all()
+    by_email = {
+        r.email: r for r in clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id)
+    }
+    assert by_email["good@studio.it"].azione_at == at
+    assert by_email["bad@studio.it"].azione_at is None
+    assert "KeyError" in caplog.text
+    assert "bad@studio.it" not in caplog.text
