@@ -153,6 +153,12 @@ delivered, clicked, entered and action done. Newest first; a draft reads «bozza
 
 ### 4.2 A new campaign, in four steps (the «Crea match» pattern)
 
+> Since REB-526 (2026-09-26) the four steps are one page: the same content, with the
+> preview beside the text, a draft that saves itself and a send bar at the foot
+> (`docs/design/DECISIONS.md`, 2026-09-26). What each step says below still holds for
+> the block that took its place: Chi is «Destinatari», Cosa is «Messaggio», Prova sits
+> under the preview, Quando is the send bar.
+
 1. **Chi.** Pick a journey state, or switch to filters. The page shows the list name by
    name. Each row can be unticked, and ticked rows are the list. Rows the rules
    exclude stay visible, greyed out, with the reason: admin or «non scrivere mai»

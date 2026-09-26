@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AdminCreaCampagna } from './CreaCampagna'
@@ -14,25 +14,8 @@ const TEMPLATE = {
   bottone_meta: 'area',
   azione: 'cv',
 }
-const DRAFT = {
-  id: 'c1', nome: 'Manca solo il CV', slug: 's', fonte: 'stato', stato_percorso: 'manca_cv', filtri: null,
-  oggetto: TEMPLATE.oggetto, testo: TEMPLATE.testo, bottone_testo: TEMPLATE.bottone_testo, bottone_meta: 'area', azione: 'cv',
-  stato: 'bozza', contenuto_at: '2026-09-25T07:00:00Z', programmata_per: null, prova_inviata_at: null, inviata_at: null,
-  created_at: '2026-09-25T07:00:00Z', pronta: false,
-}
-const AUDIENCE = {
-  righe: [
-    { email: 'ada@studio.it', nome: 'Ada', tipo: 'freelancer', escluso: null },
-    { email: 'ivan@rebase.it', nome: 'Ivan', tipo: 'freelancer', escluso: 'amministratore' },
-  ],
-  incluse: 1,
-  escluse: 1,
-}
-const ME = { email: 'ivan@rebase.it', nome: 'Ivan', role: 'admin' }
-
-/** A second template, its own `stato_percorso` and its own `azione` -- fix 4's own
- *  fixture, so switching from `TEMPLATE` to this one is a switch the saved `azione`
- *  has to show. */
+/** A second template, its own `stato_percorso` and its own `azione`: switching from
+ *  `TEMPLATE` to this one is a switch the saved `azione` has to show (fix 4, REB-472). */
 const TEMPLATE2 = {
   stato_percorso: 'profilo_incompleto',
   etichetta: 'Profilo da completare',
@@ -42,22 +25,45 @@ const TEMPLATE2 = {
   bottone_meta: 'wizard',
   azione: 'scheda_completa',
 }
-
-const COUNTS_EMPTY = {
-  destinatari: 0,
-  in_coda: 0,
-  inviate: 0,
-  saltate: 0,
-  fallite: 0,
-  consegnate: 0,
-  rimbalzate: 0,
+const DRAFT = {
+  id: 'c1', nome: 'Manca solo il CV', slug: 's', fonte: 'stato', stato_percorso: 'manca_cv', filtri: null,
+  oggetto: TEMPLATE.oggetto, testo: TEMPLATE.testo, bottone_testo: TEMPLATE.bottone_testo, bottone_meta: 'area', azione: 'cv',
+  stato: 'bozza', contenuto_at: '2026-09-25T07:00:00Z', programmata_per: null, prova_inviata_at: null, inviata_at: null,
+  created_at: '2026-09-25T07:00:00Z', pronta: false,
 }
+/** What the server answers once a test has left and nothing changed since. */
+const TESTED = { ...DRAFT, pronta: true, prova_inviata_at: '2026-09-25T07:05:00Z' }
+const AUDIENCE = {
+  righe: [
+    { email: 'ada@studio.it', nome: 'Ada', tipo: 'freelancer', escluso: null },
+    { email: 'ivan@rebase.it', nome: 'Ivan', tipo: 'freelancer', escluso: 'amministratore' },
+  ],
+  incluse: 1,
+  escluse: 1,
+}
+const AUDIENCE_TWO = {
+  righe: [
+    { email: 'ada@studio.it', nome: 'Ada', tipo: 'freelancer', escluso: null },
+    { email: 'bruno@studio.it', nome: 'Bruno', tipo: 'freelancer', escluso: null },
+    { email: 'ivan@rebase.it', nome: 'Ivan', tipo: 'freelancer', escluso: 'amministratore' },
+  ],
+  incluse: 2,
+  escluse: 1,
+}
+const ME = { email: 'ivan@rebase.it', nome: 'Ivan', role: 'admin' }
+const COUNTS_EMPTY = { destinatari: 0, in_coda: 0, inviate: 0, saltate: 0, fallite: 0, consegnate: 0, rimbalzate: 0 }
+
+/** The draft saves itself 600 ms after the last change: anything that waits on a save
+ *  waits longer than Testing Library's default second. */
+const SAVED = { timeout: 3000 }
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
-/** Answers by method and path, and records every call for the assertions. */
+/** Answers by method and path, and records every call for the assertions. The first
+ *  registered prefix a request starts with wins, so a longer path (`c1/audience`,
+ *  `c1/test`) goes before the shorter one it would otherwise be shadowed by. */
 function api(routes: Record<string, () => Response>) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const key = `${init?.method ?? 'GET'} ${String(input)}`
@@ -66,14 +72,14 @@ function api(routes: Record<string, () => Response>) {
   })
 }
 
-function mount() {
+function mountAt(path: string, entry: string) {
   const root = createRootRoute({ component: () => <Outlet /> })
   const signedIn = createRoute({ getParentRoute: () => root, id: 'signedIn', component: () => <Outlet /> })
-  const fresh = createRoute({ getParentRoute: () => signedIn, path: '/admin/campaigns/new', component: AdminCreaCampagna })
+  const page = createRoute({ getParentRoute: () => signedIn, path, component: AdminCreaCampagna })
   const one = createRoute({ getParentRoute: () => signedIn, path: '/admin/campaigns/$id', component: () => <p>pagina campagna</p> })
   const router = createRouter({
-    routeTree: root.addChildren([signedIn.addChildren([fresh, one])]),
-    history: createMemoryHistory({ initialEntries: ['/admin/campaigns/new'] }),
+    routeTree: root.addChildren([signedIn.addChildren([page, one])]),
+    history: createMemoryHistory({ initialEntries: [entry] }),
   })
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -82,23 +88,8 @@ function mount() {
   )
 }
 
-/** The edit route (`/admin/campaigns/$id/edit`): same tree shape as `mount()`, with the
- *  edit path instead of `new` and the memory history starting there. */
-function mountEdit(id: string) {
-  const root = createRootRoute({ component: () => <Outlet /> })
-  const signedIn = createRoute({ getParentRoute: () => root, id: 'signedIn', component: () => <Outlet /> })
-  const edit = createRoute({ getParentRoute: () => signedIn, path: '/admin/campaigns/$id/edit', component: AdminCreaCampagna })
-  const one = createRoute({ getParentRoute: () => signedIn, path: '/admin/campaigns/$id', component: () => <p>pagina campagna</p> })
-  const router = createRouter({
-    routeTree: root.addChildren([signedIn.addChildren([edit, one])]),
-    history: createMemoryHistory({ initialEntries: [`/admin/campaigns/${id}/edit`] }),
-  })
-  render(
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  )
-}
+const mount = () => mountAt('/admin/campaigns/new', '/admin/campaigns/new')
+const mountEdit = (id: string) => mountAt('/admin/campaigns/$id/edit', `/admin/campaigns/${id}/edit`)
 
 afterEach(() => {
   vi.useRealTimers()
@@ -116,7 +107,33 @@ function day(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } })
 }
 
-/** Every Talenti filter filled, as the wizard must send it: the same literal
+type Calls = ReturnType<typeof api>
+
+function bodies(calls: Calls, method: string, path: RegExp) {
+  return calls.mock.calls
+    .filter(([url, init]) => (init?.method ?? 'GET') === method && path.test(String(url)))
+    .map(([, init]) => JSON.parse(String(init!.body)))
+}
+
+/** The draft as the server last received it, from the create or the latest patch. */
+function lastSaved(calls: Calls) {
+  const saves = calls.mock.calls.filter(
+    ([url, init]) =>
+      (init?.method === 'POST' && /\/api\/hub\/campaigns$/.test(String(url))) ||
+      (init?.method === 'PATCH' && /\/api\/hub\/campaigns\/[^/]+$/.test(String(url))),
+  )
+  return JSON.parse(String(saves.at(-1)![1]!.body))
+}
+
+function sendBar() {
+  return within(screen.getByRole('region', { name: 'Invio' }))
+}
+
+function preview() {
+  return within(screen.getByTestId('anteprima-mail'))
+}
+
+/** Every Talenti filter filled, as the page must send it: the same literal
  *  `test_campaign_schemas.py` validates against the server's `TalentiFiltri`, so a
  *  renamed or retyped field fails on one side or the other. */
 const TALENTI_FILTRI = {
@@ -149,188 +166,318 @@ const AZIENDE_FILTRI = {
   creato_a: '2026-09-01',
 }
 
-function createdBody(calls: ReturnType<typeof api>) {
-  const create = calls.mock.calls.find(([url, init]) => String(url).endsWith('/api/hub/campaigns') && init?.method === 'POST')!
-  return JSON.parse(String(create[1]!.body))
-}
+describe('«Nuova campagna» on one page (REB-526)', () => {
+  it('fills the mail from the state, saves it by itself, counts the list, and sends after a test', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns/c1/test': () => json(TESTED),
+      'POST /api/hub/campaigns/c1/schedule': () => json({ ...TESTED, stato: 'programmata' }),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+    })
+    mount()
+    expect(await screen.findByText('Scegli uno stato per vedere chi riceve la mail.')).toBeInTheDocument()
+    expect(sendBar().getByText('Scegli prima a chi scrivere.')).toBeInTheDocument()
+    // No list yet: the button names no number rather than a zero, and no action is
+    // measured before a state brings one.
+    expect(sendBar().getByRole('button', { name: 'Invia' })).toBeDisabled()
+    expect(screen.queryByText('Cosa misuriamo:')).not.toBeInTheDocument()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    // The template fills the mail at once, and the preview reads it as the mail will.
+    expect(screen.getByLabelText('Oggetto')).toHaveValue('Manca solo il CV')
+    expect(screen.getByLabelText('Nome della campagna')).toHaveValue('Manca solo il CV')
+    expect(screen.getByText('Ha caricato il CV')).toBeInTheDocument()
+    // No «Avanti»: the draft is created by itself and the list follows.
+    expect(await screen.findByText('riceverà la mail', { exact: false }, SAVED)).toBeInTheDocument()
+    expect(screen.getByText(/1 escluse dalle regole/)).toBeInTheDocument()
+    expect(preview().getByText('Ciao Ada,')).toBeInTheDocument()
+    expect(bodies(calls, 'POST', /\/api\/hub\/campaigns$/)).toEqual([
+      {
+        nome: 'Manca solo il CV',
+        fonte: 'stato',
+        stato_percorso: 'manca_cv',
+        filtri: null,
+        oggetto: TEMPLATE.oggetto,
+        testo: TEMPLATE.testo,
+        bottone_testo: TEMPLATE.bottone_testo,
+        bottone_meta: 'area',
+        azione: 'cv',
+      },
+    ])
+    await userEvent.click(screen.getByRole('button', { name: /Mostra l.elenco \(2\)/ }))
+    expect(screen.getByText('amministratore')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'ivan@rebase.it' })).toBeDisabled()
+    expect(screen.getByRole('checkbox', { name: 'ivan@rebase.it' })).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'ada@studio.it' })).toBeChecked()
+    // The button names the count; without a test it is off and the bar says why.
+    expect(sendBar().getByRole('button', { name: 'Invia a 1 persona' })).toBeDisabled()
+    expect(sendBar().getByText('Manda prima una prova: il bottone è sotto l’anteprima.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Mandami una prova' }))
+    expect(await screen.findByText('Prova inviata alle 09:05 a ivan@rebase.it. Puoi inviare.')).toBeInTheDocument()
+    await userEvent.click(sendBar().getByRole('button', { name: 'Invia a 1 persona' }))
+    expect(await screen.findByText('pagina campagna')).toBeInTheDocument()
+    expect(bodies(calls, 'POST', /\/schedule$/)).toEqual([{ esclusi: [] }])
+    expect(bodies(calls, 'POST', /\/api\/hub\/campaigns$/)).toHaveLength(1)
+  })
 
-describe('«Nuova campagna»', () => {
-  it('fills the mail from the state, shows who is left out and why, and sends after a test', async () => {
+  it('takes an unticked person out of the count, the preview and the send', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE_TWO),
+      'POST /api/hub/campaigns/c1/test': () => json(TESTED),
+      'POST /api/hub/campaigns/c1/schedule': () => json({ ...TESTED, stato: 'programmata' }),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    expect(await screen.findByText('riceveranno la mail', { exact: false }, SAVED)).toBeInTheDocument()
+    expect(preview().getByText('Ciao Ada,')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /Mostra l.elenco \(3\)/ }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'ada@studio.it' }))
+    expect(screen.getByText(/1 tolte da te/)).toBeInTheDocument()
+    expect(preview().getByText('Ciao Bruno,')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Mandami una prova' }))
+    await userEvent.click(await sendBar().findByRole('button', { name: 'Invia a 1 persona' }))
+    await screen.findByText('pagina campagna')
+    expect(bodies(calls, 'POST', /\/schedule$/)).toEqual([{ esclusi: ['ada@studio.it'] }])
+  })
+
+  it('shows another person on request in the preview', async () => {
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE_TWO),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await screen.findByText('riceveranno la mail', { exact: false }, SAVED)
+    await pick('Vedi come la riceve', 'Bruno')
+    expect(preview().getByText('Ciao Bruno,')).toBeInTheDocument()
+  })
+
+  it('turns «Invia» off as soon as the mail changes after the test', async () => {
     let tested = false
     const calls = api({
       'GET /api/hub/me': () => json(ME),
       'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
-      'POST /api/hub/campaigns/c1/test': () => ((tested = true), json({ ...DRAFT, pronta: true, prova_inviata_at: '2026-09-25T07:05:00Z' })),
-      'POST /api/hub/campaigns/c1/schedule': () => json({ ...DRAFT, stato: 'programmata' }),
-      'POST /api/hub/campaigns': () => json(DRAFT, 201),
-      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, pronta: tested }),
       'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
-    })
-    mount()
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Stato del percorso' }))
-    await userEvent.click(await screen.findByRole('option', { name: 'Manca solo il CV' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    expect(await screen.findByText('amministratore')).toBeInTheDocument()
-    expect(screen.getByRole('checkbox', { name: 'ivan@rebase.it' })).toBeDisabled()
-    expect(screen.getByRole('checkbox', { name: 'ivan@rebase.it' })).not.toBeChecked()
-    expect(screen.getByRole('checkbox', { name: 'ada@studio.it' })).toBeChecked()
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // to Cosa
-    expect(screen.getByLabelText('Oggetto')).toHaveValue('Manca solo il CV')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // to Prova
-    expect(await screen.findByText(/Ciao Ada,/)).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Mandami una prova' }))
-    expect(await screen.findByText('Prova inviata a ivan@rebase.it')).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // to Quando
-    await userEvent.click(screen.getByRole('button', { name: 'Invia' }))
-    expect(await screen.findByText('pagina campagna')).toBeInTheDocument()
-    const schedule = calls.mock.calls.find(([url, init]) => String(url).endsWith('/schedule') && init?.method === 'POST')!
-    expect(JSON.parse(String(schedule[1]!.body))).toEqual({ esclusi: [] })
-  })
-
-  it('keeps «Invia» off after an edit that follows the test', async () => {
-    api({
-      'GET /api/hub/me': () => json(ME),
-      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
-      'POST /api/hub/campaigns/c1/test': () => json({ ...DRAFT, pronta: true, prova_inviata_at: '2026-09-25T07:05:00Z' }),
+      'POST /api/hub/campaigns/c1/test': () => ((tested = true), json(TESTED)),
       'POST /api/hub/campaigns': () => json(DRAFT, 201),
       // What the server answers to an edit after a test: the test is still on record
       // (`prova_inviata_at`), just older than the edit, so `pronta` is false.
-      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, pronta: false, prova_inviata_at: '2026-09-25T07:05:00Z' }),
-      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'PATCH /api/hub/campaigns/c1': () => json({ ...TESTED, oggetto: 'Manca solo il CV!', pronta: !tested }),
     })
     mount()
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Stato del percorso' }))
-    await userEvent.click(await screen.findByRole('option', { name: 'Manca solo il CV' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    await screen.findByText('amministratore')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Cosa
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Prova
-    await userEvent.click(await screen.findByRole('button', { name: 'Mandami una prova' }))
-    await screen.findByText('Prova inviata a ivan@rebase.it')
-    await userEvent.click(screen.getByRole('button', { name: 'Indietro' })) // back to Cosa
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await screen.findByText('riceverà la mail', { exact: false }, SAVED)
+    await userEvent.click(screen.getByRole('button', { name: 'Mandami una prova' }))
+    expect(await sendBar().findByRole('button', { name: 'Invia a 1 persona' })).toBeEnabled()
     await userEvent.type(screen.getByLabelText('Oggetto'), '!')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // saves: pronta false
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Quando
-    expect(screen.getByRole('button', { name: 'Invia' })).toBeDisabled()
-    expect(screen.getByText(/Hai modificato la campagna dopo la prova/)).toBeInTheDocument()
+    // Before the save lands: the page already knows the test no longer holds.
+    expect(sendBar().getByRole('button', { name: 'Invia a 1 persona' })).toBeDisabled()
+    expect(screen.getByText('Hai cambiato la campagna dopo la prova delle 09:05: mandane un’altra.')).toBeInTheDocument()
+    expect(
+      await sendBar().findByText('Hai cambiato la campagna dopo la prova: mandane un’altra.', {}, SAVED),
+    ).toBeInTheDocument()
+    expect(bodies(calls, 'PATCH', /\/campaigns\/c1$/).at(-1).oggetto).toBe('Manca solo il CV!')
   })
-})
 
-describe('fix round 1 (REB-472)', () => {
-  it('fix 1: a filtered campaign creates with a non-empty default name and the right filtri', async () => {
+  it('saves a burst of typing once, and patches the campaign it created', async () => {
     const calls = api({
       'GET /api/hub/me': () => json(ME),
       'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
-      'POST /api/hub/campaigns': () =>
-        json({ ...DRAFT, id: 'c2', nome: 'Campagna da filtri', fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti', stato: 'nuovo' } }, 201),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, testo: `${TEMPLATE.testo} Grazie.` }),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await screen.findByText('riceverà la mail', { exact: false }, SAVED)
+    await userEvent.type(screen.getByLabelText('Testo'), ' Grazie.')
+    expect(preview().getByText(/manca il CV\. Grazie\./)).toBeInTheDocument()
+    expect(await screen.findByText(/Bozza salvata alle/, {}, SAVED)).toBeInTheDocument()
+    await vi.waitFor(() => expect(bodies(calls, 'PATCH', /\/campaigns\/c1$/)).toHaveLength(1), SAVED)
+    expect(bodies(calls, 'PATCH', /\/campaigns\/c1$/)[0].testo).toBe(`${TEMPLATE.testo} Grazie.`)
+    expect(bodies(calls, 'POST', /\/api\/hub\/campaigns$/)).toHaveLength(1)
+  })
+
+  it('says a failed save in the header and in the send bar', async () => {
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+      'PATCH /api/hub/campaigns/c1': () => json({ detail: 'La campagna non è più una bozza.' }, 409),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await screen.findByText('riceverà la mail', { exact: false }, SAVED)
+    await userEvent.type(screen.getByLabelText('Oggetto'), '!')
+    expect(await screen.findByText('Non salvata: La campagna non è più una bozza.', {}, SAVED)).toBeInTheDocument()
+    expect(sendBar().getByText('Le modifiche non sono salvate: La campagna non è più una bozza.')).toBeInTheDocument()
+  })
+
+  it('says why the list is missing when the first save or the list fails', async () => {
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json({ detail: 'Filtro non valido.' }, 422),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    expect(await screen.findByRole('alert', {}, SAVED)).toHaveTextContent('Filtro non valido.')
+    expect(sendBar().getByText('L’elenco non si carica: Filtro non valido.')).toBeInTheDocument()
+  })
+
+  it('shows a failed create where the list would be', async () => {
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'POST /api/hub/campaigns': () => json({ detail: 'Stato del percorso sconosciuto.' }, 422),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    expect(await screen.findByText('Non salvata: Stato del percorso sconosciuto.', {}, SAVED)).toBeInTheDocument()
+    expect(screen.queryByText('Carico l’elenco…')).not.toBeInTheDocument()
+    expect(screen.getAllByText('Stato del percorso sconosciuto.', { exact: false }).length).toBeGreaterThan(1)
+  })
+
+  it('stops each field at the server\'s limit, and the preview reads like the mail', async () => {
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    expect(screen.getByLabelText('Nome della campagna')).toHaveAttribute('maxLength', '120')
+    expect(screen.getByLabelText('Oggetto')).toHaveAttribute('maxLength', '200')
+    expect(screen.getByLabelText('Testo')).toHaveAttribute('maxLength', '5000')
+    expect(screen.getByLabelText('Testo del bottone')).toHaveAttribute('maxLength', '60')
+    const footer = preview().getByText(
+      (_, node) => node?.tagName === 'P' && node.textContent === 'Non vuoi più ricevere queste mail? Disiscriviti',
+    )
+    expect(footer).toBeInTheDocument()
+    expect(preview().getByText('Carica il CV')).toBeInTheDocument()
+    expect(preview().getByText((_, node) => node?.tagName === 'P' && node.textContent === 'Ivan\nrebase')).toBeInTheDocument()
+    // Before the list is in, the greeting drops the name as the server does.
+    expect(preview().getByText('Ciao,')).toBeInTheDocument()
+  })
+
+  it('proposes an hour ahead when «Programma» is chosen, and says it on the button', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-09-25T07:00:00Z'))
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns/c1/test': () => json(TESTED),
+      'POST /api/hub/campaigns/c1/schedule': () => json({ ...TESTED, stato: 'programmata' }),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await screen.findByText('riceverà la mail', { exact: false }, SAVED)
+    await userEvent.click(screen.getByRole('button', { name: 'Mandami una prova' }))
+    await screen.findByText(/Prova inviata alle/)
+    // Two hours after the page opened: the proposal is from the click, not the mount.
+    vi.setSystemTime(new Date('2026-09-25T09:07:00Z'))
+    await userEvent.click(sendBar().getByRole('button', { name: 'Programma' }))
+    expect(screen.getByLabelText('Giorno')).toHaveValue('2026-09-25')
+    expect(screen.getByLabelText('Ora')).toHaveValue('12:15') // 11:07 in Rome, + 1 h, next quarter
+    await userEvent.click(sendBar().getByRole('button', { name: 'Programma per 1 persona, ven 25 set, 12:15' }))
+    await screen.findByText('pagina campagna')
+    expect(bodies(calls, 'POST', /\/schedule$/)).toEqual([{ giorno: '2026-09-25', ora: '12:15', esclusi: [] }])
+  })
+})
+
+describe('filters (REB-472, carried over)', () => {
+  it('saves a filtered campaign under the default name, with its filters', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
       'GET /api/hub/campaigns/c2/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () =>
+        json({ ...DRAFT, id: 'c2', nome: 'Campagna da filtri', fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti' } }, 201),
+      'PATCH /api/hub/campaigns/c2': () =>
+        json({ ...DRAFT, id: 'c2', nome: 'Campagna da filtri', fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti', stato: 'nuovo' } }),
     })
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
     await pick('Stato', 'Nuovo')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    await screen.findByText('amministratore')
-    const create = calls.mock.calls.find(([url, init]) => String(url).endsWith('/api/hub/campaigns') && init?.method === 'POST')!
-    const body = JSON.parse(String(create[1]!.body))
-    expect(body.nome).toBe('Campagna da filtri')
-    expect(body.fonte).toBe('filtri')
-    expect(body.filtri).toEqual({ lista: 'talenti', stato: 'nuovo' })
+    await screen.findByText('riceverà la mail', { exact: false }, SAVED)
+    await vi.waitFor(() => expect(lastSaved(calls).filtri).toEqual({ lista: 'talenti', stato: 'nuovo' }), SAVED)
+    expect(lastSaved(calls).nome).toBe('Campagna da filtri')
+    expect(lastSaved(calls).fonte).toBe('filtri')
   })
 
-  it('fix 2: the edit route reads the list from filtri.lista, not from which fields are present', async () => {
-    const editCampaign = { ...DRAFT, id: 'c1', fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti', stato: 'nuovo' } }
-    const calls = api({
-      'GET /api/hub/me': () => json(ME),
-      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
-      // `api()` matches the first registered prefix a request starts with, so the
-      // longer `/audience` path has to be registered before the plain campaign path it
-      // would otherwise shadow (`c1/audience`.startsWith(`c1`) is true too).
-      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
-      'GET /api/hub/campaigns/c1': () => json({ campagna: editCampaign, conteggi: COUNTS_EMPTY, destinatari: [] }),
-      'PATCH /api/hub/campaigns/c1': () => json({ ...editCampaign, pronta: false }),
-    })
-    mountEdit('c1')
-    // Talenti-only field: only present once the seeded `lista` really reads 'talenti'
-    // from `filtri.lista`, not the old (buggy) has_cv/con_accessi presence guess.
-    expect(await screen.findByLabelText('Ha un CV')).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Stato' })).toHaveTextContent('Nuovo')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    await screen.findByText('amministratore')
-    const patch = calls.mock.calls.find(([url, init]) => String(url).endsWith('/campaigns/c1') && init?.method === 'PATCH')!
-    const body = JSON.parse(String(patch[1]!.body))
-    expect(body.filtri.lista).toBe('talenti')
-  })
-
-  it('fix 3: changing a filter after loading the audience preview reloads it', async () => {
+  it('reloads the list when a filter changes, and says it is updating meanwhile', async () => {
     let audienceCalls = 0
     api({
       'GET /api/hub/me': () => json(ME),
       'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c3/audience': () => ((audienceCalls += 1), json(AUDIENCE)),
       'POST /api/hub/campaigns': () => json({ ...DRAFT, id: 'c3', fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti' } }, 201),
       'PATCH /api/hub/campaigns/c3': () =>
         json({ ...DRAFT, id: 'c3', fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti', q: 'ada' } }),
-      'GET /api/hub/campaigns/c3/audience': () => ((audienceCalls += 1), json(AUDIENCE)),
     })
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    await screen.findByText('amministratore')
+    await screen.findByText('riceverà la mail', { exact: false }, SAVED)
     expect(audienceCalls).toBe(1)
     await userEvent.type(screen.getByLabelText('Cerca'), 'ada')
-    expect(screen.queryByText('amministratore')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    await screen.findByText('amministratore')
-    expect(audienceCalls).toBe(2)
+    expect(screen.getByText(/aggiorno l.elenco/)).toBeInTheDocument()
+    await vi.waitFor(() => expect(audienceCalls).toBe(2), SAVED)
+    await vi.waitFor(() => expect(screen.queryByText(/aggiorno l.elenco/)).not.toBeInTheDocument())
   })
 
-  it('fix 4: the edit route always updates the disabled action select on a new state pick', async () => {
-    const editCampaign = { ...DRAFT, id: 'c4', fonte: 'stato', stato_percorso: 'manca_cv', filtri: null }
-    const calls = api({
-      'GET /api/hub/me': () => json(ME),
-      'GET /api/hub/campaigns/templates': () => json([TEMPLATE, TEMPLATE2]),
-      // Same ordering note as fix 2's test: the `/audience` prefix has to be registered
-      // before the plain campaign path it would otherwise shadow.
-      'GET /api/hub/campaigns/c4/audience': () => json(AUDIENCE),
-      'GET /api/hub/campaigns/c4': () => json({ campagna: editCampaign, conteggi: COUNTS_EMPTY, destinatari: [] }),
-      'PATCH /api/hub/campaigns/c4': () =>
-        json({ ...editCampaign, stato_percorso: 'profilo_incompleto', azione: 'scheda_completa', pronta: false }),
-    })
-    mountEdit('c4')
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Stato del percorso' }))
-    await userEvent.click(await screen.findByRole('option', { name: 'Profilo da completare' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    await screen.findByText('amministratore')
-    const patch = calls.mock.calls.find(([url, init]) => String(url).endsWith('/campaigns/c4') && init?.method === 'PATCH')!
-    const body = JSON.parse(String(patch[1]!.body))
-    expect(body.azione).toBe('scheda_completa')
-  })
-
-  it('fix 5: the audience preview uses the shared Table primitive, not a raw <table>', async () => {
+  it('says the list is updating when the state filter changes', async () => {
     api({
       'GET /api/hub/me': () => json(ME),
       'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
-      'POST /api/hub/campaigns': () => json(DRAFT, 201),
       'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
-    })
-    mount()
-    await userEvent.click(await screen.findByRole('combobox', { name: 'Stato del percorso' }))
-    await userEvent.click(await screen.findByRole('option', { name: 'Manca solo il CV' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    const table = await screen.findByRole('table')
-    expect(table.closest('[data-slot="table-container"]')).not.toBeNull()
-  })
-})
-
-describe('final review (REB-472)', () => {
-  it('I3: every Talenti filter goes out under the server\'s own name and type', async () => {
-    const calls = api({
-      'GET /api/hub/me': () => json(ME),
-      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
-      'POST /api/hub/campaigns': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: TALENTI_FILTRI }, 201),
-      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti' } }, 201),
+      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti', stato: 'lead' } }),
     })
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
+    await screen.findByText('riceverà la mail', { exact: false }, SAVED)
+    await pick('Stato', 'Lead')
+    expect(screen.getByText(/aggiorno l.elenco/)).toBeInTheDocument()
+    expect(sendBar().getByRole('button', { name: /Invia a/ })).toBeDisabled()
+  })
+
+  it('keeps the rarer filters behind «Altri filtri»', async () => {
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti' } }, 201),
+    })
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
+    expect(screen.getByLabelText('Ha un CV')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Posizione')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Altri filtri' }))
+    expect(screen.getByLabelText('Posizione')).toBeInTheDocument()
+  })
+
+  it('sends every Talenti filter under the server\'s own name and type', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti' } }, 201),
+      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: TALENTI_FILTRI }),
+    })
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Altri filtri' }))
     await pick('Stato', 'Attivo')
     await userEvent.type(screen.getByLabelText('Cerca'), 'react')
     await userEvent.type(screen.getByLabelText('Posizione'), 'Frontend')
@@ -343,21 +490,21 @@ describe('final review (REB-472)', () => {
     await pick('Ha fatto accesso', 'No')
     day('Creato dal', '2026-01-01')
     day('Creato al', '2026-09-01')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    await screen.findByText('amministratore')
-    expect(createdBody(calls).filtri).toEqual(TALENTI_FILTRI)
+    await vi.waitFor(() => expect(lastSaved(calls).filtri).toEqual(TALENTI_FILTRI), SAVED)
   })
 
-  it('I3: every company filter goes out under the server\'s own name and type', async () => {
+  it('sends every company filter under the server\'s own name and type', async () => {
     const calls = api({
       'GET /api/hub/me': () => json(ME),
       'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
-      'POST /api/hub/campaigns': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: AZIENDE_FILTRI }, 201),
       'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti' } }, 201),
+      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: AZIENDE_FILTRI }),
     })
     mount()
     await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
     await pick('Lista', 'Aziende')
+    await userEvent.click(screen.getByRole('button', { name: 'Altri filtri' }))
     await pick('Stato', 'In corso')
     await userEvent.type(screen.getByLabelText('Cerca'), 'block')
     await userEvent.type(screen.getByLabelText('Budget min (€/giorno)'), '200')
@@ -366,12 +513,55 @@ describe('final review (REB-472)', () => {
     await userEvent.type(screen.getByLabelText('Pagina di provenienza'), 'home')
     day('Creata dal', '2026-01-01')
     day('Creata al', '2026-09-01')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    await screen.findByText('amministratore')
-    expect(createdBody(calls).filtri).toEqual(AZIENDE_FILTRI)
+    await vi.waitFor(() => expect(lastSaved(calls).filtri).toEqual(AZIENDE_FILTRI), SAVED)
   })
 
-  it('I3: the edit route puts every stored filter back, a stored moment as its day', async () => {
+  it('draws the list with the shared Table primitive', async () => {
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await userEvent.click(await screen.findByRole('button', { name: /Mostra l.elenco/ }, SAVED))
+    const table = screen.getByRole('table')
+    expect(table.closest('[data-slot="table-container"]')).not.toBeNull()
+  })
+})
+
+describe('the edit route', () => {
+  it('opens a tested draft ready to send, and saves nothing just for opening it', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'GET /api/hub/campaigns/c1': () => json({ campagna: TESTED, conteggi: COUNTS_EMPTY, destinatari: [] }),
+    })
+    mountEdit('c1')
+    expect(await screen.findByRole('heading', { name: 'Modifica campagna' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Oggetto')).toHaveValue('Manca solo il CV')
+    expect(await sendBar().findByRole('button', { name: 'Invia a 1 persona' }, SAVED)).toBeEnabled()
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    expect(bodies(calls, 'PATCH', /\/campaigns\/c1$/)).toEqual([])
+  })
+
+  it('reads the list from filtri.lista, not from which fields are present', async () => {
+    const editCampaign = { ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti', stato: 'nuovo' } }
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'GET /api/hub/campaigns/c1': () => json({ campagna: editCampaign, conteggi: COUNTS_EMPTY, destinatari: [] }),
+    })
+    mountEdit('c1')
+    // Talenti-only field: only present once the seeded `lista` really reads 'talenti'.
+    expect(await screen.findByLabelText('Ha un CV')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Stato' })).toHaveTextContent('Nuovo')
+  })
+
+  it('puts every stored filter back, «Altri filtri» open, and sends them back unchanged', async () => {
     const stored = { ...TALENTI_FILTRI, creato_da: '2026-01-01T00:00:00', creato_a: '2026-09-01T00:00:00' }
     const editCampaign = { ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: stored }
     const calls = api({
@@ -384,56 +574,39 @@ describe('final review (REB-472)', () => {
     mountEdit('c1')
     expect(await screen.findByLabelText('Creato dal')).toHaveValue('2026-01-01')
     expect(screen.getByRole('combobox', { name: 'Da remoto' })).toHaveTextContent('Ibrido')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    await screen.findByText('amministratore')
-    const patch = calls.mock.calls.find(([url, init]) => String(url).endsWith('/campaigns/c1') && init?.method === 'PATCH')!
-    expect(JSON.parse(String(patch[1]!.body)).filtri).toEqual(TALENTI_FILTRI)
+    await userEvent.type(screen.getByLabelText('Oggetto'), '!')
+    await vi.waitFor(() => expect(bodies(calls, 'PATCH', /\/campaigns\/c1$/)).toHaveLength(1), SAVED)
+    expect(lastSaved(calls).filtri).toEqual(TALENTI_FILTRI)
   })
 
-  it('I3: picking a state clears the audience already on screen', async () => {
+  it('follows a new state with the action, and keeps the mail the admin wrote', async () => {
+    const editCampaign = { ...DRAFT, id: 'c4' }
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE, TEMPLATE2]),
+      'GET /api/hub/campaigns/c4/audience': () => json(AUDIENCE),
+      'GET /api/hub/campaigns/c4': () => json({ campagna: editCampaign, conteggi: COUNTS_EMPTY, destinatari: [] }),
+      'PATCH /api/hub/campaigns/c4': () =>
+        json({ ...editCampaign, stato_percorso: 'profilo_incompleto', azione: 'scheda_completa' }),
+    })
+    mountEdit('c4')
+    await pick('Stato del percorso', 'Profilo da completare')
+    expect(screen.getByText('Ha completato la scheda')).toBeInTheDocument()
+    expect(screen.getByLabelText('Oggetto')).toHaveValue('Manca solo il CV')
+    await vi.waitFor(() => expect(bodies(calls, 'PATCH', /\/campaigns\/c4$/)).toHaveLength(1), SAVED)
+    expect(lastSaved(calls).azione).toBe('scheda_completa')
+    expect(lastSaved(calls).stato_percorso).toBe('profilo_incompleto')
+  })
+
+  it('refuses to edit a campaign that has left «bozza»', async () => {
     api({
       'GET /api/hub/me': () => json(ME),
       'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
-      'POST /api/hub/campaigns': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti' } }, 201),
-      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'GET /api/hub/campaigns/c1': () =>
+        json({ campagna: { ...TESTED, stato: 'programmata' }, conteggi: COUNTS_EMPTY, destinatari: [] }),
     })
-    mount()
-    await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    await screen.findByText('amministratore')
-    await pick('Stato', 'Lead')
-    expect(screen.queryByText('amministratore')).not.toBeInTheDocument()
-  })
-
-  it('F1, F3, F4, M6: Cosa stops at the server\'s limits, the preview reads like the mail, Quando asks for a first test and proposes a time when «Programma» is chosen', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date('2026-09-25T07:00:00Z'))
-    api({
-      'GET /api/hub/me': () => json(ME),
-      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
-      'POST /api/hub/campaigns': () => json(DRAFT, 201),
-      'PATCH /api/hub/campaigns/c1': () => json(DRAFT),
-      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
-    })
-    mount()
-    await pick('Stato del percorso', 'Manca solo il CV')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    await screen.findByText('amministratore')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Cosa
-    expect(screen.getByLabelText('Nome')).toHaveAttribute('maxLength', '120')
-    expect(screen.getByLabelText('Oggetto')).toHaveAttribute('maxLength', '200')
-    expect(screen.getByLabelText('Testo')).toHaveAttribute('maxLength', '5000')
-    expect(screen.getByLabelText('Testo del bottone')).toHaveAttribute('maxLength', '60')
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Prova
-    const footer = await screen.findByText((_, node) => node?.tagName === 'P' && node.textContent === 'Non vuoi più ricevere queste mail? Disiscriviti')
-    expect(footer).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Avanti' })) // Quando, no test yet
-    expect(screen.getByText('Manda prima una prova dal passo Prova.')).toBeInTheDocument()
-    expect(screen.queryByText(/Hai modificato la campagna dopo la prova/)).not.toBeInTheDocument()
-    // Two hours after the page opened: the proposal is from the click, not the mount.
-    vi.setSystemTime(new Date('2026-09-25T09:07:00Z'))
-    await userEvent.click(screen.getByRole('button', { name: 'Programma' }))
-    expect(screen.getByLabelText('Giorno')).toHaveValue('2026-09-25')
-    expect(screen.getByLabelText('Ora')).toHaveValue('12:15') // 11:07 in Rome, + 1 h, next quarter
+    mountEdit('c1')
+    expect(await screen.findByText(/non è più una bozza, quindi non si modifica/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Oggetto')).not.toBeInTheDocument()
   })
 })
