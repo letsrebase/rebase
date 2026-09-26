@@ -10,12 +10,11 @@ import pytest
 from contract_flow import ADMIN_EMAIL, MISSING, SIGNER, TABLES, draft_match
 from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
-from fakes_pigro import DEAL_URL, PIGRO, TOKEN, RecordedPigro, linked_body
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_documenso, get_http_call, get_renderer
+from rebase_api.deps import get_documenso, get_renderer
 from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
 from rebase_core.models import User
@@ -255,49 +254,6 @@ def test_refresh_recovers_a_signature_and_the_match_can_then_be_cancelled(
     assert cancelled.status_code == 200 and cancelled.json()["stato"] == "annullato"
     letter_envelope = [e for e in documenso.envelopes.values() if e.id != envelope.id][0]
     assert letter_envelope.status == "CANCELLED"
-
-
-def test_a_letter_signed_on_documenso_links_its_match_to_pigro_through_the_apis_seam(
-    client: TestClient,
-    admin: None,
-    sender: RecordingSender,
-    renderer: FakeRenderer,
-    documenso: FakeDocumenso,
-) -> None:
-    """REB-499: «Aggiorna stato» on the signed letter turns its match active and links it
-    to its deal, with the engagement service `SigningDep` hands over, reading through
-    the request's own `HttpCallDep`: the override here, `urllib_engagements_call` in
-    production."""
-    pigro = RecordedPigro([(201, linked_body())])
-    client.app.dependency_overrides[get_http_call] = lambda: pigro  # type: ignore[attr-defined]
-    settings = Settings(  # type: ignore[call-arg]
-        _env_file=None,
-        signer_json=json.dumps(SIGNER),
-        contracts_mail=CONTRACTS_MAIL,
-        pigro_api_url=PIGRO,
-        pigro_engagements_token=TOKEN,
-    )
-    client.app.dependency_overrides[get_settings] = lambda: settings  # type: ignore[attr-defined]
-    match, quadro = _sent(client, sender)
-    [framework_envelope] = documenso.envelopes.values()
-    documenso.sign(framework_envelope.id, SIGNED_AT)
-    assert client.post(f"/api/hub/contract-documents/{quadro['id']}/refresh").status_code == 200
-    letter = client.get(f"/api/hub/matches/{match['id']}").json()["lettera"]
-    [letter_envelope] = [e for e in documenso.envelopes.values() if e.id != framework_envelope.id]
-    documenso.sign(letter_envelope.id, SIGNED_AT)
-    assert pigro.calls == []
-
-    refreshed = client.post(f"/api/hub/contract-documents/{letter['id']}/refresh")
-
-    assert refreshed.status_code == 200, refreshed.text
-    read = client.get(f"/api/hub/matches/{match['id']}").json()
-    assert (read["stato"], read["pigro_stato"], read["pigro_url"]) == (
-        "attivo",
-        "collegato",
-        DEAL_URL,
-    )
-    [(method, url, _headers, _body)] = pigro.calls
-    assert (method, url) == ("PUT", f"{PIGRO}/api/rebase/engagements/{match['id']}")
 
 
 def test_a_notice_is_recorded_on_an_active_framework_only(

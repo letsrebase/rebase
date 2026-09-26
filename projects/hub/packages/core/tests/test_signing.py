@@ -1802,6 +1802,50 @@ def test_finish_does_not_link_a_refused_letter(clean: Session) -> None:
     assert http.calls == []
 
 
+def test_refresh_does_not_link(clean: Session) -> None:
+    """«Aggiorna stato» (and the MCP `refresh_contract`) is an admin waiting on the page:
+    it applies the signature and turns the match active, but never waits on the CRM to
+    open a space. The match stays `da_collegare` for the sweep or «Riprova»."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
+    fake.sign(envelope, SIGNED_AT)
+    http = RecordedPigro([(201, linked_body())])
+    engagements = SpyEngagements(clean, http)
+
+    read = _signing(clean, renderer, fake, sender, engagements=engagements).refresh(letter.id)
+
+    assert read.stato == "firmato"
+    match = _match_row(clean, match_id)
+    assert (match.stato, match.pigro_stato) == ("attivo", "da_collegare")
+    assert engagements.asked == []
+    assert http.calls == []
+
+
+class RaisingEngagements(SpyEngagements):
+    """A link that fails outside the domain's errors: the database gone mid-call."""
+
+    def link(self, match_id: UUID, admin_id: UUID | None = None) -> MatchRead:
+        self.asked.append(match_id)
+        raise OperationalError("UPDATE matches", {}, Exception("server closed the connection"))
+
+
+def test_finish_survives_any_exception_from_the_link(clean: Session) -> None:
+    """The link is `finish`'s last step and nothing depends on it: even an error that is
+    not the domain's is logged and left for the sweep, never raised past a signature
+    that is already done."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
+    fake.sign(envelope, SIGNED_AT)
+    engagements = RaisingEngagements(clean, RecordedPigro([(201, linked_body())]))
+
+    assert _signing(clean, renderer, fake, sender, engagements=engagements).finish(letter.id)
+
+    assert engagements.asked == [match_id]
+    match = _match_row(clean, match_id)
+    assert (match.stato, match.pigro_stato) == ("attivo", "da_collegare")
+    assert _letter_of(clean, match_id).stato == "firmato"
+
+
 def test_finish_leaves_a_link_that_fails_for_the_sweep(clean: Session) -> None:
     """A link that raises is logged and left for the sweep, as a signed copy that is not
     stored yet is: the signature is done, and the match waits `da_collegare`."""

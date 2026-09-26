@@ -48,12 +48,14 @@ the preview alike, from the `sweep` service in `docker-compose.yml` (REB-393): `
 again, for every document a webhook or an admin's «Aggiorna stato» never reached.
 
 A signature that turns a match `attivo` also marks its link to Pigro due (`pigro_stato`
-`da_collegare`, REB-499), and `finish` then asks `EngagementService.link` for it, with no
-row lock held, after the signature's own steps: a CRM that takes its 90 seconds to open a
-space delays no signed copy. A link that fails is left for the sweep, whose round after
-the documents (`link_pending`) retries every match still waiting or in error. A service
-built without the engagement service links nothing, as one without Documenso signs
-nothing.
+`da_collegare`, REB-499), and the webhook's `finish` then asks `EngagementService.link`
+for it, with no row lock held, after the signature's own steps: a CRM that takes its 90
+seconds to open a space delays no signed copy. Nothing a person waits on runs that
+provisioning: «Aggiorna stato» (`refresh`) applies the signature and leaves the link to
+the sweep, whose round after the documents (`link_pending`) retries every match still
+waiting or in error, or to the admin's «Riprova». A link that fails is left for the
+sweep too. A service built without the engagement service links nothing, as one without
+Documenso signs nothing.
 
 The recovery actions are the admin's: «Aggiorna stato» (`refresh`) for the event
 Documenso gave up on, «Reinvia email» (`resend_mail`), «Annulla» on a framework agreement
@@ -87,13 +89,7 @@ from rebase_core.documenso import (
     outcome_from_envelope,
 )
 from rebase_core.engagements import DA_COLLEGARE, EngagementService
-from rebase_core.errors import (
-    DocumensoFailed,
-    DomainError,
-    InvalidState,
-    NotFound,
-    SigningUnavailable,
-)
+from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
 from rebase_core.framework import (
     active_framework,
     document_read,
@@ -504,8 +500,9 @@ class SigningService:
         other callers (the webhook's background task, «Aggiorna stato»). `sweep` passes
         `link=False`: its own round after the documents links every match waiting, the
         ones this run turned active among them, so each is asked for once a run and
-        counted once. A link is the match's step, not the document's, and never counts
-        as `moved`."""
+        counted once. `refresh` passes it too: an admin waiting on «Aggiorna stato» never
+        waits on the CRM opening a space. A link is the match's step, not the
+        document's, and never counts as `moved`."""
         confirmed = self._confirm_completion(document_id)
         moved = confirmed is True
         try:
@@ -529,8 +526,9 @@ class SigningService:
         confirmation, which answers `True` for a rejection as well: only a match
         `attivo` and still `da_collegare` is handed to `link`, which takes its own locks
         and holds none across the call. Last of `finish`'s steps, so a CRM slow to open
-        a space delays nothing of the signature's; a link that fails is logged and left
-        for the sweep, as a signed copy not stored yet is."""
+        a space delays nothing of the signature's, and nothing after it depends on it: a
+        link that fails, for any reason, a database error among them, is logged and left
+        for the sweep, never raised past a signature that is already done."""
         if self.engagements is None:
             return
         found = self.session.execute(
@@ -546,11 +544,14 @@ class SigningService:
             return
         try:
             self.engagements.link(match_id)
-        except DomainError:
+        except Exception as exc:
             self.session.rollback()
             _log.warning(
-                "match %s is not linked to Pigro yet: the sweep tries again",
+                "the match %s of document %s is not linked to Pigro yet (%s): the sweep "
+                "tries again",
                 match_id,
+                document_id,
+                type(exc).__name__,
                 exc_info=True,
             )
 
@@ -894,7 +895,12 @@ class SigningService:
         inside `finish`'s own confirmation (REB-431), which a webhook's background task
         and `sweep` also go through and must not need an envelope handed in from
         somewhere else. An admin's own click, not a per-event webhook, pays that second
-        GET; simpler than giving `finish` a second signature for one caller."""
+        GET; simpler than giving `finish` a second signature for one caller.
+
+        A match the signature turns active is not linked to Pigro here (REB-499): the
+        admin is waiting on this click, and a new freelancer's first link opens a space,
+        which takes up to 90 seconds. It stays `da_collegare`, with its sentence, until
+        the sweep or «Riprova» links it."""
         document = self._document(document_id)
         if document.documenso_id is None:
             raise InvalidState(
@@ -906,7 +912,7 @@ class SigningService:
         outcome = outcome_from_envelope(envelope)
         if outcome is not None:
             self.apply(outcome)
-        self.finish(document_id)
+        self._finish_outcome(document_id, link=False)
         return self._read(document_id)
 
     def resend_mail(self, document_id: UUID, admin_id: UUID) -> ContractDocumentRead:

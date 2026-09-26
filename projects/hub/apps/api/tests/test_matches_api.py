@@ -15,9 +15,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_http_call, get_renderer
+from rebase_api.deps import (
+    _engagements_call,
+    get_engagements,
+    get_http_call,
+    get_renderer,
+    get_signing_factory,
+)
 from rebase_core.config import Settings, get_settings
 from rebase_core.engagements import PIGRO_NOT_CONFIGURED
+from rebase_core.http import urllib_call, urllib_engagements_call
 from rebase_core.mail import RecordingSender
 from rebase_core.models import AdminAction, ContractDocument, Match, User
 from rebase_core.pigro import NOT_ANSWERING
@@ -913,3 +920,21 @@ def test_routes_answer_503_without_the_token(
     assert fake.calls == []
     read = client.get(f"/api/hub/matches/{waiting}").json()
     assert (read["pigro_stato"], read["pigro_attempted_at"]) == ("da_collegare", None)
+
+
+def test_the_link_reads_through_the_long_seam_in_production(api_session: Session) -> None:
+    """Production's ten-second `urllib_call` becomes `urllib_engagements_call` for the
+    link and the report, whose 90 seconds leave room for a new space to be opened, in
+    both places the API builds the engagement service; a test's fake passes through
+    unchanged."""
+    fake = RecordedPigro([(201, linked_body())])
+    assert _engagements_call(urllib_call) is urllib_engagements_call
+    assert _engagements_call(fake) is fake
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    for http, expected in ((urllib_call, urllib_engagements_call), (fake, fake)):
+        engagements = get_engagements(api_session, settings, http, None)
+        signing = get_signing_factory(settings, FakeRenderer(), None, None, http)(api_session)
+        assert engagements.http is expected
+        assert signing.engagements is not None
+        assert signing.engagements.http is expected
