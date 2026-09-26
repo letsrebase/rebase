@@ -715,12 +715,16 @@ class PigroLinkResult(NamedTuple):
     linked: int
     failed: int
 
+class ReportDayInvoice(BaseModel):
+    numero: str          # the invoice's label, as in `fatture`
+    ore: Decimal         # that day's hours on it, two places
+
 class ReportDay(BaseModel):
     data: date
     ore: Decimal
     descrizioni: list[str]
     fatture: list[str]           # distinct: ["12/2026"], ["12/2026", "proforma 3/2026"], or []
-    ore_per_fattura: list[ReportDayInvoice]   # that day's hours per invoice number, unbilled hours excluded: [("12/2026", "3.00")]
+    ore_per_fattura: list[ReportDayInvoice]   # that day's hours per invoice, unbilled hours excluded: [ReportDayInvoice(numero="12/2026", ore=Decimal("3.00"))]
 
 class ReportWeek(BaseModel):
     settimana: str               # "2026-W40"
@@ -802,11 +806,7 @@ class EngagementService:
   `pigro_mail_sent_at = now()` as a claim (`claimed = True`). Commit. Only when
   `claimed`: `sender.send(engagement_ready_mail(...))`; a refusal re-locks, sets
   `pigro_mail_sent_at = None`, commits. Two `link` calls racing on one match send one
-  mail: the second sees the claim under the lock. Stated limit: a crash between that
-  commit and the provider's answer is a rare, accepted gap, not a bug: the claim is
-  taken under the match lock and given back only on a refusal from the provider, never
-  by a timeout or a process dying outright, so such a match keeps its claim with no
-  mail sent until an admin notices and clears `pigro_mail_sent_at` by hand.
+  mail: the second sees the claim under the lock.
   With `admin_id`: `AdminActionService(session).record(entity_type="match",
   entity_id=match_id, kind="pigro_link", admin_id=admin_id, payload={"esito":
   stato, "errore": pigro_errore})`. Answer `MatchService(session).get(match_id)`.
@@ -922,11 +922,7 @@ invoice, so `lib/report.ts` sums exactly the hours on that invoice for each show
 never the day's total, and a day partly unbilled or on two invoices counts right) and
 shows in every month it touches, each with that month's days' hours; with «Tutto
 l'incarico», every invoice with the CRM's own figures, untouched (tested on a
-two-month invoice). Stated limit: a day whose hours sit on two invoices gives its
-whole total to each, since a day's total is not split between them; on a
-month-spanning invoice sharing such a day with another invoice, that day's hours can
-therefore be counted twice across the month's invoice rows, a case accepted rather
-than solved here. Loading, an error
+two-month invoice). Loading, an error
 sentence from the API (a `409` shows the state's sentence, a `502` «Pigro non
 risponde», a `503` the not-configured sentence), each as a paragraph. All data from one
 `matches.report(id)` call for the whole engagement; the month filter slices `per_giorno`
