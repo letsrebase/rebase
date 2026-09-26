@@ -361,6 +361,8 @@ def test_a_cloud_proposal_is_the_callers_and_keeps_the_ids(
     [member] = body["team"]
     # The cloud's read keeps who each member is, and the card's place: it shows the CV.
     assert member["freelancer_id"] == str(ada) and member["scheda"]["luogo"] == CARD["luogo"]
+    # And their name, which the builder's result shows as each card's heading.
+    assert (member["nome"], member["cognome"]) == ("Ada", "Lovelace")
     row = cloud.get(TeamProposal, UUID(body["id"]))
     assert row is not None and (row.origine, row.user_id) == ("cloud", user_id)
 

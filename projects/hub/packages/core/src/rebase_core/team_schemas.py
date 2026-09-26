@@ -141,12 +141,16 @@ class TeamMemberRead(BaseModel):
     """One person of a proposed team (§ 3.3): `posizione` is their index in this
     proposal (1, 2, 3), the only handle the public read gives; `freelancer_id` is
     `None` there, so a visitor cannot follow a talent across proposals, and so is the
-    card's `luogo`, which only the engine and the admin read. `modalita` is
-    `Freelancer.remoto` and `fascia` the band of their current rate, both read when the
-    proposal is, the way the card is shown everywhere (§ 2.1)."""
+    card's `luogo`, which only the engine and the admin read. `nome` and `cognome` are
+    the person's, for the cloud and the admin, which show who each member is (§ 4.2);
+    `None` on the public read, like the id. `modalita` is `Freelancer.remoto` and
+    `fascia` the band of their current rate, both read when the proposal is, the way
+    the card is shown everywhere (§ 2.1)."""
 
     posizione: int
     freelancer_id: UUID | None
+    nome: str | None = None
+    cognome: str | None = None
     ruolo: str
     motivazione: str
     giorni_settimana: int | None

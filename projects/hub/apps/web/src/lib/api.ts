@@ -1432,9 +1432,18 @@ export interface CloudFilters {
   fascia_max?: number
 }
 
-/** The builder's proposal in the cloud: the admin's shape, ids and the card's place
- *  kept, since the cloud shows who each person is. */
-export type CloudTeamProposal = AdminTeamProposal
+/** One person of the builder's proposal in the cloud: the admin's shape and the name,
+ *  which the cloud shows (spec § 4.2) and the public read never carries. */
+export interface CloudTeamMember extends AdminTeamMember {
+  nome: string
+  cognome: string
+}
+
+/** The builder's proposal in the cloud: the admin's shape, ids, names and the card's
+ *  place kept, since the cloud shows who each person is. */
+export interface CloudTeamProposal extends Omit<AdminTeamProposal, 'team'> {
+  team: CloudTeamMember[]
+}
 
 export const cloud = {
   /** 403 with the API's sentence when no grant of the caller is live. */

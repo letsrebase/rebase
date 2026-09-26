@@ -8,6 +8,8 @@ import { Textarea } from '@rebase/ui/textarea'
 import {
   ApiError,
   team,
+  type CloudTeamMember,
+  type CloudTeamProposal,
   type TeamEconomia,
   type TeamMember,
   type TeamProposal,
@@ -46,13 +48,13 @@ const PENDING = 'Sto leggendo i profili…'
 const THANKS = 'Grazie: ti scriviamo entro due giorni lavorativi.'
 
 /** `public`: «Assumi team» opens the three contacts, for a visitor with no account.
- *  `cloud` (D3): the signed-in company proposes through its own route and «Assumi
- *  team» files the request at once, with no form. */
+ *  `cloud` (D3): the signed-in company proposes through its own route, sees each
+ *  person by name, and «Assumi team» files the request at once, with no form. */
 export type TeamBuilderProps =
   | { mode: 'public' }
   | {
       mode: 'cloud'
-      propose: (body: TeamProposalCreate) => Promise<TeamProposal>
+      propose: (body: TeamProposalCreate) => Promise<CloudTeamProposal>
       hire: (proposalId: string) => Promise<unknown>
     }
 
@@ -65,12 +67,19 @@ function sentence(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback
 }
 
+/** «Nome Cognome» of a member the cloud's read names; `null` for anyone else. */
+function nameOf(member: TeamMember | CloudTeamMember): string | null {
+  if (!('nome' in member) || !member.nome) return null
+  return `${member.nome} ${member.cognome}`.trim()
+}
+
 /**
  * The team builder (P-REB-43, spec § 3.1): a description, from scratch or from an
  * example, becomes an anonymous team with its price bands; a note and «Rigenera» ask
- * again with the proposal it replaces; «Assumi team» turns it into a request. A person
- * is shown by what the card says of them and nothing else: no name, no id, no place,
- * whatever the read carries.
+ * again with the proposal it replaces; «Assumi team» turns it into a request. On the
+ * public page a person is shown by what the card says of them and nothing else: no
+ * name, no id, no place, whatever the read carries. In the cloud (§ 4.2) the card is
+ * headed by the person's name, as the profiles under it are.
  */
 export function TeamBuilder(props: TeamBuilderProps) {
   const ids = useId()
@@ -78,7 +87,10 @@ export function TeamBuilder(props: TeamBuilderProps) {
   const [descrizioneError, setDescrizioneError] = useState<string | null>(null)
   // The description the proposal on screen came from: «Rigenera» asks again about that
   // one, with the note, whatever the box says by then.
-  const [result, setResult] = useState<{ proposal: TeamProposal; descrizione: string } | null>(null)
+  const [result, setResult] = useState<{
+    proposal: TeamProposal | CloudTeamProposal
+    descrizione: string
+  } | null>(null)
   const [nota, setNota] = useState('')
   const [running, setRunning] = useState<Run | null>(null)
   const [runError, setRunError] = useState<{ from: Run; message: string } | null>(null)
@@ -125,6 +137,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
   }
 
   const proposal = result?.proposal
+  const members: readonly (TeamMember | CloudTeamMember)[] = proposal?.team ?? []
   const descrizioneErrorId = `${ids}-descrizione-error`
 
   return (
@@ -200,12 +213,12 @@ export function TeamBuilder(props: TeamBuilderProps) {
             <p>{proposal.riassunto}</p>
           </div>
 
-          {proposal.team.length > 0 && (
+          {members.length > 0 && (
             <>
               <ul aria-label="Il team" className="grid gap-4 sm:grid-cols-2">
-                {proposal.team.map((member) => (
+                {members.map((member) => (
                   <li key={member.posizione}>
-                    <MemberCard member={member} />
+                    <MemberCard member={member} name={props.mode === 'cloud' ? nameOf(member) : null} />
                   </li>
                 ))}
               </ul>
@@ -241,7 +254,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
             )}
           </form>
 
-          {proposal.team.length > 0 &&
+          {members.length > 0 &&
             (props.mode === 'cloud' ? (
               <CloudHire key={proposal.id} proposalId={proposal.id} hire={props.hire} />
             ) : (
@@ -254,15 +267,18 @@ export function TeamBuilder(props: TeamBuilderProps) {
 }
 
 /** One person, by what their card says: the role in this team, why them, the
- *  anonymous description, seniority and years, the skills, the work mode, the band. */
-function MemberCard({ member }: { member: TeamMember }) {
+ *  anonymous description, seniority and years, the skills, the work mode, the band.
+ *  With a `name` (the cloud) the name is the heading and the role comes under it;
+ *  without one (the public page) the role is the heading and nobody is named. */
+function MemberCard({ member, name }: { member: TeamMember; name: string | null }) {
   const { scheda } = member
   return (
     <Card className="h-full">
       <CardHeader>
         <CardTitle>
-          <h3>{member.ruolo}</h3>
+          <h3>{name ?? member.ruolo}</h3>
         </CardTitle>
+        {name && <p className="font-medium">{member.ruolo}</p>}
         <CardDescription>{`${scheda.ruolo}, ${SENIORITY_LABELS[scheda.seniority] ?? scheda.seniority}, ${formatExperience(scheda.anni)}`}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3">

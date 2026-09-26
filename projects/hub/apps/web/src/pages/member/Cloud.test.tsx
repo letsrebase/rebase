@@ -87,6 +87,8 @@ const PROPOSAL = {
     {
       posizione: 1,
       freelancer_id: ADA_ID,
+      nome: 'Ada',
+      cognome: 'Lovelace',
       ruolo: 'Backend developer',
       motivazione: 'Ha costruito le API di pagamento di due banche.',
       giorni_settimana: 5,
@@ -350,6 +352,10 @@ describe('Talent cloud, the builder inside', () => {
     await screen.findByText(PROPOSAL.riassunto)
     expect(posted(spy, '/api/hub/me/cloud/proposals')).toEqual([{ descrizione: DESCRIZIONE }])
     expect(posted(spy, '/api/hub/team/proposals')).toEqual([])
+    // The cloud shows who each person is: the builder's card is headed by the name.
+    const team = screen.getByRole('list', { name: 'Il team' })
+    expect(within(team).getByRole('heading', { name: 'Ada Lovelace', level: 3 })).toBeInTheDocument()
+    expect(within(team).getByRole('listitem')).toHaveTextContent('Ada LovelaceBackend developer')
 
     await user.click(screen.getByRole('button', { name: 'Assumi team' }))
 

@@ -192,6 +192,7 @@ def test_public_proposal_answers_the_team_without_ids(client: TestClient, team: 
     [member] = body["team"]
     assert member["posizione"] == 1
     assert member["freelancer_id"] is None
+    assert member["nome"] is None and member["cognome"] is None
     assert member["scheda"]["luogo"] is None
     assert member["fascia"] == {"min": 500, "max": 650}
     assert str(freelancer_id) not in response.text
