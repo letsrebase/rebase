@@ -22,16 +22,19 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping
 from datetime import date
+from decimal import Decimal
 from typing import get_args
 from uuid import UUID
 
 from pydantic import ValidationError as PydanticValidationError
+from pydantic.fields import FieldInfo
 from pydantic_core import ErrorDetails
 from pydantic_core.core_schema import ErrorType
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
 
+from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.contract_schemas import (
     ClienteDraft,
@@ -98,6 +101,28 @@ LIST_LIMIT_MAX = 500
 # Pydantic's own error types, whose messages are English; any other type is one the hub
 # raised itself (`PydanticCustomError`), with an Italian message.
 PYDANTIC_ERRORS = frozenset(get_args(ErrorType))
+# The word after a field's name for a value Pydantic's own checks refused (`field_reason`).
+NOT_VALID = "non valido"
+
+
+def _italian_amounts(
+    part: str, given: Mapping[str, object], known: Mapping[str, FieldInfo]
+) -> dict[str, object]:
+    """`given` with every amount typed as a string read the Italian way (REB-485): the
+    letter's `compenso` «1.500» is 1500, where Pydantic's own reading of the string gives
+    1.5. A number is already one and stays as it is. A string that is not an amount is
+    refused here, by its field, with the word Pydantic's refusal gets («non valido»):
+    handed on, Pydantic would take «1e3», «1_000» or digits of another script, which the
+    web refuses."""
+    read = dict(given)
+    for name, value in given.items():
+        annotation = known[name].annotation
+        if isinstance(value, str) and Decimal in (annotation, *get_args(annotation)):
+            try:
+                read[name] = italian_amount(value)
+            except NotAnAmount as exc:
+                raise ValidationFailed(ENTITY, f"{part}.{name}", NOT_VALID) from exc
+    return read
 
 
 def require_live_freelancer(
@@ -188,9 +213,9 @@ def field_reason(error: ErrorDetails) -> str:
     if error["type"] == "missing" or error["input"] is None:
         return "manca"
     if error["type"] == "value_error":
-        reason = str(error.get("ctx", {}).get("error", "non valido"))
+        reason = str(error.get("ctx", {}).get("error", NOT_VALID))
         return reason.removeprefix(f"{error['loc'][-1]}: ") if error["loc"] else reason
-    return error["msg"] if error["type"] not in PYDANTIC_ERRORS else "non valido"
+    return error["msg"] if error["type"] not in PYDANTIC_ERRORS else NOT_VALID
 
 
 def _request_fingerprint(data: MatchCreate) -> str:
@@ -459,7 +484,8 @@ class MatchService:
             unknown = sorted(set(given or {}) - set(known))
             if unknown:
                 raise ValidationFailed(ENTITY, f"{part}.{unknown[0]}", "non è un campo del match")
-            body[part] = {**suggested.model_dump(exclude_none=True), **(given or {})}
+            laid = _italian_amounts(part, given or {}, known)
+            body[part] = {**suggested.model_dump(exclude_none=True), **laid}
         try:
             return MatchCreate.model_validate(body)
         except PydanticValidationError as exc:

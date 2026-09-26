@@ -18,6 +18,7 @@ import {
   type Match,
   type SendReport,
 } from './api'
+import { amountNumber, sentAmount } from './amount'
 import { formatDate } from './format'
 
 export type FiscalDraft = Record<keyof FiscalData, string>
@@ -170,18 +171,6 @@ export const LETTERA_EMPTY: LetteraForm = {
   giorni_preavviso: '',
 }
 
-/** A fee as an Italian types it, in the machine form the API takes. With a comma, the
- *  comma is the decimal and every dot a thousands separator («1.234,50» is 1234.50).
- *  Without one, dots that group the digits in threes are thousands too («12.000» is
- *  12000), while a single dot before one or two digits is already the machine form
- *  («480.50»). Anything else goes as typed, for the API to refuse by its field. */
-export function machineAmount(value: string): string {
-  const text = value.trim()
-  if (text.includes(',')) return text.replaceAll('.', '').replace(',', '.')
-  if (/^\d{1,3}(\.\d{3})+$/.test(text)) return text.replaceAll('.', '')
-  return text
-}
-
 /** The API's amount as the fee field shows it, the way the letter writes it: «480» for
  *  «480.00», «480,50» for «480.50». `toLettera` reads the comma back. */
 export function amountForm(value: string): string {
@@ -212,7 +201,7 @@ export function toLettera(form: LetteraForm): Lettera {
     ...text,
     data_inizio: form.data_inizio,
     data_fine: form.data_fine || null,
-    compenso: machineAmount(form.compenso),
+    compenso: sentAmount(form.compenso),
     giorni_pagamento: Number(form.giorni_pagamento),
     fine_mese: form.fine_mese,
     giorni_preavviso: form.giorni_preavviso.trim() ? Number(form.giorni_preavviso) : null,
@@ -302,7 +291,7 @@ export function withPayMode(form: LetteraForm, mode: PayMode): LetteraForm {
   return { ...form, modalita: mode, unita: mode }
 }
 
-const amount = (value: string) => Number(machineAmount(value))
+const amount = amountNumber
 
 /** «Come si paga» chosen on the page. The prefill's fee is the freelancer's day rate,
  *  never a lump sum: «A corpo» empties a fee still equal to it, so the total is typed,

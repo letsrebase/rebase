@@ -52,8 +52,8 @@ afterEach(() => {
   window.localStorage.clear()
 })
 
-/** The eight answers, up to the review screen. */
-async function walkToReview(user: ReturnType<typeof userEvent.setup>) {
+/** The eight answers, up to the review screen, with the day rate as typed. */
+async function walkToReview(user: ReturnType<typeof userEvent.setup>, rate = '450') {
   await user.type(await screen.findByLabelText('Nome'), 'Ada')
   await user.type(screen.getByLabelText('Cognome'), 'Lovelace{Enter}')
   await user.type(screen.getByLabelText('Email'), 'ada@studio.it{Enter}')
@@ -61,7 +61,7 @@ async function walkToReview(user: ReturnType<typeof userEvent.setup>) {
   const cv = new File(['%PDF-1.7'], 'Ada CV.pdf', { type: 'application/pdf' })
   await user.upload(screen.getByLabelText('CV'), cv)
   await user.click(screen.getByRole('button', { name: /Avanti/ }))
-  await user.type(screen.getByLabelText('Tariffa a giornata'), '450{Enter}')
+  await user.type(screen.getByLabelText('Tariffa a giornata'), `${rate}{Enter}`)
   await user.type(screen.getByLabelText('Posizione'), 'Backend developer{Enter}')
   await user.click(screen.getByRole('radio', { name: /Da remoto/ }))
   await user.click(screen.getByRole('button', { name: /Rivedi|Avanti/ }))
@@ -104,6 +104,21 @@ describe('the freelancer fields', () => {
     const validate = field('tariffa_giornaliera').validate
     expect(validate({ ...base, tariffa_giornaliera: '450,50' } as never)).toBeNull()
     expect(validate({ ...base, tariffa_giornaliera: 'tanto' } as never)).not.toBeNull()
+  })
+
+  it('read the Italian thousands in the rate (REB-485)', () => {
+    const validate = field('tariffa_giornaliera').validate
+    expect(validate({ ...base, tariffa_giornaliera: '1.500' } as never)).toBeNull()
+    // 150000, over the ceiling: read as 150 it would have gone through.
+    expect(validate({ ...base, tariffa_giornaliera: '150.000' } as never)).not.toBeNull()
+  })
+
+  it('refuse what the API would refuse or misread: three decimals, English notation, an exponent (REB-485)', () => {
+    const validate = field('tariffa_giornaliera').validate
+    for (const typed of ['12,345', '12.3456', '1,000.00', '1e3', '0x10']) {
+      expect(validate({ ...base, tariffa_giornaliera: typed } as never)).not.toBeNull()
+    }
+    expect(validate({ ...base, tariffa_giornaliera: '1.000,50' } as never)).toBeNull()
   })
 
   it('want a PDF under five megabytes, or no CV at all', () => {
@@ -169,6 +184,39 @@ describe('FreelancerWizard', () => {
     expect(body.get('origine')).toBe('pigrocrm')
     expect(body.getAll('links')).toEqual(['https://github.com/ada'])
     expect((body.get('cv') as File).name).toBe('Ada CV.pdf')
+  })
+
+  it('posts a rate typed with Italian thousands as the number it means (REB-485)', async () => {
+    const user = userEvent.setup({ applyAccept: false })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 201 }),
+    )
+    const router = mount()
+
+    await walkToReview(user, '1.500')
+    expect(screen.getByText('1.500 € / giorno')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Invia/ }))
+    await waitFor(() => expect(router.state.location.pathname).toBe('/thanks'))
+
+    const body = fetchSpy.mock.calls[0]![1]?.body as FormData
+    expect(body.get('tariffa_giornaliera')).toBe('1500.00')
+  })
+
+  it('refuses a rate with three decimals on its own step, before any request (REB-485)', async () => {
+    const user = userEvent.setup({ applyAccept: false })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    mount()
+
+    await user.type(await screen.findByLabelText('Nome'), 'Ada')
+    await user.type(screen.getByLabelText('Cognome'), 'Lovelace{Enter}')
+    await user.type(screen.getByLabelText('Email'), 'ada@studio.it{Enter}')
+    await user.keyboard('{Enter}') // LinkedIn, optional
+    await user.click(screen.getByRole('button', { name: /Avanti/ })) // the CV, skipped
+    await user.type(screen.getByLabelText('Tariffa a giornata'), '12,345{Enter}')
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
+    expect(screen.getByLabelText('Tariffa a giornata')).toBeInTheDocument()
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   /** ORB-203: an address pasted from the phone becomes the name in the field, behind the

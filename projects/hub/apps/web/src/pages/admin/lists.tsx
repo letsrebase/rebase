@@ -30,6 +30,7 @@ import {
   type TalentiFilters,
 } from '@/lib/api'
 import { SEARCH_DEBOUNCE_MS, isFilterActive, useDebounce } from '@/lib/adminList'
+import { AMOUNT_PROBLEM, acceptedAmount, amountFilter, sentAmount } from '@/lib/amount'
 import {
   COMPANY_STATES,
   FREELANCER_LIST_STATES,
@@ -153,6 +154,42 @@ export function FilterField({
   )
 }
 
+/** A euro filter (REB-485): typed the Italian way, so «1.500» asks for 1500 whatever the
+ *  browser's locale, which a number input did not (it read 1.5). The URL keeps what was
+ *  typed; the query reads it through `amountFilter`, and a value that is not an amount
+ *  narrows nothing and says so under the field. */
+function AmountFilter({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string
+  label: string
+  value: string | undefined
+  onChange: (value: string | undefined) => void
+}) {
+  const problem = value !== undefined && amountFilter(value) === undefined
+  const errorId = `${id}-error`
+  return (
+    <FilterField label={label} htmlFor={id}>
+      <Input
+        id={id}
+        inputMode="decimal"
+        value={value ?? ''}
+        onChange={(event) => onChange(event.target.value || undefined)}
+        aria-invalid={problem || undefined}
+        aria-describedby={problem ? errorId : undefined}
+      />
+      {problem && (
+        <p role="alert" id={errorId} className="text-sm text-destructive">
+          {AMOUNT_PROBLEM}
+        </p>
+      )}
+    </FilterField>
+  )
+}
+
 /** The affordance under a truncated page (REB-286), reimplemented here from the CRM's
  *  `LoadMoreInvoices` (PR #179) since this app may not import PigroCRM: a button that
  *  walks `next_cursor` one page further, a count of what is already on screen, and an
@@ -245,7 +282,12 @@ export function AdminTalenti() {
     })
   }
 
-  const filters: TalentiFilters = { ...search, q: debouncedQ || undefined }
+  const filters: TalentiFilters = {
+    ...search,
+    q: debouncedQ || undefined,
+    tariffa_min: amountFilter(search.tariffa_min),
+    tariffa_max: amountFilter(search.tariffa_max),
+  }
   const list = useInfiniteQuery({
     queryKey: ['talenti', filters],
     queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
@@ -254,7 +296,8 @@ export function AdminTalenti() {
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   })
   const items = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data?.pages])
-  const activeFilters = isFilterActive(search)
+  // What the request carries: an amount it cannot send narrows nothing, so it is no filter.
+  const activeFilters = isFilterActive(filters)
 
   return (
     <>
@@ -301,28 +344,18 @@ export function AdminTalenti() {
             </SelectContent>
           </Select>
         </FilterField>
-        <FilterField label="Tariffa min (€/giorno)" htmlFor="talenti-tariffa-min">
-          <Input
-            id="talenti-tariffa-min"
-            type="number"
-            min={0}
-            step="0.01"
-            inputMode="decimal"
-            value={search.tariffa_min ?? ''}
-            onChange={(event) => setFilter('tariffa_min', event.target.value || undefined)}
-          />
-        </FilterField>
-        <FilterField label="Tariffa max (€/giorno)" htmlFor="talenti-tariffa-max">
-          <Input
-            id="talenti-tariffa-max"
-            type="number"
-            min={0}
-            step="0.01"
-            inputMode="decimal"
-            value={search.tariffa_max ?? ''}
-            onChange={(event) => setFilter('tariffa_max', event.target.value || undefined)}
-          />
-        </FilterField>
+        <AmountFilter
+          id="talenti-tariffa-min"
+          label="Tariffa min (€/giorno)"
+          value={search.tariffa_min}
+          onChange={(value) => setFilter('tariffa_min', value)}
+        />
+        <AmountFilter
+          id="talenti-tariffa-max"
+          label="Tariffa max (€/giorno)"
+          value={search.tariffa_max}
+          onChange={(value) => setFilter('tariffa_max', value)}
+        />
         <FilterField label="Pagina di provenienza" htmlFor="talenti-origine">
           <Input
             id="talenti-origine"
@@ -542,14 +575,18 @@ export function AdminTalentoLead() {
     return (value: string) => setDraft((current) => ({ ...current, [name]: value }))
   }
 
+  // Blank is allowed: a card drafted from research may not know the rate.
+  const rateProblem = draft.tariffa_giornaliera.trim() !== '' && !acceptedAmount(draft.tariffa_giornaliera)
+
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (rateProblem) return
     draftCard.mutate({
       nome: draft.nome.trim(),
       cognome: draft.cognome.trim(),
       linkedin_url: draft.linkedin_url.trim() || undefined,
       posizione: draft.posizione.trim() || undefined,
-      tariffa_giornaliera: draft.tariffa_giornaliera.replace(',', '.').trim() || undefined,
+      tariffa_giornaliera: sentAmount(draft.tariffa_giornaliera) || undefined,
       remoto: draft.remoto || undefined,
       links: draft.links.split('\n').map((line) => line.trim()).filter(Boolean),
       fonti: draft.fonti.split('\n').map((line) => line.trim()).filter(Boolean),
@@ -637,8 +674,14 @@ export function AdminTalentoLead() {
                 inputMode="decimal"
                 value={draft.tariffa_giornaliera}
                 onChange={(event) => field('tariffa_giornaliera')(event.target.value)}
-                aria-invalid={wrong('tariffa_giornaliera')}
+                aria-invalid={rateProblem || wrong('tariffa_giornaliera')}
+                aria-describedby={rateProblem ? 'lead-tariffa-error' : undefined}
               />
+              {rateProblem && (
+                <p role="alert" id="lead-tariffa-error" className="text-sm text-destructive">
+                  {AMOUNT_PROBLEM}
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="lead-remoto">Modalità</Label>
@@ -1066,7 +1109,12 @@ export function AdminCompanies() {
     })
   }
 
-  const filters: CompaniesFilters = { ...search, q: debouncedQ || undefined }
+  const filters: CompaniesFilters = {
+    ...search,
+    q: debouncedQ || undefined,
+    budget_min: amountFilter(search.budget_min),
+    budget_max: amountFilter(search.budget_max),
+  }
   const list = useInfiniteQuery({
     queryKey: ['companies', filters],
     queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
@@ -1075,7 +1123,8 @@ export function AdminCompanies() {
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   })
   const items = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data?.pages])
-  const activeFilters = isFilterActive(search)
+  // What the request carries: an amount it cannot send narrows nothing, so it is no filter.
+  const activeFilters = isFilterActive(filters)
 
   return (
     <>
@@ -1093,28 +1142,18 @@ export function AdminCompanies() {
             onChange={(event) => setQInput(event.target.value)}
           />
         </FilterField>
-        <FilterField label="Budget min (€/giorno)" htmlFor="aziende-budget-min">
-          <Input
-            id="aziende-budget-min"
-            type="number"
-            min={0}
-            step="0.01"
-            inputMode="decimal"
-            value={search.budget_min ?? ''}
-            onChange={(event) => setFilter('budget_min', event.target.value || undefined)}
-          />
-        </FilterField>
-        <FilterField label="Budget max (€/giorno)" htmlFor="aziende-budget-max">
-          <Input
-            id="aziende-budget-max"
-            type="number"
-            min={0}
-            step="0.01"
-            inputMode="decimal"
-            value={search.budget_max ?? ''}
-            onChange={(event) => setFilter('budget_max', event.target.value || undefined)}
-          />
-        </FilterField>
+        <AmountFilter
+          id="aziende-budget-min"
+          label="Budget min (€/giorno)"
+          value={search.budget_min}
+          onChange={(value) => setFilter('budget_min', value)}
+        />
+        <AmountFilter
+          id="aziende-budget-max"
+          label="Budget max (€/giorno)"
+          value={search.budget_max}
+          onChange={(value) => setFilter('budget_max', value)}
+        />
         <FilterField label="Periodo dal" htmlFor="aziende-periodo-da">
           <Input
             id="aziende-periodo-da"
