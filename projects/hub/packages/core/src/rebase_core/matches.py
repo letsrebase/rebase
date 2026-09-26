@@ -189,16 +189,25 @@ def _printed(letter: ContractDocument, key: str) -> str | None:
 
 
 def _match_words(
-    match: Match, letter: ContractDocument, facts: DocumentFacts, framework_stato: str | None
+    match: Match,
+    letter: ContractDocument,
+    facts: DocumentFacts,
+    framework_stato: str | None,
+    *,
+    pigro_configurato: bool = True,
 ) -> Words:
     """`match_words` for a match and its letter, the one call `MatchRead` and the «Match»
-    list's rows both make."""
+    list's rows both make. `pigro_configurato` is whether this environment has the CRM's
+    token (`MatchService`'s own)."""
     return match_words(
         match.stato,
         facts,
         framework_stato,
         _printed(letter, "data-inizio"),
         _printed(letter, "data-fine"),
+        pigro_stato=match.pigro_stato,
+        pigro_errore=match.pigro_errore,
+        pigro_configurato=pigro_configurato,
     )
 
 
@@ -248,13 +257,19 @@ class MatchService:
         renderer: Renderer | None = None,
         signer: Mapping[str, Value] | None = None,
         today: Callable[[], date] = rome_today,
+        *,
+        pigro_configurato: bool = True,
     ) -> None:
         """`renderer` is needed only to write or preview a document; the reads never
-        typeset anything. `signer` is `REBASE_SIGNER_JSON` as `signer_data` read it."""
+        typeset anything. `signer` is `REBASE_SIGNER_JSON` as `signer_data` read it.
+        `pigro_configurato` is whether `REBASE_PIGRO_ENGAGEMENTS_TOKEN` is set: without
+        it an active match's card says so and offers no «Riprova su Pigro» (spec § 3.2);
+        the API and the MCP server pass it, the tests may leave it on."""
         self.session = session
         self.renderer = renderer
         self.signer: Mapping[str, Value] = signer or {}
         self.today = today
+        self.pigro_configurato = pigro_configurato
 
     # ---- reads -------------------------------------------------------------------------
 
@@ -649,6 +664,10 @@ class MatchService:
                 stato="bozza",
                 created_by=admin_id,
                 request_fingerprint=fingerprint,
+                giorni_previsti=data.giorni_previsti,
+                lettera_data_inizio=data.lettera.data_inizio,
+                lettera_data_fine=data.lettera.data_fine,
+                lettera_compenso=data.lettera.compenso,
             )
             self.session.add(match)
             try:
@@ -896,7 +915,7 @@ class MatchService:
         today = self.today()
         facts = document_facts(letter, today)
         situazione, prossima_azione, altre_azioni = _match_words(
-            match, letter, facts, framework_stato
+            match, letter, facts, framework_stato, pigro_configurato=self.pigro_configurato
         )
         return MatchRead(
             id=match.id,
@@ -916,6 +935,18 @@ class MatchService:
             situazione=situazione,
             prossima_azione=prossima_azione,
             altre_azioni=altre_azioni,
+            giorni_previsti=match.giorni_previsti,
+            lettera_data_inizio=match.lettera_data_inizio,
+            lettera_data_fine=match.lettera_data_fine,
+            lettera_compenso=match.lettera_compenso,
+            pigro_stato=match.pigro_stato,
+            pigro_slug=match.pigro_slug,
+            pigro_deal_id=match.pigro_deal_id,
+            pigro_url=match.pigro_url,
+            pigro_linked_at=match.pigro_linked_at,
+            pigro_attempted_at=match.pigro_attempted_at,
+            pigro_errore=match.pigro_errore,
+            pigro_mail_sent_at=match.pigro_mail_sent_at,
         )
 
     def _list_item(
@@ -929,7 +960,13 @@ class MatchService:
         today: date,
     ) -> MatchListItem:
         situazione = (
-            _match_words(match, letter, document_facts(letter, today), framework_stato)[0]
+            _match_words(
+                match,
+                letter,
+                document_facts(letter, today),
+                framework_stato,
+                pigro_configurato=self.pigro_configurato,
+            )[0]
             if letter is not None
             else f"{MATCH_STATE_LABELS.get(match.stato, match.stato)}."
         )
@@ -950,6 +987,9 @@ class MatchService:
             created_by_nome=_full_name(admin_user),
             created_by_email=admin_user.email,
             situazione=situazione,
+            giorni_previsti=match.giorni_previsti,
+            pigro_stato=match.pigro_stato,
+            pigro_url=match.pigro_url,
         )
 
     def _renderer(self) -> Renderer:

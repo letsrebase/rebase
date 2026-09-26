@@ -34,3 +34,22 @@ describe('the bare /admin address', () => {
     expect(router.state.location.pathname).toBe('/admin/talent')
   })
 })
+
+describe('«Consuntivo»’s address (REB-503)', () => {
+  it.each([
+    ['2026-10', '2026-10'],
+    ['tutto', 'tutto'],
+    ['2026-13', undefined],
+    ['ottobre', undefined],
+  ])('opens the match’s report and keeps ?mese=%s as %s', async (mese, kept) => {
+    const router = createRouter({
+      routeTree,
+      history: createMemoryHistory({ initialEntries: [`/admin/matches/m1/report?mese=${mese}`] }),
+    })
+    await router.load()
+    const page = router.state.matches.at(-1)!
+    expect(page.routeId).toBe('/signedIn/admin/matches/$id/report')
+    expect(page.params).toMatchObject({ id: 'm1' })
+    expect(page.search).toEqual({ mese: kept })
+  })
+})

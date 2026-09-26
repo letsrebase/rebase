@@ -1,19 +1,33 @@
 """REB-387 phase 2 over HTTP: tax data, a match created from a card and a request, both
 PDFs downloadable, a draft cancelled; nothing at all without the admin cookie."""
 
+import json
 import re
 from collections.abc import Iterator
+from datetime import UTC, datetime
+from typing import Any
+from uuid import UUID
 
 import pytest
 from fakes_contracts import FailingRenderer, FakeRenderer
+from fakes_pigro import DEAL, DEAL_URL, PIGRO, TOKEN, RecordedPigro, linked_body
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_renderer
+from rebase_api.deps import (
+    _engagements_call,
+    get_engagements,
+    get_http_call,
+    get_renderer,
+    get_signing_factory,
+)
 from rebase_core.config import Settings, get_settings
+from rebase_core.http import urllib_call, urllib_engagements_call
 from rebase_core.mail import RecordingSender
-from rebase_core.models import Match, User
+from rebase_core.match_words import PIGRO_NOT_CONFIGURED
+from rebase_core.models import AdminAction, ContractDocument, Match, User
+from rebase_core.pigro import NOT_ANSWERING
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 ADMIN_EMAIL = "ivan@rebase.it"
@@ -139,6 +153,8 @@ def test_without_the_cookie_every_match_route_is_a_401(client: TestClient, admin
         ("GET", f"/api/hub/matches/{MISSING}"),
         ("POST", f"/api/hub/matches/{MISSING}/cancel"),
         ("POST", f"/api/hub/matches/{MISSING}/close"),
+        ("POST", f"/api/hub/matches/{MISSING}/pigro/link"),
+        ("GET", f"/api/hub/matches/{MISSING}/report"),
         ("GET", f"/api/hub/contract-documents/{MISSING}/pdf"),
     ):
         assert client.request(method, path, json={}).status_code == 401, (method, path)
@@ -655,3 +671,307 @@ def test_without_the_cookie_the_check_is_a_401(client: TestClient, admin: None) 
         json={"company_id": MISSING, "cliente": CLIENTE, "lettera": LETTERA},
     )
     assert answered.status_code == 401
+
+
+# ---- the link to Pigro and the report (REB-499) ------------------------------------------
+
+FATTURA = {
+    "id": "0192e0a0-0000-7000-8000-0000000f0012",
+    "tipo": "fattura",
+    "anno": 2026,
+    "numero": 12,
+    "stato": "emessa",
+    "stato_pagamento": "da_incassare",
+    "data": "2026-10-31",
+}
+# The CRM's report of the deal (its door's `GET .../report`): one row per time entry.
+CRM_REPORT = {
+    "slug": "ada-lovelace",
+    "deal_url": DEAL_URL,
+    "deal": {"id": str(DEAL), "nome": "Lettera n. 2026-001", "stato": "in corso"},
+    "giorni": [
+        {"data": "2026-10-01", "ore": "8.00", "descrizione": "Setup", "fattura": FATTURA},
+        {"data": "2026-10-02", "ore": "4.00", "descrizione": "API", "fattura": None},
+    ],
+    "totale_ore": "12.00",
+    "ore_fatturate": "8.00",
+    "ore_non_fatturate": "4.00",
+    "fatture": [{**FATTURA, "ore": "8.00"}],
+}
+
+
+@pytest.fixture
+def pigro(client: TestClient) -> Iterator[RecordedPigro]:
+    """The CRM's door behind the API's own seam, and the token that opens it: the one
+    override `get_http_call` hands every route that talks to Pigro."""
+    fake = RecordedPigro([(201, linked_body())])
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None, pigro_api_url=PIGRO, pigro_engagements_token=TOKEN
+    )
+    client.app.dependency_overrides[get_http_call] = lambda: fake  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_settings] = lambda: settings  # type: ignore[attr-defined]
+    yield fake
+
+
+def _signed_match(
+    client: TestClient,
+    sender: RecordingSender,
+    session: Session,
+    pigro_stato: str | None = "da_collegare",
+    **columns: Any,
+) -> str:
+    """A match as a signature leaves it: made over HTTP with 40 expected days, then its
+    letter signed and the match active in the database, since how a letter gets signed
+    is `test_signing_api.py`'s business."""
+    freelancer_id, company_id = _ready(client, sender)
+    created = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={
+            "company_id": company_id,
+            "cliente": CLIENTE,
+            "lettera": LETTERA,
+            "giorni_previsti": 40,
+        },
+    )
+    assert created.status_code == 201, created.text
+    match_id = UUID(created.json()["id"])
+    session.execute(
+        update(ContractDocument)
+        .where(ContractDocument.match_id == match_id)
+        .values(stato="firmato", signed_at=datetime(2026, 9, 30, 10, 0, tzinfo=UTC))
+    )
+    session.execute(
+        update(Match)
+        .where(Match.id == match_id)
+        .values(stato="attivo", pigro_stato=pigro_stato, **columns)
+    )
+    session.commit()
+    return str(match_id)
+
+
+def _with_signed_copy(session: Session, match_id: str) -> None:
+    """The sealed copy arrived: the card speaks of the match, not of the copy it waits
+    for."""
+    session.execute(
+        update(ContractDocument)
+        .where(ContractDocument.match_id == UUID(match_id))
+        .values(signed_pdf=PDF)
+    )
+    session.commit()
+
+
+def test_post_pigro_link_answers_the_match(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    renderer: FakeRenderer,
+    pigro: RecordedPigro,
+    api_session: Session,
+) -> None:
+    """«Riprova su Pigro»: the link runs now, and the answer is the match as it stands,
+    linked; the freelancer is told, and the match's trail says which admin asked."""
+    match_id = _signed_match(client, sender, api_session)
+
+    linked = client.post(f"/api/hub/matches/{match_id}/pigro/link")
+
+    assert linked.status_code == 200, linked.text
+    body = linked.json()
+    assert (body["id"], body["stato"], body["pigro_stato"]) == (match_id, "attivo", "collegato")
+    assert (body["pigro_slug"], body["pigro_deal_id"], body["pigro_url"]) == (
+        "ada-lovelace",
+        str(DEAL),
+        DEAL_URL,
+    )
+    assert body["pigro_errore"] is None
+    [(method, url, headers, _sent)] = pigro.calls
+    assert (method, url) == ("PUT", f"{PIGRO}/api/rebase/engagements/{match_id}")
+    assert headers["Authorization"] == f"Bearer {TOKEN}"
+    assert sender.sent[-1].to == "ada@studio.it"
+    assert "le ore si registrano su Pigro" in sender.sent[-1].subject
+    action = api_session.scalars(
+        select(AdminAction)
+        .where(AdminAction.entity_id == UUID(match_id))
+        .where(AdminAction.kind == "pigro_link")
+    ).one()
+    assert action.payload == {"esito": "collegato", "errore": None}
+
+
+def test_post_pigro_link_of_a_draft_is_409(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    renderer: FakeRenderer,
+    pigro: RecordedPigro,
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    draft = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    ).json()
+
+    refused = client.post(f"/api/hub/matches/{draft['id']}/pigro/link")
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == "Si collega a Pigro solo un match attivo."
+    assert pigro.calls == []
+    assert client.get(f"/api/hub/matches/{draft['id']}").json()["pigro_stato"] is None
+
+
+def test_get_report_answers_the_grouped_report(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    renderer: FakeRenderer,
+    pigro: RecordedPigro,
+    api_session: Session,
+) -> None:
+    """«Consuntivo»: the CRM's rows for the period asked, summed by day, ISO week and
+    month, against the 40 days expected; every figure a string with two places."""
+    match_id = _signed_match(
+        client, sender, api_session, "collegato", pigro_url=DEAL_URL, pigro_deal_id=DEAL
+    )
+    pigro.answers = [(200, json.dumps(CRM_REPORT).encode())]
+
+    answered = client.get(
+        f"/api/hub/matches/{match_id}/report", params={"da": "2026-10-01", "a": "2026-10-31"}
+    )
+
+    assert answered.status_code == 200, answered.text
+    assert answered.json() == {
+        "match_id": match_id,
+        "pigro_url": DEAL_URL,
+        "pigro_stato": "collegato",
+        "giorni_previsti": 40,
+        "ore_previste": "320.00",
+        "totale_ore": "12.00",
+        "giorni_equivalenti": "1.50",
+        "avanzamento": "3.75",
+        "ore_fatturate": "8.00",
+        "ore_non_fatturate": "4.00",
+        "per_giorno": [
+            {"data": "2026-10-01", "ore": "8.00", "descrizioni": ["Setup"], "fatture": ["12/2026"]},
+            {"data": "2026-10-02", "ore": "4.00", "descrizioni": ["API"], "fatture": []},
+        ],
+        "per_settimana": [
+            {"settimana": "2026-W40", "da": "2026-09-28", "a": "2026-10-04", "ore": "12.00"}
+        ],
+        "per_mese": [{"mese": "2026-10", "ore": "12.00"}],
+        "fatture": [
+            {
+                "numero": "12/2026",
+                "tipo": "fattura",
+                "data": "2026-10-31",
+                "stato": "emessa",
+                "stato_pagamento": "da_incassare",
+                "ore": "8.00",
+            }
+        ],
+    }
+    [(method, url, _headers, _sent)] = pigro.calls
+    assert (method, url) == (
+        "GET",
+        f"{PIGRO}/api/rebase/engagements/{match_id}/report?da=2026-10-01&a=2026-10-31",
+    )
+
+
+def test_get_report_of_unlinked_match_is_409(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    renderer: FakeRenderer,
+    pigro: RecordedPigro,
+    api_session: Session,
+) -> None:
+    match_id = _signed_match(client, sender, api_session)
+
+    refused = client.get(f"/api/hub/matches/{match_id}/report")
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == "Pigro non ha ancora il deal: riprova o aspetta lo sweep."
+    assert pigro.calls == []
+
+
+def test_get_report_when_pigro_is_down_is_502(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    renderer: FakeRenderer,
+    pigro: RecordedPigro,
+    api_session: Session,
+) -> None:
+    match_id = _signed_match(client, sender, api_session, "collegato", pigro_url=DEAL_URL)
+    pigro.answers = [ConnectionRefusedError("refused")]
+
+    answered = client.get(f"/api/hub/matches/{match_id}/report")
+
+    assert answered.status_code == 502
+    assert answered.json()["detail"] == NOT_ANSWERING
+
+
+def test_routes_answer_503_without_the_token(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    renderer: FakeRenderer,
+    api_session: Session,
+) -> None:
+    """No `REBASE_PIGRO_ENGAGEMENTS_TOKEN` on this environment: both routes say so, the
+    CRM is not asked, and the match is left as it was, waiting for the sweep. Its card
+    says the same sentence (spec § 3.2) on every read, and offers no «Riprova», which
+    would only answer this 503."""
+    fake = RecordedPigro([(201, linked_body())])
+    client.app.dependency_overrides[get_http_call] = lambda: fake  # type: ignore[attr-defined]
+    waiting = _signed_match(client, sender, api_session)
+    _with_signed_copy(api_session, waiting)
+
+    for answered in (
+        client.post(f"/api/hub/matches/{waiting}/pigro/link"),
+        client.get(f"/api/hub/matches/{waiting}/report"),
+    ):
+        assert answered.status_code == 503
+        assert answered.json()["detail"] == PIGRO_NOT_CONFIGURED
+
+    assert fake.calls == []
+    read = client.get(f"/api/hub/matches/{waiting}").json()
+    assert (read["pigro_stato"], read["pigro_attempted_at"]) == ("da_collegare", None)
+    assert read["situazione"].endswith(f". {PIGRO_NOT_CONFIGURED}")
+    assert read["altre_azioni"] == ["chiudi"]
+    [card] = client.get(f"/api/hub/freelancers/{read['freelancer_id']}/matches").json()["matches"]
+    assert (card["situazione"], card["altre_azioni"]) == (read["situazione"], ["chiudi"])
+    [row] = client.get("/api/hub/matches").json()["items"]
+    assert row["situazione"] == read["situazione"]
+
+
+def test_with_the_token_the_card_offers_riprova(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    renderer: FakeRenderer,
+    pigro: RecordedPigro,
+    api_session: Session,
+) -> None:
+    waiting = _signed_match(client, sender, api_session)
+    _with_signed_copy(api_session, waiting)
+
+    read = client.get(f"/api/hub/matches/{waiting}").json()
+
+    assert read["situazione"].endswith(" Pigro non ha ancora il deal: riprova o aspetta lo sweep.")
+    assert read["altre_azioni"] == ["chiudi", "riprova_pigro"]
+
+
+def test_the_link_reads_through_the_long_seam_in_production(api_session: Session) -> None:
+    """Production's ten-second `urllib_call` becomes `urllib_engagements_call` for the
+    link and the report, whose 90 seconds leave room for a new space to be opened, in
+    both places the API builds the engagement service; a test's fake passes through
+    unchanged."""
+    fake = RecordedPigro([(201, linked_body())])
+    assert _engagements_call(urllib_call) is urllib_engagements_call
+    assert _engagements_call(fake) is fake
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    for http, expected in ((urllib_call, urllib_engagements_call), (fake, fake)):
+        engagements = get_engagements(api_session, settings, http, None)
+        signing = get_signing_factory(settings, FakeRenderer(), None, None, http)(api_session)
+        assert engagements.http is expected
+        assert signing.engagements is not None
+        assert signing.engagements.http is expected

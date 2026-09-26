@@ -6,13 +6,32 @@ import { Input } from '@rebase/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, type MatchesFilters, type MatchListItem } from '@/lib/api'
 import { SEARCH_DEBOUNCE_MS, isFilterActive, useDebounce } from '@/lib/adminList'
-import { MATCH_STATES, MATCH_STATE_LABELS, formatDate } from '@/lib/format'
+import { MATCH_STATES, MATCH_STATE_LABELS, PIGRO_STATE_LABELS, formatDate } from '@/lib/format'
 import { Empty, FilterField, Header, LoadMore, StateFilter } from './lists'
 
 // The server's own default page size (`LIST_LIMIT_DEFAULT`, `rebase_core.matches`):
 // the same mechanism «Talenti» and «Aziende» paginate with, a page at a time through
 // «Mostra altri», just offset rather than cursor (REB-413's own brief).
 const PAGE_SIZE = 100
+
+/** Where the match's link to its deal on Pigro stands (REB-497): a linked one opens its
+ *  «Consuntivo» (spec § 3.5, REB-503), which links the deal itself; a match not active
+ *  yet has no link to speak of. */
+function PigroState({ item }: { item: MatchListItem }) {
+  if (!item.pigro_stato) return <span className="text-muted-foreground">—</span>
+  const label = PIGRO_STATE_LABELS[item.pigro_stato] ?? item.pigro_stato
+  if (item.pigro_stato !== 'collegato') return <span>{label}</span>
+  return (
+    <Link
+      to="/admin/matches/$id/report"
+      params={{ id: item.id }}
+      aria-label={`${label}: consuntivo del match con ${item.nome_azienda} come ${item.figura_richiesta}`}
+      className="hover:underline"
+    >
+      {label}
+    </Link>
+  )
+}
 
 function MatchRow({ item }: { item: MatchListItem }) {
   const name = `${item.freelancer_nome} ${item.freelancer_cognome}`.trim()
@@ -42,6 +61,9 @@ function MatchRow({ item }: { item: MatchListItem }) {
       <TableCell className="text-muted-foreground">
         {item.lettera_data_inizio}
         {item.lettera_data_fine && ` · ${item.lettera_data_fine}`}
+      </TableCell>
+      <TableCell>
+        <PigroState item={item} />
       </TableCell>
       <TableCell className="text-right text-muted-foreground">
         <p>{formatDate(item.created_at)}</p>
@@ -145,6 +167,7 @@ export function AdminMatches() {
                     <TableHead>Stato</TableHead>
                     <TableHead>Lettera</TableHead>
                     <TableHead>Periodo</TableHead>
+                    <TableHead>Pigro</TableHead>
                     <TableHead className="text-right">Creato</TableHead>
                   </TableRow>
                 </TableHeader>

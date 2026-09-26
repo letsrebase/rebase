@@ -42,11 +42,13 @@ from rebase_core.config import Settings
 from rebase_core.contract_schemas import FiscalData, MatchCreate
 from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
+from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
 from rebase_core.freelancers import LEAD_STATE, FreelancerService
 from rebase_core.http import HttpCall
 from rebase_core.logins import LoginService
+from rebase_core.match_words import PIGRO_NOT_CONFIGURED as ENGAGEMENTS_NOT_CONFIGURED
 from rebase_core.match_words import send_report_sentence
 from rebase_core.matches import (
     ENTITY,
@@ -74,6 +76,10 @@ from rebase_core.talenti import TalentiService
 SessionFactory = sessionmaker[Session]
 # Who is calling: resolved by the transport, read by the tools that sign something.
 AdminProvider = Callable[[], AdminRead]
+# What builds the `EngagementService` `get_match_report` and `link_match_to_pigro` call,
+# the way `SigningFactory` builds the signing one: real from settings in production, a
+# recorded `HttpCall` in a test.
+EngagementsFactory = Callable[[Session], EngagementService]
 
 INSTRUCTIONS = (
     "rebase, la community di freelance di letsrebase.com. Gli strumenti leggono chi "
@@ -94,10 +100,11 @@ LETTER_PART, CONDITIONS_PART = "lettera.", "condizioni."
 TAX_DATA_SAVED = {"dati_fiscali": "salvati"}
 
 
-def _tax_refusal(exc: PydanticValidationError) -> ToolError:
-    """A tax field refused in the words `MatchService.proposal` uses (`field_reason`):
-    never Pydantic's own text, which repeats the value typed, and a tax identifier does
-    not come back in an answer."""
+def _field_refusal(exc: PydanticValidationError) -> ToolError:
+    """A field refused in the words `MatchService.proposal` uses (`field_reason`): never
+    Pydantic's own text, which repeats the value typed -- a tax identifier does not come
+    back in an answer this way. `set_freelancer_tax_data` and `create_match`'s
+    `giorni_previsti` both refuse through this."""
     error = exc.errors()[0]
     field = ".".join(str(part) for part in error["loc"])
     return ToolError(f"{field}: {field_reason(error)}")
@@ -195,6 +202,7 @@ def build_server(
     middleware: Sequence[ServerMiddleware[Any]] | None = None,
     renderer: Renderer | None = None,
     signing: SigningFactory | None = None,
+    engagements: EngagementsFactory | None = None,
 ) -> MCPServer:
     """`admin` answers the admin behind the current call; `settings` and `http` are what
     reaches the CRM, for `list_pigro_spaces` and for the `pigro_slug` of `get_talento`,
@@ -206,9 +214,22 @@ def build_server(
     `settings`; `signing` builds the `SigningService` the signing tools call
     (`signing_from_settings`). The transports hand the real ones; a test hands
     `FakeRenderer` and a service over fakes. Without them a contract is not written and
-    a send answers that signing is not active here, as the admin area does."""
+    a send answers that signing is not active here, as the admin area does.
+
+    `engagements` builds the `EngagementService` behind `get_match_report` and
+    `link_match_to_pigro` (REB-501), with `urllib_engagements_call` in production, the
+    way `__main__.py` and `http.py` build `signing` too. Without it, or without
+    `settings.pigro_engagements_token`, both tools answer that Pigro is not configured
+    here, the same sentence an empty token answers from inside the service."""
     mcp = MCPServer("rebase", instructions=INSTRUCTIONS, middleware=middleware)
     signer_json = settings.signer_json if settings is not None else ""
+    # Whether the CRM's engagements door has a token here: without one an active match's
+    # `situazione` says the report is not configured and offers no `riprova_pigro`, as
+    # the admin API's own match reads do (spec § 3.2).
+    pigro_configurato = settings is not None and bool(settings.pigro_engagements_token)
+
+    def reading(session: Session) -> MatchService:
+        return MatchService(session, pigro_configurato=pigro_configurato)
 
     def contracts(session: Session) -> SigningService:
         if signing is not None:
@@ -735,7 +756,7 @@ def build_server(
         strumenti prendono il suo id, `annulla` è `cancel_contract` e `registra_disdetta`
         è `record_notice`. Solo lettura; un match nuovo si prepara con `preview_match` e
         si salva con `create_match`."""
-        body = _run(lambda s: MatchService(s).for_freelancer(UUID(freelancer_id)))
+        body = _run(lambda s: reading(s).for_freelancer(UUID(freelancer_id)))
         body.pop("fiscale", None)
         for document in (body["quadro"], *body["quadri"]):
             if document is not None:
@@ -759,7 +780,7 @@ def build_server(
             # the admin API gives (REB-417), rather than `for_freelancer` refusing with
             # the freelancer's own message.
             freelancer_id = require_live_match(session, key).freelancer_id
-            service = MatchService(session)
+            service = reading(session)
             body = service.get(key).model_dump(mode="json")
             quadro = service.for_freelancer(freelancer_id).quadro
             body["quadro"] = quadro.model_dump(mode="json") if quadro is not None else None
@@ -839,18 +860,21 @@ def build_server(
         cliente: dict[str, Any] | None = None,
         condizioni: dict[str, Any] | None = None,
         match_id: str | None = None,
+        giorni_previsti: int | None = None,
     ) -> dict[str, Any]:
         """Salva il match come bozza, come «Salva senza inviare» al passo 3 di «Crea
         match»: la lettera di incarico con il suo numero e, se il freelance non ha un
         contratto quadro attivo né uno già in firma, un contratto quadro nuovo. Non parte
         nulla: per la firma c'è `send_match_for_signature`. `cliente` e `condizioni` come
         in `preview_match`, da chiamare prima per rileggere le frasi. Servono i dati
-        fiscali del freelance (`set_freelancer_tax_data`). `match_id`, un UUID scelto da
-        chi chiama, rende sicuro riprovare: con lo stesso id torna il match già scritto e
-        non un secondo, ma solo se la proposta è rimasta identica. Se nel frattempo la
-        proposta dell'hub è cambiata (la richiesta, la scheda o l'ultimo match
-        dell'azienda), il tentativo è rifiutato: per riprovare passa esplicitamente in
-        `cliente` e `condizioni` i valori della prima volta. Risponde il match con
+        fiscali del freelance (`set_freelancer_tax_data`). `giorni_previsti`, i giorni
+        attesi per il consuntivo su Pigro (fra 1 e 366, facoltativo), sta sul match e non
+        sulla lettera: il suo testo resta quello di «Impegno». `match_id`, un UUID
+        scelto da chi chiama, rende sicuro riprovare: con lo stesso id torna il match già
+        scritto e non un secondo, ma solo se la proposta è rimasta identica. Se nel
+        frattempo la proposta dell'hub è cambiata (la richiesta, la scheda o l'ultimo
+        match dell'azienda), il tentativo è rifiutato: per riprovare passa esplicitamente
+        in `cliente` e `condizioni` i valori della prima volta. Risponde il match con
         `situazione`, `prossima_azione` e la lettera con `pdf_url`, a nome dell'admin
         dietro il token."""
         freelancer, company = UUID(freelancer_id), UUID(company_id)
@@ -859,6 +883,12 @@ def build_server(
         def call(session: Session) -> dict[str, Any]:
             service = MatchService(session, renderer, signer_data(signer_json))
             proposal = _proposal(service, freelancer, company, cliente, condizioni, key)
+            try:
+                proposal = MatchCreate.model_validate(
+                    {**proposal.model_dump(mode="json"), "giorni_previsti": giorni_previsti}
+                )
+            except PydanticValidationError as exc:
+                raise _field_refusal(exc) from None
             return service.create(freelancer, proposal, admin().id).model_dump(mode="json")
 
         body = _call(call)
@@ -942,6 +972,60 @@ def build_server(
             match_id, lambda session, key: MatchService(session).close(key, admin().id)
         )
 
+    # ---- Pigro: the hours report and the link (REB-501) ---------------------------------
+
+    def _require_engagements() -> EngagementsFactory:
+        """The sentence «Consuntivo» shows when this environment has no token for the
+        CRM's engagements door, exactly what the API's own `_require_pigro` answers
+        before `get_match_report` and `link_match_to_pigro`: without a token an admin's
+        action is refused plainly, unlike the sweep's own quiet wait."""
+        if engagements is None or settings is None or not settings.pigro_engagements_token:
+            raise ToolError(ENGAGEMENTS_NOT_CONFIGURED)
+        return engagements
+
+    @mcp.tool()
+    def link_match_to_pigro(match_id: str) -> dict[str, Any]:
+        """«Riprova su Pigro»: collega ora un match attivo al suo deal su PigroCRM, a
+        nome dell'admin dietro il token, o registra perché non ci è riuscito (`errore`,
+        `rifiutato` con la frase del CRM) così che si possa riprovare. Rifiutato per un
+        match non attivo o non trovato. Risponde un errore anche quando Pigro non è
+        configurato su questo ambiente o non risponde."""
+        build_engagements = _require_engagements()
+        try:
+            return _on_match(
+                match_id, lambda session, key: build_engagements(session).link(key, admin().id)
+            )
+        except PigroUnavailable as exc:
+            raise ToolError(str(exc)) from exc
+
+    @mcp.tool()
+    def get_match_report(
+        match_id: str, da: str | None = None, a: str | None = None
+    ) -> dict[str, Any]:
+        """Il consuntivo delle ore di un match, come «Consuntivo» nell'area admin: ore e
+        giorni totali, l'avanzamento sui giorni previsti quando ce ne sono, il dettaglio
+        per giorno con le fatture di ciascuno, i totali per settimana e per mese, e le
+        fatture del periodo. `da` e `a` (AAAA-MM-GG) restringono il periodo, l'intero
+        incarico per difetto (dall'inizio della lettera a oggi). Rifiutato per un match
+        non collegato a Pigro, con la frase di dove sta il collegamento. Risponde un
+        errore anche quando Pigro non è configurato su questo ambiente o non risponde.
+        Solo lettura, con un'eccezione: un deal eliminato nello spazio del freelance
+        segna il match come rifiutato, finché il deal non torna e «Riprova» lo
+        ricollega."""
+        build_engagements = _require_engagements()
+        key = UUID(match_id)
+        start = _day(da, "da")
+        end = _day(a, "a")
+
+        def call(session: Session) -> dict[str, Any]:
+            require_live_match(session, key)
+            return build_engagements(session).report(key, start, end).model_dump(mode="json")
+
+        try:
+            return _call(call)
+        except PigroUnavailable as exc:
+            raise ToolError(str(exc)) from exc
+
     @mcp.tool()
     def set_freelancer_tax_data(
         freelancer_id: str,
@@ -964,7 +1048,7 @@ def build_server(
                 pec=pec or None,
             )
         except PydanticValidationError as exc:
-            raise _tax_refusal(exc) from None
+            raise _field_refusal(exc) from None
         _call(lambda session: FiscalService(session).save(key, data, admin().id))
         return dict(TAX_DATA_SAVED)
 

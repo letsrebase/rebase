@@ -342,6 +342,12 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
 # ---- matches and the contracts they write (REB-387) -------------------------------------
 
 MATCH_STATES = ("bozza", "in_firma", "attivo", "concluso", "annullato")
+# The Pigro link a match carries once it turns active (REB-497): `da_collegare` until a
+# deal exists, `collegato` once `pigro_url` and `pigro_deal_id` point at it, `errore` on
+# a failure the sweep may still retry -- `pigro_errore` then holds the cause and
+# `pigro_attempted_at` the time, for the sweep's log and the admin's eye -- `rifiutato`
+# on one the CRM itself refused (a 4xx, never retried).
+PIGRO_STATES = ("da_collegare", "collegato", "errore", "rifiutato")
 CONTRACT_KINDS = ("quadro", "lettera")
 CONTRACT_STATES = ("generato", "in_attesa", "inviato", "firmato", "annullato", "disdetto")
 CODICE_FISCALE_MAX_LENGTH = 16
@@ -400,12 +406,47 @@ class Match(Base, PrimaryKeyMixin, TimestampMixin):
     # silently handing back the stale match. `NULL` for a match written before this
     # column existed, which a retry must treat the same as a mismatch.
     request_fingerprint: Mapped[str | None] = mapped_column(String(64), default=None)
+    # An admin's estimate of the engagement's billable days (REB-497), read back by
+    # `MatchRead` and `MatchListItem`; `ore_previste` (elsewhere) is eight times this.
+    giorni_previsti: Mapped[int | None] = mapped_column(Integer, default=None)
+    # The letter's own numbers, copied from `data.lettera` when `create` writes it
+    # (REB-497): a stable place for the report to read them from once the letter
+    # itself is redrawn or replaced, without re-reading `contract_documents.data`.
+    lettera_data_inizio: Mapped[date | None] = mapped_column(Date, default=None)
+    lettera_data_fine: Mapped[date | None] = mapped_column(Date, default=None)
+    lettera_compenso: Mapped[Decimal | None] = mapped_column(Numeric(7, 2), default=None)
+    # The Pigro link this match carries once it turns active: `NULL` until then, one of
+    # `PIGRO_STATES` after. `pigro_linked_at` is set only the once, when `collegato` is
+    # first reached; `pigro_attempted_at` on every attempt, successful or not, for the
+    # sweep's log and the admin's eye. `pigro_mail_sent_at` is the freelancer's own
+    # notification mail, sent once on the first `collegato`.
+    pigro_stato: Mapped[str | None] = mapped_column(String(20), default=None)
+    pigro_slug: Mapped[str | None] = mapped_column(String(32), default=None)
+    pigro_deal_id: Mapped[UUID | None] = mapped_column(default=None)
+    pigro_url: Mapped[str | None] = mapped_column(Text, default=None)
+    pigro_linked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    pigro_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    pigro_errore: Mapped[str | None] = mapped_column(Text, default=None)
+    pigro_mail_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
     __table_args__ = (
         Index("ix_matches_freelancer_created", "freelancer_id", "created_at"),
         CheckConstraint(
             "stato IN ('bozza', 'in_firma', 'attivo', 'concluso', 'annullato')",
             name="ck_matches_stato",
+        ),
+        CheckConstraint(
+            "giorni_previsti IS NULL OR giorni_previsti BETWEEN 1 AND 366",
+            name="ck_matches_giorni_previsti",
+        ),
+        CheckConstraint(
+            "pigro_stato IS NULL OR pigro_stato IN "
+            "('da_collegare', 'collegato', 'errore', 'rifiutato')",
+            name="ck_matches_pigro_stato",
         ),
     )
 
@@ -543,6 +584,9 @@ ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fisca
 # REB-387 adds the matches' own kinds, on entity type `match` (phase 3 writes the last
 # four), and `fiscal_updated` on `freelancer_fiscal`, whose payload names the fields that
 # changed and never their values: a tax identifier is not copied into this table.
+# REB-498 adds `pigro_link` on `match`: an admin's «Riprova su Pigro», its payload the
+# outcome (`esito`) and the CRM's sentence (`errore`). No `CHECK` holds this list: it is
+# the record of what the code writes.
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -556,6 +600,7 @@ ADMIN_ACTION_KINDS = (
     "document_cancelled",
     "mail_resent",
     "notice_recorded",
+    "pigro_link",
 )
 
 

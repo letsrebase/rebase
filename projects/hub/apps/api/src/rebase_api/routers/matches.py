@@ -6,15 +6,29 @@ agreement too, and both PDFs are downloadable from here. «Invia per la firma» 
 match's documents through Documenso (`rebase_core.signing`, phase 3). The routes sit
 under `/api/hub/` beside the rest of the admin area. A contract that cannot be typeset
 is a 503 with a sentence (`main.domain_error_handler`).
+
+An active match is linked to its deal on Pigro (REB-499, `rebase_core.engagements`):
+«Riprova su Pigro» links it now, «Consuntivo» reads its hours. Both answer the split
+`routers/pigro.py` makes: 503 when this environment has no token for the CRM, 502 with
+the seam's sentence when the CRM does not answer. Without the token the match reads
+say so too (`_reading`): the card's sentence is the 503's, and there is no «Riprova».
 """
 
+from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import AdminDep, RendererDep, SessionDep, SettingsDep, SigningDep
+from rebase_api.deps import (
+    AdminDep,
+    EngagementsDep,
+    RendererDep,
+    SessionDep,
+    SettingsDep,
+    SigningDep,
+)
 from rebase_api.downloads import pdf_response
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import (
@@ -27,12 +41,14 @@ from rebase_core.contract_schemas import (
     MatchList,
     MatchPrefill,
     MatchRead,
+    MatchReport,
     SendReport,
 )
 from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
 from rebase_core.errors import NotFound
 from rebase_core.fiscal import FiscalService
+from rebase_core.match_words import PIGRO_NOT_CONFIGURED
 from rebase_core.matches import (
     LIST_LIMIT_DEFAULT,
     LIST_LIMIT_MAX,
@@ -40,6 +56,7 @@ from rebase_core.matches import (
     require_live_document,
     require_live_match,
 )
+from rebase_core.pigro import PigroUnavailable
 from rebase_core.search import SEARCH_MAX_LENGTH
 
 router = APIRouter(prefix="/api/hub", tags=["hub-admin"])
@@ -52,10 +69,29 @@ SearchQ = Annotated[str | None, Query(max_length=SEARCH_MAX_LENGTH)]
 Stato = Annotated[str | None, Query(max_length=20)]
 
 
+def _require_pigro(settings: Settings) -> None:
+    """503 with the sentence the match card shows when this environment has no token for
+    the CRM's door: the service alone would leave the match waiting without a word."""
+    if not settings.pigro_engagements_token:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, PIGRO_NOT_CONFIGURED)
+
+
+def _reading(session: Session, settings: Settings) -> MatchService:
+    """The service as the routes that answer a match's words need it: whether this
+    environment has the CRM's token, so an active match's card says «Consuntivo non
+    configurato su questo ambiente.» and offers no «Riprova» without it (spec § 3.2)."""
+    return MatchService(session, pigro_configurato=bool(settings.pigro_engagements_token))
+
+
 def _writing(session: Session, settings: Settings, renderer: Renderer) -> MatchService:
     """The service as the two routes that typeset need it: the renderer, and who signs
     for rebase. The reads take neither."""
-    return MatchService(session, renderer, signer_data(settings.signer_json))
+    return MatchService(
+        session,
+        renderer,
+        signer_data(settings.signer_json),
+        pigro_configurato=bool(settings.pigro_engagements_token),
+    )
 
 
 @router.get("/freelancers/{freelancer_id}/fiscal", response_model=FiscalRead | None)
@@ -74,9 +110,9 @@ def save_fiscal(
 
 @router.get("/freelancers/{freelancer_id}/matches", response_model=FreelancerContracts)
 def list_freelancer_matches(
-    _: AdminDep, session: SessionDep, freelancer_id: UUID
+    _: AdminDep, session: SessionDep, settings: SettingsDep, freelancer_id: UUID
 ) -> FreelancerContracts:
-    return MatchService(session).for_freelancer(freelancer_id)
+    return _reading(session, settings).for_freelancer(freelancer_id)
 
 
 @router.get("/freelancers/{freelancer_id}/matches/prefill", response_model=MatchPrefill)
@@ -138,6 +174,7 @@ def create_match(
 def list_matches(
     _: AdminDep,
     session: SessionDep,
+    settings: SettingsDep,
     stato: Stato = None,
     q: SearchQ = None,
     limit: Limit = LIST_LIMIT_DEFAULT,
@@ -147,13 +184,13 @@ def list_matches(
     `GET /matches/{match_id}` -- FastAPI matches routes in the order they are
     registered, and a static path must come first or `/matches/{match_id}` would
     swallow it. 422 naming `stato` for an unknown state."""
-    return MatchService(session).list_all(stato=stato, q=q, limit=limit, offset=offset)
+    return _reading(session, settings).list_all(stato=stato, q=q, limit=limit, offset=offset)
 
 
 @router.get("/matches/{match_id}", response_model=MatchRead)
-def get_match(_: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
+def get_match(_: AdminDep, session: SessionDep, settings: SettingsDep, match_id: UUID) -> MatchRead:
     require_live_match(session, match_id)
-    return MatchService(session).get(match_id)
+    return _reading(session, settings).get(match_id)
 
 
 @router.post("/matches/{match_id}/cancel", response_model=MatchRead)
@@ -167,9 +204,56 @@ def cancel_match(
 
 
 @router.post("/matches/{match_id}/close", response_model=MatchRead)
-def close_match(admin: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
+def close_match(
+    admin: AdminDep, session: SessionDep, settings: SettingsDep, match_id: UUID
+) -> MatchRead:
     require_live_match(session, match_id)
-    return MatchService(session).close(match_id, admin.id)
+    return _reading(session, settings).close(match_id, admin.id)
+
+
+@router.post("/matches/{match_id}/pigro/link", response_model=MatchRead)
+def link_match_to_pigro(
+    admin: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    engagements: EngagementsDep,
+    match_id: UUID,
+) -> MatchRead:
+    """«Riprova su Pigro» (REB-499): the link to the match's deal runs now, as the
+    admin, and the match comes back as it stands, `collegato` or with the CRM's sentence
+    (`errore`, `rifiutato`). The browser waits for it, up to the 90 seconds the first
+    link of a freelancer takes to open their space. 409 for a match not active, 503
+    without the token."""
+    require_live_match(session, match_id)
+    _require_pigro(settings)
+    try:
+        return engagements.link(match_id, admin.id)
+    except PigroUnavailable as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+
+@router.get("/matches/{match_id}/report", response_model=MatchReport)
+def match_report(
+    _: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    engagements: EngagementsDep,
+    match_id: UUID,
+    da: date | None = None,
+    a: date | None = None,
+) -> MatchReport:
+    """«Consuntivo» (REB-499): the hours on the match's deal, asked of the CRM now and
+    stored nowhere, by default over the whole engagement (`da` the letter's start, `a`
+    today). 409 with where the link stands for a match not `collegato`, and for a deal
+    the CRM says was deleted in the space, which files the match `rifiutato` (spec
+    § 3.10); 422 naming `da` for a period that ends before it starts, 502 with the
+    seam's sentence when the CRM does not answer with a report, 503 without the token."""
+    require_live_match(session, match_id)
+    _require_pigro(settings)
+    try:
+        return engagements.report(match_id, da, a)
+    except PigroUnavailable as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
 
 @router.post("/matches/{match_id}/send", response_model=SendReport)

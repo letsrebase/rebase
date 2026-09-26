@@ -19,6 +19,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    TypeAdapter,
     ValidationInfo,
     field_validator,
     model_validator,
@@ -286,6 +287,14 @@ class LetteraFields(LetteraDraft):
         return fields
 
 
+# «Giorni previsti» (REB-497): `ck_matches_giorni_previsti`'s bounds, the sentence that
+# refuses a number outside them, and the one that refuses what is not a whole number.
+GIORNI_PREVISTI_MIN, GIORNI_PREVISTI_MAX = 1, 366
+GIORNI_PREVISTI_RANGE = "I giorni previsti vanno da 1 a 366."
+GIORNI_PREVISTI_WHOLE = "I giorni previsti sono un numero intero da 1 a 366."
+_WHOLE_NUMBER: TypeAdapter[int] = TypeAdapter(int)
+
+
 class MatchCreate(BaseModel):
     """What «Chi e per chi» and «Condizioni», steps 1 and 2 of «Crea match», ask. The
     tax data step 1 asks are saved by their own route when the admin leaves that step,
@@ -302,6 +311,33 @@ class MatchCreate(BaseModel):
     company_id: UUID
     cliente: ClienteData
     lettera: LetteraFields
+    # An admin's estimate of the engagement's billable days (REB-497), read back
+    # unchanged; `Match.giorni_previsti` carries the same `CHECK`.
+    giorni_previsti: int | None = None
+
+    @field_validator("giorni_previsti", mode="before")
+    @classmethod
+    def _expected_days_are_whole(cls, value: object) -> object:
+        """A fraction or a word refused in the admin's words too: the field's own
+        parsing runs before the range check below, and would answer Pydantic's English
+        («Input should be a valid integer, got a number with a fractional part»). What
+        that parsing takes (`40`, `40.0`, `"40"`) goes on as the whole number."""
+        if value is None:
+            return None
+        try:
+            return _WHOLE_NUMBER.validate_python(value)
+        except ValidationError:
+            raise PydanticCustomError("giorni_previsti_intero", GIORNI_PREVISTI_WHOLE) from None
+
+    @field_validator("giorni_previsti", mode="after")
+    @classmethod
+    def _expected_days_within_a_year(cls, value: int | None) -> int | None:
+        """From one day to a year, the column's own `CHECK`, refused in the admin's words
+        (REB-502): «Crea match» and the MCP tools show the sentence as it is, where
+        `Field(ge=, le=)` would answer Pydantic's English."""
+        if value is not None and not GIORNI_PREVISTI_MIN <= value <= GIORNI_PREVISTI_MAX:
+            raise PydanticCustomError("giorni_previsti_range", GIORNI_PREVISTI_RANGE)
+        return value
 
 
 class ContractDocumentRead(BaseModel):
@@ -336,6 +372,12 @@ class ContractDocumentRead(BaseModel):
 
 
 class MatchRead(BaseModel):
+    """`giorni_previsti`, the three `lettera_*` values and the eight `pigro_*` fields
+    are `Match`'s own (REB-497): the `lettera_*` ones are what `create` copied off
+    `data.lettera` at the time, not necessarily what the current `lettera` prints, were
+    it ever regenerated. `pigro_stato` is `None` until the match turns `attivo`, one of
+    `PIGRO_STATES` after."""
+
     id: UUID
     freelancer_id: UUID
     company_id: UUID
@@ -353,6 +395,18 @@ class MatchRead(BaseModel):
     situazione: str
     prossima_azione: Action | None
     altre_azioni: list[Action]
+    giorni_previsti: int | None
+    lettera_data_inizio: date | None
+    lettera_data_fine: date | None
+    lettera_compenso: Decimal | None
+    pigro_stato: str | None
+    pigro_slug: str | None
+    pigro_deal_id: UUID | None
+    pigro_url: str | None
+    pigro_linked_at: datetime | None
+    pigro_attempted_at: datetime | None
+    pigro_errore: str | None
+    pigro_mail_sent_at: datetime | None
 
 
 class FreelancerContracts(BaseModel):
@@ -408,7 +462,8 @@ class MatchListItem(BaseModel):
     together, only were a match ever to have no letter at all -- `create` always
     writes one, so this is the list staying honest about a shape `get` does not need
     to allow for. `situazione` is the match's sentence, the same `MatchRead` carries
-    (REB-477)."""
+    (REB-477). `giorni_previsti`, `pigro_stato` and `pigro_url` are `Match`'s own
+    (REB-497), the row's narrower share of what `MatchRead` carries in full."""
 
     id: UUID
     freelancer_id: UUID
@@ -426,6 +481,9 @@ class MatchListItem(BaseModel):
     created_by_nome: str
     created_by_email: str
     situazione: str
+    giorni_previsti: int | None
+    pigro_stato: str | None
+    pigro_url: str | None
 
 
 class MatchList(BaseModel):
@@ -434,6 +492,66 @@ class MatchList(BaseModel):
 
     totale: int
     items: list[MatchListItem]
+
+
+class ReportDay(BaseModel):
+    """One day of hours on the match's deal (REB-498): the CRM answers one row per time
+    entry, summed here. `fatture` names each invoice these hours sit on once, «12/2026»
+    for an invoice and «proforma 3/2026» for anything else, empty when none does yet."""
+
+    data: date
+    ore: Decimal
+    descrizioni: list[str]
+    fatture: list[str]
+
+
+class ReportWeek(BaseModel):
+    """An ISO week, «2026-W40», from its Monday to its Sunday."""
+
+    settimana: str
+    da: date
+    a: date
+    ore: Decimal
+
+
+class ReportMonth(BaseModel):
+    mese: str
+    ore: Decimal
+
+
+class ReportInvoice(BaseModel):
+    """An invoice these hours sit on, with how many of them: «12/2026», or «senza
+    numero» for one not numbered yet."""
+
+    numero: str
+    tipo: str
+    data: date | None
+    stato: str
+    stato_pagamento: str
+    ore: Decimal
+
+
+class MatchReport(BaseModel):
+    """«Consuntivo» (REB-498): the hours logged on the match's deal on Pigro over a
+    period, read from the CRM on every request and never stored. `ore_previste` is
+    `giorni_previsti` times eight, `giorni_equivalenti` the hours over eight,
+    `avanzamento` the hours as a percentage of `ore_previste`, two places, `None`
+    without an estimate. What counts as billed is the CRM's own word."""
+
+    match_id: UUID
+    pigro_url: str | None
+    pigro_stato: str | None
+    giorni_previsti: int | None
+    ore_previste: Decimal | None
+    totale_ore: Decimal
+    giorni_equivalenti: Decimal
+    avanzamento: Decimal | None
+    ore_fatturate: Decimal
+    ore_non_fatturate: Decimal
+    per_giorno: list[ReportDay]
+    per_settimana: list[ReportWeek]
+    per_mese: list[ReportMonth]
+    fatture: list[ReportInvoice]
 
 
 class SendReport(BaseModel):
@@ -450,7 +568,9 @@ class MemberContract(BaseModel):
     """A contract as its freelancer reads it in «Contratti» (REB-392): never the PDF's
     bytes and never `data`. `cliente` and the two dates are a letter's, as the letter
     prints them; `signing_url` is there only while the document waits for the
-    signature, since its path is the signer's token."""
+    signature, since its path is the signer's token. `pigro_url` is the letter's
+    match's own (REB-498), set only once that match is `collegato`: «Le tue ore su
+    Pigro» has somewhere to point (spec § 3.6)."""
 
     id: UUID
     kind: str
@@ -466,6 +586,7 @@ class MemberContract(BaseModel):
     attivo: bool
     rinnovo: date | None
     ultimo_giorno_disdetta: date | None
+    pigro_url: str | None
 
 
 class MemberContracts(BaseModel):

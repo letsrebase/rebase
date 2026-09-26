@@ -17,6 +17,7 @@ from test_signing import (
     _draft,
     _envelope_of,
     _framework_of,
+    _letter_of,
     _setup,
     _signing,
     _webhook,
@@ -26,7 +27,7 @@ from rebase_core.contract_schemas import MemberContracts
 from rebase_core.errors import NotFound
 from rebase_core.mail import RecordingSender
 from rebase_core.member_contracts import MemberContractService
-from rebase_core.models import Freelancer
+from rebase_core.models import Freelancer, Match
 
 # The day after the signature: the next renewal is a year on.
 AFTER = date(2026, 10, 2)
@@ -80,6 +81,30 @@ def test_a_draft_match_shows_nothing(clean: Session) -> None:
     assert _service(clean).for_user(_user_of(clean, freelancer_id)) == MemberContracts(
         quadro=None, lettere=[]
     )
+
+
+def test_member_letter_carries_the_pigro_url(clean: Session) -> None:
+    """spec § 3.6: «Le tue ore su Pigro» has somewhere to point once, and only once, the
+    match is `collegato`."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    match = _draft(clean, FakeRenderer(draft=False), freelancer_id, company_id, admin_id)
+    letter = _letter_of(clean, match.id)
+    letter.sent_at = SIGNED_AT
+    row = clean.get(Match, match.id)
+    assert row is not None
+    row.pigro_stato = "da_collegare"
+    clean.commit()
+    user_id = _user_of(clean, freelancer_id)
+
+    [not_yet] = _service(clean).for_user(user_id).lettere
+    assert not_yet.pigro_url is None
+
+    row.pigro_stato = "collegato"
+    row.pigro_url = "https://pigro.letsrebase.com/ada-lovelace/app/deal/123"
+    clean.commit()
+
+    [linked] = _service(clean).for_user(user_id).lettere
+    assert linked.pigro_url == "https://pigro.letsrebase.com/ada-lovelace/app/deal/123"
 
 
 def test_a_signed_framework_shows_its_dates_its_copy_and_no_link(clean: Session) -> None:

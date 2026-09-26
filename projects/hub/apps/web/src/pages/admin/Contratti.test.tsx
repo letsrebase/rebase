@@ -103,6 +103,18 @@ const MATCH = {
   situazione: 'La lettera n. 2026-001 è pronta: il freelance non ha ancora ricevuto nulla.',
   prossima_azione: 'invia',
   altre_azioni: ['annulla'],
+  giorni_previsti: null,
+  lettera_data_inizio: '2026-10-01',
+  lettera_data_fine: null,
+  lettera_compenso: '450.00',
+  pigro_stato: null,
+  pigro_slug: null,
+  pigro_deal_id: null,
+  pigro_url: null,
+  pigro_linked_at: null,
+  pigro_attempted_at: null,
+  pigro_errore: null,
+  pigro_mail_sent_at: null,
 }
 const FISCALE = {
   freelancer_id: 'f1',
@@ -839,5 +851,135 @@ describe('«Match e contratti» as cards (REB-477)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva i dati fiscali' }))
     expect(await screen.findByText('Dati fiscali salvati.')).toBeInTheDocument()
     expect(screen.queryByText(sentence)).toBeNull()
+  })
+})
+
+describe('a match’s link to Pigro on its card (REB-502)', () => {
+  const SIGNED = 'Lettera n. 2026-001 firmata il 1° ottobre 2026, dal 1° ottobre 2026.'
+  const ACTIVE = {
+    ...MATCH,
+    stato: 'attivo',
+    lettera: { ...LETTERA, stato: 'firmato', ha_pdf_firmato: true },
+    prossima_azione: null,
+    giorni_previsti: 40,
+  }
+  const LINKED = {
+    ...ACTIVE,
+    pigro_stato: 'collegato',
+    pigro_slug: 'ada',
+    pigro_deal_id: '6f1c2d3e-0000-4000-8000-000000000009',
+    pigro_url: 'https://pigro.letsrebase.com/ada/app/deal/6f1c2d3e-0000-4000-8000-000000000009',
+    pigro_linked_at: '2026-10-01T09:05:00Z',
+    situazione: `${SIGNED} Le ore si consuntivano su Pigro.`,
+    altre_azioni: ['chiudi'],
+  }
+  const FAILED = {
+    ...ACTIVE,
+    pigro_stato: 'errore',
+    pigro_errore: 'HTTP 503',
+    pigro_attempted_at: '2026-10-01T09:05:00Z',
+    situazione: `${SIGNED} Pigro non ha risposto: HTTP 503.`,
+    altre_azioni: ['chiudi', 'riprova_pigro'],
+  }
+  const MORE = 'Altre azioni del match con Rossi Studio come Backend developer'
+  const RETRY = 'Riprova su Pigro per il match con Rossi Studio come Backend developer'
+  const REPORT = 'Consuntivo del match con Rossi Studio come Backend developer'
+
+  it('says in the card’s sentence that the hours are on Pigro, and opens «Consuntivo» beside the PDFs', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, matches: [LINKED] },
+    })
+    mount('/admin/freelance/f1/contracts')
+    const card = await matchCard()
+    expect(within(card).getByText(LINKED.situazione)).toBeInTheDocument()
+    const report = within(card).getByRole('link', { name: REPORT })
+    expect(report).toHaveTextContent(/^Consuntivo$/)
+    expect(report.getAttribute('href')).toMatch(/\/admin\/matches\/m1\/report$/)
+    // Beside the letter's PDFs, among the card's own steps.
+    const pdf = within(card).getByRole('link', { name: 'PDF firmato della lettera n. 2026-001' })
+    expect(pdf.parentElement).toBe(report.parentElement)
+    expect(await openMore(card, MORE)).toEqual(['Chiudi il match con Rossi Studio come Backend developer'])
+  })
+
+  it.each([
+    { pigro_stato: null, situazione: SIGNED, altre_azioni: ['chiudi'] },
+    { pigro_stato: 'da_collegare', situazione: `${SIGNED} Pigro non ha ancora il deal: riprova o aspetta lo sweep.`, altre_azioni: ['chiudi', 'riprova_pigro'] },
+    { pigro_stato: 'errore', situazione: FAILED.situazione, altre_azioni: ['chiudi', 'riprova_pigro'] },
+    {
+      pigro_stato: 'rifiutato',
+      situazione: `${SIGNED} Pigro ha rifiutato il collegamento: Il deal esiste già.`,
+      altre_azioni: ['chiudi', 'riprova_pigro'],
+    },
+  ])('offers no «Consuntivo» for a match whose link is $pigro_stato, and says why', async (state) => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, matches: [{ ...ACTIVE, ...state }] },
+    })
+    mount('/admin/freelance/f1/contracts')
+    const card = await matchCard()
+    expect(within(card).getByText(state.situazione)).toBeInTheDocument()
+    expect(within(card).queryByRole('link', { name: /Consuntivo/ })).toBeNull()
+  })
+
+  it('links the match now from «Altre azioni» with «Riprova su Pigro», and reads the card again', async () => {
+    let linked = false
+    const spy = routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': () => ({ ...PAGE, matches: [linked ? LINKED : FAILED] }),
+      'POST /api/hub/matches/m1/pigro/link': () => {
+        linked = true
+        return LINKED
+      },
+    })
+    mount('/admin/freelance/f1/contracts')
+    const card = await matchCard()
+    expect(within(card).getByText(FAILED.situazione)).toBeInTheDocument()
+    expect(await openMore(card, MORE)).toEqual(['Chiudi il match con Rossi Studio come Backend developer', RETRY])
+    await userEvent.click(screen.getByRole('menuitem', { name: RETRY }))
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith('/api/hub/matches/m1/pigro/link', expect.objectContaining({ method: 'POST' })),
+    )
+    expect(await within(card).findByText(LINKED.situazione)).toBeInTheDocument()
+    expect(within(card).getByRole('link', { name: REPORT })).toBeInTheDocument()
+    // It asks nothing first: linking again takes nothing back.
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('says «Collego a Pigro…» on «Altre azioni» while the CRM answers, which can take a while', async () => {
+    const late = deferred<Response>()
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, matches: [FAILED] },
+      'POST /api/hub/matches/m1/pigro/link': () => late.promise,
+    })
+    mount('/admin/freelance/f1/contracts')
+    const card = await matchCard()
+    const trigger = within(card).getByRole('button', { name: MORE })
+    await openMore(card, MORE)
+    await userEvent.click(screen.getByRole('menuitem', { name: RETRY }))
+
+    await waitFor(() => expect(trigger).toHaveTextContent('Collego a Pigro…'))
+    expect(trigger).toHaveAccessibleName('Collego a Pigro il match con Rossi Studio come Backend developer')
+    expect(trigger).toBeDisabled()
+
+    late.resolve(answer(200, FAILED))
+    await waitFor(() => expect(trigger).toHaveTextContent('Altre azioni'))
+    expect(trigger).toBeEnabled()
+  })
+
+  it('shows the server’s sentence under the matches when the link cannot run here', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, matches: [FAILED] },
+      'POST /api/hub/matches/m1/pigro/link': () =>
+        answer(503, { detail: 'Consuntivo non configurato su questo ambiente.' }),
+    })
+    mount('/admin/freelance/f1/contracts')
+    await openMore(await matchCard(), MORE)
+    await userEvent.click(screen.getByRole('menuitem', { name: RETRY }))
+    const section = screen.getByRole('region', { name: 'Match' })
+    expect(await within(section).findByRole('alert')).toHaveTextContent('Consuntivo non configurato su questo ambiente.')
   })
 })

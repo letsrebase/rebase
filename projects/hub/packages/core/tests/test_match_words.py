@@ -16,11 +16,16 @@ from rebase_core.contract_schemas import (
 from rebase_core.documenso import REJECTED, Outcome
 from rebase_core.match_words import (
     DOCUMENT_STATE_LABELS,
+    HTTPS_ONLY,
     MATCH_STATE_LABELS,
+    PIGRO_NOT_CONFIGURED,
+    PROFILE_WITHOUT_NAME,
+    Action,
     DocumentFacts,
     check_sentences,
     document_words,
     match_words,
+    pigro_state_sentence,
     send_report_sentence,
 )
 from rebase_core.models import MATCH_STATES
@@ -330,6 +335,142 @@ def test_an_active_match_says_when_its_letter_was_signed_and_its_period(
         None,
         ["chiudi"],
     )
+
+
+# ---- an active match's link to Pigro (REB-498, spec § 3.5) -----------------------------
+
+
+def test_an_active_match_with_no_pigro_state_adds_nothing() -> None:
+    """A match older than migration 0021, or read before the trigger ran: nothing to add
+    yet."""
+    letter = _lettera("firmato", signed_on=SIGNED, ha_pdf_firmato=True)
+    assert match_words("attivo", letter, None, START, None, pigro_stato=None) == (
+        "Lettera n. 2026-003 firmata il 28 settembre 2026, dal 1° ottobre 2026.",
+        None,
+        ["chiudi"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("pigro_stato", "pigro_errore", "note", "altre_azioni"),
+    [
+        ("collegato", None, "Le ore si consuntivano su Pigro.", ["chiudi"]),
+        (
+            "da_collegare",
+            None,
+            "Pigro non ha ancora il deal: riprova o aspetta lo sweep.",
+            ["chiudi", "riprova_pigro"],
+        ),
+        (
+            "errore",
+            "HTTP 503",
+            "Pigro non ha risposto: HTTP 503.",
+            ["chiudi", "riprova_pigro"],
+        ),
+        (
+            "rifiutato",
+            "Il deal di questa lettera è stato eliminato nello spazio.",
+            "Pigro ha rifiutato il collegamento: Il deal di questa lettera è stato eliminato "
+            "nello spazio.",
+            ["chiudi", "riprova_pigro"],
+        ),
+    ],
+)
+def test_an_active_match_says_where_its_hours_stand_on_pigro(
+    pigro_stato: str, pigro_errore: str | None, note: str, altre_azioni: list[Action]
+) -> None:
+    letter = _lettera("firmato", signed_on=SIGNED, ha_pdf_firmato=True)
+    assert match_words(
+        "attivo", letter, None, START, None, pigro_stato=pigro_stato, pigro_errore=pigro_errore
+    ) == (
+        f"Lettera n. 2026-003 firmata il 28 settembre 2026, dal 1° ottobre 2026. {note}",
+        None,
+        altre_azioni,
+    )
+
+
+@pytest.mark.parametrize("pigro_stato", ["da_collegare", "errore", "rifiutato", "collegato"])
+def test_without_the_token_an_active_match_says_the_report_is_not_configured(
+    pigro_stato: str,
+) -> None:
+    """Spec § 3.2: an environment without `REBASE_PIGRO_ENGAGEMENTS_TOKEN` has the
+    feature off. The card says so, whatever the link's state, and offers no «Riprova»,
+    which would only answer the same sentence with a 503."""
+    letter = _lettera("firmato", signed_on=SIGNED, ha_pdf_firmato=True)
+    assert match_words(
+        "attivo",
+        letter,
+        None,
+        START,
+        None,
+        pigro_stato=pigro_stato,
+        pigro_errore="HTTP 503",
+        pigro_configurato=False,
+    ) == (
+        "Lettera n. 2026-003 firmata il 28 settembre 2026, dal 1° ottobre 2026. "
+        "Consuntivo non configurato su questo ambiente.",
+        None,
+        ["chiudi"],
+    )
+    assert PIGRO_NOT_CONFIGURED == "Consuntivo non configurato su questo ambiente."
+
+
+def test_without_the_token_a_match_with_no_pigro_state_still_adds_nothing() -> None:
+    letter = _lettera("firmato", signed_on=SIGNED, ha_pdf_firmato=True)
+    assert match_words(
+        "attivo", letter, None, START, None, pigro_stato=None, pigro_configurato=False
+    ) == (
+        "Lettera n. 2026-003 firmata il 28 settembre 2026, dal 1° ottobre 2026.",
+        None,
+        ["chiudi"],
+    )
+
+
+@pytest.mark.parametrize("sentence", [PROFILE_WITHOUT_NAME, HTTPS_ONLY])
+def test_the_hubs_own_errore_sentences_are_shown_alone(sentence: str) -> None:
+    """A link the hub never sent: «Pigro non ha risposto» would say a call was made."""
+    assert pigro_state_sentence("errore", sentence) == sentence
+    assert HTTPS_ONLY == "Pigro è raggiungibile solo su https."
+
+
+def test_pigro_state_sentence_says_nothing_before_a_deal_or_once_one_is_linked() -> None:
+    """`report`'s own `InvalidState` never needs a sentence for these two: a match not
+    yet active has no report to refuse, and `collegato` has one to answer instead."""
+    assert pigro_state_sentence(None, None) == ""
+    assert pigro_state_sentence("collegato", None) == ""
+
+
+def test_pigro_state_sentence_names_the_state_and_folds_in_the_crms_own_words() -> None:
+    assert pigro_state_sentence("da_collegare", None) == (
+        "Pigro non ha ancora il deal: riprova o aspetta lo sweep."
+    )
+    """The link stores the cause alone (`engagements.CAUSE_*`, or the CRM's own
+    sentence), and this wraps it once: a bare cause gets its stop, a sentence keeps
+    its own."""
+    assert pigro_state_sentence("errore", "timeout") == "Pigro non ha risposto: timeout."
+    assert pigro_state_sentence("errore", "HTTP 503") == "Pigro non ha risposto: HTTP 503."
+    assert pigro_state_sentence("errore", "Lo spazio non è raggiungibile.") == (
+        "Pigro non ha risposto: Lo spazio non è raggiungibile."
+    )
+    assert pigro_state_sentence("rifiutato", "Il deal è stato eliminato nello spazio.") == (
+        "Pigro ha rifiutato il collegamento: Il deal è stato eliminato nello spazio."
+    )
+    assert pigro_state_sentence("rifiutato", "HTTP 409") == (
+        "Pigro ha rifiutato il collegamento: HTTP 409."
+    )
+
+
+def test_pigro_state_sentence_without_a_stored_error_still_says_pigro_did_not_answer() -> None:
+    """`pigro_errore` is typed `str | None`: an `errore` state written with none stored
+    (a race, or a row from before the column was backfilled) reads as a sentence, never
+    «Pigro non ha risposto: None»."""
+    assert pigro_state_sentence("errore", None) == "Pigro non ha risposto."
+    assert pigro_state_sentence("errore", "  ") == "Pigro non ha risposto."
+    assert pigro_state_sentence("rifiutato", None) == "Pigro ha rifiutato il collegamento."
+
+
+def test_pigro_state_sentence_without_a_stored_error_still_says_pigro_refused() -> None:
+    assert pigro_state_sentence("rifiutato", None) == "Pigro ha rifiutato il collegamento."
 
 
 def test_a_closed_match_says_its_period() -> None:

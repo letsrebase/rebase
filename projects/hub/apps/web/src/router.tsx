@@ -6,6 +6,7 @@ import {
   redirect,
 } from '@tanstack/react-router'
 import type { CompaniesFilters, MatchesFilters, Remoto, TalentiFilters } from '@/lib/api'
+import { periodParam } from '@/lib/report'
 import { Shell } from '@/components/Shell'
 import { Chooser } from '@/pages/Chooser'
 import { CompanyWizard } from '@/pages/CompanyWizard'
@@ -17,6 +18,7 @@ import { AdminAgenti } from '@/pages/admin/Agenti'
 import { AdminGuard } from '@/pages/admin/AdminGuard'
 import { AdminGuida } from '@/pages/admin/Guida'
 import { AdminPigro } from '@/pages/admin/Pigro'
+import { AdminConsuntivo } from '@/pages/admin/Consuntivo'
 import { AdminContratti } from '@/pages/admin/Contratti'
 import { AdminCampagna } from '@/pages/admin/Campagna'
 import { AdminCampagne } from '@/pages/admin/Campagne'
@@ -330,6 +332,15 @@ const adminMatches = createRoute({
     q: strParam(search.q),
   }),
 })
+// REB-503: «Consuntivo», a match's hours on its deal on Pigro, from the match card and
+// the «Pigro» column of «Match». `mese` is the period shown, a month as `YYYY-MM` or
+// `tutto` for the whole engagement; absent, or anything else, is the current month.
+const adminMatchReport = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/matches/$id/report',
+  component: AdminConsuntivo,
+  validateSearch: (search: Record<string, unknown>): { mese?: string } => ({ mese: periodParam(search.mese) }),
+})
 // P-REB-41: the list, a stub for the new/edit form (Task 20) and a stub for the
 // detail (Task 21). `adminCampaignNew` sits before `adminCampaign` in the tree below --
 // TanStack ranks a static segment over `$id` either way, but the list reads in the
@@ -449,6 +460,7 @@ export const routeTree = root.addChildren([
       adminFreelanceMatchNew,
       adminFreelanceRedirect,
       adminMatches,
+      adminMatchReport,
       adminCampaigns,
       adminCampaignNew,
       adminCampaign,

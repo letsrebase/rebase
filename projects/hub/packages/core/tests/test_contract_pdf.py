@@ -33,6 +33,7 @@ from rebase_core.contracts.fields import (
     italian,
     italian_date,
     mark_proposals,
+    parse_italian_date,
     rendered,
     signer_data,
     survived,
@@ -112,6 +113,32 @@ def test_a_date_is_written_the_way_a_contract_writes_it() -> None:
     assert italian_date(date(2026, 10, 1)) == "1° ottobre 2026"
     assert italian_date(date(2026, 11, 2)) == "2 novembre 2026"
     assert italian_date(date(2027, 1, 31)) == "31 gennaio 2027"
+
+
+def test_parse_italian_date_round_trips() -> None:
+    """A letter printed before its match kept the dates as dates (REB-498) is read back
+    from what it printed: every month, the first with its ordinal, the plain number on
+    every other day, and nothing `italian_date` would not have written."""
+    for month in range(1, 13):
+        for day in (1, 2, 12, 28):
+            printed = date(2026, month, day)
+            assert parse_italian_date(italian_date(printed)) == printed
+    assert parse_italian_date("1° ottobre 2026") == date(2026, 10, 1)
+    assert parse_italian_date("12 ottobre 2026") == date(2026, 10, 12)
+    assert parse_italian_date("31 dicembre 2026") == date(2026, 12, 31)
+    for text in (
+        "1 ottobre 2026",
+        "12° ottobre 2026",
+        "01 ottobre 2026",
+        "31 febbraio 2026",
+        "12 october 2026",
+        "12 Ottobre 2026",
+        "2026-10-12",
+        "12 ottobre",
+        "",
+    ):
+        with pytest.raises(ContractFailed):
+            parse_italian_date(text)
 
 
 def test_a_field_is_the_value_when_known_and_a_labelled_blank_otherwise() -> None:

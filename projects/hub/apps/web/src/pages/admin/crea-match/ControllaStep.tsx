@@ -22,6 +22,7 @@ function ToContracts({ freelancerId }: { freelancerId: string }) {
 /** Step 3: no field, only what is about to happen and the two ways to finish. */
 export function ControllaStep({
   review,
+  giorniPrevisti,
   nome,
   onBack,
   onSave,
@@ -34,6 +35,8 @@ export function ControllaStep({
   freelancerId,
 }: {
   review: Review
+  /** The match's own estimate, beside the letter's sentences: the check does not say it. */
+  giorniPrevisti: number | null
   nome: string
   onBack: () => void
   onSave: () => void
@@ -56,6 +59,7 @@ export function ControllaStep({
         {review.check.riepilogo.map((sentence, index) => (
           <p key={index}>{sentence}</p>
         ))}
+        {giorniPrevisti !== null && <p>{`Giorni previsti: ${giorniPrevisti}`}</p>}
       </div>
       <p>{review.check.cosa_succede}</p>
       <ul className="space-y-2 text-sm">

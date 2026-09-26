@@ -2,6 +2,7 @@
 Every test hands `FakeRenderer`, `FakeDocumenso` and a recording mailbox: nothing here
 runs pandoc, reaches Documenso or sends a mail."""
 
+import json
 import threading
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
@@ -10,6 +11,7 @@ from uuid import UUID
 import pytest
 from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
+from fakes_pigro import DEAL_URL, PIGRO, TOKEN, RecordedPigro, linked_body
 from sqlalchemy import Engine, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -38,8 +40,10 @@ from rebase_core.documenso import (
     WebhookBody,
     outcome_from_webhook,
 )
+from rebase_core.engagements import CAUSE_REFUSED, CAUSE_TIMEOUT, EngagementService
 from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
 from rebase_core.fiscal import FiscalService
+from rebase_core.http import urllib_engagements_call
 from rebase_core.mail import EmailSender, Mail, RecordingSender, ResendSender
 from rebase_core.matches import MatchService
 from rebase_core.models import ContractDocument, Freelancer, Match
@@ -111,6 +115,7 @@ def _signing(
     today: date = TODAY,
     signer: dict[str, Value] | None = None,
     allow_draft: bool = False,
+    engagements: EngagementService | None = None,
 ) -> SigningService:
     return SigningService(
         session,
@@ -122,6 +127,7 @@ def _signing(
         allow_draft=allow_draft,
         today=lambda: today,
         now=lambda: NOW,
+        engagements=engagements,
     )
 
 
@@ -1680,6 +1686,243 @@ def test_sweep_on_an_environment_with_no_documenso_configured_counts_nothing(
     assert result == SweepResult(touched=0, unconfirmed=0)
 
 
+# ---- the link to Pigro, once a letter is signed (REB-499) ----------------------------------
+
+
+class SpyEngagements(EngagementService):
+    """The real engagement service, keeping which matches `link` was asked for, so a
+    test can tell «never asked» from «asked and refused»."""
+
+    def __init__(self, session: Session, http: RecordedPigro) -> None:
+        super().__init__(
+            session,
+            Settings(  # type: ignore[call-arg]
+                _env_file=None,
+                pigro_api_url=PIGRO,
+                pigro_engagements_token=TOKEN,
+                signer_json=json.dumps(SIGNER),
+            ),
+            http,
+            now=lambda: NOW,
+            today=lambda: TODAY,
+        )
+        self.asked: list[UUID] = []
+
+    def link(self, match_id: UUID, admin_id: UUID | None = None) -> MatchRead:
+        self.asked.append(match_id)
+        return super().link(match_id, admin_id)
+
+
+class FailingEngagements(SpyEngagements):
+    """A link that cannot even be built, the way a letter that printed no start fails."""
+
+    def link(self, match_id: UUID, admin_id: UUID | None = None) -> MatchRead:
+        self.asked.append(match_id)
+        raise ContractFailed("letter 2026-001 printed no data-inizio")
+
+
+def _letter_out(
+    session: Session, renderer: FakeRenderer, fake: FakeDocumenso, sender: RecordingSender
+) -> tuple[UUID, ContractDocument, str]:
+    """A match whose framework agreement is already active, sent: its letter `inviato`
+    on Documenso, waiting for the freelancer. (match id, letter, envelope)."""
+    admin_id, freelancer_id, company_id = _setup(session)
+    _active_framework(session, freelancer_id, admin_id)
+    match = _sent(session, renderer, fake, sender, freelancer_id, company_id, admin_id)
+    letter = _letter_of(session, match.id)
+    return match.id, letter, _envelope_of(letter)
+
+
+def _match_row(session: Session, match_id: UUID) -> Match:
+    session.expire_all()
+    match = session.get(Match, match_id)
+    assert match is not None
+    return match
+
+
+def test_confirm_completion_marks_the_match_da_collegare(clean: Session) -> None:
+    """The commit that turns a match `attivo` also marks its link to Pigro due, so the
+    sweep finds it whether or not anything links it now."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
+    fake.sign(envelope, SIGNED_AT)
+
+    assert _signing(clean, renderer, fake, sender)._confirm_completion(letter.id) is True
+
+    match = _match_row(clean, match_id)
+    assert (match.stato, match.pigro_stato, match.pigro_attempted_at) == (
+        "attivo",
+        "da_collegare",
+        None,
+    )
+
+
+def test_finish_links_a_match_that_just_turned_active(clean: Session) -> None:
+    """The webhook's `finish` (and «Aggiorna stato») links the match its signature turned
+    active, once; a second `finish` of the same letter asks the CRM nothing more."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
+    fake.sign(envelope, SIGNED_AT)
+    http = RecordedPigro([(201, linked_body())])
+    engagements = SpyEngagements(clean, http)
+    signing = _signing(clean, renderer, fake, sender, engagements=engagements)
+
+    assert signing.finish(letter.id) is True
+
+    match = _match_row(clean, match_id)
+    assert (match.stato, match.pigro_stato, match.pigro_url) == ("attivo", "collegato", DEAL_URL)
+    [call] = http.calls
+    assert call[:2] == ("PUT", f"{PIGRO}/api/rebase/engagements/{match_id}")
+    # The signature's own steps ran all the same: the sealed copy stored and mailed.
+    stored = _letter_of(clean, match_id)
+    assert (stored.stato, stored.signed_pdf) == ("firmato", fake.signed_pdf(envelope))
+
+    signing.finish(letter.id)
+
+    assert engagements.asked == [match_id]
+    assert len(http.calls) == 1
+
+
+def test_finish_does_not_link_a_refused_letter(clean: Session) -> None:
+    """`_confirm_completion` answers `True` for a rejection too: the match's state, read
+    again, decides, and a match still `in_firma` is never handed to `link`."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
+    fake.reject(envelope, "Il compenso non è quello concordato")
+    http = RecordedPigro([(201, linked_body())])
+    engagements = SpyEngagements(clean, http)
+
+    assert _signing(clean, renderer, fake, sender, engagements=engagements).finish(letter.id)
+
+    match = _match_row(clean, match_id)
+    assert (match.stato, match.pigro_stato) == ("in_firma", None)
+    assert _letter_of(clean, match_id).stato == "annullato"
+    assert engagements.asked == []
+    assert http.calls == []
+
+
+def test_refresh_does_not_link(clean: Session) -> None:
+    """«Aggiorna stato» (and the MCP `refresh_contract`) is an admin waiting on the page:
+    it applies the signature and turns the match active, but never waits on the CRM to
+    open a space. The match stays `da_collegare` for the sweep or «Riprova»."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
+    fake.sign(envelope, SIGNED_AT)
+    http = RecordedPigro([(201, linked_body())])
+    engagements = SpyEngagements(clean, http)
+
+    read = _signing(clean, renderer, fake, sender, engagements=engagements).refresh(letter.id)
+
+    assert read.stato == "firmato"
+    match = _match_row(clean, match_id)
+    assert (match.stato, match.pigro_stato) == ("attivo", "da_collegare")
+    assert engagements.asked == []
+    assert http.calls == []
+
+
+class RaisingEngagements(SpyEngagements):
+    """A link that fails outside the domain's errors: the database gone mid-call."""
+
+    def link(self, match_id: UUID, admin_id: UUID | None = None) -> MatchRead:
+        self.asked.append(match_id)
+        raise OperationalError("UPDATE matches", {}, Exception("server closed the connection"))
+
+
+def test_finish_survives_any_exception_from_the_link(clean: Session) -> None:
+    """The link is `finish`'s last step and nothing depends on it: even an error that is
+    not the domain's is logged and left for the sweep, never raised past a signature
+    that is already done."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
+    fake.sign(envelope, SIGNED_AT)
+    engagements = RaisingEngagements(clean, RecordedPigro([(201, linked_body())]))
+
+    assert _signing(clean, renderer, fake, sender, engagements=engagements).finish(letter.id)
+
+    assert engagements.asked == [match_id]
+    match = _match_row(clean, match_id)
+    assert (match.stato, match.pigro_stato) == ("attivo", "da_collegare")
+    assert _letter_of(clean, match_id).stato == "firmato"
+
+
+def test_finish_leaves_a_link_that_fails_for_the_sweep(clean: Session) -> None:
+    """A link that raises is logged and left for the sweep, as a signed copy that is not
+    stored yet is: the signature is done, and the match waits `da_collegare`."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
+    fake.sign(envelope, SIGNED_AT)
+    engagements = FailingEngagements(clean, RecordedPigro([(201, linked_body())]))
+
+    assert _signing(clean, renderer, fake, sender, engagements=engagements).finish(letter.id)
+
+    assert engagements.asked == [match_id]
+    match = _match_row(clean, match_id)
+    assert (match.stato, match.pigro_stato) == ("attivo", "da_collegare")
+    assert _letter_of(clean, match_id).signed_pdf == fake.signed_pdf(envelope)
+
+
+def test_sweep_retries_errore_matches(clean: Session) -> None:
+    """A match whose last attempt failed is asked again by the sweep, after the
+    documents, and counted as linked."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match_id, letter, envelope = _letter_out(clean, renderer, fake, sender)
+    fake.sign(envelope, SIGNED_AT)
+    _signing(clean, renderer, fake, sender).finish(letter.id)
+    match = _match_row(clean, match_id)
+    match.pigro_stato, match.pigro_errore = "errore", CAUSE_TIMEOUT
+    clean.commit()
+    http = RecordedPigro([(201, linked_body())])
+
+    result = _signing(
+        clean, renderer, fake, sender, engagements=SpyEngagements(clean, http)
+    ).sweep()
+
+    assert result == SweepResult(touched=0, unconfirmed=0, linked=1, link_failed=0)
+    match = _match_row(clean, match_id)
+    assert (match.pigro_stato, match.pigro_errore, match.pigro_url) == (
+        "collegato",
+        None,
+        DEAL_URL,
+    )
+
+
+def test_sweep_links_a_signature_it_confirms_once_and_counts_a_failure(clean: Session) -> None:
+    """The webhook never came: the sweep confirms the letter, and the match it turned
+    active is asked for by the round after the documents, once in the run. A CRM that
+    does not answer is one attempt and one failure, not two."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match_id, _letter, envelope = _letter_out(clean, renderer, fake, sender)
+    fake.sign(envelope, SIGNED_AT)
+    http = RecordedPigro([ConnectionRefusedError("refused")])
+    engagements = SpyEngagements(clean, http)
+
+    result = _signing(clean, renderer, fake, sender, engagements=engagements).sweep()
+
+    assert result == SweepResult(touched=1, unconfirmed=0, linked=0, link_failed=1)
+    assert engagements.asked == [match_id]
+    assert len(http.calls) == 1
+    match = _match_row(clean, match_id)
+    assert (match.stato, match.pigro_stato, match.pigro_errore) == (
+        "attivo",
+        "errore",
+        CAUSE_REFUSED,
+    )
+
+
+def test_sweep_without_engagements_links_nothing(clean: Session) -> None:
+    """A `SigningService` built without the engagement service links nothing, as one
+    without Documenso signs nothing: the match it turns active waits `da_collegare`."""
+    renderer, fake, sender = FakeRenderer(draft=False), FakeDocumenso(), RecordingSender()
+    match_id, _letter, envelope = _letter_out(clean, renderer, fake, sender)
+    fake.sign(envelope, SIGNED_AT)
+
+    result = _signing(clean, renderer, fake, sender).sweep()
+
+    assert result == SweepResult(touched=1, unconfirmed=0, linked=0, link_failed=0)
+    match = _match_row(clean, match_id)
+    assert (match.stato, match.pigro_stato) == ("attivo", "da_collegare")
+
+
 # ---- the recovery actions (REB-407) ------------------------------------------------------
 
 
@@ -2112,11 +2355,22 @@ def test_signing_from_settings_builds_the_service_this_environment_configures(
     assert isinstance(service.sender, ResendSender)
     assert (service.contracts_mail, service.allow_draft) == (CONTRACTS_MAIL, True)
     assert service._signer() == {"rebase-sede": "Milano"}
+    # The link to Pigro (REB-499): the same session and mail sender, and the seam with
+    # time for a new space to be provisioned.
+    engagements = service.engagements
+    assert isinstance(engagements, EngagementService)
+    assert (engagements.session, engagements.settings) == (clean, configured)
+    assert (engagements.http, engagements.sender) == (urllib_engagements_call, service.sender)
 
     # What the API injects wins, `None` included: signing off stays off.
     sender = RecordingSender()
-    overridden = signing_from_settings(configured, renderer, documenso=None, sender=sender)(clean)
+    http = RecordedPigro([(201, linked_body())])
+    overridden = signing_from_settings(
+        configured, renderer, documenso=None, sender=sender, http=http
+    )(clean)
     assert (overridden.documenso, overridden.sender) == (None, sender)
+    assert overridden.engagements is not None
+    assert (overridden.engagements.http, overridden.engagements.sender) == (http, sender)
 
     bare = signing_from_settings(Settings(_env_file=None))(clean)  # type: ignore[call-arg]
     assert isinstance(bare.renderer, ContractRenderer)

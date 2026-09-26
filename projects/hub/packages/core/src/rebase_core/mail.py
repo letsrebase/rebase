@@ -586,3 +586,52 @@ def signed_copy_mail(
         html=_frame(subject, body),
         attachments=(attachment,),
     )
+
+
+# ---- the hours of an engagement (REB-498) -------------------------------------------------
+
+
+def engagement_ready_mail(
+    to: str, *, nome: str, numero: str, azienda: str, deal_url: str, spazio_creato: bool
+) -> Mail:
+    """Sent once a match is linked to its deal on Pigro (spec § 3.7): the letter is
+    active, its hours are logged on Pigro in the project the button opens, rebase reads
+    those hours and nothing else of the space, and, when the link opened the space
+    itself, that Pigro's own mail carries the way in. The same box as the signing mails;
+    the link goes into an attribute and into text, escaped both times."""
+    e = html_escape.escape
+    greeting = f"Ciao {nome}," if nome else "Ciao,"
+    subject = f"La tua lettera n. {numero} è attiva: le ore si registrano su Pigro"
+    active = (
+        f"la lettera di incarico n. {numero} con {azienda} è attiva. Le ore di questo "
+        "incarico si registrano su Pigro, nel progetto che si apre dal bottone qui sotto."
+    )
+    after = [
+        "rebase legge le ore di quel progetto per la rendicontazione al cliente, e "
+        "nient'altro del tuo spazio."
+    ]
+    if spazio_creato:
+        after.append(
+            "Su Pigro abbiamo aperto uno spazio a tuo nome: il link per entrare te lo manda "
+            "Pigro, in una mail a parte."
+        )
+    text = (
+        f"{greeting}\n\n{active}\n\n{deal_url}\n\n"
+        + "".join(f"{paragraph}\n\n" for paragraph in after)
+        + "Noi di rebase\n"
+    )
+    safe_url = e(deal_url, quote=True)
+    small = f'style="margin:24px 0 0 0;font-size:13px;line-height:1.5;color:{INK_QUIET};'
+    body = "\n".join(
+        (
+            f'<p style="margin:0 0 20px 0;">{e(greeting)}</p>',
+            f'<p style="margin:0 0 24px 0;">{e(active)}</p>',
+            _button(safe_url, "Apri il progetto su Pigro"),
+            f'<p {small}word-break:break-all;">'
+            "Se il bottone non si apre, copia questo indirizzo nel browser:<br>"
+            f"{_quiet_link(safe_url, safe_url)}</p>",
+            *(f'<p style="margin:24px 0 0 0;">{e(paragraph)}</p>' for paragraph in after),
+            '<p style="margin:24px 0 0 0;">Noi di rebase</p>',
+        )
+    )
+    return Mail(to=to, subject=subject, text=text, html=_frame(subject, body))

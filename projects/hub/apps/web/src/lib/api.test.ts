@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, admin, applyAsFreelancer, requestPeople } from './api'
+import { ApiError, admin, applyAsFreelancer, matches, requestPeople } from './api'
 
 function answer(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -126,6 +126,33 @@ describe('the api client', () => {
     const spaces = await admin.pigroSpaces()
     expect(spy.mock.calls[0]![0]).toBe('/api/hub/pigro/instances')
     expect(spaces.items[0]!.slug).toBe('studio-ada')
+  })
+
+  it('links a match to Pigro now and reads its hours report, both through the hub (REB-502)', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch')
+    spy.mockResolvedValueOnce(answer(200, { id: 'm1', pigro_stato: 'collegato' }))
+    const linked = await matches.linkPigro('m1')
+    const [url, init] = spy.mock.calls[0]!
+    expect(url).toBe('/api/hub/matches/m1/pigro/link')
+    expect(init?.method).toBe('POST')
+    // The CRM may take the 90 seconds a new space needs: nothing here gives up sooner.
+    expect(init?.signal).toBeUndefined()
+    expect(linked.pigro_stato).toBe('collegato')
+
+    spy.mockResolvedValueOnce(answer(200, { match_id: 'm1', totale_ore: '96.00', avanzamento: '30.00' }))
+    const report = await matches.report('m1')
+    expect(spy.mock.calls[1]![0]).toBe('/api/hub/matches/m1/report')
+    expect(spy.mock.calls[1]![1]?.method ?? 'GET').toBe('GET')
+    // Hours are the API's decimal strings, never floats.
+    expect(report.totale_ore).toBe('96.00')
+  })
+
+  it('reads one match by id, for «Consuntivo»’s title (REB-503)', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { id: 'm1', nome_azienda: 'ACME Srl' }))
+    const match = await matches.get('m1')
+    expect(spy.mock.calls[0]![0]).toBe('/api/hub/matches/m1')
+    expect(spy.mock.calls[0]![1]?.method ?? 'GET').toBe('GET')
+    expect(match.nome_azienda).toBe('ACME Srl')
   })
 
   it('points the admin at the CV route by id', () => {
