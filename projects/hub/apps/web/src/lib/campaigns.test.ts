@@ -1,18 +1,21 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  AZIONE_FATTA_LABELS,
   AZIONE_LABELS,
   CAMPAIGN_STATE_LABELS,
   META_LABELS,
   RECIPIENT_STATE_LABELS,
   campaignMoment,
   defaultSchedule,
+  outcomeLine,
   peopleLabel,
   personalise,
   refetchEvery,
   romeTime,
   romeToday,
   scheduleLabel,
+  share,
 } from './campaigns'
 
 describe('personalise', () => {
@@ -166,5 +169,23 @@ describe('the send button\'s words', () => {
   it('reads a stored moment as the time in Rome', () => {
     expect(romeTime('2026-09-26T08:32:00Z')).toBe('10:32')
     expect(romeTime('2026-12-01T08:32:00Z')).toBe('09:32')
+  })
+})
+
+describe('the outcome in words', () => {
+  it('gives a share of the mails sent, and nothing while none has left', () => {
+    expect(share(3, 8)).toBe('38%')
+    expect(share(0, 8)).toBe('0%')
+    expect(share(2, 0)).toBeUndefined()
+  })
+
+  it('names every action once it is done', () => {
+    expect(Object.keys(AZIONE_FATTA_LABELS).sort()).toEqual(Object.keys(AZIONE_LABELS).sort())
+  })
+
+  it('says what left and what it led to, and what went wrong only when something did', () => {
+    const counts = { destinatari: 10, in_coda: 0, inviate: 8, saltate: 1, fallite: 0, consegnate: 8, rimbalzate: 0, cliccate: 4, entrate: 3, azioni: 2 }
+    expect(outcomeLine(counts, 'cv')).toBe('8 inviate · 8 consegnate · 4 clic · 3 entrati · 2 CV caricati · 1 saltate')
+    expect(outcomeLine({ ...counts, saltate: 0 }, 'entrato')).toBe('8 inviate · 8 consegnate · 4 clic · 3 entrati')
   })
 })
