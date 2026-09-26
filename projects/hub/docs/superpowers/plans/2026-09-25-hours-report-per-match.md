@@ -273,7 +273,10 @@ def test_engagements_token_defaults_empty_and_hides_from_repr() -> None:
 class RebaseEngagement(TenantsBase, PrimaryKeyMixin):
     """One row per hub match (spec 2026-09-25 § 2.2): which space, which customer and
     which deal the door set up for it. `match_id` is the hub's id and the idempotency
-    key; `deal_id` stays NULL between step 3 and step 6 of `EngagementService.ensure`."""
+    key; `deal_id` stays NULL between step 3 and step 6 of `EngagementService.ensure`.
+    `space_created` says the space was opened for this match (or its missing admin
+    created for it): the call that completes the row sends the welcome and answers
+    `spazio_creato` from it, so a call that stopped on the way loses neither."""
 
     __tablename__ = "rebase_engagements"
 
@@ -281,6 +284,7 @@ class RebaseEngagement(TenantsBase, PrimaryKeyMixin):
     tenant_id: Mapped[UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     customer_id: Mapped[UUID | None] = mapped_column(default=None)
     deal_id: Mapped[UUID | None] = mapped_column(default=None)
+    space_created: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 ```
@@ -331,9 +335,9 @@ def welcome(space: Session, settings: Settings, sender: EmailSender | None, owne
 - Create: `packages/core/src/pigrocrm/core/engagements/schemas.py`, `service.py`
 - Modify: `packages/core/src/pigrocrm/core/customers/repository.py`
   (`find_by_name(ragione_sociale) -> Customer | None`: exact, live rows only) and
-  `deals/repository.py` (`find_by_marker(customer_id, marker) -> Deal | None`: the live
-  deal of that customer whose `note` contains the marker, exact substring, at most one
-  by construction)
+  `deals/repository.py` (`find_by_marker(marker) -> Deal | None`: one argument, the
+  marker alone; the live deal anywhere in the space whose `note` contains it, exact
+  substring, under whichever customer it sits now, at most one by construction)
 - Modify: `packages/core/src/pigrocrm/core/work_units/service.py`
   (`actor_to_transition_json`: a `rebase` actor is recorded as `{"kind": "rebase"}`,
   never folded into `agent`; read the function's docstring and keep its shape)
@@ -344,12 +348,15 @@ def welcome(space: Session, settings: Settings, sender: EmailSender | None, owne
 **Interfaces:**
 - Consumes: `TenantService.provision`, `TenantService.availability`, `slugify`,
   `SLUG_MAX` (`tenants/schemas.py`), `welcome` (A3), `CustomerService.create`,
-  `CustomerRepository.match_by_fiscal_id`, the two new exact repository methods
-  (never `CustomerService.list` or `DealService.list`: those are paginated trigram
-  searches, and a first page is not the set), `DealService.create`,
-  `PipelineService.default_stage`, `UserRepository.get_by_email`, `Actor.rebase()`,
-  `RebaseEngagement` (A2), `tenant_database_url`, `tenant_database_name`,
-  `session_factory`, `Settings.public_url`.
+  `CustomerRepository.match_by_fiscal_id`, `CustomerRepository.find_by_name` (tried
+  whenever the VAT lookup finds nothing, not only when the body carries no VAT number
+  at all), `DealRepository.find_by_marker` (one argument, looked up across the whole
+  space before either the customer or the deal step, whatever customer the deal sits
+  under), `DealService.create`, `PipelineService.default_stage`,
+  `UserRepository.get_by_email`, `Actor.rebase()`, `RebaseEngagement` (A2),
+  `tenant_database_url`, `tenant_database_name`, `session_factory`,
+  `Settings.public_url` (never `CustomerService.list` or `DealService.list`: those are
+  paginated trigram searches, and a first page is not the set).
 - Produces:
 
 ```python
@@ -436,26 +443,51 @@ class EngagementService:
     `f"{base[:SLUG_MAX - len(suffix)]}{suffix}"` with `suffix = f"-{n}"` for n from 2
     while `availability(candidate).disponibile` is false; `TenantSignup(slug, nome=
     f"{nome} {cognome}"[:SPACE_NAME_MAX_LENGTH], email, membro=True)`;
-    `TenantService(registry, settings).provision`; then `welcome(space, settings,
-    sender, email, slug, membro=True)` and `sender.send(mail)` when both exist (no
-    request to background it). Write `RebaseEngagement(match_id, tenant_id)` and
-    commit.
+    `TenantService(registry, settings).provision`. The welcome is not sent here.
+    Write `RebaseEngagement(match_id, tenant_id, space_created=<True when this call
+    just provisioned the space, False when it reused an owned one>)` and commit,
+    before the space is touched again: a failure from here on leaves a row that says
+    «space found, deal missing», which step 2 resumes, and that already says whether
+    this match opened the space.
   - **Step 4.** In the space (`_space_session(tenant)`: an engine from
-    `tenant_database_url`, disposed in `finally`): the customer by
-    `CustomerRepository.match_by_fiscal_id(partita_iva)` when the body carries one, else
-    `CustomerRepository.find_by_name(data.rebase.ragione_sociale)`; missing →
-    `CustomerService.create` with `ragione_sociale`, `partita_iva`, `codice_fiscale`,
+    `tenant_database_url`, disposed in `finally`): if it has no user with this address
+    yet (a provisioning a restart cut short after the registry row, whose database a
+    later boot then finished creating), `row.space_created = True` if it was not
+    already, committed, and the admin created now
+    (`UserService.create(UserCreate(email, password=None, nome=full_name(freelancer),
+    ruolo="admin"), Actor.system())`), exactly as `TenantService.provision` creates it,
+    since without one the deal below has no owner. Then, before the customer is
+    touched, the deal carrying this match's marker is looked for across the whole
+    space (`DealRepository.find_by_marker(deal_marker(match_id))`, one argument, an
+    exact substring match, whatever customer it now sits under): it is the deal a
+    previous call created and failed to record, and its customer is the one that call
+    found or created, even after the freelancer renamed it or changed its VAT number.
+    Found, its `customer_id` and `id` are taken as they are and step 5 is skipped. Not
+    found, the customer is looked up: by
+    `CustomerRepository.match_by_fiscal_id(partita_iva)` when the body carries a VAT
+    number, then by `CustomerRepository.find_by_name(data.rebase.ragione_sociale)`
+    whenever that VAT lookup finds nothing too, not only when the body carries no VAT
+    number at all (so a customer created before the signer data had a VAT number keeps
+    that one customer, rather than gain a second the day the number arrives); missing
+    → `CustomerService.create` with `ragione_sociale`, `partita_iva`, `codice_fiscale`,
     `indirizzo`, `pec`, `codice_sdi` and the note of § 2.3 step 4, as `Actor.rebase()`.
-  - **Step 5.** `DealRepository.find_by_marker(customer_id, deal_marker(match_id))`,
-    else `DealService.create(DealCreate(nome=deal_name(...), customer_id,
+  - **Step 5.** Only when step 4 found no deal by its marker:
+    `DealService.create(DealCreate(nome=deal_name(...), customer_id,
     tariffa_oraria=(compenso / HOURS_PER_DAY).quantize(Decimal("0.000001")),
     ore_preventivate=giorni_previsti * HOURS_PER_DAY or None,
     data_chiusura_prevista=data_fine, owner_id=<the admin whose email is the
     freelancer's, via UserRepository.get_by_email>, note=<§ 2.3 step 5's sentence,
     a newline, deal_marker(match_id)>), Actor.rebase())` (the default open stage comes
-    from `pipeline_stage_id=None`). A deal with the same name and no marker is not ours.
+    from `pipeline_stage_id=None`). A deal with the same name and no marker is not ours,
+    and is left alone. Once the customer and deal exist, and only when
+    `row.space_created` is true, the welcome is sent now (`welcome(space, settings,
+    sender, email, slug, membro=True)`, `sender.send(mail)` when both exist, no
+    request to background it): the call that completes the engagement sends it, not
+    the one that opened the space, so a call that stops on the way sends nothing and
+    its retry sends it once the deal exists; a call that stops after this line has its
+    retry send it again, which is two welcomes rather than none.
   - **Step 6.** `row.customer_id`, `row.deal_id`, commit, answer `EngagementRead(...,
-    spazio_creato=<step 3 provisioned>, creato=True)`.
+    spazio_creato=row.space_created, creato=True)`.
 
 - [ ] **Step 1: Write the failing tests** (each on the container; the fixture, shaped like `test_tenants_api.py`'s `_serving` but on core alone, reads the registry at teardown and drops every space it finds there, so a slug the test did not choose is dropped too and nothing else is; `public_url="https://pigro.test"` in the settings):
 
@@ -769,7 +801,11 @@ class EngagementService:
   `pigro_mail_sent_at = now()` as a claim (`claimed = True`). Commit. Only when
   `claimed`: `sender.send(engagement_ready_mail(...))`; a refusal re-locks, sets
   `pigro_mail_sent_at = None`, commits. Two `link` calls racing on one match send one
-  mail: the second sees the claim under the lock.
+  mail: the second sees the claim under the lock. Stated limit: a crash between that
+  commit and the provider's answer is a rare, accepted gap, not a bug: the claim is
+  taken under the match lock and given back only on a refusal from the provider, never
+  by a timeout or a process dying outright, so such a match keeps its claim with no
+  mail sent until an admin notices and clears `pigro_mail_sent_at` by hand.
   With `admin_id`: `AdminActionService(session).record(entity_type="match",
   entity_id=match_id, kind="pigro_link", admin_id=admin_id, payload={"esito":
   stato, "errore": pigro_errore})`. Answer `MatchService(session).get(match_id)`.
@@ -779,13 +815,18 @@ class EngagementService:
   `report`: not `collegato` → `InvalidState("match", <the state's sentence from
   match_words>)`; `da = min(start, a)` where `start` is `lettera_data_inizio`, or
   `parse_italian_date(letter.data["data-inizio"])` when the column is NULL (a match
-  older than 0021), or the match's `created_at` date when the letter has no start
-  either; `a = today()`; a letter that starts in the future therefore asks for today
-  alone and answers an empty report, never a reversed range; the span is walked
-  in consecutive windows of at most `REPORT_MAX_DAYS` days (`[da, da+800]`,
-  `[da+801, ...]`, up to `a`), one `GET .../report?da=&a=` each, the `giorni` rows
-  concatenated and the `deal` taken from the last answer; any non-200 →
-  `PigroUnavailable` with the seam's sentence; then `group_report`.
+  older than migration 0021, backfilled with no `lettera_data_inizio`: it still reports
+  from the letter's printed start, or its own creation date, never from today), or the
+  match's `created_at` date when the letter has no start either; `a = today()`; a
+  letter that starts in the future therefore asks for today alone and answers an empty
+  report, never a reversed range; the span is walked in consecutive windows of at most
+  `REPORT_MAX_DAYS` days (`[da, da+800]`, `[da+801, ...]`, up to `a`), one `GET
+  .../report?da=&a=` each, so an engagement over 800 days is read whole and nothing of
+  it is silently dropped: the `giorni` rows of every window concatenated,
+  `ore_fatturate` and `ore_non_fatturate` summed across them, an invoice that has hours
+  in two windows merged into one row with both added together, and the `deal` taken
+  from the last window's answer; any non-200 → `PigroUnavailable` with the seam's
+  sentence; then `group_report`.
 
 ```python
 def engagement_ready_mail(to: str, *, nome: str, numero: str, azienda: str, deal_url: str, spazio_creato: bool) -> Mail:
@@ -873,11 +914,17 @@ month, kept in the URL; the progress line «96 ore, 12 giorni su 40 previsti (30
 «96 ore, 12 giorni»; a `Table` per day (Data, Ore, Descrizione, Fatture, the day's
 list joined with a comma, «da fatturare» when empty); «Per settimana» and «Per mese» as
 two small tables of the selected period; «Fatture» (Numero, Data, Stato, Incasso, Ore)
-scoped to the period: with a month selected, only the invoices the shown days sit on,
-each with the hours of those days on it; with «Tutto l'incarico», every invoice with all
-its hours (the day rows carry their `fatture`, so `lib/report.ts` recomputes the
-invoice hours per period from the days alone, and an invoice spanning two months shows
-in both with each month's hours; tested on a two-month invoice). Loading, an error
+scoped to the period: with a month selected, an invoice every one of whose days falls
+in that month keeps the CRM's own hours unchanged; one that spans months is recomputed
+from the days alone (the day rows carry their `fatture`, so `lib/report.ts` sums each
+shown day's hours per invoice rather than trust the CRM's whole-engagement figure) and
+shows in every month it touches, each with that month's days' hours; with «Tutto
+l'incarico», every invoice with the CRM's own figures, untouched (tested on a
+two-month invoice). Stated limit: a day whose hours sit on two invoices gives its
+whole total to each, since a day's total is not split between them; on a
+month-spanning invoice sharing such a day with another invoice, that day's hours can
+therefore be counted twice across the month's invoice rows, a case accepted rather
+than solved here. Loading, an error
 sentence from the API (a `409` shows the state's sentence, a `502` «Pigro non
 risponde», a `503` the not-configured sentence), each as a paragraph. All data from one
 `matches.report(id)` call for the whole engagement; the month filter slices `per_giorno`
