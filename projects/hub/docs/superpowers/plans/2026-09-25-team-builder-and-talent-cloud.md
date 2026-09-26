@@ -548,7 +548,9 @@ def names_the_company(riassunto: str, azienda: str) -> bool:
     `software`, `studio`, `servizi` and their kind), case-insensitively, inside the
     summary as a whole word: «Acme S.r.l.» is named by «ACME rifà il gestionale», but
     «Logistica Veneta S.r.l.» is not named by «un'azienda di logistica». Tests: «HP»
-    flagged for HP, «chip» not; «IBM Italia» flagged for «IBM Italia S.r.l.»."""
+    flagged for HP, «chip» not; «IBM Italia» flagged for «IBM Italia S.r.l.». A name made
+    only of ordinary words («Di Più») is beyond any matcher and stays the admin's eye
+    before each send (a stated limit, spec § 3.6)."""
 
 class TeamRequestService:
     def __init__(self, session: Session, *, settings: Settings, sender: EmailSender | None = None, tracker: Tracker | None = None, now=utcnow) -> None: ...

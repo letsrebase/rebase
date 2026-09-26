@@ -329,6 +329,9 @@ ordinary text), or any distinctive word of it
 words «logistica», «software», «studio», «servizi» and their kind do not count, since
 the prompt itself describes a company by its kind); the admin's
 «Salva il riassunto» refuses the same way, so the summary is fixed where it is written.
+A name made only of ordinary words («Di Più») is beyond any matcher and stays the
+admin's eye: the admin reads the summary before every send, and the prompt already
+tells the model to name no company; a stated limit, not a gap to close.
 
 ## 4. The private face
 
