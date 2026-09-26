@@ -115,6 +115,9 @@ class CampaignCounts(BaseModel):
     fallite: int = 0
     consegnate: int = 0
     rimbalzate: int = 0
+    cliccate: int = 0
+    entrate: int = 0
+    azioni: int = 0
 
 
 class CampaignRead(BaseModel):
@@ -126,6 +129,7 @@ class CampaignRead(BaseModel):
     fonte: str
     stato_percorso: str | None
     filtri: dict[str, object] | None
+    segue_id: UUID | None
     oggetto: str
     testo: str
     bottone_testo: str
@@ -165,6 +169,14 @@ class RecipientRead(BaseModel):
     inviata_at: datetime | None
     consegnata_at: datetime | None
     rimbalzata_at: datetime | None
+    primo_clic_at: datetime | None
+    reclamo_at: datetime | None
+    entrato_at: datetime | None
+    azione_at: datetime | None
+    # Read at detail time, never stored: the login or the card carries this campaign's
+    # link (REB-426), so the mail was the door (spec § 4.3).
+    entrato_dalla_mail: bool = False
+    azione_dalla_mail: bool = False
 
 
 class CampaignDetail(BaseModel):

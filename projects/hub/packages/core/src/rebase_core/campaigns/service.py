@@ -5,7 +5,7 @@ test."""
 import re
 import secrets
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -36,7 +36,7 @@ from rebase_core.campaigns.states import ENTITY, JOURNEY_STATES, PIGRO_LATER
 from rebase_core.campaigns.templates import STATE_TEMPLATES
 from rebase_core.config import Settings
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
-from rebase_core.models import Campaign, CampaignRecipient
+from rebase_core.models import Campaign, CampaignRecipient, Freelancer, Login, User
 
 NOT_A_DRAFT = "Si modifica solo una bozza: riportala in bozza prima."
 ROME = ZoneInfo("Europe/Rome")
@@ -183,11 +183,48 @@ class CampaignService:
             .where(CampaignRecipient.campaign_id == campaign_id)
             .order_by(CampaignRecipient.email)
         ).all()
+        entered, acted = self._from_mail(campaign, rows)
         return CampaignDetail(
             campagna=CampaignRead.model_validate(campaign),
             conteggi=self._counts([campaign_id]).get(campaign_id, CampaignCounts()),
-            destinatari=[RecipientRead.model_validate(r) for r in rows],
+            destinatari=[
+                RecipientRead.model_validate(r).model_copy(
+                    update={
+                        "entrato_dalla_mail": r.id in entered,
+                        "azione_dalla_mail": r.id in acted,
+                    }
+                )
+                for r in rows
+            ],
         )
+
+    def _from_mail(
+        self, campaign: Campaign, rows: Sequence[CampaignRecipient]
+    ) -> tuple[set[UUID], set[UUID]]:
+        """Which stamped rows came from this very mail (spec § 4.3, § 6.2). A login counts
+        when it carries the campaign's slug and the row's own code: the slug alone is also
+        on a forwarded mail. A card created for `profilo_creato` counts when it stored the
+        slug. Two queries for the whole list."""
+        pairs = set(
+            self.session.execute(
+                select(func.lower(User.email), Login.utm_term)
+                .join(User, User.id == Login.user_id)
+                .where(Login.utm_campaign == campaign.slug)
+            ).all()
+        )
+        entered = {r.id for r in rows if r.entrato_at is not None and (r.email, r.codice) in pairs}
+        if campaign.azione == "entrato":
+            return entered, entered
+        if campaign.azione != "profilo_creato":
+            return entered, set()
+        cards = set(
+            self.session.scalars(
+                select(func.lower(User.email))
+                .join(Freelancer, Freelancer.user_id == User.id)
+                .where(Freelancer.utm_campaign == campaign.slug, Freelancer.deleted_at.is_(None))
+            )
+        )
+        return entered, {r.id for r in rows if r.azione_at is not None and r.email in cards}
 
     def send_test(
         self, campaign_id: UUID, admin: AdminRead, sender: CampaignSender
@@ -366,6 +403,9 @@ class CampaignService:
                 func.count(case((r.stato == "fallita", 1))),
                 func.count(r.consegnata_at),
                 func.count(r.rimbalzata_at),
+                func.count(r.primo_clic_at),
+                func.count(r.entrato_at),
+                func.count(r.azione_at),
             )
             .where(r.campaign_id.in_(ids))
             .group_by(r.campaign_id)
@@ -379,6 +419,9 @@ class CampaignService:
                 fallite=row[5],
                 consegnate=row[6],
                 rimbalzate=row[7],
+                cliccate=row[8],
+                entrate=row[9],
+                azioni=row[10],
             )
             for row in rows
         }
