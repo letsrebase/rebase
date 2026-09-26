@@ -29,6 +29,7 @@ from rebase_core.errors import LlmUnavailable, NotFound, TeamBuilderOff, Validat
 from rebase_core.llm import UNAVAILABLE_SENTENCE, LlmRequest, LlmResponse, RecordingCall
 from rebase_core.models import Freelancer, FreelancerCard, TeamProposal, User
 from rebase_core.team_builder import (
+    NO_FIT_SENTENCE,
     PROPOSAL_MAX_TOKENS,
     PROPOSAL_SCHEMA,
     TeamBuilder,
@@ -227,7 +228,9 @@ def logs(clean: Session, caplog: pytest.LogCaptureFixture) -> pytest.LogCaptureF
 def test_catalogue_is_stable_and_anonymous(clean: Session) -> None:
     first = _talent(clean, 1, tariffa=Decimal("450.00"), remoto="ibrido")
     second = _talent(clean, 2, tariffa=None, remoto=None)
-    third = _talent(clean, 3, card={**CARD, "ruolo": "Designer", "luogo": None})
+    third = _talent(
+        clean, 3, tariffa=Decimal("200.00"), card={**CARD, "ruolo": "Designer", "luogo": None}
+    )
 
     catalogue, positions = catalogue_lines(clean)
 
@@ -261,8 +264,9 @@ def test_catalogue_is_stable_and_anonymous(clean: Session) -> None:
     }
     assert (by_id[second]["modalita"], by_id[second]["fascia"]) == (None, None)
     assert (by_id[third]["ruolo"], by_id[third]["luogo"]) == ("Designer", None)
+    assert by_id[third]["fascia"] == "fino a 300"  # 200 x 1.4 = 280
     # No name, no link, no summary, no rate, no vetted flag, no id of ours.
-    for secret in ("Lovelace", "Ada", "github", "http", "@", "sintesi", "450", "vetted"):
+    for secret in ("Lovelace", "Ada", "github", "http", "@", "sintesi", "450", "200", "vetted"):
         assert secret not in catalogue
     for freelancer_id in positions:
         assert str(freelancer_id) not in catalogue
@@ -464,6 +468,57 @@ def test_engine_drops_remote_members_on_a_local_need(
     assert [m.freelancer_id for m in remote_ok.team] == [remote, unknown, hybrid, on_site]
     assert "local need" in logs.text
     assert f"{ids[remote]!r}" in logs.text and f"{ids[unknown]!r}" in logs.text
+
+
+@pytest.mark.parametrize("dropped_by", ["on site", "unknown ids"])
+def test_a_team_dropped_whole_carries_the_hubs_sentence(clean: Session, dropped_by: str) -> None:
+    """The model's summary describes the team it chose: when the checks leave nobody of
+    it, the page says nobody fits rather than describing people who are not there."""
+    remote = _talent(clean, 1, remoto="remoto")
+    unknown = _talent(clean, 2, remoto=None)
+    ids = _positions(clean)
+    team = (
+        [_member(ids[remote]), _member(ids[unknown])]
+        if dropped_by == "on site"
+        else [_member("t9"), _member("t12")]
+    )
+    llm = RecordingCall([proposal_response(team, locale=dropped_by == "on site", dove="Bari")])
+
+    read = _builder(clean, llm).propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
+    )
+
+    assert (read.riassunto, read.team) == (NO_FIT_SENTENCE, [])
+    assert read.economia == {"giorno": None, "mese": None, "giorni_mese": 22}
+    [row] = _rows(clean)
+    assert (row.riassunto, row.team) == (NO_FIT_SENTENCE, [])
+    assert row.luogo == {"locale": dropped_by == "on site", "dove": "Bari"}
+
+
+def test_an_empty_catalogue_asks_nobody(clean: Session) -> None:
+    _talent(clean, 1, deleted=True)  # a card, but not in the catalogue
+    llm = RecordingCall([])  # any call would fail on an empty script
+    capture = FakeCapture()
+
+    read = _builder(clean, llm, tracker=Tracker(capture)).propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
+    )
+
+    assert llm.requests == []
+    assert (read.riassunto, read.team) == (NO_FIT_SENTENCE, [])
+    assert read.luogo == {"locale": False, "dove": None}
+    assert read.economia == {"giorno": None, "mese": None, "giorni_mese": 22}
+    # The row is written all the same, so «Rigenera» and a later read find it; it cost
+    # nothing, and says so.
+    [row] = _rows(clean)
+    assert row.id == read.id
+    assert (row.model, row.input_tokens, row.output_tokens, row.cache_read_tokens) == ("", 0, 0, 0)
+    [(_, _, properties)] = capture.calls
+    assert (properties["persone"], properties["input_tokens"], properties["output_tokens"]) == (
+        0,
+        0,
+        0,
+    )
 
 
 def test_a_member_gone_during_the_call_is_dropped(clean: Session) -> None:
@@ -759,6 +814,55 @@ def test_public_read_hides_ids_and_luogo(clean: Session) -> None:
     assert builder.get(public.id, public=True) == public
     with pytest.raises(NotFound):
         builder.get(uuid7(), public=True)
+
+
+@pytest.mark.parametrize("change", ["deleted", "scartato"])
+def test_a_read_leaves_out_who_left_the_catalogue(clean: Session, change: str) -> None:
+    staying = _talent(clean, 1)
+    leaving = _talent(clean, 2, tariffa=Decimal("300.00"))
+    ids = _positions(clean)
+    llm = RecordingCall([proposal_response([_member(ids[staying]), _member(ids[leaving])])])
+    builder = _builder(clean, llm)
+    proposal = builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE), origine="admin", user_id=None
+    )
+    row = clean.get(Freelancer, leaving)
+    assert row is not None
+    if change == "deleted":
+        row.deleted_at = NOW
+    else:
+        row.stato = "scartato"
+    clean.commit()
+
+    read = builder.get(proposal.id, public=False)
+
+    assert [(m.posizione, m.freelancer_id) for m in read.team] == [(1, staying)]
+    assert read.economia["giorno"] == Band(min=500, max=650)  # the one left, alone
+    [stored] = _rows(clean)
+    assert len(stored.team) == 2  # the row keeps them
+
+
+def test_a_read_skips_a_card_that_no_longer_validates(
+    clean: Session, logs: pytest.LogCaptureFixture
+) -> None:
+    first = _talent(clean, 1)
+    second = _talent(clean, 2)
+    ids = _positions(clean)
+    llm = RecordingCall([proposal_response([_member(ids[first]), _member(ids[second])])])
+    builder = _builder(clean, llm)
+    proposal = builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE), origine="admin", user_id=None
+    )
+    card = clean.get(FreelancerCard, second)
+    assert card is not None
+    card.card = {"ruolo": "Ruolo segreto", "anni": "nove"}
+    clean.commit()
+
+    read = builder.get(proposal.id, public=True)
+
+    assert [m.posizione for m in read.team] == [1]
+    assert f"{proposal.id}: member 2" in logs.text and "not a card" in logs.text
+    assert "Ruolo segreto" not in logs.text
 
 
 def test_proposal_row_keeps_the_tokens_and_origin(clean: Session) -> None:

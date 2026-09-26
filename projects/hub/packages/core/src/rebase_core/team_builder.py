@@ -18,7 +18,9 @@ all of it here); a refusal, a cut answer or a body that is not the shape is
 already in the team, drops that line; so does, when the description asks for people on
 site, a member whose work mode is remote or unknown, and a member who left the catalogue
 while Claude was writing. What was dropped is logged by position, never by anything the
-model wrote.
+model wrote. When the checks drop everyone the model chose, its summary describes a team
+that is not there, and the hub's own sentence (`NO_FIT_SENTENCE`) takes its place; an
+empty catalogue asks nobody and answers that sentence at once, for free.
 
 **The economics are the hub's.** Each member's band comes from their own rate
 (`bands.py`), read when the proposal is read, and the team's bands are their sum; the
@@ -66,6 +68,13 @@ ENTITY = "team_proposal"
 # the whole catalogue (global-constraints.md: 8000 for a proposal, 2000 for a card).
 PROPOSAL_MAX_TOKENS = 8000
 OFF_SENTENCE = "Il team builder è spento."
+# The summary of a proposal with nobody in it, when the hub rather than the model is the
+# one who knows (spec § 3.2: «an empty team and the summary's sentence»): the catalogue
+# is empty, so nobody was asked, or the checks dropped everyone the model chose, so its
+# own summary describes a team that is not there.
+NO_FIT_SENTENCE = "Al momento nessun profilo corrisponde alla richiesta."
+# `TeamProposal.model` when no model was asked: an empty catalogue costs no call.
+NO_CALL_MODEL = ""
 # How long a proposal can be regenerated (spec § 3.2): the same day a visitor asked it.
 PREVIOUS_MAX_AGE = timedelta(days=1)
 _PREVIOUS_REFUSED = "la proposta da rigenerare non esiste o è scaduta"
@@ -349,6 +358,21 @@ class TeamBuilder:
             raise ValueError(f"unknown origin {origine!r}")
         previous = self._previous(data.previous_id, origine=origine, user_id=user_id)
         catalogue, positions = catalogue_lines(self.session)
+        if not positions:
+            # Nobody has a card: nothing for Claude to choose from, and nothing to pay
+            # for. The row is still written, so «Rigenera» and a later read find it.
+            logger.info("team proposal: the catalogue is empty, no call made")
+            return self._write(
+                data,
+                previous,
+                origine=origine,
+                user_id=user_id,
+                riassunto=NO_FIT_SENTENCE,
+                luogo={"locale": False, "dove": None},
+                team=[],
+                bands=[],
+                response=None,
+            )
         request = proposal_prompt(catalogue, data, previous, positions=positions)
         # Claude takes seconds to tens of seconds: the transaction ends here, so no
         # pooled connection waits on it. The row is written in the next one.
@@ -356,19 +380,61 @@ class TeamBuilder:
         response = self.llm.complete(request)
         answer = _answer_from(response)
         team, bands = self._team(answer, positions)
+        riassunto = answer.riassunto
+        if answer.team and not team:
+            # The model's summary describes the team it chose; nobody of it is left.
+            logger.warning("team proposal: every member dropped, the summary is the hub's")
+            riassunto = NO_FIT_SENTENCE
+        return self._write(
+            data,
+            previous,
+            origine=origine,
+            user_id=user_id,
+            riassunto=riassunto,
+            luogo=answer.luogo.model_dump(),
+            team=team,
+            bands=bands,
+            response=response,
+        )
+
+    def get(self, proposal_id: UUID, *, public: bool) -> TeamProposalRead:
+        row = self.session.get(TeamProposal, proposal_id)
+        if row is None:
+            raise NotFound(ENTITY, proposal_id)
+        return self._read(row, public=public)
+
+    # ---- helpers -----------------------------------------------------------------------
+
+    def _write(
+        self,
+        data: TeamProposalCreate,
+        previous: TeamProposal | None,
+        *,
+        origine: str,
+        user_id: UUID | None,
+        riassunto: str,
+        luogo: dict[str, Any],
+        team: list[dict[str, Any]],
+        bands: list[Band | None],
+        response: LlmResponse | None,
+    ) -> TeamProposalRead:
+        """The row, the event and the read: `response` is the call's usage, `None` when
+        no call was made (every count 0, `model` empty)."""
         day, month = team_bands(bands)
+        input_tokens = response.input_tokens if response is not None else 0
+        output_tokens = response.output_tokens if response is not None else 0
         row = TeamProposal(
             descrizione=data.descrizione,
             nota=data.nota,
             previous_id=previous.id if previous is not None else None,
-            riassunto=answer.riassunto,
-            luogo=answer.luogo.model_dump(),
+            riassunto=riassunto,
+            luogo=luogo,
             team=team,
             economia=_economia(day, month, dump=True),
-            model=response.model,
-            input_tokens=response.input_tokens,
-            output_tokens=response.output_tokens,
-            cache_read_tokens=response.cache_read_tokens,
+            model=response.model if response is not None else NO_CALL_MODEL,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_tokens=response.cache_read_tokens if response is not None else 0,
             origine=origine,
             user_id=user_id,
             created_at=self.now(),
@@ -381,19 +447,11 @@ class TeamBuilder:
                 {
                     "origine": origine,
                     "persone": len(team),
-                    "input_tokens": response.input_tokens,
-                    "output_tokens": response.output_tokens,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
                 },
             )
         return self._read(row, public=origine == "pubblico")
-
-    def get(self, proposal_id: UUID, *, public: bool) -> TeamProposalRead:
-        row = self.session.get(TeamProposal, proposal_id)
-        if row is None:
-            raise NotFound(ENTITY, proposal_id)
-        return self._read(row, public=public)
-
-    # ---- helpers -----------------------------------------------------------------------
 
     def _previous(
         self, previous_id: UUID | None, *, origine: str, user_id: UUID | None
@@ -475,21 +533,22 @@ class TeamBuilder:
 
     def _read(self, row: TeamProposal, *, public: bool) -> TeamProposalRead:
         """The row as a page reads it, with each member's card, work mode and band as
-        they are now (§ 2.1), and the team's bands summed from those. A member whose
-        card is gone since (a CV replaced and not described yet, a hard delete) is left
-        out of the read; the row keeps them."""
+        they are now (§ 2.1), and the team's bands summed from those. Only who is still
+        `cloud_visible` is read: a member deleted, turned down or left without a card
+        since the proposal is left out, and so is one whose stored card no longer
+        validates, logged by position; the row keeps them all."""
         ids = [UUID(member["freelancer_id"]) for member in row.team]
         found: dict[UUID, tuple[str | None, Decimal | None, Any]] = {}
         if ids:
             rows = self.session.execute(
-                select(
-                    Freelancer.id,
-                    Freelancer.remoto,
-                    Freelancer.tariffa_giornaliera,
-                    FreelancerCard.card,
-                )
-                .join(FreelancerCard, FreelancerCard.freelancer_id == Freelancer.id)
-                .where(Freelancer.id.in_(ids))
+                cloud_visible(
+                    select(
+                        Freelancer.id,
+                        Freelancer.remoto,
+                        Freelancer.tariffa_giornaliera,
+                        FreelancerCard.card,
+                    )
+                ).where(Freelancer.id.in_(ids))
             ).all()
             found = {
                 freelancer_id: (remoto, tariffa, card)
@@ -498,15 +557,23 @@ class TeamBuilder:
         members: list[TeamMemberRead] = []
         for stored in row.team:
             freelancer_id = UUID(stored["freelancer_id"])
-            remoto, tariffa, card = found.get(freelancer_id, (None, None, None))
-            if not isinstance(card, dict):
+            if freelancer_id not in found:
                 logger.info(
-                    "team proposal %s: member %s left out of the read: no card",
+                    "team proposal %s: member %s left out of the read: not in the catalogue",
                     row.id,
                     stored["posizione"],
                 )
                 continue
-            scheda = Card.model_validate(card)
+            remoto, tariffa, card = found[freelancer_id]
+            try:
+                scheda = Card.model_validate(card)
+            except ValidationError:
+                logger.warning(
+                    "team proposal %s: member %s left out of the read: the card is not a card",
+                    row.id,
+                    stored["posizione"],
+                )
+                continue
             members.append(
                 TeamMemberRead(
                     posizione=stored["posizione"],

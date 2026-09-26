@@ -31,6 +31,11 @@ BANDS: tuple[tuple[int, int | None], ...] = (
 )
 
 
+# Between a figure and «€», as the web's `formatEuro` (`Intl.NumberFormat('it-IT')`)
+# writes it: a line never breaks between the two.
+_NBSP = "\u00a0"
+
+
 def _euro(amount: int) -> str:
     """Whole euro written the Italian way: `17.600`, not `17,600` or `17600`."""
     return f"{amount:,}".replace(",", ".")
@@ -44,14 +49,19 @@ class Band(BaseModel):
     max: int | None
 
     def bounds(self) -> str:
-        """«400–500», «oltre 800»: the band as the catalogue gives it to the engine."""
+        """«400–500», «oltre 800», «fino a 300»: the band as the catalogue gives it to
+        the engine. A band from nothing says only its top: «0–300» reads as a price that
+        could be nothing."""
         if self.max is None:
             return f"oltre {_euro(self.min)}"
+        if self.min == 0:
+            return f"fino a {_euro(self.max)}"
         return f"{_euro(self.min)}–{_euro(self.max)}"
 
     def label(self, per: Literal["giorno", "mese"] = "giorno") -> str:
-        """«400–500 € al giorno», «oltre 800 € al giorno», «17.600–23.100 € al mese»."""
-        return f"{self.bounds()} € al {per}"
+        """«400–500 € al giorno», «oltre 800 € al giorno», «fino a 6.600 € al mese»,
+        with a non-breaking space before «€»."""
+        return f"{self.bounds()}{_NBSP}€ al {per}"
 
 
 def band_containing(price: Decimal) -> Band:
