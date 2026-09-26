@@ -168,6 +168,8 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "add_company_comment",
             "guide_stats",
             "login_stats",
+            "list_campagne",
+            "get_campagna",
             "list_matches",
             "get_match",
             "preview_match",

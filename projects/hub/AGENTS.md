@@ -75,6 +75,14 @@ a `SigningService` over `FakeDocumenso`.
 - `close_match`: «Chiudi match», the engagement ends.
 - `set_freelancer_tax_data`: saves the tax data; answers that they are saved, never the values.
 
+The campaigns are read-only over MCP (P-REB-41 phase 2), so an agent reports on a
+campaign without a terminal:
+
+- `list_campagne`: every campaign, newest first, with its `conteggi`, clicks, entries and
+  actions included.
+- `get_campagna`: one campaign, with each person's outcome, and `entrato_dalla_mail` /
+  `azione_dalla_mail` when the mail's own link was the door.
+
 ## The guide is a generated file, committed, and easy to leave stale
 
 `content/guida-primi-passi-freelance.md` is typeset by `tools/build_guide_pdf.py`, with
