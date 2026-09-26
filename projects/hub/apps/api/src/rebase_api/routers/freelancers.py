@@ -157,8 +157,6 @@ def apply(
         read, created = service.apply(
             data, cv.file.read(), cv.filename or "", cv.content_type or ""
         )
-        if created:
-            background.add_task(write_after_response, open_session, llm, read.id)
     if not created and sender is not None:
         mail = UserService(session, settings).request_link(data.email, note=ALREADY_HAS_CARD_NOTE)
         if mail is not None:
@@ -171,4 +169,8 @@ def apply(
             cv=cv is not None,
             utm=data.utm,
         )
+    # Last: background tasks run in order, and the completion event must not wait
+    # behind the seconds Claude takes to write the card.
+    if created and cv is not None:
+        background.add_task(write_after_response, open_session, llm, read.id)
     return Ack()

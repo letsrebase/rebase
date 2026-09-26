@@ -903,6 +903,23 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     assert client.post(f"/api/hub/freelancers/{MISSING}/card").status_code == 404
 
 
+def test_regenerating_without_a_key_is_the_team_builders_503(
+    client: TestClient, admin: None, sender: RecordingSender, llm: RecordingCall
+) -> None:
+    """«Rigenera scheda» on an environment with no key says so, rather than answering the
+    card unchanged as if it had been written again."""
+    _login(client, sender)
+    freelancer_id = _apply_with_text(client)
+    client.app.dependency_overrides[get_llm] = lambda: None  # type: ignore[attr-defined]
+
+    refused = client.post(f"/api/hub/freelancers/{freelancer_id}/card")
+
+    assert refused.status_code == 503
+    assert refused.json() == {"detail": "Il team builder è spento."}
+    # Reading still works: the card written earlier is there.
+    assert client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()["card"] == CARD
+
+
 def test_clearing_the_cv_drops_the_anonymous_card(
     client: TestClient,
     admin: None,

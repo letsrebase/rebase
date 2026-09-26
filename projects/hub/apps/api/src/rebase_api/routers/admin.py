@@ -31,6 +31,7 @@ from rebase_core.audit import AdminActionRead
 from rebase_core.cards import CardWriter
 from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
+from rebase_core.errors import TeamBuilderOff
 from rebase_core.freelancers import FreelancerService
 from rebase_core.logins import LoginService
 from rebase_core.mail import EmailSender, Mail
@@ -230,7 +231,10 @@ def regenerate_freelancer_card(
 ) -> FreelancerCardRead:
     """«Rigenera scheda»: the card written again from the current CV, now, even from the
     CV that last failed, which is otherwise not tried again until it changes. A failure
-    answers 200 with the previous card and `error`, as the page shows it."""
+    answers 200 with the previous card and `error`, as the page shows it; no key answers
+    the team builder's own 503, rather than the card unchanged as if written again."""
+    if llm is None:
+        raise TeamBuilderOff("Il team builder è spento.")
     return CardWriter(session, llm).write(freelancer_id, force=True)
 
 

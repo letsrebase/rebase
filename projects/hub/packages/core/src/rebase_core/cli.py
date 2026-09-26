@@ -184,8 +184,10 @@ def cards_refresh(limit: int) -> int:
     """`rebase cards-refresh [--limit N]`: the anonymous card of every freelancer whose CV
     has none yet, or has changed since, `limit` at a time, the oldest first (REB-510).
     Run once after the deploy that brings the key, and again until it prints «0 schede
-    scritte»: a CV that failed is not tried again until it changes, so the runs end.
-    Without a key it says so, rather than printing «0 schede scritte» for ever."""
+    scritte, 0 non riuscite». A CV that failed on its own account is not tried again
+    until it changes, so the runs end; a batch that met an outage stops there, counts it
+    among «non riuscite» and leaves it and the rest to the next run. Without a key it
+    says so, rather than printing «0 schede scritte» for ever."""
     if limit < 1:
         print("--limit deve essere almeno 1.", file=sys.stderr)
         return 2

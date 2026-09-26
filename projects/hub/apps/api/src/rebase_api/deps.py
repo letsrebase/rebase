@@ -1,8 +1,8 @@
 """One engine per process, one session per request."""
 
 import threading
-from collections.abc import Callable, Iterator
-from contextlib import AbstractContextManager, closing
+from collections.abc import Iterator
+from contextlib import closing
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -13,7 +13,7 @@ from rebase_core.admin_tokens import AdminRead
 from rebase_core.analytics import Tracker, tracker_from_settings
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.render import ContractRenderer, Renderer
-from rebase_core.db import create_engine_from_settings, session_factory
+from rebase_core.db import SessionOpener, create_engine_from_settings, session_factory
 from rebase_core.documenso import DocumensoClient, client_from_settings
 from rebase_core.http import HttpCall, urllib_call
 from rebase_core.llm import LlmCall, call_from_settings
@@ -152,8 +152,6 @@ def get_signing_factory(
 
 
 SigningDep = Annotated[SigningFactory, Depends(get_signing_factory)]
-
-SessionOpener = Callable[[], AbstractContextManager[Session]]
 
 
 def get_session_opener() -> SessionOpener:

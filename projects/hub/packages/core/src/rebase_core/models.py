@@ -762,9 +762,10 @@ class FreelancerCard(Base, TimestampMixin):
     (spec § 5.1) or not at all -- a freelancer whose CV has never produced a card has
     every one of these `NULL`. `error` and `error_cv_sha256` are the *last failure*,
     independent of whether a card exists at all: an empty CV, a refusal, a `max_tokens`
-    stop or a body that is not the shape leaves the previous card exactly as it was and
-    only these two change, so the same CV is not retried and paid for again until it
-    changes."""
+    stop or a body that is not the shape writes these two, so the same CV is not retried
+    and paid for again until it changes, and retires a card written from another CV (it
+    must not outlive the CV it describes); an outage writes `error` alone and keeps the
+    card, and the next attempt asks again (REB-510)."""
 
     __tablename__ = "freelancer_cards"
 

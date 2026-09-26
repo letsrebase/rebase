@@ -3,13 +3,24 @@ and writes what a company may know of the profile without a name, and the team
 builder's engine reads nothing else about a talent.
 
 One call per CV, never two: the card keeps the SHA-256 of the file it came from, and a
-failure keeps the hash of the file that failed, so neither the same CV nor the same
-broken one is sent and paid for again until the bytes change, or until an admin asks
-with «Rigenera scheda» (`force`). A failure of any kind -- a refusal, an answer cut at
-`max_tokens`, a body that is not the card, the provider down -- leaves the previous card
-exactly as it was and writes one sentence of ours beside it, never the model's words.
-Nothing here logs more than the freelancer's id and the kind of failure: not the CV's
-text, not the card, not the answer.
+failure that is the CV's own -- a refusal, an answer cut at `max_tokens`, a body that is
+not the card, a card that names the person or carries an address, a scan with no text
+-- keeps the hash of the file that failed, so neither the same CV nor the same broken
+one is sent and paid for again until the bytes change, or until an admin asks with
+«Rigenera scheda» (`force`). The provider down is not the CV's fault: the row says so,
+no hash is kept, and the next write, or the next `rebase cards-refresh`, asks again.
+A failure writes one sentence of ours, never the model's words; it keeps the previous
+card when that card is the same CV's or the failure is an outage, and otherwise retires
+it, since a card must not outlive the CV it describes: the catalogue would go on showing
+a profile the person has replaced. Nothing here logs more than the freelancer's id and
+the kind of failure: not the CV's text, not the card, not the answer.
+
+The Claude call holds no transaction: the session is committed before it and a new
+transaction stores the answer, after re-reading, under the freelancer's row lock, that
+the CV the card came from is still the one on file. A CV replaced or cleared while
+Claude was writing gets nothing stored for it; `FreelancerService.clear_cv` takes the
+same row lock (its `UPDATE`) before it deletes the card, so the two cannot interleave
+into a card for a CV that is gone.
 
 Who calls it: the wizard and the member's CV upload, after their response, through
 `write_after_response` in a session of its own; the admin's two routes; `rebase
@@ -20,22 +31,23 @@ in the same transaction as the CV's own removal.
 import hashlib
 import json
 import logging
+import re
 from collections.abc import Callable
-from contextlib import AbstractContextManager
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from rebase_core.audit import utcnow
 from rebase_core.cv_text import CvText
+from rebase_core.db import SessionOpener
 from rebase_core.errors import LlmUnavailable, NotFound
 from rebase_core.freelancers import ENTITY, FreelancerService
 from rebase_core.llm import LlmCall, LlmRequest, LlmResponse
-from rebase_core.models import Freelancer, FreelancerCard
+from rebase_core.models import Freelancer, FreelancerCard, User
 from rebase_core.team_schemas import Card, CardsRefreshed, FreelancerCardRead
 
 logger = logging.getLogger(__name__)
@@ -45,53 +57,47 @@ logger = logging.getLogger(__name__)
 CARD_MAX_TOKENS = 2000
 NO_TEXT = "Il CV non ha testo leggibile."
 
-Failure = Literal["refusal", "max_tokens", "shape", "unavailable"]
-Outcome = Literal["written", "failed", "unchanged", "deleted"]
+# `Card`'s own schema, as it stands: the seam (`AnthropicCall.complete`) strips what the
+# structured-output API refuses, and `Card.model_validate` enforces all of it on the
+# answer.
+CARD_SCHEMA = Card.model_json_schema()
+
+Failure = Literal["no_text", "refusal", "max_tokens", "shape", "identifying", "unavailable"]
+Outcome = Literal["written", "failed", "unavailable", "unchanged", "deleted", "superseded"]
+
+# The last successful generation, written together and retired together.
+_CARD_COLUMNS = ("cv_sha256", "card", "model", "input_tokens", "output_tokens", "generated_at")
 
 # What the admin reads beside the card: ours, short, and never what the model said.
 _FAILURES: dict[Failure, str] = {
+    "no_text": NO_TEXT,
     "refusal": "Claude ha rifiutato di scrivere la scheda da questo CV.",
     "max_tokens": "La risposta di Claude si è interrotta prima della fine della scheda.",
     "shape": "La risposta di Claude non era una scheda valida.",
+    "identifying": "La scheda cita la persona o un indirizzo.",
+    # True of every outage, the backlog's (asked again by the next run) and a
+    # «Rigenera scheda» on the card's own CV (whose card stays) alike.
     "unavailable": "Claude non ha risposto: «Rigenera scheda» riprova.",
 }
 
-# Keywords the structured-output API refuses in a schema (the `claude-api` skill's list
-# for `output_config.format`): left out of what is sent, still enforced on the answer by
-# `Card.model_validate`, which is where a card that breaks one becomes a failure.
-_UNSUPPORTED_KEYWORDS = frozenset({"minLength", "maxLength", "minimum", "maximum", "maxItems"})
+# A link or an address in a card (spec § 2.1: no link). A scheme, not the bare word
+# `http`, which is also a skill («HTTP/2», «REST/HTTP») a backend developer's card lists.
+_ADDRESS = re.compile(r"https?://|www\.|@", re.IGNORECASE)
 
 
-def _for_the_api(node: dict[str, Any]) -> dict[str, Any]:
-    """A Pydantic JSON schema as the API takes it: the unsupported keywords dropped at
-    every level, and every object closed (`additionalProperties: false`) with every
-    property required, a nullable one staying the `anyOf` with `null` Pydantic writes."""
-    strict: dict[str, Any] = {}
-    for key, value in node.items():
-        if key in _UNSUPPORTED_KEYWORDS:
-            continue
-        if key == "properties":
-            strict[key] = {name: _for_the_api(sub) for name, sub in value.items()}
-        elif key == "items":
-            strict[key] = _for_the_api(value)
-        elif key == "anyOf":
-            strict[key] = [_for_the_api(variant) for variant in value]
-        else:
-            strict[key] = value
-    if strict.get("type") == "object":
-        strict["additionalProperties"] = False
-        strict["required"] = list(strict.get("properties", {}))
-    return strict
+def _identifies(card: Card, cognome: str) -> bool:
+    """Whether any text of the card names the person, by the surname as a whole word in
+    any case, or carries a link or an email address. The prompt forbids both; this is
+    what a card that ignored it runs into before it reaches a page."""
+    texts = [card.ruolo, card.sintesi, *card.competenze, *card.settori, *card.lingue]
+    if card.luogo is not None:
+        texts.append(card.luogo)
+    surname = cognome.strip()
+    person = re.compile(rf"\b{re.escape(surname)}\b", re.IGNORECASE) if surname else None
+    return any(
+        _ADDRESS.search(value) or (person is not None and person.search(value)) for value in texts
+    )
 
-
-def _card_schema() -> dict[str, Any]:
-    schema = _for_the_api(Card.model_json_schema())
-    # `Card`'s docstring is written for whoever maintains this file, not for the model.
-    schema.pop("description", None)
-    return schema
-
-
-CARD_SCHEMA = _card_schema()
 
 _SYSTEM = """\
 You write the anonymous card of a freelancer who belongs to rebase, an Italian \
@@ -146,9 +152,10 @@ def card_prompt(cv: CvText, posizione: str | None) -> LlmRequest:
     )
 
 
-def _card_from(response: LlmResponse) -> Card | Failure:
+def _card_from(response: LlmResponse, cognome: str) -> Card | Failure:
     """The card, or the kind of failure: `stop_reason` is read before the body, as the
-    seam hands it over (`llm.py`)."""
+    seam hands it over (`llm.py`), and a card that validates is still refused if it
+    names the person or carries an address."""
     if response.stop_reason == "refusal":
         return "refusal"
     if response.stop_reason == "max_tokens":
@@ -156,9 +163,10 @@ def _card_from(response: LlmResponse) -> Card | Failure:
     if response.text is None:
         return "shape"
     try:
-        return Card.model_validate(json.loads(response.text))
+        card = Card.model_validate(json.loads(response.text))
     except ValueError:  # `json.JSONDecodeError` and Pydantic's `ValidationError` alike
         return "shape"
+    return "identifying" if _identifies(card, cognome) else card
 
 
 class CardWriter:
@@ -187,7 +195,12 @@ class CardWriter:
         """Every live freelancer whose CV is neither the card's nor the failed one,
         oldest first, `limit` at a time: the backlog `rebase cards-refresh` works
         through, one batch per run. The hash is computed by Postgres, so the CVs'
-        bytes never leave the database to be compared."""
+        bytes never leave the database to be compared.
+
+        The batch stops at the first outage (`LlmUnavailable`), counted as not done: a
+        run of 429s would otherwise walk the whole batch for nothing, and the CVs after
+        it are simply the next run's. A run with nothing written and nothing failed is
+        the backlog done."""
         if self.llm is None:
             return CardsRefreshed(written=0, failed=0)
         digest = func.encode(func.sha256(Freelancer.cv_bytes), "hex")
@@ -206,16 +219,21 @@ class CardWriter:
         written = failed = 0
         for freelancer_id in stale:
             outcome = self._write(freelancer_id, force=False)
-            written += outcome == "written"
-            failed += outcome == "failed"
+            if outcome == "written":
+                written += 1
+            elif outcome in ("failed", "unavailable"):
+                failed += 1
+            if outcome == "unavailable":
+                break
         return CardsRefreshed(written=written, failed=failed)
 
     def delete(self, freelancer_id: UUID) -> None:
         """The card goes with the CV. Not committed here: `clear_cv` commits it with the
-        CV's own removal, and `write` with its answer."""
-        stored = self.session.get(FreelancerCard, freelancer_id)
-        if stored is not None:
-            self.session.delete(stored)
+        CV's own removal, and `write` with its answer. A statement rather than a loaded
+        object, so it reads the table when it runs, after the caller's own lock."""
+        self.session.execute(
+            delete(FreelancerCard).where(FreelancerCard.freelancer_id == freelancer_id)
+        )
 
     def read(self, freelancer_id: UUID) -> FreelancerCardRead:
         row = self._freelancer(freelancer_id)
@@ -260,18 +278,23 @@ class CardWriter:
             return "unchanged"
         cv = FreelancerService(self.session).cv_text(freelancer_id)
         if not cv.testo.strip():
-            logger.info("card for freelancer %s not written: no text", freelancer_id)
-            self._save(freelancer_id, {"error": NO_TEXT, "error_cv_sha256": digest})
-            return "failed"
+            return self._fail(freelancer_id, digest, "no_text")
+        owner = self.session.get(User, row.user_id)
+        cognome = owner.cognome if owner is not None else ""
+        request = card_prompt(cv, row.posizione)
+        # Claude takes seconds: the transaction ends here, so no pooled connection and
+        # no lock waits on it. `_save` opens the next one.
+        self.session.commit()
         try:
-            response = self.llm.complete(card_prompt(cv, row.posizione))
+            response = self.llm.complete(request)
         except LlmUnavailable:
             return self._fail(freelancer_id, digest, "unavailable")
-        card = _card_from(response)
+        card = _card_from(response, cognome)
         if not isinstance(card, Card):
             return self._fail(freelancer_id, digest, card)
-        self._save(
+        saved = self._save(
             freelancer_id,
+            digest,
             {
                 "cv_sha256": digest,
                 "card": card.model_dump(mode="json"),
@@ -283,18 +306,54 @@ class CardWriter:
                 "error_cv_sha256": None,
             },
         )
-        return "written"
+        return "written" if saved else "superseded"
 
     def _fail(self, freelancer_id: UUID, digest: str, kind: Failure) -> Outcome:
+        """The sentence beside the card, and the failed CV's hash unless the failure was
+        the provider's: an outage keeps nothing that would stop the next attempt, and
+        keeps the previous card. Any other failure retires a card written from another
+        CV than the one that just failed (`_save`)."""
+        outage = kind == "unavailable"
+        values = {"error": _FAILURES[kind], "error_cv_sha256": None if outage else digest}
+        if not self._save(freelancer_id, digest, values, retire_other=not outage):
+            return "superseded"
         logger.warning("card for freelancer %s not written: %s", freelancer_id, kind)
-        self._save(freelancer_id, {"error": _FAILURES[kind], "error_cv_sha256": digest})
-        return "failed"
+        return "unavailable" if outage else "failed"
 
-    def _save(self, freelancer_id: UUID, values: dict[str, Any]) -> None:
-        """One upsert: the row is created on a first card or a first failure, and only
-        the columns given change, so a failure never touches the previous card. Two
-        writes racing on one freelancer (a double «Rigenera scheda») both land, the
-        later one last, rather than the second failing on the primary key."""
+    def _save(
+        self,
+        freelancer_id: UUID,
+        digest: str,
+        values: dict[str, Any],
+        *,
+        retire_other: bool = False,
+    ) -> bool:
+        """One upsert of the given columns, and only if the freelancer's CV is still the
+        one `digest` was taken from: re-read under the row's lock, which `clear_cv`'s and
+        `replace_cv`'s `UPDATE` take too, so a CV cleared or replaced while Claude was
+        writing is never given a card, or a failure, that is not its own. `False` when
+        it was, with nothing written. `retire_other` also empties the card columns when
+        the stored card came from another CV: read under the same lock, since every
+        writer of this row holds it. Two writes racing on one CV (a double «Rigenera
+        scheda») both land, the later one last, rather than the second failing on the
+        primary key."""
+        current = self.session.scalar(
+            select(func.encode(func.sha256(Freelancer.cv_bytes), "hex"))
+            .where(Freelancer.id == freelancer_id)
+            .with_for_update()
+        )
+        if current != digest:
+            self.session.commit()
+            logger.info("card for freelancer %s not written: the CV changed", freelancer_id)
+            return False
+        if retire_other:
+            written_from = self.session.scalar(
+                select(FreelancerCard.cv_sha256).where(
+                    FreelancerCard.freelancer_id == freelancer_id
+                )
+            )
+            if written_from is not None and written_from != digest:
+                values = {**dict.fromkeys(_CARD_COLUMNS), **values}
         insert = pg_insert(FreelancerCard).values(freelancer_id=freelancer_id, **values)
         self.session.execute(
             insert.on_conflict_do_update(
@@ -306,15 +365,13 @@ class CardWriter:
             )
         )
         self.session.commit()
+        return True
 
     def _freelancer(self, freelancer_id: UUID) -> Freelancer:
         row = self.session.get(Freelancer, freelancer_id)
         if row is None or row.deleted_at is not None:
             raise NotFound(ENTITY, freelancer_id)
         return row
-
-
-SessionOpener = Callable[[], AbstractContextManager[Session]]
 
 
 def write_after_response(

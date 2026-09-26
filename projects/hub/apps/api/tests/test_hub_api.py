@@ -6,7 +6,7 @@ from contextlib import nullcontext
 from typing import Any
 
 import pytest
-from fakes_cards import CARD, text_pdf
+from fakes_cards import CARD, card_response, text_pdf
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from rebase_api.deps import get_llm, get_sender, get_session_opener, get_tracker
 from rebase_api.ratelimit import SIGNUPS_PER_MINUTE
 from rebase_core.analytics import APPLICATION_COMPLETED, Tracker
-from rebase_core.llm import RecordingCall
+from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
 from rebase_core.mail import RecordingSender
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
@@ -491,6 +491,35 @@ def test_the_wizard_schedules_the_card_write(
     assert no_cv.status_code == 201
     assert len(llm.requests) == 1
     assert api_session.execute(text("SELECT count(*) FROM freelancer_cards")).scalar() == 1
+
+
+class _AfterTheEvent:
+    """Claude, noting whether the completion event had already gone out when it was
+    called: the card write is queued after it, so PostHog never waits on Claude."""
+
+    def __init__(self, tracked: RecordingCapture) -> None:
+        self.tracked = tracked
+        self.events_before: list[int] = []
+
+    def complete(self, request: LlmRequest) -> LlmResponse:
+        self.events_before.append(len(self.tracked.calls))
+        return card_response()
+
+
+def test_the_completion_event_is_not_held_behind_the_card(
+    client: TestClient, api_session: Session, llm: RecordingCall, tracked: RecordingCapture
+) -> None:
+    _clean(api_session)
+    claude = _AfterTheEvent(tracked)
+    client.app.dependency_overrides[get_llm] = lambda: claude  # type: ignore[attr-defined]
+
+    response = client.post(
+        "/api/hub/freelancers", data=_form(), files={"cv": ("Ada CV.pdf", CV, "application/pdf")}
+    )
+
+    assert response.status_code == 201, response.text
+    assert claude.events_before == [1]
+    assert len(tracked.calls) == 1
 
 
 def test_without_a_key_the_wizard_writes_no_card_and_opens_no_session(
