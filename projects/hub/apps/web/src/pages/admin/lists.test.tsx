@@ -752,7 +752,7 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
     mount('/admin/talent?tariffa_min=50')
     await screen.findByRole('heading', { name: 'Talenti' })
-    expect(screen.getByLabelText('Tariffa min (€/giorno)')).toHaveValue(50)
+    expect(screen.getByLabelText('Tariffa min (€/giorno)')).toHaveValue('50')
   })
 
   it('reflects a filter field into the address for Aziende', async () => {
@@ -770,6 +770,48 @@ describe('every filter and the search box live in the URL, both ways (REB-286)',
     mount('/admin/companies?origine=pigrocrm')
     await screen.findByRole('heading', { name: 'Aziende' })
     expect(screen.getByLabelText('Pagina di provenienza')).toHaveValue('pigrocrm')
+  })
+})
+
+describe('the euro filters read Italian thousands, whatever the browser’s locale (REB-485)', () => {
+  /** Every URL the page asked the list endpoint for, in order. */
+  function listCalls(spy: { mock: { calls: unknown[][] } }, endpoint: string): string[] {
+    return spy.mock.calls.map((call) => String(call[0])).filter((url) => url.startsWith(endpoint))
+  }
+
+  const TALENTI = { path: '/admin/talent', heading: 'Talenti', endpoint: '/api/hub/talent' }
+  const AZIENDE = { path: '/admin/companies', heading: 'Aziende', endpoint: '/api/hub/companies' }
+  it.each([
+    { ...TALENTI, label: 'Tariffa min (€/giorno)', param: 'tariffa_min' },
+    { ...TALENTI, label: 'Tariffa max (€/giorno)', param: 'tariffa_max' },
+    { ...AZIENDE, label: 'Budget min (€/giorno)', param: 'budget_min' },
+    { ...AZIENDE, label: 'Budget max (€/giorno)', param: 'budget_max' },
+  ])('«1.500» in «$label» asks for $param=1500', async ({ path, heading, label, endpoint, param }) => {
+    const spy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => answer(200, { totale: 0, items: [], per_stato: {} }))
+    mount(path)
+    await screen.findByRole('heading', { name: heading })
+
+    await userEvent.type(screen.getByLabelText(label), '1.500')
+
+    await waitFor(() => expect(listCalls(spy, endpoint).at(-1)).toContain(`${param}=1500`))
+    expect(screen.getByLabelText(label)).toHaveValue('1.500')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('says a filter that is not an amount is not one, and narrows nothing with it', async () => {
+    const spy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => answer(200, { totale: 0, items: [], per_stato: {} }))
+    mount('/admin/talent')
+    await screen.findByRole('heading', { name: 'Talenti' })
+
+    await userEvent.type(screen.getByLabelText('Tariffa min (€/giorno)'), 'tanto')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
+    expect(screen.getByLabelText('Tariffa min (€/giorno)')).toHaveAttribute('aria-invalid', 'true')
+    expect(listCalls(spy, '/api/hub/talent').every((url) => !url.includes('tariffa_min'))).toBe(true)
   })
 })
 

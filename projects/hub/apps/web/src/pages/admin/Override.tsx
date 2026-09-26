@@ -14,12 +14,21 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
+import { AMOUNT_PROBLEM, amountNumber, machineAmount } from '@/lib/amount'
 import type { Company, CompanyOverride, Freelancer, FreelancerOverride, Remoto } from '@/lib/api'
 import { REMOTO_LABELS, formatDate } from '@/lib/format'
 
 // A `Select` needs a non-empty string; `remoto` is the one override field that is both
 // nullable and rendered as a `Select`, so it alone needs a sentinel for "not set".
 const UNSET = '__non_impostata__'
+
+/** Whether a day rate or a daily budget, typed the Italian way, is one the API takes: the
+ *  core's `TARIFFA_MIN` to `TARIFFA_MAX`, the range these inputs' `min` and `max` held when
+ *  they were number inputs, which read «1.500» as 1.5 in an Italian browser (REB-485). */
+function acceptedAmount(value: string): boolean {
+  const number = amountNumber(value)
+  return Number.isFinite(number) && number >= 1 && number <= 99999.99
+}
 
 interface FreelancerOverrideDraft {
   nome: string
@@ -83,7 +92,7 @@ export function FreelancerOverrideDialog({
       nome: draft.nome.trim(),
       cognome: draft.cognome.trim(),
       linkedin_url: draft.linkedinUrl.trim() || null,
-      tariffa_giornaliera: draft.tariffaGiornaliera.trim() || null,
+      tariffa_giornaliera: machineAmount(draft.tariffaGiornaliera) || null,
       posizione: draft.posizione.trim() || null,
       remoto: draft.remoto === UNSET ? null : draft.remoto,
       links: draft.links
@@ -94,7 +103,9 @@ export function FreelancerOverrideDialog({
     })
   }
 
-  const valid = draft.nome.trim() !== '' && draft.cognome.trim() !== ''
+  // Blank is allowed here: it clears the rate.
+  const rateProblem = draft.tariffaGiornaliera.trim() !== '' && !acceptedAmount(draft.tariffaGiornaliera)
+  const valid = draft.nome.trim() !== '' && draft.cognome.trim() !== '' && !rateProblem
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -151,14 +162,18 @@ export function FreelancerOverrideDialog({
               <Label htmlFor="override-freelancer-tariffa">Tariffa a giornata (€)</Label>
               <Input
                 id="override-freelancer-tariffa"
-                type="number"
-                min="1"
-                max="99999.99"
-                step="0.01"
+                inputMode="decimal"
                 value={draft.tariffaGiornaliera}
                 onChange={(event) => setDraft({ ...draft, tariffaGiornaliera: event.target.value })}
                 placeholder="Vuoto per rimuoverla"
+                aria-invalid={rateProblem || undefined}
+                aria-describedby={rateProblem ? 'override-freelancer-tariffa-error' : undefined}
               />
+              {rateProblem && (
+                <p role="alert" id="override-freelancer-tariffa-error" className="text-sm text-destructive">
+                  {AMOUNT_PROBLEM}
+                </p>
+              )}
             </div>
           </div>
           <div className="space-y-1.5">
@@ -302,7 +317,7 @@ export function CompanyOverrideDialog({
       progetto: draft.progetto.trim(),
       periodo_da: draft.periodoDa,
       durata: draft.durata.trim(),
-      budget_giornaliero: draft.budgetGiornaliero.trim(),
+      budget_giornaliero: machineAmount(draft.budgetGiornaliero),
       remoto: draft.remoto,
       giorni_presenza: draft.remoto === 'ibrido' ? Number(draft.giorniPresenza) : null,
       numero_risorse: Number(draft.numeroRisorse),
@@ -314,7 +329,9 @@ export function CompanyOverrideDialog({
     onSave(payload)
   }
 
+  const budgetProblem = draft.budgetGiornaliero.trim() !== '' && !acceptedAmount(draft.budgetGiornaliero)
   const valid =
+    !budgetProblem &&
     draft.nomeAzienda.trim() !== '' &&
     draft.figuraRichiesta.trim() !== '' &&
     draft.progetto.trim() !== '' &&
@@ -388,14 +405,18 @@ export function CompanyOverrideDialog({
             <Label htmlFor="override-company-budget">Budget a giornata (€)</Label>
             <Input
               id="override-company-budget"
-              type="number"
-              min="1"
-              max="99999.99"
-              step="0.01"
+              inputMode="decimal"
               value={draft.budgetGiornaliero}
               onChange={(event) => setDraft({ ...draft, budgetGiornaliero: event.target.value })}
               required
+              aria-invalid={budgetProblem || undefined}
+              aria-describedby={budgetProblem ? 'override-company-budget-error' : undefined}
             />
+            {budgetProblem && (
+              <p role="alert" id="override-company-budget-error" className="text-sm text-destructive">
+                {AMOUNT_PROBLEM}
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="override-company-numero-risorse">Numero di persone</Label>

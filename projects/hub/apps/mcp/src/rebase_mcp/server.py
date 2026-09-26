@@ -21,7 +21,7 @@ them: the core's `signing_from_settings` for the real ones, test doubles in the 
 
 from collections.abc import Callable, Sequence
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -35,6 +35,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
+from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
 from rebase_core.config import Settings
@@ -124,13 +125,14 @@ def _proposal(
 
 
 def _number(value: str | None, field: str) -> Decimal | None:
-    """A decimal passed as a string, the way `create_freelancer_from_signup` already
-    takes it: JSON numbers lose the two-decimal exactness a tariffa or a budget needs."""
+    """An amount passed as a string, so a tariffa or a budget keeps its two decimals
+    exactly (a JSON number would not), and read the Italian way the web app reads it:
+    «1.500» is 1500, «1.234,50» is 1234.50 (`rebase_core.amounts`, REB-485)."""
     if value is None or not value.strip():
         return None
     try:
-        return Decimal(value.strip())
-    except InvalidOperation:
+        return italian_amount(value)
+    except NotAnAmount:
         raise ToolError(f"{field}: «{value}» non è un numero") from None
 
 
@@ -239,9 +241,7 @@ def build_server(
             cognome=cognome,
             linkedin_url=linkedin_url,
             posizione=posizione,
-            tariffa_giornaliera=(
-                Decimal(tariffa_giornaliera) if tariffa_giornaliera is not None else None
-            ),
+            tariffa_giornaliera=_number(tariffa_giornaliera, "tariffa_giornaliera"),
             remoto=remoto,  # type: ignore[arg-type]
             links=links or [],
             fonti=fonti,
@@ -284,8 +284,8 @@ def build_server(
         scheda di un lead si crea con `create_freelancer_from_signup`.
         `q` cerca nome, cognome, email e posizione; `posizione` filtra per ruolo,
         `remoto` per disponibilità (remoto/ibrido/in_sede), `tariffa_min` e
-        `tariffa_max` per tariffa a giornata (stringa decimale col punto, «500» o
-        «450.50»); `origine` per canale della riga (form/wizard/admin), `utm_source` per
+        `tariffa_max` per tariffa a giornata (stringa, «500», «450.50» o all'italiana
+        «1.500», «1.234,50»); `origine` per canale della riga (form/wizard/admin), `utm_source` per
         campagna, `has_cv` per le schede con o senza CV, `con_accessi` per chi è
         entrato almeno una volta nella sua area, `creato_da` e `creato_a` per data di
         creazione (ISO 8601, anche solo `AAAA-MM-GG`). I filtri che una riga nuda non
@@ -515,8 +515,8 @@ def build_server(
         pertinente quando `q` restringe.
         `q` cerca nome azienda, referente, email e progetto; `stato` filtra (nuovo,
         contattato, in_corso, chiuso) e `per_stato` conta con ogni filtro tranne
-        `stato`; `budget_min` e `budget_max` sul budget a giornata (stringa decimale
-        col punto, «500» o «450.50»), `periodo_da` sull'inizio del progetto (ISO
+        `stato`; `budget_min` e `budget_max` sul budget a giornata (stringa, «500»,
+        «450.50» o all'italiana «1.500», «1.234,50»), `periodo_da` sull'inizio del progetto (ISO
         8601), `origine` sulla pagina da cui è arrivata la richiesta, `creato_da` e
         `creato_a` sulla data di creazione (ISO 8601, anche solo `AAAA-MM-GG`).
         `next_cursor` è il cursore opaco della pagina successiva, `None` all'ultima:

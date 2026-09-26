@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { machineAmount } from './amount'
+import { amountFilter, amountNumber, machineAmount } from './amount'
 
 describe('machineAmount', () => {
   it('reads an amount the Italian way: a dot before three digits is a thousands separator, a comma the decimal', () => {
@@ -22,5 +22,30 @@ describe('machineAmount', () => {
   it('leaves what is not an amount as typed, for the field to refuse', () => {
     expect(machineAmount('')).toBe('')
     expect(machineAmount('tanto')).toBe('tanto')
+  })
+})
+
+describe('amountNumber', () => {
+  it('is the number an amount field holds, read the Italian way', () => {
+    expect(amountNumber('1.500')).toBe(1500)
+    expect(amountNumber('1.234,50')).toBe(1234.5)
+    expect(amountNumber('1500.00')).toBe(1500)
+  })
+
+  it('is NaN for a blank field or anything that is not an amount, never 0', () => {
+    expect(amountNumber('')).toBeNaN()
+    expect(amountNumber('   ')).toBeNaN()
+    expect(amountNumber('tanto')).toBeNaN()
+  })
+})
+
+describe('amountFilter', () => {
+  it('sends a list filter in the machine form, and leaves out one that is not an amount', () => {
+    expect(amountFilter('1.500')).toBe('1500')
+    expect(amountFilter('1.234,50')).toBe('1234.50')
+    expect(amountFilter('0')).toBe('0')
+    expect(amountFilter(undefined)).toBeUndefined()
+    expect(amountFilter('tanto')).toBeUndefined()
+    expect(amountFilter('-5')).toBeUndefined()
   })
 })

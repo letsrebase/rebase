@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { distinctId } from '@rebase/analytics/browser'
-import { machineAmount } from '@/lib/amount'
+import { AMOUNT_PROBLEM, machineAmount } from '@/lib/amount'
 import { readPerkParam, useWizardAnalytics } from '@/lib/analytics'
 import { ApiError, applyAsFreelancer, type FreelancerApplication } from '@/lib/api'
 import { isLinkedinName, LINKEDIN_OWN_PROFILE, linkedinFieldValue, linkedinProfile } from '@/lib/linkedin'
@@ -177,7 +177,7 @@ export const FREELANCER_FIELDS: Field<FreelancerApplication>[] = [
       const number = Number(machineAmount(value.tariffa_giornaliera))
       return Number.isFinite(number) && number >= 1 && number <= 99999
         ? null
-        : 'Serve una cifra, in euro.'
+        : AMOUNT_PROBLEM
     },
     summary: (value) => (value.tariffa_giornaliera ? `${value.tariffa_giornaliera} € / giorno` : ''),
   },
