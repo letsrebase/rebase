@@ -213,6 +213,7 @@ jobs:
               - 'projects/hub/apps/api/**'
               - 'projects/hub/apps/mcp/**'
               - 'projects/hub/packages/**'
+              - 'projects/hub/apps/web/src/lib/amount_cases.json'
               - 'projects/hub/conftest.py'
               - 'projects/hub/ruff.toml'
               # The guide PDF's own inputs (REB-310): `test_guide_pdf.py` under
