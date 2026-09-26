@@ -116,24 +116,19 @@ function Editor({ initial }: { initial: Campaign | null }) {
   }
 
   const test = useMutation({
-    mutationFn: async () => {
+    mutationFn: () => {
       if (key === null) throw new Error('nothing to test')
-      const saved = await save.persist(key)
-      return admin.testCampaign(saved.id)
+      return save.run(key, (saved) => admin.testCampaign(saved.id))
     },
-    onSuccess: save.adopt,
   })
   const schedule = useMutation({
-    mutationFn: async () => {
+    mutationFn: () => {
       if (key === null || count === null) throw new Error('nothing to send')
-      const saved = await save.persist(key)
       const esclusiOra = count.esclusi
-      return admin.scheduleCampaign(
-        saved.id,
-        mode === 'programma' ? { giorno: when.giorno, ora: when.ora, esclusi: esclusiOra } : { esclusi: esclusiOra },
-      )
+      const moment = mode === 'programma' ? { giorno: when.giorno, ora: when.ora } : {}
+      return save.run(key, (saved) => admin.scheduleCampaign(saved.id, { ...moment, esclusi: esclusiOra }))
     },
-    onSuccess: (saved) => void navigate({ to: '/admin/campaigns/$id', params: { id: saved.id } }),
+    onSuccess: (sent) => void navigate({ to: '/admin/campaigns/$id', params: { id: sent.id } }),
   })
 
   function blockedReason(): string | null {

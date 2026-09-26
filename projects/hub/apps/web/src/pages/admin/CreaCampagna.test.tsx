@@ -64,7 +64,7 @@ function json(body: unknown, status = 200) {
 /** Answers by method and path, and records every call for the assertions. The first
  *  registered prefix a request starts with wins, so a longer path (`c1/audience`,
  *  `c1/test`) goes before the shorter one it would otherwise be shadowed by. */
-function api(routes: Record<string, () => Response>) {
+function api(routes: Record<string, () => Response | Promise<Response>>) {
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const key = `${init?.method ?? 'GET'} ${String(input)}`
     const match = Object.keys(routes).find((prefix) => key.startsWith(prefix))
@@ -287,6 +287,30 @@ describe('«Nuova campagna» on one page (REB-526)', () => {
       await sendBar().findByText('Hai cambiato la campagna dopo la prova: mandane un’altra.', {}, SAVED),
     ).toBeInTheDocument()
     expect(bodies(calls, 'PATCH', /\/campaigns\/c1$/).at(-1).oggetto).toBe('Manca solo il CV!')
+  })
+
+  it('holds a save asked for while the test is out until the test has answered', async () => {
+    let answerTest: (response: Response) => void = () => undefined
+    const order: string[] = []
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns/c1/test': () => (order.push('test'), new Promise<Response>((resolve) => (answerTest = resolve))),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+      'PATCH /api/hub/campaigns/c1': () => (order.push('patch'), json({ ...TESTED, oggetto: 'Manca solo il CV!', pronta: false })),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await screen.findByText('riceverà la mail', { exact: false }, SAVED)
+    await userEvent.click(screen.getByRole('button', { name: 'Mandami una prova' }))
+    await userEvent.type(screen.getByLabelText('Oggetto'), '!')
+    await new Promise((resolve) => setTimeout(resolve, 900))
+    expect(order).toEqual(['test'])
+    answerTest(json(TESTED))
+    await vi.waitFor(() => expect(order).toEqual(['test', 'patch']), SAVED)
+    // The patch answered last, so the page reads its verdict, not the test's.
+    expect(await sendBar().findByText('Hai cambiato la campagna dopo la prova: mandane un’altra.', {}, SAVED)).toBeInTheDocument()
   })
 
   it('saves a burst of typing once, and patches the campaign it created', async () => {
