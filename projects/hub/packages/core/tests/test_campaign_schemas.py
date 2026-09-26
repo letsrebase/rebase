@@ -71,6 +71,10 @@ def test_a_filter_amount_keeps_cents_at_most_and_is_never_negative(amount: str) 
         AziendeFiltri.model_validate({"lista": "aziende", "budget_max": amount})
 
 
-def test_a_filter_amount_with_cents_or_none_is_kept_as_it_is() -> None:
+def test_a_filter_amount_with_cents_is_kept_as_it_is_however_large() -> None:
+    """No ceiling the editor's field does not have: an amount it sends is one this
+    takes (CodeRabbit on #432)."""
     filtri = TalentiFiltri.model_validate({"lista": "talenti", "tariffa_min": "12.30"})
     assert filtri.tariffa_min == Decimal("12.30")
+    huge = AziendeFiltri.model_validate({"lista": "aziende", "budget_max": "123456789012.00"})
+    assert huge.budget_max == Decimal("123456789012.00")
