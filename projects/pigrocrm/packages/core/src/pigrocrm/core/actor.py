@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict
 
 from pigrocrm.core.errors import AgentForbidden, PermissionDenied
 
-ActorType = Literal["user", "mcp", "system"]
+ActorType = Literal["user", "mcp", "system", "rebase"]
 Role = Literal["admin", "collaboratore", "readonly"]
 
 WRITE_ROLES: tuple[str, ...] = ("admin", "collaboratore")
@@ -166,6 +166,13 @@ class Actor(BaseModel):
     @classmethod
     def system(cls) -> Self:
         return cls(id=None, type="system", role="admin")
+
+    @classmethod
+    def rebase(cls) -> Self:
+        """rebase acting inside a freelancer's space through the engagements door
+        (spec 2026-09-25 § 2.5): an admin for what it writes, never an agent, and named
+        «rebase» in the timeline so the freelancer knows who did what."""
+        return cls(id=None, type="rebase", role="admin")
 
     @property
     def can_write(self) -> bool:

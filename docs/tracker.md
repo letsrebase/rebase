@@ -4,8 +4,10 @@ Linear is where the work is recorded, and using it is not optional. An agent tha
 something real and leaves no trace has done half the job: the next person, human or
 agent, starts from the board, and what is not there did not happen. Linear is the only
 tracker for the work this repository does: a GitHub Project on another repository is not
-part of its flow, and the one kind of GitHub issue that lives here, the `roadmap` label,
-is the public roadmap rather than development work (`AGENTS.md` § Conventions).
+part of its flow, the one kind of GitHub issue a person opens here, the `roadmap` label,
+is the public roadmap rather than development work, and the other, the weekly Snyk issue
+a workflow files, is the twin of a Linear card that carries the work (`AGENTS.md` §
+Conventions).
 
 ## Where things are
 
@@ -114,7 +116,10 @@ keeps two agents off the same work is the **assignee**. It is a claim, not a hin
   question is a decision; the assignee is who does the work.
 
 `assignee` is therefore set on every issue you file, including work left for later,
-because a card nobody owns is one the other agent will reasonably take. On an update it
+because a card nobody owns is one the other agent will reasonably take. The one card
+filed otherwise is the weekly Snyk card, which its workflow files unassigned, with no
+estimate and labelled `parallel`, because being taken by whoever is free is its point
+(`AGENTS.md` § Conventions). On an update it
 is sent only when changing the owner is the point, since `save_issue` overwrites whatever
 it is given (§ API details). There is no `createdBy` filter in the API either, so an
 unassigned card's owner is not queryable without reading it.
@@ -249,7 +254,8 @@ studied. Every field has a budget, and the budget is the rule.
   call, so an issue that is missing one of them is a mistake, not the accident of a
   skipped second call. The assignee is yourself when you will do the work, the
   person who asked for it when they will, and never empty: an unowned card is one
-  the other agent will take.
+  the other agent will take (the weekly Snyk card is the one exception, § Who owns a
+  card).
 - What you deliberately did **not** do, in one sentence, when there is such a
   thing. An issue that hides a decision costs a whole round trip later.
 

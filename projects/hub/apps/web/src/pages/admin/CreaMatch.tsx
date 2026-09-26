@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowLeft } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { cn } from '@rebase/ui/cn'
+import { AMOUNT_PROBLEM, euroAmount } from '@/lib/amount'
 import { admin, ApiError, type Company, type Fiscal, type FiscalData, type Match, type MatchCreate } from '@/lib/api'
 import {
   ALTRE_CONDIZIONI_FIELDS,
@@ -28,6 +29,7 @@ import {
   toCliente,
   withPayMode,
   type ClienteForm,
+  type Failure,
   type FiscalDraft,
   type FiscalKey,
   type LetteraForm,
@@ -42,6 +44,12 @@ const STEPS = ['Chi e per chi', 'Condizioni', 'Controlla e invia'] as const
 // A request closed after it was picked: `create` and the check refuse it by this name.
 const REQUEST_FIELD = 'company_id'
 const onStepOne = (field: string) => field === REQUEST_FIELD || CLIENTE_FIELDS.has(field) || FISCAL_FIELDS.has(field)
+
+// A fee the API would refuse or read as another number (three decimals, English
+// notation) is refused on «Condizioni» before any request, in the words every amount
+// field uses (REB-485). A blank fee is left to the server, which says «manca».
+const FEE_REFUSED: Failure = { message: AMOUNT_PROBLEM, fields: ['compenso'], conflict: false }
+const feeRefused = (fee: string) => fee.trim() !== '' && !Number.isFinite(euroAmount(fee))
 
 function revoke(review: Review) {
   URL.revokeObjectURL(review.lettera)
@@ -66,6 +74,7 @@ export function AdminCreaMatch() {
   // new: the server returns the match already written under it.
   const [matchId] = useState(() => crypto.randomUUID())
   const [step, setStep] = useState(0)
+  const [feeFailure, setFeeFailure] = useState<Failure | null>(null)
   const [company, setCompany] = useState<Company | null>(null)
   const [prefillFor, setPrefillFor] = useState<string | null>(null)
   const [savedFiscal, setSavedFiscal] = useState<Fiscal | null>(null)
@@ -274,12 +283,19 @@ export function AdminCreaMatch() {
     // what it names, whether they came back through «Indietro» or were brought back;
     // «Condizioni» starts clean.
     check.reset()
+    setFeeFailure(null)
     const data = fiscalToSave(savedFiscal, fiscal, editFiscal)
     if (data) saveFiscal.mutate({ data, companyId: company.id })
     else setStep(1)
   }
 
   function submitCondizioni() {
+    if (feeRefused(lettera.compenso)) {
+      check.reset()
+      setFeeFailure(FEE_REFUSED)
+      return
+    }
+    setFeeFailure(null)
     const body = payload()
     if (body) check.mutate(body)
   }
@@ -336,7 +352,7 @@ export function AdminCreaMatch() {
             onBack={() => setStep(0)}
             onNext={submitCondizioni}
             pending={check.isPending}
-            failure={checkFailure}
+            failure={feeFailure ?? checkFailure}
           />
         )}
         {step === 2 && review && (

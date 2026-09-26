@@ -9,6 +9,7 @@ import {
   type Me,
   type MemberUpdate,
 } from './api'
+import { sentAmount } from './amount'
 import { linkedinFieldValue, linkedinProfile } from './linkedin'
 import type { Utm } from './utm'
 
@@ -124,7 +125,7 @@ export function toUpdate(value: FreelancerApplication): MemberUpdate {
     nome: value.nome.trim(),
     cognome: value.cognome.trim(),
     linkedin_url: linkedinProfile(value.linkedin_url) || null,
-    tariffa_giornaliera: value.tariffa_giornaliera.replace(',', '.').trim(),
+    tariffa_giornaliera: sentAmount(value.tariffa_giornaliera),
     posizione: value.posizione.trim(),
     remoto: value.remoto as MemberUpdate['remoto'],
     links: value.links.map((link) => link.trim()).filter(Boolean),
@@ -167,7 +168,7 @@ export function toCompanyUpdate(value: CompanyRequest): CompanyUpdate {
     progetto: value.progetto.trim(),
     periodo_da: value.periodo_da,
     durata: value.durata.trim(),
-    budget_giornaliero: value.budget_giornaliero.replace(',', '.').trim(),
+    budget_giornaliero: sentAmount(value.budget_giornaliero),
     remoto: value.remoto as CompanyUpdate['remoto'],
     giorni_presenza: value.giorni_presenza ? Number(value.giorni_presenza) : null,
     numero_risorse: Number(value.numero_risorse),

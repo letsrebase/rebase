@@ -6,6 +6,7 @@ import {
   redirect,
 } from '@tanstack/react-router'
 import type { CompaniesFilters, MatchesFilters, Remoto, TalentiFilters } from '@/lib/api'
+import { parseSearch } from '@/lib/search'
 import { Shell } from '@/components/Shell'
 import { Chooser } from '@/pages/Chooser'
 import { CompanyWizard } from '@/pages/CompanyWizard'
@@ -44,13 +45,14 @@ import { NuovaRichiestaAzienda } from '@/pages/member/NuovaRichiestaAzienda'
  *  `/admin/companies` shares (REB-286), the same narrowing `thanks`'s `chi` and
  *  `verify`'s `t` do below for their own single required param.
  *
- *  The router's default `parseSearch` runs `JSON.parse` on every raw query-string
- *  value before `validateSearch` sees it, so a purely numeric value in the URL
- *  (`?tariffa_min=50`) or a bare `true`/`false` arrives as that JS type, not a
- *  string -- on first load, a reload, a shared link, or back/forward, never on an
- *  in-app `navigate()`, which is why this only shows up outside the tab that set it.
- *  Coerced back to the string it was in the URL, the same treatment the `has_cv`/
- *  `con_accessi` booleans below already needed for the same reason. */
+ *  The router's `parseSearch` (`lib/search.ts`) runs `JSON.parse` on every raw
+ *  query-string value but the amount filters before `validateSearch` sees it, so a
+ *  purely numeric value in the URL (`?posizione=50`) or a bare `true`/`false` arrives
+ *  as that JS type, not a string -- on first load, a reload, a shared link, or
+ *  back/forward, never on an in-app `navigate()`, which is why this only shows up
+ *  outside the tab that set it. Coerced back to the string it was in the URL, the same
+ *  treatment the `has_cv`/`con_accessi` booleans below already needed for the same
+ *  reason. */
 export function strParam(value: unknown): string | undefined {
   if (typeof value === 'string') return value !== '' ? value : undefined
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
@@ -470,7 +472,7 @@ export const routeTree = root.addChildren([
   ]),
 ])
 
-export const router = createRouter({ routeTree, basepath: '/hub' })
+export const router = createRouter({ routeTree, basepath: '/hub', parseSearch })
 
 declare module '@tanstack/react-router' {
   interface Register {
