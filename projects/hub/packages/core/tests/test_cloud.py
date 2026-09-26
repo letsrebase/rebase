@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import Engine, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from rebase_core.cloud import TalentCloudService
@@ -202,3 +203,63 @@ def test_the_list_reads_every_grant_newest_first_with_the_names(
     assert [grant.azienda for grant in grants] == ["Bianchi Srl", "Acme S.r.l."]
     assert grants[0].email == "ada@studio.it" and grants[0].revoked_at is None
     assert grants[1].revoked_at is not None and grants[1].revoked_by_nome == "Ivan"
+
+
+def test_the_list_leaves_out_a_deleted_requests_grant_until_it_is_restored(
+    clean: Session, settings: Settings
+) -> None:
+    """The list says what `for_user` does: a deleted request's live grant opens nothing,
+    so it is not listed as live."""
+    admin_id = _admin(clean)
+    acme, bianchi = _request(clean), _request(clean, "ada@studio.it", "Bianchi Srl")
+    cloud = TalentCloudService(clean, settings)
+    kept, _ = cloud.grant(acme, admin_id)
+    hidden, _ = cloud.grant(bianchi, admin_id)
+
+    CompanyService(clean).soft_delete(bianchi, admin_id)
+    assert [grant.id for grant in cloud.list()] == [kept.id]
+
+    CompanyService(clean).restore(bianchi, admin_id)
+    assert [grant.id for grant in cloud.list()] == [hidden.id, kept.id]
+
+
+def test_a_grant_that_loses_the_race_to_the_index_answers_the_winner(
+    clean: Session, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two «Apri» in two sessions both find nothing live and both insert: the partial
+    unique index lets one in, and the other answers that row with no second mail."""
+    admin_id = _admin(clean)
+    acme = _request(clean)
+    cloud = TalentCloudService(clean, settings)
+    winner, _ = cloud.grant(acme, admin_id)
+
+    real_live = TalentCloudService._live
+    misses = iter([True])
+
+    def live_missing_once(
+        self: TalentCloudService, user_id: UUID, company_id: UUID
+    ) -> TalentCloudGrant | None:
+        # The read before the insert misses the other session's row, as it would have
+        # before that session committed; the read after the refusal finds it.
+        if next(misses, False):
+            return None
+        return real_live(self, user_id, company_id)
+
+    monkeypatch.setattr(TalentCloudService, "_live", live_missing_once)
+    loser, mail = cloud.grant(acme, admin_id)
+    assert loser.id == winner.id and mail is None
+    rows = clean.scalars(select(TalentCloudGrant).where(TalentCloudGrant.company_id == acme))
+    assert len(rows.all()) == 1
+
+
+def test_a_refused_insert_that_is_not_the_race_is_not_swallowed(
+    clean: Session, settings: Settings
+) -> None:
+    """Only the live-grant index is the other click: any other refusal (here an admin
+    that is not a `users` row) still raises."""
+    _admin(clean)
+    acme = _request(clean)
+    with pytest.raises(IntegrityError):
+        TalentCloudService(clean, settings).grant(acme, uuid4())
+    clean.rollback()
+    assert TalentCloudService(clean, settings).for_company(acme) is None

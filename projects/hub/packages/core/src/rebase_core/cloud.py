@@ -98,9 +98,14 @@ class TalentCloudService:
         return self._read(row)
 
     def list(self) -> list[TalentCloudGrantRead]:
-        """Every grant, live and closed, newest first, at most `LIST_CAP`."""
+        """Every grant, live and closed, newest first, at most `LIST_CAP`. A grant of a
+        request an admin deleted is left out, as `for_user` leaves it: it opens nothing,
+        and listing it as live would say the opposite; restoring the request lists it
+        again."""
         rows = self.session.scalars(
             select(TalentCloudGrant)
+            .join(Company, Company.id == TalentCloudGrant.company_id)
+            .where(Company.deleted_at.is_(None))
             .order_by(TalentCloudGrant.granted_at.desc(), TalentCloudGrant.id.desc())
             .limit(LIST_CAP)
         ).all()

@@ -1378,10 +1378,17 @@ export function AdminCompanyDetail() {
       admin.moveCompany(id, stato, note.trim() || null),
     // The PATCH's own `commenti` is always `[]` (REB-356, same cause as REB-355's own
     // mutations below): merged onto the cached detail with `commenti` kept from the
-    // current cache, or a save would wipe the thread from view.
+    // current cache, or a save would wipe the thread from view. The same for
+    // `talent_cloud_grant` (REB-518), which only `get` fills: a save must not show the
+    // talent cloud closed while its grant is live.
     onSuccess: (updated: Company) => {
       client.setQueryData<Company>(['company', id], (current) =>
-        current && { ...current, ...updated, commenti: current.commenti },
+        current && {
+          ...current,
+          ...updated,
+          commenti: current.commenti,
+          talent_cloud_grant: current.talent_cloud_grant,
+        },
       )
       void client.invalidateQueries({ queryKey: ['companies'] })
     },
@@ -1391,10 +1398,16 @@ export function AdminCompanyDetail() {
   // `AdminAction` the admin expects to see without reloading the page. `commenti` is
   // kept from the current cache rather than `updated`'s own (always `[]`, since none of
   // these routes' response models fill it -- only `get` does): replacing it here would
-  // wipe the thread from view until the next full fetch.
+  // wipe the thread from view until the next full fetch. `talent_cloud_grant` is kept
+  // the same way (REB-518): these answers carry it as `null` whatever is live.
   function mergeAndRefresh(updated: Company) {
     client.setQueryData<Company>(['company', id], (current) =>
-      current && { ...current, ...updated, commenti: current.commenti },
+      current && {
+        ...current,
+        ...updated,
+        commenti: current.commenti,
+        talent_cloud_grant: current.talent_cloud_grant,
+      },
     )
     void client.invalidateQueries({ queryKey: ['companies'] })
     void client.invalidateQueries({ queryKey: auditKey })
@@ -1408,7 +1421,15 @@ export function AdminCompanyDetail() {
     },
   })
   const del = useMutation({ mutationFn: () => admin.deleteCompany(id), onSuccess: mergeAndRefresh })
-  const restore = useMutation({ mutationFn: () => admin.restoreCompany(id), onSuccess: mergeAndRefresh })
+  // A restored request opens its talent cloud again (`cloud.for_user` skips a deleted
+  // one), so its page reads the request, grant included, once more.
+  const restore = useMutation({
+    mutationFn: () => admin.restoreCompany(id),
+    onSuccess: (updated) => {
+      mergeAndRefresh(updated)
+      void client.invalidateQueries({ queryKey: ['company', id] })
+    },
+  })
   const onCommentAdded = (created: Comment) =>
     client.setQueryData<Company>(['company', id], (current) =>
       current && { ...current, commenti: [created, ...current.commenti] },
