@@ -369,3 +369,25 @@ def test_a_campaign_whose_candidates_raises_does_not_stop_a_second_due_campaign(
     assert rows(clean, broken)["a@studio.it"].stato == "in_coda"
     clean.refresh(healthy)
     assert healthy.stato == "inviata"
+
+
+def test_a_stamping_error_is_logged_and_the_send_still_happens(
+    clean: Session,  # noqa: F811  (fixture)
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Review Focus 4: the outcome never stops a send."""
+    import rebase_core.campaigns.tick as tick_module
+
+    def broken(_session: Session, *, now: datetime) -> int:
+        raise KeyError("t")
+
+    monkeypatch.setattr(tick_module, "stamp_outcomes", broken)
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it")
+    with caplog.at_level(logging.ERROR):
+        result = run_tick(clean, RecordingCampaignSender(), SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert result.inviate == 1 and result.stampate == 0
+    assert rows(clean, campaign)["a@studio.it"].stato == "inviata"
+    assert "outcome stamping failed this tick: KeyError" in caplog.text
+    assert "a@studio.it" not in caplog.text

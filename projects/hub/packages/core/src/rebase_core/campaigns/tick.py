@@ -34,7 +34,11 @@ reason and the row loop moves on; a campaign whose own work raises outside a row
 `candidates`) rolls that campaign's work back, is logged by id and
 exception type only, and is left `in_invio` for a later pass while the loop moves on
 to the next due campaign. The advisory lock is released in every case regardless,
-since it is taken and released around the whole pass, outside both of these."""
+since it is taken and released around the whole pass, outside both of these.
+
+After the sends, the same pass stamps the outcome of the last 30 days' mails
+(`outcome.py`); a failure there is logged by type and rolled back, and never undoes a
+send."""
 
 import logging
 import time
@@ -48,6 +52,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.campaigns.actions import done_at
 from rebase_core.campaigns.audience import REASON_DONE, REASON_NOT_LISTED, candidates, exclusions
+from rebase_core.campaigns.outcome import stamp_outcomes
 from rebase_core.campaigns.render import RenderTarget, render
 from rebase_core.campaigns.sender import CampaignSender
 from rebase_core.config import Settings
@@ -69,6 +74,7 @@ class TickResult:
     inviate: int = 0
     saltate: int = 0
     fallite: int = 0
+    stampate: int = 0
 
 
 def run_tick(
@@ -107,6 +113,11 @@ def run_tick(
                 except Exception as exc:  # one bad campaign must not wedge the rest (R14)
                     session.rollback()
                     _log.error("campaign %s failed this tick: %s", campaign_id, type(exc).__name__)
+            try:
+                result.stampate = stamp_outcomes(session, now=clock())
+            except Exception as exc:  # the outcome must never stop a send (R14)
+                session.rollback()
+                _log.error("outcome stamping failed this tick: %s", type(exc).__name__)
         finally:
             lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": TICK_LOCK_KEY})
             lock_conn.commit()

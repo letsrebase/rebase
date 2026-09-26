@@ -175,6 +175,14 @@ campaign with its rows still `in_coda` and logs «campaign <id> stopped this tic
 Resend 401», and the send resumes on the first pass after the key is fixed. No
 address and no key ever appears in these lines or anywhere else in the logs.
 
+**The same pass stamps what each mail led to** (P-REB-41 phase 2, `rebase_core.campaigns.outcome`).
+For every row sent in the last 30 days and still missing a stamp, it writes `entrato_at`
+(the first login after the mail) and `azione_at` (the campaign's action, from the table
+that records it: the CV comment, the card's `created_at`, the request's `updated_at`, or
+the tick itself for a card that became complete). A stamp is written once. The log line
+ends with `N esiti registrati`. Without a Resend key the tick does not run, so the preview
+stamps nothing.
+
 **Scripts written for one campaign wave never live under `/opt/hub`.** The deploy syncs
 the whole repository there with `rsync -az --delete` (`.github/workflows/
 _deploy-compose.yml`), so anything dropped into the checkout by hand that is not in the
