@@ -611,6 +611,7 @@ def test_an_admin_contacts_the_talents_and_each_answers_once(
     body = contacted.json()
     assert body["stato"] == "contattata" and body["contacted_at"] is not None
     assert all(talento["mail_sent_at"] is not None for talento in body["talenti"])
+    assert all(talento["contattabile"] for talento in body["talenti"])
     # Sent after the answer, by the background task, to each talent once.
     first, second = _availability(mailbox)
     assert (first.to, second.to) == ("talento1@studio.it", "talento2@studio.it")
@@ -723,15 +724,22 @@ def test_a_refused_availability_mail_is_logged_by_id_alone(
     contacted = client.post(f"/api/hub/team/requests/{request_id}/contact")
 
     assert contacted.status_code == 200, contacted.text
+    # The answer came before the delivery: it shows the talent contacted.
+    assert contacted.json()["stato"] == "contattata"
     assert len(refusing.sent) == 1
-    [record] = [record for record in caplog.records if record.levelno == logging.WARNING]
-    logged = record.getMessage()
-    assert request_id in logged
-    for secret in ("talento1", "studio.it", "Ada1", "Lovelace", "Acme"):
-        assert secret not in logged
-    # The link reached nobody: the talent is not contacted, and «Contatta» is free again.
+    warnings = [
+        record.getMessage() for record in caplog.records if record.levelno == logging.WARNING
+    ]
+    assert len(warnings) == 2  # the refusal, and the request put back
+    for logged in warnings:
+        assert request_id in logged
+        for secret in ("talento1", "studio.it", "Ada1", "Lovelace", "Acme"):
+            assert secret not in logged
+    # The link reached nobody: the talent is not contacted, nor is the request, and
+    # «Contatta i talenti» is free again.
     detail = client.get(f"/api/hub/team/requests/{request_id}").json()
     assert [talento["mail_sent_at"] for talento in detail["talenti"]] == [None]
+    assert detail["stato"] == "nuova" and detail["contacted_at"] is None
 
 
 def test_the_answer_post_is_throttled(client: TestClient, team: Session) -> None:

@@ -259,7 +259,8 @@ export interface AdminTeamProposal extends Omit<TeamProposal, 'team'> {
 
 /** One talent of a request: the name, the role proposed, their own rate and the
  *  client's band from it, and the availability mail's progress, all `null` until D1's
- *  first send. */
+ *  first send. `contattabile` is false for a talent whose card was deleted or turned
+ *  down: the availability mail skips them. */
 export interface TeamRequestTalent {
   freelancer_id: string
   nome: string
@@ -270,6 +271,7 @@ export interface TeamRequestTalent {
   mail_sent_at: string | null
   risposta: TalentAnswer | null
   risposta_at: string | null
+  contattabile: boolean
 }
 
 /** A request's page in «Richieste team» (§ 3.5). `proposal`, `riassunto` and

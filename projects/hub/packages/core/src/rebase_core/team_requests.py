@@ -27,7 +27,8 @@ thirty days of its mail; an unknown, spent or expired one is the same `invalid`,
 answer says nothing about which. The mails leave after the admin's answer
 (`prepare_contact`, then `deliver` in the route's background task): `mail_sent_at` is
 written with the token, so the page shows the talent as contacted at once, and taken
-back with the token if the provider refuses the mail, since that link reaches nobody.
+back with the token if the provider refuses the mail, since that link reaches nobody; a
+batch refused whole also gives the request back the state it had before the send.
 
 Nothing here logs a name, an address, a phone or a text: the log lines carry ids.
 """
@@ -36,7 +37,7 @@ import hashlib
 import logging
 import re
 import secrets
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Literal
@@ -180,6 +181,13 @@ def _token_hash(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
+def _contactable(freelancer: Freelancer) -> bool:
+    """Whether the availability mail may go to a talent: a card neither deleted nor
+    `scartato`, whenever that happened. The send skips the others, and the page offers
+    no send when only they are silent."""
+    return freelancer.deleted_at is None and freelancer.stato != "scartato"
+
+
 @dataclass(frozen=True)
 class AvailabilityMail:
     """One talent's availability mail, built by `prepare_contact` and sent by `deliver`:
@@ -189,6 +197,19 @@ class AvailabilityMail:
     talent_id: UUID
     token_hash: str
     mail: Mail
+
+
+@dataclass(frozen=True)
+class AvailabilityBatch:
+    """One «Contatta i talenti» or «Rimanda», as `prepare_contact` hands it to `deliver`:
+    the request, its mails, and what the send changed on the request, the state it had
+    before and the `contacted_at` it wrote (`None` when one was already there), so a
+    batch the provider refuses whole leaves the request as it found it."""
+
+    request_id: UUID
+    mails: tuple[AvailabilityMail, ...]
+    stato_before: str
+    contacted_at: datetime | None
 
 
 def _violates_unique_proposal(exc: IntegrityError) -> bool:
@@ -446,20 +467,21 @@ class TeamRequestService:
         The API's route runs the two halves apart, `deliver` after its answer."""
         if self.sender is None:
             raise InvalidState(NO_SENDER)
-        _, mails = self.prepare_contact(request_id, admin_id, only_silent=only_silent)
-        self.deliver(request_id, mails)
+        _, batch = self.prepare_contact(request_id, admin_id, only_silent=only_silent)
+        self.deliver(batch)
         return self.get(request_id)
 
     def prepare_contact(
         self, request_id: UUID, admin_id: UUID, *, only_silent: bool
-    ) -> tuple[TeamRequestRead, list[AvailabilityMail]]:
+    ) -> tuple[TeamRequestRead, AvailabilityBatch]:
         """The tokens and the mails, committed and not sent. Every talent the first
         time, and a first time only: once anyone has the mail, writing again is
         `only_silent`, to each talent with no answer. A talent whose card was deleted or
-        `scartato` since the request is skipped, and logged by id. Refused, before
-        anything is written: a closed request, a summary that names the company
-        (`names_the_company`), a second first time, and nobody left to write to. The
-        request becomes `contattata`, with `contacted_at` from its first send."""
+        `scartato` since the request is skipped (`_contactable`), and logged by id.
+        Refused, before anything is written: a closed request, a summary that names the
+        company (`names_the_company`), a second first time, and nobody left to write to.
+        The request becomes `contattata`, with `contacted_at` from its first send, until
+        `deliver` finds that no mail of the batch left."""
         row = self._lock(request_id)
         if row.stato == "chiusa":
             self.session.rollback()
@@ -485,7 +507,7 @@ class TeamRequestService:
         for talent, freelancer, user in talents:
             if talent.risposta is not None:
                 continue
-            if freelancer.deleted_at is not None or freelancer.stato == "scartato":
+            if not _contactable(freelancer):
                 logger.info("team request %s: talent %s is gone, not mailed", row.id, talent.id)
                 continue
             raw = secrets.token_urlsafe(32)
@@ -509,6 +531,12 @@ class TeamRequestService:
         if not mails:
             self.session.rollback()
             raise InvalidState(NOBODY_TO_CONTACT)
+        batch = AvailabilityBatch(
+            request_id=row.id,
+            mails=tuple(mails),
+            stato_before=row.stato,
+            contacted_at=now if row.contacted_at is None else None,
+        )
         if row.stato == "nuova":
             row.stato = "contattata"
         if row.contacted_at is None:
@@ -517,17 +545,20 @@ class TeamRequestService:
         AdminActionService(self.session).record(
             ENTITY, row.id, CONTACTED, admin_id, {"talenti": len(mails), "only_silent": only_silent}
         )
-        return self.get(request_id), mails
+        return self.get(request_id), batch
 
-    def deliver(self, request_id: UUID, mails: Sequence[AvailabilityMail]) -> int:
+    def deliver(self, batch: AvailabilityBatch) -> int:
         """Sends each mail `prepare_contact` built, and answers how many the provider
         accepted. An accepted one keeps its token and moves `mail_sent_at` to the moment
         it left; a refused one takes both back, since that link reaches nobody, and is
-        logged by id, so «Rimanda» writes to that talent again."""
+        logged by id, so «Rimanda» writes to that talent again. A batch refused whole
+        contacted nobody: the request goes back to the state it had and loses the
+        `contacted_at` this batch wrote, so the page offers «Contatta i talenti» again."""
         if self.sender is None:
             raise InvalidState(NO_SENDER)
+        request_id = batch.request_id
         accepted = 0
-        for item in mails:
+        for item in batch.mails:
             sent = self.sender.send(item.mail)
             same = (
                 TeamRequestTalent.id == item.talent_id,
@@ -546,6 +577,8 @@ class TeamRequestService:
                 values = {"token_hash": None, "mail_sent_at": None}
             self.session.execute(update(TeamRequestTalent).where(*same).values(**values))
             self.session.commit()
+        if accepted == 0:
+            self._undo_contact(batch)
         return accepted
 
     def answer(self, raw_token: str, risposta: str) -> Answer:
@@ -622,6 +655,32 @@ class TeamRequestService:
             raise ValidationFailed(ENTITY, "proposal_id", NOBODY_TO_HIRE)
         return members
 
+    def _undo_contact(self, batch: AvailabilityBatch) -> None:
+        """What a batch refused whole wrote on the request, taken back where it still
+        stands: the state, if the send moved it and nobody moved it since, and the
+        `contacted_at` it wrote."""
+        if batch.stato_before != "contattata":
+            self.session.execute(
+                update(TeamRequest)
+                .where(TeamRequest.id == batch.request_id, TeamRequest.stato == "contattata")
+                .values(stato=batch.stato_before)
+            )
+        if batch.contacted_at is not None:
+            self.session.execute(
+                update(TeamRequest)
+                .where(
+                    TeamRequest.id == batch.request_id,
+                    TeamRequest.contacted_at == batch.contacted_at,
+                )
+                .values(contacted_at=None)
+            )
+        self.session.commit()
+        logger.warning(
+            "team request %s: no availability mail left, the request is %s again",
+            batch.request_id,
+            batch.stato_before,
+        )
+
     def _talent_rows(
         self, row: TeamRequest, proposal: TeamProposal | None, *, lock: bool = False
     ) -> list[tuple[TeamRequestTalent, Freelancer, User]]:
@@ -670,6 +729,7 @@ class TeamRequestService:
                 mail_sent_at=talent.mail_sent_at,
                 risposta=talent.risposta,
                 risposta_at=talent.risposta_at,
+                contattabile=_contactable(freelancer),
             )
             for talent, freelancer, user in ordered
         ]

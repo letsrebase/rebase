@@ -120,10 +120,10 @@ WATERMELON = "#ed254e"
 # this darker step for the same reason (`--color-watermelon-strong`).
 CTA = "#e5133e"
 # «Sono disponibile» in the availability mail (spec § 3.6): the palette has no green, so
-# this one is the mail's own, proposed for Ivan to confirm on the pull request. White on
-# it measures 4.37:1 by WCAG's formula (the spec says 4.7:1), a little under the 4.5:1
-# floor `CTA` was darkened for; `#29843b`, a shade darker, measures 4.71:1.
-AVAILABLE_GREEN = "#2b8a3e"
+# this one is the mail's own, for Ivan to confirm on the pull request. White on it
+# measures 4.71:1 by WCAG's formula, over the 4.5:1 floor `CTA` was darkened for; the
+# spec's `#2b8a3e`, a shade lighter, measures 4.37:1, under it.
+AVAILABLE_GREEN = "#29843b"
 FONT = "Outfit, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Arial, sans-serif"
 # The landing's stepped shadow: the border colour, moved 8px right and down. A mail
 # client draws no box-shadow, so the step is a cell of ink behind the card.

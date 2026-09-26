@@ -223,17 +223,19 @@ function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: Admi
 
 /** «Contatta i talenti» while nobody has the availability mail (D1, spec § 3.5, § 3.6),
  *  then «Rimanda a chi non ha risposto», which writes only to the silent, so a talent
- *  who answered is never mailed again; nothing once everyone answered, or on a closed
- *  request. The mails leave after the API's answer, which already shows every talent
- *  contacted; a refusal is the API's sentence, the summary that names the company
- *  among them. */
+ *  who answered is never mailed again, with a fresh link that retires the one they
+ *  had. Nothing once every talent who can be written to answered (a card deleted or
+ *  turned down cannot), or on a closed request. The mails leave after the API's
+ *  answer, which already shows every talent contacted; a refusal is the API's sentence
+ *  as it stands, the summary that names the company among them. */
 function ContactTalents({ request, onContacted }: { request: TeamRequest; onContacted: (updated: TeamRequest) => void }) {
+  const hintId = useId()
   const contact = useMutation({
     mutationFn: (onlySilent: boolean) => admin.contactTeamTalents(request.id, onlySilent),
     onSuccess: onContacted,
   })
   const mailed = request.talenti.some((talent) => talent.mail_sent_at !== null)
-  const silent = request.talenti.some((talent) => talent.risposta === null)
+  const silent = request.talenti.some((talent) => talent.risposta === null && talent.contattabile)
   if (request.stato === 'chiusa' || !silent) return null
   return (
     <div className="space-y-3">
@@ -246,7 +248,13 @@ function ContactTalents({ request, onContacted }: { request: TeamRequest; onCont
         </p>
       )}
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="button" size="sm" disabled={contact.isPending} onClick={() => contact.mutate(mailed)}>
+        <Button
+          type="button"
+          size="sm"
+          disabled={contact.isPending}
+          aria-describedby={mailed ? hintId : undefined}
+          onClick={() => contact.mutate(mailed)}
+        >
           {contact.isPending ? 'Invio…' : mailed ? 'Rimanda a chi non ha risposto' : 'Contatta i talenti'}
         </Button>
         {contact.isSuccess && (
@@ -255,6 +263,11 @@ function ContactTalents({ request, onContacted }: { request: TeamRequest; onCont
           </span>
         )}
       </div>
+      {mailed && (
+        <p id={hintId} className="text-sm text-muted-foreground">
+          I link delle mail precedenti smettono di valere.
+        </p>
+      )}
     </div>
   )
 }

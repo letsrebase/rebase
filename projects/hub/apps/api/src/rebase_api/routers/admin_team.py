@@ -10,7 +10,6 @@ the admin's page and the answer already shows every talent as contacted.
 """
 
 import logging
-from collections.abc import Sequence
 from typing import Annotated
 from uuid import UUID
 
@@ -25,7 +24,7 @@ from rebase_core.team_requests import (
     LIST_LIMIT_DEFAULT,
     LIST_LIMIT_MAX,
     NO_SENDER,
-    AvailabilityMail,
+    AvailabilityBatch,
     TeamRequestService,
 )
 from rebase_core.team_schemas import (
@@ -117,16 +116,15 @@ def _deliver(
     open_session: SessionOpener,
     settings: Settings,
     sender: EmailSender,
-    request_id: UUID,
-    mails: Sequence[AvailabilityMail],
+    batch: AvailabilityBatch,
 ) -> None:
     """After the response: it never raises, since nobody is left to read it, and logs
     the request's id alone."""
     try:
         with open_session() as session:
-            TeamRequestService(session, settings=settings, sender=sender).deliver(request_id, mails)
+            TeamRequestService(session, settings=settings, sender=sender).deliver(batch)
     except Exception:
-        _log.exception("team request %s: sending the availability mails failed", request_id)
+        _log.exception("team request %s: sending the availability mails failed", batch.request_id)
 
 
 @router.post("/requests/{request_id}/contact", response_model=TeamRequestRead)
@@ -146,8 +144,8 @@ def contact_team_talents(
     time, or nobody left to write to; 503 without a mail key."""
     if sender is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_SENDER)
-    read, mails = TeamRequestService(session, settings=settings).prepare_contact(
+    read, batch = TeamRequestService(session, settings=settings).prepare_contact(
         request_id, admin.id, only_silent=only_silent
     )
-    background.add_task(_deliver, open_session, settings, sender, read.id, mails)
+    background.add_task(_deliver, open_session, settings, sender, batch)
     return read

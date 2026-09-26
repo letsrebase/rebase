@@ -202,7 +202,8 @@ class TeamRequestCreated(BaseModel):
 class TeamRequestTalentRead(BaseModel):
     """One talent of a request, as the admin reads it: the name, the role proposed, the
     freelancer's own rate and the client's band from it, and the availability mail's
-    progress (D1), all `None` until the first send."""
+    progress (D1), all `None` until the first send. `contattabile` is false for a talent
+    whose card was deleted or `scartato`: the availability mail skips them."""
 
     freelancer_id: UUID
     nome: str
@@ -213,6 +214,7 @@ class TeamRequestTalentRead(BaseModel):
     mail_sent_at: datetime | None
     risposta: str | None
     risposta_at: datetime | None
+    contattabile: bool
 
 
 class TeamRequestRead(BaseModel):

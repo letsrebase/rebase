@@ -2,18 +2,21 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { stripAnswerLink, takeAnswerLink } from '@/lib/answer-link'
 import { TeamRisposta } from './TeamRisposta'
 
-function mount(path: string) {
+function mount(path: string, { strict = false } = {}) {
   const root = createRootRoute({ component: () => <Outlet /> })
   const page = createRoute({ getParentRoute: () => root, path: '/team/risposta', component: TeamRisposta })
   const router = createRouter({ routeTree: root.addChildren([page]), history: createMemoryHistory({ initialEntries: [path] }) })
-  render(
+  const tree = (
     <QueryClientProvider client={new QueryClient()}>
       <RouterProvider router={router} />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   )
+  render(strict ? <StrictMode>{tree}</StrictMode> : tree)
 }
 
 function answering(status: number, body: unknown) {
@@ -24,7 +27,12 @@ function answering(status: number, body: unknown) {
 
 const INVALID = 'Questo link non è più valido'
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.restoreAllMocks()
+  // The browser's own URL and the module's one-shot slot, whatever a test left there.
+  window.history.replaceState(null, '', '/')
+  takeAnswerLink()
+})
 
 describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
   it('asks before recording, then posts the token and the answer and thanks for the yes', async () => {
@@ -36,9 +44,9 @@ describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
     expect(fetch).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: 'Conferma' }))
 
-    expect(
-      await screen.findByRole('heading', { name: 'Grazie, abbiamo registrato la tua disponibilità' }),
-    ).toBeInTheDocument()
+    const outcome = await screen.findByRole('heading', { name: 'Grazie, abbiamo registrato la tua disponibilità' })
+    // The outcome takes the focus, so a screen reader announces it.
+    expect(outcome).toHaveFocus()
     expect(screen.queryByRole('button', { name: 'Conferma' })).toBeNull()
     const [url, init] = fetch.mock.calls[0]!
     expect(url).toBe('/api/hub/team/availability')
@@ -65,8 +73,27 @@ describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Conferma' }))
 
-    expect(await screen.findByRole('heading', { name: INVALID })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: INVALID })).toHaveFocus()
     expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('answers with the link main.tsx already took out of the URL, under StrictMode', async () => {
+    const fetch = answering(200, { esito: 'no' })
+    window.history.replaceState(null, '', '/hub/team/risposta?t=abc_-1&r=no')
+    stripAnswerLink()
+    // Out of the address bar, so out of the history, the first pageview and the replay.
+    expect(window.location.search).toBe('')
+
+    // The router mounts at a clean path: the pair reaches the page only through
+    // `takeAnswerLink`'s one-shot read.
+    mount('/team/risposta', { strict: true })
+    expect(await screen.findByRole('heading', { name: 'Vuoi confermare che non sei disponibile?' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Conferma' }))
+
+    expect(
+      await screen.findByRole('heading', { name: 'Grazie, abbiamo registrato che non sei disponibile' }),
+    ).toBeInTheDocument()
+    expect(JSON.parse(fetch.mock.calls[0]![1]?.body as string)).toEqual({ t: 'abc_-1', risposta: 'no' })
   })
 
   it('says the same of a link with no token or no answer, and posts nothing', async () => {

@@ -735,6 +735,8 @@ def test_contact_skips_a_talent_gone_since_the_request(
 
     assert [mail.to for mail in sender.sent] == ["talento1@studio.it"]
     assert [talent.mail_sent_at for talent in read.talenti] == [NOW, None, None]
+    # The page reads who can be written to at all.
+    assert [talent.contattabile for talent in read.talenti] == [True, False, False]
     for gone in talents[1:]:
         assert _row(clean, request.id, gone).token_hash is None
     lines = [record.getMessage() for record in logs.records]
@@ -813,6 +815,8 @@ def test_a_refused_mail_leaves_no_link_and_rimanda_tries_again(
     read = _mailer(clean, refusing).contact_talents(request.id, admin, only_silent=False)
 
     assert [talent.mail_sent_at for talent in read.talenti] == [NOW, None]
+    # One mail left, so the request was contacted.
+    assert read.stato == "contattata" and read.contacted_at == NOW
     assert _row(clean, request.id, second).token_hash is None
     assert _mailer(clean).answer(_token(refusing.sent[1]), "si") == "invalid"
     [warning] = [
@@ -829,14 +833,42 @@ def test_a_refused_mail_leaves_no_link_and_rimanda_tries_again(
     _mailer(clean, sender).contact_talents(request.id, admin, only_silent=True)
     assert [mail.to for mail in sender.sent] == ["talento1@studio.it", "talento2@studio.it"]
 
-    # A request whose every mail was refused was never contacted: the first send is free.
-    lone = _public(_service(clean), _proposal(clean, [_talent(clean, 3)]), "Tre Srl")
-    _mailer(clean, Refusing("talento3@studio.it")).contact_talents(
-        lone.id, admin, only_silent=False
+
+def test_a_first_send_refused_whole_leaves_the_request_as_it_was(
+    clean: Session, logs: pytest.LogCaptureFixture
+) -> None:
+    """No mail of the batch left: the request was not contacted, so it goes back to the
+    state it had, without the `contacted_at` the send wrote, and «Contatta i talenti»
+    is free again."""
+    talents = [_talent(clean, 1), _talent(clean, 2)]
+    request = _public(_service(clean), _proposal(clean, talents))
+    admin = _user(clean, "ivan@rebase.it", role="admin")
+
+    read = _mailer(clean, Refusing("talento1@studio.it", "talento2@studio.it")).contact_talents(
+        request.id, admin, only_silent=False
     )
+
+    assert read.stato == "nuova" and read.contacted_at is None
+    assert [talent.mail_sent_at for talent in read.talenti] == [None, None]
+    undone = [line for line in (r.getMessage() for r in logs.records) if "again" in line]
+    assert undone == [
+        f"team request {request.id}: no availability mail left, the request is nuova again"
+    ]
     retried = RecordingSender()
-    _mailer(clean, retried).contact_talents(lone.id, admin, only_silent=False)
-    assert [mail.to for mail in retried.sent] == ["talento3@studio.it"]
+    again = _mailer(clean, retried).contact_talents(request.id, admin, only_silent=False)
+    assert [mail.to for mail in retried.sent] == ["talento1@studio.it", "talento2@studio.it"]
+    assert again.stato == "contattata" and again.contacted_at == NOW
+
+    # A request reopened by hand keeps the `contacted_at` it already had: only the state
+    # this send moved goes back.
+    reopened = _public(_service(clean), _proposal(clean, [_talent(clean, 3)]), "Tre Srl")
+    _service(clean).set_status(reopened.id, "contattata", admin)
+    _service(clean).set_status(reopened.id, "nuova", admin)
+    later = NOW + timedelta(days=1)
+    read = _mailer(clean, Refusing("talento3@studio.it"), now=later).contact_talents(
+        reopened.id, admin, only_silent=False
+    )
+    assert read.stato == "nuova" and read.contacted_at == NOW
 
 
 def test_availability_records_yes_and_no(clean: Session) -> None:
@@ -896,6 +928,18 @@ def test_availability_token_is_one_use_and_expires(clean: Session) -> None:
     assert unknown.value.details["field"] == "risposta"
 
 
+def _contrast_with_white(colour: str) -> float:
+    """WCAG 2's contrast ratio of white text on `colour` (`#rrggbb`)."""
+
+    def linear(channel: int) -> float:
+        value = channel / 255
+        return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+    red, green, blue = (int(colour[i : i + 2], 16) for i in (1, 3, 5))
+    luminance = 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+    return 1.05 / (luminance + 0.05)
+
+
 def test_the_availability_mail_carries_both_answers_and_escapes_the_summary() -> None:
     yes = "https://letsrebase.com/hub/team/risposta?t=abc&r=si"
     no = "https://letsrebase.com/hub/team/risposta?t=abc&r=no"
@@ -926,7 +970,10 @@ def test_the_availability_mail_carries_both_answers_and_escapes_the_summary() ->
         assert url not in html
         assert html.count(url.replace("&", "&amp;")) == 3
     # «Sono disponibile» on the green, «Non sono disponibile» on the brand's CTA red.
-    assert AVAILABLE_GREEN == "#2b8a3e" and CTA == "#e5133e"
+    assert AVAILABLE_GREEN == "#29843b" and CTA == "#e5133e"
+    # White text on either button clears WCAG's 4.5:1 for text this size.
+    for colour in (AVAILABLE_GREEN, CTA):
+        assert _contrast_with_white(colour) >= 4.5, colour
     green = html.index(f'bgcolor="{AVAILABLE_GREEN}"')
     red = html.index(f'bgcolor="{CTA}"')
     assert green < html.index(">Sono disponibile</a>") < red

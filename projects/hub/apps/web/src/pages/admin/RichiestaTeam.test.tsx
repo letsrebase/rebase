@@ -86,6 +86,7 @@ const REQUEST = {
       mail_sent_at: null,
       risposta: null,
       risposta_at: null,
+      contattabile: true,
     },
     {
       freelancer_id: 'f2',
@@ -97,6 +98,7 @@ const REQUEST = {
       mail_sent_at: '2026-09-25T12:00:00Z',
       risposta: 'si',
       risposta_at: '2026-09-26T09:30:00Z',
+      contattabile: true,
     },
   ],
   contacted_at: null,
@@ -379,6 +381,8 @@ describe('the talents’ availability on the request’s page (REB-517, spec § 
 
     const team = await screen.findByRole('region', { name: 'Il team' })
     expect(within(team).queryByRole('button', { name: 'Rimanda a chi non ha risposto' })).toBeNull()
+    // Before any mail there is no older link to retire.
+    expect(within(team).queryByText('I link delle mail precedenti smettono di valere.')).toBeNull()
     for (const link of within(team).getAllByRole('link')) {
       expect(cellUnder(link.closest('tr')!, 'Risposta')).toHaveTextContent(/^—$/)
     }
@@ -387,6 +391,9 @@ describe('the talents’ availability on the request’s page (REB-517, spec § 
     expect(await within(team).findByRole('button', { name: 'Rimanda a chi non ha risposto' })).toBeInTheDocument()
     expect(calls).toEqual(['POST /api/hub/team/requests/r1/contact?only_silent=false'])
     expect(within(team).getByRole('status')).toHaveTextContent('Mail in partenza')
+    expect(within(team).getByRole('button', { name: 'Rimanda a chi non ha risposto' })).toHaveAccessibleDescription(
+      'I link delle mail precedenti smettono di valere.',
+    )
     for (const link of within(team).getAllByRole('link')) {
       expect(cellUnder(link.closest('tr')!, 'Risposta')).toHaveTextContent(/^In attesa$/)
     }
@@ -455,6 +462,45 @@ describe('the talents’ availability on the request’s page (REB-517, spec § 
     mount()
     const team = await screen.findByRole('region', { name: 'Il team' })
     expect(within(team).queryByRole('button')).toBeNull()
+  })
+
+  it('says under «Rimanda» that the links already sent stop working', async () => {
+    serveRequest(REQUEST, () => answer(500, {}))
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    const button = within(team).getByRole('button', { name: 'Rimanda a chi non ha risposto' })
+    expect(button).toHaveAccessibleDescription('I link delle mail precedenti smettono di valere.')
+    expect(within(team).getByText('I link delle mail precedenti smettono di valere.')).toBeVisible()
+  })
+
+  it('offers nothing to send when only talents who cannot be written to are silent', async () => {
+    serveRequest(
+      {
+        ...REQUEST,
+        talenti: [
+          { ...REQUEST.talenti[0], contattabile: false },
+          REQUEST.talenti[1],
+        ],
+      },
+      () => answer(500, {}),
+    )
+    mount()
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    await within(team).findByRole('link', { name: 'Ada Lovelace' })
+    expect(within(team).queryByRole('button')).toBeNull()
+  })
+
+  it('shows the API’s sentence as it stands when nobody is left to write to', async () => {
+    // `team_requests.NOBODY_TO_CONTACT`, a 409: a card turned down since this page loaded.
+    const nobody = "Non c'è nessun talento da contattare."
+    serveRequest(FRESH, () => answer(409, { detail: nobody }))
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    await userEvent.click(within(team).getByRole('button', { name: 'Contatta i talenti' }))
+
+    expect(await within(team).findByRole('alert')).toHaveTextContent(new RegExp(`^${nobody}$`))
   })
 
   it('offers nothing to send on a closed request', async () => {
