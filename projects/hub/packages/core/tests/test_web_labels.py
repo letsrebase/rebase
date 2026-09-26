@@ -11,18 +11,11 @@ from typing import get_args
 import pytest
 
 from rebase_core.match_words import DOCUMENT_STATE_LABELS, MATCH_STATE_LABELS, Action
+from rebase_core.models import CARD_SENIORITIES
 from rebase_core.team_words import (
     TALENT_ANSWER_LABELS,
     TEAM_ORIGIN_LABELS,
     TEAM_REQUEST_STATE_LABELS,
-)
-
-# REB-509: the three maps exist in core, but `format.ts` does not carry them yet --
-# C7 (REB-514) and D2 (REB-518) copy them in and remove this mark. `strict=True` so the
-# mark itself fails the moment one of those tasks makes the comparison pass without
-# removing it.
-_NOT_ON_THE_WEB_YET = pytest.mark.xfail(
-    strict=True, reason="format.ts gets this map from REB-514 (C7) or REB-518 (D2)"
 )
 
 REPO = Path(__file__).resolve().parents[5]
@@ -63,11 +56,10 @@ def _drift(name: str, web: dict[str, str], core: dict[str, str]) -> list[str]:
     [
         ("MATCH_STATE_LABELS", MATCH_STATE_LABELS),
         ("DOCUMENT_STATE_LABELS", DOCUMENT_STATE_LABELS),
-        pytest.param(
-            "TEAM_REQUEST_STATE_LABELS", TEAM_REQUEST_STATE_LABELS, marks=_NOT_ON_THE_WEB_YET
-        ),
-        pytest.param("TEAM_ORIGIN_LABELS", TEAM_ORIGIN_LABELS, marks=_NOT_ON_THE_WEB_YET),
-        pytest.param("TALENT_ANSWER_LABELS", TALENT_ANSWER_LABELS, marks=_NOT_ON_THE_WEB_YET),
+        # REB-514: «Richieste team» and the talents' answers (P-REB-43).
+        ("TEAM_REQUEST_STATE_LABELS", TEAM_REQUEST_STATE_LABELS),
+        ("TEAM_ORIGIN_LABELS", TEAM_ORIGIN_LABELS),
+        ("TALENT_ANSWER_LABELS", TALENT_ANSWER_LABELS),
     ],
 )
 def test_the_web_labels_a_state_as_the_core_does(name: str, core: dict[str, str]) -> None:
@@ -80,6 +72,16 @@ def test_the_web_labels_every_action_the_core_names_and_no_other(name: str) -> N
     web, core = set(_web_map(name)), set(get_args(Action))
     assert web == core, (
         f"{name}: only on the web {sorted(web - core)}, only in the core {sorted(core - web)}"
+    )
+
+
+def test_the_web_names_every_seniority_a_card_can_carry_and_no_other() -> None:
+    """REB-514: the web words a card's `seniority`; the core keeps the values, not the
+    words, since only a page says them."""
+    web, core = set(_web_map("SENIORITY_LABELS")), set(CARD_SENIORITIES)
+    assert web == core, (
+        f"SENIORITY_LABELS: only on the web {sorted(web - core)}, "
+        f"only in the core {sorted(core - web)}"
     )
 
 

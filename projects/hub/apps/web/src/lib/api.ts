@@ -225,6 +225,99 @@ export const team = {
   request: (body: TeamRequestCreate) => request<{ id: string }>('/api/hub/team/requests', json(body)),
 }
 
+// ---- the team builder, in the admin area (P-REB-43, spec § 2.1, § 3.5, § 5.1) --------------
+
+export type TeamRequestStato = 'nuova' | 'contattata' | 'chiusa'
+export type TeamRequestOrigine = 'pubblico' | 'cloud'
+/** A talent's answer to the availability mail (D1): `null` until they give one. */
+export type TalentAnswer = 'si' | 'no'
+
+/** One person of a proposal as the admin reads it: the public shape, plus who it is. */
+export interface AdminTeamMember extends TeamMember {
+  freelancer_id: string
+}
+
+/** The admin's read of a proposal: ids kept, and the card's `luogo` with them. */
+export interface AdminTeamProposal extends Omit<TeamProposal, 'team'> {
+  team: AdminTeamMember[]
+  origine: string
+}
+
+/** One talent of a request: the name, the role proposed, their own rate and the
+ *  client's band from it, and the availability mail's progress, all `null` until D1's
+ *  first send. */
+export interface TeamRequestTalent {
+  freelancer_id: string
+  nome: string
+  cognome: string
+  ruolo: string
+  tariffa_giornaliera: string | null
+  fascia: Band | null
+  mail_sent_at: string | null
+  risposta: TalentAnswer | null
+  risposta_at: string | null
+}
+
+/** A request's page in «Richieste team» (§ 3.5). `proposal`, `riassunto` and
+ *  `descrizione` are `null` for a request of one talent from the cloud, which has no
+ *  proposal; `riassunto` is the copy the admin edits before the talents read it. */
+export interface TeamRequest {
+  id: string
+  proposal: AdminTeamProposal | null
+  riassunto: string | null
+  descrizione: string | null
+  origine: TeamRequestOrigine
+  azienda: string
+  email: string
+  telefono: string | null
+  user_id: string | null
+  company_id: string | null
+  stato: TeamRequestStato
+  note: string | null
+  talenti: TeamRequestTalent[]
+  contacted_at: string | null
+  closed_at: string | null
+  created_at: string
+}
+
+/** One row of «Richieste team»: who, from where, when, where it stands, and how many of
+ *  the talents asked said yes. */
+export interface TeamRequestListItem {
+  id: string
+  azienda: string
+  origine: TeamRequestOrigine
+  stato: TeamRequestStato
+  created_at: string
+  contacted_at: string | null
+  talenti_totale: number
+  talenti_si: number
+}
+
+/** `GET /api/hub/team/requests`: newest first, `next_cursor` `null` on the last page. */
+export interface TeamRequestList {
+  items: TeamRequestListItem[]
+  next_cursor: string | null
+}
+
+/** What the list takes beside `cursor`/`limit`, and what `/admin/team` carries in its
+ *  URL: a state of `TeamRequestStato`, which the API checks. */
+export interface TeamRequestsFilters {
+  stato?: string
+}
+
+/** A talent's anonymous card as the admin reads it (§ 5.1): the last card written and
+ *  when, from which model, and the last failure, which may sit beside an older card.
+ *  `card` is `null` until a CV produces one; `modalita` is the profile's own, read now. */
+export interface FreelancerCard {
+  freelancer_id: string
+  card: Scheda | null
+  modalita: Remoto | null
+  cv_sha256: string | null
+  model: string | null
+  generated_at: string | null
+  error: string | null
+}
+
 // ---- the admin area -------------------------------------------------------------------
 
 export type Role = 'member' | 'admin'
@@ -967,6 +1060,27 @@ export const admin = {
   deleteFreelancer: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}`, { method: 'DELETE' }),
   restoreFreelancer: (id: string) =>
     request<Freelancer>(`/api/hub/freelancers/${id}/restore`, { method: 'POST' }),
+  /** The anonymous card Claude wrote from the CV (REB-510), with the last failure. */
+  freelancerCard: (id: string) => request<FreelancerCard>(`/api/hub/freelancers/${id}/card`),
+  /** «Rigenera scheda»: the card written again from the current CV, now. A failure is
+   *  a 200 with `error`; 503 with the API's sentence when the builder is off. */
+  regenerateFreelancerCard: (id: string) =>
+    request<FreelancerCard>(`/api/hub/freelancers/${id}/card`, { method: 'POST' }),
+  /** «Richieste team» (REB-512): newest first, a page at a time by cursor. */
+  teamRequests: (filters: TeamRequestsFilters & { cursor?: string; limit?: number } = {}) => {
+    const qs = filterQuery(filters)
+    return request<TeamRequestList>(`/api/hub/team/requests${qs ? `?${qs}` : ''}`)
+  },
+  teamRequest: (id: string) => request<TeamRequest>(`/api/hub/team/requests/${id}`),
+  /** «Segna come contattata», «Chiudi», «Riapri». */
+  setTeamRequestStatus: (id: string, stato: TeamRequestStato) =>
+    request<TeamRequest>(`/api/hub/team/requests/${id}/status`, json({ stato })),
+  /** «Salva la nota»: `null` clears it. */
+  setTeamRequestNote: (id: string, note: string | null) =>
+    request<TeamRequest>(`/api/hub/team/requests/${id}/note`, { ...json({ note }), method: 'PATCH' }),
+  /** «Salva il riassunto»: what the talents will read. */
+  setTeamRequestSummary: (id: string, riassunto: string) =>
+    request<TeamRequest>(`/api/hub/team/requests/${id}/summary`, { ...json({ riassunto }), method: 'PATCH' }),
   companies: (filters: CompaniesFilters & { cursor?: string; limit?: number } = {}) => {
     const qs = filterQuery(filters)
     return request<CompanyList>(`/api/hub/companies${qs ? `?${qs}` : ''}`)
