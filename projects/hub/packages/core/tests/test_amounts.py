@@ -1,7 +1,8 @@
 """`italian_amount`: the web app's amount rule, in Python (REB-485).
 
-Both sides run the same table, `amount_cases.json` beside this file: the web's
-`apps/web/src/lib/amount.test.ts` reads it too, so the two readings cannot drift. A row's
+Both sides run the same table, `apps/web/src/lib/amount_cases.json`: it lives in the web
+package because the web image builds and type-checks only that package, and
+`amount.test.ts` beside it reads it too, so the two readings cannot drift. A row's
 `amount` is `null` for a refusal."""
 
 import json
@@ -12,8 +13,10 @@ import pytest
 
 from rebase_core.amounts import NotAnAmount, italian_amount
 
+# `.../projects/hub/packages/core/tests/test_amounts.py`: three levels up is `projects/hub`.
+TABLE = Path(__file__).resolve().parents[3] / "apps" / "web" / "src" / "lib" / "amount_cases.json"
 CASES = json.loads(
-    (Path(__file__).parent / "amount_cases.json").read_text(encoding="utf-8"),
+    TABLE.read_text(encoding="utf-8"),
     parse_float=Decimal,
 )
 

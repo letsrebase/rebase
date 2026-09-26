@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 // The table the core's `test_amounts.py` runs too (REB-485), so the web and the API cannot
 // read an amount two ways. `amount` is `null` for a refusal.
-import CASES from '../../../../packages/core/tests/amount_cases.json'
+import CASES from './amount_cases.json'
 import { acceptedAmount, amountFilter, amountNumber, euroAmount, sentAmount } from './amount'
 
 describe('amountNumber', () => {
