@@ -238,6 +238,71 @@ commits the row. **So the preview must never get a key on production's Resend te
 each environment would then 503 the other's tagged events, and Resend would retry every
 one of them for a day. Give the preview its own Resend team, or no key at all.
 
+## The team builder
+
+Since milestone C of `docs/superpowers/specs/2026-09-25-team-builder-and-talent-cloud-design.md`
+(REB-508 to REB-516) Claude reads every freelancer's CV once and writes an anonymous
+card of it (`rebase_core.cards`), and `/hub/team` turns a project's description and
+those cards into a team (`rebase_core.team_builder`), which a company files with
+«Assumi team» and an admin works in «Richieste team». Both calls go through one seam,
+`rebase_core.llm`, with inference in the European Union; the tests hand a
+`RecordingCall` and never reach Anthropic.
+
+**The privacy page goes out before the hub.** From the first card on, CVs go to
+Anthropic, and it is letsrebase.com/privacy, in «La tua scheda e il team builder», that
+tells the people they belong to. So on production the section is live first: the
+`website-v*` tag that carries it, then the key in `.env`, then the `hub-v*` tag. The
+other way round, CVs reach Anthropic while the privacy page still says nothing of it.
+
+**The key** is `REBASE_ANTHROPIC_API_KEY`, in production's and the preview's
+`${DEPLOY_PATH}/.env`, never in the repository; recreate `api` after setting it
+(`docker compose -p rebase --env-file "${DEPLOY_PATH}/.env" up -d api` from
+`projects/hub`, `-p rebase-preview` on the preview). Without it no card is written
+and `POST /api/hub/team/proposals` answers 503 «Il team builder è spento.»; nothing
+else of the hub changes. `REBASE_TEAM_BUILDER_ENABLED=false` is the switch that turns
+the proposals off with the key still there: the same 503, while cards go on being
+written and requests already filed stay in «Richieste team».
+
+**The backlog is `rebase cards-refresh`.** A card is written after the wizard or a CV
+upload, so the CVs already on file get theirs from `docker exec rebase-api-1 uv run
+--no-sync rebase cards-refresh` (`rebase-preview-api-1` on the preview), run after the
+deploy that brings the key (on production, once the talents' mail of spec § 4.4 has
+gone out) and again until it prints «0 schede scritte, 0 non riuscite». Each run takes
+50 CVs, the oldest first (`--limit`), and never a turned-down person's. A CV that
+failed on its own account (a refusal, a scan with no text, a card that names the
+person) is not tried again until it changes, so the runs end; an outage stops the
+batch, counts under «non riuscite» and is the next run's, so a run that keeps printing
+«0 schede scritte, 1 non riuscite» is Claude not answering, not a CV. «Rigenera
+scheda» on the talent's page asks again for one.
+
+**Two caps.** `REBASE_TEAM_BUILDER_CONCURRENCY` (4) is how many proposals run at once
+in the API process: the next one answers 503 «Troppe richieste in questo momento:
+riprova tra un minuto.» at once rather than wait on the threads the member area and the
+webhooks share. `REBASE_TEAM_BUILDER_DAILY_CAP` (300) is how many proposals a day, the
+public page and the cloud together, counted on `team_proposals` since midnight in Rome
+(`rebase_core.team_caps`); once reached, the same 503 until the next day. It counts
+proposals written: an admin's own and one with an empty catalogue (no call made) do
+not count, and a call that failed is bounded by `spend_one` and the concurrency cap,
+not by this one.
+
+**`/api/hub/team/proposals` needs 90 seconds on the host vhost.** A proposal holds the
+request while Claude writes, and the seam gives up after two attempts of 40 seconds
+(`llm.py`, `_TIMEOUT_SECONDS` and `_MAX_RETRIES`), near 81 seconds; nginx's default of
+60 would answer the visitor 504 while the proposal goes on. The installed vhost in
+`/etc/nginx/sites-available/` gets, by hand as the MCP location did and beside
+`location ^~ /api/hub/`, which an exact match outranks, production's
+
+```
+location = /api/hub/team/proposals {
+    proxy_pass http://127.0.0.1:8084;
+    proxy_read_timeout 90s;
+    include /etc/nginx/snippets/orbiters-proxy.conf;
+}
+```
+
+and the preview's the same on 127.0.0.1:8086; `nginx -t`, then `systemctl reload
+nginx`.
+
 ## Running it
 
 From the repository root:
