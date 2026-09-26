@@ -1,5 +1,5 @@
 /* An amount as an Italian types it (REB-485). The same grammar as the core's
- * `rebase_core.amounts`, and both run the table in `packages/core/tests/amount_cases.json`:
+ * `rebase_core.amounts`, and both run the table in `amount_cases.json` beside this file:
  *
  * - with a comma, the comma is the decimal and dots may only group the digits before it in
  *   threes («1.234,50» is 1234.50, «1,5» is 1.5); anything else with a comma is refused,

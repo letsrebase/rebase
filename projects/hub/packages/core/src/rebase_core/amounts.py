@@ -1,7 +1,7 @@
 """An amount as an Italian types it, read once for every adapter (REB-485).
 
 The same grammar as the web app's (`apps/web/src/lib/amount.ts`), and both run the table
-in `packages/core/tests/amount_cases.json`:
+in `apps/web/src/lib/amount_cases.json`:
 
 - with a comma, the comma is the decimal and dots may only group the digits before it in
   threes («1.234,50» is 1234.50, «1,5» is 1.5); anything else with a comma is refused,
