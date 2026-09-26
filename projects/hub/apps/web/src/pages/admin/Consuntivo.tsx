@@ -39,10 +39,14 @@ function matchTitle(match: Match): string {
     .join(' · ')
 }
 
+const UNREADABLE = 'Non riesco a leggere il consuntivo.'
+
 /** Why there is no report, in the API's own sentence: where the link stands for a 409,
- *  the seam's for a 502, the missing configuration for a 503. */
+ *  the seam's for a 502, the missing configuration for a 503. A refusal with no
+ *  sentence, or anything that is not the API's, reads as `UNREADABLE`, never as an
+ *  empty paragraph. */
 function failure(error: unknown): string {
-  return error instanceof ApiError ? error.message : 'Non riesco a leggere il consuntivo.'
+  return (error instanceof ApiError && error.message.trim()) || UNREADABLE
 }
 
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {

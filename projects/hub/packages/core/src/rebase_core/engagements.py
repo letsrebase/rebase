@@ -84,6 +84,10 @@ ENGAGEMENTS_PATH = "/api/rebase/engagements"
 # Where plain HTTP is still acceptable: a CRM running on this machine, in development.
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1"})
 NOT_ACTIVE = "Si collega a Pigro solo un match attivo."
+# The report's refusal for a match with no link state yet (`pigro_stato` NULL: not
+# signed, so not active): `pigro_state_sentence` says nothing there, since the card
+# has its own words for a match waiting on its signature.
+REPORT_NOT_ACTIVE = "Il match non è ancora attivo: nessun consuntivo da leggere."
 LETTER_NOT_SIGNED = "La lettera non è firmata."
 # The CRM's own customer rules (`CustomerService._check_fiscal`), met before the call so
 # a value the space would refuse never leaves: an address of 255 characters at most, a
@@ -539,9 +543,10 @@ class EngagementService:
         engagement: from the letter's start (the printed one for a match older than
         migration 0021, the match's own creation day when the letter has none) to
         today, asked in windows of at most `REPORT_MAX_DAYS`. `InvalidState` for a
-        match not `collegato`, with where its link stands; `PigroUnavailable` for a CRM
-        not configured here (`PIGRO_NOT_CONFIGURED`), not on HTTPS (`HTTPS_ONLY`) or not
-        answering with a report."""
+        match not `collegato`, with where its link stands (`REPORT_NOT_ACTIVE` when it
+        has no link state yet); `PigroUnavailable` for a CRM not configured here
+        (`PIGRO_NOT_CONFIGURED`), not on HTTPS (`HTTPS_ONLY`) or not answering with a
+        report."""
         match = self.session.scalars(
             select(Match).where(Match.id == match_id).execution_options(populate_existing=True)
         ).first()
@@ -552,10 +557,12 @@ class EngagementService:
         if not speaks_https(self.settings.pigro_api_url):
             raise PigroUnavailable(HTTPS_ONLY)
         if match.pigro_stato != COLLEGATO:
-            raise InvalidState(
-                pigro_state_sentence(match.pigro_stato, match.pigro_errore),
-                pigro_stato=match.pigro_stato,
+            sentence = (
+                REPORT_NOT_ACTIVE
+                if match.pigro_stato is None
+                else pigro_state_sentence(match.pigro_stato, match.pigro_errore)
             )
+            raise InvalidState(sentence, pigro_stato=match.pigro_stato)
         pigro_url, giorni_previsti = match.pigro_url, match.giorni_previsti
         a = a if a is not None else self.today()
         start = da if da is not None else self._start(match)

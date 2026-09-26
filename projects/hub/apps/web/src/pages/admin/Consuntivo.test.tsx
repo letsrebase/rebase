@@ -301,4 +301,13 @@ describe('«Consuntivo» (REB-503)', () => {
     // The match is still named, so the admin knows which one refused.
     expect(await screen.findByText('ACME Srl · Backend developer · lettera n. 2026-001')).toBeInTheDocument()
   })
+
+  it('says it cannot read the report when the refusal comes with no sentence', async () => {
+    serve(answer(409, { detail: '' }), { ...MATCH, pigro_stato: null, pigro_url: null })
+    mount('/admin/matches/m1/report')
+
+    const paragraph = await screen.findByText('Non riesco a leggere il consuntivo.')
+    expect(paragraph.tagName).toBe('P')
+    expect(screen.queryByRole('table')).toBeNull()
+  })
 })

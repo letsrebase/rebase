@@ -135,9 +135,10 @@ def pigro_state_sentence(pigro_stato: str | None, pigro_errore: str | None) -> s
     `collegato` (nothing wrong -- `match_words` says that one itself, since it also has
     good news to report). Read by `match_words`, for the card's `situazione`, and by
     `EngagementService.report`, for the `InvalidState` a match not `collegato` refuses
-    with. `pigro_errore` is typed `str | None` and this holds it: a state written before
-    the CRM ever answered (or an old row with the column not yet backfilled) still gets
-    a sentence, the generic one `rebase_core.pigro`'s own seam uses."""
+    with (the report has its own sentence for `None`). `pigro_errore` is typed
+    `str | None` and this holds it: a state written before the CRM ever answered (or an
+    old row with the column not yet backfilled) still gets a sentence, the generic one
+    `rebase_core.pigro`'s own seam uses."""
     if pigro_stato == DA_COLLEGARE:
         return "Pigro non ha ancora il deal: riprova o aspetta lo sweep."
     if pigro_stato == ERRORE:

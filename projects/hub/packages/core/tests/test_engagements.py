@@ -31,6 +31,7 @@ from rebase_core.engagements import (
     HTTPS_ONLY,
     PIGRO_NOT_CONFIGURED,
     REPORT_MAX_DAYS,
+    REPORT_NOT_ACTIVE,
     EngagementService,
     PigroLinkResult,
     group_report,
@@ -865,6 +866,21 @@ def test_report_refuses_a_match_not_linked(clean: Session) -> None:
         _service(clean, http).report(match_id)
 
     assert "Pigro non ha ancora il deal" in refused.value.message
+    assert http.calls == []
+
+
+def test_report_of_a_match_not_active_yet_says_so(clean: Session) -> None:
+    """A match still waiting for its signature has no link state at all: the refusal
+    says so in a sentence of its own, never the card's empty one."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    match_id = _draft(clean, admin_id, freelancer_id, company_id)
+    http = RecordedPigro([(200, json.dumps(_crm([])).encode())])
+
+    with pytest.raises(InvalidState) as refused:
+        _service(clean, http).report(match_id)
+
+    assert refused.value.message == REPORT_NOT_ACTIVE
+    assert REPORT_NOT_ACTIVE == "Il match non è ancora attivo: nessun consuntivo da leggere."
     assert http.calls == []
 
 
