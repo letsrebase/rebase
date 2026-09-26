@@ -140,10 +140,11 @@ export async function fileReport({ title, report, summary, priority, scanErrors 
   }
   // The marker search can find an open card that is not this issue's pair: another
   // week's, when the card this issue names was closed, or one that links another issue.
-  // A card is this issue's pair unless either of them names something else.
-  if (openGithub && openLinear && !isPair(openGithub, openLinear)) {
-    log(`${openLinear.identifier} is not the pair of GitHub issue #${openGithub.number}: left alone`);
-    openLinear = null;
+  // Both still get the week's report, since each is an open weekly record, and filing a
+  // third beside them would be the duplicate this avoids; neither is linked to the other.
+  const paired = Boolean(openGithub && openLinear && isPair(openGithub, openLinear));
+  if (openGithub && openLinear && !paired) {
+    log(`${openLinear.identifier} is not the pair of GitHub issue #${openGithub.number}: both get the report, neither is linked`);
   }
   if (openGithub) log(`Open GitHub issue from a previous run: #${openGithub.number} (${openGithub.url})`);
   if (openLinear) log(`Open Linear card from a previous run: ${openLinear.identifier} (${openLinear.url})`);
@@ -209,7 +210,7 @@ export async function fileReport({ title, report, summary, priority, scanErrors 
   // 3b. A pair linked one way only (the link back failed an earlier week) is linked
   // both ways now. Only one way: a card and an issue that name nobody are both
   // commented on, and never joined on a guess.
-  if (openGithub && openLinear && !linearError) {
+  if (paired && !linearError) {
     if (openLinear.githubNumber == null && openGithub.linearIdentifier === openLinear.identifier) {
       act(`link ${openLinear.identifier} to GitHub issue #${openGithub.number}`);
       if (!dryRun) {

@@ -54,8 +54,9 @@ GitHub's 65,536 characters, dropping the least severe rows first and saying so.
   card or an issue somebody closed is not refiled, with one exception that takes two
   failures at once: while Linear is unreachable, an issue closed by a person cannot be
   told from none, so a new issue is filed and the run goes red. A pair linked one way
-  only (a link back that failed) is linked both ways the next week; an open card and an
-  open issue that name nobody are both commented on and never joined on a guess.
+  only (a link back that failed) is linked both ways the next week. An open card and an
+  open issue that are not each other's pair (one names nobody, or names a closed
+  record) both get the report and are never joined on a guess.
 - **An advisory with no fix yet counts like any other.** Most rows today are Debian
   packages in the API images waiting for a Debian update, and the report's second line
   says how many rows can be fixed now. Waiting is written on the open card, which stays
