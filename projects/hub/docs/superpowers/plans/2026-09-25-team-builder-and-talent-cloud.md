@@ -577,7 +577,11 @@ class TeamRequestService:
   and records an `AdminAction` (`kind="overridden"`
   on `entity_type="team_request"`). Public routes: `TeamBuilderOff` → 503,
   `LlmUnavailable` → 502 through the handler; the semaphore's 503; `team_caps.require_daily_room`'s
-  503 (§ 5); `spend_one` on requests only.
+  503 (§ 5); `spend_one` on both public routes (proposals and requests), as § 3.2 says.
+  The cap is a spend guard, not a ledger: it is checked while the semaphore's slot is
+  held, so concurrent calls can exceed it by at most the concurrency minus one, and a
+  paid call that fails writes no row and is not counted; `spend_one` and the semaphore
+  bound what a flood of failing descriptions can cost (a stated limit).
 
 - [ ] **Step 1: Failing tests**: `test_request_from_a_proposal_files_the_talents_and_mails`, `test_request_is_unique_per_proposal` (two sessions, one wins, the other 409), `test_request_refuses_an_old_proposal`, `test_request_refuses_a_proposal_of_another_origin_or_none` (a cloud or admin proposal, another cloud user's, an unknown id, all `PROPOSAL_REFUSED`), `test_request_refuses_a_proposal_with_nobody`, `test_request_logs_a_summary_that_names_the_company`, `test_names_the_company_words` (a legal form and a generic word of the kind exempt, four letters the floor), `test_summary_of_a_request_with_no_proposal_is_refused`, `test_list_filters_and_pages_by_cursor`, `test_status_note_and_summary_record_the_admin`, `test_the_daily_cap_counts_paid_proposals_since_midnight_in_rome` (a `NO_CALL_MODEL` row not counted, an admin's not counted, yesterday's not counted), `test_the_caps_have_their_defaults_and_reach_the_container`; the API: `test_public_proposal_answers_the_team_without_ids`, `test_public_proposal_is_503_when_off`, `test_public_proposal_is_503_when_the_cap_is_full` (a stub `LlmCall` that blocks on an event while a second request arrives), `test_public_proposal_is_503_when_the_daily_cap_is_reached`, `test_public_proposal_is_502_when_claude_is_down`, `test_public_request_is_201_then_409`, `test_public_request_refuses_an_old_a_cloud_or_an_empty_proposal`, `test_public_request_is_throttled`, `test_admin_routes_need_an_admin`.
 - [ ] **Step 2: fail. Step 3: implement. Step 4: green; ruff, mypy.**
