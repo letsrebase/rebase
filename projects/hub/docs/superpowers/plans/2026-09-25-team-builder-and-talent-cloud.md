@@ -251,7 +251,7 @@ def call_from_settings(settings: Settings) -> LlmCall | None:
   become `LlmUnavailable`, logged with the class name and status and never the request.
   Settings: `anthropic_api_key: str = Field(default="", repr=False)`,
   `team_builder_model: str = "claude-opus-5"`, `team_builder_enabled: bool = True`,
-  `team_builder_concurrency: int = 4`, each with a comment in the file's voice. The tests
+  `team_builder_concurrency: int = 4`, `team_builder_daily_cap: int = 300`, each with a comment in the file's voice. The tests
   build `AnthropicCall` over a stub `client` (a class with `beta.messages.create`
   recording the kwargs and answering a canned message with `content`, `stop_reason`,
   `stop_details`, `usage`, `model`).
@@ -282,7 +282,7 @@ class FreelancerCard(Base, TimestampMixin):          # freelancer_id PK (FK free
 class TeamProposal(Base, PrimaryKeyMixin):           # descrizione, nota, previous_id, riassunto, luogo JSONB, team JSONB, economia JSONB, model, input_tokens, output_tokens, cache_read_tokens, origine, user_id nullable, created_at
 class TeamRequest(Base, PrimaryKeyMixin, TimestampMixin)   # proposal_id nullable, origine, azienda, email, telefono nullable, user_id nullable, company_id nullable, stato, note, contacted_at, closed_at
 class TeamRequestTalent(Base, PrimaryKeyMixin)       # request_id, freelancer_id, ruolo, token_hash nullable unique, mail_sent_at, risposta, risposta_at; unique (request_id, freelancer_id)
-class TalentCloudGrant(Base, PrimaryKeyMixin)        # user_id, company_id, granted_by, granted_at, revoked_by, revoked_at; partial unique index on user_id where revoked_at IS NULL
+class TalentCloudGrant(Base, PrimaryKeyMixin)        # user_id, company_id, granted_by, granted_at, revoked_by, revoked_at; partial unique index on (user_id, company_id) where revoked_at IS NULL
 # Freelancer: vetted_at, vetted_by; ADMIN_ACTION_KINDS += ("vetted",)
 
 class Card(BaseModel):                                # team_schemas.py, spec § 2.1; no modalita here
@@ -360,9 +360,10 @@ class CardWriter:
   to `error_cv_sha256` and not `force` → untouched (a failed CV is not retried until it
   changes); the text through `FreelancerService.cv_text`, empty → `error = NO_TEXT`,
   `error_cv_sha256 = hash`, no call; else the prompt, `llm.complete`, and `stop_reason`
-  `refusal` or `max_tokens`, a body that is not JSON or does not validate as `Card`, or
-  `LlmUnavailable` → keep the previous card, write `error` and `error_cv_sha256`; a
-  valid card → upsert `card`, `cv_sha256`, `model`, the tokens, `generated_at`, `error =
+  `refusal` or `max_tokens`, a body that is not JSON or does not validate as `Card` →
+  retire a previous card of another CV (`card = None`), write `error` and
+  `error_cv_sha256`; `LlmUnavailable` → keep the previous card, write `error` only, and
+  stop the batch; a valid card → upsert `card`, `cv_sha256`, `model`, the tokens, `generated_at`, `error =
   None`, `error_cv_sha256 = None`. `refresh_stale`: every live freelancer with a CV whose
   hash differs from both `cv_sha256` and `error_cv_sha256`, `limit` at a time, oldest
   first; answers written and failed. `read` fills `modalita` from `Freelancer.remoto`.
@@ -441,13 +442,15 @@ class TeamBuilder:
 ```
 
   `propose`: `settings.team_builder_enabled` false or `llm` None → `TeamBuilderOff`;
-  `previous_id` must exist and be younger than a day (`ValidationFailed`); the prompt
+  `previous_id` must exist, be younger than a day, carry the caller's `origine` and, on
+  the cloud, the caller's `user_id` (`ValidationFailed`); the prompt
   of § 3.4 (the system block one, the rules; the system block two, the catalogue, with
   `cache_control`); `stop_reason` `refusal` (logged with the category) or `max_tokens`,
   a body that is not JSON or does not validate → `LlmUnavailable`; the answer validated
   by a Pydantic model of `{riassunto, luogo, team: [{id, ruolo, motivazione,
   giorni_settimana}]}`; ids mapped back by position, unknown or repeated ones dropped
-  and logged; the bands from each freelancer's rate; the row written with the tokens
+  and logged, and so is, when `luogo.locale` is true, a member whose `modalita` is
+  `remoto` or unknown; the bands from each freelancer's rate; the row written with the tokens
   and `origine`; `tracker.team_event("team_proposta_generata", {"origine", "persone",
   "input_tokens", "output_tokens"})`; the read answered with `public = origine ==
   "pubblico"`, which drops `freelancer_id` and `luogo` from every member.
@@ -519,7 +522,8 @@ class TeamRequestService:
     def set_summary(self, request_id: UUID, riassunto: str, admin_id: UUID) -> TeamRequestRead: ...
 ```
 
-  `create`: the proposal must exist and be younger than a day (`ValidationFailed`);
+  `create`: the proposal must exist, be public (`origine == "public"`) and younger than
+  a day (`ValidationFailed`);
   the insert relies on `uq_team_requests_proposal_id`, and an `IntegrityError` on it
   becomes `InvalidState("Questa proposta è già stata richiesta.", proposal_id=...)`
   (409), so two clicks in two sessions file one request; one `TeamRequestTalent` per
@@ -647,12 +651,12 @@ disponibile» on `CTA`; Ivan picks otherwise on the PR.
 ### Task D2: Vetted, and the cloud's door
 
 **Files:**
-- Modify: `packages/core/src/rebase_core/freelancers.py` (`set_vetted(freelancer_id, vetted: bool, admin_id) -> FreelancerRead`, an `AdminAction` of kind `vetted`), `talenti.py` and `schemas.py` (`vetted_at`, `ha_scheda_anonima` on the talent reads), new `cloud.py` (`TalentCloudService`: `grant(company_id, admin_id) -> TalentCloudGrantRead` resolving the request's user and answering the live grant when one exists, `revoke(company_id, admin_id)` closing the user's live grant, `list()`, `for_user(user_id) -> TalentCloudGrant | None`), `mail.py` (`talent_cloud_opened_mail(to, *, nome, azienda, url)`), `members.py` (`MeRead.talent_cloud: bool`)
+- Modify: `packages/core/src/rebase_core/freelancers.py` (`set_vetted(freelancer_id, vetted: bool, admin_id) -> FreelancerRead`, an `AdminAction` of kind `vetted`), `talenti.py` and `schemas.py` (`vetted_at`, `ha_scheda_anonima` on the talent reads), new `cloud.py` (`TalentCloudService`: `grant(company_id, admin_id) -> TalentCloudGrantRead` resolving the request's user and answering the live grant of that user for that company when one exists, `revoke(company_id, admin_id)` closing that company's live grant, `list()`, `for_user(user_id) -> TalentCloudGrant | None`, the newest live grant of the user across companies), `mail.py` (`talent_cloud_opened_mail(to, *, nome, azienda, url)`), `members.py` (`MeRead.talent_cloud: bool`)
 - Modify: `apps/api/src/rebase_api/routers/admin.py` (`POST /api/hub/freelancers/{id}/vetted` `{vetted: bool}`; `POST /api/hub/companies/{id}/cloud`, `DELETE /api/hub/companies/{id}/cloud`, `GET /api/hub/cloud/grants`), `routers/members.py` (`talent_cloud` on `/me`)
 - Modify: `apps/web/src/pages/admin/lists.tsx` («Segna come verificato» / «Togli la verifica» on the talent row's menu, a «Verificato» pill; «da team builder» on a company row whose `origine` is `team-builder`), `AdminCompanyDetail` («Apri il talent cloud» / «Revoca il talent cloud», the request page has the room the row lacks), `pages/CompanyWizard.tsx` (the box when `resolveAttribution(search).origine === 'team-builder'`: «Stai chiedendo l'accesso al talent cloud: compila la richiesta e ti ricontattiamo noi.»), the talent detail page (the vetted state), `lib/format.ts` (`da team builder`, the vetted words)
 - Test: core, API and web tests beside each
 
-- [ ] **Step 1: Failing tests**: `test_set_vetted_records_the_admin`, `test_grant_is_one_live_per_user_and_mails` (a second request of the same referente answers the live grant, no 500), `test_revoke_closes_it`, `test_me_carries_talent_cloud`, the routes, the row actions, the detail page's actions, the wizard's box on `?da=team-builder`, «da team builder».
+- [ ] **Step 1: Failing tests**: `test_set_vetted_records_the_admin`, `test_grant_is_one_live_per_user_and_company_and_mails` (a second request of the same referente for the same company answers the live grant, no 500; for another company a second grant), `test_revoke_closes_it`, `test_me_carries_talent_cloud`, the routes, the row actions, the detail page's actions, the wizard's box on `?da=team-builder`, «da team builder».
 - [ ] **Step 2: fail. Step 3: implement. Step 4: green everywhere.**
 - [ ] **Step 5: Commit** `feat(hub): an admin marks a talent vetted and opens the talent cloud to a company` (`REB-518.`).
 

@@ -87,8 +87,11 @@ send refuses a summary that names the company. Nothing else is automatic: contac
 company and closing the request are the admin's.
 
 **The cloud is a company's, admitted from its request, and shows names.** An admin
-opens the cloud from a company request's page; the grant is the referente's, one live
-grant per person, and a second request of the same referente finds the one that exists.
+opens the cloud from a company request's page; the grant is the referente's for that
+company, one live grant per person and company: a second request of the same referente
+for the same company finds the one that exists, a person behind two companies holds
+two grants and opens the cloud through either, and what they propose there is
+attributed to the newest live grant's company.
 The referente signs in as they already do and finds «Talent cloud»: every card with the
 person's name, surname, links and CV beside the anonymous description, a vetted badge
 where it applies, filters by role, seniority, skill, work mode and price band, the same
@@ -156,8 +159,8 @@ those at the API's boot:
   `no`, nullable), `risposta_at`; unique `(request_id, freelancer_id)`.
 - `talent_cloud_grants`: `id`, `user_id` (FK: the referente's user), `company_id` (FK
   `companies`: the request the grant was opened from), `granted_by` (FK users),
-  `granted_at`, `revoked_by`, `revoked_at`. One live grant per user (a partial unique
-  index where `revoked_at IS NULL`).
+  `granted_at`, `revoked_by`, `revoked_at`. One live grant per user and company (a
+  partial unique index on `(user_id, company_id)` where `revoked_at IS NULL`).
 - On `freelancers`: `vetted_at` (timestamptz, nullable), `vetted_by` (FK users,
   nullable).
 
@@ -207,8 +210,11 @@ the visitor.
 
 ### 3.2 The routes
 
-- `POST /api/hub/team/proposals` (public): `{descrizione, nota?, previous_id?}` →
-  `TeamProposalRead` (§ 3.3). `503` with «Il team builder è spento.» when
+- `POST /api/hub/team/proposals` (public, behind the wizards' `spend_one` speed bump):
+  `{descrizione, nota?, previous_id?}` → `TeamProposalRead` (§ 3.3). `previous_id`
+  must name a proposal of the caller's origin (`public` here, `cloud` on the cloud's
+  route, where it must also be the caller's own) younger than a day, else `422`; the
+  proposal's id, a UUID with random bits the caller received, is its capability. `503` with «Il team builder è spento.» when
   `REBASE_TEAM_BUILDER_ENABLED` is false or no API key is configured
   (`TeamBuilderOff`, a domain error the API maps to `503`); `503` with «Troppe
   richieste in questo momento: riprova tra un minuto.» when the cap of § 5 is full;
@@ -221,7 +227,7 @@ the visitor.
 - `POST /api/hub/team/requests` (public, behind the same `spend_one` speed bump as the
   wizards: it mails ciao@ on every call): `{proposal_id, azienda, email, telefono}` →
   `201` `{id}`; a proposal already requested is `409` (the unique index decides, so a
-  double click is one request), a proposal older than a day `422`.
+  double click is one request), a proposal older than a day or not a public one `422`.
 - `POST /api/hub/team/availability` (public): `{t: <token>, risposta: "si" | "no"}`,
   posted by the answer page, records the talent's answer and answers `{esito: "si" |
   "no" | "invalid"}`; the page is `/hub/team/risposta?t=…&r=si|no`, which shows «Vuoi
@@ -271,7 +277,9 @@ previous team's positions and the note («togli il designer»). Output through
 `output_config.format` with the JSON schema of `{riassunto, luogo: {locale, dove},
 team: [{id, ruolo, motivazione, giorni_settimana}]}`, `additionalProperties: false`,
 validated again by a Pydantic model on the way in; an id the catalogue does not hold
-or repeats drops that line and logs it; a `max_tokens` stop, a body that is not JSON
+or repeats drops that line and logs it, and so does, when `luogo.locale` is true, a
+member whose `modalita` is `remoto` or unknown (the place itself stays the model's
+judgement: the catalogue carries `luogo` and `modalita` for it); a `max_tokens` stop, a body that is not JSON
 or does not validate is `LlmUnavailable`. Adaptive thinking, effort `medium`,
 `max_tokens` 8000, the server-side fallback `default` with its beta header. The
 proposal row keeps `model` and the three token counts from `usage`. The seam passes
@@ -317,10 +325,11 @@ more of the request's `azienda`, case-insensitively.
 ### 4.1 Access
 
 On a company request's page in «Aziende» (`AdminCompanyDetail`), «Apri il talent
-cloud» writes a `talent_cloud_grants` row for the request's user (a live grant of that
-user already there is answered, not doubled) and mails the referente «Il talent cloud
+cloud» writes a `talent_cloud_grants` row for the request's user and that company (a
+live grant of that user for that company already there is answered, not doubled) and mails the referente «Il talent cloud
 di rebase è aperto per Acme S.r.l.» with a link to `/hub/me/cloud` (the magic link
-flow they already have); «Revoca» closes the user's live grant. `MeRead` gains
+flow they already have); «Revoca» closes the user's live grant for that company, and
+the cloud stays open while any grant of theirs is live. `MeRead` gains
 `talent_cloud: bool`, and the member area's nav gains «Talent cloud» when true. Ivan:
 «accesso al cloud privato da azienda esistente».
 
@@ -388,6 +397,11 @@ requests, the way `RecordingSender` does for mail. Two callers: the card writer
 `REBASE_TEAM_BUILDER_ENABLED`, default true; the cap `REBASE_TEAM_BUILDER_CONCURRENCY`,
 default 4, a semaphore in the API process: the fifth proposal at once answers `503`
 rather than queue on the thread pool the member area and the Documenso webhook share.
+The semaphore bounds load, not spend: the public proposals route also sits behind the
+wizards' `spend_one` speed bump, and `REBASE_TEAM_BUILDER_DAILY_CAP` (default 300:
+proposals a day across both origins, counted on `team_proposals`) answers the same
+«Troppe richieste» `503` once reached, so a flood cannot run up the bill; beta stays
+unlimited for a person, not for a script.
 Without a key, cards are not written and the builder answers `503`; nothing else of the
 hub changes.
 
@@ -396,12 +410,15 @@ hub changes.
 `rebase_core/cards.py`: `CardWriter(session, llm, *, now=utcnow)` with
 `write(freelancer_id) -> FreelancerCardRead`, `refresh_stale(limit) -> CardsRefreshed`
 and `delete(freelancer_id)`. `write` takes the CV's text (`FreelancerService.cv_text`,
-the same page and character ceilings as `read_freelancer_cv`), `posizione` and
-`tariffa_giornaliera`, asks for the card of § 2.1 through the schema, stores it with the
+the same page and character ceilings as `read_freelancer_cv`) and `posizione` (never
+the rate: the bands are computed in core), asks for the card of § 2.1 through the schema, stores it with the
 CV's SHA-256 and the tokens; an empty text (a scanned CV) makes no call and writes
-`error` «Il CV non ha testo leggibile.»; a refusal, a `max_tokens` stop, a body that is
-not the shape or a provider error leaves the previous card and writes `error` with the
-failed CV's hash, so the same CV is not retried and paid for until it changes. It runs
+`error` «Il CV non ha testo leggibile.»; a refusal, a `max_tokens` stop or a body that is
+not the shape retires a previous card written from another CV (`card` set to null, so
+the catalogue never shows a card of a CV that is gone) and writes `error` with the
+failed CV's hash, so the same CV is not retried and paid for until it changes; a
+provider error leaves the previous card and writes `error` without the hash, so the
+next run retries. It runs
 after the response, in a session of its own (`SessionOpenerDep`, as the Documenso
 webhook's follow-up does), where a CV arrives or changes: the public wizard
 (`FreelancerService.apply`) and the member's `replace_cv`; `FreelancerService.clear_cv`
