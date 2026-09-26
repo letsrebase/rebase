@@ -288,15 +288,18 @@ not by this one.
 **`/api/hub/team/proposals` needs 90 seconds on the host vhost.** A proposal holds the
 request while Claude writes, and the seam gives up after two attempts of 40 seconds
 (`llm.py`, `_TIMEOUT_SECONDS` and `_MAX_RETRIES`), near 81 seconds; nginx's default of
-60 would answer the visitor 504 while the proposal goes on. The installed vhost in
-`/etc/nginx/sites-available/` gets, by hand as the MCP location did and beside
-`location ^~ /api/hub/`, which an exact match outranks, production's
+60 would answer the visitor 504 while the proposal goes on. The repository's copies
+of the host vhosts, `projects/website/deploy/letsrebase.conf` and
+`preview.letsrebase.conf`, carry the location beside `location ^~ /api/hub/`, which an
+exact match outranks; the installed vhost in `/etc/nginx/sites-available/` gets it by
+hand, as the MCP location did. Production's:
 
 ```
 location = /api/hub/team/proposals {
+    client_max_body_size 6M;
     proxy_pass http://127.0.0.1:8084;
-    proxy_read_timeout 90s;
     include /etc/nginx/snippets/orbiters-proxy.conf;
+    proxy_read_timeout 90s;
 }
 ```
 
