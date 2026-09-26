@@ -79,6 +79,18 @@ def test_a_rate_typed_with_italian_thousands_is_stored_as_that_number(
     assert str(rate) == stored
 
 
+@pytest.mark.parametrize("typed", ["1,000.00", "1e3", "-1.500"])
+def test_a_rate_that_is_not_an_amount_is_a_422_naming_it(client: TestClient, typed: str) -> None:
+    """REB-485: English notation is refused, never saved as 1.00."""
+    response = client.post(
+        "/api/hub/freelancers",
+        data=_form(tariffa_giornaliera=typed),
+        files={"cv": ("cv.pdf", PDF, "application/pdf")},
+    )
+    assert response.status_code == 422
+    assert [error["loc"][-1] for error in response.json()["detail"]] == ["tariffa_giornaliera"]
+
+
 def test_a_linkedin_address_pasted_from_a_phone_is_stored_as_the_profile(
     client: TestClient, api_session: Session
 ) -> None:

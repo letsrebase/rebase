@@ -113,6 +113,14 @@ describe('the freelancer fields', () => {
     expect(validate({ ...base, tariffa_giornaliera: '150.000' } as never)).not.toBeNull()
   })
 
+  it('refuse what the API would refuse or misread: three decimals, English notation, an exponent (REB-485)', () => {
+    const validate = field('tariffa_giornaliera').validate
+    for (const typed of ['12,345', '12.3456', '1,000.00', '1e3', '0x10']) {
+      expect(validate({ ...base, tariffa_giornaliera: typed } as never)).not.toBeNull()
+    }
+    expect(validate({ ...base, tariffa_giornaliera: '1.000,50' } as never)).toBeNull()
+  })
+
   it('want a PDF under five megabytes, or no CV at all', () => {
     const validate = field('cv').validate
     const pdf = new File(['%PDF'], 'cv.pdf', { type: 'application/pdf' })
@@ -192,6 +200,23 @@ describe('FreelancerWizard', () => {
 
     const body = fetchSpy.mock.calls[0]![1]?.body as FormData
     expect(body.get('tariffa_giornaliera')).toBe('1500')
+  })
+
+  it('refuses a rate with three decimals on its own step, before any request (REB-485)', async () => {
+    const user = userEvent.setup({ applyAccept: false })
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    mount()
+
+    await user.type(await screen.findByLabelText('Nome'), 'Ada')
+    await user.type(screen.getByLabelText('Cognome'), 'Lovelace{Enter}')
+    await user.type(screen.getByLabelText('Email'), 'ada@studio.it{Enter}')
+    await user.keyboard('{Enter}') // LinkedIn, optional
+    await user.click(screen.getByRole('button', { name: /Avanti/ })) // the CV, skipped
+    await user.type(screen.getByLabelText('Tariffa a giornata'), '12,345{Enter}')
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
+    expect(screen.getByLabelText('Tariffa a giornata')).toBeInTheDocument()
+    expect(fetchSpy).not.toHaveBeenCalled()
   })
 
   /** ORB-203: an address pasted from the phone becomes the name in the field, behind the

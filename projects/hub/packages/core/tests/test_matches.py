@@ -1513,6 +1513,25 @@ def test_the_proposal_reads_a_fee_typed_the_italian_way(
 
 
 @pytest.mark.parametrize(
+    "typed", ["1e3", "1_000", "\u0661\u0665\u0660\u0660", "1,000.00", "-1.500", "12,345", "tanto"]
+)
+def test_the_proposal_refuses_a_fee_that_is_not_an_amount_by_name(
+    clean: Session, typed: str
+) -> None:
+    """REB-485: what Pydantic alone would take («1e3», «1_000», Arabic-Indic digits) is
+    refused as the web refuses it, and English notation is never read as cents."""
+    _admin_id, freelancer_id, company_id = _setup(clean)
+    with pytest.raises(ValidationFailed) as refused:
+        _service(clean).proposal(
+            freelancer_id, company_id, cliente=CLIENTE_REST, lettera={"compenso": typed}
+        )
+    assert (refused.value.details["field"], refused.value.details["reason"]) == (
+        "lettera.compenso",
+        "non valido",
+    )
+
+
+@pytest.mark.parametrize(
     ("cliente", "lettera", "field"),
     [
         ({**CLIENTE_REST, "nome": "ACME"}, None, "cliente.nome"),

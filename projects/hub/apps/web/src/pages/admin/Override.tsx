@@ -14,21 +14,13 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
-import { AMOUNT_PROBLEM, amountNumber, machineAmount } from '@/lib/amount'
+import { AMOUNT_PROBLEM, acceptedAmount, machineAmount } from '@/lib/amount'
 import type { Company, CompanyOverride, Freelancer, FreelancerOverride, Remoto } from '@/lib/api'
 import { REMOTO_LABELS, formatDate } from '@/lib/format'
 
 // A `Select` needs a non-empty string; `remoto` is the one override field that is both
 // nullable and rendered as a `Select`, so it alone needs a sentinel for "not set".
 const UNSET = '__non_impostata__'
-
-/** Whether a day rate or a daily budget, typed the Italian way, is one the API takes: the
- *  core's `TARIFFA_MIN` to `TARIFFA_MAX`, the range these inputs' `min` and `max` held when
- *  they were number inputs, which read «1.500» as 1.5 in an Italian browser (REB-485). */
-function acceptedAmount(value: string): boolean {
-  const number = amountNumber(value)
-  return Number.isFinite(number) && number >= 1 && number <= 99999.99
-}
 
 interface FreelancerOverrideDraft {
   nome: string

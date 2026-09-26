@@ -18,7 +18,7 @@ import {
   type Match,
   type SendReport,
 } from './api'
-import { machineAmount } from './amount'
+import { amountNumber, machineAmount } from './amount'
 import { formatDate } from './format'
 
 export type FiscalDraft = Record<keyof FiscalData, string>
@@ -291,7 +291,7 @@ export function withPayMode(form: LetteraForm, mode: PayMode): LetteraForm {
   return { ...form, modalita: mode, unita: mode }
 }
 
-const amount = (value: string) => Number(machineAmount(value))
+const amount = amountNumber
 
 /** «Come si paga» chosen on the page. The prefill's fee is the freelancer's day rate,
  *  never a lump sum: «A corpo» empties a fee still equal to it, so the total is typed,

@@ -1,7 +1,7 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { distinctId } from '@rebase/analytics/browser'
-import { AMOUNT_PROBLEM, machineAmount } from '@/lib/amount'
+import { AMOUNT_PROBLEM, euroAmount, machineAmount } from '@/lib/amount'
 import { readPerkParam, useWizardAnalytics } from '@/lib/analytics'
 import { ApiError, applyAsFreelancer, type FreelancerApplication } from '@/lib/api'
 import { isLinkedinName, LINKEDIN_OWN_PROFILE, linkedinFieldValue, linkedinProfile } from '@/lib/linkedin'
@@ -174,7 +174,7 @@ export const FREELANCER_FIELDS: Field<FreelancerApplication>[] = [
       </div>
     ),
     validate: (value) => {
-      const number = Number(machineAmount(value.tariffa_giornaliera))
+      const number = euroAmount(value.tariffa_giornaliera)
       return Number.isFinite(number) && number >= 1 && number <= 99999
         ? null
         : AMOUNT_PROBLEM

@@ -292,6 +292,23 @@ async def test_preview_match_reads_the_fee_the_italian_way(
     assert "condizioni.compenso: non valido" in garbage
 
 
+@pytest.mark.parametrize("typed", ["1e3", "1,000.00"])
+async def test_preview_match_refuses_a_fee_pydantic_alone_would_misread(
+    world: World, typed: str
+) -> None:
+    """REB-485: «1e3» is not an amount on the web, and «1,000.00» is not 1.00."""
+    async with Client(world.server()) as client:
+        refused = await _refused(
+            client,
+            "preview_match",
+            freelancer_id=world.freelancer_id,
+            company_id=world.company_id,
+            cliente=CLIENTE,
+            condizioni={"compenso": typed},
+        )
+    assert "condizioni.compenso: non valido" in refused
+
+
 async def test_create_match_saves_the_draft_with_the_fields_given(world: World) -> None:
     async with Client(world.server()) as client:
         body = await _create(client, world, cliente=CLIENTE, condizioni={"ruolo": "Staff engineer"})

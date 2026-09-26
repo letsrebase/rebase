@@ -198,6 +198,20 @@ describe('FreelancerOverrideDialog', () => {
     expect(onSave).not.toHaveBeenCalled()
   })
 
+  it.each(['12,345', '12.3456', '0x10', '1,000.00'])(
+    'refuses a rate typed as «%s» before any request (REB-485)',
+    async (typed) => {
+      const onSave = vi.fn<(data: FreelancerOverride) => void>()
+      mountFreelancer({ onSave })
+      const rate = screen.getByLabelText('Tariffa a giornata (€)')
+      await userEvent.clear(rate)
+      await userEvent.type(rate, typed)
+      expect(screen.getByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
+      expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
+      expect(onSave).not.toHaveBeenCalled()
+    },
+  )
+
   it('disables Save when nome or cognome is blank, and never lets it through', async () => {
     const onSave = vi.fn<(data: FreelancerOverride) => void>()
     mountFreelancer({ onSave })

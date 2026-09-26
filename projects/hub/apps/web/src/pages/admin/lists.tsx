@@ -30,7 +30,7 @@ import {
   type TalentiFilters,
 } from '@/lib/api'
 import { SEARCH_DEBOUNCE_MS, isFilterActive, useDebounce } from '@/lib/adminList'
-import { AMOUNT_PROBLEM, amountFilter, machineAmount } from '@/lib/amount'
+import { AMOUNT_PROBLEM, acceptedAmount, amountFilter, machineAmount } from '@/lib/amount'
 import {
   COMPANY_STATES,
   FREELANCER_LIST_STATES,
@@ -295,7 +295,8 @@ export function AdminTalenti() {
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   })
   const items = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data?.pages])
-  const activeFilters = isFilterActive(search)
+  // What the request carries: an amount it cannot send narrows nothing, so it is no filter.
+  const activeFilters = isFilterActive(filters)
 
   return (
     <>
@@ -573,8 +574,12 @@ export function AdminTalentoLead() {
     return (value: string) => setDraft((current) => ({ ...current, [name]: value }))
   }
 
+  // Blank is allowed: a card drafted from research may not know the rate.
+  const rateProblem = draft.tariffa_giornaliera.trim() !== '' && !acceptedAmount(draft.tariffa_giornaliera)
+
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (rateProblem) return
     draftCard.mutate({
       nome: draft.nome.trim(),
       cognome: draft.cognome.trim(),
@@ -668,8 +673,14 @@ export function AdminTalentoLead() {
                 inputMode="decimal"
                 value={draft.tariffa_giornaliera}
                 onChange={(event) => field('tariffa_giornaliera')(event.target.value)}
-                aria-invalid={wrong('tariffa_giornaliera')}
+                aria-invalid={rateProblem || wrong('tariffa_giornaliera')}
+                aria-describedby={rateProblem ? 'lead-tariffa-error' : undefined}
               />
+              {rateProblem && (
+                <p role="alert" id="lead-tariffa-error" className="text-sm text-destructive">
+                  {AMOUNT_PROBLEM}
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="lead-remoto">Modalità</Label>
@@ -1105,7 +1116,8 @@ export function AdminCompanies() {
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   })
   const items = useMemo(() => list.data?.pages.flatMap((page) => page.items) ?? [], [list.data?.pages])
-  const activeFilters = isFilterActive(search)
+  // What the request carries: an amount it cannot send narrows nothing, so it is no filter.
+  const activeFilters = isFilterActive(filters)
 
   return (
     <>

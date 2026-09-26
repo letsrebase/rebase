@@ -21,7 +21,6 @@ with the client never reaches a freelancer's document (spec § 1h).
 import hashlib
 import json
 from collections.abc import Callable, Mapping
-from contextlib import suppress
 from datetime import date
 from decimal import Decimal
 from typing import get_args
@@ -102,21 +101,27 @@ LIST_LIMIT_MAX = 500
 # Pydantic's own error types, whose messages are English; any other type is one the hub
 # raised itself (`PydanticCustomError`), with an Italian message.
 PYDANTIC_ERRORS = frozenset(get_args(ErrorType))
+# The word after a field's name for a value Pydantic's own checks refused (`field_reason`).
+NOT_VALID = "non valido"
 
 
 def _italian_amounts(
-    given: Mapping[str, object], known: Mapping[str, FieldInfo]
+    part: str, given: Mapping[str, object], known: Mapping[str, FieldInfo]
 ) -> dict[str, object]:
     """`given` with every amount typed as a string read the Italian way (REB-485): the
     letter's `compenso` «1.500» is 1500, where Pydantic's own reading of the string gives
-    1.5. A number is already one and stays as it is; a string that is not an amount goes
-    on unchanged, for the validation to refuse by its field as before."""
+    1.5. A number is already one and stays as it is. A string that is not an amount is
+    refused here, by its field, with the word Pydantic's refusal gets («non valido»):
+    handed on, Pydantic would take «1e3», «1_000» or digits of another script, which the
+    web refuses."""
     read = dict(given)
     for name, value in given.items():
         annotation = known[name].annotation
         if isinstance(value, str) and Decimal in (annotation, *get_args(annotation)):
-            with suppress(NotAnAmount):
+            try:
                 read[name] = italian_amount(value)
+            except NotAnAmount as exc:
+                raise ValidationFailed(ENTITY, f"{part}.{name}", NOT_VALID) from exc
     return read
 
 
@@ -208,9 +213,9 @@ def field_reason(error: ErrorDetails) -> str:
     if error["type"] == "missing" or error["input"] is None:
         return "manca"
     if error["type"] == "value_error":
-        reason = str(error.get("ctx", {}).get("error", "non valido"))
+        reason = str(error.get("ctx", {}).get("error", NOT_VALID))
         return reason.removeprefix(f"{error['loc'][-1]}: ") if error["loc"] else reason
-    return error["msg"] if error["type"] not in PYDANTIC_ERRORS else "non valido"
+    return error["msg"] if error["type"] not in PYDANTIC_ERRORS else NOT_VALID
 
 
 def _request_fingerprint(data: MatchCreate) -> str:
@@ -479,7 +484,7 @@ class MatchService:
             unknown = sorted(set(given or {}) - set(known))
             if unknown:
                 raise ValidationFailed(ENTITY, f"{part}.{unknown[0]}", "non è un campo del match")
-            laid = _italian_amounts(given or {}, known)
+            laid = _italian_amounts(part, given or {}, known)
             body[part] = {**suggested.model_dump(exclude_none=True), **laid}
         try:
             return MatchCreate.model_validate(body)

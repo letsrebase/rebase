@@ -355,6 +355,23 @@ describe('a lead offers to draft a card in place (ORB-155, REB-283)', () => {
     expect(JSON.parse(post[1]!.body as string).tariffa_giornaliera).toBe('1500')
   })
 
+  it.each(['1,000.00', '12,345', '1e3'])(
+    'refuses a rate typed as «%s» before any request (REB-485)',
+    async (typed) => {
+      const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+        answer(200, { totale: 1, items: [LEAD_TALENTO], per_stato: { lead: 1 } }),
+      )
+      mount('/admin/talent/s2')
+      await screen.findByRole('heading', { name: 'Bob Ross' })
+      await userEvent.type(screen.getByLabelText('Tariffa a giornata'), typed)
+      await userEvent.type(screen.getByLabelText('Fonti'), 'https://bob.dev')
+      expect(screen.getByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
+      expect(screen.getByLabelText('Tariffa a giornata')).toHaveAttribute('aria-invalid', 'true')
+      await userEvent.click(screen.getByRole('button', { name: 'Crea scheda' }))
+      expect(spy.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+    },
+  )
+
   it('refuses without at least one source, since a card written from research needs one', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       answer(200, { totale: 1, items: [LEAD_TALENTO], per_stato: { lead: 1 } }),
@@ -872,6 +889,20 @@ describe('two empty states, in Italian (REB-286)', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
     mount('/admin/companies')
     expect(await screen.findByText('Nessuna richiesta qui.')).toBeInTheDocument()
+  })
+
+  it.each([
+    ['/admin/talent?tariffa_min=tanto', 'Tariffa min (€/giorno)', 'Nessun profilo qui.'],
+    ['/admin/companies?budget_min=tanto', 'Budget min (€/giorno)', 'Nessuna richiesta qui.'],
+  ])('does not count an amount it cannot send as a filter: %s (REB-485)', async (path, label, empty) => {
+    const spy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => answer(200, { totale: 0, items: [], per_stato: {} }))
+    mount(path)
+    expect(await screen.findByText(empty)).toBeInTheDocument()
+    expect(screen.getByLabelText(label)).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
+    expect(spy.mock.calls.every(([url]) => !String(url).includes('_min'))).toBe(true)
   })
 
   it('names the filters when one narrows Aziende to nothing', async () => {

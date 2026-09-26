@@ -1,43 +1,36 @@
-"""`italian_amount`: the web app's `machineAmount` rule, in Python (REB-485)."""
+"""`italian_amount`: the web app's amount rule, in Python (REB-485).
 
+Both sides run the same table, `amount_cases.json` beside this file: the web's
+`apps/web/src/lib/amount.test.ts` reads it too, so the two readings cannot drift. A row's
+`amount` is `null` for a refusal."""
+
+import json
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
 from rebase_core.amounts import NotAnAmount, italian_amount
 
+CASES = json.loads(
+    (Path(__file__).parent / "amount_cases.json").read_text(encoding="utf-8"),
+    parse_float=Decimal,
+)
+
 
 @pytest.mark.parametrize(
-    ("typed", "amount"),
-    [
-        ("12.000", Decimal("12000")),
-        ("1.500", Decimal("1500")),
-        ("1.234,50", Decimal("1234.50")),
-        ("480", Decimal("480")),
-        ("480,50", Decimal("480.50")),
-        ("480.50", Decimal("480.50")),
-        ("480.5", Decimal("480.5")),
-        ("0,5", Decimal("0.5")),
-        (" 12.000 ", Decimal("12000")),
-        # What the API answers with, sent back unchanged by a form that showed it.
-        ("1500.00", Decimal("1500.00")),
-    ],
+    ("typed", "amount"), [(row["typed"], row["amount"]) for row in CASES], ids=repr
 )
-def test_an_amount_is_read_the_italian_way(typed: str, amount: Decimal) -> None:
-    assert italian_amount(typed) == amount
+def test_every_row_of_the_shared_table(typed: str, amount: Decimal | int | None) -> None:
+    if amount is None:
+        with pytest.raises(NotAnAmount):
+            italian_amount(typed)
+    else:
+        assert italian_amount(typed) == amount
 
 
 def test_the_decimal_keeps_its_cents_exactly() -> None:
     assert str(italian_amount("1.234,50")) == "1234.50"
-
-
-@pytest.mark.parametrize(
-    "typed",
-    ["", "   ", "tanto", "12abc", "1,2,3", "1.2.3,4,5", "NaN", "Infinity", "1e3", "1_000", "١٢"],
-)
-def test_what_is_not_an_amount_is_refused(typed: str) -> None:
-    with pytest.raises(NotAnAmount):
-        italian_amount(typed)
 
 
 def test_the_refusal_is_a_value_error_a_caller_can_catch_as_one() -> None:
