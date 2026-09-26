@@ -14,7 +14,7 @@ import {
   type TeamProposalCreate,
 } from '@/lib/api'
 import { bandLabel } from '@/lib/bands'
-import { REMOTO_LABELS } from '@/lib/format'
+import { REMOTO_LABELS, SENIORITY_LABELS, formatExperience } from '@/lib/format'
 
 /** The lengths core's `TeamProposalCreate` takes (`team_schemas.py`), measured as it
  *  measures them, stripped: the page says so before the API has to. */
@@ -63,11 +63,6 @@ type Run = 'proponi' | 'rigenera'
  *  answered at all. */
 function sentence(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback
-}
-
-function experience(anni: number): string {
-  if (anni === 0) return 'meno di un anno di esperienza'
-  return anni === 1 ? '1 anno di esperienza' : `${anni} anni di esperienza`
 }
 
 /**
@@ -268,7 +263,7 @@ function MemberCard({ member }: { member: TeamMember }) {
         <CardTitle>
           <h3>{member.ruolo}</h3>
         </CardTitle>
-        <CardDescription>{`${scheda.ruolo}, ${scheda.seniority}, ${experience(scheda.anni)}`}</CardDescription>
+        <CardDescription>{`${scheda.ruolo}, ${SENIORITY_LABELS[scheda.seniority] ?? scheda.seniority}, ${formatExperience(scheda.anni)}`}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-3">
         <p>{member.motivazione}</p>
