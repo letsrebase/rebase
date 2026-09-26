@@ -1,6 +1,8 @@
 """rebase's engagements door (spec 2026-09-25 § 2.2, § 2.3): the registry table
 `rebase_engagements`, and `EngagementService.ensure`, which sets up a freelancer's
-space, the customer «rebase» and the deal of one letter, once per hub match.
+space, the customer «rebase» and the deal of one letter, once per hub match; and
+`EngagementService.report` (§ 2.4), which reads that deal's hours back with the invoices
+they sit on.
 
 Every `ensure` test runs on the container for real: `TenantService.provision` creates
 the space's database and migrates it exactly as the signup does. The `door` fixture
@@ -13,16 +15,18 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import Engine, create_engine, func, inspect, select, text
+from sqlalchemy import Engine, create_engine, func, inspect, select, text, update
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
+import pigrocrm.core.db.clock as db_clock
 import pigrocrm.core.engagements as engagements_package
 import pigrocrm.core.engagements.service as engagements_service
 from pigrocrm.core.activities.models import Activity
@@ -32,15 +36,21 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
-from pigrocrm.core.db import session_factory
+from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.engagements.models import RebaseEngagement
-from pigrocrm.core.engagements.schemas import EngagementRead, EngagementUpsert
+from pigrocrm.core.engagements.schemas import (
+    EngagementRead,
+    EngagementUpsert,
+    ReportDeal,
+    ReportInvoice,
+)
 from pigrocrm.core.engagements.service import EngagementService, deal_marker, deal_name
-from pigrocrm.core.errors import Conflict, ValidationFailed
+from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.mail import RecordingSender
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.tenants import (
@@ -51,6 +61,9 @@ from pigrocrm.core.tenants import (
     ensure_tenants_database,
 )
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
+from pigrocrm.core.timetracking.models import TimeEntry
+from pigrocrm.core.timetracking.schemas import TimeEntryCreate
+from pigrocrm.core.timetracking.service import TimeEntryService
 
 ADA = "ada@studio.it"
 CUSTOMER_NOTE = (
@@ -667,3 +680,287 @@ def test_welcome_mail_is_sent_once_for_a_new_space(door: Door) -> None:
 
     door.service().ensure(uuid4(), _upsert(lettera={"numero": "4/2026"}))
     assert len(door.sender.sent) == 1
+
+
+# --- report: a match's hours with their invoices (§ 2.4) -----------------------------
+
+
+def _log(
+    space: Session, deal_id: UUID, day: date, descrizione: str, *, fatturabile: bool = True
+) -> UUID:
+    """Eight hours on the deal, logged for the space's admin through the service: the
+    admin has no password, so the service is the way in."""
+    admin = UserRepository(space).get_by_email(ADA)
+    assert admin is not None
+    entry = TimeEntryService(space).create(
+        TimeEntryCreate(
+            deal_id=deal_id,
+            user_id=admin.id,
+            data=day,
+            ore=Decimal("8.00"),
+            descrizione=descrizione,
+            fatturabile=fatturabile,
+        ),
+        Actor.system(),
+    )
+    return entry.id
+
+
+def _invoice(space: Session, linked: EngagementRead, entries: list[UUID], **fields: Any) -> UUID:
+    """An invoice of the deal's customer with one line, and `entries` bound to that
+    line, written as rows: the report reads an invoice's state, not how it got there."""
+    invoice = Invoice(customer_id=linked.customer_id, deal_id=linked.deal_id, **fields)
+    space.add(invoice)
+    space.flush()
+    line = InvoiceLine(
+        invoice_id=invoice.id,
+        numero_linea=1,
+        descrizione="Ore di lavoro",
+        quantita=Decimal("8"),
+        prezzo_unitario=Decimal("50"),
+        prezzo_totale=Decimal("400.00"),
+        aliquota_iva=Decimal("22.00"),
+    )
+    space.add(line)
+    space.flush()
+    space.execute(
+        update(TimeEntry).where(TimeEntry.id.in_(entries)).values(invoice_line_id=line.id)
+    )
+    space.commit()
+    return invoice.id
+
+
+def _frozen(monkeypatch: pytest.MonkeyPatch, instant: datetime) -> None:
+    """The product's one clock (`db.clock._now`) at `instant`."""
+    monkeypatch.setattr(db_clock, "_now", lambda: instant)
+
+
+def test_report_lists_entries_with_their_invoice(
+    door: Door, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One row per entry, sorted by day and then by when it was logged, each with the
+    invoice its line belongs to; the billed hours and the invoices summed from them.
+    Read one entry per page here, so the paging is walked to its end."""
+    monkeypatch.setattr(engagements_service, "REPORT_PAGE_SIZE", 1)
+    match_id = uuid4()
+    linked = door.service().ensure(match_id, _upsert())
+    today = today_local(door.settings)
+    first, second = today - timedelta(days=2), today - timedelta(days=1)
+    with _space(door, linked.slug) as space:
+        setup = _log(space, linked.deal_id, first, "Setup")
+        api = _log(space, linked.deal_id, second, "API")
+        _log(space, linked.deal_id, second, "Riunione interna", fatturabile=False)
+        invoice_id = _invoice(
+            space,
+            linked,
+            [setup, api],
+            tipo="fattura",
+            stato="emessa",
+            anno=2026,
+            numero=12,
+            data_emissione=second,
+        )
+
+    report = door.service().report(match_id, da=first)
+
+    assert report.slug == "ada-lovelace"
+    assert report.deal_url == linked.deal_url
+    assert report.deal == ReportDeal(
+        id=linked.deal_id,
+        nome=DEAL_NAME,
+        tariffa_oraria=Decimal("50.000000"),
+        ore_preventivate=Decimal("320.00"),
+        stato="in corso",
+    )
+    issued = ReportInvoice(
+        id=invoice_id,
+        tipo="fattura",
+        anno=2026,
+        numero=12,
+        stato="emessa",
+        stato_pagamento="da_incassare",
+        data=second,
+    )
+    assert [(g.data, g.ore, g.descrizione, g.fatturabile, g.fattura) for g in report.giorni] == [
+        (first, Decimal("8.00"), "Setup", True, issued),
+        (second, Decimal("8.00"), "API", True, issued),
+        (second, Decimal("8.00"), "Riunione interna", False, None),
+    ]
+    assert report.fatture == [issued.model_copy(update={"ore": Decimal("16.00")})]
+    # The wire shape the hub reads (spec § 2.4): hours at two places, the rate at six,
+    # and no hours on an entry's own invoice.
+    wire = report.model_dump(mode="json")
+    assert (wire["totale_ore"], wire["ore_fatturate"], wire["ore_non_fatturate"]) == (
+        "24.00",
+        "16.00",
+        "8.00",
+    )
+    assert wire["deal"]["tariffa_oraria"] == "50.000000"
+    assert wire["deal"]["ore_preventivate"] == "320.00"
+    assert wire["giorni"][0]["fattura"]["ore"] is None
+    assert wire["fatture"][0]["ore"] == "16.00"
+    assert wire["fatture"][0]["data"] == second.isoformat()
+
+
+def test_report_counts_only_issued_invoices_as_billed(door: Door) -> None:
+    """Billed is the CRM's own word for it (`billed_entry_ids`): a line of a `fattura`
+    that is `emessa`. An entry on a proforma or on a draft still shows that invoice, and
+    counts as not billed; an entry on an invoice deleted since shows none, as the CRM
+    itself no longer shows that invoice. The invoices come newest first, the undated
+    ones last."""
+    match_id = uuid4()
+    linked = door.service().ensure(match_id, _upsert())
+    today = today_local(door.settings)
+    days = [today - timedelta(days=n) for n in (3, 2, 1, 0)]
+    with _space(door, linked.slug) as space:
+        on_proforma, on_draft, on_issued, on_deleted = [
+            _log(space, linked.deal_id, day, name)
+            for day, name in zip(days, ("Analisi", "Sviluppo", "Rilascio", "Scartata"), strict=True)
+        ]
+        proforma = _invoice(space, linked, [on_proforma], tipo="proforma", stato="confermata")
+        draft = _invoice(space, linked, [on_draft], tipo="fattura", stato="bozza")
+        issued = _invoice(
+            space,
+            linked,
+            [on_issued],
+            tipo="fattura",
+            stato="emessa",
+            anno=2026,
+            numero=7,
+            data_emissione=days[2],
+        )
+        _invoice(
+            space,
+            linked,
+            [on_deleted],
+            tipo="fattura",
+            stato="bozza",
+            deleted_at=datetime.now(UTC),
+        )
+
+    report = door.service().report(match_id, da=days[0])
+
+    assert [(g.descrizione, g.fattura.id if g.fattura else None) for g in report.giorni] == [
+        ("Analisi", proforma),
+        ("Sviluppo", draft),
+        ("Rilascio", issued),
+        ("Scartata", None),
+    ]
+    shown = report.giorni[0].fattura
+    assert shown is not None
+    assert (shown.tipo, shown.stato, shown.anno, shown.numero, shown.data, shown.ore) == (
+        "proforma",
+        "confermata",
+        None,
+        None,
+        None,
+        None,
+    )
+    assert (report.totale_ore, report.ore_fatturate, report.ore_non_fatturate) == (
+        Decimal("32.00"),
+        Decimal("8.00"),
+        Decimal("24.00"),
+    )
+    assert [(f.id, f.ore) for f in report.fatture] == [
+        (issued, Decimal("8.00")),
+        (draft, Decimal("8.00")),
+        (proforma, Decimal("8.00")),
+    ]
+
+
+def test_report_defaults_and_caps_the_period(door: Door, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`da` is the day the deal was created, in the CRM's zone (22:30 UTC on 1 October is
+    already the 2nd in Rome), `a` is today by the CRM's clock; a period over 800 days,
+    or one that ends before it starts, is refused."""
+    match_id = uuid4()
+    linked = door.service().ensure(match_id, _upsert())
+    with _space(door, linked.slug) as space:
+        space.execute(
+            text("UPDATE deals SET created_at = :at WHERE id = :deal"),
+            {"at": datetime(2026, 10, 1, 22, 30, tzinfo=UTC), "deal": linked.deal_id},
+        )
+        space.commit()
+        _frozen(monkeypatch, datetime(2026, 11, 1, 12, 0, tzinfo=UTC))
+        for day in (1, 2, 31):
+            _log(space, linked.deal_id, date(2026, 10, day), f"Il {day} ottobre")
+        _log(space, linked.deal_id, date(2026, 11, 1), "Il primo novembre")
+
+    _frozen(monkeypatch, datetime(2026, 10, 31, 12, 0, tzinfo=UTC))
+    report = door.service().report(match_id)
+
+    assert [g.data for g in report.giorni] == [date(2026, 10, 2), date(2026, 10, 31)]
+
+    for da, a in (
+        (date(2024, 1, 1), date(2024, 1, 1) + timedelta(days=801)),
+        (date(2026, 10, 2), date(2026, 10, 1)),
+    ):
+        with pytest.raises(ValidationFailed) as refused:
+            door.service().report(match_id, da=da, a=a)
+        assert refused.value.details == {
+            "entity": "engagement",
+            "field": "periodo",
+            "reason": "al massimo 800 giorni",
+        }
+    # `a` alone before the deal's first day is the same reversed period.
+    with pytest.raises(ValidationFailed):
+        door.service().report(match_id, a=date(2026, 10, 1))
+
+
+def test_report_accepts_exactly_800_days(door: Door) -> None:
+    """The hub walks 800-day windows whose bounds touch (`da + 800`, then `da + 801`):
+    a span of exactly 800 days is accepted, and both of its ends are in it."""
+    match_id = uuid4()
+    linked = door.service().ensure(match_id, _upsert())
+    a = today_local(door.settings)
+    da = a - timedelta(days=800)
+    with _space(door, linked.slug) as space:
+        _log(space, linked.deal_id, da - timedelta(days=1), "Prima")
+        _log(space, linked.deal_id, da, "Il primo giorno")
+        _log(space, linked.deal_id, a, "L'ultimo giorno")
+
+    report = door.service().report(match_id, da=da, a=a)
+
+    assert [g.descrizione for g in report.giorni] == ["Il primo giorno", "L'ultimo giorno"]
+    assert report.totale_ore == Decimal("16.00")
+
+
+def test_report_of_unknown_match_is_not_found(door: Door) -> None:
+    unknown = uuid4()
+    with pytest.raises(NotFound) as missing:
+        door.service().report(unknown)
+    assert missing.value.details == {"entity": "engagement", "identifier": str(unknown)}
+
+    # A row a call left before its deal existed has nothing to report either.
+    tenant_id = _provision(door, "ada-lovelace")
+    halfway = uuid4()
+    with session_factory(door.registry)() as registry:
+        registry.add(RebaseEngagement(match_id=halfway, tenant_id=tenant_id))
+        registry.commit()
+    with pytest.raises(NotFound) as missing:
+        door.service().report(halfway)
+    assert missing.value.details["identifier"] == str(halfway)
+
+
+def test_report_of_deleted_deal_answers_409(door: Door) -> None:
+    match_id = uuid4()
+    linked = door.service().ensure(match_id, _upsert())
+    with _space(door, linked.slug) as space:
+        DealService(space).soft_delete(linked.deal_id, Actor.system())
+
+    with pytest.raises(Conflict) as refused:
+        door.service().report(match_id)
+
+    assert refused.value.details["reason"] == GONE
+    assert refused.value.details["match_id"] == str(match_id)
+
+
+def test_report_refuses_without_public_url(door: Door, db_engine: Engine) -> None:
+    """The report carries the deal's page, built from `PIGROCRM_PUBLIC_URL` like
+    `ensure`'s links: without it the door answers as `ensure` does, before it looks for
+    the match."""
+    service = EngagementService(door.registry, _settings_for(db_engine, public_url=""), door.sender)
+
+    with pytest.raises(ValidationFailed) as refused:
+        service.report(uuid4())
+
+    assert refused.value.details["field"] == "public_url"

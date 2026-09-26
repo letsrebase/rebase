@@ -1,6 +1,7 @@
 """The engagements door (spec 2026-09-25 § 2.3): what a signed letter sets up in the
 freelancer's CRM -- the space, the customer «rebase» in it, and the deal of the letter --
-once per hub match, whatever the number of calls.
+once per hub match, whatever the number of calls; and the report of that deal's hours
+with the invoices they sit on (§ 2.4), the one thing of the space the door reads back.
 
 On the registry's engine, never on a space's: the registry says which space, and each
 space is opened for the length of one step. Everything written in a space is written as
@@ -14,8 +15,10 @@ package's docstring: this module imports `tenants.service`, which imports
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from psycopg.errors import LockNotAvailable
 from sqlalchemy import Connection, Engine, create_engine, func, select, text
@@ -28,27 +31,36 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
-from pigrocrm.core.db import session_factory
+from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.deals.repository import DealRepository
-from pigrocrm.core.deals.schemas import DealCreate
+from pigrocrm.core.deals.schemas import DealCreate, DealRead
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.engagements.models import RebaseEngagement
 from pigrocrm.core.engagements.schemas import (
     COMPANY_IN_DEAL_NAME,
     HOURS_PER_DAY,
+    REPORT_MAX_DAYS,
     ROLE_IN_DEAL_NAME,
     SPACE_NAME_MAX_LENGTH,
     EngagementFreelancer,
     EngagementRead,
+    EngagementReport,
     EngagementUpsert,
+    ReportDeal,
+    ReportEntry,
+    ReportInvoice,
 )
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.mail import EmailSender
+from pigrocrm.core.money import sum_hours
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.tenants.models import Tenant
 from pigrocrm.core.tenants.schemas import SLUG_MAX, TenantSignup, slugify
 from pigrocrm.core.tenants.service import TenantService
 from pigrocrm.core.tenants.welcome import welcome
+from pigrocrm.core.timetracking.schemas import TimeEntryListQuery, TimeEntryRead
+from pigrocrm.core.timetracking.service import TimeEntryService, billed_entry_ids
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +72,10 @@ LOCK_TIMEOUT = "120s"
 LOCK = text("SELECT pg_advisory_lock(hashtext(:email))")
 UNLOCK = text("SELECT pg_advisory_unlock(hashtext(:email))")
 BUSY = "Un'altra chiamata sta preparando lo spazio di questo indirizzo: riprova tra poco."
+GONE = "Il deal di questa lettera è stato eliminato nello spazio."
+# The report reads the deal's hours through `TimeEntryService.list`, this many a page
+# (its own cap), until the cursor runs out.
+REPORT_PAGE_SIZE = 200
 # `deals.tariffa_oraria` is Numeric(12, 6).
 RATE_PLACES = Decimal("0.000001")
 # What `slugify` of a name made only of characters it drops (a name in another script)
@@ -115,9 +131,9 @@ def _deal_note(numero: str, azienda: str, match_id: UUID) -> str:
 
 
 class EngagementService:
-    """On the registry's engine: `ensure` opens its own sessions on it (one for the
-    rows, one connection for the lock), so a caller hands over the engine and nothing
-    that is already in a transaction."""
+    """On the registry's engine: `ensure` and `report` open their own sessions on it
+    (`ensure` one for the rows and one connection for the lock), so a caller hands over
+    the engine and nothing that is already in a transaction."""
 
     def __init__(
         self, registry_engine: Engine, settings: Settings, sender: EmailSender | None = None
@@ -138,8 +154,7 @@ class EngagementService:
         transaction-level lock would go at the first of those commits. So two letters of
         one freelancer activating together open one space, and two retries of one match
         wait for each other from the first step to the last."""
-        if not _origin(self.settings):
-            raise ValidationFailed(ENTITY, "public_url", "PIGROCRM_PUBLIC_URL non configurato")
+        self._require_public_url()
         email = str(data.freelancer.email).strip().lower()
         with self.registry_engine.connect() as lock:
             try:
@@ -162,6 +177,174 @@ class EngagementService:
             finally:
                 self._unlock(lock, email)
 
+    def report(
+        self, match_id: UUID, da: date | None = None, a: date | None = None
+    ) -> EngagementReport:
+        """The hours on the match's deal from `da` to `a`, both included (spec § 2.4):
+        one row per time entry with the invoice its line belongs to, the CRM's own split
+        of billed hours, and one row per invoice with the hours of this report on it.
+        Nothing else of the space: not its customers, not its other deals, not an
+        invoice these hours do not sit on.
+
+        `da` defaults to the day the deal was created and `a` to today, both in the
+        CRM's zone; a period that ends before it starts or spans over `REPORT_MAX_DAYS`
+        is refused. No row for the match, or a row a call left before its deal existed,
+        is `NotFound`; a deal deleted in the space is `ensure`'s `Conflict`."""
+        self._require_public_url()
+        with session_factory(self.registry_engine)() as registry:
+            row = self._row(registry, match_id)
+            if row is None or row.deal_id is None:
+                raise NotFound(ENTITY, str(match_id))
+            tenant = self._tenant(registry, row)
+            deal_id = row.deal_id
+
+        with self._space_session(tenant) as space:
+            deal = self._live_deal(space, deal_id, match_id)
+            first, last = self._period(deal, da, a)
+            times = TimeEntryService(space)
+            entries = self._entries(times, deal_id, first, last)
+            stato = times.deal_summary(deal_id, Actor.rebase()).stato
+            billed = billed_entry_ids(space, entries)
+            invoice_of_line, invoices = self._invoices(space, entries)
+
+        on_invoice: dict[UUID, list[Decimal]] = {}
+        giorni = []
+        for entry in entries:
+            invoice_id = (
+                invoice_of_line.get(entry.invoice_line_id)
+                if entry.invoice_line_id is not None
+                else None
+            )
+            if invoice_id is not None:
+                on_invoice.setdefault(invoice_id, []).append(entry.ore)
+            giorni.append(
+                ReportEntry(
+                    data=entry.data,
+                    ore=entry.ore,
+                    descrizione=entry.descrizione,
+                    fatturabile=entry.fatturabile,
+                    fattura=invoices[invoice_id][0] if invoice_id is not None else None,
+                )
+            )
+        totale = sum_hours(entry.ore for entry in entries)
+        fatturate = sum_hours(entry.ore for entry in entries if entry.id in billed)
+        # Newest first by the date it was issued, the undated (a draft, a proforma) last;
+        # among equals the one created last first, then by id, so the order is stable.
+        newest_first = sorted(
+            invoices.values(),
+            key=lambda pair: (
+                pair[0].data is not None,
+                pair[0].data or date.min,
+                pair[1],
+                pair[0].id,
+            ),
+            reverse=True,
+        )
+        return EngagementReport(
+            slug=tenant.slug,
+            deal_url=deal_url(self.settings, tenant.slug, deal_id),
+            deal=ReportDeal(
+                id=deal.id,
+                nome=deal.nome,
+                tariffa_oraria=deal.tariffa_oraria,
+                ore_preventivate=deal.ore_preventivate,
+                stato=stato,
+            ),
+            giorni=giorni,
+            totale_ore=totale,
+            ore_fatturate=fatturate,
+            ore_non_fatturate=totale - fatturate,
+            fatture=[
+                invoice.model_copy(update={"ore": sum_hours(on_invoice[invoice.id])})
+                for invoice, _ in newest_first
+            ],
+        )
+
+    def _require_public_url(self) -> None:
+        """Both answers carry links built from `PIGROCRM_PUBLIC_URL`: without it the
+        door is not configured, whichever route is asked."""
+        if not _origin(self.settings):
+            raise ValidationFailed(ENTITY, "public_url", "PIGROCRM_PUBLIC_URL non configurato")
+
+    def _period(self, deal: DealRead, da: date | None, a: date | None) -> tuple[date, date]:
+        """`da` or the day the deal was created, `a` or today, both in the CRM's zone:
+        `created_at` is an instant, and 22:30 UTC on 1 October is the 2nd in Rome. At
+        most `REPORT_MAX_DAYS` from one to the other, so the hub's windows of exactly
+        that many days, bounds touching, all pass."""
+        first = (
+            da
+            if da is not None
+            else deal.created_at.astimezone(ZoneInfo(self.settings.timezone)).date()
+        )
+        last = a if a is not None else today_local(self.settings)
+        if last < first or (last - first).days > REPORT_MAX_DAYS:
+            raise ValidationFailed(ENTITY, "periodo", f"al massimo {REPORT_MAX_DAYS} giorni")
+        return first, last
+
+    @staticmethod
+    def _entries(times: TimeEntryService, deal_id: UUID, da: date, a: date) -> list[TimeEntryRead]:
+        """Every live entry of the deal in `[da, a]`, through the service's own list and
+        its cursor to the end, sorted by day and then by when it was logged (the list
+        itself runs newest first)."""
+        entries: list[TimeEntryRead] = []
+        cursor: UUID | None = None
+        while True:
+            page = times.list(
+                TimeEntryListQuery(
+                    deal_id=deal_id, da=da, a=a, limit=REPORT_PAGE_SIZE, cursor=cursor
+                ),
+                Actor.rebase(),
+            )
+            entries.extend(page.items)
+            if page.next_cursor is None:
+                return sorted(entries, key=lambda e: (e.data, e.created_at, e.id))
+            cursor = page.next_cursor
+
+    @staticmethod
+    def _invoices(
+        space: Session, entries: list[TimeEntryRead]
+    ) -> tuple[dict[UUID, UUID], dict[UUID, tuple[ReportInvoice, datetime]]]:
+        """The invoice of each entry's line, in one query for the whole report: which
+        invoice each line is on, and each invoice once, with its `created_at` for the
+        order. Any state (a draft, a proforma, an annulled invoice all still show), but
+        not an invoice deleted since: the CRM no longer shows it, and neither does the
+        door."""
+        line_ids = {e.invoice_line_id for e in entries if e.invoice_line_id is not None}
+        if not line_ids:
+            return {}, {}
+        rows = space.execute(
+            select(
+                InvoiceLine.id,
+                Invoice.id,
+                Invoice.tipo,
+                Invoice.anno,
+                Invoice.numero,
+                Invoice.stato,
+                Invoice.stato_pagamento,
+                Invoice.data_emissione,
+                Invoice.created_at,
+            )
+            .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
+            .where(InvoiceLine.id.in_(line_ids), Invoice.deleted_at.is_(None))
+        ).all()
+        invoice_of_line: dict[UUID, UUID] = {}
+        invoices: dict[UUID, tuple[ReportInvoice, datetime]] = {}
+        for line_id, invoice_id, tipo, anno, numero, stato, pagamento, emissione, created in rows:
+            invoice_of_line[line_id] = invoice_id
+            invoices[invoice_id] = (
+                ReportInvoice(
+                    id=invoice_id,
+                    tipo=tipo,
+                    anno=anno,
+                    numero=numero,
+                    stato=stato,
+                    stato_pagamento=pagamento,
+                    data=emissione,
+                ),
+                created,
+            )
+        return invoice_of_line, invoices
+
     @staticmethod
     def _unlock(lock: Connection, email: str) -> None:
         """Releases the address. If the unlock itself fails, the connection is
@@ -179,16 +362,25 @@ class EngagementService:
                 type(exc).__name__,
             )
 
+    @staticmethod
+    def _row(registry: Session, match_id: UUID) -> RebaseEngagement | None:
+        return registry.scalar(
+            select(RebaseEngagement).where(RebaseEngagement.match_id == match_id)
+        )
+
+    @staticmethod
+    def _tenant(registry: Session, row: RebaseEngagement) -> Tenant:
+        tenant = registry.get(Tenant, row.tenant_id)
+        if tenant is None:  # pragma: no cover - a foreign key holds it
+            raise NotFound("tenant", row.tenant_id)
+        return tenant
+
     def _ensure(self, match_id: UUID, data: EngagementUpsert, email: str) -> EngagementRead:
         with session_factory(self.registry_engine)() as registry:
-            row = registry.scalar(
-                select(RebaseEngagement).where(RebaseEngagement.match_id == match_id)
-            )
+            row = self._row(registry, match_id)
             spazio_creato = False
             if row is not None:
-                tenant = registry.get(Tenant, row.tenant_id)
-                if tenant is None:  # pragma: no cover - a foreign key holds it
-                    raise NotFound("tenant", row.tenant_id)
+                tenant = self._tenant(registry, row)
                 if row.deal_id is not None:
                     return self._recorded(tenant, row.customer_id, row.deal_id, match_id)
                 # A previous call stopped between steps 3 and 6: resume at step 4, in the
@@ -221,18 +413,20 @@ class EngagementService:
         """Step 2 with a deal on the row: alive, the row's ids (spec § 2.3); gone, a
         409, and nothing is recreated behind the freelancer's back."""
         with self._space_session(tenant) as space:
-            try:
-                deal = DealService(space).get(deal_id, Actor.rebase())
-            except NotFound as exc:
-                raise Conflict(
-                    ENTITY,
-                    "Il deal di questa lettera è stato eliminato nello spazio.",
-                    match_id=str(match_id),
-                ) from exc
+            deal = self._live_deal(space, deal_id, match_id)
         # Step 6 writes both ids together, so a row with a deal has its customer; the
         # deal's own stands in only for a row somebody edited by hand.
         answered = customer_id if customer_id is not None else deal.customer_id
         return self._answer(tenant.slug, answered, deal_id, False, creato=False)
+
+    @staticmethod
+    def _live_deal(space: Session, deal_id: UUID, match_id: UUID) -> DealRead:
+        """The row's deal in its space; soft-deleted or missing, the `409` both routes
+        answer (spec § 2.3 step 2, § 2.4)."""
+        try:
+            return DealService(space).get(deal_id, Actor.rebase())
+        except NotFound as exc:
+            raise Conflict(ENTITY, GONE, match_id=str(match_id)) from exc
 
     def _answer(
         self, slug: str, customer_id: UUID, deal_id: UUID, spazio_creato: bool, *, creato: bool

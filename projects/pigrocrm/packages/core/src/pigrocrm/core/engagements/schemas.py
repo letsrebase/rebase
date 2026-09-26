@@ -1,5 +1,5 @@
 """What the hub sends through the engagements door and what the door answers (spec
-2026-09-25 § 2.3).
+2026-09-25 § 2.3), and the report of a match's hours it reads back (§ 2.4).
 
 The bounds are the CRM's own rules for a customer (`CustomerService._check_fiscal`) and
 the hub's for a name, applied at the door, so a value the space would refuse is a 422
@@ -23,6 +23,9 @@ ROLE_IN_DEAL_NAME = 80
 COMPANY_IN_DEAL_NAME = 100
 # A letter's fee is per day; the deal's rate is per hour.
 HOURS_PER_DAY = Decimal(8)
+# The longest period one report covers, `a - da` in days: the hub walks a longer
+# engagement in windows of this many days whose bounds touch.
+REPORT_MAX_DAYS = 800
 
 
 class EngagementFreelancer(BaseModel):
@@ -77,3 +80,55 @@ class EngagementRead(BaseModel):
     deal_url: str
     spazio_creato: bool
     creato: bool
+
+
+class ReportInvoice(BaseModel):
+    """An invoice some of the report's hours sit on. `data` is its `data_emissione`;
+    `ore` only on the report's `fatture` list, the hours of this report on it, and
+    `None` on an entry's own `fattura`."""
+
+    id: UUID
+    tipo: str  # "fattura" | "proforma"
+    anno: int | None
+    numero: int | None
+    stato: str
+    stato_pagamento: str
+    data: date | None
+    ore: Decimal | None = None
+
+
+class ReportEntry(BaseModel):
+    """One time entry of the deal: a day with two entries is two rows, and the hub sums."""
+
+    data: date
+    ore: Decimal
+    descrizione: str
+    fatturabile: bool
+    fattura: ReportInvoice | None
+
+
+class ReportDeal(BaseModel):
+    """The letter's deal as it stands, `stato` as the deal's own page reads it
+    (`DealTimeSummary.stato`)."""
+
+    id: UUID
+    nome: str
+    tariffa_oraria: Decimal | None
+    ore_preventivate: Decimal | None
+    stato: str
+
+
+class EngagementReport(BaseModel):
+    """The answer of `GET /api/rebase/engagements/{match_id}/report`. `ore_fatturate` is
+    the CRM's own billed (`billed_entry_ids`: on a line of an issued `fattura`), so it
+    agrees with the deal's summary; `ore_non_fatturate` is every other hour of the
+    period; `fatture` has one row per invoice among the entries, newest first."""
+
+    slug: str
+    deal_url: str
+    deal: ReportDeal
+    giorni: list[ReportEntry]
+    totale_ore: Decimal
+    ore_fatturate: Decimal
+    ore_non_fatturate: Decimal
+    fatture: list[ReportInvoice]
