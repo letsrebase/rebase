@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -246,6 +247,12 @@ class Freelancer(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
     # Never a hard delete -- see `AdminAction`, whose "deleted"/"restored" entries are
     # what makes flipping this back to `None` a real undo rather than a fresh guess.
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # «Vetted», REB-509: a manual flag an admin sets in «Talenti» or over MCP, shown as
+    # a badge in the talent cloud; the public builder's page does not distinguish. Not
+    # an `ADMIN_ACTION_KINDS` "overridden" -- it is its own kind, `vetted`, since it is
+    # neither a field correction nor reversible the same way (there is no "before").
+    vetted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    vetted_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
 
     __table_args__ = (
         Index("ix_freelancers_created_at", "created_at"),
@@ -543,6 +550,8 @@ ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fisca
 # REB-387 adds the matches' own kinds, on entity type `match` (phase 3 writes the last
 # four), and `fiscal_updated` on `freelancer_fiscal`, whose payload names the fields that
 # changed and never their values: a tax identifier is not copied into this table.
+# REB-509 adds `vetted`, on entity type `freelancer`: «Vetted» flips `Freelancer.vetted_at`
+# on or off, not a field an "overridden"/"cleared" pair already describes.
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -556,6 +565,7 @@ ADMIN_ACTION_KINDS = (
     "document_cancelled",
     "mail_resent",
     "notice_recorded",
+    "vetted",
 )
 
 
@@ -729,3 +739,185 @@ class UserSession(Base, PrimaryKeyMixin):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+# ---- the team builder and the talent cloud (REB-509, design 2026-09-25) ----------------
+
+CARD_SENIORITIES = ("junior", "mid", "senior", "lead")
+TEAM_REQUEST_STATES = ("nuova", "contattata", "chiusa")
+TEAM_PROPOSAL_ORIGINS = ("pubblico", "cloud", "admin")
+TEAM_REQUEST_ORIGINS = ("pubblico", "cloud")
+TALENT_ANSWERS = ("si", "no")
+# An Anthropic model id, `claude-opus-5` today: short, but the SDK's own ids run longer
+# (`claude-opus-4-20250514`), so the width is generous the same way every other width in
+# this file is.
+CARD_MODEL_MAX_LENGTH = 60
+
+
+class FreelancerCard(Base, TimestampMixin):
+    """Claude's anonymous read of a freelancer's CV (spec § 2.1), one row per card
+    (`freelancer_id` is the primary key: at most one per person, gone with the person on
+    `ON DELETE CASCADE`). `cv_sha256`, `card`, `model` and the two token counts are the
+    *last successful* generation, written together by `rebase_core.cards.CardWriter`
+    (spec § 5.1) or not at all -- a freelancer whose CV has never produced a card has
+    every one of these `NULL`. `error` and `error_cv_sha256` are the *last failure*,
+    independent of whether a card exists at all: an empty CV, a refusal, a `max_tokens`
+    stop or a body that is not the shape leaves the previous card exactly as it was and
+    only these two change, so the same CV is not retried and paid for again until it
+    changes."""
+
+    __tablename__ = "freelancer_cards"
+
+    freelancer_id: Mapped[UUID] = mapped_column(
+        ForeignKey("freelancers.id", ondelete="CASCADE"), primary_key=True
+    )
+    cv_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+    card: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    model: Mapped[str | None] = mapped_column(String(CARD_MODEL_MAX_LENGTH), default=None)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, default=None)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, default=None)
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    error: Mapped[str | None] = mapped_column(Text, default=None)
+    error_cv_sha256: Mapped[str | None] = mapped_column(String(64), default=None)
+
+
+class TeamProposal(Base, PrimaryKeyMixin):
+    """One team the engine proposed (spec § 3.4), immutable once written -- no
+    `TimestampMixin`: a «Rigenera» writes a new row with `previous_id` pointing at the
+    one it replaces, never edits this one. `luogo`, `team` and `economia` are the JSONB
+    the engine and § 3.3 describe; `model` and the three token counts are `usage` from
+    the call that produced this row, always present since a row is written only once a
+    proposal actually succeeds -- a failed attempt raises `LlmUnavailable` and writes
+    nothing here. `origine` says who asked (`TEAM_PROPOSAL_ORIGINS`): the public page, a
+    signed-in cloud user, or an admin from the talent cloud; `user_id` is that person,
+    `NULL` for a public visitor with no account at all."""
+
+    __tablename__ = "team_proposals"
+
+    descrizione: Mapped[str] = mapped_column(Text, nullable=False)
+    # The «Rigenera» note, e.g. «togli il designer» (spec § 3.4): `NULL` on a first ask.
+    nota: Mapped[str | None] = mapped_column(Text, default=None)
+    previous_id: Mapped[UUID | None] = mapped_column(ForeignKey("team_proposals.id"), default=None)
+    riassunto: Mapped[str] = mapped_column(Text, nullable=False)
+    luogo: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    team: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
+    economia: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    model: Mapped[str] = mapped_column(String(CARD_MODEL_MAX_LENGTH), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    cache_read_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
+    origine: Mapped[str] = mapped_column(String(10), nullable=False)
+    user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_team_proposals_created_at", "created_at"),
+        CheckConstraint(
+            "origine IN ('pubblico', 'cloud', 'admin')", name="ck_team_proposals_origine"
+        ),
+    )
+
+
+class TeamRequest(Base, PrimaryKeyMixin, TimestampMixin):
+    """A company's «Assumi team» (spec § 3.2, § 3.5): who asked (`azienda`, `email`,
+    `telefono`, the same shape the company wizard already collects), and which proposal
+    it is for -- `proposal_id`, `NULL` for a single-talent request with no team proposal
+    behind it, unique where set (`uq_team_requests_proposal_id`) so a double click on
+    «Assumi team» is a `409`, not a second row. `origine` is `pubblico` or `cloud`
+    (`TEAM_REQUEST_ORIGINS`); `user_id` and `company_id` are the cloud user and their own
+    request row, both `NULL` for a public visitor with neither. `stato` is the admin's
+    own progress on it (`TEAM_REQUEST_STATES`), `note` theirs too; `contacted_at` and
+    `closed_at` are each set once, by «Contatta i talenti» and «Chiudi»."""
+
+    __tablename__ = "team_requests"
+
+    proposal_id: Mapped[UUID | None] = mapped_column(ForeignKey("team_proposals.id"), default=None)
+    origine: Mapped[str] = mapped_column(String(10), nullable=False)
+    azienda: Mapped[str] = mapped_column(String(AZIENDA_MAX_LENGTH), nullable=False)
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    telefono: Mapped[str | None] = mapped_column(String(TELEFONO_MAX_LENGTH), default=None)
+    user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    company_id: Mapped[UUID | None] = mapped_column(ForeignKey("companies.id"), default=None)
+    stato: Mapped[str] = mapped_column(String(20), nullable=False, default="nuova")
+    note: Mapped[str | None] = mapped_column(Text, default=None)
+    contacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+    __table_args__ = (
+        Index(
+            "uq_team_requests_proposal_id",
+            "proposal_id",
+            unique=True,
+            postgresql_where=text("proposal_id IS NOT NULL"),
+        ),
+        Index("ix_team_requests_stato_created_at", "stato", "created_at"),
+        CheckConstraint(
+            "stato IN ('nuova', 'contattata', 'chiusa')", name="ck_team_requests_stato"
+        ),
+        CheckConstraint("origine IN ('pubblico', 'cloud')", name="ck_team_requests_origine"),
+    )
+
+
+class TeamRequestTalent(Base, PrimaryKeyMixin):
+    """One talent asked for on a request (spec § 3.5, § 3.6): `ruolo` is the role they
+    were proposed for, carried here on its own rather than re-read off the proposal's
+    `team` JSONB, so a request keeps its own copy even if the proposal above it is later
+    regenerated. `token_hash` is the availability mail's one-use token (SHA-256 at rest,
+    `token_urlsafe(32)` sent, the magic link's own shape), `NULL` until the first send;
+    `mail_sent_at`, `risposta` (`TALENT_ANSWERS`) and `risposta_at` fill in as the mail
+    goes out and the talent answers, all `NULL` until then. `unique (request_id,
+    freelancer_id)`: a talent is asked once per request."""
+
+    __tablename__ = "team_request_talents"
+
+    request_id: Mapped[UUID] = mapped_column(ForeignKey("team_requests.id"), nullable=False)
+    freelancer_id: Mapped[UUID] = mapped_column(ForeignKey("freelancers.id"), nullable=False)
+    ruolo: Mapped[str] = mapped_column(String(POSIZIONE_MAX_LENGTH), nullable=False)
+    token_hash: Mapped[str | None] = mapped_column(String(TOKEN_HASH_LENGTH), default=None)
+    mail_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    risposta: Mapped[str | None] = mapped_column(String(10), default=None)
+    risposta_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+    __table_args__ = (
+        Index(
+            "uq_team_request_talents_request_freelancer",
+            "request_id",
+            "freelancer_id",
+            unique=True,
+        ),
+        Index("uq_team_request_talents_token_hash", "token_hash", unique=True),
+        CheckConstraint("risposta IN ('si', 'no')", name="ck_team_request_talents_risposta"),
+    )
+
+
+class TalentCloudGrant(Base, PrimaryKeyMixin):
+    """A company's access to the private talent cloud (spec § 4.1): opened by «Apri il
+    talent cloud» on a company request's page, for the referente's own `user_id`, closed
+    by «Revoca». One live grant per user (`revoked_at IS NULL`, the partial unique index
+    below): the admin route checks for one first, so a second «Apri» on an
+    already-open grant answers the existing row rather than doubling it. `company_id` is
+    the request the grant was opened from, kept for the trail even though the same user
+    may later hold a grant from a different one; `granted_by` and `revoked_by` are the
+    admin who acted."""
+
+    __tablename__ = "talent_cloud_grants"
+
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    company_id: Mapped[UUID] = mapped_column(ForeignKey("companies.id"), nullable=False)
+    granted_by: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    granted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    revoked_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+
+    __table_args__ = (
+        Index(
+            "uq_talent_cloud_grants_user_id_live",
+            "user_id",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
+    )

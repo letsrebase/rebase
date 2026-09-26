@@ -64,3 +64,14 @@ class LlmUnavailable(DomainError):
     a traceback."""
 
     code = "llm_unavailable"
+
+
+class TeamBuilderOff(DomainError):
+    """The team builder cannot run in this environment: `REBASE_TEAM_BUILDER_ENABLED` is
+    false, or no `REBASE_ANTHROPIC_API_KEY` is configured at all (spec § 3.2, § 5).
+    `message` is «Il team builder è spento.», the same sentence for either reason -- a
+    visitor gets nothing useful from knowing which. A 503, the same shape
+    `SigningUnavailable` already gives an environment missing Documenso or a mail
+    sender."""
+
+    code = "team_builder_off"
