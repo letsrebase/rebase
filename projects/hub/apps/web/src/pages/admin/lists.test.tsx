@@ -7,7 +7,7 @@ import {
   createRoute,
   createRouter,
 } from '@tanstack/react-router'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CompaniesFilters, Remoto, TalentiFilters } from '@/lib/api'
@@ -816,6 +816,35 @@ describe('the euro filters read Italian thousands, whatever the browser’s loca
     expect(screen.getByLabelText(label)).toHaveValue('1.500')
     expect(screen.queryByRole('alert')).toBeNull()
   })
+
+  it.each([
+    { ...TALENTI, label: 'Tariffa min (€/giorno)', param: 'tariffa_min' },
+    { ...TALENTI, label: 'Tariffa max (€/giorno)', param: 'tariffa_max' },
+    { ...AZIENDE, label: 'Budget min (€/giorno)', param: 'budget_min' },
+    { ...AZIENDE, label: 'Budget max (€/giorno)', param: 'budget_max' },
+  ])(
+    '«1.500» in «$label» survives a reload of the address the app wrote',
+    async ({ path, heading, label, endpoint, param }) => {
+      const spy = vi
+        .spyOn(globalThis, 'fetch')
+        .mockImplementation(async () => answer(200, { totale: 0, items: [], per_stato: {} }))
+      const router = mount(path)
+      await screen.findByRole('heading', { name: heading })
+      await userEvent.type(screen.getByLabelText(label), '1.500')
+      await waitFor(() => expect(router.state.location.search).toMatchObject({ [param]: '1.500' }))
+      // The router writes a string JSON would read as a number in quotes, so a reload,
+      // a shared link or back/forward reads «1.500» back, never the number 1.5.
+      const href = router.state.location.href
+      expect(href).toContain(`${param}=%221.500%22`)
+
+      cleanup()
+      spy.mockClear()
+      mount(href)
+      await screen.findByRole('heading', { name: heading })
+      expect(screen.getByLabelText(label)).toHaveValue('1.500')
+      await waitFor(() => expect(listCalls(spy, endpoint).at(-1)).toContain(`${param}=1500.00`))
+    },
+  )
 
   it('says a filter that is not an amount is not one, and narrows nothing with it', async () => {
     const spy = vi
