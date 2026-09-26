@@ -298,7 +298,7 @@ def proposal_prompt(
             },
         ],
         messages=[{"role": "user", "content": [{"type": "text", "text": "\n\n".join(parts)}]}],
-        schema=PROPOSAL_SCHEMA,
+        json_schema=PROPOSAL_SCHEMA,
         max_tokens=PROPOSAL_MAX_TOKENS,
     )
 

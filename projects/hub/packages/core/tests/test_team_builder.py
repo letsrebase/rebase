@@ -369,7 +369,7 @@ def test_engine_maps_the_answer_to_freelancers(clean: Session) -> None:
     # One call, shaped for a proposal: the rules, then the catalogue as a cached block.
     [request] = llm.requests
     assert request.max_tokens == PROPOSAL_MAX_TOKENS == 8000
-    assert request.schema == PROPOSAL_SCHEMA
+    assert request.json_schema == PROPOSAL_SCHEMA
     assert PROPOSAL_SCHEMA["additionalProperties"] is False
     assert PROPOSAL_SCHEMA["required"] == ["riassunto", "luogo", "team"]
     assert "description" not in json.dumps(PROPOSAL_SCHEMA)  # no docstring reaches Claude

@@ -174,7 +174,7 @@ def test_card_from_a_cv(clean: Session) -> None:
     assert {
         key: value for key, value in Card.model_json_schema().items() if key != "description"
     } == CARD_SCHEMA
-    assert request.schema == CARD_SCHEMA
+    assert request.json_schema == CARD_SCHEMA
     assert CARD_SCHEMA["additionalProperties"] is False
     assert CARD_SCHEMA["required"] == list(Card.model_fields)
     assert {"type": "null"} in CARD_SCHEMA["properties"]["luogo"]["anyOf"]

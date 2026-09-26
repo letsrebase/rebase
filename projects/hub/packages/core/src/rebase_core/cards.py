@@ -164,7 +164,7 @@ def card_prompt(cv: CvText, posizione: str | None) -> LlmRequest:
     return LlmRequest(
         system=[{"type": "text", "text": _SYSTEM}],
         messages=[{"role": "user", "content": [{"type": "text", "text": user}]}],
-        schema=CARD_SCHEMA,
+        json_schema=CARD_SCHEMA,
         max_tokens=CARD_MAX_TOKENS,
     )
 

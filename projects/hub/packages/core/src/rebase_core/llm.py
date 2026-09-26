@@ -32,9 +32,16 @@ UNAVAILABLE_SENTENCE = "Non riesco a proporre un team adesso: riprova tra poco."
 # name it: never the older array form, never a client-side fallback list.
 _BETAS = ["server-side-fallback-2026-07-01"]
 
-# Under nginx's own 60-second cut (AGENTS.md), so a stalled provider answers
-# `LlmUnavailable` instead of leaving the caller behind a proxy that already gave up.
-_TIMEOUT_SECONDS = 50.0
+# The whole call has to end inside the 90 seconds the host vhost gives
+# `/api/hub/team/proposals` (AGENTS.md, «The team builder»), or the visitor gets
+# nginx's 504 while the proposal's slot stays held and a late answer writes a paid
+# proposal nobody sees. The SDK's timeout is per attempt and it retries twice by
+# default, so 50 seconds a try ran to about 151 before `LlmUnavailable`: two attempts
+# of 40 seconds, with the SDK's backoff of half a second between them, end near 81.
+# (A `retry-after` the API sends replaces that half second, and the SDK caps it
+# nowhere: a long one on a 429 is the one way still past 90.)
+_TIMEOUT_SECONDS = 40.0
+_MAX_RETRIES = 1
 
 # Inference stays in the European Union, which the privacy page states (spec § 6).
 _INFERENCE_GEO = "eu"
@@ -47,7 +54,9 @@ class LlmRequest(BaseModel):
 
     system: list[dict[str, Any]]
     messages: list[dict[str, Any]]
-    schema: dict[str, Any]  # type: ignore[assignment]  # `output_config.format`'s `json_schema`
+    # `output_config.format`'s schema. Not `schema`, which shadows `BaseModel.schema`
+    # and has Pydantic warn at every boot.
+    json_schema: dict[str, Any]
     max_tokens: int
 
 
@@ -56,6 +65,9 @@ class LlmResponse(BaseModel):
     stop_reason: str
     refusal_category: str | None
     model: str
+    # What was paid for as input: the uncached tokens and the cache writes (the
+    # catalogue block, when its prefix is written again), not the cache reads, which
+    # are `cache_read_tokens`.
     input_tokens: int
     output_tokens: int
     cache_read_tokens: int
@@ -67,10 +79,12 @@ class LlmCall(Protocol):
 
 class AnthropicCall:
     """`client` is a keyword-only override: production leaves it out and gets
-    `anthropic.Anthropic(api_key=...)`, built on the first call rather than here, since
-    the API builds one of these for every request that might write a card (`LlmDep`)
-    and most never do; the tests hand a stub that records `beta.messages.create`'s
-    kwargs and answers a canned response, no network.
+    `anthropic.Anthropic(api_key=..., max_retries=_MAX_RETRIES, timeout=_TIMEOUT_SECONDS)`,
+    built on the first call rather than here, since the API builds one of these for
+    every request that might write a card (`LlmDep`) and most never do; the tests hand
+    a stub that records `beta.messages.create`'s kwargs and answers a canned response,
+    no network. The timeout is the client's, so it holds for each attempt, the retry's
+    included.
 
     The schema of every request goes out through the SDK's own `transform_schema`
     (REB-510): the structured-output API refuses length, range and list-size keywords
@@ -89,11 +103,13 @@ class AnthropicCall:
     @property
     def client(self) -> anthropic.Anthropic:
         if self._client is None:
-            self._client = anthropic.Anthropic(api_key=self._api_key)
+            self._client = anthropic.Anthropic(
+                api_key=self._api_key, max_retries=_MAX_RETRIES, timeout=_TIMEOUT_SECONDS
+            )
         return self._client
 
     def complete(self, request: LlmRequest) -> LlmResponse:
-        schema = anthropic.transform_schema(request.schema)
+        schema = anthropic.transform_schema(request.json_schema)
         try:
             response = self.client.beta.messages.create(
                 model=self.model,
@@ -110,7 +126,6 @@ class AnthropicCall:
                 # future callers never import an `anthropic` type of their own.
                 system=cast(Any, request.system),
                 messages=cast(Any, request.messages),
-                timeout=_TIMEOUT_SECONDS,
                 inference_geo=_INFERENCE_GEO,
             )
         except anthropic.APIConnectionError as error:
@@ -135,7 +150,8 @@ class AnthropicCall:
             stop_reason=response.stop_reason or "",
             refusal_category=refusal_category,
             model=response.model,
-            input_tokens=response.usage.input_tokens,
+            input_tokens=response.usage.input_tokens
+            + (response.usage.cache_creation_input_tokens or 0),
             output_tokens=response.usage.output_tokens,
             cache_read_tokens=response.usage.cache_read_input_tokens or 0,
         )
