@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { distinctId } from '@rebase/analytics/browser'
+import { AMOUNT_PROBLEM, euroAmount, sentAmount } from '@/lib/amount'
 import { readPerkParam, useWizardAnalytics } from '@/lib/analytics'
 import { ApiError, applyAsFreelancer, type FreelancerApplication } from '@/lib/api'
 import { isLinkedinName, LINKEDIN_OWN_PROFILE, linkedinFieldValue, linkedinProfile } from '@/lib/linkedin'
@@ -173,10 +174,10 @@ export const FREELANCER_FIELDS: Field<FreelancerApplication>[] = [
       </div>
     ),
     validate: (value) => {
-      const number = Number(value.tariffa_giornaliera.replace(',', '.'))
+      const number = euroAmount(value.tariffa_giornaliera)
       return Number.isFinite(number) && number >= 1 && number <= 99999
         ? null
-        : 'Serve una cifra, in euro.'
+        : AMOUNT_PROBLEM
     },
     summary: (value) => (value.tariffa_giornaliera ? `${value.tariffa_giornaliera} € / giorno` : ''),
   },
@@ -347,7 +348,11 @@ export function FreelancerWizard() {
     setSubmitting(true)
     setSubmitError(null)
     try {
-      await applyAsFreelancer(value, resolveAttribution(searchStr), distinctId())
+      await applyAsFreelancer(
+        { ...value, tariffa_giornaliera: sentAmount(value.tariffa_giornaliera) },
+        resolveAttribution(searchStr),
+        distinctId(),
+      )
       sent.current = true
       clearDraft(FREELANCER_DRAFT_KEY)
       analytics.completed()

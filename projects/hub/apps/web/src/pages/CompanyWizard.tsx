@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import { useEffect, useRef, useState } from 'react'
 import { distinctId } from '@rebase/analytics/browser'
+import { AMOUNT_PROBLEM, euroAmount, sentAmount } from '@/lib/amount'
 import { useWizardAnalytics } from '@/lib/analytics'
 import { ApiError, requestPeople, type CompanyRequest } from '@/lib/api'
 import { resolveAttribution } from '@/lib/utm'
@@ -190,8 +191,8 @@ export const COMPANY_FIELDS: Field<CompanyRequest>[] = [
       </div>
     ),
     validate: (value) => {
-      const number = Number(value.budget_giornaliero.replace(',', '.'))
-      return Number.isFinite(number) && number >= 1 && number <= 99999 ? null : 'Serve una cifra, in euro.'
+      const number = euroAmount(value.budget_giornaliero)
+      return Number.isFinite(number) && number >= 1 && number <= 99999 ? null : AMOUNT_PROBLEM
     },
     summary: (value) => (value.budget_giornaliero ? `${value.budget_giornaliero} € / giorno` : ''),
   },
@@ -337,7 +338,7 @@ export function CompanyWizard() {
       await requestPeople(
         {
           ...value,
-          budget_giornaliero: value.budget_giornaliero.replace(',', '.'),
+          budget_giornaliero: sentAmount(value.budget_giornaliero),
         },
         resolveAttribution(searchStr),
         distinctId(),
