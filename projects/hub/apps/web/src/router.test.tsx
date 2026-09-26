@@ -34,3 +34,15 @@ describe('the bare /admin address', () => {
     expect(router.state.location.pathname).toBe('/admin/talent')
   })
 })
+
+describe('the team builder', () => {
+  it('is /team, under the public layout with the wizards’ chrome', async () => {
+    const router = createRouter({
+      routeTree,
+      history: createMemoryHistory({ initialEntries: ['/team'] }),
+    })
+    await router.load()
+    expect(router.state.location.pathname).toBe('/team')
+    expect(router.state.matches.map((match) => match.routeId)).toEqual(['__root__', '/public', '/public/team'])
+  })
+})

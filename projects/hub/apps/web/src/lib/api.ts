@@ -143,6 +143,88 @@ export function requestPeople(
   )
 }
 
+// ---- the team builder, public (P-REB-43, spec § 3.2, § 3.3) --------------------------------
+
+/** A client's price band in whole euro, per day or per month: the freelancer's rate
+ *  plus 40%, never the rate itself. `max` is `null` for the band with no top («oltre»). */
+export interface Band {
+  min: number
+  max: number | null
+}
+
+/** A talent's anonymous card (spec § 2.1): no name, no link, no employer. `luogo` is
+ *  `null` on the public read; only the engine and the admin read it. */
+export interface Scheda {
+  ruolo: string
+  seniority: 'junior' | 'mid' | 'senior' | 'lead'
+  anni: number
+  competenze: string[]
+  settori: string[]
+  lingue: string[]
+  luogo: string | null
+  sintesi: string
+}
+
+/** One person of a proposed team, as the public read gives them: `posizione` (1, 2, 3)
+ *  is the only handle, and there is no `freelancer_id` at all, so a visitor cannot
+ *  follow a talent across proposals. `fascia` is `null` for a talent with no rate
+ *  («tariffa da definire»), `modalita` for one who never said. */
+export interface TeamMember {
+  posizione: number
+  ruolo: string
+  motivazione: string
+  giorni_settimana: number | null
+  scheda: Scheda
+  modalita: Remoto | null
+  fascia: Band | null
+}
+
+/** The team's bands: the sum of its people's, per day and per month at `giorni_mese`
+ *  (22) days; both `null` when somebody has no band, or nobody is proposed. */
+export interface TeamEconomia {
+  giorno: Band | null
+  mese: Band | null
+  giorni_mese: number
+}
+
+/** `POST /api/hub/team/proposals`'s answer. `id` is the proposal's capability: «Rigenera»
+ *  sends it back as `previous_id`, «Assumi team» as `proposal_id`. An empty `team` comes
+ *  with the hub's sentence in `riassunto`: nobody fits. `luogo` is what the engine read
+ *  in the visitor's own description about place. */
+export interface TeamProposal {
+  id: string
+  riassunto: string
+  luogo: { locale: boolean; dove: string | null }
+  team: TeamMember[]
+  economia: TeamEconomia
+  previous_id: string | null
+  created_at: string
+}
+
+/** A description, and on «Rigenera» the proposal it replaces and a note on it. */
+export interface TeamProposalCreate {
+  descrizione: string
+  nota?: string
+  previous_id?: string
+}
+
+/** «Assumi team» from the public page: the three contacts, all required. */
+export interface TeamRequestCreate {
+  proposal_id: string
+  azienda: string
+  email: string
+  telefono: string
+}
+
+export const team = {
+  /** 503 when the builder is off or too busy, 502 when Claude does not answer, 422 on
+   *  the description or a `previous_id` that is not a live public proposal: each with
+   *  the API's own sentence. */
+  propose: (body: TeamProposalCreate) => request<TeamProposal>('/api/hub/team/proposals', json(body)),
+  /** 201; 409 when the proposal is already requested, 422 when it is gone. */
+  request: (body: TeamRequestCreate) => request<{ id: string }>('/api/hub/team/requests', json(body)),
+}
+
 // ---- the admin area -------------------------------------------------------------------
 
 export type Role = 'member' | 'admin'

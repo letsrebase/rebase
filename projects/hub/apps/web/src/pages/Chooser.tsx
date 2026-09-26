@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router'
 import { ArrowRight, Briefcase, UserRound } from 'lucide-react'
 
-/** The front door of the hub: two doors, and a word for each. */
+/** The front door of the hub: two doors, a word for each, and a line to the team
+ *  builder (P-REB-43). */
 export function Chooser() {
   return (
     <div className="mx-auto max-w-2xl space-y-10">
@@ -41,6 +42,13 @@ export function Chooser() {
           </span>
         </Link>
       </div>
+      <p className="text-sm text-muted-foreground">
+        Hai già un progetto in mente?{' '}
+        <Link to="/team" className="font-medium text-foreground underline underline-offset-2">
+          Cerca un team
+        </Link>
+        : te lo proponiamo subito, senza nomi.
+      </p>
     </div>
   )
 }

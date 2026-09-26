@@ -11,6 +11,7 @@ import { Chooser } from '@/pages/Chooser'
 import { CompanyWizard } from '@/pages/CompanyWizard'
 import { FreelancerWizard } from '@/pages/FreelancerWizard'
 import { SignedInLayout } from '@/pages/SignedInLayout'
+import { Team } from '@/pages/Team'
 import { AdminAccessi } from '@/pages/admin/Accessi'
 import { AdminAdmins } from '@/pages/admin/Admins'
 import { AdminAgenti } from '@/pages/admin/Agenti'
@@ -117,6 +118,8 @@ const companiesRedirect = createRoute({
     throw redirect({ to: '/companies', search: true })
   },
 })
+// P-REB-43: the public team builder, with the wizards' chrome and no login.
+const team = createRoute({ getParentRoute: () => publicLayout, path: '/team', component: Team })
 const thanks = createRoute({
   getParentRoute: () => publicLayout,
   path: '/thanks',
@@ -425,6 +428,7 @@ export const routeTree = root.addChildren([
     freelance,
     companies,
     companiesRedirect,
+    team,
     thanks,
     thanksRedirect,
     login,
