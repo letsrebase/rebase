@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Bot, CircleHelp, Cog, User, type LucideIcon } from 'lucide-react'
+import { Bot, CircleHelp, Cog, DoorOpen, User, type LucideIcon } from 'lucide-react'
 import { formatOccurredAt, humanize, labelForKind } from '@/components/activityLabels'
 import { Badge } from '@rebase/ui/badge'
 import { Skeleton } from '@rebase/ui/skeleton'
@@ -20,12 +20,12 @@ import type { TimelineEntityType } from '@/lib/schema'
  * values -- no migration").
  *
  * Note `actor_type` comes through as a bare `string`, not the `'user' | 'mcp' |
- * 'system'` literal union `ActorType` is declared as in
+ * 'system' | 'rebase'` literal union `ActorType` is declared as in
  * packages/core/src/pigrocrm/core/actor.py: `ActivityRead.actor_type` (schemas.py)
  * widens it to `str` before it ever reaches Pydantic's own JSON Schema export, so
  * openapi-typescript has nothing narrower to generate. `actorMeta` below treats
  * every value defensively for exactly this reason -- the type system does not
- * rule out a fourth value showing up on the wire.
+ * rule out a fifth value showing up on the wire.
  */
 type ActivityEntry = components['schemas']['ActivityRead']
 
@@ -43,9 +43,12 @@ interface ActorMeta {
  * "user"; a personal-access-token call -- the MCP server's own authentication,
  * pat_service.py -- records "mcp", tied to the human who owns the token, not to a
  * null actor; "system" is reserved for actor-less bootstrap actions (`Actor.
- * system()`, today only `pigrocrm createadmin`).
+ * system()`, today only `pigrocrm createadmin`); "rebase" is the hub itself, writing
+ * through the engagements door with the freelancer's own consent -- an admin, and
+ * `Actor.rebase()`'s own docstring is explicit that it is never an agent, so it does
+ * not share `mcp`'s treatment either (milestone A, REB-490).
  *
- * The three get deliberately different *visible* treatments, not just three
+ * The four get deliberately different *visible* treatments, not just four
  * icons at the same weight: "did I do that, or did an agent?" is the first
  * question this whole timeline exists to answer, so the answer is a coloured,
  * labelled badge -- a word, not only a glyph someone has to recognise at 12px --
@@ -57,6 +60,7 @@ const ACTOR_META: Record<string, ActorMeta> = {
   user: { label: 'Utente', icon: User, variant: 'outline' },
   mcp: { label: 'Agente AI', icon: Bot, variant: 'default' },
   system: { label: 'Sistema', icon: Cog, variant: 'secondary' },
+  rebase: { label: 'rebase', icon: DoorOpen, variant: 'secondary' },
 }
 
 function actorMeta(actorType: string): ActorMeta {

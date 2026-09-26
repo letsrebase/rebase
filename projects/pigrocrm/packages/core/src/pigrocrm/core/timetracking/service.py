@@ -81,9 +81,11 @@ def to_read(entry: TimeEntry) -> TimeEntryRead:
     )
 
 
-def billed_entry_ids(session: Session, entries: Sequence[TimeEntry]) -> set[UUID]:
+def billed_entry_ids(session: Session, entries: Sequence[TimeEntry | TimeEntryRead]) -> set[UUID]:
     """Which of `entries` belong to a **line of an issued invoice** and are therefore
-    frozen (§4.3).
+    frozen (§4.3). The rows or their read shape: only `id` and `invoice_line_id` are
+    read, and the engagements report (spec 2026-09-25 § 2.4) holds the entries as
+    `list` answered them.
 
     The rule attaches to the state of the invoice, not to the presence of the link,
     because a draft is still freely editable: while the invoice is a draft the hours stay

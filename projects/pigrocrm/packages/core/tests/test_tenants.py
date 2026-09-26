@@ -499,6 +499,52 @@ def test_a_failed_drop_keeps_the_registry_row_and_the_exception_propagates(
     registry_session.commit()
 
 
+# --- A3: the welcome step, shared with the engagements door (REB-492) ---------------
+
+
+def test_welcome_answers_the_entering_link_and_none_without_a_public_origin(
+    settings: Settings, registry_session: Session
+) -> None:
+    from pigrocrm.core.mail import RecordingSender
+    from pigrocrm.core.tenants.welcome import welcome
+
+    service = TenantService(registry_session, settings)
+    slug = "prova-welcome"
+    try:
+        tenant = service.provision(TenantSignup(slug=slug, nome="Ada", email="ada@studio.it"))
+        space_engine = create_engine(
+            tenant_database_url(settings, tenant_database_name(slug)), future=True
+        )
+        try:
+            with session_factory(space_engine)() as space:
+                with_origin = settings.model_copy(update={"public_url": "https://pigro.test"})
+                mail = welcome(
+                    space, with_origin, RecordingSender(), tenant.owner_email, slug, membro=False
+                )
+                assert mail is not None
+                assert mail.html is not None
+                assert f"/{slug}/app/verify?t=" in mail.html
+
+                without_origin = settings.model_copy(update={"public_url": ""})
+                assert (
+                    welcome(
+                        space,
+                        without_origin,
+                        RecordingSender(),
+                        tenant.owner_email,
+                        slug,
+                        membro=False,
+                    )
+                    is None
+                )
+        finally:
+            space_engine.dispose()
+    finally:
+        _drop(settings, slug)
+        registry_session.execute(text("delete from tenants where slug = :s"), {"s": slug})
+        registry_session.commit()
+
+
 def test_a_successful_drop_deletes_the_registry_row(
     settings: Settings, registry_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

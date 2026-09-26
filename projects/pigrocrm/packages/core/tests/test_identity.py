@@ -379,7 +379,9 @@ def test_the_cli_boot_import_path_alone_registers_every_identity_table() -> None
     (`pigrocrm ensure-space-defaults`) imports only `pigrocrm.core.tenants` -- so a
     subprocess mirroring exactly that import, and nothing more, is what proves
     `TenantsBase.metadata` is complete without relying on whatever this test file
-    happened to import first."""
+    happened to import first. The engagements door's `rebase_engagements` (spec
+    2026-09-25 § 2.2) rides the same import in `tenants/database.py`, so the same
+    subprocess proves it is created at boot too."""
     import ast
     import subprocess
     import sys
@@ -397,4 +399,10 @@ def test_the_cli_boot_import_path_alone_registers_every_identity_table() -> None
         check=True,
     )
     tables = ast.literal_eval(result.stdout.strip())
-    assert tables == ["identities", "identity_link_tokens", "identity_sessions", "tenants"]
+    assert tables == [
+        "identities",
+        "identity_link_tokens",
+        "identity_sessions",
+        "rebase_engagements",
+        "tenants",
+    ]
