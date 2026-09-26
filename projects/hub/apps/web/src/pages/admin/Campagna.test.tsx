@@ -107,6 +107,15 @@ describe('the outcome of a sent campaign (phase 2)', () => {
     expect(done).toHaveTextContent('33%')
   })
 
+  it('shows Saltate as a share of the list, not of the mails sent, since a skipped row never left', async () => {
+    const withSkips = { ...SENT, conteggi: { ...SENT.conteggi, destinatari: 4, saltate: 1 } }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(withSkips))
+    mount()
+    const saltate = (await screen.findByText('Saltate')).closest('div')!
+    expect(saltate).toHaveTextContent('1')
+    expect(saltate).toHaveTextContent('25%')
+  })
+
   it('says «dalla mail» where the mail was the door', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(SENT))
     mount()

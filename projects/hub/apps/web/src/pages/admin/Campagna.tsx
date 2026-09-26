@@ -279,8 +279,8 @@ export function AdminCampagna() {
         <Figure label="Entrate nell’area" value={conteggi.entrate} note={share(conteggi.entrate, conteggi.inviate)} />
         <Figure label={AZIONE_FATTA_LABELS[campagna.azione]} value={conteggi.azioni} note={share(conteggi.azioni, conteggi.inviate)} />
         <Figure label="Rimbalzate" value={conteggi.rimbalzate} note={share(conteggi.rimbalzate, conteggi.inviate)} />
-        <Figure label="Saltate" value={conteggi.saltate} />
-        <Figure label="Fallite" value={conteggi.fallite} />
+        <Figure label="Saltate" value={conteggi.saltate} note={share(conteggi.saltate, conteggi.destinatari)} />
+        <Figure label="Fallite" value={conteggi.fallite} note={share(conteggi.fallite, conteggi.destinatari)} />
         {conteggi.in_coda > 0 && <Figure label="In coda" value={conteggi.in_coda} />}
       </dl>
       {destinatari.length === 0 ? (
