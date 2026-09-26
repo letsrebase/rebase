@@ -15,13 +15,29 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# The five enum tuples live once, in `models.py`, the way `contract_schemas.py` and
+# `match_words.py` already import their own shared constants from there rather than
+# repeating them: re-exported here so a caller of this module still finds them beside
+# `Card`.
+from rebase_core.models import (
+    CARD_SENIORITIES,
+    TALENT_ANSWERS,
+    TEAM_PROPOSAL_ORIGINS,
+    TEAM_REQUEST_ORIGINS,
+    TEAM_REQUEST_STATES,
+)
 from rebase_core.validation import SafeStr
 
-CARD_SENIORITIES = ("junior", "mid", "senior", "lead")
-TEAM_REQUEST_STATES = ("nuova", "contattata", "chiusa")
-TEAM_PROPOSAL_ORIGINS = ("pubblico", "cloud", "admin")
-TEAM_REQUEST_ORIGINS = ("pubblico", "cloud")
-TALENT_ANSWERS = ("si", "no")
+__all__ = [
+    "CARD_SENIORITIES",
+    "Card",
+    "CardsRefreshed",
+    "FreelancerCardRead",
+    "TALENT_ANSWERS",
+    "TEAM_PROPOSAL_ORIGINS",
+    "TEAM_REQUEST_ORIGINS",
+    "TEAM_REQUEST_STATES",
+]
 
 
 class Card(BaseModel):
