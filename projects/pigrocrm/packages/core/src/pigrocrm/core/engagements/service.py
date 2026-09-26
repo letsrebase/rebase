@@ -11,12 +11,15 @@ package's docstring: this module imports `tenants.service`, which imports
 `tenants.database`, which imports this package's `models`).
 """
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Engine, create_engine, func, select, text
+from psycopg.errors import LockNotAvailable
+from sqlalchemy import Connection, Engine, create_engine, func, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -47,12 +50,23 @@ from pigrocrm.core.tenants.schemas import SLUG_MAX, TenantSignup, slugify
 from pigrocrm.core.tenants.service import TenantService
 from pigrocrm.core.tenants.welcome import welcome
 
+logger = logging.getLogger(__name__)
+
 ENTITY = "engagement"
+# How long a call waits for another call on the same address before answering that it
+# is busy: long enough for a provisioning, short enough that a call which hung while
+# holding the address does not pin every later one forever.
+LOCK_TIMEOUT = "120s"
+LOCK = text("SELECT pg_advisory_lock(hashtext(:email))")
+UNLOCK = text("SELECT pg_advisory_unlock(hashtext(:email))")
+BUSY = "Un'altra chiamata sta preparando lo spazio di questo indirizzo: riprova tra poco."
 # `deals.tariffa_oraria` is Numeric(12, 6).
 RATE_PLACES = Decimal("0.000001")
 # What `slugify` of a name made only of characters it drops (a name in another script)
 # stands in with: an empty base would never become a valid slug, whatever its suffix.
 FALLBACK_SLUG = "spazio"
+# `-2` ... `-50`: past this many namesakes the name is not what is wrong.
+SLUG_SUFFIX_MAX = 50
 
 
 def deal_name(numero: str, ruolo: str, azienda: str) -> str:
@@ -128,15 +142,42 @@ class EngagementService:
             raise ValidationFailed(ENTITY, "public_url", "PIGROCRM_PUBLIC_URL non configurato")
         email = str(data.freelancer.email).strip().lower()
         with self.registry_engine.connect() as lock:
-            lock.execute(text("SELECT pg_advisory_lock(hashtext(:email))"), {"email": email})
-            # Out of the transaction the execute began: the lock is the session's, and
-            # the connection waits idle rather than idle in a transaction.
-            lock.commit()
             try:
+                # `is_local`: the timeout lives as long as this transaction, and the
+                # pooled connection goes back without it.
+                lock.execute(
+                    text("SELECT set_config('lock_timeout', :timeout, true)"),
+                    {"timeout": LOCK_TIMEOUT},
+                )
+                lock.execute(LOCK, {"email": email})
+            except OperationalError as exc:
+                if not isinstance(exc.orig, LockNotAvailable):
+                    raise
+                raise Conflict(ENTITY, BUSY, email=email) from exc
+            try:
+                # Out of the transaction the lock was taken in: the lock is the
+                # session's, and the connection waits idle, not idle in a transaction.
+                lock.commit()
                 return self._ensure(match_id, data, email)
             finally:
-                lock.execute(text("SELECT pg_advisory_unlock(hashtext(:email))"), {"email": email})
-                lock.commit()
+                self._unlock(lock, email)
+
+    @staticmethod
+    def _unlock(lock: Connection, email: str) -> None:
+        """Releases the address. If the unlock itself fails, the connection is
+        invalidated instead of going back to the pool holding the lock: closing it is
+        what releases a session lock. Not re-raised, so the call's own answer or error
+        is the one that surfaces; logged by type only, since SQLAlchemy's message
+        carries the statement's parameters, and the address is one of them."""
+        try:
+            lock.execute(UNLOCK, {"email": email})
+            lock.commit()
+        except Exception as exc:
+            lock.invalidate()
+            logger.warning(
+                "engagements: pg_advisory_unlock failed (%s); connection dropped",
+                type(exc).__name__,
+            )
 
     def _ensure(self, match_id: UUID, data: EngagementUpsert, email: str) -> EngagementRead:
         with session_factory(self.registry_engine)() as registry:
@@ -149,7 +190,7 @@ class EngagementService:
                 if tenant is None:  # pragma: no cover - a foreign key holds it
                     raise NotFound("tenant", row.tenant_id)
                 if row.deal_id is not None:
-                    return self._recorded(tenant, row.deal_id, match_id)
+                    return self._recorded(tenant, row.customer_id, row.deal_id, match_id)
                 # A previous call stopped between steps 3 and 6: resume at step 4, in the
                 # space it had already chosen.
             else:
@@ -174,9 +215,11 @@ class EngagementService:
             registry.commit()
             return self._answer(tenant.slug, customer_id, deal_id, spazio_creato, creato=True)
 
-    def _recorded(self, tenant: Tenant, deal_id: UUID, match_id: UUID) -> EngagementRead:
-        """Step 2 with a deal on the row: alive, its ids; gone, a 409, and nothing is
-        recreated behind the freelancer's back."""
+    def _recorded(
+        self, tenant: Tenant, customer_id: UUID | None, deal_id: UUID, match_id: UUID
+    ) -> EngagementRead:
+        """Step 2 with a deal on the row: alive, the row's ids (spec § 2.3); gone, a
+        409, and nothing is recreated behind the freelancer's back."""
         with self._space_session(tenant) as space:
             try:
                 deal = DealService(space).get(deal_id, Actor.rebase())
@@ -186,7 +229,10 @@ class EngagementService:
                     "Il deal di questa lettera è stato eliminato nello spazio.",
                     match_id=str(match_id),
                 ) from exc
-        return self._answer(tenant.slug, deal.customer_id, deal.id, False, creato=False)
+        # Step 6 writes both ids together, so a row with a deal has its customer; the
+        # deal's own stands in only for a row somebody edited by hand.
+        answered = customer_id if customer_id is not None else deal.customer_id
+        return self._answer(tenant.slug, answered, deal_id, False, creato=False)
 
     def _answer(
         self, slug: str, customer_id: UUID, deal_id: UUID, spazio_creato: bool, *, creato: bool
@@ -214,17 +260,16 @@ class EngagementService:
     def _provision(self, registry: Session, freelancer: EngagementFreelancer, email: str) -> Tenant:
         """A space in the freelancer's name, then the welcome the signup sends (spec
         § 2.3 step 3): the slug from the name, `-2`, `-3`... in place of its tail while
-        the name is taken or reserved. A name taken between the question and the insert
-        (a signup of a namesake at that moment) moves on to the next candidate rather
-        than refusing the letter."""
+        the name is taken or reserved, up to `SLUG_SUFFIX_MAX`. A name taken between the
+        question and the insert (a namesake's signup at that moment) is `provision`'s
+        `Conflict` on that very slug, and moves on to the next candidate; any other
+        `Conflict`, or the last candidate's, is the caller's."""
         tenants = TenantService(registry, self.settings)
         nome = f"{freelancer.nome} {freelancer.cognome}"
         base = slugify(nome) or FALLBACK_SLUG
-        n = 1
-        while True:
+        for n in range(1, SLUG_SUFFIX_MAX + 1):
             suffix = "" if n == 1 else f"-{n}"
             candidate = base if n == 1 else f"{base[: SLUG_MAX - len(suffix)]}{suffix}"
-            n += 1
             if not tenants.availability(candidate).disponibile:
                 continue
             try:
@@ -236,16 +281,24 @@ class EngagementService:
                         membro=True,
                     )
                 )
-            except Conflict:
+            except Conflict as exc:
+                if exc.details.get("slug") != candidate or n == SLUG_SUFFIX_MAX:
+                    raise
                 continue
-            break
-        tenant = tenants.get(created.slug)
-        if self.sender is not None:
-            with self._space_session(tenant) as space:
-                mail = welcome(space, self.settings, self.sender, email, tenant.slug, membro=True)
-            if mail is not None:
-                self.sender.send(mail)
-        return tenant
+            tenant = tenants.get(created.slug)
+            self._welcome(tenant, email)
+            return tenant
+        raise Conflict("tenant", "questo nome è già in uso", slug=base)
+
+    def _welcome(self, tenant: Tenant, email: str) -> None:
+        """What the signup sends after provisioning, sent at once: nothing here is a
+        request waiting on it."""
+        if self.sender is None:
+            return
+        with self._space_session(tenant) as space:
+            mail = welcome(space, self.settings, self.sender, email, tenant.slug, membro=True)
+        if mail is not None:
+            self.sender.send(mail)
 
     @contextmanager
     def _space_session(self, tenant: Tenant) -> Iterator[Session]:

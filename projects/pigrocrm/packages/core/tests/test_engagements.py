@@ -21,8 +21,10 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy import Engine, create_engine, func, inspect, select, text
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import NullPool
 
 import pigrocrm.core.engagements as engagements_package
+import pigrocrm.core.engagements.service as engagements_service
 from pigrocrm.core.activities.models import Activity
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
@@ -41,7 +43,13 @@ from pigrocrm.core.engagements.service import EngagementService, deal_marker, de
 from pigrocrm.core.errors import Conflict, ValidationFailed
 from pigrocrm.core.mail import RecordingSender
 from pigrocrm.core.pipeline.service import PipelineService
-from pigrocrm.core.tenants import Tenant, TenantService, TenantSignup, ensure_tenants_database
+from pigrocrm.core.tenants import (
+    Tenant,
+    TenantAvailability,
+    TenantService,
+    TenantSignup,
+    ensure_tenants_database,
+)
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 
 ADA = "ada@studio.it"
@@ -55,6 +63,7 @@ DEAL_NOTE = (
 )
 DEAL_NAME = "Lettera n. 3/2026 · Backend developer per Acme S.r.l."
 GONE = "Il deal di questa lettera è stato eliminato nello spazio."
+BUSY = "Un'altra chiamata sta preparando lo spazio di questo indirizzo: riprova tra poco."
 
 
 def _settings_for(engine: Engine, *, public_url: str = "https://pigro.test") -> Settings:
@@ -161,6 +170,34 @@ def _count(space: Session, model: type[Customer] | type[Deal], *where: Any) -> i
     return space.scalar(select(func.count()).select_from(model).where(*where)) or 0
 
 
+def _at_once(door: Door, bodies: dict[str, EngagementUpsert]) -> dict[str, EngagementRead]:
+    """Each body through `ensure` on a thread of its own, with a match id of its own,
+    released together by a barrier. An error on a thread fails the test here, and so
+    does a thread still alive after its join: a hang is a failure, not a slow pass."""
+    barrier = threading.Barrier(len(bodies))
+    answers: dict[str, EngagementRead] = {}
+    errors: list[BaseException] = []
+
+    def activate(key: str, body: EngagementUpsert) -> None:
+        try:
+            barrier.wait(timeout=30)
+            answers[key] = door.service().ensure(uuid4(), body)
+        except BaseException as exc:  # noqa: BLE001 -- carried to the main thread
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=activate, args=(key, body), daemon=True)
+        for key, body in bodies.items()
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=120)
+        assert not thread.is_alive()
+    assert errors == []
+    return answers
+
+
 # --- the registry table (A2) ---------------------------------------------------------
 
 
@@ -254,6 +291,19 @@ def test_second_call_answers_the_same_ids_and_creates_nothing(door: Door) -> Non
         assert _count(space, Customer) == 1
         assert _count(space, Deal) == 1
 
+    # The row's ids are answered (spec § 2.3 step 2), not what the deal points at now.
+    with _space(door, "ada-lovelace") as space:
+        other = CustomerService(space).create(
+            CustomerCreate(ragione_sociale="Altro"), Actor.system()
+        )
+        space.execute(
+            text("UPDATE deals SET customer_id = :c WHERE id = :d"),
+            {"c": other.id, "d": first.deal_id},
+        )
+        space.commit()
+    third = door.service().ensure(match_id, _upsert())
+    assert third.customer_id == first.customer_id
+
 
 def test_owned_space_is_reused_oldest_first(door: Door) -> None:
     _provision(door, "studio-ada")
@@ -302,28 +352,68 @@ def test_slug_collision_takes_a_suffix(door: Door) -> None:
     assert _owned(door, "altra@studio.it") == ["ada-lovelace"]
 
 
+def test_a_slug_lost_at_the_insert_moves_on(door: Door, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A namesake's signup takes the name between `availability` and the insert:
+    `provision` answers the slug's `Conflict`, and the next candidate is tried."""
+    real = TenantService.provision
+    tried: list[str] = []
+
+    def racing(self: TenantService, data: TenantSignup) -> Any:
+        tried.append(data.slug)
+        if len(tried) == 1:
+            raise Conflict("tenant", "questo nome è già in uso", slug=data.slug)
+        return real(self, data)
+
+    monkeypatch.setattr(TenantService, "provision", racing)
+    answer = door.service().ensure(uuid4(), _upsert())
+
+    assert tried == ["ada-lovelace", "ada-lovelace-2"]
+    assert answer.slug == "ada-lovelace-2"
+
+
+def test_a_conflict_about_something_else_is_not_retried(
+    door: Door, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tried: list[str] = []
+
+    def refusing(self: TenantService, data: TenantSignup) -> Any:
+        tried.append(data.slug)
+        if len(tried) > 60:  # the RED run's guard against retrying it for ever
+            raise RuntimeError("a foreign Conflict is retried")
+        raise Conflict("tenant", "un altro motivo", slug="un-altro-nome")
+
+    monkeypatch.setattr(TenantService, "provision", refusing)
+    with pytest.raises(Conflict) as refused:
+        door.service().ensure(uuid4(), _upsert())
+
+    assert tried == ["ada-lovelace"]
+    assert refused.value.details["reason"] == "un altro motivo"
+
+
+def test_the_suffix_gives_up_after_fifty(door: Door, monkeypatch: pytest.MonkeyPatch) -> None:
+    asked: list[str] = []
+
+    def taken(self: TenantService, slug: str) -> TenantAvailability:
+        asked.append(slug)
+        if len(asked) > 60:  # the RED run's guard against an unbounded loop
+            raise RuntimeError("the suffix has no bound")
+        return TenantAvailability(slug=slug, disponibile=False, motivo="questo nome è già in uso")
+
+    monkeypatch.setattr(TenantService, "availability", taken)
+    with pytest.raises(Conflict):
+        door.service().ensure(uuid4(), _upsert())
+
+    assert len(asked) == 50
+    assert asked[-1] == "ada-lovelace-50"
+    assert _owned(door) == []
+
+
 def test_two_matches_one_email_share_one_space(door: Door) -> None:
     """Two letters of the same freelancer activating together (spec § 3.10): the lock
     by address serialises the whole call, so the second finds the space the first
     opened instead of opening another under `ada-lovelace-2`."""
-    barrier = threading.Barrier(2)
-    answers: dict[str, EngagementRead] = {}
-    errors: list[BaseException] = []
+    answers = _at_once(door, {n: _upsert(lettera={"numero": n}) for n in ("1/2026", "2/2026")})
 
-    def activate(numero: str) -> None:
-        try:
-            barrier.wait(timeout=30)
-            answers[numero] = door.service().ensure(uuid4(), _upsert(lettera={"numero": numero}))
-        except BaseException as exc:  # noqa: BLE001 -- carried to the main thread
-            errors.append(exc)
-
-    threads = [threading.Thread(target=activate, args=(n,)) for n in ("1/2026", "2/2026")]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(timeout=300)
-
-    assert errors == []
     assert _owned(door) == ["ada-lovelace"]
     assert {a.slug for a in answers.values()} == {"ada-lovelace"}
     assert sorted(a.spazio_creato for a in answers.values()) == [False, True]
@@ -333,6 +423,85 @@ def test_two_matches_one_email_share_one_space(door: Door) -> None:
         assert _count(space, Customer) == 1
         assert _count(space, Deal) == 2
     assert len(door.sender.sent) == 1
+
+
+def test_two_addresses_at_once_open_two_spaces(door: Door) -> None:
+    """Two freelancers' letters activating in the same instant: the lock by address
+    lets both through, so two spaces are provisioned at once in one process. Alembic's
+    script directory is not thread-safe (`DuplicateTable`, `KeyError('script')` before
+    `migrate_to_head` took its own lock), so the migrations take turns."""
+    grace = {"email": "grace@studio.it", "nome": "Grace", "cognome": "Hopper"}
+    answers = _at_once(
+        door,
+        {
+            "ada": _upsert(lettera={"numero": "1/2026"}),
+            "grace": _upsert(freelancer=grace, lettera={"numero": "2/2026"}),
+        },
+    )
+
+    assert (answers["ada"].slug, answers["grace"].slug) == ("ada-lovelace", "grace-hopper")
+    assert answers["ada"].spazio_creato is True and answers["grace"].spazio_creato is True
+    assert _owned(door) == ["ada-lovelace"]
+    assert _owned(door, "grace@studio.it") == ["grace-hopper"]
+    for slug in ("ada-lovelace", "grace-hopper"):
+        with _space(door, slug) as space:
+            assert _count(space, Customer) == 1 and _count(space, Deal) == 1
+    assert sorted(mail.to for mail in door.sender.sent) == [ADA, "grace@studio.it"]
+
+
+def test_a_held_lock_times_out_as_a_conflict(door: Door, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A call that hangs while holding an address must not pin every later call for
+    it: the wait is bounded by `lock_timeout`, and the answer says to try again."""
+    monkeypatch.setattr(engagements_service, "LOCK_TIMEOUT", "200ms")
+    with door.registry.connect() as holder:
+        holder.execute(text("SELECT pg_advisory_lock(hashtext(:e))"), {"e": ADA})
+        try:
+            with pytest.raises(Conflict) as refused:
+                door.service().ensure(uuid4(), _upsert())
+        finally:
+            holder.execute(text("SELECT pg_advisory_unlock(hashtext(:e))"), {"e": ADA})
+            holder.commit()
+
+    assert refused.value.details["reason"] == BUSY
+    assert refused.value.details["email"] == ADA
+    assert _owned(door) == []
+
+
+def test_a_failed_unlock_drops_the_connection_and_frees_the_address(
+    door: Door, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If `pg_advisory_unlock` itself fails, the connection is invalidated rather than
+    handed back to the pool still holding the address; closing it is what releases a
+    session lock. The call's own error is the one that surfaces."""
+
+    def fails_midway(self: EngagementService, *args: object) -> EngagementRead:
+        raise RuntimeError("a failure in the middle of the call")
+
+    monkeypatch.setattr(EngagementService, "_ensure", fails_midway)
+    monkeypatch.setattr(
+        engagements_service, "UNLOCK", text("SELECT pg_advisory_unlock_missing(:email)")
+    )
+    with pytest.raises(RuntimeError, match="in the middle"):
+        door.service().ensure(uuid4(), _upsert())
+
+    # A connection of its own, outside the pool: a session lock is re-entrant, so the
+    # pooled connection that kept it would answer yes to its own question.
+    other = create_engine(door.registry.url, poolclass=NullPool)
+    try:
+        with other.connect() as connection:
+            free = False
+            for _ in range(50):
+                free = bool(
+                    connection.scalar(text("SELECT pg_try_advisory_lock(hashtext(:e))"), {"e": ADA})
+                )
+                if free:
+                    connection.execute(text("SELECT pg_advisory_unlock(hashtext(:e))"), {"e": ADA})
+                    break
+                connection.commit()
+                threading.Event().wait(0.05)
+            assert free
+    finally:
+        other.dispose()
 
 
 # --- ensure: resuming what a previous call left halfway ------------------------------
