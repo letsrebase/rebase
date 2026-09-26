@@ -586,3 +586,49 @@ def signed_copy_mail(
         html=_frame(subject, body),
         attachments=(attachment,),
     )
+
+
+def team_request_mail(
+    to: str, *, azienda: str, riassunto: str | None, talento: str | None, url: str
+) -> Mail:
+    """A team request arriving (spec § 3.5), to rebase's own address and never to the
+    company: the subject names the company, the body carries the project's anonymous
+    summary, or for a request of one talent from the cloud that talent's name, and the
+    link to the request's page, where the contacts and the team are. The company's name
+    and the summary were typed by a visitor, so both are escaped in the HTML, the way
+    the magic link escapes its token."""
+    e = html_escape.escape
+    subject = f"Nuova richiesta team da {azienda}"
+    if talento is not None:
+        what = f"{azienda} ha chiesto un talento del talent cloud: {talento}."
+        quoted = None
+    else:
+        what = f"{azienda} ha chiesto il team che il team builder ha proposto per questo progetto:"
+        quoted = riassunto
+    where = "La richiesta, con i contatti e i talenti, è qui:"
+    text_parts = ["Ciao,", what]
+    if quoted:
+        text_parts.append(quoted)
+    text_parts.extend((f"{where}\n{url}", "Noi di rebase"))
+    text = "\n\n".join(text_parts) + "\n"
+    safe_url = e(url, quote=True)
+    small = f'style="margin:24px 0 0 0;font-size:13px;line-height:1.5;color:{INK_QUIET};'
+    rows = [
+        '<p style="margin:0 0 20px 0;">Ciao,</p>',
+        f'<p style="margin:0 0 20px 0;">{e(what)}</p>',
+    ]
+    if quoted:
+        rows.append(
+            f'<p style="margin:0 0 24px 0;padding:0 0 0 16px;border-left:2px solid {INK};">'
+            f"{e(quoted)}</p>"
+        )
+    rows.extend(
+        (
+            _button(safe_url, "Apri la richiesta"),
+            f'<p {small}word-break:break-all;">'
+            "Se il bottone non si apre, copia questo indirizzo nel browser:<br>"
+            f"{_quiet_link(safe_url, safe_url)}</p>",
+            '<p style="margin:24px 0 0 0;">Noi di rebase</p>',
+        )
+    )
+    return Mail(to=to, subject=subject, text=text, html=_frame(subject, "\n".join(rows)))

@@ -5,12 +5,13 @@ import {
   createRouter,
   redirect,
 } from '@tanstack/react-router'
-import type { CompaniesFilters, MatchesFilters, Remoto, TalentiFilters } from '@/lib/api'
+import type { CompaniesFilters, MatchesFilters, Remoto, TalentiFilters, TeamRequestsFilters } from '@/lib/api'
 import { Shell } from '@/components/Shell'
 import { Chooser } from '@/pages/Chooser'
 import { CompanyWizard } from '@/pages/CompanyWizard'
 import { FreelancerWizard } from '@/pages/FreelancerWizard'
 import { SignedInLayout } from '@/pages/SignedInLayout'
+import { Team } from '@/pages/Team'
 import { AdminAccessi } from '@/pages/admin/Accessi'
 import { AdminAdmins } from '@/pages/admin/Admins'
 import { AdminAgenti } from '@/pages/admin/Agenti'
@@ -23,6 +24,8 @@ import { AdminCampagne } from '@/pages/admin/Campagne'
 import { AdminCreaCampagna } from '@/pages/admin/CreaCampagna'
 import { AdminCreaMatch } from '@/pages/admin/CreaMatch'
 import { AdminMatches } from '@/pages/admin/Matches'
+import { AdminRichiestaTeam } from '@/pages/admin/RichiestaTeam'
+import { AdminRichiesteTeam } from '@/pages/admin/RichiesteTeam'
 import { Disiscrizione } from '@/pages/Disiscrizione'
 import { Thanks } from '@/pages/Thanks'
 import {
@@ -117,6 +120,8 @@ const companiesRedirect = createRoute({
     throw redirect({ to: '/companies', search: true })
   },
 })
+// P-REB-43: the public team builder, with the wizards' chrome and no login.
+const team = createRoute({ getParentRoute: () => publicLayout, path: '/team', component: Team })
 const thanks = createRoute({
   getParentRoute: () => publicLayout,
   path: '/thanks',
@@ -330,6 +335,21 @@ const adminMatches = createRoute({
     q: strParam(search.q),
   }),
 })
+// REB-514: «Richieste team», the requests the team builder files, and one request's
+// page. The state pill lives in the URL, as «Match»'s does.
+const adminTeamRequests = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/team',
+  component: AdminRichiesteTeam,
+  validateSearch: (search: Record<string, unknown>): TeamRequestsFilters => ({
+    stato: strParam(search.stato),
+  }),
+})
+const adminTeamRequest = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/team/$id',
+  component: AdminRichiestaTeam,
+})
 // P-REB-41: the list, a stub for the new/edit form (Task 20) and a stub for the
 // detail (Task 21). `adminCampaignNew` sits before `adminCampaign` in the tree below --
 // TanStack ranks a static segment over `$id` either way, but the list reads in the
@@ -425,6 +445,7 @@ export const routeTree = root.addChildren([
     freelance,
     companies,
     companiesRedirect,
+    team,
     thanks,
     thanksRedirect,
     login,
@@ -449,6 +470,8 @@ export const routeTree = root.addChildren([
       adminFreelanceMatchNew,
       adminFreelanceRedirect,
       adminMatches,
+      adminTeamRequests,
+      adminTeamRequest,
       adminCampaigns,
       adminCampaignNew,
       adminCampaign,

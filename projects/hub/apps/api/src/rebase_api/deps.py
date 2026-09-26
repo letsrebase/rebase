@@ -1,8 +1,8 @@
 """One engine per process, one session per request."""
 
 import threading
-from collections.abc import Callable, Iterator
-from contextlib import AbstractContextManager, closing
+from collections.abc import Iterator
+from contextlib import closing
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -14,13 +14,15 @@ from rebase_core.analytics import Tracker, tracker_from_settings
 from rebase_core.campaigns.sender import CampaignSender, campaign_sender_from_settings
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.render import ContractRenderer, Renderer
-from rebase_core.db import create_engine_from_settings, session_factory
+from rebase_core.db import SessionOpener, create_engine_from_settings, session_factory
 from rebase_core.documenso import DocumensoClient, client_from_settings
 from rebase_core.http import HttpCall, urllib_call
+from rebase_core.llm import LlmCall, call_from_settings
 from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.members import MemberService
 from rebase_core.schemas import MeRead
 from rebase_core.signing import SigningFactory, signing_from_settings
+from rebase_core.team_builder import TeamBuilder
 from rebase_core.users import UserService
 
 MEMBER_COOKIE = "orbiters_user"
@@ -99,6 +101,39 @@ def get_campaign_sender(settings: SettingsDep) -> CampaignSender | None:
 CampaignSenderDep = Annotated[CampaignSender | None, Depends(get_campaign_sender)]
 
 
+def get_llm(settings: SettingsDep) -> LlmCall | None:
+    """The Claude seam (REB-508), or `None` without a key: the anonymous card is then
+    not written (REB-510). A dependency, so a test hands a `RecordingCall` the way it
+    hands `RecordingSender` for the mail."""
+    return call_from_settings(settings)
+
+
+LlmDep = Annotated[LlmCall | None, Depends(get_llm)]
+
+# The proposals running now in this process (spec § 5): one semaphore for the process,
+# sized by `REBASE_TEAM_BUILDER_CONCURRENCY` when the first proposal arrives. A proposal
+# holds a worker thread for the seconds Claude takes, on the pool the member area and
+# the webhooks share, so the one past the cap is refused at once, never queued.
+_proposal_slots: tuple[int, threading.BoundedSemaphore] | None = None
+_proposal_slots_lock = threading.Lock()
+
+
+def get_proposal_slots(settings: SettingsDep) -> threading.BoundedSemaphore:
+    """The process's proposal slots, acquired with `blocking=False` and released in a
+    `finally`. Keyed by the size, the way `analytics.build_client` keys its client: the
+    setting never changes in a running process, and a test that sets another size gets
+    a semaphore of that size; a slot held on the old one is released into the old one."""
+    global _proposal_slots
+    size = settings.team_builder_concurrency
+    with _proposal_slots_lock:
+        if _proposal_slots is None or _proposal_slots[0] != size:
+            _proposal_slots = (size, threading.BoundedSemaphore(size))
+        return _proposal_slots[1]
+
+
+ProposalSlotsDep = Annotated[threading.BoundedSemaphore, Depends(get_proposal_slots)]
+
+
 def get_http_call() -> HttpCall:
     """The one HTTP seam, as a dependency so a test can hand a fake where production
     hands `urllib_call`: the registry of PigroCRM's spaces is read through it (ORB-142)."""
@@ -152,8 +187,6 @@ def get_signing_factory(
 
 SigningDep = Annotated[SigningFactory, Depends(get_signing_factory)]
 
-SessionOpener = Callable[[], AbstractContextManager[Session]]
-
 
 def get_session_opener() -> SessionOpener:
     """A session for work that runs after the response (REB-387's webhook): a background
@@ -163,3 +196,14 @@ def get_session_opener() -> SessionOpener:
 
 
 SessionOpenerDep = Annotated[SessionOpener, Depends(get_session_opener)]
+
+
+def get_team_builder(
+    session: SessionDep, llm: LlmDep, settings: SettingsDep, tracker: TrackerDep
+) -> TeamBuilder:
+    """The engine (REB-511) for this request: the Claude seam, `None` without a key, and
+    the tracker that counts the proposal."""
+    return TeamBuilder(session, llm, settings, tracker=tracker)
+
+
+TeamBuilderDep = Annotated[TeamBuilder, Depends(get_team_builder)]

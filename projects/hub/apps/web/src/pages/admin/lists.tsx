@@ -46,6 +46,7 @@ import { cn } from '@rebase/ui/cn'
 import { AuditTrail } from './AuditTrail'
 import { Comments } from './Comments'
 import { CompanyOverrideDialog, FreelancerOverrideDialog, RecordLifecycle } from './Override'
+import { SchedaAnonima } from './SchedaAnonima'
 
 const TONE: Record<string, string> = {
   nuovo: 'bg-[var(--color-royal-gold)]',
@@ -889,6 +890,9 @@ export function AdminFreelancerDetail() {
     )
     void client.invalidateQueries({ queryKey: ['freelancers'] })
     void client.invalidateQueries({ queryKey: auditKey })
+    // «Scheda anonima» (REB-514): clearing the CV deletes the card, and an override
+    // may change the work mode or the rate, whose band the section reads beside it.
+    void client.invalidateQueries({ queryKey: ['freelancer-card', id] })
   }
   const [overrideOpen, setOverrideOpen] = useState(false)
   const override = useMutation({
@@ -1020,6 +1024,9 @@ export function AdminFreelancerDetail() {
           />
         )}
       </div>
+      {f.deleted_at === null && (
+        <SchedaAnonima freelancerId={f.id} hasCv={f.cv_filename !== null} />
+      )}
       <FreelancerIscrizione utm={f.iscrizione_utm} />
       <RecentEvents
         title="Ultimi accessi"

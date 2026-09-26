@@ -81,6 +81,21 @@ const COMPLETE = {
   ultimo_accesso: '2026-09-11T12:04:00Z',
 }
 
+/** `GET /api/hub/freelancers/{id}/card` before any card is written (REB-514): the
+ *  detail page's «Scheda anonima» reads it beside the card itself. */
+function noCard(id: string) {
+  return {
+    freelancer_id: id,
+    card: null,
+    modalita: null,
+    fascia: null,
+    cv_sha256: null,
+    model: null,
+    generated_at: null,
+    error: null,
+  }
+}
+
 /** A card in `talenti` (REB-282/283): a freelancer already written, `origine` naming
  *  the wizard the person filled in themselves. */
 const CARD_TALENTO = {
@@ -387,6 +402,7 @@ describe('the freelancer detail', () => {
     const spy = routeFetch({
       'GET /api/hub/freelancers/f1': INCOMPLETE,
       'GET /api/hub/freelancers/f1/audit': [],
+      'GET /api/hub/freelancers/f1/card': noCard('f1'),
     })
     mount('/admin/freelance/f1')
     await screen.findByRole('heading', { name: 'Ada Lovelace' })
@@ -404,6 +420,7 @@ describe('the freelancer detail', () => {
     routeFetch({
       'GET /api/hub/freelancers/f2': COMPLETE,
       'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': noCard('f2'),
     })
     mount('/admin/freelance/f2')
     await screen.findByRole('heading', { name: 'Grace Hopper' })
@@ -412,6 +429,45 @@ describe('the freelancer detail', () => {
     expect(screen.getByText('compilata dalla persona')).toBeInTheDocument()
     expect(screen.getByText('Da remoto')).toBeInTheDocument()
     expect(screen.getByText(/^3 · ultimo 11 set 2026/)).toBeInTheDocument()
+  })
+})
+
+describe('the anonymous card on the freelancer detail (REB-514)', () => {
+  it('reads the card of a live talent with a CV, and offers to write it again', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f2': COMPLETE,
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': {
+        ...noCard('f2'),
+        card: {
+          ruolo: 'CTO',
+          seniority: 'lead',
+          anni: 15,
+          competenze: ['Architettura'],
+          settori: [],
+          lingue: ['italiano'],
+          luogo: null,
+          sintesi: 'Guida team di prodotto da quindici anni.',
+        },
+        modalita: 'remoto',
+        generated_at: '2026-09-25T10:00:00Z',
+        model: 'claude-opus-5',
+      },
+    })
+    mount('/admin/freelance/f2')
+    const section = await screen.findByRole('region', { name: 'Scheda anonima' })
+    expect(await within(section).findByText('Guida team di prodotto da quindici anni.')).toBeInTheDocument()
+    expect(within(section).getByRole('button', { name: 'Rigenera scheda' })).toBeInTheDocument()
+  })
+
+  it('leaves the section off a deleted card, whose card the API no longer reads', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f2': { ...COMPLETE, deleted_at: '2026-09-23T10:00:00Z' },
+      'GET /api/hub/freelancers/f2/audit': [],
+    })
+    mount('/admin/freelance/f2')
+    await screen.findByRole('heading', { name: 'Grace Hopper' })
+    expect(screen.queryByRole('region', { name: 'Scheda anonima' })).toBeNull()
   })
 })
 
@@ -435,11 +491,16 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
   }
 
   it('shows the sign-up utm, the recent logins and downloads, and the Pigro slug, in order', async () => {
-    routeFetch({ 'GET /api/hub/freelancers/f2': ENRICHED, 'GET /api/hub/freelancers/f2/audit': [] })
+    routeFetch({
+      'GET /api/hub/freelancers/f2': ENRICHED,
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': noCard('f2'),
+    })
     mount('/admin/freelance/f2')
     await screen.findByRole('heading', { name: 'Grace Hopper' })
     const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
     expect(headings).toEqual([
+      'Scheda anonima',
       'Iscrizione alla newsletter',
       'Ultimi accessi',
       'Download della guida',
@@ -463,6 +524,7 @@ describe('the enriched detail: sign-up, logins, downloads, Pigro space (REB-284)
         pigro_slug: null,
       },
       'GET /api/hub/freelancers/f1/audit': [],
+      'GET /api/hub/freelancers/f1/card': noCard('f1'),
     })
     mount('/admin/freelance/f1')
     await screen.findByRole('heading', { name: 'Ada Lovelace' })
@@ -966,7 +1028,11 @@ describe('the talent row menu and the card link to its contracts (REB-387)', () 
   })
 
   it('links a card to its matches and contracts from its header', async () => {
-    routeFetch({ 'GET /api/hub/freelancers/f2': COMPLETE, 'GET /api/hub/freelancers/f2/audit': [] })
+    routeFetch({
+      'GET /api/hub/freelancers/f2': COMPLETE,
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': noCard('f2'),
+    })
     mount('/admin/freelance/f2')
     const link = await screen.findByRole('link', { name: 'Match e contratti' })
     expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f2\/contracts$/)

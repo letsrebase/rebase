@@ -16,6 +16,10 @@ The completion is reported to PostHog from here, after the answer, as a backgrou
 task (`rebase_core.analytics`, REB-215): the browser's own event is the one an ad
 blocker eats, and `distinct_id` -- the id the browser's SDK carries, when it was
 allowed to run -- is what lands the two halves on the same person.
+
+A new card that came with a CV gets its anonymous description the same way, after the
+answer and in a session of its own (`rebase_core.cards.write_after_response`, REB-510):
+Claude takes seconds, and the person waiting for the 201 has nothing to wait for.
 """
 
 import logging
@@ -34,9 +38,17 @@ from fastapi import (
 )
 from pydantic import ValidationError
 
-from rebase_api.deps import SenderDep, SessionDep, SettingsDep, TrackerDep
+from rebase_api.deps import (
+    LlmDep,
+    SenderDep,
+    SessionDep,
+    SessionOpenerDep,
+    SettingsDep,
+    TrackerDep,
+)
 from rebase_api.ratelimit import spend_one
 from rebase_core.amounts import NotAnAmount, italian_amount
+from rebase_core.cards import write_after_response
 from rebase_core.freelancers import ALREADY_HAS_CARD_NOTE, FreelancerService
 from rebase_core.mail import EmailSender, Mail
 from rebase_core.schemas import DISTINCT_ID_MAX_LENGTH, Ack, FreelancerCreate, SignupUtm
@@ -87,6 +99,8 @@ def apply(
     tracker: TrackerDep,
     settings: SettingsDep,
     sender: SenderDep,
+    llm: LlmDep,
+    open_session: SessionOpenerDep,
     nome: Annotated[str, Form()],
     cognome: Annotated[str, Form()],
     email: Annotated[str, Form()],
@@ -141,9 +155,11 @@ def apply(
     # 422 shape as the fields above.
     service = FreelancerService(session)
     if cv is None:
-        _, created = service.apply(data)
+        read, created = service.apply(data)
     else:
-        _, created = service.apply(data, cv.file.read(), cv.filename or "", cv.content_type or "")
+        read, created = service.apply(
+            data, cv.file.read(), cv.filename or "", cv.content_type or ""
+        )
     if not created and sender is not None:
         mail = UserService(session, settings).request_link(data.email, note=ALREADY_HAS_CARD_NOTE)
         if mail is not None:
@@ -156,4 +172,8 @@ def apply(
             cv=cv is not None,
             utm=data.utm,
         )
+    # Last: background tasks run in order, and the completion event must not wait
+    # behind the seconds Claude takes to write the card.
+    if created and cv is not None:
+        background.add_task(write_after_response, open_session, llm, read.id)
     return Ack()

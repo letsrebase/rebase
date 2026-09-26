@@ -191,7 +191,7 @@ describe('privacy.html', () => {
     expect(policy).toMatch(/consenso/i)
     // Both halves of the date: the attribute a machine reads and the words a person does.
     // The first version of this change moved one and not the other.
-    expect(policy).toContain('<time datetime="2026-09-24">24 settembre 2026</time>')
+    expect(policy).toContain('<time datetime="2026-09-26">26 settembre 2026</time>')
   })
 
   it('says PostHog is there, on the site after the yes and behind the logins without one', () => {

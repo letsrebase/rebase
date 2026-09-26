@@ -34,3 +34,34 @@ describe('the bare /admin address', () => {
     expect(router.state.location.pathname).toBe('/admin/talent')
   })
 })
+
+describe('the team builder', () => {
+  it('is /team, under the public layout with the wizards’ chrome', async () => {
+    const router = createRouter({
+      routeTree,
+      history: createMemoryHistory({ initialEntries: ['/team'] }),
+    })
+    await router.load()
+    expect(router.state.location.pathname).toBe('/team')
+    expect(router.state.matches.map((match) => match.routeId)).toEqual(['__root__', '/public', '/public/team'])
+  })
+})
+
+describe('«Richieste team» in the admin area', () => {
+  it('has the list at /admin/team and a request at /admin/team/$id, behind the admin guard', async () => {
+    for (const [path, leaf] of [
+      ['/admin/team', '/signedIn/admin/team'],
+      ['/admin/team/r1', '/signedIn/admin/team/$id'],
+    ] as const) {
+      const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
+      await router.load()
+      expect(router.state.location.pathname).toBe(path)
+      expect(router.state.matches.map((match) => match.routeId)).toEqual([
+        '__root__',
+        '/signedIn',
+        '/signedIn/admin',
+        leaf,
+      ])
+    }
+  })
+})

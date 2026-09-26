@@ -31,11 +31,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 
 from rebase_api.deps import (
     SessionDep,
-    SessionOpener,
     SessionOpenerDep,
     SettingsDep,
     SigningDep,
 )
+from rebase_core.db import SessionOpener
 from rebase_core.documenso import WebhookBody, outcome_from_webhook
 from rebase_core.schemas import Ack
 from rebase_core.signing import SigningFactory

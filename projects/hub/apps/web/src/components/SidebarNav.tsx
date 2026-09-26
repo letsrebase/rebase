@@ -11,6 +11,7 @@ import {
   Send,
   ShieldCheck,
   UserRound,
+  Users,
 } from 'lucide-react'
 import { BrandMark } from '@/components/BrandMark'
 import { Button } from '@rebase/ui/button'
@@ -23,10 +24,13 @@ import { useLogout } from '@/lib/me'
  *  model that merges them (REB-283); the rest keep their label, icon and path. «Match»
  *  (REB-413) lists every match the milestone's other four admin pages create, between
  *  the two lists it draws its rows from. «Campagne» (P-REB-41) lists the mails an
- *  admin sends the community, one state and one outcome at a time. */
+ *  admin sends the community, one state and one outcome at a time. «Richieste team»
+ *  (REB-514) sits right after «Match», before «Aziende» as the spec places it: the
+ *  requests the team builder files, the step before a match. */
 const ADMIN_NAV = [
   { to: '/admin/talent', label: 'Talenti', icon: UserRound },
   { to: '/admin/matches', label: 'Match', icon: Handshake },
+  { to: '/admin/team', label: 'Richieste team', icon: Users },
   { to: '/admin/campaigns', label: 'Campagne', icon: Send },
   { to: '/admin/companies', label: 'Aziende', icon: Briefcase },
   { to: '/admin/pigro', label: 'Istanze Pigro', icon: Boxes },

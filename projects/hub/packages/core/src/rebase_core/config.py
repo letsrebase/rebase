@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -112,6 +113,26 @@ class Settings(BaseSettings):
     # The `whsec_` secret Resend shows for this environment's webhook (spec § 6.1).
     # Empty: the webhook answers 503 and delivery, bounces and complaints are not read.
     resend_webhook_secret: str = ""
+    # --- Claude: the team builder's seam (`llm.py`, REB-508) --------------------------
+    # `AnthropicCall`'s key, for its two callers: the anonymous card (spec § 5.1) and the
+    # team proposal (spec § 3.4). Empty: `call_from_settings` answers `None` and each
+    # caller refuses with its own sentence, the same shape as `resend_api_key` and
+    # `documenso_api_token`. `repr=False` so the key never shows up in a logged
+    # `Settings()` or a stack trace, unlike the other secrets above -- this one is new
+    # enough to start the habit the rest never had.
+    anthropic_api_key: str = Field(default="", repr=False)
+    team_builder_model: str = "claude-opus-5"
+    # Off switches the feature without touching the key above: the two callers read it,
+    # this file only declares it.
+    team_builder_enabled: bool = True
+    # How many proposals the API process runs at once (spec § 5): the next one answers
+    # 503 «Troppe richieste» at once rather than queue on the thread pool the member
+    # area and the webhooks share. It bounds load, not spend: that is the cap below.
+    team_builder_concurrency: int = Field(default=4, ge=1)
+    # Proposals a day, public and cloud together, counted on `team_proposals` since
+    # midnight in Rome (`team_caps.py`); once reached, the same 503 until tomorrow. A
+    # proposal that asked no model (an empty catalogue) cost nothing and does not count.
+    team_builder_daily_cap: int = Field(default=300, ge=1)
 
 
 @lru_cache(maxsize=1)

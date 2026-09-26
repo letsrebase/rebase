@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from rebase_core.admin_tokens import DEFAULT_NAME, AdminTokenService
 from rebase_core.campaigns.sender import campaign_sender_from_settings
 from rebase_core.campaigns.tick import run_tick
+from rebase_core.cards import CardWriter
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.fields import ContractFailed, Value, merge_data
 from rebase_core.contracts.render import (
@@ -25,6 +26,7 @@ from rebase_core.documenso import client_from_settings
 from rebase_core.errors import DocumensoFailed, DomainError
 from rebase_core.freelancers import freelancer_read
 from rebase_core.http import HttpCall
+from rebase_core.llm import call_from_settings
 from rebase_core.mail import CardSummary, EmailSender, sender_from_settings, welcome_mail
 from rebase_core.models import USER_ROLES, Freelancer, Signup, User
 from rebase_core.signing import signing_from_settings
@@ -201,6 +203,34 @@ def campaigns_tick() -> int:
     return 0
 
 
+def cards_refresh(limit: int) -> int:
+    """`rebase cards-refresh [--limit N]`: the anonymous card of every freelancer whose CV
+    has none yet, or has changed since, `limit` at a time, the oldest first (REB-510).
+    Run once after the deploy that brings the key, and again until it prints «0 schede
+    scritte, 0 non riuscite». A CV that failed on its own account is not tried again
+    until it changes, so the runs end; a batch that met an outage stops there, counts it
+    among «non riuscite» and leaves it and the rest to the next run. Without a key it
+    says so, rather than printing «0 schede scritte» for ever."""
+    if limit < 1:
+        print("--limit deve essere almeno 1.", file=sys.stderr)
+        return 2
+    settings = get_settings()
+    llm = call_from_settings(settings)
+    if llm is None:
+        print(
+            "Nessuna chiave per Claude: serve REBASE_ANTHROPIC_API_KEY.",
+            file=sys.stderr,
+        )
+        return 1
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        result = CardWriter(session, llm).refresh_stale(limit)
+    finally:
+        session.close()
+    print(f"{result.written} schede scritte, {result.failed} non riuscite")
+    return 0
+
+
 def documenso_check(settings: Settings, http: HttpCall | None = None) -> int:
     """`rebase documenso-check`: does this environment reach its Documenso, and does its
     token open it? Reads one page of the team's envelopes and prints none of them. Run
@@ -343,6 +373,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "campaigns-tick",
         help="Invia le campagne arrivate alla loro ora, una mail alla volta",
     )
+    cards_parser = sub.add_parser(
+        "cards-refresh",
+        help="Scrive la scheda anonima di chi ha un CV nuovo o cambiato, i più vecchi prima",
+    )
+    cards_parser.add_argument("--limit", type=int, default=50)
     token = sub.add_parser(
         "createtoken", help="Crea un token personale di un amministratore, per un agente"
     )
@@ -372,6 +407,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return contracts_sweep()
     if args.command == "campaigns-tick":
         return campaigns_tick()
+    if args.command == "cards-refresh":
+        return cards_refresh(args.limit)
     if args.command == "createtoken":
         return createtoken(args.email, args.nome)
     if args.command == "setrole":

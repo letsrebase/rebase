@@ -1,5 +1,7 @@
 """The declarative base, the two mixins every table shares, and the engine helpers."""
 
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -42,3 +44,9 @@ def create_engine_from_settings(settings: Settings) -> Engine:
 
 def session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, expire_on_commit=False, future=True)
+
+
+# A session for work that runs after an API response (REB-387's webhook, REB-510's card
+# write): the API's `get_session_opener` answers one, and a background task opens its
+# own session with it rather than borrow the request's, which is closed by then.
+SessionOpener = Callable[[], AbstractContextManager[Session]]

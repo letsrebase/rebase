@@ -78,8 +78,13 @@ describe.each(PAGES)('%s', (name) => {
       // `posthog.com` since ORB-183: the cookie section links PostHog's policy the way
       // it links OpenAI's. The SDK itself is on `i.posthog.com`, which is not here and
       // never will be: `pixel.test.ts` keeps it out of every page.
+      // `www.anthropic.com` since REB-515: the new team builder section on privacy.html
+      // links Anthropic's own privacy page, the same way the cookie section links
+      // PostHog's and OpenAI's. Nothing on this site calls Anthropic's API directly —
+      // that call is the hub's, over `rebase_core/llm.py` — this host only ever appears
+      // as an `<a href>` a reader clicks.
       expect(url, 'external subresource').toMatch(
-        /^https:\/\/(?:github\.com|pigro\.letsrebase\.com|openai\.com|posthog\.com|humancraft\.tech|www\.linkedin\.com)\//,
+        /^https:\/\/(?:github\.com|pigro\.letsrebase\.com|openai\.com|posthog\.com|humancraft\.tech|www\.linkedin\.com|www\.anthropic\.com)\//,
       )
     }
     expect(page).not.toMatch(/fonts\.googleapis\.com|fonts\.gstatic\.com/)
