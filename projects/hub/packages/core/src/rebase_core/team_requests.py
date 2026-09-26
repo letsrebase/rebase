@@ -78,18 +78,72 @@ _NAME_WORD_MIN_LENGTH = 4
 # The legal forms, with or without their dots: «S.r.l.» names the kind of company, not
 # which one, and «srls» is the one of four letters.
 _LEGAL_FORMS = frozenset({"srl", "srls", "spa", "snc", "sas"})
+# The words a company's name shares with the kind of company it is, which the prompt
+# itself asks the summary to name instead («un'azienda di logistica»): «Logistica
+# Veneta S.r.l.» is not named by it, and «Studio Legale Bianchi» not by «uno studio
+# legale». Lower case, matched whole; only the other words of a name are distinctive.
+_GENERIC_WORDS = frozenset(
+    {
+        "agency",
+        "agenzia",
+        "associati",
+        "azienda",
+        "company",
+        "consulenza",
+        "consulting",
+        "cooperativa",
+        "design",
+        "digital",
+        "digitale",
+        "engineering",
+        "group",
+        "gruppo",
+        "holding",
+        "impresa",
+        "informatica",
+        "ingegneria",
+        "international",
+        "italia",
+        "italiana",
+        "italy",
+        "labs",
+        "legale",
+        "logistica",
+        "marketing",
+        "media",
+        "partner",
+        "partners",
+        "servizi",
+        "services",
+        "sistemi",
+        "società",
+        "software",
+        "solutions",
+        "soluzioni",
+        "studio",
+        "systems",
+        "tech",
+        "technologies",
+        "technology",
+        "tecnologie",
+        "trasporti",
+    }
+)
 
 
 def names_the_company(riassunto: str, azienda: str) -> bool:
-    """Any word of four letters or more of `azienda` that is not a legal form,
-    case-insensitively, inside the summary as a whole word: «Acme S.r.l.» is named by
-    «ACME rifà il gestionale», «Data Srl» is not by «un database», and «Acme Srls» is
-    not by «una srls di Torino»."""
+    """Any word of four letters or more of `azienda` that is neither a legal form nor a
+    generic word of a company's kind, case-insensitively, inside the summary as a whole
+    word: «Acme S.r.l.» is named by «ACME rifà il gestionale», «Data Srl» is not by «un
+    database», «Acme Srls» is not by «una srls di Torino», and «Logistica Veneta
+    S.r.l.» is not by «un'azienda di logistica»."""
     for token in azienda.split():
         if token.replace(".", "").strip(",;:").casefold() in _LEGAL_FORMS:
             continue
         for word in _WORD.findall(token):
-            if len(word) < _NAME_WORD_MIN_LENGTH or word.casefold() in _LEGAL_FORMS:
+            if len(word) < _NAME_WORD_MIN_LENGTH:
+                continue
+            if word.casefold() in _LEGAL_FORMS or word.casefold() in _GENERIC_WORDS:
                 continue
             if re.search(rf"(?<![^\W_]){re.escape(word)}(?![^\W_])", riassunto, re.IGNORECASE):
                 return True

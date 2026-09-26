@@ -378,6 +378,14 @@ def test_request_logs_a_summary_that_names_the_company(
         ("Un database per un'azienda di logistica.", "Data Srl", False),
         ("Un'azienda di logistica rifà il gestionale.", "Caffè Nero", False),
         ("Il nuovo sito del caffè più noto di Torino.", "Caffè Nero", True),
+        # The words of a company's kind, which the prompt asks the summary to use, are
+        # not its name; the distinctive words still are.
+        ("Un'azienda di logistica rifà il gestionale.", "Logistica Veneta S.r.l.", False),
+        ("La Logistica Veneta rifà il gestionale.", "Logistica Veneta S.r.l.", True),
+        ("Uno studio legale di Milano digitalizza le pratiche.", "Studio Legale Bianchi", False),
+        ("Lo studio Bianchi digitalizza le pratiche.", "Studio Legale Bianchi", True),
+        ("Una software house in Italia rifà la sua app.", "Nexa Software Italia", False),
+        ("NEXA rifà la sua app.", "Nexa Software Italia", True),
     ],
 )
 def test_names_the_company_words(riassunto: str, azienda: str, expected: bool) -> None:
