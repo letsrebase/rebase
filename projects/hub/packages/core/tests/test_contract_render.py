@@ -8,6 +8,7 @@ test hands `FakeRenderer` instead.
 """
 
 import re
+import struct
 import unicodedata
 from io import BytesIO
 from pathlib import Path
@@ -16,6 +17,7 @@ import pytest
 from pypdf import PdfReader
 
 from rebase_core.cli import main
+from rebase_core.contracts import brand
 from rebase_core.contracts.fields import Value, read_layer
 from rebase_core.contracts.render import (
     A4_HEIGHT_PT,
@@ -144,3 +146,37 @@ def test_the_renderer_says_whether_a_text_is_a_draft_as_its_render_does() -> Non
     for document in DOCUMENTS:
         assert text_is_draft(document) is render(document, _example()).draft
         assert ContractRenderer().is_draft(document) is text_is_draft(document)
+
+
+def _png_size(png: bytes) -> tuple[int, int]:
+    """A PNG's width and height in pixels, from its header chunk."""
+    width, height = struct.unpack(">II", png[16:24])
+    return width, height
+
+
+def _pictures(pdf: bytes) -> list[list[tuple[int, int]]]:
+    """Every page's pictures, as width and height in pixels. Read from the page's own
+    resources, where Typst puts an image, because pypdf's `page.images` decodes each one
+    and needs Pillow to do it."""
+    pages = []
+    for page in PdfReader(BytesIO(pdf)).pages:
+        xobjects = page["/Resources"].get_object().get("/XObject") or {}
+        found = []
+        for ref in xobjects.values():
+            xobject = ref.get_object()
+            if xobject["/Subtype"] == "/Image":
+                found.append((int(xobject["/Width"]), int(xobject["/Height"])))
+        pages.append(found)
+    return pages
+
+
+def test_the_echo_heads_the_first_page_and_no_other() -> None:
+    """The title block prints the echo's document-size copy (REB-479), embedded as it is;
+    the running header on the pages after the first keeps the words and draws no
+    picture, since the echo has no compact variant."""
+    expected = _png_size(brand.ECHO.read_bytes())
+    for document in DOCUMENTS:
+        pages = _pictures(render(document, _example()).pdf)
+        assert len(pages) >= 2, document
+        assert pages[0] == [expected], document
+        assert all(page == [] for page in pages[1:]), document

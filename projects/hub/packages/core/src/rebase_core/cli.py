@@ -9,11 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import DEFAULT_NAME, AdminTokenService
+from rebase_core.campaigns.sender import campaign_sender_from_settings
+from rebase_core.campaigns.tick import run_tick
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.fields import ContractFailed, Value, merge_data
 from rebase_core.contracts.render import (
     DOCUMENTS,
-    ContractRenderer,
     company_defaults,
     render,
     signature_blanks,
@@ -26,7 +27,7 @@ from rebase_core.freelancers import freelancer_read
 from rebase_core.http import HttpCall
 from rebase_core.mail import CardSummary, EmailSender, sender_from_settings, welcome_mail
 from rebase_core.models import USER_ROLES, Freelancer, Signup, User
-from rebase_core.signing import SigningService
+from rebase_core.signing import signing_from_settings
 from rebase_core.users import UserService
 
 
@@ -159,33 +160,44 @@ def contracts_sweep() -> int:
     """`rebase contracts-sweep`: redoes what a lost background task or a restart left
     behind (REB-391).
 
-    Runs `SigningService.sweep()` with this environment's own collaborators -- the same
-    ones `SigningDep` builds for a request, gathered here by hand since this command has
-    no request to build one from. Runs every ten minutes on production and the preview
-    alike, from the `sweep` service in `docker-compose.yml` (REB-393). Prints the
-    `unconfirmed` count only when it is not zero (REB-431): an expired, revoked or
-    wrong token, or Documenso itself unreachable, otherwise failed silently, leaving a
-    document `inviato` and «0 documenti ripresi» printed every ten minutes with nothing
-    to say why."""
+    Runs `SigningService.sweep()` with this environment's own collaborators, built by
+    `signing_from_settings`, the same builder `SigningDep` and the MCP server use. Runs
+    every ten minutes on production and the preview alike, from the `sweep` service in
+    `docker-compose.yml` (REB-393). Prints the `unconfirmed` count only when it is not
+    zero (REB-431): an expired, revoked or wrong token, or Documenso itself unreachable,
+    otherwise failed silently, leaving a document `inviato` and «0 documenti ripresi»
+    printed every ten minutes with nothing to say why."""
     settings = get_settings()
     session = session_factory(create_engine_from_settings(settings))()
     try:
-        signing = SigningService(
-            session,
-            renderer=ContractRenderer(),
-            documenso=client_from_settings(settings),
-            sender=sender_from_settings(settings),
-            signer_json=settings.signer_json,
-            contracts_mail=settings.contracts_mail,
-            allow_draft=settings.contracts_allow_draft,
-        )
-        result = signing.sweep()
+        result = signing_from_settings(settings)(session).sweep()
     finally:
         session.close()
     line = f"{result.touched} documenti ripresi"
     if result.unconfirmed:
         line += f", {result.unconfirmed} non confermati"
     print(line)
+    return 0
+
+
+def campaigns_tick() -> int:
+    """`rebase campaigns-tick`: one pass of the campaigns loop (P-REB-41). Runs every
+    minute from the `campaigns` service in `docker-compose.yml`. Without a Resend key it
+    sends nothing and says so, and exits 0 so the loop keeps running."""
+    settings = get_settings()
+    sender = campaign_sender_from_settings(settings)
+    if sender is None:
+        print("invio non configurato: nessuna campagna parte senza REBASE_RESEND_API_KEY")
+        return 0
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        result = run_tick(session, sender, settings)
+    finally:
+        session.close()
+    print(
+        f"{result.campagne} campagne, {result.inviate} inviate, "
+        f"{result.saltate} saltate, {result.fallite} fallite"
+    )
     return 0
 
 
@@ -327,6 +339,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "contracts-sweep",
         help="Rifà quanto un riavvio o una mail rifiutata hanno lasciato indietro",
     )
+    sub.add_parser(
+        "campaigns-tick",
+        help="Invia le campagne arrivate alla loro ora, una mail alla volta",
+    )
     token = sub.add_parser(
         "createtoken", help="Crea un token personale di un amministratore, per un agente"
     )
@@ -354,6 +370,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return documenso_check(get_settings())
     if args.command == "contracts-sweep":
         return contracts_sweep()
+    if args.command == "campaigns-tick":
+        return campaigns_tick()
     if args.command == "createtoken":
         return createtoken(args.email, args.nome)
     if args.command == "setrole":

@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { BrandMark } from '@/components/BrandMark'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rebase/ui/card'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { api, toProblem, unwrap } from '@/lib/api'
+import { readAndClearRegisterHandoffEmail } from '@/lib/registerHandoff'
 import { slugProblem, slugify } from '@/lib/tenant'
 
 /** The public host the space will answer on, for the preview under the name field. */
@@ -44,9 +45,33 @@ const PRIVACY = 'https://letsrebase.com/privacy'
  */
 export function SignupPage({ go = (url) => window.location.assign(url) }: { go?: (url: string) => void }) {
   const navigate = useNavigate()
-  // Three screens: the email, the owner card (this address already has a space), the name.
-  const [screen, setScreen] = useState<'email' | 'owner' | 'name'>('email')
-  const [email, setEmail] = useState('')
+  // AppShell's sidebar (REB-482, REB-488) already knows who is asking and that they
+  // hold a space right now: it hands its own email to this page through
+  // sessionStorage, read once and cleared immediately, never a URL (a `?email=` sits
+  // in browser history and an analytics pageview capture, and cannot be cross-checked
+  // against a session either way: PigroCRM's access/refresh cookies are scoped
+  // `path=/<slug>/`, so a request from the unprefixed `/app/register` never carries
+  // the space's own session to compare against -- confirmed against `tenancy.py`'s
+  // `cookie_path` and `routers/tenants.py`'s `path=f"/{tenant.slug}/"`, Greptile,
+  // PR #425). sessionStorage is what actually closes the threat a `?email=` opened: a
+  // crafted link cannot write to this origin's storage at all, only this origin's own
+  // script can, so the only way a value lands here is this exact click, in this exact
+  // tab. `readAndClearRegisterHandoffEmail` also bounds how long a written value is
+  // honoured, so a navigation that never completed -- and so was never read -- cannot
+  // sit in a shared tab's storage to be picked up by whoever opens this page in it
+  // next, on a kiosk or after the first person logged out (Greptile, PR #425, on the
+  // version with no expiry). The chooser has no such email to hand over in the first
+  // place (`IdentitySpace`'s own "an unproven email learns a number, never a list"),
+  // so this fast path exists only from inside an authenticated space, never from the
+  // chooser.
+  const [handoffEmail] = useState(readAndClearRegisterHandoffEmail)
+
+  // Three screens: the email, the owner card (this address already has a space), the
+  // name. `screenState`/`emailState` are the state machine's own, mutated only by an
+  // explicit transition (`onEmailNext`, `backToEmail`); `screen`/`email` below are
+  // what the rest of this component reads, the fast path folded in without an effect.
+  const [screenState, setScreen] = useState<'email' | 'owner' | 'name'>('email')
+  const [emailState, setEmail] = useState('')
   const [member, setMember] = useState<Member | null>(null)
   const [linkSent, setLinkSent] = useState(false)
   const [nome, setNome] = useState('')
@@ -56,6 +81,35 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
   const [availability, setAvailability] = useState<Availability>({ state: 'idle' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Whether the fast path's background member lookup (below) has settled, one way or
+  // the other: the create button must not read a still-null `member` as a confirmed
+  // non-member and send `membro: false` for someone who really is one, and a lookup
+  // that fails outright must not block the button forever either (Greptile P1,
+  // PR #425). Irrelevant outside the fast path -- `canCreate` below only consults it
+  // while `fastPathActive` is true.
+  const [memberSettled, setMemberSettled] = useState(false)
+  // Whether `nome` carries anything the person (or this page) put there, read fresh by
+  // the fast path's background lookup below -- unlike `nome === ''`, which a one-time
+  // mount effect would see through the closure it was created with (empty, always),
+  // never what is on screen once the request actually answers.
+  const nomeTouched = useRef(false)
+  // Set once the person explicitly leaves the fast path (`backToEmail`), including
+  // while its background lookup is still in flight. Two flags, not one: `left` is
+  // read during render (below), which a ref may never be (`react-hooks/refs`);
+  // `cancelled` is read only inside the background lookup's own async callback,
+  // where a ref is exactly right and state would risk a stale closure. Both are set
+  // together, and the fast path never re-activates for the rest of this visit even
+  // though `screenState`/`emailState` return to the same values it started at.
+  const [fastPathLeft, setFastPathLeft] = useState(false)
+  const fastPathCancelled = useRef(false)
+
+  // Computed at render time rather than committed by an effect (no cascading
+  // setState, `react-hooks/set-state-in-effect`): active for as long as there was a
+  // handoff and the state machine is still sitting at its untouched defaults, which
+  // is also exactly what makes it stop being active the moment either changes.
+  const fastPathActive = handoffEmail !== null && !fastPathLeft && screenState === 'email' && emailState === ''
+  const screen = fastPathActive ? 'name' : screenState
+  const email = fastPathActive ? (handoffEmail as string) : emailState
 
   // The local grammar check needs no round-trip and no state: a malformed name never
   // leaves the browser.
@@ -113,9 +167,33 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
 
   // The name proposes the address until the person edits the address by hand.
   function onNomeChange(value: string) {
+    nomeTouched.current = value !== ''
     setNome(value)
     if (!slugTouched) setSlug(slugify(value))
   }
+
+  // The fast path skips straight to the name step, but the hub's answer (the
+  // proposed name, the `membro` flag the create call sends) still matters: fetched
+  // here in the background rather than blocking the form on it. `nomeTouched` is
+  // read fresh at resolution time so a name the person already started typing is
+  // never clobbered by a slow answer landing after them, and `memberSettled` keeps
+  // the create button off until this settles one way or the other.
+  useEffect(() => {
+    if (!fastPathActive || !handoffEmail) return
+    const address = handoffEmail
+    void api
+      .POST('/api/tenants/member', { body: { email: address } })
+      .then(({ data }) => {
+        if (!data || fastPathCancelled.current) return
+        setMember(data)
+        if (nomeTouched.current) return
+        const proposed = [data.nome, data.cognome].filter(Boolean).join(' ')
+        if (proposed) onNomeChange(proposed)
+      })
+      .catch(() => {})
+      .finally(() => setMemberSettled(true))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onNomeChange is a plain function redefined every render; this must fire only when the fast path (re)activates or the lookup's own email changes, not on every render
+  }, [fastPathActive, handoffEmail])
 
   async function onEmailNext(event: FormEvent) {
     event.preventDefault()
@@ -179,11 +257,16 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
   const isFree = current?.state === 'free'
   // A failed probe never blocks the button: the server validates the slug again on
   // POST /api/tenants/, so there is a real answer either way instead of a dead end.
-  const canCreate = !busy && (isFree || failed) && nome.trim() !== ''
+  // Outside the fast path `memberSettled` never matters (`!fastPathActive` alone
+  // clears the gate): the ordinary flow already awaits the member lookup before the
+  // name screen ever shows.
+  const canCreate = !busy && (isFree || failed) && nome.trim() !== '' && (memberSettled || !fastPathActive)
 
   const hasSpaces = screen === 'owner'
 
   function backToEmail() {
+    fastPathCancelled.current = true
+    setFastPathLeft(true)
     setScreen('email')
     setMember(null)
     setLinkSent(false)
@@ -200,7 +283,7 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
         <CardHeader>
           <CardTitle className="inline-flex items-center text-2xl">
             <BrandMark className="mr-2.5 size-3.5" />
-            {hasSpaces ? 'Hai già uno spazio' : 'Crea il tuo spazio'}
+            {hasSpaces ? 'Hai già uno spazio' : screen === 'email' ? 'Crea il tuo spazio' : fastPathActive ? 'Crea un nuovo spazio' : 'Crea il tuo spazio'}
           </CardTitle>
           <CardDescription>
             {hasSpaces
@@ -209,9 +292,13 @@ export function SignupPage({ go = (url) => window.location.assign(url) }: { go?:
                 : 'Questa email ha già uno spazio PigroCRM. Ti mandiamo il link per entrare.'
               : screen === 'email'
                 ? '1 di 2. Un PigroCRM tutto tuo, con i tuoi dati in un database separato.'
-                : member?.membro
-                  ? `2 di 2. Sei dei nostri${member.nome ? `: ciao ${member.nome}` : ''}.`
-                  : '2 di 2. Come si chiama il tuo spazio?'}
+                : fastPathActive
+                  ? member?.membro
+                    ? `Sei dei nostri${member.nome ? `: ciao ${member.nome}` : ''}.`
+                    : 'Come si chiama il nuovo spazio?'
+                  : member?.membro
+                    ? `2 di 2. Sei dei nostri${member.nome ? `: ciao ${member.nome}` : ''}.`
+                    : '2 di 2. Come si chiama il tuo spazio?'}
           </CardDescription>
         </CardHeader>
         <CardContent>

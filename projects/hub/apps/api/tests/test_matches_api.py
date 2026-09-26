@@ -133,6 +133,7 @@ def test_without_the_cookie_every_match_route_is_a_401(client: TestClient, admin
         ("GET", f"/api/hub/freelancers/{MISSING}/matches"),
         ("GET", f"/api/hub/freelancers/{MISSING}/matches/prefill?company_id={MISSING}"),
         ("POST", f"/api/hub/freelancers/{MISSING}/matches/preview"),
+        ("POST", f"/api/hub/freelancers/{MISSING}/matches/check"),
         ("POST", f"/api/hub/freelancers/{MISSING}/matches"),
         ("GET", "/api/hub/matches"),
         ("GET", f"/api/hub/matches/{MISSING}"),
@@ -198,8 +199,9 @@ def test_a_repeated_create_with_the_same_id_writes_the_match_once(
     client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
 ) -> None:
     """REB-406: the wizard's own retry after a lost response sends the same
-    client-generated id again with «Salva come bozza» or «Invia per la firma», and gets
-    the match already written back, never a second one with another letter number."""
+    client-generated id again with «Salva senza inviare» or «Invia per la firma», and
+    gets the match already written back, never a second one with another letter
+    number."""
     freelancer_id, company_id = _ready(client, sender)
     given_id = "01234567-89ab-7cde-8123-456789abcdef"
     body = {"id": given_id, "company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA}
@@ -553,3 +555,103 @@ def test_a_malformed_signer_setting_is_a_503_not_a_crash(
     )
     assert created.status_code == 503
     assert "REBASE_SIGNER_JSON" in created.json()["detail"]
+
+
+# ---- what a match is doing, and the check before saving (REB-476, REB-477) -------------
+
+
+def test_a_match_and_its_documents_say_what_they_are_doing_and_what_comes_next(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    match = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    ).json()
+    numero = match["lettera"]["numero"]
+    draft = f"La lettera n. {numero} è pronta: il freelance non ha ancora ricevuto nulla."
+    assert (match["situazione"], match["prossima_azione"], match["altre_azioni"]) == (
+        draft,
+        "invia",
+        ["annulla"],
+    )
+    assert match["lettera"]["situazione"] == "Parte da sola dopo la firma del contratto quadro."
+    quadro = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()["quadro"]
+    assert (quadro["prossima_azione"], quadro["altre_azioni"]) == (None, ["annulla"])
+    assert quadro["situazione"].startswith("Parte con «Invia per la firma» sul suo match.")
+    (row,) = client.get("/api/hub/matches").json()["items"]
+    assert row["situazione"] == draft
+
+
+def test_the_check_says_what_saving_would_do_and_writes_nothing(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    checked = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches/check",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    )
+    assert checked.status_code == 200, checked.text
+    assert checked.json() == {
+        "riepilogo": [
+            "Ada Lovelace lavorerà per ACME S.r.l. come Backend developer, dal 1° ottobre 2026.",
+            "Compenso: 450,00 €, IVA esclusa, pagato a 30 giorni fine mese.",
+        ],
+        "cosa_succede": (
+            "Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua "
+            "firma."
+        ),
+        "quadro_necessario": True,
+        "dati_fiscali_mancanti": False,
+    }
+    assert BUDGET not in checked.text
+    assert renderer.calls == []
+    page = client.get(f"/api/hub/freelancers/{freelancer_id}/matches").json()
+    assert (page["quadro"], page["matches"]) == (None, [])
+
+
+def test_the_check_reports_missing_tax_data_instead_of_refusing(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    _login(client, sender)
+    freelancer_id, company_id = _apply(client), _request_company(client)
+    checked = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches/check",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    )
+    assert checked.status_code == 200, checked.text
+    assert checked.json()["dati_fiscali_mancanti"] is True
+    assert checked.json()["riepilogo"][-1] == (
+        "Mancano i dati fiscali del freelance: servono prima di salvare."
+    )
+
+
+def test_the_check_is_a_422_naming_the_field_as_create_is(
+    client: TestClient, admin: None, sender: RecordingSender, renderer: FakeRenderer
+) -> None:
+    freelancer_id, company_id = _ready(client, sender)
+    over = {**LETTERA, "giorni_pagamento": 45, "fine_mese": True}
+    refused = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches/check",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": over},
+    )
+    assert refused.status_code == 422
+    assert refused.json()["detail"][0]["loc"][-1] == "giorni_pagamento"
+    assert (
+        client.patch(f"/api/hub/companies/{company_id}", json={"stato": "chiuso"}).status_code
+        == 200
+    )
+    closed = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches/check",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": LETTERA},
+    )
+    assert closed.status_code == 422
+    assert closed.json()["detail"][0]["loc"] == ["body", "company_id"]
+
+
+def test_without_the_cookie_the_check_is_a_401(client: TestClient, admin: None) -> None:
+    answered = client.post(
+        f"/api/hub/freelancers/{MISSING}/matches/check",
+        json={"company_id": MISSING, "cliente": CLIENTE, "lettera": LETTERA},
+    )
+    assert answered.status_code == 401

@@ -169,6 +169,16 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "login_stats",
             "list_matches",
             "get_match",
+            "preview_match",
+            "create_match",
+            "send_match_for_signature",
+            "resend_signing_mail",
+            "refresh_contract",
+            "cancel_contract",
+            "record_notice",
+            "cancel_match",
+            "close_match",
+            "set_freelancer_tax_data",
         }
     _wipe(factory)
 

@@ -54,6 +54,7 @@ const MATCH_A = {
   created_at: '2026-09-20T10:00:00Z',
   created_by_nome: 'Ivan',
   created_by_email: 'ivan@rebase.it',
+  situazione: 'La lettera n. 2026-001 è pronta: il freelance non ha ancora ricevuto nulla.',
 }
 
 const MATCH_B = {
@@ -68,6 +69,7 @@ const MATCH_B = {
   lettera_numero: '2026-002',
   lettera_stato: 'firmato',
   created_at: '2026-09-10T10:00:00Z',
+  situazione: 'Lettera n. 2026-002 firmata il 12 settembre 2026, dal 1° ottobre 2026.',
 }
 
 /** Mirrors `lists.test.tsx`'s own `mount`: a pathless `signedIn` id, `/admin/matches`
@@ -120,11 +122,26 @@ describe('the Match list (REB-413)', () => {
     const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('2')
     expect(within(cellUnder(ada, 'Azienda')).getByText('ACME Srl')).toBeInTheDocument()
-    expect(within(cellUnder(ada, 'Stato')).getByText('Bozza')).toBeInTheDocument()
+    expect(within(cellUnder(ada, 'Stato')).getByText('Da inviare')).toBeInTheDocument()
     expect(cellUnder(ada, 'Lettera')).toHaveTextContent('2026-001')
     expect(cellUnder(ada, 'Periodo')).toHaveTextContent('1° ottobre 2026')
     const link = within(ada).getByRole('link', { name: /Ada Lovelace/ })
     expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/contracts$/)
+  })
+
+  it('says under each state pill where the match stands, in the core’s sentence (REB-477)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 2, items: [MATCH_A, MATCH_B] }))
+    mount('/admin/matches')
+
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    const stato = cellUnder(ada, 'Stato')
+    expect(within(stato).getByText('Da inviare')).toBeInTheDocument()
+    expect(within(stato).getByText(MATCH_A.situazione)).toBeInTheDocument()
+    const grace = screen.getByText('grace@studio.it').closest('tr')!
+    expect(within(cellUnder(grace, 'Stato')).getByText('Attivo')).toBeInTheDocument()
+    expect(within(cellUnder(grace, 'Stato')).getByText(MATCH_B.situazione)).toBeInTheDocument()
+    // The letter's column keeps its number; where the letter stands is the sentence's.
+    expect(cellUnder(ada, 'Lettera')).toHaveTextContent(/^n\. 2026-001$/)
   })
 
   it('shows nothing, no em dash, when a match has no letter', async () => {
@@ -152,7 +169,7 @@ describe('the Match list (REB-413)', () => {
     await screen.findByRole('heading', { name: 'Match' })
     spy.mockClear()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Bozza' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Da inviare' }))
 
     await waitFor(() => expect(router.state.location.search).toMatchObject({ stato: 'bozza' }))
     const calls = spy.mock.calls.map((call) => String(call[0])).filter((url) => url.includes('/api/hub/matches'))

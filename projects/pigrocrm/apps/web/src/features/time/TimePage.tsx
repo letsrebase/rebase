@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { PageHeader } from '@/components/PageHeader'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { Button } from '@rebase/ui/button'
+import { Loader } from '@rebase/ui/loader'
 import { Tabs, TabsList, TabsTrigger } from '@rebase/ui/tabs'
 import { useDeals } from '@/features/deals/queries'
 import { useAuth, useCanWrite } from '@/lib/auth'
@@ -97,7 +98,12 @@ export function TimePage() {
   if (entries.isError || deals.isError) {
     body = <QueryErrorBanner error={entries.error ?? deals.error} />
   } else if (userId === undefined || entries.isPending || deals.isPending) {
-    body = <p className="text-sm text-muted-foreground">Caricamento…</p>
+    body = (
+      <p className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader className="size-4" />
+        Caricamento…
+      </p>
+    )
   } else if (tab === 'registro') {
     body = (
       <>

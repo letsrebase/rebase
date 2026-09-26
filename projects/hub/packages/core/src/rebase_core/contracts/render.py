@@ -4,7 +4,9 @@ The toolchain is PigroCRM's and the guide's: pandoc for Markdown to Typst, Typst
 compile, `--creation-timestamp 0` so the same data give the same bytes. The texts, the
 template and rebase's own defaults are this package's data, so the API image needs
 nothing from `content/` or `tools/`. Every call works in a directory of its own, removed
-when it returns; the static fonts are the one thing shared (`brand.fonts_dir`).
+when it returns; the static fonts are the one thing shared (`brand.fonts_dir`), and the
+echo is copied into each call's directory, since Typst reads a picture only from inside
+its `--root`.
 
 `signature_blanks` compiles the same source and asks `typst query` for every
 `<signature-blank>` the template left behind: the page and the box, in points from the
@@ -22,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from rebase_core.contracts.brand import fonts_dir, palette
+from rebase_core.contracts.brand import ECHO, fonts_dir, palette
 from rebase_core.contracts.fields import (
     ContractFailed,
     Value,
@@ -150,8 +152,9 @@ def _typst_world(workdir: Path) -> list[str]:
 def _typst_source(
     document: str, data: Mapping[str, Value], workdir: Path, signing: bool = False
 ) -> tuple[Path, list[str], str, bool]:
-    """pandoc's Typst with every field filled and every proposal marked: the path, the
-    fields left blank, the text's version and whether it is a draft."""
+    """pandoc's Typst with every field filled and every proposal marked, and the echo
+    beside it: the path, the fields left blank, the text's version and whether it is a
+    draft."""
     source = text_path(document)
     markdown = source.read_text(encoding="utf-8")
     version = front_matter(markdown, source.name).get("version")
@@ -172,6 +175,7 @@ def _typst_source(
             *(f"--variable={name}:{value.lstrip('#')}" for name, value in palette().items()),
             f"--variable=draft:{'true' if draft else 'false'}",
             f"--variable=forsigning:{'true' if signing else 'false'}",
+            f"--variable=echo:{ECHO.name}",
             "--output",
             str(intermediate),
             str(source),
@@ -184,6 +188,10 @@ def _typst_source(
     survived(markdown, written, source.name)
     typst, blank = fill(written, checked(dict(data)))
     intermediate.write_text(mark_proposals(typst, source.name, draft), encoding="utf-8")
+    try:
+        shutil.copyfile(ECHO, workdir / ECHO.name)
+    except OSError as exc:
+        raise ContractFailed(f"cannot read {ECHO}: {exc}") from exc
     return intermediate, blank, version, draft
 
 

@@ -1,13 +1,15 @@
-"""The brand a contract is typeset in: five values of the palette and Outfit at the two
-weights the site uses.
+"""The brand a contract is typeset in: five values of the palette, Outfit at the two
+weights the site uses, and the echo logo in the title block.
 
 The same reading `tools/build_guide_pdf.py` does, written again here rather than
 imported: a package cannot import a script, and that script's own bytes are part of the
 guide's lock (`test_guide_pdf.py`), so it is not the one to move. `test_contract_pdf.py`
 compares the two readings, so two documents of one brand cannot drift apart. The files
 are read at the repository's own paths, which the API image mirrors (`Dockerfile.api`
-copies both), so the woff2 in `shared/brand/fonts` stays the single source of the
-typeface.
+copies all three), so the woff2 in `shared/brand/fonts` stays the single source of the
+typeface and `shared/brand/echo` the single source of the logo. The echo is the
+contracts' own (REB-479): the guide's PDF, locked on its own, still prints the four-tile
+mark.
 """
 
 import os
@@ -27,6 +29,10 @@ REPO = Path(__file__).resolve().parents[7]
 BRAND = Path(os.environ.get("REBASE_CONTRACTS_BRAND_DIR") or REPO / "shared" / "brand")
 PALETTE = BRAND / "palette.css"
 FONT = BRAND / "fonts" / "outfit-variable-latin.woff2"
+# The default colourway on a light ground, in the document-size copy the brand's own
+# generator draws (`shared/brand/README.md`, «The echo logo»): Typst embeds a picture's
+# own pixels, and the full 2572x1222 file would add about 250 KB to every contract.
+ECHO = BRAND / "echo" / "echo-ink-watermelon-outlines-260.png"
 
 # Weight 300 is `body`'s in landing.css, 500 is what `h1`, `h2`, `h3` and `.kicker` share.
 WEIGHTS = {300: "Light", 500: "Medium"}

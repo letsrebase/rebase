@@ -2,7 +2,7 @@ import { Outlet, createFileRoute, useLocation, useNavigate } from '@tanstack/rea
 import { useEffect } from 'react'
 import { AppShell } from '@/components/AppShell'
 import { GmailBanner } from '@/components/GmailBanner'
-import { Skeleton } from '@rebase/ui/skeleton'
+import { Loader } from '@rebase/ui/loader'
 import { useAuth } from '@/lib/auth'
 import { PUBLIC_APP_ROUTES } from '@/lib/tenant'
 
@@ -39,9 +39,9 @@ function AppLayout() {
 
   if (isLoading) {
     return (
-      <div className="space-y-4 p-8">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-64 w-full" />
+      <div className="flex min-h-screen items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
+        <Loader className="size-8" />
+        Caricamento…
       </div>
     )
   }

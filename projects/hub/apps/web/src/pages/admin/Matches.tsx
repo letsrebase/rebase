@@ -6,7 +6,7 @@ import { Input } from '@rebase/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, type MatchesFilters, type MatchListItem } from '@/lib/api'
 import { SEARCH_DEBOUNCE_MS, isFilterActive, useDebounce } from '@/lib/adminList'
-import { DOCUMENT_STATE_LABELS, MATCH_STATES, MATCH_STATE_LABELS, formatDate } from '@/lib/format'
+import { MATCH_STATES, MATCH_STATE_LABELS, formatDate } from '@/lib/format'
 import { Empty, FilterField, Header, LoadMore, StateFilter } from './lists'
 
 // The server's own default page size (`LIST_LIMIT_DEFAULT`, `rebase_core.matches`):
@@ -32,21 +32,13 @@ function MatchRow({ item }: { item: MatchListItem }) {
         <p className="font-medium">{item.nome_azienda}</p>
         <p className="text-xs text-muted-foreground">{item.figura_richiesta}</p>
       </TableCell>
-      <TableCell>
+      <TableCell className="min-w-64 space-y-1 whitespace-normal">
         <Badge variant="pill">{MATCH_STATE_LABELS[item.stato] ?? item.stato}</Badge>
+        {/* Where the match stands, in the words «Match e contratti» uses (REB-477): it
+            names the letter's state too, so the «Lettera» column keeps just the number. */}
+        <p className="text-xs text-muted-foreground">{item.situazione}</p>
       </TableCell>
-      <TableCell>
-        {item.lettera_numero && (
-          <>
-            <p className="text-sm">n. {item.lettera_numero}</p>
-            {item.lettera_stato && (
-              <p className="text-xs text-muted-foreground">
-                {DOCUMENT_STATE_LABELS[item.lettera_stato] ?? item.lettera_stato}
-              </p>
-            )}
-          </>
-        )}
-      </TableCell>
+      <TableCell>{item.lettera_numero && <p className="text-sm">{`n. ${item.lettera_numero}`}</p>}</TableCell>
       <TableCell className="text-muted-foreground">
         {item.lettera_data_inizio}
         {item.lettera_data_fine && ` · ${item.lettera_data_fine}`}

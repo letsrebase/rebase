@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { SETTINGS_TABS } from '@/features/settings/tabs'
+import { readAndClearRegisterHandoffEmail } from '@/lib/registerHandoff'
 import { AppShell } from './AppShell'
 import { SIDEBAR_GROUPS_KEY } from './sidebarGroups'
 
@@ -128,6 +129,7 @@ beforeEach(() => {
   mockRoute.pathname = '/app/customers'
   mockRoute.search = ''
   localStorage.clear()
+  sessionStorage.clear()
   GET.mockReset()
   POST.mockReset()
   mockGo.mockReset()
@@ -567,12 +569,13 @@ describe('the space switcher', () => {
     )
   })
 
-  it('offers to create a new space from the menu', async () => {
+  it('offers to create a new space from the menu, leaving the signed-in email in the handoff, not the URL', async () => {
     renderShell()
     await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
     const menu = within(await screen.findByRole('menu'))
     await userEvent.click(await menu.findByRole('menuitem', { name: 'Crea un nuovo spazio' }))
     expect(mockGo).toHaveBeenCalledWith('/app/register')
+    expect(readAndClearRegisterHandoffEmail()).toBe('m@example.com')
   })
 
   it('refreshes the space list when the menu opens, not only once on mount', async () => {
