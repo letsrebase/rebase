@@ -7,7 +7,6 @@ differently, but the page never offers it there, and a space creating spaces is 
 thing this product means.
 """
 
-import secrets
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request, Response, status
@@ -33,6 +32,7 @@ from pigrocrm_api.ratelimit import (
     TOO_MANY_REQUESTS_RESPONSE,
     spend_one,
 )
+from pigrocrm_api.service_token import require_service_token
 from pigrocrm_api.sessions import SenderDep, set_access_cookie
 
 router = APIRouter(prefix="/api/tenants", tags=["tenants"], responses=PROBLEM_RESPONSES)
@@ -63,15 +63,7 @@ def list_spaces(
     exist and whose they are (ORB-142). Without the token configured the route does not
     exist (404), so nothing says there is a door; with it, a missing or wrong bearer is a
     401. What comes back is the registry row and nothing about the database behind it."""
-    if not settings.registry_token:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not Found")
-    presented = authorization.removeprefix("Bearer ").strip() if authorization else ""
-    # Bytes, not str: Starlette decodes headers as latin-1 and `compare_digest` refuses a
-    # `str` with a non-ASCII character, which would turn a stray byte into a 500.
-    if not presented or not secrets.compare_digest(
-        presented.encode("utf-8"), settings.registry_token.encode("utf-8")
-    ):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token non valido")
+    require_service_token(settings.registry_token, authorization)
     return TenantService(registry, settings).list()
 
 
