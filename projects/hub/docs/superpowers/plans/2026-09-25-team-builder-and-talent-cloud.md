@@ -608,7 +608,7 @@ the address the page already gives.
 - [ ] **Step 2:** On the preview: `REBASE_ANTHROPIC_API_KEY` in the preview hub's `.env` (Ivan holds the key: ask him for it on the card and wait), restart `api`, `rebase cards-refresh` in the container until it prints «0 schede scritte, 0 non riuscite», open `/hub/team`, describe a project, read the team, regenerate, file a request with a test address, read it in «Richieste team».
 - [ ] **Step 3:** The pairs (the public page, the chooser line, «Richieste team», the request page, the talent's card) and the video, with the monorepo's `docs/pr-screenshots/record.mjs`.
 - [ ] **Step 4:** Not before Ivan's «ok» on the privacy section sits on REB-515: then `gh pr ready`, the fresh reviewer, Greptile and CodeRabbit to 5/5 and clean, a merge commit; the closing comments on C1 to C9, each moved to `Done`; a project update on P-REB-43.
-- [ ] **Step 5:** Tell Ivan production needs the key before the `hub-v*` tag, that the talents' mail of spec § 4.4 goes out before the production `rebase cards-refresh` (the mail is his send; the card for it is in Backlog), and that the host vhost needs `proxy_read_timeout 90s` on `/api/hub/team/proposals`.
+- [ ] **Step 5:** Tell Ivan the `website-v*` tag carrying the privacy section goes out before the `hub-v*` tag that brings the key (or CVs reach Anthropic before letsrebase.com/privacy says so), that production needs the key before the `hub-v*` tag, that the talents' mail of spec § 4.4 goes out before the production `rebase cards-refresh` (the mail is his send; the card for it is in Backlog), and that the host vhost needs `proxy_read_timeout 90s` on `/api/hub/team/proposals`.
 
 ---
 
