@@ -67,8 +67,8 @@ function ReportLink({ match }: { match: Match }) {
   return (
     <Button asChild variant="outline" size="sm">
       <Link
-        // @ts-expect-error -- REB-503 registers this route in `router.tsx`, with its page: drop this line then.
-        to="/admin/matches/$id/report" params={{ id: match.id }}
+        to="/admin/matches/$id/report"
+        params={{ id: match.id }}
         aria-label={`Consuntivo del match con ${match.nome_azienda} come ${match.figura_richiesta}`}
       >
         Consuntivo

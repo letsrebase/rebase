@@ -147,6 +147,14 @@ describe('the api client', () => {
     expect(report.totale_ore).toBe('96.00')
   })
 
+  it('reads one match by id, for «Consuntivo»’s title (REB-503)', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { id: 'm1', nome_azienda: 'ACME Srl' }))
+    const match = await matches.get('m1')
+    expect(spy.mock.calls[0]![0]).toBe('/api/hub/matches/m1')
+    expect(spy.mock.calls[0]![1]?.method ?? 'GET').toBe('GET')
+    expect(match.nome_azienda).toBe('ACME Srl')
+  })
+
   it('points the admin at the CV route by id', () => {
     expect(admin.cvUrl('abc')).toBe('/api/hub/freelancers/abc/cv')
   })

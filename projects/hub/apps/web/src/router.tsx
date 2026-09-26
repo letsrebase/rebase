@@ -6,6 +6,7 @@ import {
   redirect,
 } from '@tanstack/react-router'
 import type { CompaniesFilters, MatchesFilters, Remoto, TalentiFilters } from '@/lib/api'
+import { periodParam } from '@/lib/report'
 import { Shell } from '@/components/Shell'
 import { Chooser } from '@/pages/Chooser'
 import { CompanyWizard } from '@/pages/CompanyWizard'
@@ -17,6 +18,7 @@ import { AdminAgenti } from '@/pages/admin/Agenti'
 import { AdminGuard } from '@/pages/admin/AdminGuard'
 import { AdminGuida } from '@/pages/admin/Guida'
 import { AdminPigro } from '@/pages/admin/Pigro'
+import { AdminConsuntivo } from '@/pages/admin/Consuntivo'
 import { AdminContratti } from '@/pages/admin/Contratti'
 import { AdminCreaMatch } from '@/pages/admin/CreaMatch'
 import { AdminMatches } from '@/pages/admin/Matches'
@@ -319,6 +321,15 @@ const adminMatches = createRoute({
     q: strParam(search.q),
   }),
 })
+// REB-503: «Consuntivo», a match's hours on its deal on Pigro, from the match card and
+// the «Pigro» column of «Match». `mese` is the period shown, a month as `YYYY-MM` or
+// `tutto` for the whole engagement; absent, or anything else, is the current month.
+const adminMatchReport = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/matches/$id/report',
+  component: AdminConsuntivo,
+  validateSearch: (search: Record<string, unknown>): { mese?: string } => ({ mese: periodParam(search.mese) }),
+})
 const adminCompanies = createRoute({
   getParentRoute: () => adminArea,
   path: '/companies',
@@ -421,6 +432,7 @@ export const routeTree = root.addChildren([
       adminFreelanceMatchNew,
       adminFreelanceRedirect,
       adminMatches,
+      adminMatchReport,
       adminCompanies,
       adminCompaniesRedirect,
       adminCompaniesDetail,

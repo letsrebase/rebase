@@ -1,6 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { ExternalLink } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Input } from '@rebase/ui/input'
@@ -15,23 +14,22 @@ import { Empty, FilterField, Header, LoadMore, StateFilter } from './lists'
 // «Mostra altri», just offset rather than cursor (REB-413's own brief).
 const PAGE_SIZE = 100
 
-/** Where the match's link to its deal on Pigro stands (REB-497): a linked one opens the
- *  deal, a match not active yet has no link to speak of. */
+/** Where the match's link to its deal on Pigro stands (REB-497): a linked one opens its
+ *  «Consuntivo» (spec § 3.5, REB-503), which links the deal itself; a match not active
+ *  yet has no link to speak of. */
 function PigroState({ item }: { item: MatchListItem }) {
   if (!item.pigro_stato) return <span className="text-muted-foreground">—</span>
   const label = PIGRO_STATE_LABELS[item.pigro_stato] ?? item.pigro_stato
-  if (item.pigro_stato !== 'collegato' || !item.pigro_url) return <span>{label}</span>
+  if (item.pigro_stato !== 'collegato') return <span>{label}</span>
   return (
-    <a
-      // The API keeps only an http(s) address the CRM answered for the deal's page.
-      href={item.pigro_url}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-center gap-1.5 hover:underline"
+    <Link
+      to="/admin/matches/$id/report"
+      params={{ id: item.id }}
+      aria-label={`${label}: consuntivo del match con ${item.nome_azienda} come ${item.figura_richiesta}`}
+      className="hover:underline"
     >
       {label}
-      <ExternalLink className="size-3.5 text-muted-foreground" aria-hidden="true" />
-    </a>
+    </Link>
   )
 }
 

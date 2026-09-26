@@ -701,6 +701,9 @@ export interface MemberContract {
   attivo: boolean
   rinnovo: string | null
   ultimo_giorno_disdetta: string | null
+  /** A letter's deal on Pigro, only once its match is linked there (REB-498): «Le tue
+   *  ore su Pigro» opens it. */
+  pigro_url: string | null
 }
 
 /** `quadri_precedenti` (REB-392): the freelancer's other framework agreements that were
@@ -990,6 +993,9 @@ export const admin = {
 /** One match's link to its deal on Pigro and the hours read from there (REB-498), the
  *  admin's: the browser never talks to the CRM, the hub's API does with its own token. */
 export const matches = {
+  /** One match as «Match e contratti» reads it: «Consuntivo» names it by its company,
+   *  its role and its letter's number (REB-503). */
+  get: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}`),
   /** «Riprova su Pigro»: the link runs now and the match comes back as it stands,
    *  `collegato` or with the CRM's sentence. The first link of a freelancer opens their
    *  space and can take the CRM up to 90 seconds: no timeout here cuts it short. A 503

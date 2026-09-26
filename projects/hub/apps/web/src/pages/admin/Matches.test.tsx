@@ -6,6 +6,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  useParams,
 } from '@tanstack/react-router'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -76,8 +77,8 @@ const MATCH_B = {
 }
 
 /** Mirrors `lists.test.tsx`'s own `mount`: a pathless `signedIn` id, `/admin/matches`
- *  with the same `validateSearch` shape `router.tsx` gives it, and a stub for the
- *  card's «Match e contratti» destination. */
+ *  with the same `validateSearch` shape `router.tsx` gives it, and stubs for the
+ *  card's «Match e contratti» destination and the «Pigro» column's «Consuntivo». */
 function mount(path: string) {
   const root = createRootRoute({ component: () => <Outlet /> })
   const signedIn = createRoute({ getParentRoute: () => root, id: 'signedIn', component: () => <Outlet /> })
@@ -95,8 +96,16 @@ function mount(path: string) {
     path: '/admin/freelance/$id/contracts',
     component: () => <p>contratti</p>,
   })
+  const report = createRoute({
+    getParentRoute: () => signedIn,
+    path: '/admin/matches/$id/report',
+    component: function Report() {
+      const { id } = useParams({ strict: false })
+      return <p>{`consuntivo ${id}`}</p>
+    },
+  })
   const router = createRouter({
-    routeTree: root.addChildren([signedIn.addChildren([matches, contratti])]),
+    routeTree: root.addChildren([signedIn.addChildren([matches, contratti, report])]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   render(
@@ -164,7 +173,7 @@ describe('the Match list (REB-413)', () => {
     expect(cellUnder(row, 'Periodo').textContent).toBe('')
   })
 
-  it('says in «Pigro» where each match’s link stands, and links a linked one to its deal (REB-502)', async () => {
+  it('says in «Pigro» where each match’s link stands, and opens a linked one’s «Consuntivo» (REB-502, REB-503)', async () => {
     const url = 'https://pigro.letsrebase.com/grace/app/deal/6f1c2d3e-0000-4000-8000-000000000009'
     const linked = { ...MATCH_B, giorni_previsti: 40, pigro_stato: 'collegato', pigro_url: url }
     const states = [
@@ -178,9 +187,11 @@ describe('the Match list (REB-413)', () => {
     mount('/admin/matches')
 
     const grace = (await screen.findByText('grace@studio.it')).closest('tr')!
-    const deal = within(cellUnder(grace, 'Pigro')).getByRole('link', { name: /Collegato/ })
-    expect(deal).toHaveAttribute('href', url)
-    expect(deal).toHaveAttribute('target', '_blank')
+    const report = within(cellUnder(grace, 'Pigro')).getByRole('link', { name: /^Collegato/ })
+    expect(report).toHaveTextContent(/^Collegato$/)
+    // Spec § 3.5: the list opens the hours; the deal on Pigro is a link on that page.
+    expect(report.getAttribute('href')).toMatch(/\/admin\/matches\/m2\/report$/)
+    expect(report).not.toHaveAttribute('target')
     const row = (email: string) => screen.getByText(email).closest('tr')!
     expect(cellUnder(row('da-collegare@studio.it'), 'Pigro')).toHaveTextContent(/^Da collegare$/)
     expect(cellUnder(row('errore@studio.it'), 'Pigro')).toHaveTextContent(/^Errore$/)
@@ -188,6 +199,8 @@ describe('the Match list (REB-413)', () => {
     expect(within(cellUnder(row('errore@studio.it'), 'Pigro')).queryByRole('link')).toBeNull()
     // A match that is not active yet has no link to speak of.
     expect(cellUnder(row('ada@studio.it'), 'Pigro')).toHaveTextContent(/^—$/)
+    await userEvent.click(report)
+    expect(await screen.findByText('consuntivo m2')).toBeInTheDocument()
   })
 
   it('filters by state through a chip, the URL and the request both carrying it', async () => {
