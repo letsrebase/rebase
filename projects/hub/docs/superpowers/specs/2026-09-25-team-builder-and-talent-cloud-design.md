@@ -183,8 +183,9 @@ those at the API's boot:
 the CV names, or null, required in the schema (null, not absent) and never rendered
 outside the admin's talent page; `sintesi` is two sentences at most, Italian, with no
 name, no company name and no link; the writer checks that last rule itself, and a
-card whose text carries the freelancer's surname as a word, or `http`, `www.` or `@`,
-is a shape failure, not a card. Not on the card, read when it is shown: the work
+card whose text carries the freelancer's surname as a word, or `http://`, `https://`,
+`www.` or `@` (the bare word «HTTP» is a skill), is a shape failure, not a card; so is
+the card of a CV that fails (`max_tokens` included): a card never outlives its CV. Not on the card, read when it is shown: the work
 mode (`Freelancer.remoto`: `remoto`, `ibrido`, `in_sede`, or unknown when the profile
 has none) and the price band, computed from `tariffa_giornaliera` (§ 3.3), so a rate or
 a mode the freelancer edits is right the next time.
