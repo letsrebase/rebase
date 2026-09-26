@@ -134,7 +134,8 @@ those at the API's boot:
   CV the card came from), `card` (JSONB, § 2.1, nullable while only an error exists),
   `model` (varchar(60)), `input_tokens`, `output_tokens` (integer), `generated_at`,
   `error` (text, nullable: the last failure), `error_cv_sha256` (varchar(64), nullable:
-  the CV that failed, so it is not retried until the CV changes).
+  the CV that failed on a refusal or a bad shape, so it is not retried until the CV
+  changes; a provider outage leaves it null, so the next run retries).
 - `team_proposals`: `id`, `descrizione` (text), `nota` (text, nullable: the «Rigenera»
   note), `previous_id` (FK self, nullable), `riassunto` (text: the anonymous summary,
   editable by the admin), `luogo` (JSONB: `{"locale": bool, "dove": str | null}` as
@@ -178,7 +179,9 @@ those at the API's boot:
 `seniority` is one of `junior`, `mid`, `senior`, `lead`; `luogo` is the city or region
 the CV names, or null, required in the schema (null, not absent) and never rendered
 outside the admin's talent page; `sintesi` is two sentences at most, Italian, with no
-name, no company name and no link. Not on the card, read when it is shown: the work
+name, no company name and no link; the writer checks that last rule itself, and a
+card whose text carries the freelancer's surname as a word, or `http`, `www.` or `@`,
+is a shape failure, not a card. Not on the card, read when it is shown: the work
 mode (`Freelancer.remoto`: `remoto`, `ibrido`, `in_sede`, or unknown when the profile
 has none) and the price band, computed from `tariffa_giornaliera` (§ 3.3), so a rate or
 a mode the freelancer edits is right the next time.
@@ -271,7 +274,9 @@ validated again by a Pydantic model on the way in; an id the catalogue does not 
 or repeats drops that line and logs it; a `max_tokens` stop, a body that is not JSON
 or does not validate is `LlmUnavailable`. Adaptive thinking, effort `medium`,
 `max_tokens` 8000, the server-side fallback `default` with its beta header. The
-proposal row keeps `model` and the three token counts from `usage`.
+proposal row keeps `model` and the three token counts from `usage`. The seam passes
+every schema through the SDK's `transform_schema` before sending it, so the length and
+range keywords the API refuses never reach it, and Pydantic enforces them on the way in.
 
 ### 3.5 The request, in the admin
 
@@ -403,8 +408,10 @@ webhook's follow-up does), where a CV arrives or changes: the public wizard
 deletes the card in core, so the admin route and the MCP tool both drop it. `rebase
 cards-refresh --limit N` writes every freelancer whose CV hash differs from the card's
 and from the failed one, `limit` at a time, oldest first, and prints how many were
-written and how many failed; the admin's talent page has «Rigenera scheda», which
-ignores the failed hash once.
+written and how many failed; it stops at the first provider outage, since those CVs
+are not marked failed and the next run retries them, so the backlog is done when a run
+prints «0 schede scritte, 0 non riuscite»; the admin's talent page has «Rigenera
+scheda», which ignores the failed hash once.
 
 ## 6. Privacy, settings, deployment
 
