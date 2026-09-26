@@ -39,6 +39,7 @@ from rebase_core.engagements import (
 )
 from rebase_core.errors import InvalidState, ValidationFailed
 from rebase_core.mail import Mail, RecordingSender, engagement_ready_mail
+from rebase_core.match_words import PROFILE_WITHOUT_NAME, pigro_state_sentence
 from rebase_core.matches import MatchService
 from rebase_core.models import Company, ContractDocument, Freelancer, Match, User
 from rebase_core.pigro import (
@@ -52,6 +53,25 @@ from rebase_core.pigro import (
 NOW = datetime(2026, 10, 2, 8, 0, tzinfo=UTC)
 SIGNED_AT = datetime(2026, 9, 30, 10, 0, tzinfo=UTC)
 DEAL_GONE = "Il deal di questa lettera è stato eliminato nello spazio."
+
+
+def _crm_conflict(match_id: UUID, reason: str) -> bytes:
+    """A `Conflict` as the CRM's `domain_error_handler` renders it: the RFC 9457 keys,
+    `detail` as `entity: reason`, and the `Conflict`'s own `entity` and `reason` spread
+    at the top level."""
+    return json.dumps(
+        {
+            "type": "https://pigrocrm.dev/errors/conflict",
+            "title": "Conflitto con lo stato attuale",
+            "status": 409,
+            "detail": f"engagement: {reason}",
+            "code": "conflict",
+            "instance": f"/api/rebase/engagements/{match_id}",
+            "entity": "engagement",
+            "reason": reason,
+            "match_id": str(match_id),
+        }
+    ).encode()
 
 
 @pytest.fixture
@@ -506,10 +526,11 @@ def test_link_leaves_a_match_another_caller_already_linked(
 
 
 def test_link_writes_the_crm_sentence_on_409_as_rifiutato(clean: Session) -> None:
+    """The sentence stored is the `Conflict`'s `reason`, not its `detail`, which the CRM
+    prefixes with the entity («engagement: …»)."""
     _admin, match_id = _active(clean)
-    problem = {"type": "x", "title": "Conflitto", "status": 409, "detail": DEAL_GONE}
     sender = RecordingSender()
-    http = RecordedPigro([(409, json.dumps(problem).encode())])
+    http = RecordedPigro([(409, _crm_conflict(match_id, DEAL_GONE))])
 
     read = _service(clean, http, sender=sender).link(match_id)
 
@@ -546,6 +567,32 @@ def test_link_on_422_is_rifiutato(clean: Session) -> None:
         assert "0123" not in read.pigro_errore
 
 
+def test_link_of_a_freelancer_without_a_surname_asks_nothing_and_retries(
+    clean: Session,
+) -> None:
+    """The door wants a name and a surname: a profile without one is not sent at all,
+    and the match waits as `errore` with the hub's own sentence, which the card shows
+    alone. The next link, once the profile is complete, goes through."""
+    _admin, match_id = _active(clean)
+    user = _parts(clean, match_id)[2]
+    user.cognome = "  "
+    clean.commit()
+    http = RecordedPigro([(201, linked_body())])
+
+    read = _service(clean, http).link(match_id)
+
+    assert (read.pigro_stato, read.pigro_errore) == ("errore", PROFILE_WITHOUT_NAME)
+    assert read.pigro_attempted_at == NOW
+    assert http.calls == []
+    assert pigro_state_sentence("errore", read.pigro_errore) == PROFILE_WITHOUT_NAME
+
+    user = _parts(clean, match_id)[2]
+    user.cognome = "Lovelace"
+    clean.commit()
+    assert _service(clean, http).link(match_id).pigro_stato == "collegato"
+    assert len(http.calls) == 1
+
+
 def test_link_on_refused_connection_is_errore_with_the_sentence(clean: Session) -> None:
     _admin, match_id = _active(clean)
     http = RecordedPigro([ConnectionRefusedError("[Errno 61] Connection refused")])
@@ -561,6 +608,12 @@ def test_link_on_refused_connection_is_errore_with_the_sentence(clean: Session) 
     ("answer", "sentence"),
     [
         ((500, b"Internal Server Error"), ANSWERED_STATUS.format(status=500)),
+        # The door's «not now»: the space's lock busy or its database unreachable. A
+        # retry, never a refusal, whatever the body says.
+        (
+            (503, json.dumps({"detail": "Spazio non raggiungibile."}).encode()),
+            ANSWERED_STATUS.format(status=503),
+        ),
         ((302, b""), ANSWERED_STATUS.format(status=302)),
         ((201, b"not json"), NOT_THE_SHAPE),
         ((201, b'{"slug": "ada-lovelace"}'), NOT_THE_SHAPE),
@@ -1035,6 +1088,7 @@ def test_report_surfaces_the_crm_sentence_on_409(clean: Session) -> None:
     problem = {"type": "x", "title": "Conflitto", "status": 409, "detail": DEAL_GONE}
 
     for body, sentence in (
+        (_crm_conflict(match_id, DEAL_GONE), DEAL_GONE),
         (json.dumps(problem).encode(), DEAL_GONE),
         (b"", ANSWERED_STATUS.format(status=409)),
     ):

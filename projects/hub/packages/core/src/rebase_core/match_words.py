@@ -129,6 +129,15 @@ def _flat(text: str) -> str:
     return " ".join(text.split())
 
 
+# The one `errore` the hub records without asking the CRM (`EngagementService.payload`):
+# the door wants a name and a surname. Shown alone on the card, since «Pigro non ha
+# risposto» would say a call was made.
+PROFILE_WITHOUT_NAME = (
+    "Il freelance non ha nome e cognome sul profilo: il collegamento a Pigro riparte "
+    "quando il profilo è completo."
+)
+
+
 def pigro_state_sentence(pigro_stato: str | None, pigro_errore: str | None) -> str:
     """Why an active match has no report yet, with the CRM's own words folded in
     (spec § 3.5): the empty string for `None` (the match is not active) and for
@@ -141,6 +150,8 @@ def pigro_state_sentence(pigro_stato: str | None, pigro_errore: str | None) -> s
     `rebase_core.pigro`'s own seam uses."""
     if pigro_stato == DA_COLLEGARE:
         return "Pigro non ha ancora il deal: riprova o aspetta lo sweep."
+    if pigro_stato == ERRORE and pigro_errore == PROFILE_WITHOUT_NAME:
+        return PROFILE_WITHOUT_NAME
     if pigro_stato == ERRORE:
         return f"Pigro non ha risposto: {pigro_errore or NOT_ANSWERING}"
     if pigro_stato == RIFIUTATO:

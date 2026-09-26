@@ -61,7 +61,7 @@ from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.framework import ROME, rome_today
 from rebase_core.http import MAX_BODY_BYTES, HttpCall
 from rebase_core.mail import EmailSender, engagement_ready_mail
-from rebase_core.match_words import pigro_state_sentence
+from rebase_core.match_words import PROFILE_WITHOUT_NAME, pigro_state_sentence
 from rebase_core.matches import ENTITY, MatchService
 from rebase_core.models import Company, ContractDocument, Freelancer, Match, User
 from rebase_core.pigro import (
@@ -150,9 +150,11 @@ def _printed_date(data: Mapping[str, Any], key: str) -> date | None:
 
 
 def _refusal(raw: bytes, status: int) -> str:
-    """The CRM's own sentence for a refusal: a problem document's `detail`, or FastAPI's
-    list of errors as `field: reason` (the rejected value itself left out); the status
-    when the body says neither."""
+    """The CRM's own sentence for a refusal: a problem document's `reason` when it has
+    one (a `Conflict`'s `detail` is `entity: reason`, «engagement: Il deal di questa
+    lettera è stato eliminato nello spazio.», and an admin reads the sentence, not the
+    entity), else its `detail`, or FastAPI's list of errors as `field: reason` (the
+    rejected value itself left out); the status when the body says none of these."""
     fallback = ANSWERED_STATUS.format(status=status)
     if not raw or len(raw) > MAX_BODY_BYTES:
         return fallback
@@ -160,6 +162,9 @@ def _refusal(raw: bytes, status: int) -> str:
         body = json.loads(raw)
     except ValueError:
         return fallback
+    reason = body.get("reason") if isinstance(body, dict) else None
+    if isinstance(reason, str) and reason.strip():
+        return reason.strip()[:ERRORE_MAX_LENGTH]
     detail = body.get("detail") if isinstance(body, dict) else None
     if isinstance(detail, str) and detail.strip():
         return detail.strip()[:ERRORE_MAX_LENGTH]
@@ -363,6 +368,16 @@ def _group(report: _CrmReport, giorni_previsti: int | None) -> dict[str, Any]:
     }
 
 
+class _NotAsked(Exception):
+    """A match the hub will not send to the CRM yet, with the sentence its card shows
+    (`PROFILE_WITHOUT_NAME`): recorded as `errore`, never as `rifiutato`, since it is
+    the hub's own data to complete, and a retry after that may well succeed."""
+
+    def __init__(self, sentence: str) -> None:
+        super().__init__(sentence)
+        self.sentence = sentence
+
+
 class _Recipient(NamedTuple):
     """What the freelancer's mail needs, read under the first lock."""
 
@@ -401,9 +416,14 @@ class EngagementService:
         """The door's `PUT` body (spec § 2.3): the freelancer, the letter as the match
         kept it (its printed data for a match older than migration 0021), and rebase as
         `REBASE_SIGNER_JSON` names it over `rebase.json`, normalised to the CRM's own
-        customer rules. Refused for a letter not signed: only an active match links."""
+        customer rules. Refused for a letter not signed: only an active match links.
+        Refused with `_NotAsked` for a freelancer whose name or surname is empty, which
+        the CRM's door would refuse in English: `link` records it as `errore`, so the
+        sweep and «Riprova» try again once the profile is complete."""
         if letter.stato != "firmato":
             raise InvalidState(LETTER_NOT_SIGNED, stato=letter.stato)
+        if not user.nome.strip() or not user.cognome.strip():
+            raise _NotAsked(PROFILE_WITHOUT_NAME)
         data = letter.data
         start = match.lettera_data_inizio or _printed_date(data, "data-inizio")
         if start is None:
@@ -460,7 +480,12 @@ class EngagementService:
                 )
                 return self.matches.get(match_id)
             letter, user, company = self._parts(match)
-            body = self.payload(match, letter, user, company)
+            unasked: _Outcome | None = None
+            body: dict[str, Any] = {}
+            try:
+                body = self.payload(match, letter, user, company)
+            except _NotAsked as missing:
+                unasked = _Outcome(ERRORE, missing.sentence)
             recipient = _Recipient(user.email, user.nome, letter.numero or "", company.nome_azienda)
             match.pigro_attempted_at = self.now()
             self.session.commit()
@@ -468,7 +493,7 @@ class EngagementService:
             self.session.rollback()
             raise
 
-        outcome = self._put(match_id, body)
+        outcome = unasked if unasked is not None else self._put(match_id, body)
 
         claimed = False
         try:
