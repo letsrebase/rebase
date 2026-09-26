@@ -69,6 +69,8 @@ function idsOn(page: string): Set<string> {
  *  the markup (ORB-116, after ORB-97 on the hub). */
 // `www.linkedin.com` since ORB-151: the four voices link to their public profiles.
 // `developers.google.com` since REB-410: the privacy page links Google's User Data Policy.
+// `www.anthropic.com` since REB-515: the privacy page's team builder section links
+// Anthropic's own privacy page, the way it already links PostHog's and OpenAI's.
 const EXTERNAL_HOSTS = [
   'github.com',
   'pigro.letsrebase.com',
@@ -77,6 +79,7 @@ const EXTERNAL_HOSTS = [
   'humancraft.tech',
   'www.linkedin.com',
   'developers.google.com',
+  'www.anthropic.com',
 ]
 
 function checkExternal(href: string): string | undefined {
