@@ -76,7 +76,7 @@ const PIGRO_LINK: AdminAction = {
   kind: 'pigro_link',
   admin_id: 'u1',
   admin_nome: 'Ivan Bianchi',
-  payload: { esito: 'errore', errore: 'Pigro non risponde.' },
+  payload: { esito: 'errore', errore: 'timeout' },
   created_at: '2026-10-01T09:05:00Z',
 }
 

@@ -876,9 +876,9 @@ describe('a match’s link to Pigro on its card (REB-502)', () => {
   const FAILED = {
     ...ACTIVE,
     pigro_stato: 'errore',
-    pigro_errore: 'Pigro non risponde.',
+    pigro_errore: 'HTTP 503',
     pigro_attempted_at: '2026-10-01T09:05:00Z',
-    situazione: `${SIGNED} Pigro non ha risposto: Pigro non risponde.`,
+    situazione: `${SIGNED} Pigro non ha risposto: HTTP 503.`,
     altre_azioni: ['chiudi', 'riprova_pigro'],
   }
   const MORE = 'Altre azioni del match con Rossi Studio come Backend developer'

@@ -40,14 +40,13 @@ from rebase_core.documenso import (
     WebhookBody,
     outcome_from_webhook,
 )
-from rebase_core.engagements import EngagementService
+from rebase_core.engagements import CAUSE_REFUSED, CAUSE_TIMEOUT, EngagementService
 from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
 from rebase_core.fiscal import FiscalService
 from rebase_core.http import urllib_engagements_call
 from rebase_core.mail import EmailSender, Mail, RecordingSender, ResendSender
 from rebase_core.matches import MatchService
 from rebase_core.models import ContractDocument, Freelancer, Match
-from rebase_core.pigro import NOT_ANSWERING
 from rebase_core.signing import SigningService, SweepResult, signing_from_settings
 
 # 23:30 UTC on 30 September is already 1 October in Rome.
@@ -1870,7 +1869,7 @@ def test_sweep_retries_errore_matches(clean: Session) -> None:
     fake.sign(envelope, SIGNED_AT)
     _signing(clean, renderer, fake, sender).finish(letter.id)
     match = _match_row(clean, match_id)
-    match.pigro_stato, match.pigro_errore = "errore", NOT_ANSWERING
+    match.pigro_stato, match.pigro_errore = "errore", CAUSE_TIMEOUT
     clean.commit()
     http = RecordedPigro([(201, linked_body())])
 
@@ -1906,7 +1905,7 @@ def test_sweep_links_a_signature_it_confirms_once_and_counts_a_failure(clean: Se
     assert (match.stato, match.pigro_stato, match.pigro_errore) == (
         "attivo",
         "errore",
-        NOT_ANSWERING,
+        CAUSE_REFUSED,
     )
 
 

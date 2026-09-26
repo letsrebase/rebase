@@ -26,7 +26,6 @@ from rebase_core.match_words import (
     send_report_sentence,
 )
 from rebase_core.models import MATCH_STATES
-from rebase_core.pigro import NOT_ANSWERING
 from rebase_core.signing import (
     CANCELLED_BY_REBASE,
     CANCELLED_ON_DOCUMENSO,
@@ -361,8 +360,8 @@ def test_an_active_match_with_no_pigro_state_adds_nothing() -> None:
         ),
         (
             "errore",
-            "Pigro non risponde.",
-            "Pigro non ha risposto: Pigro non risponde.",
+            "HTTP 503",
+            "Pigro non ha risposto: HTTP 503.",
             ["chiudi", "riprova_pigro"],
         ),
         (
@@ -398,11 +397,19 @@ def test_pigro_state_sentence_names_the_state_and_folds_in_the_crms_own_words() 
     assert pigro_state_sentence("da_collegare", None) == (
         "Pigro non ha ancora il deal: riprova o aspetta lo sweep."
     )
-    assert pigro_state_sentence("errore", "Pigro non risponde.") == (
-        "Pigro non ha risposto: Pigro non risponde."
+    """The link stores the cause alone (`engagements.CAUSE_*`, or the CRM's own
+    sentence), and this wraps it once: a bare cause gets its stop, a sentence keeps
+    its own."""
+    assert pigro_state_sentence("errore", "timeout") == "Pigro non ha risposto: timeout."
+    assert pigro_state_sentence("errore", "HTTP 503") == "Pigro non ha risposto: HTTP 503."
+    assert pigro_state_sentence("errore", "Lo spazio non è raggiungibile.") == (
+        "Pigro non ha risposto: Lo spazio non è raggiungibile."
     )
     assert pigro_state_sentence("rifiutato", "Il deal è stato eliminato nello spazio.") == (
         "Pigro ha rifiutato il collegamento: Il deal è stato eliminato nello spazio."
+    )
+    assert pigro_state_sentence("rifiutato", "HTTP 409") == (
+        "Pigro ha rifiutato il collegamento: HTTP 409."
     )
 
 
@@ -410,7 +417,9 @@ def test_pigro_state_sentence_without_a_stored_error_still_says_pigro_did_not_an
     """`pigro_errore` is typed `str | None`: an `errore` state written with none stored
     (a race, or a row from before the column was backfilled) reads as a sentence, never
     «Pigro non ha risposto: None»."""
-    assert pigro_state_sentence("errore", None) == f"Pigro non ha risposto: {NOT_ANSWERING}"
+    assert pigro_state_sentence("errore", None) == "Pigro non ha risposto."
+    assert pigro_state_sentence("errore", "  ") == "Pigro non ha risposto."
+    assert pigro_state_sentence("rifiutato", None) == "Pigro ha rifiutato il collegamento."
 
 
 def test_pigro_state_sentence_without_a_stored_error_still_says_pigro_refused() -> None:

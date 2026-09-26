@@ -8,6 +8,8 @@ hand, since how a letter gets signed is `test_signing.py`'s business.
 
 import json
 import logging
+import socket
+import urllib.error
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -27,6 +29,12 @@ from rebase_core.audit import AdminActionService
 from rebase_core.config import Settings
 from rebase_core.db import session_factory
 from rebase_core.engagements import (
+    CAUSE_HTTPS_ONLY,
+    CAUSE_NOT_THE_SHAPE,
+    CAUSE_REFUSED,
+    CAUSE_TIMEOUT,
+    CAUSE_TOO_LONG,
+    CAUSE_UNREACHABLE,
     HOURS_PER_DAY,
     HTTPS_ONLY,
     PIGRO_NOT_CONFIGURED,
@@ -53,6 +61,10 @@ from rebase_core.pigro import (
 NOW = datetime(2026, 10, 2, 8, 0, tzinfo=UTC)
 SIGNED_AT = datetime(2026, 9, 30, 10, 0, tzinfo=UTC)
 DEAL_GONE = "Il deal di questa lettera è stato eliminato nello spazio."
+# The door's own 503 sentence (`SPAZIO_NON_RAGGIUNGIBILE` in the CRM's router).
+SPACE_UNREACHABLE = (
+    "Lo spazio del freelancer non è raggiungibile in questo momento: riprova più tardi."
+)
 
 
 def _crm_conflict(match_id: UUID, reason: str) -> bytes:
@@ -320,7 +332,7 @@ def test_link_refuses_plain_http(clean: Session) -> None:
 
     read = _service(clean, http, settings=_settings(url="http://pigro.example")).link(match_id)
 
-    assert (read.pigro_stato, read.pigro_errore) == ("errore", HTTPS_ONLY)
+    assert (read.pigro_stato, read.pigro_errore) == ("errore", CAUSE_HTTPS_ONLY)
     assert http.calls == []
 
     local = _service(clean, http, settings=_settings(url="http://localhost:8000")).link(match_id)
@@ -559,7 +571,7 @@ def test_link_on_422_is_rifiutato(clean: Session) -> None:
     for body, sentence in (
         (json.dumps(fastapi).encode(), "rebase.partita_iva: String should match pattern"),
         (json.dumps(problem).encode(), "lettera.compenso: sopra zero"),
-        (b"", ANSWERED_STATUS.format(status=422)),
+        (b"", "HTTP 422"),
     ):
         read = _service(clean, RecordedPigro([(422, body)])).link(match_id)
         assert read.pigro_stato == "rifiutato"
@@ -593,42 +605,56 @@ def test_link_of_a_freelancer_without_a_surname_asks_nothing_and_retries(
     assert len(http.calls) == 1
 
 
-def test_link_on_refused_connection_is_errore_with_the_sentence(clean: Session) -> None:
+@pytest.mark.parametrize(
+    ("failure", "cause"),
+    [
+        (ConnectionRefusedError("[Errno 61] Connection refused"), CAUSE_REFUSED),
+        (urllib.error.URLError(ConnectionRefusedError(61, "refused")), CAUSE_REFUSED),
+        (TimeoutError("The read operation timed out"), CAUSE_TIMEOUT),
+        (urllib.error.URLError(TimeoutError("timed out")), CAUSE_TIMEOUT),
+        (urllib.error.URLError(socket.gaierror(8, "nodename nor servname")), CAUSE_UNREACHABLE),
+    ],
+)
+def test_link_that_gets_no_answer_is_errore_with_its_cause(
+    clean: Session, failure: Exception, cause: str
+) -> None:
+    """The stored cause is short, since the card wraps it: «Pigro non ha risposto:
+    timeout.», never «Pigro non ha risposto: Pigro non risponde.»"""
     _admin, match_id = _active(clean)
-    http = RecordedPigro([ConnectionRefusedError("[Errno 61] Connection refused")])
+    http = RecordedPigro([failure])
 
     read = _service(clean, http, sender=RecordingSender()).link(match_id)
 
-    assert (read.pigro_stato, read.pigro_errore) == ("errore", NOT_ANSWERING)
+    assert (read.pigro_stato, read.pigro_errore) == ("errore", cause)
+    assert pigro_state_sentence("errore", read.pigro_errore) == f"Pigro non ha risposto: {cause}."
     assert read.pigro_attempted_at == NOW
     assert read.pigro_mail_sent_at is None
 
 
 @pytest.mark.parametrize(
-    ("answer", "sentence"),
+    ("answer", "cause"),
     [
-        ((500, b"Internal Server Error"), ANSWERED_STATUS.format(status=500)),
+        ((500, b"Internal Server Error"), "HTTP 500"),
+        ((404, json.dumps({"detail": "Not Found"}).encode()), "HTTP 404"),
         # The door's «not now»: the space's lock busy or its database unreachable. A
-        # retry, never a refusal, whatever the body says.
-        (
-            (503, json.dumps({"detail": "Spazio non raggiungibile."}).encode()),
-            ANSWERED_STATUS.format(status=503),
-        ),
-        ((302, b""), ANSWERED_STATUS.format(status=302)),
-        ((201, b"not json"), NOT_THE_SHAPE),
-        ((201, b'{"slug": "ada-lovelace"}'), NOT_THE_SHAPE),
-        ((201, linked_body().replace(b"https://", b"javascript://")), NOT_THE_SHAPE),
-        ((201, b"x" * 1_048_577), TOO_LONG),
+        # retry, never a refusal, in the door's own words when it has some.
+        ((503, json.dumps({"detail": SPACE_UNREACHABLE}).encode()), SPACE_UNREACHABLE),
+        ((503, b"<html>Service Unavailable</html>"), "HTTP 503"),
+        ((302, b""), "HTTP 302"),
+        ((201, b"not json"), CAUSE_NOT_THE_SHAPE),
+        ((201, b'{"slug": "ada-lovelace"}'), CAUSE_NOT_THE_SHAPE),
+        ((201, linked_body().replace(b"https://", b"javascript://")), CAUSE_NOT_THE_SHAPE),
+        ((201, b"x" * 1_048_577), CAUSE_TOO_LONG),
     ],
 )
-def test_link_on_any_other_answer_is_errore_with_the_seams_sentence(
-    clean: Session, answer: tuple[int, bytes], sentence: str
+def test_link_on_any_other_answer_is_errore_with_its_cause(
+    clean: Session, answer: tuple[int, bytes], cause: str
 ) -> None:
     _admin, match_id = _active(clean)
 
     read = _service(clean, RecordedPigro([answer])).link(match_id)
 
-    assert (read.pigro_stato, read.pigro_errore) == ("errore", sentence)
+    assert (read.pigro_stato, read.pigro_errore) == ("errore", cause)
 
 
 def test_link_after_an_error_clears_the_sentence(clean: Session) -> None:

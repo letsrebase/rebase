@@ -17,7 +17,6 @@ from datetime import date
 from typing import TYPE_CHECKING, Literal
 
 from rebase_core.contracts.fields import FEE, italian_date, rendered
-from rebase_core.pigro import NOT_ANSWERING
 
 if TYPE_CHECKING:
     from rebase_core.contract_schemas import LetteraFields, SendReport
@@ -144,20 +143,30 @@ def pigro_state_sentence(pigro_stato: str | None, pigro_errore: str | None) -> s
     `collegato` (nothing wrong -- `match_words` says that one itself, since it also has
     good news to report). Read by `match_words`, for the card's `situazione`, and by
     `EngagementService.report`, for the `InvalidState` a match not `collegato` refuses
-    with (the report has its own sentence for `None`). `pigro_errore` is typed
-    `str | None` and this holds it: a state written before the CRM ever answered (or an
-    old row with the column not yet backfilled) still gets a sentence, the generic one
-    `rebase_core.pigro`'s own seam uses."""
+    with (the report has its own sentence for `None`). `pigro_errore` is the cause the
+    link stored (`engagements.CAUSE_*`, or the CRM's own sentence), wrapped here as
+    «Pigro non ha risposto: HTTP 503.»; a state written with none (an old row not yet
+    backfilled) still gets a sentence, «Pigro non ha risposto.»"""
     if pigro_stato == DA_COLLEGARE:
         return "Pigro non ha ancora il deal: riprova o aspetta lo sweep."
     if pigro_stato == ERRORE and pigro_errore == PROFILE_WITHOUT_NAME:
         return PROFILE_WITHOUT_NAME
     if pigro_stato == ERRORE:
-        return f"Pigro non ha risposto: {pigro_errore or NOT_ANSWERING}"
+        return _with_cause("Pigro non ha risposto", pigro_errore)
     if pigro_stato == RIFIUTATO:
-        refused = "Pigro ha rifiutato il collegamento"
-        return f"{refused}: {pigro_errore}" if pigro_errore else f"{refused}."
+        return _with_cause("Pigro ha rifiutato il collegamento", pigro_errore)
     return ""
+
+
+def _with_cause(sentence: str, cause: str | None) -> str:
+    """`sentence: cause.`, the cause as `EngagementService` stored it (a bare cause,
+    «HTTP 503», or the CRM's own sentence, which already ends in a stop), or the
+    sentence alone when none was stored."""
+    cause = (cause or "").strip()
+    if not cause:
+        return f"{sentence}."
+    stop = "" if cause.endswith((".", "!", "?", "…")) else "."
+    return f"{sentence}: {cause}{stop}"
 
 
 def document_words(document: DocumentFacts) -> Words:

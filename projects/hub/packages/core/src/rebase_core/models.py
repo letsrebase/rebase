@@ -344,7 +344,7 @@ class Company(Base, PrimaryKeyMixin, TimestampMixin, UtmMixin):
 MATCH_STATES = ("bozza", "in_firma", "attivo", "concluso", "annullato")
 # The Pigro link a match carries once it turns active (REB-497): `da_collegare` until a
 # deal exists, `collegato` once `pigro_url` and `pigro_deal_id` point at it, `errore` on
-# a failure the sweep may still retry -- `pigro_errore` then holds the sentence and
+# a failure the sweep may still retry -- `pigro_errore` then holds the cause and
 # `pigro_attempted_at` the time, for the sweep's log and the admin's eye -- `rifiutato`
 # on one the CRM itself refused (a 4xx, never retried).
 PIGRO_STATES = ("da_collegare", "collegato", "errore", "rifiutato")

@@ -25,6 +25,7 @@ the CRM's 800 days, and `group_report` sums the rows by day, ISO week and month.
 import json
 import logging
 import re
+import urllib.error
 from collections.abc import Callable, Iterable, Mapping
 from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -76,6 +77,18 @@ _log = logging.getLogger(__name__)
 
 PIGRO_NOT_CONFIGURED = "Consuntivo non configurato su questo ambiente."
 HTTPS_ONLY = "Pigro è raggiungibile solo su https."
+# What a failed or refused link stores in `pigro_errore`: the cause alone, never a
+# sentence of its own, since the card wraps it (spec § 3.5): «Pigro non ha risposto:
+# HTTP 503.», «Pigro ha rifiutato il collegamento: <the CRM's sentence>». A seam
+# sentence there would say «Pigro» twice. The CRM's own `reason` (or `detail`) is the
+# cause whenever its answer carries one, on a 409, a 422 or a 503.
+CAUSE_STATUS = "HTTP {status}"
+CAUSE_TIMEOUT = "timeout"
+CAUSE_REFUSED = "connessione rifiutata"
+CAUSE_UNREACHABLE = "nessuna connessione"
+CAUSE_TOO_LONG = "risposta troppo lunga"
+CAUSE_NOT_THE_SHAPE = "risposta non leggibile"
+CAUSE_HTTPS_ONLY = "indirizzo non https"
 HOURS_PER_DAY = Decimal(8)
 # The CRM's own cap on a report's period, `a - da` in days: a longer span it refuses, so
 # a longer engagement is read in consecutive windows of this size.
@@ -150,18 +163,40 @@ def _printed_date(data: Mapping[str, Any], key: str) -> date | None:
 
 
 def _refusal(raw: bytes, status: int) -> str:
-    """The CRM's own sentence for a refusal: a problem document's `reason` when it has
-    one (a `Conflict`'s `detail` is `entity: reason`, «engagement: Il deal di questa
-    lettera è stato eliminato nello spazio.», and an admin reads the sentence, not the
-    entity), else its `detail`, or FastAPI's list of errors as `field: reason` (the
-    rejected value itself left out); the status when the body says none of these."""
-    fallback = ANSWERED_STATUS.format(status=status)
+    """The report's words for a CRM that refused it: the CRM's own sentence, or the
+    seam's sentence naming the status, shown alone on «Consuntivo»."""
+    return _crm_sentence(raw) or ANSWERED_STATUS.format(status=status)
+
+
+def _cause(raw: bytes, status: int) -> str:
+    """What a link the CRM refused, or answered «not now», stores: the CRM's own
+    sentence, or the bare status (`CAUSE_STATUS`)."""
+    return _crm_sentence(raw) or CAUSE_STATUS.format(status=status)
+
+
+def _failure(exc: Exception) -> str:
+    """The cause of a call that never got an answer: `urllib` wraps the socket's own
+    error in `URLError`, a read that stalls raises `TimeoutError` bare."""
+    reason = exc.reason if isinstance(exc, urllib.error.URLError) else exc
+    if isinstance(reason, TimeoutError):
+        return CAUSE_TIMEOUT
+    if isinstance(reason, ConnectionRefusedError):
+        return CAUSE_REFUSED
+    return CAUSE_UNREACHABLE
+
+
+def _crm_sentence(raw: bytes) -> str | None:
+    """The CRM's own sentence in an answer, `None` when it carries none: a problem
+    document's `reason` when it has one (a `Conflict`'s `detail` is `entity: reason`,
+    «engagement: Il deal di questa lettera è stato eliminato nello spazio.», and an
+    admin reads the sentence, not the entity), else its `detail`, or FastAPI's list of
+    errors as `field: reason` (the rejected value itself left out)."""
     if not raw or len(raw) > MAX_BODY_BYTES:
-        return fallback
+        return None
     try:
         body = json.loads(raw)
     except ValueError:
-        return fallback
+        return None
     reason = body.get("reason") if isinstance(body, dict) else None
     if isinstance(reason, str) and reason.strip():
         return reason.strip()[:ERRORE_MAX_LENGTH]
@@ -182,7 +217,7 @@ def _refusal(raw: bytes, status: int) -> str:
             reasons.append(f"{where}: {error['msg']}" if where else error["msg"])
         if reasons:
             return "; ".join(reasons)[:ERRORE_MAX_LENGTH]
-    return fallback
+    return None
 
 
 def _windows(da: date, a: date) -> list[tuple[date, date]]:
@@ -459,10 +494,11 @@ class EngagementService:
     def link(self, match_id: UUID, admin_id: UUID | None = None) -> MatchRead:
         """Links an active match to its deal on Pigro, or records why not (spec § 3.3):
         `collegato` on a `201` or `200`; `rifiutato` with the CRM's sentence on a `409`
-        or `422`, which only an admin's «Riprova» asks again; `errore` with the seam's
-        sentence on anything else, a CRM not on HTTPS among them, which the sweep
-        retries. Without a token nothing is asked: the match waits as `da_collegare`.
-        With `admin_id`, the trail says who asked (`pigro_link`)."""
+        or `422`, which only an admin's «Riprova» asks again; `errore` with its cause
+        (`CAUSE_*`, or the CRM's sentence on a `503`) on anything else, a CRM not on
+        HTTPS among them, which the sweep retries. Without a token nothing is asked:
+        the match waits as `da_collegare`. With `admin_id`, the trail says who asked
+        (`pigro_link`)."""
         try:
             freelancer_id = self.matches.match_freelancer(match_id)
             self.matches.lock_freelancer(freelancer_id)
@@ -666,7 +702,7 @@ class EngagementService:
         """The one call, with no row lock held and only over HTTPS. Never raises:
         whatever happens is an outcome to write."""
         if not speaks_https(self.settings.pigro_api_url):
-            return _Outcome(ERRORE, HTTPS_ONLY)
+            return _Outcome(ERRORE, CAUSE_HTTPS_ONLY)
         try:
             status, raw = self.http(
                 "PUT", self._url(match_id), self._headers(with_body=True), json.dumps(body).encode()
@@ -675,17 +711,20 @@ class EngagementService:
             _log.warning(
                 "Pigro did not answer the link of match %s (%s)", match_id, type(exc).__name__
             )
-            return _Outcome(ERRORE, NOT_ANSWERING)
+            return _Outcome(ERRORE, _failure(exc))
         if status in (200, 201):
             if len(raw) > MAX_BODY_BYTES:
-                return _Outcome(ERRORE, TOO_LONG)
+                return _Outcome(ERRORE, CAUSE_TOO_LONG)
             try:
                 return _Outcome(COLLEGATO, linked=_Linked.model_validate_json(raw))
             except ValidationError:
-                return _Outcome(ERRORE, NOT_THE_SHAPE)
+                return _Outcome(ERRORE, CAUSE_NOT_THE_SHAPE)
         if status in (409, 422):
-            return _Outcome(RIFIUTATO, _refusal(raw, status))
-        return _Outcome(ERRORE, ANSWERED_STATUS.format(status=status))
+            return _Outcome(RIFIUTATO, _cause(raw, status))
+        if status == 503:
+            # The door's «not now» (its lock busy, the space unreachable), in its words.
+            return _Outcome(ERRORE, _cause(raw, status))
+        return _Outcome(ERRORE, CAUSE_STATUS.format(status=status))
 
     def _write(self, match: Match, outcome: _Outcome) -> None:
         match.pigro_stato = outcome.stato
