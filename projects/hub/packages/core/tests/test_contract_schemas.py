@@ -1,6 +1,7 @@
 """What «Crea match» sends: tax data an Italian contract can print, a letter whose
 numbers the law allows, and nothing that could carry the client's budget (REB-387)."""
 
+import json
 from datetime import date
 from decimal import Decimal
 from uuid import uuid4
@@ -94,16 +95,18 @@ def test_a_letter_the_law_or_the_page_would_not_allow_is_refused(change: dict[st
         LetteraFields(**{**REQUIRED, **change})  # type: ignore[arg-type]
 
 
-def _match(giorni_previsti: int | None) -> MatchCreate:
-    cliente = {
-        "cliente_ragione_sociale": "Rossi Studio S.r.l.",
-        "cliente_piva": "01234567890",
-        "cliente_sede": "Milano",
-    }
+CLIENTE = {
+    "cliente_ragione_sociale": "Rossi Studio S.r.l.",
+    "cliente_piva": "01234567890",
+    "cliente_sede": "Milano",
+}
+
+
+def _match(giorni_previsti: object) -> MatchCreate:
     return MatchCreate.model_validate(
         {
             "company_id": uuid4(),
-            "cliente": cliente,
+            "cliente": CLIENTE,
             "lettera": REQUIRED,
             "giorni_previsti": giorni_previsti,
         }
@@ -124,6 +127,41 @@ def test_expected_days_outside_a_year_are_refused_in_the_admins_words(days: int)
 @pytest.mark.parametrize("days", [1, 366, None])
 def test_expected_days_from_one_to_366_or_none_are_taken(days: int | None) -> None:
     assert _match(days).giorni_previsti == days
+
+
+@pytest.mark.parametrize("days", [2.5, "2,5", "quaranta", float("nan")])
+def test_expected_days_that_are_not_a_whole_number_are_refused_in_the_admins_words(
+    days: object,
+) -> None:
+    """The field's own parsing would answer before the range check, in English («Input
+    should be a valid integer, got a number with a fractional part»): a fraction or a
+    word gets the admin's sentence too."""
+    with pytest.raises(ValidationError) as refused:
+        _match(days)
+    (error,) = refused.value.errors()
+    assert error["loc"] == ("giorni_previsti",)
+    assert error["msg"] == "I giorni previsti sono un numero intero da 1 a 366."
+
+
+def test_a_fraction_of_a_day_in_the_pages_json_is_refused_in_the_admins_words() -> None:
+    body = {
+        "company_id": str(uuid4()),
+        "cliente": CLIENTE,
+        "lettera": {**REQUIRED, "data_inizio": "2026-10-01", "compenso": "450"},
+        "giorni_previsti": 2.5,
+    }
+    with pytest.raises(ValidationError) as refused:
+        MatchCreate.model_validate_json(json.dumps(body))
+    (error,) = refused.value.errors()
+    assert (error["loc"], error["msg"]) == (
+        ("giorni_previsti",),
+        "I giorni previsti sono un numero intero da 1 a 366.",
+    )
+
+
+@pytest.mark.parametrize("days", [40.0, "40"])
+def test_expected_days_written_as_a_whole_number_are_taken(days: object) -> None:
+    assert _match(days).giorni_previsti == 40
 
 
 def test_the_form_covers_every_field_of_the_letter_and_the_hub_fills_the_rest() -> None:

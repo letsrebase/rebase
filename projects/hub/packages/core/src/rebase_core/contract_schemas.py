@@ -19,6 +19,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    TypeAdapter,
     ValidationInfo,
     field_validator,
     model_validator,
@@ -286,10 +287,12 @@ class LetteraFields(LetteraDraft):
         return fields
 
 
-# «Giorni previsti» (REB-497): `ck_matches_giorni_previsti`'s bounds, and the sentence
-# that refuses a number outside them.
+# «Giorni previsti» (REB-497): `ck_matches_giorni_previsti`'s bounds, the sentence that
+# refuses a number outside them, and the one that refuses what is not a whole number.
 GIORNI_PREVISTI_MIN, GIORNI_PREVISTI_MAX = 1, 366
 GIORNI_PREVISTI_RANGE = "I giorni previsti vanno da 1 a 366."
+GIORNI_PREVISTI_WHOLE = "I giorni previsti sono un numero intero da 1 a 366."
+_WHOLE_NUMBER: TypeAdapter[int] = TypeAdapter(int)
 
 
 class MatchCreate(BaseModel):
@@ -311,6 +314,20 @@ class MatchCreate(BaseModel):
     # An admin's estimate of the engagement's billable days (REB-497), read back
     # unchanged; `Match.giorni_previsti` carries the same `CHECK`.
     giorni_previsti: int | None = None
+
+    @field_validator("giorni_previsti", mode="before")
+    @classmethod
+    def _expected_days_are_whole(cls, value: object) -> object:
+        """A fraction or a word refused in the admin's words too: the field's own
+        parsing runs before the range check below, and would answer Pydantic's English
+        («Input should be a valid integer, got a number with a fractional part»). What
+        that parsing takes (`40`, `40.0`, `"40"`) goes on as the whole number."""
+        if value is None:
+            return None
+        try:
+            return _WHOLE_NUMBER.validate_python(value)
+        except ValidationError:
+            raise PydanticCustomError("giorni_previsti_intero", GIORNI_PREVISTI_WHOLE) from None
 
     @field_validator("giorni_previsti", mode="after")
     @classmethod
