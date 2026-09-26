@@ -163,6 +163,13 @@ def test_door_is_absent_without_the_token(container_settings: Settings) -> None:
             f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer("qualcosa")
         )
         assert wrong.status_code == 404, wrong.text
+        # The gate is a router-level dependency, run before FastAPI even looks at the
+        # body or the path: an empty body and a non-UUID match id are still a 404, not
+        # the 422 either would earn once the door exists.
+        empty_body = client.put(f"/api/rebase/engagements/{match_id}", json={})
+        assert empty_body.status_code == 404, empty_body.text
+        bad_path = client.put("/api/rebase/engagements/not-a-uuid", json={})
+        assert bad_path.status_code == 404, bad_path.text
 
 
 def test_wrong_bearer_is_401(door_client: TestClient) -> None:
@@ -177,6 +184,42 @@ def test_wrong_bearer_is_401(door_client: TestClient) -> None:
     # No bearer at all is the same refusal, not a 404.
     put_missing = door_client.put(f"/api/rebase/engagements/{match_id}", json=_upsert())
     assert put_missing.status_code == 401, put_missing.text
+    # The token gate runs before the body or the path are parsed: a missing bearer with
+    # a body that would otherwise be a 422 (empty, or a non-UUID match id) is still 401.
+    bad_body = door_client.put(f"/api/rebase/engagements/{match_id}", json={})
+    assert bad_body.status_code == 401, bad_body.text
+    bad_path = door_client.put("/api/rebase/engagements/not-a-uuid", json={})
+    assert bad_path.status_code == 401, bad_path.text
+
+
+def test_report_without_bearer_is_401(door_client: TestClient) -> None:
+    match_id = uuid4()
+    refused = door_client.get(f"/api/rebase/engagements/{match_id}/report")
+    assert refused.status_code == 401, refused.text
+
+
+def test_root_only_a_spaces_own_prefix_is_404(door_client: TestClient) -> None:
+    """Spec § 2.1: the door answers only on the root installation. Under a real space's
+    own prefix -- not merely one that names no tenant -- the request must still be
+    refused outright: `space_base_settings` would fold that slug into
+    `PIGROCRM_PUBLIC_URL` and double it into the links this service builds, so the
+    router refuses the prefix itself rather than quietly using the wrong settings."""
+    match_id = uuid4()
+    created = door_client.put(
+        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
+    )
+    assert created.status_code == 201, created.text
+    slug = created.json()["slug"]
+
+    other_match = uuid4()
+    prefixed_put = door_client.put(
+        f"/{slug}/api/rebase/engagements/{other_match}", json=_upsert(), headers=_bearer()
+    )
+    assert prefixed_put.status_code == 404, prefixed_put.text
+    prefixed_report = door_client.get(
+        f"/{slug}/api/rebase/engagements/{match_id}/report", headers=_bearer()
+    )
+    assert prefixed_report.status_code == 404, prefixed_report.text
 
 
 def test_registry_token_does_not_open_the_door(container_settings: Settings) -> None:
@@ -279,3 +322,60 @@ def test_report_of_deleted_deal_is_409(
         f"/api/rebase/engagements/{match_id}/report", headers=_bearer()
     )
     assert refused.status_code == 409, refused.text
+
+
+def test_report_of_unknown_match_is_404(door_client: TestClient) -> None:
+    unknown = uuid4()
+    refused = door_client.get(
+        f"/api/rebase/engagements/{unknown}/report", headers=_bearer()
+    )
+    assert refused.status_code == 404, refused.text
+    assert refused.json()["code"] == "not_found"
+
+
+def test_report_reversed_period_is_422(door_client: TestClient) -> None:
+    """`a` before `da` is the same refusal `ValidationFailed("engagement", "periodo",
+    ...)` gives for a span over 800 days (`test_engagements.py`'s own coverage): here
+    only the wire shape of the problem document is new."""
+    match_id = uuid4()
+    created = door_client.put(
+        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
+    )
+    assert created.status_code == 201, created.text
+
+    refused = door_client.get(
+        f"/api/rebase/engagements/{match_id}/report",
+        params={"da": "2026-10-02", "a": "2026-10-01"},
+        headers=_bearer(),
+    )
+    assert refused.status_code == 422, refused.text
+    body = refused.json()
+    assert body["code"] == "validation_failed"
+    assert body["entity"] == "engagement"
+    assert body["field"] == "periodo"
+    assert body["reason"] == "al massimo 800 giorni"
+
+
+def test_unreachable_space_is_503(door_client: TestClient, container_settings: Settings) -> None:
+    """After the space exists, its database going away must not surface as a 500:
+    `_run` in `routers/engagements.py` turns any `SQLAlchemyError` into a 503, on both
+    routes, without ever logging the address a lock statement's parameters would carry."""
+    match_id = uuid4()
+    created = door_client.put(
+        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
+    )
+    assert created.status_code == 201, created.text
+    slug = created.json()["slug"]
+    drop_database(
+        container_settings, tenant_database_url(container_settings, tenant_database_name(slug))
+    )
+
+    again = door_client.put(
+        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
+    )
+    assert again.status_code == 503, again.text
+
+    report = door_client.get(
+        f"/api/rebase/engagements/{match_id}/report", headers=_bearer()
+    )
+    assert report.status_code == 503, report.text
