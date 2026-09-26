@@ -410,11 +410,15 @@ say the same words. Three methods and a helper:
 - `report(match_id, da=None, a=None)` (§ 3.5).
 
 Where it is called from: `SigningService._confirm_completion` sets `pigro_stato =
-'da_collegare'` on the same commit that sets `attivo`. `finish` (the webhook's
-background step and «Aggiorna stato») and `sweep` then call `link` when, re-reading the
-row after the confirmation, the match is `attivo` with `pigro_stato = 'da_collegare'`
-(`_confirm_completion` answers `True` for a rejection as well, so the state, not the
-return value, decides). `SigningService` takes the engagement service as one more
+'da_collegare'` on the same commit that sets `attivo`. The webhook's background
+`finish` then calls `link` when, re-reading the row after the confirmation, the match
+is `attivo` with `pigro_stato = 'da_collegare'` (`_confirm_completion` answers `True`
+for a rejection as well, so the state, not the return value, decides); the sweep
+finishes its documents without linking and calls `link_pending()` once after its loop,
+so every match is asked once per run; «Aggiorna stato», which an admin waits on, never
+links (§ 1: nothing a person is waiting on runs the provisioning), and its card reads
+«Pigro non ha ancora il deal: riprova o aspetta lo sweep.» until the sweep or «Riprova»
+does. `SigningService` takes the engagement service as one more
 collaborator, and the two places that build one, `signing_from_settings` (the webhook's
 background task, the CLI) and `deps.get_signing_factory` (which gains the API's
 `HttpCallDep`), hand it over; a `SigningService` built without one links nothing, as one
@@ -569,7 +573,10 @@ Production and preview each get their own pair, in the host `.env` files (the CR
 (`pigrocrm-v*`): the routes answer `404` until the token is set, and the hub's link
 attempts fail with a sentence, not an exception, until the CRM is up. The hub follows
 (`hub-v*`). No per-space migration; the registry table appears at the CRM's first
-boot. The rule is a row in the monorepo's `docs/design/DECISIONS.md`, added with this
+boot. The host vhost in front of the hub API gets `proxy_read_timeout 120s` on
+`/api/hub/matches/` (a by-hand change, as the MCP location was): «Riprova» may wait the
+90 seconds a new space takes, and nginx's default sixty would answer the admin a 504
+while the link still finishes. The rule is a row in the monorepo's `docs/design/DECISIONS.md`, added with this
 record: the hub reaches into a space only through the CRM's engagements door, with a
 token of its own, and the registry token stays read-only.
 

@@ -803,13 +803,16 @@ def engagement_ready_mail(to: str, *, nome: str, numero: str, azienda: str, deal
 **Files:**
 - Modify: `packages/core/src/rebase_core/signing.py`: `SigningService.__init__` gains
   `engagements: EngagementService | None = None`; `_confirm_completion` sets
-  `match.pigro_stato = "da_collegare"` beside `match.stato = "attivo"`; `_finish_outcome`,
-  after the confirmation step, re-reads the document's match and, when it is `attivo`
-  with `pigro_stato == "da_collegare"` and `self.engagements` is set, calls
-  `self.engagements.link(match.id)` in the same try/except shape as the signed-copy
-  step (a failure is logged and left for the sweep); `sweep` calls
-  `self.engagements.link_pending()` after its loop and `SweepResult` gains `linked` and
-  `link_failed`; `signing_from_settings(settings, renderer, *, documenso, sender)` gains
+  `match.pigro_stato = "da_collegare"` beside `match.stato = "attivo"`; `_finish_outcome`
+  takes `link: bool = True` and, after the confirmation step, re-reads the document's
+  match and, when `link` is true, the match is `attivo` with `pigro_stato ==
+  "da_collegare"` and `self.engagements` is set, calls `self.engagements.link(match.id)`
+  as its last step, catching `Exception` (logged with the document id and the class,
+  left for the sweep); `refresh` («Aggiorna stato», which an admin waits on) calls it
+  with `link=False`, so no person ever waits on the CRM (spec § 1); `sweep` finishes
+  each document with `link=False` and calls `self.engagements.link_pending()` once
+  after its loop, so every match is asked once per run, and `SweepResult` gains
+  `linked` and `link_failed`; `signing_from_settings(settings, renderer, *, documenso, sender)` gains
   `http: HttpCall = urllib_engagements_call` and builds the `EngagementService`
 - Modify: `packages/core/src/rebase_core/cli.py` (`contracts_sweep` prints `, N match collegati a Pigro` and `, M non collegati` when not zero)
 - Modify: `apps/api/src/rebase_api/deps.py` (`get_engagements(session, settings, http: HttpCallDep, sender) -> EngagementService` built with `urllib_engagements_call`, `EngagementsDep`; `get_signing_factory` hands the same service to `SigningService`), `apps/api/src/rebase_api/routers/matches.py` (`POST /api/hub/matches/{match_id}/pigro/link` → `MatchRead`; `GET /api/hub/matches/{match_id}/report` → `MatchReport`; both `AdminDep`; both catch `PigroUnavailable` → `HTTPException(502, str(exc))`, and answer `503` with `PIGRO_NOT_CONFIGURED` when the token is empty, the split `routers/pigro.py` makes)
@@ -903,7 +906,7 @@ nothing to add here.
 - [ ] **Step 2:** On the preview (Documenso is on there, and A7 set the CRM's token): set `REBASE_PIGRO_ENGAGEMENTS_TOKEN` in the preview hub's `.env`, restart `api` and `sweep`, create a match for a test freelancer of ours with `giorni_previsti`, send it for signature, sign on Documenso, watch the sweep line («1 match collegati a Pigro»), open the preview CRM as that freelancer (the welcome mail's link), log two hours on the deal, open «Consuntivo» on the preview hub and read them.
 - [ ] **Step 3:** The before-and-after pairs (the card, the «Match» list, the wizard's conditions step, the member's letter, «Consuntivo») and the video of the flow, with the monorepo's `docs/pr-screenshots/record.mjs` (`docs/pr-screenshots/README.md`; the screenshot stack runs on its own ports, never `:8000`).
 - [ ] **Step 4:** Not before Ivan's «ok» on the clause's wording sits on REB-504 (B8): the PR stays a draft until then, whatever else is done. Then `gh pr ready`, the fresh reviewer on the whole diff, Greptile and CodeRabbit to 5/5 and clean, a merge commit; the closing comment on every card B1 to B9 and each moved to `Done` by hand; a project update on P-REB-42 (three sentences, `type: "project"`).
-- [ ] **Step 5:** Tell Ivan the production hub `.env` needs the token before the `hub-v*` tag, and that the CRM tag goes first.
+- [ ] **Step 5:** Tell Ivan the production hub `.env` needs the token before the `hub-v*` tag, that the CRM tag goes first, and that the host vhost needs `proxy_read_timeout 120s` on `/api/hub/matches/` (spec § 4) before «Riprova» is used on production.
 
 ## Self-review (done while writing, redone after the review of 2026-09-25)
 
