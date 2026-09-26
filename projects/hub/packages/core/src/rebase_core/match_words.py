@@ -128,13 +128,28 @@ def _flat(text: str) -> str:
     return " ".join(text.split())
 
 
-# The one `errore` the hub records without asking the CRM (`EngagementService.payload`):
-# the door wants a name and a surname. Shown alone on the card, since «Pigro non ha
-# risposto» would say a call was made.
+# The environment has no `REBASE_PIGRO_ENGAGEMENTS_TOKEN` (spec § 3.2): what the card of
+# an active match says, and what the report and link routes answer with their 503.
+PIGRO_NOT_CONFIGURED = "Consuntivo non configurato su questo ambiente."
+# The `errore`s the hub records without asking the CRM (`EngagementService.payload` and
+# `_put`), each shown alone on the card, since «Pigro non ha risposto» would say a call
+# was made: the door wants a name and a surname, rebase's own PEC and tax code as the
+# CRM's customer rules take them (an address, at most 16 characters), and a CRM on
+# HTTPS, since the bearer never travels in clear.
 PROFILE_WITHOUT_NAME = (
     "Il freelance non ha nome e cognome sul profilo: il collegamento a Pigro riparte "
     "quando il profilo è completo."
 )
+SIGNER_PEC_INVALID = (
+    "La PEC di rebase in REBASE_SIGNER_JSON non è un indirizzo valido: il collegamento a "
+    "Pigro riparte quando è corretta."
+)
+SIGNER_CF_TOO_LONG = (
+    "Il codice fiscale di rebase in REBASE_SIGNER_JSON supera i 16 caratteri: il "
+    "collegamento a Pigro riparte quando è corretto."
+)
+HTTPS_ONLY = "Pigro è raggiungibile solo su https."
+NOT_ASKED = frozenset({PROFILE_WITHOUT_NAME, SIGNER_PEC_INVALID, SIGNER_CF_TOO_LONG, HTTPS_ONLY})
 
 
 def pigro_state_sentence(pigro_stato: str | None, pigro_errore: str | None) -> str:
@@ -146,11 +161,12 @@ def pigro_state_sentence(pigro_stato: str | None, pigro_errore: str | None) -> s
     with (the report has its own sentence for `None`). `pigro_errore` is the cause the
     link stored (`engagements.CAUSE_*`, or the CRM's own sentence), wrapped here as
     «Pigro non ha risposto: HTTP 503.»; a state written with none (an old row not yet
-    backfilled) still gets a sentence, «Pigro non ha risposto.»"""
+    backfilled) still gets a sentence, «Pigro non ha risposto.» One of the hub's own
+    sentences (`NOT_ASKED`) is shown as it is."""
     if pigro_stato == DA_COLLEGARE:
         return "Pigro non ha ancora il deal: riprova o aspetta lo sweep."
-    if pigro_stato == ERRORE and pigro_errore == PROFILE_WITHOUT_NAME:
-        return PROFILE_WITHOUT_NAME
+    if pigro_stato == ERRORE and pigro_errore is not None and pigro_errore in NOT_ASKED:
+        return pigro_errore
     if pigro_stato == ERRORE:
         return _with_cause("Pigro non ha risposto", pigro_errore)
     if pigro_stato == RIFIUTATO:
@@ -233,6 +249,7 @@ def match_words(
     *,
     pigro_stato: str | None = None,
     pigro_errore: str | None = None,
+    pigro_configurato: bool = True,
 ) -> Words:
     """`framework_stato` is where the freelancer's framework agreement stands
     (`framework.framework_states`): `firmato` for an active one, else the pending one's
@@ -243,7 +260,9 @@ def match_words(
     `pigro_errore` are the match's own (REB-498): for an `attivo` match they add one
     sentence to `situazione` about where its hours are, and, short of `collegato`, a
     «Riprova su Pigro» among `altre_azioni`; irrelevant, and left `None`, for every other
-    state."""
+    state. `pigro_configurato` is whether this environment has the CRM's token: without
+    it the sentence is `PIGRO_NOT_CONFIGURED` whatever the state, and there is no
+    «Riprova», which would only answer 503 (spec § 3.2)."""
     numero = letter.numero
     if stato == "bozza":
         return (
@@ -296,13 +315,14 @@ def match_words(
             f"Lettera n. {numero} firmata{_on(letter.signed_on)}"
             f"{_period(letter_start, letter_end)}."
         )
-        note = (
-            PIGRO_LINKED
-            if pigro_stato == COLLEGATO
-            else pigro_state_sentence(pigro_stato, pigro_errore)
-        )
+        if pigro_stato is not None and not pigro_configurato:
+            note = PIGRO_NOT_CONFIGURED
+        elif pigro_stato == COLLEGATO:
+            note = PIGRO_LINKED
+        else:
+            note = pigro_state_sentence(pigro_stato, pigro_errore)
         altre_azioni: list[Action] = ["chiudi"]
-        if pigro_stato in PIGRO_RETRY_STATES:
+        if pigro_configurato and pigro_stato in PIGRO_RETRY_STATES:
             altre_azioni.append("riprova_pigro")
         return (f"{sentence} {note}" if note else sentence, None, altre_azioni)
     if stato == "concluso":

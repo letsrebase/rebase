@@ -16,7 +16,12 @@ from rebase_core.contract_schemas import (
 from rebase_core.documenso import REJECTED, Outcome
 from rebase_core.match_words import (
     DOCUMENT_STATE_LABELS,
+    HTTPS_ONLY,
     MATCH_STATE_LABELS,
+    PIGRO_NOT_CONFIGURED,
+    PROFILE_WITHOUT_NAME,
+    SIGNER_CF_TOO_LONG,
+    SIGNER_PEC_INVALID,
     Action,
     DocumentFacts,
     check_sentences,
@@ -384,6 +389,52 @@ def test_an_active_match_says_where_its_hours_stand_on_pigro(
         None,
         altre_azioni,
     )
+
+
+@pytest.mark.parametrize("pigro_stato", ["da_collegare", "errore", "rifiutato", "collegato"])
+def test_without_the_token_an_active_match_says_the_report_is_not_configured(
+    pigro_stato: str,
+) -> None:
+    """Spec § 3.2: an environment without `REBASE_PIGRO_ENGAGEMENTS_TOKEN` has the
+    feature off. The card says so, whatever the link's state, and offers no «Riprova»,
+    which would only answer the same sentence with a 503."""
+    letter = _lettera("firmato", signed_on=SIGNED, ha_pdf_firmato=True)
+    assert match_words(
+        "attivo",
+        letter,
+        None,
+        START,
+        None,
+        pigro_stato=pigro_stato,
+        pigro_errore="HTTP 503",
+        pigro_configurato=False,
+    ) == (
+        "Lettera n. 2026-003 firmata il 28 settembre 2026, dal 1° ottobre 2026. "
+        "Consuntivo non configurato su questo ambiente.",
+        None,
+        ["chiudi"],
+    )
+    assert PIGRO_NOT_CONFIGURED == "Consuntivo non configurato su questo ambiente."
+
+
+def test_without_the_token_a_match_with_no_pigro_state_still_adds_nothing() -> None:
+    letter = _lettera("firmato", signed_on=SIGNED, ha_pdf_firmato=True)
+    assert match_words(
+        "attivo", letter, None, START, None, pigro_stato=None, pigro_configurato=False
+    ) == (
+        "Lettera n. 2026-003 firmata il 28 settembre 2026, dal 1° ottobre 2026.",
+        None,
+        ["chiudi"],
+    )
+
+
+@pytest.mark.parametrize(
+    "sentence", [PROFILE_WITHOUT_NAME, SIGNER_PEC_INVALID, SIGNER_CF_TOO_LONG, HTTPS_ONLY]
+)
+def test_the_hubs_own_errore_sentences_are_shown_alone(sentence: str) -> None:
+    """A link the hub never sent: «Pigro non ha risposto» would say a call was made."""
+    assert pigro_state_sentence("errore", sentence) == sentence
+    assert HTTPS_ONLY == "Pigro è raggiungibile solo su https."
 
 
 def test_pigro_state_sentence_says_nothing_before_a_deal_or_once_one_is_linked() -> None:

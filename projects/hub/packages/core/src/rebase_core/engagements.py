@@ -18,8 +18,11 @@ is claimed in that same locked write (`pigro_mail_sent_at` stamped before the se
 of two callers racing on one match only the one that claimed it sends; a refusal gives
 the claim back for the next call.
 
-`report` stores nothing: every «Consuntivo» asks the CRM again, in windows of at most
-the CRM's 800 days, and `group_report` sums the rows by day, ISO week and month.
+`report` stores nothing but one fact: every «Consuntivo» asks the CRM again, in windows
+of at most the CRM's 800 days, and `group_report` sums the rows by day, ISO week and
+month. The fact is the CRM's `409`, a deal deleted in the space (spec § 3.10), which
+`report` writes over a `collegato` match as `rifiutato`, the way `link` would, so the
+card, the sweep and «Riprova» all know it.
 """
 
 import json
@@ -33,7 +36,7 @@ from typing import Any, NamedTuple
 from urllib.parse import urlencode, urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, TypeAdapter, ValidationError
 from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.orm import Session
 
@@ -62,7 +65,14 @@ from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.framework import ROME, rome_today
 from rebase_core.http import MAX_BODY_BYTES, HttpCall
 from rebase_core.mail import EmailSender, engagement_ready_mail
-from rebase_core.match_words import PROFILE_WITHOUT_NAME, pigro_state_sentence
+from rebase_core.match_words import (
+    HTTPS_ONLY,
+    PIGRO_NOT_CONFIGURED,
+    PROFILE_WITHOUT_NAME,
+    SIGNER_CF_TOO_LONG,
+    SIGNER_PEC_INVALID,
+    pigro_state_sentence,
+)
 from rebase_core.matches import ENTITY, MatchService
 from rebase_core.models import Company, ContractDocument, Freelancer, Match, User
 from rebase_core.pigro import (
@@ -75,20 +85,20 @@ from rebase_core.pigro import (
 
 _log = logging.getLogger(__name__)
 
-PIGRO_NOT_CONFIGURED = "Consuntivo non configurato su questo ambiente."
-HTTPS_ONLY = "Pigro è raggiungibile solo su https."
 # What a failed or refused link stores in `pigro_errore`: the cause alone, never a
 # sentence of its own, since the card wraps it (spec § 3.5): «Pigro non ha risposto:
 # HTTP 503.», «Pigro ha rifiutato il collegamento: <the CRM's sentence>». A seam
-# sentence there would say «Pigro» twice. The CRM's own `reason` (or `detail`) is the
-# cause whenever its answer carries one, on a 409, a 422 or a 503.
+# sentence there would say «Pigro» twice. The CRM's own sentence is the cause whenever
+# its answer carries one, on a 409, a 422 or a 503. The exceptions are the hub's own
+# sentences for a link it never asked (`match_words.NOT_ASKED`), shown alone.
 CAUSE_STATUS = "HTTP {status}"
 CAUSE_TIMEOUT = "timeout"
 CAUSE_REFUSED = "connessione rifiutata"
 CAUSE_UNREACHABLE = "nessuna connessione"
 CAUSE_TOO_LONG = "risposta troppo lunga"
 CAUSE_NOT_THE_SHAPE = "risposta non leggibile"
-CAUSE_HTTPS_ONLY = "indirizzo non https"
+# A field of the body the CRM's door refused, named, never in FastAPI's English.
+CAUSE_FIELD = "{field}: non valido"
 HOURS_PER_DAY = Decimal(8)
 # The CRM's own cap on a report's period, `a - da` in days: a longer span it refuses, so
 # a longer engagement is read in consecutive windows of this size.
@@ -102,11 +112,14 @@ NOT_ACTIVE = "Si collega a Pigro solo un match attivo."
 # has its own words for a match waiting on its signature.
 REPORT_NOT_ACTIVE = "Il match non è ancora attivo: nessun consuntivo da leggere."
 LETTER_NOT_SIGNED = "La lettera non è firmata."
-# The CRM's own customer rules (`CustomerService._check_fiscal`), met before the call so
-# a value the space would refuse never leaves: an address of 255 characters at most, a
-# recipient code of exactly seven.
+# The CRM's own customer rules (`CustomerService._check_fiscal`, the door's
+# `EngagementRebase`), met before the call so a value the space would refuse never
+# leaves: an address of 255 characters at most, a recipient code of exactly seven, a tax
+# code of 16 at most, and a PEC that is an address by the rule of the CRM's `EmailStr`.
 ADDRESS_MAX_LENGTH = 255
 SDI_LENGTH = 7
+FISCAL_CODE_MAX_LENGTH = 16
+_EMAIL: TypeAdapter[str] = TypeAdapter(EmailStr)
 # A refusal's sentence as stored on the match: the CRM's own words, bounded, since a
 # body of a megabyte is still a body the seam lets through.
 ERRORE_MAX_LENGTH = 500
@@ -162,10 +175,20 @@ def _printed_date(data: Mapping[str, Any], key: str) -> date | None:
     return parse_italian_date(value)
 
 
-def _refusal(raw: bytes, status: int) -> str:
-    """The report's words for a CRM that refused it: the CRM's own sentence, or the
-    seam's sentence naming the status, shown alone on «Consuntivo»."""
-    return _crm_sentence(raw) or ANSWERED_STATUS.format(status=status)
+def normalise_fiscal_code(value: str | None) -> str | None:
+    """rebase's tax code as the CRM is sent it: spaces gone, upper case, `None` for a
+    blank. Its length is `payload`'s to check."""
+    if value is None:
+        return None
+    return "".join(value.split()).upper() or None
+
+
+def _is_email(value: str) -> bool:
+    try:
+        _EMAIL.validate_python(value)
+    except ValidationError:
+        return False
+    return True
 
 
 def _cause(raw: bytes, status: int) -> str:
@@ -186,37 +209,36 @@ def _failure(exc: Exception) -> str:
 
 
 def _crm_sentence(raw: bytes) -> str | None:
-    """The CRM's own sentence in an answer, `None` when it carries none: a problem
-    document's `reason` when it has one (a `Conflict`'s `detail` is `entity: reason`,
-    «engagement: Il deal di questa lettera è stato eliminato nello spazio.», and an
-    admin reads the sentence, not the entity), else its `detail`, or FastAPI's list of
-    errors as `field: reason` (the rejected value itself left out)."""
+    """The CRM's own sentence in an answer, `None` when it carries none. A `Conflict`'s
+    problem document (`code` `conflict`) by its `reason`: its `detail` is `entity:
+    reason`, «engagement: Il deal di questa lettera è stato eliminato nello spazio.»,
+    and an admin reads the sentence, not the entity. Any other problem document by its
+    `detail`, which for a `ValidationFailed` is `entity.field: reason` and keeps the
+    field's name. FastAPI's own list of errors, whose words are English and repeat the
+    value, as `field: non valido` for each field it names."""
     if not raw or len(raw) > MAX_BODY_BYTES:
         return None
     try:
         body = json.loads(raw)
     except ValueError:
         return None
-    reason = body.get("reason") if isinstance(body, dict) else None
-    if isinstance(reason, str) and reason.strip():
+    if not isinstance(body, dict):
+        return None
+    reason = body.get("reason")
+    if body.get("code") == "conflict" and isinstance(reason, str) and reason.strip():
         return reason.strip()[:ERRORE_MAX_LENGTH]
-    detail = body.get("detail") if isinstance(body, dict) else None
+    detail = body.get("detail")
     if isinstance(detail, str) and detail.strip():
         return detail.strip()[:ERRORE_MAX_LENGTH]
     if isinstance(detail, list):
-        reasons = []
-        for error in detail:
-            if not isinstance(error, dict) or not isinstance(error.get("msg"), str):
-                continue
-            loc = error.get("loc")
-            where = (
-                ".".join(str(part) for part in loc if part != "body")
-                if isinstance(loc, list)
-                else ""
-            )
-            reasons.append(f"{where}: {error['msg']}" if where else error["msg"])
-        if reasons:
-            return "; ".join(reasons)[:ERRORE_MAX_LENGTH]
+        fields = dict.fromkeys(
+            ".".join(str(part) for part in error["loc"] if part != "body")
+            for error in detail
+            if isinstance(error, dict) and isinstance(error.get("loc"), list)
+        )
+        named = [CAUSE_FIELD.format(field=field) for field in fields if field]
+        if named:
+            return "; ".join(named)[:ERRORE_MAX_LENGTH]
     return None
 
 
@@ -309,11 +331,14 @@ def _joined(windows: list[_CrmReport]) -> _CrmReport:
 
 class _Outcome(NamedTuple):
     """What one `PUT` came to: the state to write, the sentence for anything but a
-    link, and the CRM's answer for a link."""
+    link, and the CRM's answer for a link. `gone` marks the door's `409`: for a match
+    already linked, the one `409` it has is its deal deleted in the space (spec
+    § 3.10), which `link` writes even over `collegato`."""
 
     stato: str
     errore: str | None = None
     linked: _Linked | None = None
+    gone: bool = False
 
 
 def _invoice_number(invoice: _CrmInvoice) -> str:
@@ -405,12 +430,22 @@ def _group(report: _CrmReport, giorni_previsti: int | None) -> dict[str, Any]:
 
 class _NotAsked(Exception):
     """A match the hub will not send to the CRM yet, with the sentence its card shows
-    (`PROFILE_WITHOUT_NAME`): recorded as `errore`, never as `rifiutato`, since it is
-    the hub's own data to complete, and a retry after that may well succeed."""
+    (`PROFILE_WITHOUT_NAME`, `SIGNER_PEC_INVALID`, `SIGNER_CF_TOO_LONG`): recorded as
+    `errore`, never as `rifiutato`, since it is the hub's own data to complete, and a
+    retry after that may well succeed."""
 
     def __init__(self, sentence: str) -> None:
         super().__init__(sentence)
         self.sentence = sentence
+
+
+class _Gone(Exception):
+    """The report's `409`: the match's deal was deleted in the space, with the cause the
+    match stores (`_cause`)."""
+
+    def __init__(self, cause: str) -> None:
+        super().__init__(cause)
+        self.cause = cause
 
 
 class _Recipient(NamedTuple):
@@ -441,7 +476,9 @@ class EngagementService:
         self.sender = sender
         self.now = now
         self.today = today
-        self.matches = MatchService(session, today=today)
+        self.matches = MatchService(
+            session, today=today, pigro_configurato=bool(settings.pigro_engagements_token)
+        )
 
     # ---- the body ----------------------------------------------------------------------
 
@@ -452,20 +489,27 @@ class EngagementService:
         kept it (its printed data for a match older than migration 0021), and rebase as
         `REBASE_SIGNER_JSON` names it over `rebase.json`, normalised to the CRM's own
         customer rules. Refused for a letter not signed: only an active match links.
-        Refused with `_NotAsked` for a freelancer whose name or surname is empty, which
-        the CRM's door would refuse in English: `link` records it as `errore`, so the
-        sweep and «Riprova» try again once the profile is complete."""
+        Refused with `_NotAsked` for a freelancer whose name or surname is empty, and for
+        a PEC or a tax code of rebase's that the CRM's door would refuse in English:
+        `link` records it as `errore`, so the sweep and «Riprova» try again once the
+        profile or `REBASE_SIGNER_JSON` is complete."""
         if letter.stato != "firmato":
             raise InvalidState(LETTER_NOT_SIGNED, stato=letter.stato)
         if not user.nome.strip() or not user.cognome.strip():
             raise _NotAsked(PROFILE_WITHOUT_NAME)
+        signer = merge_data(company_defaults(), signer_data(self.settings.signer_json))
+        pec = _text(signer.get("rebase-pec"))
+        if pec is not None and not _is_email(pec):
+            raise _NotAsked(SIGNER_PEC_INVALID)
+        codice_fiscale = normalise_fiscal_code(_text(signer.get("rebase-cf")))
+        if codice_fiscale is not None and len(codice_fiscale) > FISCAL_CODE_MAX_LENGTH:
+            raise _NotAsked(SIGNER_CF_TOO_LONG)
         data = letter.data
         start = match.lettera_data_inizio or _printed_date(data, "data-inizio")
         if start is None:
             raise ContractFailed(f"letter {letter.numero} printed no data-inizio")
         end = match.lettera_data_fine or _printed_date(data, "data-fine")
         fee = match.lettera_compenso if match.lettera_compenso is not None else amount(data, FEE)
-        signer = merge_data(company_defaults(), signer_data(self.settings.signer_json))
         sede = _text(signer.get("rebase-sede"))
         sdi = _text(signer.get("rebase-codice-destinatario"))
         return {
@@ -482,9 +526,9 @@ class EngagementService:
             "rebase": {
                 "ragione_sociale": _text(signer.get("rebase-ragione-sociale")),
                 "partita_iva": normalise_vat(_text(signer.get("rebase-piva"))),
-                "codice_fiscale": _text(signer.get("rebase-cf")),
+                "codice_fiscale": codice_fiscale,
                 "indirizzo": sede[:ADDRESS_MAX_LENGTH] if sede is not None else None,
-                "pec": _text(signer.get("rebase-pec")),
+                "pec": pec,
                 "codice_sdi": sdi if sdi is not None and len(sdi) == SDI_LENGTH else None,
             },
         }
@@ -495,10 +539,12 @@ class EngagementService:
         """Links an active match to its deal on Pigro, or records why not (spec § 3.3):
         `collegato` on a `201` or `200`; `rifiutato` with the CRM's sentence on a `409`
         or `422`, which only an admin's «Riprova» asks again; `errore` with its cause
-        (`CAUSE_*`, or the CRM's sentence on a `503`) on anything else, a CRM not on
-        HTTPS among them, which the sweep retries. Without a token nothing is asked:
-        the match waits as `da_collegare`. With `admin_id`, the trail says who asked
-        (`pigro_link`)."""
+        (`CAUSE_*`, or the CRM's sentence on a `503`) on anything else, and with
+        `HTTPS_ONLY` for a CRM not on HTTPS, which the sweep retries. A match already
+        `collegato` keeps its state, except on a `409`: its deal was deleted in the
+        space (spec § 3.10), unless another caller linked it after this call began.
+        Without a token nothing is asked: the match waits as `da_collegare`. With
+        `admin_id`, the trail says who asked (`pigro_link`)."""
         try:
             freelancer_id = self.matches.match_freelancer(match_id)
             self.matches.lock_freelancer(freelancer_id)
@@ -523,7 +569,8 @@ class EngagementService:
             except _NotAsked as missing:
                 unasked = _Outcome(ERRORE, missing.sentence)
             recipient = _Recipient(user.email, user.nome, letter.numero or "", company.nome_azienda)
-            match.pigro_attempted_at = self.now()
+            started = self.now()
+            match.pigro_attempted_at = started
             self.session.commit()
         except Exception:
             self.session.rollback()
@@ -535,7 +582,10 @@ class EngagementService:
         try:
             self.matches.lock_freelancer(freelancer_id)
             match = self.matches.lock_match(match_id)
-            if match.pigro_stato != COLLEGATO:
+            # A link made by another caller after this one began may be newer than this
+            # call's 409, which then says nothing about the deal it found.
+            linked_since = match.pigro_linked_at is not None and match.pigro_linked_at > started
+            if match.pigro_stato != COLLEGATO or (outcome.gone and not linked_since):
                 self._write(match, outcome)
             if (
                 match.pigro_stato == COLLEGATO
@@ -605,9 +655,12 @@ class EngagementService:
         migration 0021, the match's own creation day when the letter has none) to
         today, asked in windows of at most `REPORT_MAX_DAYS`. `InvalidState` for a
         match not `collegato`, with where its link stands (`REPORT_NOT_ACTIVE` when it
-        has no link state yet); `PigroUnavailable` for a CRM not configured here
-        (`PIGRO_NOT_CONFIGURED`), not on HTTPS (`HTTPS_ONLY`) or not answering with a
-        report."""
+        has no link state yet), and for a deal the CRM says was deleted in the space (a
+        `409`, spec § 3.10), after writing the match `rifiutato` with the CRM's sentence
+        if it is still `collegato`, as `link` would: the sweep then leaves it alone, and
+        «Riprova» links it again once the freelancer restores the deal.
+        `PigroUnavailable` for a CRM not configured here (`PIGRO_NOT_CONFIGURED`), not on
+        HTTPS (`HTTPS_ONLY`) or not answering with a report."""
         match = self.session.scalars(
             select(Match).where(Match.id == match_id).execution_options(populate_existing=True)
         ).first()
@@ -625,6 +678,7 @@ class EngagementService:
             )
             raise InvalidState(sentence, pigro_stato=match.pigro_stato)
         pigro_url, giorni_previsti = match.pigro_url, match.giorni_previsti
+        freelancer_id = match.freelancer_id
         a = a if a is not None else self.today()
         start = da if da is not None else self._start(match)
         # Nothing the CRM is asked for keeps this transaction open while it answers.
@@ -635,9 +689,15 @@ class EngagementService:
         # `da` after `a`, which the CRM refuses with a 422. It has no hours yet, so today
         # alone is asked for and the report is empty, while a deal gone or a CRM down
         # still shows here as everywhere else.
-        windows = [
-            self._window(match_id, first, last) for first, last in _windows(min(start, a), a)
-        ]
+        try:
+            windows = [
+                self._window(match_id, first, last) for first, last in _windows(min(start, a), a)
+            ]
+        except _Gone as gone:
+            self._refused(match_id, freelancer_id, gone.cause)
+            raise InvalidState(
+                pigro_state_sentence(RIFIUTATO, gone.cause), pigro_stato=RIFIUTATO
+            ) from None
         return MatchReport(
             match_id=match_id,
             pigro_url=pigro_url,
@@ -698,11 +758,26 @@ class EngagementService:
         printed = _printed_date(letter.data, "data-inizio") if letter is not None else None
         return printed or match.created_at.astimezone(ROME).date()
 
+    def _refused(self, match_id: UUID, freelancer_id: UUID, cause: str) -> None:
+        """The report's `409` written over the match, under the locks `link` takes in the
+        same order: `rifiutato` with the CRM's sentence, if the match is still
+        `collegato` (another caller may have written something newer meanwhile)."""
+        try:
+            self.matches.lock_freelancer(freelancer_id)
+            match = self.matches.lock_match(match_id)
+            if match.pigro_stato == COLLEGATO:
+                self._write(match, _Outcome(RIFIUTATO, cause))
+            self.session.commit()
+        except Exception:
+            self.session.rollback()
+            raise
+        _log.warning("the deal of match %s is gone from its Pigro space", match_id)
+
     def _put(self, match_id: UUID, body: dict[str, Any]) -> _Outcome:
         """The one call, with no row lock held and only over HTTPS. Never raises:
         whatever happens is an outcome to write."""
         if not speaks_https(self.settings.pigro_api_url):
-            return _Outcome(ERRORE, CAUSE_HTTPS_ONLY)
+            return _Outcome(ERRORE, HTTPS_ONLY)
         try:
             status, raw = self.http(
                 "PUT", self._url(match_id), self._headers(with_body=True), json.dumps(body).encode()
@@ -719,7 +794,9 @@ class EngagementService:
                 return _Outcome(COLLEGATO, linked=_Linked.model_validate_json(raw))
             except ValidationError:
                 return _Outcome(ERRORE, CAUSE_NOT_THE_SHAPE)
-        if status in (409, 422):
+        if status == 409:
+            return _Outcome(RIFIUTATO, _cause(raw, status), gone=True)
+        if status == 422:
             return _Outcome(RIFIUTATO, _cause(raw, status))
         if status == 503:
             # The door's «not now» (its lock busy, the space unreachable), in its words.
@@ -777,9 +854,9 @@ class EngagementService:
         except Exception as exc:  # noqa: BLE001 - a refused connection, a DNS miss, a timeout
             raise PigroUnavailable(NOT_ANSWERING) from exc
         if status == 409:
-            # The deal was deleted in the space (spec § 3.10): the CRM's own sentence,
-            # the same one `link` stores, since this page is where an admin learns it.
-            raise PigroUnavailable(_refusal(raw, status))
+            # The deal was deleted in the space (spec § 3.10): `report` files the match
+            # as refused with the CRM's own sentence, the one `link` would store.
+            raise _Gone(_cause(raw, status))
         if status != 200:
             raise PigroUnavailable(ANSWERED_STATUS.format(status=status))
         if len(raw) > MAX_BODY_BYTES:

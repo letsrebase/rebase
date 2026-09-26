@@ -41,13 +41,13 @@ from rebase_core.config import Settings
 from rebase_core.contract_schemas import FiscalData, MatchCreate
 from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
-from rebase_core.engagements import PIGRO_NOT_CONFIGURED as ENGAGEMENTS_NOT_CONFIGURED
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
 from rebase_core.freelancers import LEAD_STATE, FreelancerService
 from rebase_core.http import HttpCall
 from rebase_core.logins import LoginService
+from rebase_core.match_words import PIGRO_NOT_CONFIGURED as ENGAGEMENTS_NOT_CONFIGURED
 from rebase_core.match_words import send_report_sentence
 from rebase_core.matches import (
     ENTITY,
@@ -221,6 +221,13 @@ def build_server(
     here, the same sentence an empty token answers from inside the service."""
     mcp = MCPServer("rebase", instructions=INSTRUCTIONS, middleware=middleware)
     signer_json = settings.signer_json if settings is not None else ""
+    # Whether the CRM's engagements door has a token here: without one an active match's
+    # `situazione` says the report is not configured and offers no `riprova_pigro`, as
+    # the admin API's own match reads do (spec § 3.2).
+    pigro_configurato = settings is not None and bool(settings.pigro_engagements_token)
+
+    def reading(session: Session) -> MatchService:
+        return MatchService(session, pigro_configurato=pigro_configurato)
 
     def contracts(session: Session) -> SigningService:
         if signing is not None:
@@ -749,7 +756,7 @@ def build_server(
         strumenti prendono il suo id, `annulla` è `cancel_contract` e `registra_disdetta`
         è `record_notice`. Solo lettura; un match nuovo si prepara con `preview_match` e
         si salva con `create_match`."""
-        body = _run(lambda s: MatchService(s).for_freelancer(UUID(freelancer_id)))
+        body = _run(lambda s: reading(s).for_freelancer(UUID(freelancer_id)))
         body.pop("fiscale", None)
         for document in (body["quadro"], *body["quadri"]):
             if document is not None:
@@ -773,7 +780,7 @@ def build_server(
             # the admin API gives (REB-417), rather than `for_freelancer` refusing with
             # the freelancer's own message.
             freelancer_id = require_live_match(session, key).freelancer_id
-            service = MatchService(session)
+            service = reading(session)
             body = service.get(key).model_dump(mode="json")
             quadro = service.for_freelancer(freelancer_id).quadro
             body["quadro"] = quadro.model_dump(mode="json") if quadro is not None else None
@@ -1001,7 +1008,9 @@ def build_server(
         incarico per difetto (dall'inizio della lettera a oggi). Rifiutato per un match
         non collegato a Pigro, con la frase di dove sta il collegamento. Risponde un
         errore anche quando Pigro non è configurato su questo ambiente o non risponde.
-        Solo lettura."""
+        Solo lettura, con un'eccezione: un deal eliminato nello spazio del freelance
+        segna il match come rifiutato, finché il deal non torna e «Riprova» lo
+        ricollega."""
         build_engagements = _require_engagements()
         key = UUID(match_id)
         start = _day(da, "da")

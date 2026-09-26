@@ -29,25 +29,30 @@ from rebase_core.audit import AdminActionService
 from rebase_core.config import Settings
 from rebase_core.db import session_factory
 from rebase_core.engagements import (
-    CAUSE_HTTPS_ONLY,
     CAUSE_NOT_THE_SHAPE,
     CAUSE_REFUSED,
     CAUSE_TIMEOUT,
     CAUSE_TOO_LONG,
     CAUSE_UNREACHABLE,
     HOURS_PER_DAY,
-    HTTPS_ONLY,
-    PIGRO_NOT_CONFIGURED,
     REPORT_MAX_DAYS,
     REPORT_NOT_ACTIVE,
     EngagementService,
     PigroLinkResult,
     group_report,
+    normalise_fiscal_code,
     normalise_vat,
 )
 from rebase_core.errors import InvalidState, ValidationFailed
 from rebase_core.mail import Mail, RecordingSender, engagement_ready_mail
-from rebase_core.match_words import PROFILE_WITHOUT_NAME, pigro_state_sentence
+from rebase_core.match_words import (
+    HTTPS_ONLY,
+    PIGRO_NOT_CONFIGURED,
+    PROFILE_WITHOUT_NAME,
+    SIGNER_CF_TOO_LONG,
+    SIGNER_PEC_INVALID,
+    pigro_state_sentence,
+)
 from rebase_core.matches import MatchService
 from rebase_core.models import Company, ContractDocument, Freelancer, Match, User
 from rebase_core.pigro import (
@@ -56,6 +61,10 @@ from rebase_core.pigro import (
     NOT_THE_SHAPE,
     TOO_LONG,
     PigroUnavailable,
+)
+
+DEAL_GONE_SENTENCE = (
+    "Pigro ha rifiutato il collegamento: Il deal di questa lettera è stato eliminato nello spazio."
 )
 
 NOW = datetime(2026, 10, 2, 8, 0, tzinfo=UTC)
@@ -280,6 +289,48 @@ def test_payload_normalises_rebase_fiscal_data(clean: Session) -> None:
     assert normalise_vat(None) is None
 
 
+def test_payload_sends_rebase_pec_and_tax_code_as_the_crm_takes_them(clean: Session) -> None:
+    """The tax code compacted and in capitals, the PEC as it is: both pass the rules of
+    the CRM's door (`EmailStr`, at most 16 characters)."""
+    _admin, match_id = _active(clean)
+    signer = {**SIGNER, "rebase-cf": " rss mra 80a01 h501u ", "rebase-pec": "rebase@pec.it"}
+    service = _service(clean, RecordedPigro([(500, b"")]), settings=_settings(signer=signer))
+
+    rebase = service.payload(*_parts(clean, match_id))["rebase"]
+
+    assert (rebase["codice_fiscale"], rebase["pec"]) == ("RSSMRA80A01H501U", "rebase@pec.it")
+    assert normalise_fiscal_code("  ") is None
+    assert normalise_fiscal_code(None) is None
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "sentence"),
+    [
+        ("rebase-pec", "rebase at pec", SIGNER_PEC_INVALID),
+        ("rebase-pec", "rebase@", SIGNER_PEC_INVALID),
+        ("rebase-cf", "RSSMRA80A01H501UX", SIGNER_CF_TOO_LONG),
+    ],
+)
+def test_link_with_rebase_data_the_crm_would_refuse_asks_nothing(
+    clean: Session, field: str, value: str, sentence: str
+) -> None:
+    """A PEC that is not an address, a tax code longer than 16: the CRM's door would
+    refuse either in English, so neither leaves. The match waits as `errore` with the
+    hub's own sentence, which the card shows alone, and the sweep tries again once
+    `REBASE_SIGNER_JSON` is fixed."""
+    _admin, match_id = _active(clean)
+    http = RecordedPigro([(201, linked_body())])
+    settings = _settings(signer={**SIGNER, field: value})
+
+    read = _service(clean, http, settings=settings).link(match_id)
+
+    assert (read.pigro_stato, read.pigro_errore) == ("errore", sentence)
+    assert http.calls == []
+    assert pigro_state_sentence("errore", read.pigro_errore) == sentence
+
+    assert _service(clean, http).link(match_id).pigro_stato == "collegato"
+
+
 def test_payload_refuses_a_letter_that_is_not_signed(clean: Session) -> None:
     _admin, match_id = _active(clean)
     match, letter, user, company = _parts(clean, match_id)
@@ -332,8 +383,10 @@ def test_link_refuses_plain_http(clean: Session) -> None:
 
     read = _service(clean, http, settings=_settings(url="http://pigro.example")).link(match_id)
 
-    assert (read.pigro_stato, read.pigro_errore) == ("errore", CAUSE_HTTPS_ONLY)
+    assert (read.pigro_stato, read.pigro_errore) == ("errore", HTTPS_ONLY)
     assert http.calls == []
+    # The hub's own sentence, shown alone: nothing was asked of Pigro.
+    assert pigro_state_sentence("errore", read.pigro_errore) == HTTPS_ONLY
 
     local = _service(clean, http, settings=_settings(url="http://localhost:8000")).link(match_id)
 
@@ -552,31 +605,126 @@ def test_link_writes_the_crm_sentence_on_409_as_rifiutato(clean: Session) -> Non
     assert sender.sent == []
 
 
+def test_link_on_409_turns_a_linked_match_rifiutato_until_riprova(clean: Session) -> None:
+    """The freelancer deleted the deal after the link (spec § 3.10): for a match that
+    already has one, the door's only `409` says so, and it is written over `collegato`.
+    The sweep then leaves the match alone; once the deal is restored, «Riprova» finds it
+    again, and the mail already sent is not sent twice."""
+    _admin, match_id = _active(clean)
+    sender = RecordingSender()
+    http = RecordedPigro(
+        [
+            (201, linked_body()),
+            (409, _crm_conflict(match_id, DEAL_GONE)),
+            (200, linked_body(spazio_creato=False, creato=False)),
+        ]
+    )
+    service = _service(clean, http, sender=sender)
+    assert service.link(match_id).pigro_stato == "collegato"
+
+    refused = service.link(match_id)
+
+    assert (refused.pigro_stato, refused.pigro_errore) == ("rifiutato", DEAL_GONE)
+    # The registry row still points at the deal: the link is kept for «Riprova».
+    assert (refused.pigro_url, refused.pigro_deal_id) == (DEAL_URL, DEAL)
+    assert pigro_state_sentence(refused.pigro_stato, refused.pigro_errore) == DEAL_GONE_SENTENCE
+    assert service.link_pending() == PigroLinkResult(0, 0)
+    assert len(http.calls) == 2
+
+    again = service.link(match_id)
+
+    assert (again.pigro_stato, again.pigro_errore, again.pigro_url) == (
+        "collegato",
+        None,
+        DEAL_URL,
+    )
+    assert len(sender.sent) == 1
+
+
+def test_link_keeps_a_link_made_after_its_409_was_asked(hub_engine: Engine, clean: Session) -> None:
+    """Two callers overlap: while this one's `PUT` comes back `409`, another links the
+    match. That link is newer than this call, whose `409` then says nothing about the
+    deal it found: the match stays `collegato`."""
+    _admin, match_id = _active(clean)
+
+    def crm_after_a_newer_link(
+        method: str, url: str, headers: dict[str, str], body: bytes
+    ) -> tuple[int, bytes]:
+        other = session_factory(hub_engine)()
+        try:
+            other.execute(
+                text(
+                    "UPDATE matches SET pigro_stato = 'collegato', pigro_url = :url, "
+                    "pigro_linked_at = :at WHERE id = :id"
+                ),
+                {"url": DEAL_URL, "at": NOW + timedelta(seconds=1), "id": match_id},
+            )
+            other.commit()
+        finally:
+            other.close()
+        return 409, _crm_conflict(match_id, DEAL_GONE)
+
+    service = EngagementService(
+        clean, _settings(), crm_after_a_newer_link, now=lambda: NOW, today=lambda: TODAY
+    )
+    read = service.link(match_id)
+
+    assert (read.pigro_stato, read.pigro_url, read.pigro_errore) == ("collegato", DEAL_URL, None)
+
+
 def test_link_on_422_is_rifiutato(clean: Session) -> None:
-    """A body the CRM's door refuses names the field: FastAPI's own list of errors is
-    read as `field: reason`, a problem document by its `detail`, an empty body by the
-    status."""
+    """A body the CRM's door refuses names the field, never in English: FastAPI's own
+    list of errors as `field: non valido` for each field, the value left out; a
+    `ValidationFailed` from the space by its `detail`, `entity.field: reason`, never by
+    its bare `reason`, which would drop the field; an empty body by the status."""
     _admin, match_id = _active(clean)
     fastapi = {
         "detail": [
             {
                 "loc": ["body", "rebase", "partita_iva"],
-                "msg": "String should match pattern '^[0-9]{11}$'",
+                "msg": "String should match pattern '^\\d{11}$'",
                 "type": "string_pattern_mismatch",
                 "input": "0123",
-            }
+            },
+            {
+                "loc": ["body", "rebase", "partita_iva"],
+                "msg": "Value error, twice",
+                "type": "value_error",
+                "input": "0123",
+            },
+            {
+                "loc": ["body", "lettera", "giorni_previsti"],
+                "msg": "Input should be less than or equal to 366",
+                "type": "less_than_equal",
+                "input": 400,
+            },
         ]
     }
-    problem = {"detail": "lettera.compenso: sopra zero", "status": 422}
+    # `ValidationFailed` as the CRM's `domain_error_handler` renders it: the RFC 9457
+    # keys, `detail` as `entity.field: reason`, and its own details spread at the top.
+    problem = {
+        "type": "https://pigrocrm.dev/errors/validation_failed",
+        "title": "Dati non validi",
+        "status": 422,
+        "detail": "customer.codice_sdi: deve essere di 7 caratteri",
+        "code": "validation_failed",
+        "instance": f"/api/rebase/engagements/{match_id}",
+        "entity": "customer",
+        "field": "codice_sdi",
+        "reason": "deve essere di 7 caratteri",
+        "expected": "7 caratteri",
+    }
     for body, sentence in (
-        (json.dumps(fastapi).encode(), "rebase.partita_iva: String should match pattern"),
-        (json.dumps(problem).encode(), "lettera.compenso: sopra zero"),
+        (
+            json.dumps(fastapi).encode(),
+            "rebase.partita_iva: non valido; lettera.giorni_previsti: non valido",
+        ),
+        (json.dumps(problem).encode(), "customer.codice_sdi: deve essere di 7 caratteri"),
+        (json.dumps({"detail": [{"msg": "Field required"}]}).encode(), "HTTP 422"),
         (b"", "HTTP 422"),
     ):
         read = _service(clean, RecordedPigro([(422, body)])).link(match_id)
-        assert read.pigro_stato == "rifiutato"
-        assert read.pigro_errore is not None and read.pigro_errore.startswith(sentence)
-        assert "0123" not in read.pigro_errore
+        assert (read.pigro_stato, read.pigro_errore) == ("rifiutato", sentence)
 
 
 def test_link_of_a_freelancer_without_a_surname_asks_nothing_and_retries(
@@ -1106,21 +1254,73 @@ def test_report_walks_800_day_windows(clean: Session) -> None:
     assert [(i.numero, i.ore) for i in report.fatture] == [("12/2026", Decimal("14.00"))]
 
 
-def test_report_surfaces_the_crm_sentence_on_409(clean: Session) -> None:
-    """The freelancer deleted the deal (spec § 3.10): the report page is where an admin
-    learns it, in the CRM's own words, the same the link stores; a 409 with nothing to
-    say still names its status."""
+def test_report_on_409_files_the_match_rifiutato(clean: Session) -> None:
+    """The freelancer deleted the deal (spec § 3.10): the report is refused as a match
+    not linked is, in the words the card then says, and the match is written
+    `rifiutato` with the CRM's own sentence, the one the link would store. The sweep
+    leaves it alone, the next report is refused before the CRM is asked, and «Riprova»
+    links it again once the deal is restored. A 409 with nothing to say names its
+    status."""
     match_id = _linked_match(clean, date(2026, 10, 1))
     problem = {"type": "x", "title": "Conflitto", "status": 409, "detail": DEAL_GONE}
 
-    for body, sentence in (
+    for body, cause in (
         (_crm_conflict(match_id, DEAL_GONE), DEAL_GONE),
         (json.dumps(problem).encode(), DEAL_GONE),
-        (b"", ANSWERED_STATUS.format(status=409)),
+        (b"", "HTTP 409"),
     ):
-        with pytest.raises(PigroUnavailable) as gone:
+        match = _match(clean, match_id)
+        match.pigro_stato, match.pigro_errore = "collegato", None
+        clean.commit()
+        with pytest.raises(InvalidState) as gone:
             _service(clean, RecordedPigro([(409, body)])).report(match_id)
-        assert str(gone.value) == sentence
+        assert gone.value.message == pigro_state_sentence("rifiutato", cause)
+        match = _match(clean, match_id)
+        assert (match.pigro_stato, match.pigro_errore) == ("rifiutato", cause)
+        assert match.pigro_url == DEAL_URL
+    assert gone.value.message == "Pigro ha rifiutato il collegamento: HTTP 409."
+
+    http = RecordedPigro([(200, linked_body(spazio_creato=False, creato=False))])
+    service = _service(clean, http, sender=RecordingSender())
+    assert service.link_pending() == PigroLinkResult(0, 0)
+    with pytest.raises(InvalidState) as still:
+        service.report(match_id)
+    assert still.value.message == "Pigro ha rifiutato il collegamento: HTTP 409."
+    assert http.calls == []
+
+    assert service.link(match_id).pigro_stato == "collegato"
+
+
+def test_report_on_409_leaves_a_state_written_meanwhile(hub_engine: Engine, clean: Session) -> None:
+    """The refusal is written only over `collegato`: a match «Riprova» took elsewhere
+    to `errore` while the report was asked keeps what it says now."""
+    match_id = _linked_match(clean, date(2026, 10, 1))
+
+    def crm_while_the_match_moves(
+        method: str, url: str, headers: dict[str, str], body: bytes
+    ) -> tuple[int, bytes]:
+        other = session_factory(hub_engine)()
+        try:
+            other.execute(
+                text(
+                    "UPDATE matches SET pigro_stato = 'errore', pigro_errore = 'HTTP 503' "
+                    "WHERE id = :id"
+                ),
+                {"id": match_id},
+            )
+            other.commit()
+        finally:
+            other.close()
+        return 409, _crm_conflict(match_id, DEAL_GONE)
+
+    service = EngagementService(
+        clean, _settings(), crm_while_the_match_moves, now=lambda: NOW, today=lambda: TODAY
+    )
+    with pytest.raises(InvalidState, match="Pigro ha rifiutato il collegamento"):
+        service.report(match_id)
+
+    match = _match(clean, match_id)
+    assert (match.pigro_stato, match.pigro_errore) == ("errore", "HTTP 503")
 
 
 def test_report_when_pigro_does_not_answer_or_is_not_configured(clean: Session) -> None:

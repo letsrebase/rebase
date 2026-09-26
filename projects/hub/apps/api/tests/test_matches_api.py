@@ -23,9 +23,9 @@ from rebase_api.deps import (
     get_signing_factory,
 )
 from rebase_core.config import Settings, get_settings
-from rebase_core.engagements import PIGRO_NOT_CONFIGURED
 from rebase_core.http import urllib_call, urllib_engagements_call
 from rebase_core.mail import RecordingSender
+from rebase_core.match_words import PIGRO_NOT_CONFIGURED
 from rebase_core.models import AdminAction, ContractDocument, Match, User
 from rebase_core.pigro import NOT_ANSWERING
 
@@ -749,6 +749,17 @@ def _signed_match(
     return str(match_id)
 
 
+def _with_signed_copy(session: Session, match_id: str) -> None:
+    """The sealed copy arrived: the card speaks of the match, not of the copy it waits
+    for."""
+    session.execute(
+        update(ContractDocument)
+        .where(ContractDocument.match_id == UUID(match_id))
+        .values(signed_pdf=PDF)
+    )
+    session.commit()
+
+
 def test_post_pigro_link_answers_the_match(
     client: TestClient,
     admin: None,
@@ -905,10 +916,13 @@ def test_routes_answer_503_without_the_token(
     api_session: Session,
 ) -> None:
     """No `REBASE_PIGRO_ENGAGEMENTS_TOKEN` on this environment: both routes say so, the
-    CRM is not asked, and the match is left as it was, waiting for the sweep."""
+    CRM is not asked, and the match is left as it was, waiting for the sweep. Its card
+    says the same sentence (spec § 3.2) on every read, and offers no «Riprova», which
+    would only answer this 503."""
     fake = RecordedPigro([(201, linked_body())])
     client.app.dependency_overrides[get_http_call] = lambda: fake  # type: ignore[attr-defined]
     waiting = _signed_match(client, sender, api_session)
+    _with_signed_copy(api_session, waiting)
 
     for answered in (
         client.post(f"/api/hub/matches/{waiting}/pigro/link"),
@@ -920,6 +934,29 @@ def test_routes_answer_503_without_the_token(
     assert fake.calls == []
     read = client.get(f"/api/hub/matches/{waiting}").json()
     assert (read["pigro_stato"], read["pigro_attempted_at"]) == ("da_collegare", None)
+    assert read["situazione"].endswith(f". {PIGRO_NOT_CONFIGURED}")
+    assert read["altre_azioni"] == ["chiudi"]
+    [card] = client.get(f"/api/hub/freelancers/{read['freelancer_id']}/matches").json()["matches"]
+    assert (card["situazione"], card["altre_azioni"]) == (read["situazione"], ["chiudi"])
+    [row] = client.get("/api/hub/matches").json()["items"]
+    assert row["situazione"] == read["situazione"]
+
+
+def test_with_the_token_the_card_offers_riprova(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    renderer: FakeRenderer,
+    pigro: RecordedPigro,
+    api_session: Session,
+) -> None:
+    waiting = _signed_match(client, sender, api_session)
+    _with_signed_copy(api_session, waiting)
+
+    read = client.get(f"/api/hub/matches/{waiting}").json()
+
+    assert read["situazione"].endswith(" Pigro non ha ancora il deal: riprova o aspetta lo sweep.")
+    assert read["altre_azioni"] == ["chiudi", "riprova_pigro"]
 
 
 def test_the_link_reads_through_the_long_seam_in_production(api_session: Session) -> None:
