@@ -720,6 +720,7 @@ class ReportDay(BaseModel):
     ore: Decimal
     descrizioni: list[str]
     fatture: list[str]           # distinct: ["12/2026"], ["12/2026", "proforma 3/2026"], or []
+    ore_per_fattura: list[ReportDayInvoice]   # that day's hours per invoice number, unbilled hours excluded: [("12/2026", "3.00")]
 
 class ReportWeek(BaseModel):
     settimana: str               # "2026-W40"
@@ -916,8 +917,9 @@ list joined with a comma, «da fatturare» when empty); «Per settimana» and «
 two small tables of the selected period; «Fatture» (Numero, Data, Stato, Incasso, Ore)
 scoped to the period: with a month selected, an invoice every one of whose days falls
 in that month keeps the CRM's own hours unchanged; one that spans months is recomputed
-from the days alone (the day rows carry their `fatture`, so `lib/report.ts` sums each
-shown day's hours per invoice rather than trust the CRM's whole-engagement figure) and
+from the days alone (each day row carries `ore_per_fattura`, that day's hours per
+invoice, so `lib/report.ts` sums exactly the hours on that invoice for each shown day,
+never the day's total, and a day partly unbilled or on two invoices counts right) and
 shows in every month it touches, each with that month's days' hours; with «Tutto
 l'incarico», every invoice with the CRM's own figures, untouched (tested on a
 two-month invoice). Stated limit: a day whose hours sit on two invoices gives its
