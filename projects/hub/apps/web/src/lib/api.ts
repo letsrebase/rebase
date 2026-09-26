@@ -1393,6 +1393,68 @@ export const member = {
   logout: () => request<void>('/api/hub/me/logout', { method: 'POST' }),
 }
 
+// ---- the talent cloud (REB-519, spec § 4.2) -------------------------------------------------
+
+/** A talent as a company rebase admitted reads them: the name, the links, whether rebase
+ *  vetted them, the anonymous card (`luogo` always `null`: the CV is one click away), the
+ *  work mode, the client's band, and whether there is a CV to open. Never the
+ *  freelancer's own rate, their state, the admin's notes, their address or phone: the
+ *  API has no field for them. */
+export interface CloudTalent {
+  freelancer_id: string
+  nome: string
+  cognome: string
+  linkedin_url: string | null
+  links: string[]
+  vetted: boolean
+  card: Scheda
+  modalita: Remoto | null
+  fascia: Band | null
+  ha_cv: boolean
+}
+
+/** `GET /api/hub/me/cloud/talents`: vetted first then by name, at most 200 with
+ *  `capped` when there were more, and every role of the cloud's cards for the filter. */
+export interface CloudTalentList {
+  items: CloudTalent[]
+  ruoli: string[]
+  capped: boolean
+}
+
+/** The cloud's filters: a role of `ruoli`, a seniority, one skill, a work mode, and a
+ *  band of the client's price per day in whole euro (its bottom and its top). */
+export interface CloudFilters {
+  ruolo?: string
+  seniority?: string
+  competenza?: string
+  modalita?: string
+  fascia_min?: number
+  fascia_max?: number
+}
+
+/** The builder's proposal in the cloud: the admin's shape, ids and the card's place
+ *  kept, since the cloud shows who each person is. */
+export type CloudTeamProposal = AdminTeamProposal
+
+export const cloud = {
+  /** 403 with the API's sentence when no grant of the caller is live. */
+  talents: (filters: CloudFilters = {}) => {
+    const qs = filterQuery(filters)
+    return request<CloudTalentList>(`/api/hub/me/cloud/talents${qs ? `?${qs}` : ''}`)
+  },
+  /** «Apri il CV»: a plain href like `member.cvUrl`, the route answers an attachment. */
+  cvUrl: (freelancerId: string) => `/api/hub/me/cloud/talents/${freelancerId}/cv`,
+  /** The builder in the cloud: the public route's answers, with the caller's name on it. */
+  propose: (body: TeamProposalCreate) =>
+    request<CloudTeamProposal>('/api/hub/me/cloud/proposals', json(body)),
+  /** «Assumi team»: the proposal filed at once, no form; 409 when already requested. */
+  hire: (proposalId: string) =>
+    request<{ id: string }>('/api/hub/me/cloud/requests', json({ proposal_id: proposalId })),
+  /** «Richiedi» on one card: 404 with the API's sentence for a talent no longer shown. */
+  ask: (freelancerId: string) =>
+    request<{ id: string }>('/api/hub/me/cloud/requests', json({ freelancer_id: freelancerId })),
+}
+
 // ---- campaigns, the public part -----------------------------------------------------------
 
 export const campaigns = {

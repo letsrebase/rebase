@@ -13,6 +13,12 @@ than a day; the cloud's (D3), a cloud proposal of its own user. One sentence for
 refusal, so the answer does not say which proposals exist. A proposal with nobody in it
 (nobody fit, or the catalogue was empty) has nobody to hire, and says so.
 
+**The cloud files with no form** (REB-519, spec § 4.2): «Assumi team» on its own
+proposal (`create_in_cloud`) and «Richiedi» on one card (`create_for_talent`, a request
+of that talent alone and no proposal) take the company of the caller's grant and the
+caller's own address and phone, none when they gave none. A card's talent must be one
+the cloud shows (`cloud.cloud_card`), with the CV route's sentence otherwise.
+
 **The summary is checked, then refused when it is written.** A proposal's summary that
 names the company is logged at creation, by the request's id alone, since the visitor
 cannot change it; the admin's own edit (`set_summary`) that still names it is refused,
@@ -50,6 +56,7 @@ from sqlalchemy.orm import Session
 from rebase_core.analytics import TEAM_REQUEST_SENT, TEAM_TALENT_ANSWER, Tracker
 from rebase_core.audit import AdminActionService, field_changes, utcnow
 from rebase_core.bands import band_for
+from rebase_core.cloud import cloud_card
 from rebase_core.config import Settings
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.mail import EmailSender, Mail, team_availability_mail, team_request_mail
@@ -248,22 +255,101 @@ class TeamRequestService:
         origine: str,
         user_id: UUID | None,
         company_id: UUID | None,
-        telefono: str | None = None,
     ) -> tuple[TeamRequestRead, Mail]:
         """The request for `data.proposal_id`, with one talent per member of its team,
         and the mail to `settings.contracts_mail` (`request_mail`), built and not sent:
-        the caller sends it after its own answer. `telefono`, when given, is stored in
-        place of `data.telefono`: the cloud's route (D3) files with the user's own."""
+        the caller sends it after its own answer. The public page's, with the three
+        contacts the visitor typed; the cloud's is `create_in_cloud`."""
+        return self._create_for_proposal(
+            data.proposal_id,
+            origine=origine,
+            azienda=data.azienda,
+            email=str(data.email),
+            telefono=data.telefono,
+            user_id=user_id,
+            company_id=company_id,
+        )
+
+    def create_in_cloud(
+        self,
+        proposal_id: UUID,
+        *,
+        azienda: str,
+        email: str,
+        telefono: str | None,
+        user_id: UUID,
+        company_id: UUID,
+    ) -> tuple[TeamRequestRead, Mail]:
+        """«Assumi team» in the talent cloud (spec § 4.2): `create` with no form, on a
+        cloud proposal of `user_id`'s own younger than a day, filed for the grant's
+        company with the caller's address and their phone, `None` when they have none."""
+        return self._create_for_proposal(
+            proposal_id,
+            origine="cloud",
+            azienda=azienda,
+            email=email,
+            telefono=telefono,
+            user_id=user_id,
+            company_id=company_id,
+        )
+
+    def create_for_talent(
+        self,
+        freelancer_id: UUID,
+        *,
+        azienda: str,
+        email: str,
+        telefono: str | None,
+        user_id: UUID,
+        company_id: UUID,
+    ) -> TeamRequestRead:
+        """«Richiedi» on one card of the talent cloud (spec § 4.2): a request of that
+        talent alone, with no proposal and so no summary, in the role their card gives
+        them. `NotInTheCloud` («Profilo non disponibile.») for a talent the cloud does
+        not show. The mail to rebase is `request_mail`, which names the talent for a
+        request with no summary, sent by the caller after its answer."""
+        card = cloud_card(self.session, freelancer_id)
+        row = TeamRequest(
+            proposal_id=None,
+            origine="cloud",
+            azienda=azienda,
+            email=email,
+            telefono=telefono,
+            user_id=user_id,
+            company_id=company_id,
+            stato="nuova",
+        )
+        self.session.add(row)
+        self.session.flush()
+        self.session.add(
+            TeamRequestTalent(request_id=row.id, freelancer_id=freelancer_id, ruolo=card.ruolo)
+        )
+        self.session.commit()
+        if self.tracker is not None:
+            self.tracker.team_event(TEAM_REQUEST_SENT, {"origine": "cloud"})
+        return self.get(row.id)
+
+    def _create_for_proposal(
+        self,
+        proposal_id: UUID,
+        *,
+        origine: str,
+        azienda: str,
+        email: str,
+        telefono: str | None,
+        user_id: UUID | None,
+        company_id: UUID | None,
+    ) -> tuple[TeamRequestRead, Mail]:
         if origine not in TEAM_REQUEST_ORIGINS:
             raise ValueError(f"unknown origin {origine!r}")
-        proposal = self._requestable(data.proposal_id, origine=origine, user_id=user_id)
+        proposal = self._requestable(proposal_id, origine=origine, user_id=user_id)
         members = self._members(proposal)
         row = TeamRequest(
             proposal_id=proposal.id,
             origine=origine,
-            azienda=data.azienda,
-            email=str(data.email),
-            telefono=telefono if telefono is not None else data.telefono,
+            azienda=azienda,
+            email=email,
+            telefono=telefono,
             user_id=user_id,
             company_id=company_id,
             stato="nuova",
@@ -277,7 +363,7 @@ class TeamRequestService:
             self.session.rollback()
             if not _violates_unique_proposal(exc):
                 raise
-            raise InvalidState(ALREADY_REQUESTED, proposal_id=str(data.proposal_id)) from exc
+            raise InvalidState(ALREADY_REQUESTED, proposal_id=str(proposal_id)) from exc
         self.session.add_all(
             TeamRequestTalent(request_id=row.id, freelancer_id=freelancer_id, ruolo=ruolo)
             for freelancer_id, ruolo in members

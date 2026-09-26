@@ -10,9 +10,11 @@ from typing import get_args
 
 import pytest
 
+from rebase_core.bands import BANDS
 from rebase_core.match_words import DOCUMENT_STATE_LABELS, MATCH_STATE_LABELS, Action
 from rebase_core.models import CARD_SENIORITIES
 from rebase_core.team_words import (
+    CLOUD_VETTED_LABEL,
     TALENT_ANSWER_LABELS,
     TALENT_WAITING_LABEL,
     TEAM_BUILDER_ORIGIN,
@@ -24,6 +26,7 @@ from rebase_core.team_words import (
 
 REPO = Path(__file__).resolve().parents[5]
 FORMAT_TS = REPO / "projects" / "hub" / "apps" / "web" / "src" / "lib" / "format.ts"
+BANDS_TS = FORMAT_TS.with_name("bands.ts")
 ENTRY = re.compile(r"(\w+): '([^'\\]*)',")
 
 
@@ -95,6 +98,8 @@ def test_the_web_says_in_attesa_as_the_core_does() -> None:
         ("VETTED_LABEL", VETTED_LABEL),
         ("TEAM_BUILDER_ORIGIN", TEAM_BUILDER_ORIGIN),
         ("TEAM_BUILDER_ORIGIN_LABEL", TEAM_BUILDER_ORIGIN_LABEL),
+        # REB-519: the badge on a vetted talent's card in the talent cloud.
+        ("CLOUD_VETTED_LABEL", CLOUD_VETTED_LABEL),
     ],
 )
 def test_the_web_says_one_word_as_the_core_does(name: str, core: str) -> None:
@@ -112,6 +117,24 @@ def test_the_web_names_every_seniority_a_card_can_carry_and_no_other() -> None:
         f"SENIORITY_LABELS: only on the web {sorted(web - core)}, "
         f"only in the core {sorted(core - web)}"
     )
+
+
+def test_the_web_offers_the_bands_the_core_places_a_price_in() -> None:
+    """REB-519: the talent cloud's band filter lists `DAY_BANDS`, a copy of the core's
+    `BANDS`, one `{ min: N, max: N | null },` per line; a band the core moves or adds
+    fails here rather than filtering on bounds no talent has."""
+    source = BANDS_TS.read_text(encoding="utf-8")
+    block = re.search(
+        r"^export const DAY_BANDS: Band\[\] = \[\n(.*?)^\]$", source, re.MULTILINE | re.DOTALL
+    )
+    assert block is not None, f"DAY_BANDS is not a `Band[]` list in {BANDS_TS.name}"
+    web: list[tuple[int, int | None]] = []
+    for line in block.group(1).splitlines():
+        entry = re.fullmatch(r"\{ min: (\d+), max: (\d+|null) \},", line.strip())
+        assert entry is not None, f"DAY_BANDS: a line that is not a band: {line!r}"
+        low, high = entry.groups()
+        web.append((int(low), None if high == "null" else int(high)))
+    assert tuple(web) == BANDS
 
 
 def test_a_drifted_label_is_named_with_both_words() -> None:

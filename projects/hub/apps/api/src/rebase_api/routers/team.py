@@ -22,9 +22,11 @@ behind the same speed bump as the wizards all the same.
 """
 
 import logging
+import threading
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Request, status
+from sqlalchemy.orm import Session
 
 from rebase_api.deps import (
     ProposalSlotsDep,
@@ -35,9 +37,10 @@ from rebase_api.deps import (
     TrackerDep,
 )
 from rebase_api.ratelimit import spend_one
+from rebase_core.config import Settings
 from rebase_core.errors import TeamBuilderBusy, TeamBuilderOff
 from rebase_core.mail import EmailSender, Mail
-from rebase_core.team_builder import OFF_SENTENCE
+from rebase_core.team_builder import OFF_SENTENCE, TeamBuilder
 from rebase_core.team_caps import BUSY_SENTENCE, require_daily_room
 from rebase_core.team_requests import TeamRequestService
 from rebase_core.team_schemas import (
@@ -54,11 +57,39 @@ router = APIRouter(prefix="/api/hub/team", tags=["hub"])
 _log = logging.getLogger(__name__)
 
 
-def _send(sender: EmailSender, mail: Mail, request_id: UUID) -> None:
+def send_request_mail(sender: EmailSender, mail: Mail, request_id: UUID) -> None:
     """Runs after the response: a refusal is logged by the request's id alone, never
-    the address, the company or the summary."""
+    the address, the company or the summary. The cloud's requests (REB-519) send theirs
+    through it too."""
     if not sender.send(mail):
         _log.warning("team request %s: the provider refused the mail", request_id)
+
+
+def propose_in_a_slot(
+    data: TeamProposalCreate,
+    *,
+    origine: str,
+    user_id: UUID | None,
+    session: Session,
+    settings: Settings,
+    builder: TeamBuilder,
+    slots: threading.BoundedSemaphore,
+) -> TeamProposalRead:
+    """A proposal behind the switch, a slot of the process and the day's room, in that
+    order: the public page's and the cloud's (REB-519), which share the one semaphore
+    and the one daily cap (spec § 5)."""
+    # Before the caps: an environment with the builder off says so, not «Troppe
+    # richieste», whatever the day's count.
+    if not settings.team_builder_enabled or builder.llm is None:
+        raise TeamBuilderOff(OFF_SENTENCE)
+    if not slots.acquire(blocking=False):
+        _log.info("team builder: every proposal slot is taken")
+        raise TeamBuilderBusy(BUSY_SENTENCE)
+    try:
+        require_daily_room(session, settings)
+        return builder.propose(data, origine=origine, user_id=user_id)
+    finally:
+        slots.release()
 
 
 @router.post("/proposals", response_model=TeamProposalRead)
@@ -74,18 +105,15 @@ def propose_team(
     spento.» without a key or with the switch off, 503 «Troppe richieste…» with every
     slot taken or the day's proposals spent, 502 when Claude does not answer."""
     spend_one(request)
-    # Before the caps: an environment with the builder off says so, not «Troppe
-    # richieste», whatever the day's count.
-    if not settings.team_builder_enabled or builder.llm is None:
-        raise TeamBuilderOff(OFF_SENTENCE)
-    if not slots.acquire(blocking=False):
-        _log.info("team builder: every proposal slot is taken")
-        raise TeamBuilderBusy(BUSY_SENTENCE)
-    try:
-        require_daily_room(session, settings)
-        return builder.propose(data, origine="pubblico", user_id=None)
-    finally:
-        slots.release()
+    return propose_in_a_slot(
+        data,
+        origine="pubblico",
+        user_id=None,
+        session=session,
+        settings=settings,
+        builder=builder,
+        slots=slots,
+    )
 
 
 @router.post("/requests", response_model=TeamRequestCreated, status_code=status.HTTP_201_CREATED)
@@ -109,7 +137,7 @@ def request_team(
     if sender is None:
         _log.info("team request %s: no mail sender, not mailed", read.id)
     else:
-        background.add_task(_send, sender, mail, read.id)
+        background.add_task(send_request_mail, sender, mail, read.id)
     return TeamRequestCreated(id=read.id)
 
 
