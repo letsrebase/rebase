@@ -69,7 +69,8 @@ class Card(BaseModel):
     invents that the caller silently accepted would be data nobody asked for and nobody
     can see written down. `luogo` has no default on purpose: the card writer always
     knows whether the CV names a place, and a key silently missing from Claude's JSON is
-    a shape failure (`LlmUnavailable`), not a card with an unremarkable empty field."""
+    a shape failure the writer records on the row, not a card with an unremarkable empty
+    field."""
 
     model_config = ConfigDict(extra="forbid")
 
