@@ -141,8 +141,15 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
-          snyk code test --org="$SNYK_ORG" --json-file-output="$SNYK_JSON/code.json" || [ $? -eq 1 ]
-          [ -s "$SNYK_JSON/code.json" ] || echo '{"version":"2.1.0","runs":[]}' > "$SNYK_JSON/code.json"
+          status=0
+          snyk code test --org="$SNYK_ORG" --json-file-output="$SNYK_JSON/code.json" || status=$?
+          if [ "$status" -gt 1 ]; then exit "$status"; fi
+          # Only a clean run stands for "nothing found"; a run that found something and
+          # wrote nothing is a failure, not a clean week.
+          if [ "$status" -eq 0 ] && [ ! -s "$SNYK_JSON/code.json" ]; then
+            echo '{"version":"2.1.0","runs":[]}' > "$SNYK_JSON/code.json"
+          fi
+          test -s "$SNYK_JSON/code.json"
 
       # The images the way ci.yml's tier 3 builds them: the project's compose file from
       # its own directory, with the same throwaway values for the variables compose
