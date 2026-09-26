@@ -22,6 +22,7 @@ from pigrocrm_api.routers import (
     drive,
     email_drafts,
     emitter,
+    engagements,
     fields,
     fiscal_profile,
     gmail,
@@ -98,6 +99,9 @@ def create_app() -> FastAPI:
         automations,
         # Spaces (2026-09-08). Public signup, on the registry database: routers/tenants.py.
         tenants,
+        # rebase's engagements door (spec 2026-09-25 § 2.3/§ 2.4), on the registry
+        # database, under its own token: routers/engagements.py.
+        engagements,
         # Cross-space identity (2026-09-23, REB-376): also root-scoped, on the registry.
         identity,
         # Settings → Space: the settings a database decides for itself.

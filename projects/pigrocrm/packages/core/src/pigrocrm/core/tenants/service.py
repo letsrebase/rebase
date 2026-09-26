@@ -10,6 +10,7 @@ does not work, and never freed onto one that still does (REB-230).
 """
 
 import logging
+import threading
 from pathlib import Path
 
 from alembic import command
@@ -41,6 +42,14 @@ from pigrocrm.core.tenants.schemas import (
 
 logger = logging.getLogger(__name__)
 
+# One Alembic run at a time in this process. Its script directory and the
+# `alembic.context` proxy that env.py configures are module-global, not per thread: two
+# spaces provisioned at once (two signups, or two freelancers' letters through the
+# engagements door, each on a thread of the API's pool) failed with `KeyError('script')`
+# and `DuplicateTable`, one run reading the other's configuration. A migration is a few
+# seconds once per space, so taking turns costs nothing a person would notice.
+_MIGRATIONS = threading.Lock()
+
 
 def default_alembic_ini() -> Path:
     """packages/core/alembic.ini, found from this package: `pigrocrm/core/__init__.py`
@@ -63,7 +72,8 @@ def migrate_to_head(settings: Settings, url: str) -> None:
         raise RuntimeError(f"alembic.ini not found at {ini}; set PIGROCRM_TENANTS_ALEMBIC_INI")
     config = Config(str(ini))
     config.set_main_option("sqlalchemy.url", url)
-    command.upgrade(config, "head")
+    with _MIGRATIONS:
+        command.upgrade(config, "head")
 
 
 class TenantService:
