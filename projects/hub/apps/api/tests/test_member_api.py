@@ -1,11 +1,13 @@
 """The member area over HTTP: a link in, a cookie out, and only your own row behind it."""
 
+import hashlib
 import logging
 import re
 from collections.abc import Iterator
 
 import httpx
 import pytest
+from fakes_cards import text_pdf
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -13,6 +15,7 @@ from sqlalchemy.orm import Session
 from rebase_api.deps import get_sender
 from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.config import Settings, get_settings
+from rebase_core.llm import RecordingCall
 from rebase_core.mail import Mail, RecordingSender
 from rebase_core.models import GuideDownload, Login, User
 from rebase_core.perks import GUIDE_PATH
@@ -425,6 +428,29 @@ def test_a_member_changes_their_answers_and_the_admin_sees_the_comment(
         "link",
     ]
     assert thread[0]["autore"] == "Ada Lovelace"
+
+
+def test_replacing_the_cv_schedules_the_card_write(
+    client: TestClient,
+    sender: RecordingSender,
+    api_session: Session,
+    clean: None,
+    llm: RecordingCall,
+) -> None:
+    """REB-510: a new CV is a new anonymous card, written after the 200 in a session of
+    its own. The wizard's own CV here is a scan, which asks Claude nothing."""
+    _apply(client, "ada@studio.it")
+    _enter(client, sender, "ada@studio.it")
+    assert llm.requests == []
+
+    cv = text_pdf("Ada Lovelace, staff engineer a Torino: Python, Kubernetes, dieci anni.")
+    replaced = client.put("/api/hub/me/cv", files={"cv": ("Ada 2026.pdf", cv, "application/pdf")})
+    assert replaced.status_code == 200, replaced.text
+
+    assert len(llm.requests) == 1
+    assert "staff engineer a Torino" in llm.requests[0].messages[0]["content"][0]["text"]
+    row = api_session.execute(text("SELECT cv_sha256, error FROM freelancer_cards")).one()
+    assert (row.cv_sha256, row.error) == (hashlib.sha256(cv).hexdigest(), None)
 
 
 def test_a_member_never_sees_another_members_row(

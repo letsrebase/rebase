@@ -5,7 +5,9 @@ against `sessions` on every request (`deps.get_admin`, checking `role == 'admin'
 Everything under this router reads or moves rows other people wrote, or grants the role
 to one more person (ORB-123); nothing here writes on an applicant's behalf. The one
 thing it writes about a person is the card an admin drafts from a signup (ORB-155), and
-that is signed by the admin and refused where the person has already spoken.
+that is signed by the admin and refused where the person has already spoken; and, on
+request, the anonymous card Claude writes from the CV (REB-510), which the person's own
+CV decides.
 
 Since REB-278 `GET /admins` filters `users` on `role == 'admin'`, and the promote/demote
 pair is the only way to grant or revoke it: REB-281 dropped the password login and the
@@ -22,10 +24,11 @@ from uuid import UUID
 from fastapi import APIRouter, BackgroundTasks, Query, Response, status
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from rebase_api.deps import AdminDep, HttpCallDep, SenderDep, SessionDep, SettingsDep
+from rebase_api.deps import AdminDep, HttpCallDep, LlmDep, SenderDep, SessionDep, SettingsDep
 from rebase_api.downloads import cv_response
 from rebase_core.admin_tokens import AdminList, AdminRead
 from rebase_core.audit import AdminActionRead
+from rebase_core.cards import CardWriter
 from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
 from rebase_core.freelancers import FreelancerService
@@ -54,6 +57,7 @@ from rebase_core.schemas import (
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import SignupService
 from rebase_core.talenti import TalentiService
+from rebase_core.team_schemas import FreelancerCardRead
 from rebase_core.users import UserService
 from rebase_core.validation import SafeStr
 
@@ -205,9 +209,29 @@ def restore_freelancer(admin: AdminDep, session: SessionDep, freelancer_id: UUID
 def clear_freelancer_cv(
     admin: AdminDep, session: SessionDep, freelancer_id: UUID
 ) -> FreelancerRead:
-    """Drops the stored CV; the file itself never enters the audit trail
-    (`FreelancerService.clear_cv`)."""
+    """Drops the stored CV, and the anonymous card written from it; the file itself
+    never enters the audit trail (`FreelancerService.clear_cv`)."""
     return FreelancerService(session).clear_cv(freelancer_id, admin.id)
+
+
+@router.get("/freelancers/{freelancer_id}/card", response_model=FreelancerCardRead)
+def get_freelancer_card(
+    _: AdminDep, session: SessionDep, freelancer_id: UUID
+) -> FreelancerCardRead:
+    """The anonymous card Claude wrote from the CV (REB-510): the card, the work mode
+    read from the profile now, the CV and the model it came from, and the last failure,
+    which may sit beside an older card."""
+    return CardWriter(session, None).read(freelancer_id)
+
+
+@router.post("/freelancers/{freelancer_id}/card", response_model=FreelancerCardRead)
+def regenerate_freelancer_card(
+    _: AdminDep, session: SessionDep, llm: LlmDep, freelancer_id: UUID
+) -> FreelancerCardRead:
+    """«Rigenera scheda»: the card written again from the current CV, now, even from the
+    CV that last failed, which is otherwise not tried again until it changes. A failure
+    answers 200 with the previous card and `error`, as the page shows it."""
+    return CardWriter(session, llm).write(freelancer_id, force=True)
 
 
 @router.get("/freelancers/{freelancer_id}/audit", response_model=list[AdminActionRead])

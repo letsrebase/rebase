@@ -1,16 +1,19 @@
 from collections.abc import Iterator
+from contextlib import nullcontext
 
 import pytest
+from fakes_cards import card_response
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
 from testcontainers.community.postgres import PostgresContainer
 
-from rebase_api.deps import get_sender, get_session
+from rebase_api.deps import get_llm, get_sender, get_session, get_session_opener
 from rebase_api.main import create_app
 from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.db import create_engine_from_settings, session_factory
+from rebase_core.llm import RecordingCall
 from rebase_core.mail import RecordingSender
 from rebase_core.migrate import upgrade_to_head
 
@@ -57,4 +60,17 @@ def sender(client: TestClient) -> Iterator[RecordingSender]:
     importing it (which ruff flags as a redefinition, `F811`)."""
     recording = RecordingSender()
     client.app.dependency_overrides[get_sender] = lambda: recording  # type: ignore[attr-defined]
+    yield recording
+
+
+@pytest.fixture
+def llm(client: TestClient, api_session: Session) -> Iterator[RecordingCall]:
+    """Claude, for every module here whose route writes an anonymous card (REB-510),
+    overridden the way `sender` overrides the mailbox: a canned card for each call, and
+    the background write's own session the test's, the way the Documenso webhook's
+    tests hand its follow-up one, so the card lands where the test reads it."""
+    recording = RecordingCall([card_response() for _ in range(4)])
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    overrides[get_llm] = lambda: recording
+    overrides[get_session_opener] = lambda: lambda: nullcontext(api_session)
     yield recording

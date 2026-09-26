@@ -1,14 +1,17 @@
 """What the team builder writes and reads (REB-509, spec § 2, § 2.1).
 
-Only `Card` lives here for now: the schema Claude's structured output is validated
-against, before its JSON ever reaches a `freelancer_cards` row. The public and admin
-read models -- `TeamProposalRead`, `TeamRequestRead` and the rest of § 3.3 and § 3.5 --
-come with the tasks that build the routes reading them (C3 to D4), kept out of
-`schemas.py`, already the size of a chapter, the same reasoning `contract_schemas.py`
-gives for its own flow.
+`Card` is the schema Claude's structured output is validated against, before its JSON
+ever reaches a `freelancer_cards` row; `FreelancerCardRead` and `CardsRefreshed` are
+what the card writer answers (REB-510, `cards.py`). The public and admin read models
+-- `TeamProposalRead`, `TeamRequestRead` and the rest of § 3.3 and § 3.5 -- come with
+the tasks that build the routes reading them (C4 to D4), kept out of `schemas.py`,
+already the size of a chapter, the same reasoning `contract_schemas.py` gives for its
+own flow.
 """
 
-from typing import Literal
+from datetime import datetime
+from typing import Literal, NamedTuple
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -41,3 +44,28 @@ class Card(BaseModel):
     lingue: list[SafeStr] = Field(max_length=8)
     luogo: SafeStr | None = Field(max_length=120)
     sintesi: SafeStr = Field(min_length=1, max_length=400)
+
+
+class FreelancerCardRead(BaseModel):
+    """A freelancer's anonymous card as the admin reads it (spec § 5.1): the last card
+    written, the CV it came from, the model and when, and the last failure, which may
+    sit beside an older card. `modalita` is not on the card: it is `Freelancer.remoto`,
+    read when the card is shown, so a mode the person edits is right at once (§ 2.1).
+    `card`, `cv_sha256`, `model` and `generated_at` stay `None` until a CV produces a
+    card; `error` is set or not on its own."""
+
+    freelancer_id: UUID
+    card: Card | None
+    modalita: str | None
+    cv_sha256: str | None
+    model: str | None
+    generated_at: datetime | None
+    error: str | None
+
+
+class CardsRefreshed(NamedTuple):
+    """What one `rebase cards-refresh` batch did: cards written, and CVs that failed
+    (a refusal, a cut or malformed answer, a provider error, a scan with no text)."""
+
+    written: int
+    failed: int

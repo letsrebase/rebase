@@ -1,10 +1,11 @@
-"""`rebase contracts-sweep` (REB-391) and `rebase documenso-check` (REB-393): the CLI
-wiring alone. `SigningService.sweep`'s own behaviour is `test_signing.py`'s
-(`test_sweep_*`) and `documenso_check`'s own behaviour, against a fake Documenso, is
-`test_documenso.py`'s. No real database or Documenso is reached here: `get_settings`,
-`SigningService` and the settings `documenso_check` reads are all swapped out, so the
-tests prove `main` dispatches to each command and reports what it returns, nothing
-more."""
+"""`rebase contracts-sweep` (REB-391), `rebase documenso-check` (REB-393) and `rebase
+cards-refresh` (REB-510): the CLI wiring alone. `SigningService.sweep`'s own behaviour
+is `test_signing.py`'s (`test_sweep_*`), `documenso_check`'s own behaviour, against a
+fake Documenso, is `test_documenso.py`'s, and `CardWriter.refresh_stale`'s is
+`test_cards.py`'s. No real database, Documenso or Claude is reached here:
+`get_settings`, `SigningService`, `CardWriter` and the settings `documenso_check` reads
+are all swapped out, so the tests prove `main` dispatches to each command and reports
+what it returns, nothing more."""
 
 from typing import Any
 
@@ -13,7 +14,9 @@ import pytest
 from rebase_core import cli, signing
 from rebase_core.cli import main
 from rebase_core.config import Settings
+from rebase_core.llm import AnthropicCall
 from rebase_core.signing import SweepResult
+from rebase_core.team_schemas import CardsRefreshed
 
 
 class _FakeSigningService:
@@ -80,3 +83,54 @@ def test_the_documenso_check_command_dispatches_to_documenso_check(
     assert main(["documenso-check"]) == 1
 
     assert "la firma è spenta" in capsys.readouterr().err
+
+
+class _FakeCardWriter:
+    """Records what `cards_refresh` built it with and the limit it was asked for."""
+
+    instances: list["_FakeCardWriter"] = []
+
+    def __init__(self, session: object, llm: object) -> None:
+        self.session = session
+        self.llm = llm
+        self.limits: list[int] = []
+        _FakeCardWriter.instances.append(self)
+
+    def refresh_stale(self, limit: int = 50) -> CardsRefreshed:
+        self.limits.append(limit)
+        return CardsRefreshed(written=3, failed=1)
+
+
+def test_cards_refresh_prints_the_counts(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One batch of `--limit` per run, the oldest first (`refresh_stale`), so the
+    operator runs it again until it prints «0 schede scritte»."""
+    _FakeCardWriter.instances = []
+    monkeypatch.setattr(
+        cli,
+        "get_settings",
+        lambda: Settings(anthropic_api_key="sk-ant-test-not-a-real-key", _env_file=None),  # type: ignore[call-arg]
+    )
+    monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
+
+    assert main(["cards-refresh", "--limit", "10"]) == 0
+
+    [writer] = _FakeCardWriter.instances
+    assert isinstance(writer.llm, AnthropicCall)
+    assert writer.limits == [10]
+    assert capsys.readouterr().out.strip() == "3 schede scritte, 1 non riuscite"
+
+
+def test_cards_refresh_without_a_key_says_so_and_writes_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Without a key a run would print «0 schede scritte» for ever: it says why instead."""
+    _FakeCardWriter.instances = []
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
+
+    assert main(["cards-refresh"]) == 1
+
+    assert _FakeCardWriter.instances == []
+    assert "REBASE_ANTHROPIC_API_KEY" in capsys.readouterr().err

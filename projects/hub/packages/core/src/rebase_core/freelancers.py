@@ -481,7 +481,14 @@ class FreelancerService:
         payload that carried them would duplicate exactly what this call removes. The
         three metadata columns are recorded, so an admin can see a CV was there, by whom
         it was cleared and when, without the file itself; there is no `revert` for this
-        one kind, on purpose (`rebase_core.audit`'s own module docstring)."""
+        one kind, on purpose (`rebase_core.audit`'s own module docstring).
+
+        The anonymous card written from the CV goes in the same commit (REB-510): a
+        description of a file the hub no longer holds is not one to keep showing, and
+        the admin route and the MCP tool both reach it through here."""
+        # Imported here, not at the top: `cards` reads the CV through this module.
+        from rebase_core.cards import CardWriter
+
         row = self._require(freelancer_id)
         user = self.session.get(User, row.user_id)
         assert user is not None
@@ -489,6 +496,7 @@ class FreelancerService:
             return freelancer_read(row, user)
         before = {"cv_filename": row.cv_filename, "cv_mime": row.cv_mime, "cv_size": row.cv_size}
         row.cv_bytes, row.cv_filename, row.cv_mime, row.cv_size = None, None, None, None
+        CardWriter(self.session, None).delete(row.id)
         self.session.commit()
         AdminActionService(self.session).record(
             ENTITY,

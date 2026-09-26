@@ -16,6 +16,7 @@ from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.documenso import DocumensoClient, client_from_settings
 from rebase_core.http import HttpCall, urllib_call
+from rebase_core.llm import LlmCall, call_from_settings
 from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.members import MemberService
 from rebase_core.schemas import MeRead
@@ -87,6 +88,16 @@ def get_sender(settings: SettingsDep) -> EmailSender | None:
 
 
 SenderDep = Annotated[EmailSender | None, Depends(get_sender)]
+
+
+def get_llm(settings: SettingsDep) -> LlmCall | None:
+    """The Claude seam (REB-508), or `None` without a key: the anonymous card is then
+    not written (REB-510). A dependency, so a test hands a `RecordingCall` the way it
+    hands `RecordingSender` for the mail."""
+    return call_from_settings(settings)
+
+
+LlmDep = Annotated[LlmCall | None, Depends(get_llm)]
 
 
 def get_http_call() -> HttpCall:

@@ -44,9 +44,18 @@ from fastapi import (
     status,
 )
 
-from rebase_api.deps import MEMBER_COOKIE, MeDep, SenderDep, SessionDep, SettingsDep
+from rebase_api.deps import (
+    MEMBER_COOKIE,
+    LlmDep,
+    MeDep,
+    SenderDep,
+    SessionDep,
+    SessionOpenerDep,
+    SettingsDep,
+)
 from rebase_api.downloads import cv_response, pdf_response, perk_response
 from rebase_api.ratelimit import spend_one
+from rebase_core.cards import write_after_response
 from rebase_core.contract_schemas import MemberContracts
 from rebase_core.mail import EmailSender, Mail
 from rebase_core.member_contracts import MemberContractService
@@ -154,6 +163,9 @@ def replace_my_cv(
     me: MeDep,
     request: Request,
     session: SessionDep,
+    background: BackgroundTasks,
+    llm: LlmDep,
+    open_session: SessionOpenerDep,
     cv: Annotated[UploadFile, File()],
 ) -> MeRead:
     # The multipart body is already parsed by the time any dependency runs, so an
@@ -165,6 +177,9 @@ def replace_my_cv(
     service = MemberService(session)
     freelancer = service.require_card(me.id)
     service.replace_cv(freelancer.id, content, cv.filename or "", cv.content_type or "")
+    # A new CV is a new anonymous card (REB-510), written after the answer in a session
+    # of its own, as the wizard's first one is.
+    background.add_task(write_after_response, open_session, llm, freelancer.id)
     return service.me_read(me.id)
 
 
