@@ -74,7 +74,8 @@ code; the amendments are folded in below. Section numbers (§) are the spec's.
   "adaptive"}`, `output_config={"effort": "medium", "format": {"type": "json_schema",
   "schema": ...}}` (`additionalProperties: false`, every property `required`, a nullable
   one as `["string", "null"]`), `inference_geo="eu"` as a top-level keyword, a request
-  timeout of fifty seconds, the catalogue as a `system` block with `cache_control:
+  timeout of forty seconds per attempt with one retry (the client's own backoff between
+  the two keeps the worst case under the host vhost's ninety seconds), the catalogue as a `system` block with `cache_control:
   {"type": "ephemeral"}`, `max_tokens` 8000 for a proposal and 2000 for a card,
   `stop_reason` read before `content` (`refusal`, `max_tokens`), the first `text` block
   parsed with `json.loads` and validated by a Pydantic model, any failure of those a
@@ -139,7 +140,8 @@ D's PR at `main` only when C's branch is deleted after the merge, so delete it).
 ## File structure
 
 - `packages/core/src/rebase_core/config.py`: `anthropic_api_key`, `team_builder_model`,
-  `team_builder_enabled`, `team_builder_concurrency`; `.env.example`, `docker-compose.yml`.
+  `team_builder_enabled`, `team_builder_concurrency`, `team_builder_daily_cap`;
+  `.env.example`, `docker-compose.yml`.
 - `packages/core/pyproject.toml`: `anthropic` pinned; the root `uv.lock` updated.
 - `packages/core/src/rebase_core/errors.py`: `LlmUnavailable`, `TeamBuilderOff`;
   `apps/api/src/rebase_api/main.py`: their status codes.
@@ -153,7 +155,9 @@ D's PR at `main` only when C's branch is deleted after the merge, so delete it).
 - `packages/core/src/rebase_core/cards.py`: `CardWriter`, `card_prompt`, `CARD_SCHEMA`.
 - `packages/core/src/rebase_core/bands.py`: `band_for`, `team_bands`, `Band`.
 - `packages/core/src/rebase_core/team_builder.py`: `TeamBuilder`, `catalogue_lines`,
-  `PROPOSAL_SCHEMA`, `proposal_prompt`, `cloud_visible`.
+  `PROPOSAL_SCHEMA`, `proposal_prompt`, `cloud_visible`, `NO_CALL_MODEL`.
+- `packages/core/src/rebase_core/team_caps.py`: `require_daily_room`, `proposals_today`,
+  `BUSY_SENTENCE`, `CAPPED_ORIGINS`.
 - `packages/core/src/rebase_core/team_requests.py`: `TeamRequestService`, the tokens,
   the answers; `cloud.py`: `TalentCloudService` (grants) and `CloudTalentService` (the
   list, the CV).
@@ -209,7 +213,7 @@ the milestone's name and the checklist C1 to C9 after the first commit. Read
 class LlmRequest(BaseModel):
     system: list[dict[str, Any]]        # text blocks, the last may carry cache_control
     messages: list[dict[str, Any]]
-    schema: dict[str, Any]               # the output_config.format json_schema
+    json_schema: dict[str, Any]          # the output_config.format schema; not `schema`, which shadows BaseModel.schema and warns at every boot
     max_tokens: int
 
 class LlmResponse(BaseModel):
@@ -228,7 +232,7 @@ class LlmCall(Protocol):
     def complete(self, request: LlmRequest) -> LlmResponse: ...
 
 class AnthropicCall:
-    def __init__(self, api_key: str, model: str, *, client: Any | None = None) -> None: ...  # anthropic.Anthropic(api_key=..., timeout=50.0) by default
+    def __init__(self, api_key: str, model: str, *, client: Any | None = None) -> None: ...  # anthropic.Anthropic(api_key=..., max_retries=1, timeout=40.0) by default, built on first use
     def complete(self, request: LlmRequest) -> LlmResponse: ...
 
 class RecordingCall:
@@ -239,13 +243,21 @@ def call_from_settings(settings: Settings) -> LlmCall | None:
     """None without a key: the callers then refuse with their own sentence."""
 ```
 
-  `complete` calls `self.client.beta.messages.create(model=self.model,
+  `complete` passes `request.json_schema` through the SDK's own `anthropic.transform_schema`
+  first: it strips the length, range and list-size keywords the structured-output API
+  refuses (`maxLength`, `minimum`, `maxItems`, ...), moving them into each property's
+  description and closing every object, `$defs` included, since both `Card` and the
+  proposal schema carry `Field` limits the API would otherwise reject; the same Pydantic
+  model still enforces those limits when the answer is validated. It then calls
+  `self.client.beta.messages.create(model=self.model,
   max_tokens=request.max_tokens, betas=["server-side-fallback-2026-07-01"],
   fallbacks="default", thinking={"type": "adaptive"}, output_config={"effort":
-  "medium", "format": {"type": "json_schema", "schema": request.schema}},
+  "medium", "format": {"type": "json_schema", "schema": <the transformed schema>}},
   inference_geo="eu", system=request.system, messages=request.messages)`, reads
   `stop_reason`, `stop_details.category` when the reason is `refusal`, the first `text`
-  block otherwise (also on `max_tokens`), and `usage.input_tokens`, `usage.output_tokens`,
+  block otherwise (also on `max_tokens`), and `usage.input_tokens +
+  (usage.cache_creation_input_tokens or 0)` as `input_tokens` (a cache write is paid for
+  too, so the row says what was spent), `usage.output_tokens`,
   `usage.cache_read_input_tokens or 0`. `anthropic.RateLimitError`,
   `anthropic.APIStatusError`, `anthropic.APIConnectionError` (most specific first)
   become `LlmUnavailable`, logged with the class name and status and never the request.
@@ -256,7 +268,7 @@ def call_from_settings(settings: Settings) -> LlmCall | None:
   recording the kwargs and answering a canned message with `content`, `stop_reason`,
   `stop_details`, `usage`, `model`).
 
-- [ ] **Step 1: Failing tests** (`test_complete_sends_the_documented_request` (every kwarg above, `inference_geo` and the timeout included), `test_refusal_answers_no_text`, `test_max_tokens_passes_through_with_the_text`, `test_provider_errors_are_domain_errors`, `test_recording_call_keeps_requests`, `test_settings_defaults`, the API's 502).
+- [ ] **Step 1: Failing tests** (`test_complete_sends_the_documented_request` (every kwarg above, `inference_geo` included, the schema sent through `transform_schema`), `test_refusal_answers_no_text`, `test_request_carries_eu_geo_and_leaves_the_timeout_to_the_client`, `test_input_tokens_count_the_cache_writes`, `test_the_schema_sent_carries_only_what_the_api_takes` (a model with a `Field` limit that would otherwise reach the API unstripped), `test_the_sdk_client_is_built_on_first_use` (`max_retries=1`, `timeout=40.0`, and that one retry at that timeout, plus the SDK's own backoff, stays under ninety seconds), `test_provider_errors_are_domain_errors`, `test_recording_call_keeps_requests`, `test_settings_default`, the API's 502).
 - [ ] **Step 2: fail. Step 3: implement** (`uv add --package rebase-core anthropic==<version>` or the manual pin plus `uv lock`; `uv sync --frozen` passes after). **Step 4: green; ruff, mypy.**
 - [ ] **Step 5: Commit** `feat(core): the hub speaks to Claude through a seam of its own` (`REB-508.`). The lock change goes in the same commit.
 
@@ -328,6 +340,16 @@ TALENT_ANSWER_LABELS = {"si": "Sì", "no": "No"}
 CARD_MAX_TOKENS = 2000
 NO_TEXT = "Il CV non ha testo leggibile."
 
+Failure = Literal["no_text", "refusal", "max_tokens", "shape", "identifying", "unavailable"]
+
+def _identifies(card: Card, cognome: str) -> bool:
+    """Whether the card names the person: the surname as a whole word written with a
+    capital (`\bSURNAME\b`, case-sensitive on the first letter so «Conti» in «i conti
+    del cliente» is not the person) in `ruolo`, `sintesi`, `competenze` or `settori`
+    (never `luogo` or `lingue`: Messina, Russo and Tedesco are a city and two
+    languages the CV may legitimately carry), or `http://`, `https://`, `www.` or `@`
+    anywhere (the bare word "HTTP" is a skill, not a link)."""
+
 class FreelancerCardRead(BaseModel):
     freelancer_id: UUID
     card: Card | None
@@ -360,16 +382,23 @@ class CardWriter:
   to `error_cv_sha256` and not `force` → untouched (a failed CV is not retried until it
   changes); the text through `FreelancerService.cv_text`, empty → `error = NO_TEXT`,
   `error_cv_sha256 = hash`, no call; else the prompt, `llm.complete`, and `stop_reason`
-  `refusal` or `max_tokens`, a body that is not JSON or does not validate as `Card` →
-  retire a previous card of another CV (`card = None`), write `error` and
-  `error_cv_sha256`; `LlmUnavailable` → keep the previous card, write `error` only, and
-  stop the batch; a valid card → upsert `card`, `cv_sha256`, `model`, the tokens, `generated_at`, `error =
+  `refusal` or `max_tokens`, a body that is not JSON or does not validate as `Card`, or a
+  `Card` that validates but `_identifies` it as the person (the surname, a link, an
+  email or `www.`) → the CV's own failure, one of these kinds, never the model's words:
+  a card of another, older CV is retired with SQL `NULL` (never Python's `None`, which
+  the JSONB column would still bind as the JSON value `null`, so `card IS NOT NULL`, the
+  catalogue's filter, would still count it), and `error` and `error_cv_sha256` are
+  written so the same broken CV is not sent and paid for again until it changes, or
+  until «Rigenera scheda» (`force`) asks anyway; `LlmUnavailable` (a provider outage,
+  not the CV's fault) → keep the previous card untouched, write `error` alone with no
+  `error_cv_sha256`, so the next `write` or `cards-refresh` retries it, and stop the
+  batch; a valid, non-identifying card → upsert `card`, `cv_sha256`, `model`, the tokens, `generated_at`, `error =
   None`, `error_cv_sha256 = None`. `refresh_stale`: every live freelancer with a CV whose
   hash differs from both `cv_sha256` and `error_cv_sha256`, `limit` at a time, oldest
   first; answers written and failed. `read` fills `modalita` from `Freelancer.remoto`.
   The CLI prints «N schede scritte, M non riuscite».
 
-- [ ] **Step 1: Failing tests**: `test_card_from_a_cv` (a `RecordingCall` answering a canned card: the row, the hash, the tokens; `modalita` read from the profile), `test_card_follows_the_cv` (same hash → no call; new bytes → rewritten; `clear_cv` → row gone), `test_failed_cv_is_not_retried` (a refusal writes `error` and the hash; a second `write` makes no call; `force` does), `test_scanned_cv_makes_no_call`, `test_max_tokens_and_bad_json_are_errors`, `test_no_key_writes_nothing`, `test_refresh_stale_limits_and_counts`, `test_cards_refresh_prints_the_counts` (CLI); the API: the wizard and the CV replace schedule the write (assert on the recorded call after the response), the two admin routes, `clear_cv` drops the card.
+- [ ] **Step 1: Failing tests**: `test_card_from_a_cv` (a `RecordingCall` answering a canned card: the row, the hash, the tokens; `modalita` read from the profile), `test_card_follows_the_cv` (same hash → no call; new bytes → rewritten; `clear_cv` → row gone), `test_failed_cv_is_not_retried` (a refusal writes `error` and the hash; a second `write` makes no call; `force` does), `test_scanned_cv_makes_no_call`, `test_max_tokens_and_bad_json_are_errors`, `test_an_outage_on_a_new_cv_keeps_the_old_card` (`LlmUnavailable`: the previous card stays, no `error_cv_sha256`), `test_a_scan_replacing_a_cv_retires_its_card` (a failed new CV: `card` goes to SQL `NULL`, `card IS NOT NULL` no longer finds it), `test_the_same_cv_refused_on_regenerate_keeps_its_card`, `test_a_surname_that_is_a_word_is_the_person_only_with_a_capital`, `test_a_surname_inside_a_longer_word_is_not_the_person`, `test_a_surname_that_is_a_place_or_a_language_is_the_cvs_own` (`luogo`, `lingue` exempt), `test_http_as_a_skill_is_not_a_link`, `test_no_key_writes_nothing`, `test_refresh_stale_limits_and_counts`, `test_cards_refresh_prints_the_counts` (CLI); the API: the wizard and the CV replace schedule the write (assert on the recorded call after the response), the two admin routes, `clear_cv` drops the card.
 - [ ] **Step 2: fail. Step 3: implement. Step 4: green; ruff, mypy.**
 - [ ] **Step 5: Commit** `feat(core): every freelancer with a CV gets an anonymous card` (`REB-510.`).
 
@@ -421,6 +450,7 @@ class TeamProposalRead(BaseModel):
     created_at: datetime
 
 PROPOSAL_MAX_TOKENS = 8000
+NO_CALL_MODEL = ""   # `TeamProposal.model` for a row that made no call (an empty catalogue): `team_caps` (C5) does not count it as a paid proposal.
 
 def cloud_visible(stmt: Select) -> Select:
     """The one filter of who is in the catalogue and the cloud: Freelancer.deleted_at IS NULL,
@@ -455,17 +485,17 @@ class TeamBuilder:
   "input_tokens", "output_tokens"})`; the read answered with `public = origine ==
   "pubblico"`, which drops `freelancer_id` and `luogo` from every member.
 
-- [ ] **Step 1: Failing tests**: `test_bands_at_every_boundary`, `test_team_bands_with_a_missing_rate`, `test_catalogue_is_stable_and_anonymous` (no name, no link, no sintesi, sorted, the positions), `test_catalogue_positions_are_unique` (two freelancers created in the same second), `test_engine_maps_the_answer_to_freelancers`, `test_engine_drops_unknown_and_repeated_positions`, `test_engine_refuses_when_off`, `test_engine_turns_a_refusal_and_max_tokens_and_bad_json_into_unavailable`, `test_regenerate_carries_the_previous_team_and_note`, `test_public_read_hides_ids_and_luogo`, `test_proposal_row_keeps_the_tokens_and_origin`.
+- [ ] **Step 1: Failing tests**: `test_bands_at_every_boundary`, `test_team_bands_with_a_missing_rate`, `test_catalogue_is_stable_and_anonymous` (no name, no link, no sintesi, sorted, the positions), `test_catalogue_positions_are_unique` (two freelancers created in the same second), `test_engine_maps_the_answer_to_freelancers`, `test_engine_drops_unknown_and_repeated_positions`, `test_engine_drops_remote_members_on_a_local_need` (`luogo.locale` true, a member whose `modalita` is `remoto` or unknown dropped and logged, the rest kept), `test_engine_refuses_when_off`, `test_engine_turns_a_refusal_and_max_tokens_and_bad_json_into_unavailable`, `test_previous_id_must_be_the_callers_and_younger_than_a_day` (another origin, another user on the cloud, a day old, unknown: the same `ValidationFailed`), `test_previous_id_of_the_same_cloud_user_within_the_day`, `test_regenerate_carries_the_previous_team_and_note`, `test_public_read_hides_ids_and_luogo`, `test_proposal_row_keeps_the_tokens_and_origin`.
 - [ ] **Step 2: fail. Step 3: implement. Step 4: green; ruff, mypy.**
 - [ ] **Step 5: Commit** `feat(core): a project description becomes an anonymous team with a price band` (`REB-511.`).
 
 ### Task C5: The request, and the routes
 
 **Files:**
-- Create: `packages/core/src/rebase_core/team_requests.py`
+- Create: `packages/core/src/rebase_core/team_requests.py`, `team_caps.py`
 - Modify: `team_schemas.py` (`TeamRequestCreate`, `TeamRequestRead`, `TeamRequestListItem`, `TeamRequestList`, `TeamRequestTalentRead`), `mail.py` (`team_request_mail(to, *, azienda, riassunto: str | None, talento: str | None, url)`)
-- Create: `apps/api/src/rebase_api/routers/team.py` (public: `POST /api/hub/team/proposals`, `POST /api/hub/team/requests` behind `spend_one`), `routers/admin_team.py` (admin: `GET /api/hub/team/requests?stato&origine&limit&cursor`, `GET /api/hub/team/requests/{id}`, `POST /api/hub/team/requests/{id}/status`, `PATCH /api/hub/team/requests/{id}/note`, `PATCH /api/hub/team/requests/{id}/summary`); `main.py` lists both; `deps.py` (`TeamBuilderDep`, and a module-level `threading.BoundedSemaphore(settings.team_builder_concurrency)` the proposal route acquires with `blocking=False`, answering `503` «Troppe richieste in questo momento: riprova tra un minuto.» when it cannot)
-- Test: `packages/core/tests/test_team_requests.py`, `apps/api/tests/test_team_api.py`
+- Create: `apps/api/src/rebase_api/routers/team.py` (public: `POST /api/hub/team/proposals`, `POST /api/hub/team/requests` behind `spend_one`), `routers/admin_team.py` (admin: `GET /api/hub/team/requests?stato&origine&limit&cursor`, `GET /api/hub/team/requests/{id}`, `POST /api/hub/team/requests/{id}/status`, `PATCH /api/hub/team/requests/{id}/note`, `PATCH /api/hub/team/requests/{id}/summary`); `main.py` lists both; `deps.py` (`TeamBuilderDep`, and a module-level `threading.BoundedSemaphore(settings.team_builder_concurrency)` the proposal route acquires with `blocking=False`, answering `503` «Troppe richieste in questo momento: riprova tra un minuto.» when it cannot; once a slot is held, `team_caps.require_daily_room(session, settings)` answers the same `503` when the day's proposals of `pubblico` and `cloud` origin together reach `settings.team_builder_daily_cap`, so the cap holds whichever door a stranger comes through, D3's cloud route (§ 5) shares it)
+- Test: `packages/core/tests/test_team_requests.py` (`team_caps.py`'s tests live beside it, not in a file of their own), `apps/api/tests/test_team_api.py`
 
 **Interfaces:**
 
@@ -509,7 +539,12 @@ class TeamRequestListItem(BaseModel): ...   # id, azienda, origine, stato, creat
 class TeamRequestList(BaseModel): ...       # items, next_cursor
 
 def names_the_company(riassunto: str, azienda: str) -> bool:
-    """Any word of three letters or more of `azienda`, case-insensitively, inside the summary."""
+    """Any word of four letters or more of `azienda` that is neither a legal form
+    (`srl`, `srls`, `spa`, `snc`, `sas`, with or without their dots) nor a generic word
+    of a company's kind the prompt itself asks the summary to use instead (`logistica`,
+    `software`, `studio`, `servizi` and their kind), case-insensitively, inside the
+    summary as a whole word: «Acme S.r.l.» is named by «ACME rifà il gestionale», but
+    «Logistica Veneta S.r.l.» is not named by «un'azienda di logistica»."""
 
 class TeamRequestService:
     def __init__(self, session: Session, *, settings: Settings, sender: EmailSender | None = None, tracker: Tracker | None = None, now=utcnow) -> None: ...
@@ -522,21 +557,29 @@ class TeamRequestService:
     def set_summary(self, request_id: UUID, riassunto: str, admin_id: UUID) -> TeamRequestRead: ...
 ```
 
-  `create`: the proposal must exist, be public (`origine == "pubblico"`) and younger than
-  a day (`ValidationFailed`);
-  the insert relies on `uq_team_requests_proposal_id`, and an `IntegrityError` on it
-  becomes `InvalidState("Questa proposta è già stata richiesta.", proposal_id=...)`
+  `create`: a private `_requestable` reads the proposal (`ValidationFailed`,
+  `PROPOSAL_REFUSED`, one sentence so the answer does not say which proposals exist)
+  when it does not exist, its `origine` is not the caller's own, on the cloud its
+  `user_id` is not the caller's, or it is older than a day, so a public or cloud caller
+  can never hire off someone else's proposal; then that a member of its team is still
+  there (`NOBODY_TO_HIRE` when none is); the insert relies on
+  `uq_team_requests_proposal_id`, and an `IntegrityError` on it becomes
+  `InvalidState("Questa proposta è già stata richiesta.", proposal_id=...)`
   (409), so two clicks in two sessions file one request; one `TeamRequestTalent` per
   member of the proposal's team; the mail to `settings.contracts_mail` («Nuova
   richiesta team da Acme S.r.l.», the summary, the link `{hub_url}/admin/team/{id}`);
-  `names_the_company` on the summary logged at warning (the refusal is D1's, at the
-  send); `tracker.team_event("team_richiesta_inviata", {"origine"})`. `set_summary`
-  writes `team_proposals.riassunto` and records an `AdminAction` (`kind="overridden"`
+  `names_the_company` on the summary logged at warning (the refusal is D1's and
+  `set_summary`'s, at the send and at the edit); `tracker.team_event("team_richiesta_inviata", {"origine"})`.
+  `set_summary` refuses, before writing anything, a `riassunto` that `names_the_company`
+  with the same `InvalidState` sentence D1's `contact_talents` refuses it with (409:
+  «Il riassunto nomina l'azienda: correggilo prima di scrivere ai talenti.»), a request
+  with no proposal (`NO_SUMMARY`) likewise; else it writes `team_proposals.riassunto`
+  and records an `AdminAction` (`kind="overridden"`
   on `entity_type="team_request"`). Public routes: `TeamBuilderOff` → 503,
-  `LlmUnavailable` → 502 through the handler; the semaphore's 503; `spend_one` on
-  requests only.
+  `LlmUnavailable` → 502 through the handler; the semaphore's 503; `team_caps.require_daily_room`'s
+  503 (§ 5); `spend_one` on requests only.
 
-- [ ] **Step 1: Failing tests**: `test_request_from_a_proposal_files_the_talents_and_mails`, `test_request_is_unique_per_proposal` (two sessions, one wins, the other 409), `test_request_refuses_an_old_proposal`, `test_request_logs_a_summary_that_names_the_company`, `test_names_the_company_words`, `test_list_filters_and_pages_by_cursor`, `test_status_note_and_summary_record_the_admin`; the API: `test_public_proposal_answers_the_team_without_ids`, `test_public_proposal_is_503_when_off`, `test_public_proposal_is_503_when_the_cap_is_full` (a stub `LlmCall` that blocks on an event while a second request arrives), `test_public_proposal_is_502_when_claude_is_down`, `test_public_request_is_201_then_409`, `test_public_request_is_throttled`, `test_admin_routes_need_an_admin`.
+- [ ] **Step 1: Failing tests**: `test_request_from_a_proposal_files_the_talents_and_mails`, `test_request_is_unique_per_proposal` (two sessions, one wins, the other 409), `test_request_refuses_an_old_proposal`, `test_request_refuses_a_proposal_of_another_origin_or_none` (a cloud or admin proposal, another cloud user's, an unknown id, all `PROPOSAL_REFUSED`), `test_request_refuses_a_proposal_with_nobody`, `test_request_logs_a_summary_that_names_the_company`, `test_names_the_company_words` (a legal form and a generic word of the kind exempt, four letters the floor), `test_summary_of_a_request_with_no_proposal_is_refused`, `test_list_filters_and_pages_by_cursor`, `test_status_note_and_summary_record_the_admin`, `test_the_daily_cap_counts_paid_proposals_since_midnight_in_rome` (a `NO_CALL_MODEL` row not counted, an admin's not counted, yesterday's not counted), `test_the_caps_have_their_defaults_and_reach_the_container`; the API: `test_public_proposal_answers_the_team_without_ids`, `test_public_proposal_is_503_when_off`, `test_public_proposal_is_503_when_the_cap_is_full` (a stub `LlmCall` that blocks on an event while a second request arrives), `test_public_proposal_is_503_when_the_daily_cap_is_reached`, `test_public_proposal_is_502_when_claude_is_down`, `test_public_request_is_201_then_409`, `test_public_request_refuses_an_old_a_cloud_or_an_empty_proposal`, `test_public_request_is_throttled`, `test_admin_routes_need_an_admin`.
 - [ ] **Step 2: fail. Step 3: implement. Step 4: green; ruff, mypy.**
 - [ ] **Step 5: Commit** `feat(hub): a proposal becomes a team request the admin reads over the API` (`REB-512.`).
 
@@ -630,7 +673,10 @@ branch is deleted, GitHub retargets it to `main`.
 - Test: `test_team_requests.py`, `test_team_api.py`, the web tests
 
 **Interfaces:** `contact_talents`: refuse with `InvalidState("Il riassunto nomina
-l'azienda: correggilo prima di scrivere ai talenti.")` when `names_the_company`; for
+l'azienda: correggilo prima di scrivere ai talenti.")` when `names_the_company` (C5:
+a distinctive word of the company's name, four letters or more, legal forms and generic
+company words such as «logistica» or «software» exempt, since the prompt itself
+describes a company that way); for
 each talent (all when `only_silent` is false, those with `risposta` NULL when true), a
 fresh `token_urlsafe(32)`, its SHA-256 stored (replacing the old one), the mail through
 the sender with `yes_url = f"{settings.hub_url}/team/risposta?t={raw}&r=si"` and the
@@ -656,7 +702,7 @@ disponibile» on `CTA`; Ivan picks otherwise on the PR.
 - Modify: `apps/web/src/pages/admin/lists.tsx` («Segna come verificato» / «Togli la verifica» on the talent row's menu, a «Verificato» pill; «da team builder» on a company row whose `origine` is `team-builder`), `AdminCompanyDetail` («Apri il talent cloud» / «Revoca il talent cloud», the request page has the room the row lacks), `pages/CompanyWizard.tsx` (the box when `resolveAttribution(search).origine === 'team-builder'`: «Stai chiedendo l'accesso al talent cloud: compila la richiesta e ti ricontattiamo noi.»), the talent detail page (the vetted state), `lib/format.ts` (`da team builder`, the vetted words)
 - Test: core, API and web tests beside each
 
-- [ ] **Step 1: Failing tests**: `test_set_vetted_records_the_admin`, `test_grant_is_one_live_per_user_and_company_and_mails` (a second request of the same referente for the same company answers the live grant, no 500; for another company a second grant), `test_revoke_closes_it`, `test_me_carries_talent_cloud`, the routes, the row actions, the detail page's actions, the wizard's box on `?da=team-builder`, «da team builder».
+- [ ] **Step 1: Failing tests**: `test_set_vetted_records_the_admin`, `test_grant_is_one_live_per_user_and_company_and_mails` (a second request of the same referente for the same company answers the live grant, no 500; for another company a second grant), `test_a_grant_that_loses_the_race_to_the_index_answers_the_winner`, `test_revoke_closes_it` (only that company's grant; another company's stays live), `test_for_user_answers_the_newest_live_grant_across_companies` (a referente of companies A and B: the cloud attributes a proposal or a request to whichever grant is newest and live, never a fixed one), `test_me_carries_talent_cloud`, the routes, the row actions, the detail page's actions, the wizard's box on `?da=team-builder`, «da team builder».
 - [ ] **Step 2: fail. Step 3: implement. Step 4: green everywhere.**
 - [ ] **Step 5: Commit** `feat(hub): an admin marks a talent vetted and opens the talent cloud to a company` (`REB-518.`).
 
