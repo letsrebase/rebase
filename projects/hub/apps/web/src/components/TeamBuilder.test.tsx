@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest'
-import type { TeamProposal } from '@/lib/api'
+import type { CloudTeamProposal } from '@/lib/api'
 import { TeamBuilder } from './TeamBuilder'
 
 // Escapes on purpose: the space before «€» is a non-breaking one, the dash an en dash.
@@ -168,6 +168,13 @@ describe('TeamBuilder, the result', () => {
     const team = screen.getByRole('list', { name: 'Il team' })
     const people = within(team).getAllByRole('listitem')
     expect(people).toHaveLength(2)
+
+    // Each card is headed by the role in this team, never by the name the fixture carries.
+    expect(
+      within(team)
+        .getAllByRole('heading', { level: 3 })
+        .map((heading) => heading.textContent),
+    ).toEqual(['Backend developer', 'Frontend developer'])
 
     const backend = people[0]!
     expect(within(backend).getByRole('heading', { name: 'Backend developer' })).toBeInTheDocument()
@@ -374,7 +381,7 @@ describe('TeamBuilder in the cloud', () => {
   it('proposes through the cloud’s own call and files «Assumi team» at once, with no form', async () => {
     const user = userEvent.setup()
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
-    const propose = vi.fn().mockResolvedValue(PROPOSAL as unknown as TeamProposal)
+    const propose = vi.fn().mockResolvedValue(PROPOSAL as unknown as CloudTeamProposal)
     const hire = vi.fn().mockResolvedValue({ id: 'a1b2c3d4-0000-4000-8000-000000000001' })
     render(<TeamBuilder mode="cloud" propose={propose} hire={hire} />)
     await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIZIONE)
@@ -389,5 +396,25 @@ describe('TeamBuilder in the cloud', () => {
       'Grazie: ti scriviamo entro due giorni lavorativi.',
     )
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('heads each person with their name, the role in this team under it', async () => {
+    const user = userEvent.setup()
+    const propose = vi.fn().mockResolvedValue({ ...PROPOSAL, origine: 'cloud' })
+    render(<TeamBuilder mode="cloud" propose={propose} hire={vi.fn()} />)
+    await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIZIONE)
+    await user.click(screen.getByRole('button', { name: 'Proponi il team' }))
+    await screen.findByText(PROPOSAL.riassunto)
+
+    const team = screen.getByRole('list', { name: 'Il team' })
+    expect(
+      within(team)
+        .getAllByRole('heading', { level: 3 })
+        .map((heading) => heading.textContent),
+    ).toEqual(['Ada Lovelace', 'Grace Hopper'])
+    const [ada, grace] = within(team).getAllByRole('listitem')
+    expect(ada).toHaveTextContent('Ada LovelaceBackend developerSviluppatore backend, Senior, 9 anni di esperienza')
+    expect(ada).toHaveTextContent('Ha costruito le API di pagamento di due banche.')
+    expect(grace).toHaveTextContent('Grace HopperFrontend developerSviluppatrice frontend, Mid, 1 anno di esperienza')
   })
 })

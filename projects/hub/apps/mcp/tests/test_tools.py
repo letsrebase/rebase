@@ -1,19 +1,27 @@
 """The hub's MCP tools over its own database: the reads, the status moves, the comments."""
 
 import json
-from datetime import UTC, datetime
+import re
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from fakes_cards import CARD, MODEL, card_response, text_pdf
 from mcp import Client
 from sqlalchemy import text
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
+from rebase_core.config import Settings
+from rebase_core.llm import LlmResponse, RecordingCall
+from rebase_core.mail import RecordingSender
+from rebase_core.models import Freelancer, FreelancerCard, TeamProposal, User
 from rebase_core.perks import guide_bytes
 from rebase_core.schemas import SignupCreate
 from rebase_core.service import SignupService
+from rebase_core.team_requests import TeamRequestService
+from rebase_core.team_schemas import TeamRequestCreate
 from rebase_mcp.server import build_server
 
 # The admin every test calls as: the transport resolves a token to this and hands it in.
@@ -66,8 +74,15 @@ async def test_no_tool_subscribes_or_applies_on_somebody_elses_behalf(
 ) -> None:
     async with Client(build_server(factory, lambda: IVAN)) as client:
         names = {tool.name for tool in (await client.list_tools()).tools}
+    # `team_request` (REB-520) is legitimate: an admin's own screen on a request a
+    # company or the public page already filed, never a way to file one as if the
+    # applicant had.
     assert not [
-        name for name in names if "subscribe" in name or "apply" in name or "request" in name
+        name
+        for name in names
+        if "subscribe" in name
+        or "apply" in name
+        or ("request" in name and "team_request" not in name)
     ]
 
 
@@ -154,6 +169,9 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "delete_freelancer",
             "restore_freelancer",
             "clear_freelancer_cv",
+            "set_freelancer_vetted",
+            "get_freelancer_card",
+            "regenerate_freelancer_card",
             "get_freelancer_audit",
             "revert_freelancer_action",
             "add_freelancer_comment",
@@ -166,6 +184,15 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "get_company_audit",
             "revert_company_action",
             "add_company_comment",
+            "list_team_requests",
+            "get_team_request",
+            "set_team_request_summary",
+            "contact_team_talents",
+            "set_team_request_status",
+            "propose_team",
+            "grant_talent_cloud",
+            "revoke_talent_cloud",
+            "list_talent_cloud_grants",
             "guide_stats",
             "login_stats",
             "list_matches",
@@ -531,3 +558,526 @@ async def test_get_talento_answers_a_card_with_the_detail_and_a_lead_with_the_ro
         assert missing.is_error
         assert "talento" in missing.content[0].text and "non trovato" in missing.content[0].text
     _wipe(factory)
+
+
+# ---- the cards, the vetted flag, the team requests and the cloud (REB-520, D4) --------------
+
+
+def _team_settings(**overrides: Any) -> Settings:
+    return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
+
+
+def _seed_freelancer_with_text_cv(factory: sessionmaker[Session], text: str) -> str:
+    """Like `_seed_freelancer`, but with a CV `pypdf` reads text out of (`PDF`, the
+    module's own fixture, is a scan with none): the card writer needs a real CV to
+    write anything from."""
+    from rebase_core.freelancers import FreelancerService
+    from rebase_core.schemas import FreelancerCreate
+
+    session = factory()
+    try:
+        row, _ = FreelancerService(session).apply(
+            FreelancerCreate(
+                nome="Ada",
+                cognome="Lovelace",
+                email="ada@studio.it",
+                tariffa_giornaliera=Decimal("450"),
+                posizione="Backend developer",
+                remoto="remoto",
+            ),
+            text_pdf(text),
+            "cv.pdf",
+            "application/pdf",
+        )
+        return str(row.id)
+    finally:
+        session.close()
+
+
+def _talent_with_card(session: Session, n: int = 1) -> UUID:
+    """A live freelancer with an anonymous card already written (`CARD`/`MODEL`,
+    `fakes_cards.py`), the way `TeamBuilder.catalogue_lines` and `.get`'s
+    `cloud_visible` need one to keep a proposal's member in a read."""
+    user = User(email=f"talento{n}@studio.it", nome=f"Ada{n}", cognome=f"Lovelace{n}")
+    session.add(user)
+    session.flush()
+    row = Freelancer(
+        user_id=user.id,
+        remoto="remoto",
+        tariffa_giornaliera=Decimal("450.00"),
+        stato="nuovo",
+        posizione="Backend developer",
+    )
+    session.add(row)
+    session.flush()
+    session.add(
+        FreelancerCard(
+            freelancer_id=row.id,
+            cv_sha256="0" * 64,
+            card=CARD,
+            model=MODEL,
+            input_tokens=1200,
+            output_tokens=180,
+            generated_at=datetime.now(UTC),
+        )
+    )
+    session.commit()
+    return row.id
+
+
+def _proposal_row(session: Session, members: list[UUID], *, origine: str = "pubblico") -> UUID:
+    row = TeamProposal(
+        descrizione=(
+            "Rifacciamo il gestionale degli ordini: un backend in Python con FastAPI, "
+            "sei mesi, da remoto."
+        ),
+        riassunto="Un'azienda di logistica rifà il gestionale degli ordini, backend in Python.",
+        luogo={"locale": False, "dove": None},
+        team=[
+            {
+                "posizione": index,
+                "freelancer_id": str(freelancer_id),
+                "ruolo": "Backend developer",
+                "motivazione": "Nove anni di API in Python.",
+                "giorni_settimana": 5,
+            }
+            for index, freelancer_id in enumerate(members, start=1)
+        ],
+        economia={"giorno": None, "mese": None, "giorni_mese": 22},
+        model=MODEL,
+        input_tokens=5200,
+        output_tokens=640,
+        cache_read_tokens=0,
+        origine=origine,
+        created_at=datetime.now(UTC) - timedelta(minutes=5),
+    )
+    session.add(row)
+    session.commit()
+    return row.id
+
+
+def _team_request(
+    factory: sessionmaker[Session], members: list[UUID], *, azienda: str = "Uno Srl"
+) -> str:
+    session = factory()
+    try:
+        proposal_id = _proposal_row(session, members)
+        read, _mail = TeamRequestService(session, settings=_team_settings()).create(
+            TeamRequestCreate(
+                proposal_id=proposal_id,
+                azienda=azienda,
+                email="wile@acme.it",
+                telefono="+39 345 1234567",
+            ),
+            origine="pubblico",
+            user_id=None,
+            company_id=None,
+        )
+        return str(read.id)
+    finally:
+        session.close()
+
+
+def _proposal_response(position: str = "t1") -> LlmResponse:
+    body = {
+        "riassunto": "Un'azienda di logistica rifà il gestionale, backend in Python.",
+        "luogo": {"locale": False, "dove": None},
+        "team": [
+            {
+                "id": position,
+                "ruolo": "Backend developer",
+                "motivazione": "Nove anni di API in Python e FastAPI.",
+                "giorni_settimana": 5,
+            }
+        ],
+    }
+    return LlmResponse(
+        text=json.dumps(body),
+        stop_reason="end_turn",
+        refusal_category=None,
+        model=MODEL,
+        input_tokens=5200,
+        output_tokens=640,
+        cache_read_tokens=4800,
+    )
+
+
+def _wipe_team(factory: sessionmaker[Session]) -> None:
+    session = factory()
+    for table in (
+        "team_request_talents",
+        "team_requests",
+        "team_proposals",
+        "admin_actions",
+        "talent_cloud_grants",
+        "freelancer_cards",
+        "comments",
+        "freelancers",
+        "companies",
+        "users",
+    ):
+        session.execute(text(f"DELETE FROM {table}"))
+    session.commit()
+    session.close()
+
+
+def _seed_admin(factory: sessionmaker[Session]) -> None:
+    """`IVAN`'s own `users` row: `Freelancer.vetted_by`, `TeamProposal.user_id`,
+    `TalentCloudGrant.granted_by`/`revoked_by` and `AdminAction.admin_id` are all a
+    real foreign key to `users.id`, which the fake `AdminRead` every test calls as is
+    not, on its own -- only the tools that never write one of those (a read, or
+    `CardWriter`, which takes no admin at all) can skip this."""
+    session = factory()
+    session.add(User(id=IVAN.id, email=IVAN.email, nome=IVAN.nome, cognome="Sala", role="admin"))
+    session.commit()
+    session.close()
+
+
+async def test_freelancer_card_tools_read_write_and_off_is_the_sentence(
+    factory: sessionmaker[Session],
+) -> None:
+    freelancer_id = _seed_freelancer_with_text_cv(
+        factory, "Ada Lovelace, backend developer a Torino da nove anni: Python, FastAPI, AWS."
+    )
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        empty = _payload(
+            await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert empty["card"] is None and empty["error"] is None
+        assert empty["modalita"] == "remoto"
+
+        off = await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
+        assert off.is_error
+        assert "Il team builder è spento." in off.content[0].text
+
+    llm = RecordingCall([card_response()])
+    async with Client(build_server(factory, lambda: IVAN, llm=llm)) as client:
+        written = _payload(
+            await client.call_tool("regenerate_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert written["card"]["ruolo"] == CARD["ruolo"]
+        assert written["model"] == MODEL
+        assert len(llm.requests) == 1
+
+        read_back = _payload(
+            await client.call_tool("get_freelancer_card", {"freelancer_id": freelancer_id})
+        )
+        assert read_back["card"] == written["card"]
+
+        listed = _payload(await client.call_tool("list_talenti", {}))
+        assert listed["items"][0]["ha_scheda_anonima"] is True
+        detail = _payload(await client.call_tool("get_talento", {"talento_id": freelancer_id}))
+        assert detail["ha_scheda_anonima"] is True
+
+        missing = await client.call_tool(
+            "get_freelancer_card", {"freelancer_id": "01a00000-0000-7000-8000-0000000000fe"}
+        )
+        assert missing.is_error
+    _wipe(factory)
+
+
+async def test_set_freelancer_vetted_toggles_and_a_repeat_keeps_the_first_date(
+    factory: sessionmaker[Session],
+) -> None:
+    freelancer_id = _seed_freelancer(factory)
+    _seed_admin(factory)
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        before = _payload(await client.call_tool("list_talenti", {}))["items"][0]
+        assert before["vetted_at"] is None and before["ha_scheda_anonima"] is False
+        card = _payload(await client.call_tool("get_talento", {"talento_id": freelancer_id}))
+        assert card["vetted_at"] is None and card["ha_scheda_anonima"] is False
+
+        vetted = _payload(
+            await client.call_tool(
+                "set_freelancer_vetted", {"freelancer_id": freelancer_id, "vetted": True}
+            )
+        )
+        assert vetted["vetted_at"] is not None
+        first = vetted["vetted_at"]
+
+        again = _payload(
+            await client.call_tool(
+                "set_freelancer_vetted", {"freelancer_id": freelancer_id, "vetted": True}
+            )
+        )
+        assert again["vetted_at"] == first
+
+        listed = _payload(await client.call_tool("list_talenti", {}))
+        assert listed["items"][0]["vetted_at"] == first
+
+        off = _payload(
+            await client.call_tool(
+                "set_freelancer_vetted", {"freelancer_id": freelancer_id, "vetted": False}
+            )
+        )
+        assert off["vetted_at"] is None
+    _wipe_team(factory)
+
+
+async def test_team_request_tools_list_and_read_the_admins_page(
+    factory: sessionmaker[Session],
+) -> None:
+    session = factory()
+    member = _talent_with_card(session)
+    session.close()
+    ids = [
+        _team_request(factory, [member], azienda=azienda)
+        for azienda in ("Uno Srl", "Due Srl", "Tre Srl")
+    ]
+
+    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
+        page = _payload(await client.call_tool("list_team_requests", {"limit": 2}))
+        assert [item["id"] for item in page["items"]] == [ids[2], ids[1]]
+        rest = _payload(
+            await client.call_tool(
+                "list_team_requests", {"limit": 2, "cursor": page["next_cursor"]}
+            )
+        )
+        assert [item["id"] for item in rest["items"]] == [ids[0]]
+        assert rest["next_cursor"] is None
+        item = rest["items"][0]
+        assert (item["azienda"], item["origine"], item["stato"]) == ("Uno Srl", "pubblico", "nuova")
+        assert (item["talenti_totale"], item["talenti_si"]) == (1, 0)
+
+        only = _payload(await client.call_tool("list_team_requests", {"stato": "chiusa"}))
+        assert only["items"] == []
+        bad = await client.call_tool("list_team_requests", {"stato": "persa"})
+        assert bad.is_error and "stato" in bad.content[0].text
+
+        detail = _payload(await client.call_tool("get_team_request", {"request_id": ids[0]}))
+        assert detail["email"] == "wile@acme.it" and detail["telefono"] == "+39 345 1234567"
+        assert detail["proposal"]["team"][0]["freelancer_id"] == str(member)
+        [talento] = detail["talenti"]
+        assert (talento["nome"], talento["cognome"]) == ("Ada1", "Lovelace1")
+        assert talento["tariffa_giornaliera"] == "450.00"
+
+        missing = await client.call_tool(
+            "get_team_request", {"request_id": "01a00000-0000-7000-8000-0000000000fe"}
+        )
+        assert missing.is_error
+    _wipe_team(factory)
+
+
+async def test_set_team_request_summary_saves_it_and_refuses_one_naming_the_company(
+    factory: sessionmaker[Session],
+) -> None:
+    session = factory()
+    member = _talent_with_card(session)
+    session.close()
+    request_id = _team_request(factory, [member], azienda="Acme Srl")
+    _seed_admin(factory)
+
+    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
+        summary = "Un'azienda rifà il gestionale, sei mesi."
+        edited = _payload(
+            await client.call_tool(
+                "set_team_request_summary", {"request_id": request_id, "riassunto": summary}
+            )
+        )
+        assert edited["riassunto"] == summary
+
+        refused = await client.call_tool(
+            "set_team_request_summary",
+            {"request_id": request_id, "riassunto": "ACME rifà il gestionale."},
+        )
+        assert refused.is_error
+        assert "nomina l'azienda" in refused.content[0].text
+
+        blank = await client.call_tool(
+            "set_team_request_summary", {"request_id": request_id, "riassunto": "   "}
+        )
+        assert blank.is_error
+    _wipe_team(factory)
+
+
+async def test_set_team_request_status_moves_it_and_records_an_optional_note(
+    factory: sessionmaker[Session],
+) -> None:
+    session = factory()
+    member = _talent_with_card(session)
+    session.close()
+    request_id = _team_request(factory, [member])
+    _seed_admin(factory)
+
+    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
+        moved = _payload(
+            await client.call_tool(
+                "set_team_request_status",
+                {"request_id": request_id, "stato": "contattata", "note": "Richiamare."},
+            )
+        )
+        assert moved["stato"] == "contattata" and moved["contacted_at"] is not None
+        assert moved["note"] == "Richiamare."
+
+        cleared = _payload(
+            await client.call_tool(
+                "set_team_request_status", {"request_id": request_id, "stato": "chiusa"}
+            )
+        )
+        assert cleared["stato"] == "chiusa" and cleared["closed_at"] is not None
+        # `note` omitted: the note from the previous call is untouched.
+        assert cleared["note"] == "Richiamare."
+
+        refused = await client.call_tool(
+            "set_team_request_status", {"request_id": request_id, "stato": "persa"}
+        )
+        assert refused.is_error
+    _wipe_team(factory)
+
+
+async def test_set_team_request_status_refuses_a_bad_note_before_moving_anything(
+    factory: sessionmaker[Session],
+) -> None:
+    """The note is checked before the state is written: a refused note leaves the
+    request where it was and answers the field's sentence, not Pydantic's."""
+    session = factory()
+    member = _talent_with_card(session)
+    session.close()
+    request_id = _team_request(factory, [member])
+    _seed_admin(factory)
+
+    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
+        long = await client.call_tool(
+            "set_team_request_status",
+            {"request_id": request_id, "stato": "contattata", "note": "x" * 4001},
+        )
+        assert long.is_error
+        assert long.content[0].text.endswith(": note: al massimo 4000 caratteri")
+        nul = await client.call_tool(
+            "set_team_request_status",
+            {"request_id": request_id, "stato": "chiusa", "note": "Richiamare\x00."},
+        )
+        assert nul.is_error
+        assert nul.content[0].text.endswith(
+            ": note: il testo contiene un carattere nullo (\\x00), non ammesso"
+        )
+
+        untouched = _payload(await client.call_tool("get_team_request", {"request_id": request_id}))
+        assert untouched["stato"] == "nuova" and untouched["note"] is None
+        assert untouched["contacted_at"] is None and untouched["closed_at"] is None
+    _wipe_team(factory)
+
+
+async def test_contact_team_talents_mails_once_then_rimanda_only_the_silent(
+    factory: sessionmaker[Session],
+) -> None:
+    session = factory()
+    members = [_talent_with_card(session, 1), _talent_with_card(session, 2)]
+    session.close()
+    request_id = _team_request(factory, members)
+    _seed_admin(factory)
+    sender = RecordingSender()
+
+    async with Client(
+        build_server(factory, lambda: IVAN, settings=_team_settings(), sender=sender)
+    ) as client:
+        contacted = _payload(
+            await client.call_tool("contact_team_talents", {"request_id": request_id})
+        )
+        assert contacted["stato"] == "contattata"
+        assert len(sender.sent) == 2
+        addresses = {mail.to for mail in sender.sent}
+        assert addresses == {"talento1@studio.it", "talento2@studio.it"}
+        assert all(mail.subject == "Un progetto per te: sei disponibile?" for mail in sender.sent)
+
+        again = await client.call_tool("contact_team_talents", {"request_id": request_id})
+        assert again.is_error
+        assert "già stati contattati" in again.content[0].text
+
+        first_mail = next(mail for mail in sender.sent if mail.to == "talento1@studio.it")
+        found = re.search(r"[?&]t=([A-Za-z0-9_-]+)&r=si", first_mail.text)
+        assert found
+        session2 = factory()
+        TeamRequestService(session2, settings=_team_settings()).answer(found.group(1), "si")
+        session2.close()
+
+        rimanda = _payload(
+            await client.call_tool(
+                "contact_team_talents", {"request_id": request_id, "only_silent": True}
+            )
+        )
+        assert rimanda["stato"] == "contattata"
+        assert len(sender.sent) == 3
+        assert sender.sent[2].to == "talento2@studio.it"
+    _wipe_team(factory)
+
+
+async def test_contact_team_talents_without_a_sender_is_the_no_sender_sentence(
+    factory: sessionmaker[Session],
+) -> None:
+    session = factory()
+    member = _talent_with_card(session)
+    session.close()
+    request_id = _team_request(factory, [member])
+
+    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
+        refused = await client.call_tool("contact_team_talents", {"request_id": request_id})
+        assert refused.is_error
+        assert "L'invio delle email non è attivo" in refused.content[0].text
+    _wipe_team(factory)
+
+
+async def test_propose_team_proposes_as_the_admin_and_off_is_the_sentence(
+    factory: sessionmaker[Session],
+) -> None:
+    session = factory()
+    member = _talent_with_card(session)
+    session.close()
+    _seed_admin(factory)
+    descrizione = (
+        "Rifacciamo il gestionale degli ordini: un backend in Python con FastAPI, "
+        "sei mesi, da remoto."
+    )
+    llm = RecordingCall([_proposal_response()])
+    async with Client(
+        build_server(factory, lambda: IVAN, settings=_team_settings(), llm=llm)
+    ) as client:
+        proposed = _payload(await client.call_tool("propose_team", {"descrizione": descrizione}))
+        assert proposed["origine"] == "admin"
+        assert proposed["team"][0]["freelancer_id"] == str(member)
+        assert len(llm.requests) == 1
+
+    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
+        off = await client.call_tool("propose_team", {"descrizione": descrizione})
+        assert off.is_error
+        assert "Il team builder è spento." in off.content[0].text
+    _wipe_team(factory)
+
+
+async def test_grant_and_revoke_talent_cloud_and_list_every_grant(
+    factory: sessionmaker[Session],
+) -> None:
+    company_id = _seed_company(factory)
+    _seed_admin(factory)
+    sender = RecordingSender()
+    async with Client(
+        build_server(factory, lambda: IVAN, settings=_team_settings(), sender=sender)
+    ) as client:
+        granted = _payload(await client.call_tool("grant_talent_cloud", {"company_id": company_id}))
+        assert granted["azienda"] == "ACME Srl"
+        assert granted["mail_inviata"] is True
+        assert len(sender.sent) == 1
+        assert sender.sent[0].subject == "Il talent cloud di rebase è aperto per ACME Srl"
+
+        again = _payload(await client.call_tool("grant_talent_cloud", {"company_id": company_id}))
+        assert again["id"] == granted["id"] and again["mail_inviata"] is False
+        assert len(sender.sent) == 1
+
+        # A list-returning tool's structured content is `{"result": [...]}`, the shape
+        # MCP wraps a bare array in.
+        listed = _payload(await client.call_tool("list_talent_cloud_grants", {}))["result"]
+        assert [g["id"] for g in listed] == [granted["id"]]
+
+        revoked = _payload(
+            await client.call_tool("revoke_talent_cloud", {"company_id": company_id})
+        )
+        assert revoked["revoked_at"] is not None
+
+        again_revoke = await client.call_tool("revoke_talent_cloud", {"company_id": company_id})
+        assert again_revoke.is_error
+
+        missing = await client.call_tool(
+            "grant_talent_cloud", {"company_id": "01a00000-0000-7000-8000-0000000000fe"}
+        )
+        assert missing.is_error
+    _wipe_team(factory)

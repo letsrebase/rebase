@@ -33,11 +33,18 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, Subquery, exists, func, select
+from sqlalchemy import ColumnElement, Select, Subquery, exists, func, select
 from sqlalchemy.orm import Session, aliased, defer
 
 from rebase_core.freelancers import LEAD_STATE
-from rebase_core.models import FREELANCER_STATES, Freelancer, Login, Signup, User
+from rebase_core.models import (
+    FREELANCER_STATES,
+    Freelancer,
+    FreelancerCard,
+    Login,
+    Signup,
+    User,
+)
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 from rebase_core.schemas import TalentoList, TalentoOrigine, TalentoRead
 from rebase_core.search import escape_like, matches_any, similarity_score
@@ -85,7 +92,7 @@ def _signup_read(row: Signup) -> TalentoRead:
     )
 
 
-def _card_read(row: Freelancer, user: User) -> TalentoRead:
+def _card_read(row: Freelancer, user: User, ha_scheda_anonima: bool) -> TalentoRead:
     return TalentoRead(
         id=row.id,
         nome=user.nome,
@@ -96,6 +103,20 @@ def _card_read(row: Freelancer, user: User) -> TalentoRead:
         origine=_ORIGIN_BY_COMPILATA_DA.get(row.compilata_da, "wizard"),
         utm_source=row.utm_source,
         created_at=row.created_at,
+        vetted_at=row.vetted_at,
+        ha_scheda_anonima=ha_scheda_anonima,
+    )
+
+
+def _has_anonymous_card() -> ColumnElement[bool]:
+    """Whether Claude's anonymous card of the row's freelancer exists (REB-518): a JSON
+    object, as `team_builder.cloud_visible` reads one, so a card the writer retired to
+    `NULL` after a failure is none."""
+    return exists(
+        select(FreelancerCard.freelancer_id).where(
+            FreelancerCard.freelancer_id == Freelancer.id,
+            func.jsonb_typeof(FreelancerCard.card) == "object",
+        )
     )
 
 
@@ -263,6 +284,7 @@ class TalentiService:
                 stmt = stmt.where(
                     keyset_predicate(sort_col, Freelancer.id, cursor_bound[0], cursor_bound[1])
                 )
+            stmt = stmt.add_columns(_has_anonymous_card().label("ha_scheda_anonima"))
             # A row reads `cv_size` and the file's name, never the PDF itself: a page of
             # 100 cards (or a campaign's whole list, P-REB-41) must not carry 100 CVs.
             rows = self.session.execute(
@@ -273,7 +295,9 @@ class TalentiService:
             for row in rows:
                 card, user = row[0], row[1]
                 sort_value = row[2] if term else card.created_at
-                candidates.append((sort_value, card.id, _card_read(card, user)))
+                candidates.append(
+                    (sort_value, card.id, _card_read(card, user, row.ha_scheda_anonima))
+                )
 
         if wants_leads:
             lead_stmt = _lead_stmt(

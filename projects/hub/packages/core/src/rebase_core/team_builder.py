@@ -57,6 +57,7 @@ from rebase_core.models import (
     Freelancer,
     FreelancerCard,
     TeamProposal,
+    User,
 )
 from rebase_core.team_schemas import Card, TeamMemberRead, TeamProposalCreate, TeamProposalRead
 from rebase_core.validation import SafeStr
@@ -536,9 +537,10 @@ class TeamBuilder:
         they are now (§ 2.1), and the team's bands summed from those. Only who is still
         `cloud_visible` is read: a member deleted, turned down or left without a card
         since the proposal is left out, and so is one whose stored card no longer
-        validates, logged by position; the row keeps them all."""
+        validates, logged by position; the row keeps them all. The cloud's and the
+        admin's read name each member (§ 4.2); the public read names nobody."""
         ids = [UUID(member["freelancer_id"]) for member in row.team]
-        found: dict[UUID, tuple[str | None, Decimal | None, Any]] = {}
+        found: dict[UUID, tuple[str | None, Decimal | None, Any, str, str]] = {}
         if ids:
             rows = self.session.execute(
                 cloud_visible(
@@ -547,12 +549,14 @@ class TeamBuilder:
                         Freelancer.remoto,
                         Freelancer.tariffa_giornaliera,
                         FreelancerCard.card,
-                    )
+                        User.nome,
+                        User.cognome,
+                    ).join(User, User.id == Freelancer.user_id)
                 ).where(Freelancer.id.in_(ids))
             ).all()
             found = {
-                freelancer_id: (remoto, tariffa, card)
-                for freelancer_id, remoto, tariffa, card in rows
+                freelancer_id: (remoto, tariffa, card, nome, cognome)
+                for freelancer_id, remoto, tariffa, card, nome, cognome in rows
             }
         members: list[TeamMemberRead] = []
         for stored in row.team:
@@ -564,7 +568,7 @@ class TeamBuilder:
                     stored["posizione"],
                 )
                 continue
-            remoto, tariffa, card = found[freelancer_id]
+            remoto, tariffa, card, nome, cognome = found[freelancer_id]
             try:
                 scheda = Card.model_validate(card)
             except ValidationError:
@@ -578,6 +582,8 @@ class TeamBuilder:
                 TeamMemberRead(
                     posizione=stored["posizione"],
                     freelancer_id=None if public else freelancer_id,
+                    nome=None if public else nome,
+                    cognome=None if public else cognome,
                     ruolo=stored["ruolo"],
                     motivazione=stored["motivazione"],
                     giorni_settimana=stored["giorni_settimana"],

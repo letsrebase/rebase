@@ -216,6 +216,16 @@ export interface TeamRequestCreate {
   telefono: string
 }
 
+/** What the answer page posts on «Conferma» (D1, spec § 3.2): the mail's token and the
+ *  answer its link carried. */
+export interface TeamAvailabilityAnswer {
+  t: string
+  risposta: TalentAnswer
+}
+
+/** The answer recorded, or `invalid` for a link unknown, spent or expired alike. */
+export type TeamAvailabilityOutcome = TalentAnswer | 'invalid'
+
 export const team = {
   /** 503 when the builder is off or too busy, 502 when Claude does not answer, 422 on
    *  the description or a `previous_id` that is not a live public proposal: each with
@@ -223,6 +233,10 @@ export const team = {
   propose: (body: TeamProposalCreate) => request<TeamProposal>('/api/hub/team/proposals', json(body)),
   /** 201; 409 when the proposal is already requested, 422 when it is gone. */
   request: (body: TeamRequestCreate) => request<{ id: string }>('/api/hub/team/requests', json(body)),
+  /** A talent's «Conferma»: 200 with the outcome, whatever the token; 429 past the
+   *  wizards' speed bump. */
+  answer: (body: TeamAvailabilityAnswer) =>
+    request<{ esito: TeamAvailabilityOutcome }>('/api/hub/team/availability', json(body)),
 }
 
 // ---- the team builder, in the admin area (P-REB-43, spec § 2.1, § 3.5, § 5.1) --------------
@@ -245,7 +259,8 @@ export interface AdminTeamProposal extends Omit<TeamProposal, 'team'> {
 
 /** One talent of a request: the name, the role proposed, their own rate and the
  *  client's band from it, and the availability mail's progress, all `null` until D1's
- *  first send. */
+ *  first send. `contattabile` is false for a talent whose card was deleted or turned
+ *  down: the availability mail skips them. */
 export interface TeamRequestTalent {
   freelancer_id: string
   nome: string
@@ -256,6 +271,7 @@ export interface TeamRequestTalent {
   mail_sent_at: string | null
   risposta: TalentAnswer | null
   risposta_at: string | null
+  contattabile: boolean
 }
 
 /** A request's page in «Richieste team» (§ 3.5). `proposal`, `riassunto` and
@@ -385,6 +401,8 @@ export interface Freelancer {
   /** `null` while the card is live; a moment once an admin soft-deletes it (REB-347),
    *  reversed by `restoreFreelancer` (REB-355). */
   deleted_at: string | null
+  /** When an admin marked the talent «Verificato» (REB-518), `null` otherwise. */
+  vetted_at: string | null
 }
 
 export interface Company {
@@ -410,6 +428,26 @@ export interface Company {
   commenti: Comment[]
   /** Same soft-delete as `Freelancer.deleted_at`. */
   deleted_at: string | null
+  /** The talent cloud open for this request's referente (REB-518): the detail carries
+   *  it while it is live, the list leaves it `null`. */
+  talent_cloud_grant: TalentCloudGrant | null
+}
+
+/** A grant of the talent cloud (REB-518, spec § 4.1): the request it was opened from,
+ *  the referente by name, who opened it and when; `revoked_at` is `null` while live. */
+export interface TalentCloudGrant {
+  id: string
+  user_id: string
+  company_id: string
+  azienda: string
+  referente: string
+  email: string
+  granted_by: string
+  granted_by_nome: string | null
+  granted_at: string
+  revoked_by: string | null
+  revoked_by_nome: string | null
+  revoked_at: string | null
 }
 
 /** One remark in a row's thread: appended, signed and dated, never edited. */
@@ -452,12 +490,15 @@ export interface AdminAction {
     | 'mail_resent'
     | 'document_cancelled'
     | 'notice_recorded'
+    /** «Segna come verificato» / «Togli la verifica» (REB-518): `payload.vetted` says which. */
+    | 'vetted'
   admin_id: string
   admin_nome: string
   payload: {
     changed?: string[]
     before?: Record<string, unknown>
     after?: Record<string, unknown>
+    vetted?: boolean
   }
   created_at: string
 }
@@ -561,6 +602,10 @@ export interface Talento {
   origine: 'form' | 'wizard' | 'admin'
   utm_source: string | null
   created_at: string
+  /** REB-518: the «Verificato» pill's date, and whether Claude's anonymous card exists;
+   *  a bare sign-up has neither. */
+  vetted_at: string | null
+  ha_scheda_anonima: boolean
 }
 
 /** What an admin found about a signup on the public web (ORB-155): a name, maybe a
@@ -1063,6 +1108,9 @@ export const admin = {
   deleteFreelancer: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}`, { method: 'DELETE' }),
   restoreFreelancer: (id: string) =>
     request<Freelancer>(`/api/hub/freelancers/${id}/restore`, { method: 'POST' }),
+  /** «Segna come verificato» (`true`) and «Togli la verifica» (`false`), REB-518. */
+  setVetted: (id: string, vetted: boolean) =>
+    request<Freelancer>(`/api/hub/freelancers/${id}/vetted`, json({ vetted })),
   /** The anonymous card Claude wrote from the CV (REB-510), with the last failure. */
   freelancerCard: (id: string) => request<FreelancerCard>(`/api/hub/freelancers/${id}/card`),
   /** «Rigenera scheda»: the card written again from the current CV, now. A failure is
@@ -1084,6 +1132,12 @@ export const admin = {
   /** «Salva il riassunto»: what the talents will read. */
   setTeamRequestSummary: (id: string, riassunto: string) =>
     request<TeamRequest>(`/api/hub/team/requests/${id}/summary`, { ...json({ riassunto }), method: 'PATCH' }),
+  /** «Contatta i talenti», or with `onlySilent` «Rimanda a chi non ha risposto» (D1):
+   *  the request with its talents contacted, the mails leaving after the answer; 409
+   *  with the API's sentence (a summary that names the company, among others), 503
+   *  without a mail key. */
+  contactTeamTalents: (id: string, onlySilent: boolean) =>
+    request<TeamRequest>(`/api/hub/team/requests/${id}/contact?only_silent=${onlySilent}`, { method: 'POST' }),
   companies: (filters: CompaniesFilters & { cursor?: string; limit?: number } = {}) => {
     const qs = filterQuery(filters)
     return request<CompanyList>(`/api/hub/companies${qs ? `?${qs}` : ''}`)
@@ -1107,6 +1161,15 @@ export const admin = {
    *  reverses it. Never a hard delete (REB-347/355). */
   deleteCompany: (id: string) => request<Company>(`/api/hub/companies/${id}`, { method: 'DELETE' }),
   restoreCompany: (id: string) => request<Company>(`/api/hub/companies/${id}/restore`, { method: 'POST' }),
+  /** «Apri il talent cloud» (REB-518): the live grant to the request's referente, new
+   *  (201, with a mail to them) or already there (200, no mail). */
+  openTalentCloud: (companyId: string) =>
+    request<TalentCloudGrant>(`/api/hub/companies/${companyId}/cloud`, { method: 'POST' }),
+  /** «Revoca il talent cloud»: 409 with the API's sentence when nothing is live. */
+  revokeTalentCloud: (companyId: string) =>
+    request<TalentCloudGrant>(`/api/hub/companies/${companyId}/cloud`, { method: 'DELETE' }),
+  /** Every grant, live and closed, newest first (capped by the API, not paginated). */
+  talentCloudGrants: () => request<TalentCloudGrant[]>('/api/hub/cloud/grants'),
   /** Every card and every bare sign-up as one list (REB-282/283), `stato` `lead` for
    *  the bare ones alone -- the read model «Talenti» replaced «Developer e CTO» and
    *  «Iscrizioni» with. `filters` beside `stato` and `cursor` are REB-285's search and
@@ -1259,6 +1322,8 @@ export interface Me {
   /** CV, rate, position and remote preference all present. Always `false` without a
    *  card (`ha_scheda`). */
   completa: boolean
+  /** Whether a talent cloud grant of theirs is live (REB-518): «Talent cloud» in the nav. */
+  talent_cloud: boolean
 }
 
 /** The seven answers a member may change. The email is not among them. */
@@ -1326,6 +1391,77 @@ export const member = {
   /** A signed copy, a plain href like `cvUrl`: the route answers an attachment. */
   contractPdfUrl: (documentId: string) => `/api/hub/me/contracts/${documentId}/pdf`,
   logout: () => request<void>('/api/hub/me/logout', { method: 'POST' }),
+}
+
+// ---- the talent cloud (REB-519, spec § 4.2) -------------------------------------------------
+
+/** A talent as a company rebase admitted reads them: the name, the links, whether rebase
+ *  vetted them, the anonymous card (`luogo` always `null`: the CV is one click away), the
+ *  work mode, the client's band, and whether there is a CV to open. Never the
+ *  freelancer's own rate, their state, the admin's notes, their address or phone: the
+ *  API has no field for them. */
+export interface CloudTalent {
+  freelancer_id: string
+  nome: string
+  cognome: string
+  linkedin_url: string | null
+  links: string[]
+  vetted: boolean
+  card: Scheda
+  modalita: Remoto | null
+  fascia: Band | null
+  ha_cv: boolean
+}
+
+/** `GET /api/hub/me/cloud/talents`: vetted first then by name, at most 200 with
+ *  `capped` when there were more, and every role of the cloud's cards for the filter. */
+export interface CloudTalentList {
+  items: CloudTalent[]
+  ruoli: string[]
+  capped: boolean
+}
+
+/** The cloud's filters: a role of `ruoli`, a seniority, one skill, a work mode, and a
+ *  band of the client's price per day in whole euro (its bottom and its top). */
+export interface CloudFilters {
+  ruolo?: string
+  seniority?: string
+  competenza?: string
+  modalita?: string
+  fascia_min?: number
+  fascia_max?: number
+}
+
+/** One person of the builder's proposal in the cloud: the admin's shape and the name,
+ *  which the cloud shows (spec § 4.2) and the public read never carries. */
+export interface CloudTeamMember extends AdminTeamMember {
+  nome: string
+  cognome: string
+}
+
+/** The builder's proposal in the cloud: the admin's shape, ids, names and the card's
+ *  place kept, since the cloud shows who each person is. */
+export interface CloudTeamProposal extends Omit<AdminTeamProposal, 'team'> {
+  team: CloudTeamMember[]
+}
+
+export const cloud = {
+  /** 403 with the API's sentence when no grant of the caller is live. */
+  talents: (filters: CloudFilters = {}) => {
+    const qs = filterQuery(filters)
+    return request<CloudTalentList>(`/api/hub/me/cloud/talents${qs ? `?${qs}` : ''}`)
+  },
+  /** «Apri il CV»: a plain href like `member.cvUrl`, the route answers an attachment. */
+  cvUrl: (freelancerId: string) => `/api/hub/me/cloud/talents/${freelancerId}/cv`,
+  /** The builder in the cloud: the public route's answers, with the caller's name on it. */
+  propose: (body: TeamProposalCreate) =>
+    request<CloudTeamProposal>('/api/hub/me/cloud/proposals', json(body)),
+  /** «Assumi team»: the proposal filed at once, no form; 409 when already requested. */
+  hire: (proposalId: string) =>
+    request<{ id: string }>('/api/hub/me/cloud/requests', json({ proposal_id: proposalId })),
+  /** «Richiedi» on one card: 404 with the API's sentence for a talent no longer shown. */
+  ask: (freelancerId: string) =>
+    request<{ id: string }>('/api/hub/me/cloud/requests', json({ freelancer_id: freelancerId })),
 }
 
 // ---- campaigns, the public part -----------------------------------------------------------

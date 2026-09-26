@@ -3,6 +3,7 @@ import {
   BookOpen,
   Boxes,
   Briefcase,
+  Cloud,
   Handshake,
   Home,
   LogIn,
@@ -91,6 +92,14 @@ export function SidebarNav({
           <Home className="size-4" aria-hidden="true" />
           La tua area
         </Link>
+        {/* REB-518: while a grant of theirs is live, the cloud rebase opened for their
+            company (spec § 4.1); an admin with none does not see it either. */}
+        {me.talent_cloud && (
+          <Link to="/me/cloud" onClick={onNavigate} className={cn(NAV_LINK, drawer && 'min-h-11')}>
+            <Cloud className="size-4" aria-hidden="true" />
+            Talent cloud
+          </Link>
+        )}
         {isAdmin && (
           <>
             <p className="mt-2 px-2 text-xs font-medium tracking-wide text-sidebar-foreground/70 uppercase">

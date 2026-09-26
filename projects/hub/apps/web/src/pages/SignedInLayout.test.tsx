@@ -200,6 +200,20 @@ describe('the sidebar, gated on role', () => {
     expect(labels).toEqual(['Match', 'Richieste team', 'Aziende'])
   })
 
+  it('shows «Talent cloud» to a person the cloud is open for, and to nobody else (REB-518)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { ...ADA, talent_cloud: true }))
+    mount('/me')
+    const cloud = await screen.findByRole('link', { name: 'Talent cloud' })
+    expect(cloud.getAttribute('href')).toMatch(/\/me\/cloud$/)
+  })
+
+  it('leaves «Talent cloud» out while no grant is live (REB-518)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { ...ADA, talent_cloud: false }))
+    mount('/me')
+    await screen.findByRole('link', { name: /La tua area/ })
+    expect(screen.queryByRole('link', { name: 'Talent cloud' })).toBeNull()
+  })
+
   it('hides the admin group and its eyebrow for a member, keeping "La tua area"', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, ADA))
     mount('/me')

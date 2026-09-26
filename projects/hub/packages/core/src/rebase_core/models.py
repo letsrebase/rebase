@@ -551,7 +551,9 @@ ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fisca
 # four), and `fiscal_updated` on `freelancer_fiscal`, whose payload names the fields that
 # changed and never their values: a tax identifier is not copied into this table.
 # REB-509 adds `vetted`, on entity type `freelancer`: «Vetted» flips `Freelancer.vetted_at`
-# on or off, not a field an "overridden"/"cleared" pair already describes.
+# on or off, not a field an "overridden"/"cleared" pair already describes. REB-517 adds
+# `talents_contacted`, on entity type `team_request`: «Contatta i talenti» and «Rimanda»,
+# with how many talents were mailed. Both in Python only: the column has no CHECK.
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -566,6 +568,7 @@ ADMIN_ACTION_KINDS = (
     "mail_resent",
     "notice_recorded",
     "vetted",
+    "talents_contacted",
 )
 
 
@@ -1062,13 +1065,12 @@ class TeamRequestTalent(Base, PrimaryKeyMixin):
 
 class TalentCloudGrant(Base, PrimaryKeyMixin):
     """A company's access to the private talent cloud (spec § 4.1): opened by «Apri il
-    talent cloud» on a company request's page, for the referente's own `user_id`, closed
-    by «Revoca». One live grant per user (`revoked_at IS NULL`, the partial unique index
-    below): the admin route checks for one first, so a second «Apri» on an
-    already-open grant answers the existing row rather than doubling it. `company_id` is
-    the request the grant was opened from, kept for the trail even though the same user
-    may later hold a grant from a different one; `granted_by` and `revoked_by` are the
-    admin who acted."""
+    talent cloud» on a company request's page, for the referente's own `user_id` and that
+    request's `company_id`, closed by «Revoca il talent cloud». One live grant per person
+    and company (`revoked_at IS NULL`, the partial unique index below, REB-518): a second
+    «Apri» on the same request answers the existing row rather than doubling it, and a
+    person behind two companies holds two grants, the cloud open while either is live
+    (`rebase_core.cloud`). `granted_by` and `revoked_by` are the admin who acted."""
 
     __tablename__ = "talent_cloud_grants"
 
@@ -1083,8 +1085,9 @@ class TalentCloudGrant(Base, PrimaryKeyMixin):
 
     __table_args__ = (
         Index(
-            "uq_talent_cloud_grants_user_id_live",
+            "uq_talent_cloud_grants_user_company_live",
             "user_id",
+            "company_id",
             unique=True,
             postgresql_where=text("revoked_at IS NULL"),
         ),

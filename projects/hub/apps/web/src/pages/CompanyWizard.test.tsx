@@ -45,13 +45,18 @@ function captured(event: string) {
     .map(([, properties]) => properties)
 }
 
-// The draft lives in `localStorage`, which jsdom keeps across the tests of one file.
-beforeEach(() => window.localStorage.clear())
+// The draft lives in `localStorage`, which jsdom keeps across the tests of one file;
+// the origin the page read lives in `sessionStorage` (`resolveOrigin`), the same way.
+beforeEach(() => {
+  window.localStorage.clear()
+  window.sessionStorage.clear()
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
   vi.clearAllMocks()
   window.localStorage.clear()
+  window.sessionStorage.clear()
 })
 
 describe('CompanyWizard', () => {
@@ -191,5 +196,20 @@ describe('CompanyWizard, the draft and the intro (REB-215)', () => {
     const body = JSON.parse(fetchSpy.mock.calls[0]![1]?.body as string)
     expect(body.nome_azienda).toBe('ACME Srl')
     expect(body.distinct_id).toBe('anon-1')
+  })
+})
+
+describe('CompanyWizard, opened from the team builder (REB-518)', () => {
+  it('says above the form that the request is for the talent cloud', async () => {
+    mount('/companies?da=team-builder')
+    expect(await screen.findByRole('note', { name: 'Talent cloud' })).toHaveTextContent(
+      'Stai chiedendo l’accesso al talent cloud: compila la richiesta e ti ricontattiamo noi.',
+    )
+  })
+
+  it('says nothing of the kind from any other page', async () => {
+    mount('/companies?da=home')
+    await screen.findByRole('complementary', { name: 'Cos’è rebase' })
+    expect(screen.queryByRole('note', { name: 'Talent cloud' })).toBeNull()
   })
 })

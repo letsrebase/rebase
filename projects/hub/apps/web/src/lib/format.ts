@@ -87,6 +87,9 @@ export const TALENT_ANSWER_LABELS: Record<string, string> = {
   si: 'Sì',
   no: 'No',
 }
+/** A talent who has the availability mail and has not answered (D1): core's
+ *  `team_words.TALENT_WAITING_LABEL`, held equal by `tests/test_web_labels.py`. */
+export const TALENT_WAITING_LABEL = 'In attesa'
 
 /** A card's `seniority` (spec § 2.1), in the words a profile uses: the keys are core's
  *  `CARD_SENIORITIES`, which `tests/test_web_labels.py` holds this map to. */
@@ -102,6 +105,21 @@ export function formatExperience(anni: number): string {
   if (anni === 0) return 'meno di un anno di esperienza'
   return anni === 1 ? '1 anno di esperienza' : `${anni} anni di esperienza`
 }
+
+/** REB-518: the talent's «Verificato» pill, core's `team_words.VETTED_LABEL`, and the
+ *  two actions of the row's menu that put it on and take it off. */
+export const VETTED_LABEL = 'Verificato'
+export const VETTED_MARK_LABEL = 'Segna come verificato'
+export const VETTED_UNMARK_LABEL = 'Togli la verifica'
+/** REB-519: the badge a vetted talent's card carries in the talent cloud, core's
+ *  `team_words.CLOUD_VETTED_LABEL`, held equal by `tests/test_web_labels.py`. */
+export const CLOUD_VETTED_LABEL = 'Verificato da rebase'
+/** A company request that came from the team builder's beta box (`?da=team-builder`,
+ *  spec § 4.3), and the word its row in «Aziende» shows: core's `team_words`
+ *  `TEAM_BUILDER_ORIGIN` and `TEAM_BUILDER_ORIGIN_LABEL`, held equal by
+ *  `tests/test_web_labels.py`. */
+export const TEAM_BUILDER_ORIGIN = 'team-builder'
+export const TEAM_BUILDER_ORIGIN_LABEL = 'da team builder'
 
 /** The words on the button for each step the core names (REB-477). */
 export const ACTION_LABELS: Record<Action, string> = {

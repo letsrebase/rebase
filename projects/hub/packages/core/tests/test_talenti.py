@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.errors import ValidationFailed
 from rebase_core.freelancers import FreelancerService
-from rebase_core.models import Login
+from rebase_core.models import FreelancerCard, Login, User
 from rebase_core.schemas import (
     FreelancerCreate,
     FreelancerDraft,
@@ -29,6 +29,7 @@ PDF = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 def clean(hub_session: Session) -> Session:
     yield hub_session  # type: ignore[misc]
     hub_session.rollback()
+    hub_session.execute(text("DELETE FROM admin_actions"))
     hub_session.execute(text("DELETE FROM comments"))
     hub_session.execute(text("DELETE FROM freelancers"))
     hub_session.execute(text("DELETE FROM companies"))
@@ -79,6 +80,43 @@ def test_a_bare_signup_is_a_lead_and_a_card_is_its_own_state(clean: Session) -> 
     assert by_email["lead@studio.it"].stato == "lead"
     assert by_email["lead@studio.it"].origine == "form"
     assert listed.totale == 2
+
+
+def test_a_row_carries_the_vetted_date_and_whether_an_anonymous_card_exists(
+    clean: Session,
+) -> None:
+    """REB-518: «Talenti» shows the «Verificato» pill and knows which talent the team
+    builder can propose, with or without a search term (which adds a score column)."""
+    service = FreelancerService(clean)
+    ada, _ = service.apply(_application("ada@studio.it"), PDF, "cv.pdf", "application/pdf")
+    grace, _ = service.apply(
+        _application("grace@studio.it", nome="Grace", cognome="Hopper"),
+        PDF,
+        "cv.pdf",
+        "application/pdf",
+    )
+    _signup(clean, "lead@studio.it")
+    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="", role="admin")
+    clean.add(admin)
+    clean.commit()
+    service.set_vetted(ada.id, True, admin.id)
+    clean.add(
+        FreelancerCard(
+            freelancer_id=ada.id, cv_sha256="0" * 64, card={"ruolo": "Backend developer"}
+        )
+    )
+    # A card the writer retired: only the failure is left, which is no card.
+    clean.add(FreelancerCard(freelancer_id=grace.id, error="rifiutata", error_cv_sha256="1" * 64))
+    clean.commit()
+
+    for q in (None, "studio"):
+        by_email = {item.email: item for item in TalentiService(clean).list_recent(q=q).items}
+        assert by_email["ada@studio.it"].vetted_at is not None
+        assert by_email["ada@studio.it"].ha_scheda_anonima is True
+        assert by_email["grace@studio.it"].vetted_at is None
+        assert by_email["grace@studio.it"].ha_scheda_anonima is False
+        assert by_email["lead@studio.it"].vetted_at is None
+        assert by_email["lead@studio.it"].ha_scheda_anonima is False
 
 
 def test_a_signup_whose_address_already_has_a_card_is_not_also_a_lead(clean: Session) -> None:

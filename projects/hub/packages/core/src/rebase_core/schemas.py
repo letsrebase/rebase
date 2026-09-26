@@ -10,6 +10,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    StrictBool,
     computed_field,
     field_validator,
     model_validator,
@@ -621,6 +622,9 @@ class MeRead(BaseModel):
     azienda_giorni_presenza: int | None = None
     azienda_numero_risorse: int | None = None
     azienda_figura_richiesta: str | None = None
+    # REB-518: whether any talent cloud grant of this person is live, which puts «Talent
+    # cloud» in the member area's nav (`rebase_core.cloud.TalentCloudService.for_user`).
+    talent_cloud: bool = False
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -715,6 +719,9 @@ class FreelancerRead(BaseModel):
     updated_at: datetime
     # `None` while the card is live; a moment once an admin soft-deletes it (REB-347).
     deleted_at: datetime | None = None
+    # When an admin marked the talent «Verificato» (REB-518), `None` while nobody has or
+    # after the mark was taken off; who did it is in the audit trail.
+    vetted_at: datetime | None = None
     commenti: list[CommentRead] = Field(default_factory=list)
 
     @computed_field  # type: ignore[prop-decorator]
@@ -759,6 +766,11 @@ class TalentoRead(BaseModel):
     origine: TalentoOrigine
     utm_source: str | None = None
     created_at: datetime
+    # REB-518: the «Verificato» pill, and whether Claude has an anonymous card of this
+    # talent the team builder can propose (a live one: a retired card is none). A bare
+    # sign-up has neither.
+    vetted_at: datetime | None = None
+    ha_scheda_anonima: bool = False
 
 
 class TalentoList(BaseModel):
@@ -774,6 +786,26 @@ class TalentoList(BaseModel):
     items: list[TalentoRead]
     per_stato: dict[str, int]
     next_cursor: str | None = None
+
+
+class TalentCloudGrantRead(BaseModel):
+    """One grant of the talent cloud (REB-518, spec § 4.1), as the admin reads it: the
+    request it was opened from and its company's name, the referente by name and
+    address (the admin sees names everywhere), who opened it and when, and who closed
+    it and when, `None` while it is live."""
+
+    id: UUID
+    user_id: UUID
+    company_id: UUID
+    azienda: str
+    referente: str
+    email: str
+    granted_by: UUID
+    granted_by_nome: str | None
+    granted_at: datetime
+    revoked_by: UUID | None = None
+    revoked_by_nome: str | None = None
+    revoked_at: datetime | None = None
 
 
 class CompanyRead(BaseModel):
@@ -807,6 +839,9 @@ class CompanyRead(BaseModel):
     deleted_at: datetime | None = None
     # The thread, newest first; filled by `get` only, as on `FreelancerRead`.
     commenti: list[CommentRead] = Field(default_factory=list)
+    # The talent cloud this request's referente holds for it, while it is open
+    # (REB-518): filled by `get` only, for «Apri il talent cloud» and «Revoca».
+    talent_cloud_grant: TalentCloudGrantRead | None = None
 
 
 class CompanyList(BaseModel):
@@ -826,6 +861,15 @@ class StatusChange(BaseModel):
 
     stato: str = Field(min_length=1, max_length=20)
     note: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
+
+
+class VettedChange(BaseModel):
+    """«Segna come verificato» (`true`) and «Togli la verifica» (`false`), REB-518. A
+    strict bool: a word that is not one of the two is a 422, not a guess."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    vetted: StrictBool
 
 
 class FreelancerOverride(BaseModel):

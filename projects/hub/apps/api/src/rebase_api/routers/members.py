@@ -137,6 +137,8 @@ def enter(
 
 @router.get("/me", response_model=MeRead)
 def me(me: MeDep) -> MeRead:
+    """Whoever the cookie resolves to; `talent_cloud` (REB-518) says whether a grant of
+    theirs is live, which puts «Talent cloud» in the area's nav."""
     return me
 
 

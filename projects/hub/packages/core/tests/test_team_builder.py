@@ -816,6 +816,35 @@ def test_public_read_hides_ids_and_luogo(clean: Session) -> None:
         builder.get(uuid7(), public=True)
 
 
+def test_the_cloud_read_names_each_member_and_the_public_read_never(clean: Session) -> None:
+    """The cloud shows who each person is (spec § 4.2), so its read carries the name
+    and the surname beside the id; the public read carries neither, of a public
+    proposal or of a cloud one read by id."""
+    first = _talent(clean, 1)
+    second = _talent(clean, 2)
+    ids = _positions(clean)
+    user_id = _user(clean, "referente@acme.it")
+    team = [_member(ids[first]), _member(ids[second])]
+    llm = RecordingCall([proposal_response(team), proposal_response(team)])
+    builder = _builder(clean, llm)
+
+    cloud = builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE), origine="cloud", user_id=user_id
+    )
+    public = builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
+    )
+
+    assert [(m.freelancer_id, m.nome, m.cognome) for m in cloud.team] == [
+        (first, "Ada", "Lovelace1"),
+        (second, "Ada", "Lovelace2"),
+    ]
+    assert builder.get(cloud.id, public=False) == cloud
+    for anonymous in (public, builder.get(cloud.id, public=True)):
+        assert [(m.nome, m.cognome) for m in anonymous.team] == [(None, None)] * 2
+        assert "Lovelace" not in anonymous.model_dump_json()
+
+
 @pytest.mark.parametrize("change", ["deleted", "scartato"])
 def test_a_read_leaves_out_who_left_the_catalogue(clean: Session, change: str) -> None:
     staying = _talent(clean, 1)

@@ -18,6 +18,7 @@ import {
 import { bandLabel } from '@/lib/bands'
 import {
   TALENT_ANSWER_LABELS,
+  TALENT_WAITING_LABEL,
   TEAM_ORIGIN_LABELS,
   TEAM_REQUEST_STATE_LABELS,
   formatDate,
@@ -51,9 +52,10 @@ function teamBands(economia: AdminTeamProposal['economia']): string {
   return `${bandLabel(economia.giorno)} · ${bandLabel(economia.mese, 'mese')}`
 }
 
-/** The answer to the availability mail and when it came; «—» until one does (D1). */
+/** The answer to the availability mail and when it came (D1); «In attesa» for a talent
+ *  who has the mail and has not answered, «—» for one who was never mailed. */
 function answer(talent: TeamRequestTalent): string {
-  if (talent.risposta === null) return '—'
+  if (talent.risposta === null) return talent.mail_sent_at ? TALENT_WAITING_LABEL : '—'
   const label = TALENT_ANSWER_LABELS[talent.risposta] ?? talent.risposta
   return talent.risposta_at ? `${label} · ${formatDateTime(talent.risposta_at)}` : label
 }
@@ -84,7 +86,8 @@ function moves(request: TeamRequest): Move[] {
  * the summary the talents will read (editable here, since it is what D1's mail sends),
  * the place the engine read, the team by name with each talent's own rate and the band
  * the company saw, the contacts, the state and the admin's note. Nothing is anonymised:
- * this is the admin's page. «Contatta i talenti» is D1's and does not appear here.
+ * this is the admin's page. «Contatta i talenti» (D1) mails the team from here, and the
+ * answers fill the table's last column.
  */
 export function AdminRichiestaTeam() {
   const { id } = useParams({ from: '/signedIn/admin/team/$id' })
@@ -141,6 +144,7 @@ function RequestPage({ request }: { request: TeamRequest }) {
         <h2 id={teamId} className="text-sm font-medium">
           Il team
         </h2>
+        <ContactTalents request={request} onContacted={apply} />
         {request.talenti.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessun talento in questa richiesta.</p>
         ) : (
@@ -214,6 +218,57 @@ function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: Admi
       <TableCell>{talent.fascia ? bandLabel(talent.fascia) : '—'}</TableCell>
       <TableCell>{answer(talent)}</TableCell>
     </TableRow>
+  )
+}
+
+/** «Contatta i talenti» while nobody has the availability mail (D1, spec § 3.5, § 3.6),
+ *  then «Rimanda a chi non ha risposto», which writes only to the silent, so a talent
+ *  who answered is never mailed again, with a fresh link that retires the one they
+ *  had. Nothing once every talent who can be written to answered (a card deleted or
+ *  turned down cannot), or on a closed request. The mails leave after the API's
+ *  answer, which already shows every talent contacted; a refusal is the API's sentence
+ *  as it stands, the summary that names the company among them. */
+function ContactTalents({ request, onContacted }: { request: TeamRequest; onContacted: (updated: TeamRequest) => void }) {
+  const hintId = useId()
+  const contact = useMutation({
+    mutationFn: (onlySilent: boolean) => admin.contactTeamTalents(request.id, onlySilent),
+    onSuccess: onContacted,
+  })
+  const mailed = request.talenti.some((talent) => talent.mail_sent_at !== null)
+  const silent = request.talenti.some((talent) => talent.risposta === null && talent.contattabile)
+  if (request.stato === 'chiusa' || !silent) return null
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        Ogni talento riceve il riassunto, il ruolo proposto, la sua tariffa e due bottoni per rispondere.
+      </p>
+      {contact.isError && (
+        <p role="alert" className="text-sm text-destructive">
+          {sentence(contact.error, 'Non riesco a scrivere ai talenti.')}
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          type="button"
+          size="sm"
+          disabled={contact.isPending}
+          aria-describedby={mailed ? hintId : undefined}
+          onClick={() => contact.mutate(mailed)}
+        >
+          {contact.isPending ? 'Invio…' : mailed ? 'Rimanda a chi non ha risposto' : 'Contatta i talenti'}
+        </Button>
+        {contact.isSuccess && (
+          <span role="status" className="text-sm text-muted-foreground">
+            Mail in partenza: le risposte arrivano in questa tabella.
+          </span>
+        )}
+      </div>
+      {mailed && (
+        <p id={hintId} className="text-sm text-muted-foreground">
+          I link delle mail precedenti smettono di valere.
+        </p>
+      )}
+    </div>
   )
 }
 

@@ -75,6 +75,21 @@ a `SigningService` over `FakeDocumenso`.
 - `close_match`: «Chiudi match», the engagement ends.
 - `set_freelancer_tax_data`: saves the tax data; answers that they are saved, never the values.
 
+The team builder and the talent cloud are twelve tools more (REB-520, spec § 8 of
+`docs/superpowers/specs/2026-09-25-team-builder-and-talent-cloud-design.md`), each
+running the core service the admin area runs, with the calling admin as the actor:
+
+- `list_team_requests`, `get_team_request`: «Richieste team» and a request's page.
+- `set_team_request_summary`: «Salva il riassunto», refused while it names the company.
+- `contact_team_talents`: «Contatta i talenti», or with `only_silent` «Rimanda a chi non ha risposto».
+- `set_team_request_status`: «Segna come contattata», «Chiudi», with an optional note.
+- `propose_team`: the engine as the admin (`origine` `admin`), outside the daily cap.
+- `get_freelancer_card`, `regenerate_freelancer_card`: the anonymous card, and «Rigenera scheda».
+- `set_freelancer_vetted`: «Segna come verificato» and «Togli la verifica».
+- `grant_talent_cloud`, `revoke_talent_cloud`, `list_talent_cloud_grants`: the cloud's grants.
+
+`get_talento` and `list_talenti` carry `vetted_at` and whether an anonymous card exists.
+
 ## The guide is a generated file, committed, and easy to leave stale
 
 `content/guida-primi-passi-freelance.md` is typeset by `tools/build_guide_pdf.py`, with
@@ -254,9 +269,27 @@ tells the people they belong to. So on production the section is live first: the
 `website-v*` tag that carries it, then the key in `.env`, then the `hub-v*` tag. The
 other way round, CVs reach Anthropic while the privacy page still says nothing of it.
 
+**The talent cloud** (milestone D, REB-517 to REB-521) shows the same cards by name to a
+company rebase admitted. «Apri il talent cloud» on a company request's page in «Aziende»
+grants its referente `/hub/me/cloud` and mails them the news, «Revoca» closes it, and
+`cloud_visible` decides who is in it: live, not `scartato`, with a card. There the
+builder names each person, «Assumi team» files the request with no form, and a card's
+«Richiedi» asks for that talent alone. «Contatta i talenti» on a team request mails each
+talent the availability question, answered with a click that posts on
+`/hub/team/risposta`, and «Segna come verificato» in «Talenti» puts «Verificato da
+rebase» on their card. **On production the talents' mail of spec § 4.4 goes out before
+the first grant**: every freelancer with a card is told, by a campaign from «Campagne»,
+what their card says, that the public builder shows it without their name, and that the
+companies rebase admits see their profile by name with the CV. **The `mcp` service now
+uses the Anthropic and the Resend keys** as `api` does: `propose_team` and
+`regenerate_freelancer_card` call Claude, `contact_team_talents` and
+`grant_talent_cloud` send mail. Recreate it beside `api` whenever either key changes;
+without them those tools answer as the admin area does (the builder off, sending not
+active here, the cloud opened with no mail).
+
 **The key** is `REBASE_ANTHROPIC_API_KEY`, in production's and the preview's
-`${DEPLOY_PATH}/.env`, never in the repository; recreate `api` after setting it
-(`docker compose -p rebase --env-file "${DEPLOY_PATH}/.env" up -d api` from
+`${DEPLOY_PATH}/.env`, never in the repository; recreate `api` and `mcp` after setting
+it (`docker compose -p rebase --env-file "${DEPLOY_PATH}/.env" up -d api mcp` from
 `projects/hub`, `-p rebase-preview` on the preview). Without it no card is written
 and `POST /api/hub/team/proposals` answers 503 «Il team builder è spento.»; nothing
 else of the hub changes. `REBASE_TEAM_BUILDER_ENABLED=false` is the switch that turns
@@ -285,17 +318,28 @@ proposals written: an admin's own and one with an empty catalogue (no call made)
 not count, and a call that failed is bounded by `spend_one` and the concurrency cap,
 not by this one.
 
-**`/api/hub/team/proposals` needs 90 seconds on the host vhost.** A proposal holds the
-request while Claude writes, and the seam gives up after two attempts of 40 seconds
-(`llm.py`, `_TIMEOUT_SECONDS` and `_MAX_RETRIES`), near 81 seconds; nginx's default of
-60 would answer the visitor 504 while the proposal goes on. The repository's copies
-of the host vhosts, `projects/website/deploy/letsrebase.conf` and
-`preview.letsrebase.conf`, carry the location beside `location ^~ /api/hub/`, which an
-exact match outranks; the installed vhost in `/etc/nginx/sites-available/` gets it by
-hand, as the MCP location did. Production's:
+**`/api/hub/team/proposals` needs 90 seconds on the host vhost, and so does
+`/api/hub/me/cloud/proposals`**, the same builder inside the talent cloud (REB-519). A
+proposal holds the request while Claude writes, and the seam gives up after two
+attempts of 40 seconds (`llm.py`, `_TIMEOUT_SECONDS` and `_MAX_RETRIES`), near 81
+seconds; nginx's default of 60 would answer the visitor 504 while the proposal goes
+on. The repository's copies of the host vhosts, `projects/website/deploy/letsrebase.conf`
+and `preview.letsrebase.conf`, carry both locations beside `location ^~ /api/hub/`,
+which an exact match outranks; the installed vhost in `/etc/nginx/sites-available/`
+gets them by hand, as the MCP location did. That MCP location,
+`location ^~ /api/hub/mcp`, waits on the same seam for `propose_team` and
+`regenerate_freelancer_card` (REB-520), so it carries `proxy_read_timeout 90s;` after
+its include too: in both copies here, and by hand in the installed vhosts (8088 on
+production, 8089 on the preview), with the same `nginx -t` and reload. Production's:
 
 ```
 location = /api/hub/team/proposals {
+    client_max_body_size 6M;
+    proxy_pass http://127.0.0.1:8084;
+    include /etc/nginx/snippets/orbiters-proxy.conf;
+    proxy_read_timeout 90s;
+}
+location = /api/hub/me/cloud/proposals {
     client_max_body_size 6M;
     proxy_pass http://127.0.0.1:8084;
     include /etc/nginx/snippets/orbiters-proxy.conf;

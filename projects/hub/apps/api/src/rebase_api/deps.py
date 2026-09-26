@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.analytics import Tracker, tracker_from_settings
 from rebase_core.campaigns.sender import CampaignSender, campaign_sender_from_settings
+from rebase_core.cloud import CLOUD_CLOSED, CloudCaller, CloudTalentService
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.db import SessionOpener, create_engine_from_settings, session_factory
@@ -82,6 +83,20 @@ def get_me(request: Request, session: SessionDep, settings: SettingsDep) -> MeRe
 
 
 MeDep = Annotated[MeRead, Depends(get_me)]
+
+
+def get_cloud_caller(me: MeDep, session: SessionDep) -> CloudCaller:
+    """A signed-in person with a live talent cloud grant (REB-519, spec § 4.2), with the
+    company of their newest one, which a cloud proposal and request are for. Nobody
+    signed in is `MeDep`'s 401; signed in with no live grant, an admin included, is a
+    real identity at the wrong door: 403 with the sentence the page shows."""
+    caller = CloudTalentService(session).caller(me.id)
+    if caller is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, CLOUD_CLOSED)
+    return caller
+
+
+CloudDep = Annotated[CloudCaller, Depends(get_cloud_caller)]
 
 
 def get_sender(settings: SettingsDep) -> EmailSender | None:

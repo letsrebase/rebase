@@ -12,6 +12,7 @@ import { CompanyWizard } from '@/pages/CompanyWizard'
 import { FreelancerWizard } from '@/pages/FreelancerWizard'
 import { SignedInLayout } from '@/pages/SignedInLayout'
 import { Team } from '@/pages/Team'
+import { TeamRisposta } from '@/pages/TeamRisposta'
 import { AdminAccessi } from '@/pages/admin/Accessi'
 import { AdminAdmins } from '@/pages/admin/Admins'
 import { AdminAgenti } from '@/pages/admin/Agenti'
@@ -37,6 +38,7 @@ import {
 } from '@/pages/admin/lists'
 import { Accedi } from '@/pages/member/Accedi'
 import { Area } from '@/pages/member/Area'
+import { Cloud } from '@/pages/member/Cloud'
 import { Entra } from '@/pages/member/Entra'
 import { Modifica } from '@/pages/member/Modifica'
 import { ModificaAzienda } from '@/pages/member/ModificaAzienda'
@@ -122,6 +124,17 @@ const companiesRedirect = createRoute({
 })
 // P-REB-43: the public team builder, with the wizards' chrome and no login.
 const team = createRoute({ getParentRoute: () => publicLayout, path: '/team', component: Team })
+// REB-517: where a talent answers the availability mail, public like the page above; the
+// page reads `t` and `r` itself and posts nothing until «Conferma».
+const teamAnswer = createRoute({
+  getParentRoute: () => publicLayout,
+  path: '/team/risposta',
+  validateSearch: (search: Record<string, unknown>): { t: string; r: string } => ({
+    t: strParam(search.t) ?? '',
+    r: strParam(search.r) ?? '',
+  }),
+  component: TeamRisposta,
+})
 const thanks = createRoute({
   getParentRoute: () => publicLayout,
   path: '/thanks',
@@ -203,6 +216,9 @@ const meNewCompany = createRoute({
   path: '/new-company',
   component: NuovaRichiestaAzienda,
 })
+// The talent cloud (REB-519, spec § 4.2): REB-518 opens its door from «Aziende», and the
+// nav's «Talent cloud» leads here while a grant of the person is live.
+const meCloud = createRoute({ getParentRoute: () => me, path: '/cloud', component: Cloud })
 // `/io`, `/io/modifica` and `/io/modifica-azienda` each renamed their own segment, not
 // just the shared `/io` prefix, so a deep link to any of the three needs its own
 // redirect: TanStack Router does not cascade a parent's rename onto a child route that
@@ -446,6 +462,7 @@ export const routeTree = root.addChildren([
     companies,
     companiesRedirect,
     team,
+    teamAnswer,
     thanks,
     thanksRedirect,
     login,
@@ -455,7 +472,7 @@ export const routeTree = root.addChildren([
     unsubscribe,
   ]),
   signedInLayout.addChildren([
-    me.addChildren([meIndex, meEdit, meEditCompany, meNewCompany]),
+    me.addChildren([meIndex, meEdit, meEditCompany, meNewCompany, meCloud]),
     meRedirect,
     meEditRedirect,
     meEditCompanyRedirect,

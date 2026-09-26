@@ -67,6 +67,20 @@ const NOTICE_RECORDED: AdminAction = {
   created_at: '2026-09-24T09:00:00Z',
 }
 
+// «Segna come verificato» and «Togli la verifica» (REB-518): one kind, `vetted`, whose
+// payload says which way it went.
+const VETTED: AdminAction = {
+  id: 'a5',
+  entity_type: 'freelancer',
+  entity_id: 'f1',
+  kind: 'vetted',
+  admin_id: 'u1',
+  admin_nome: 'Ivan Bianchi',
+  payload: { vetted: true },
+  created_at: '2026-09-25T09:00:00Z',
+}
+const UNVETTED: AdminAction = { ...VETTED, id: 'a6', payload: { vetted: false }, created_at: '2026-09-26T09:00:00Z' }
+
 function mount({ canRevert = true, onReverted = () => {} }: { canRevert?: boolean; onReverted?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
@@ -110,6 +124,16 @@ describe('AuditTrail', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [NOTICE_RECORDED]))
     mount()
     await screen.findByText('Disdetta registrata')
+    expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
+  })
+
+  it('says which way a verification went, with no revert button (REB-518)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [UNVETTED, VETTED]))
+    mount()
+    await screen.findByText('Verifica tolta')
+    const entries = screen.getAllByRole('listitem')
+    expect(entries[0]).toHaveTextContent('Verifica tolta')
+    expect(entries[1]).toHaveTextContent('Segnato come verificato')
     expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
   })
 

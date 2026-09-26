@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any, Literal, NamedTuple
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from rebase_core.bands import Band
 
@@ -41,6 +41,10 @@ __all__ = [
     "Band",
     "Card",
     "CardsRefreshed",
+    "CloudRequestCreate",
+    "CloudTalentList",
+    "CloudTalentQuery",
+    "CloudTalentRead",
     "FreelancerCardRead",
     "TALENT_ANSWERS",
     "TEAM_PROPOSAL_ORIGINS",
@@ -137,12 +141,16 @@ class TeamMemberRead(BaseModel):
     """One person of a proposed team (§ 3.3): `posizione` is their index in this
     proposal (1, 2, 3), the only handle the public read gives; `freelancer_id` is
     `None` there, so a visitor cannot follow a talent across proposals, and so is the
-    card's `luogo`, which only the engine and the admin read. `modalita` is
-    `Freelancer.remoto` and `fascia` the band of their current rate, both read when the
-    proposal is, the way the card is shown everywhere (§ 2.1)."""
+    card's `luogo`, which only the engine and the admin read. `nome` and `cognome` are
+    the person's, for the cloud and the admin, which show who each member is (§ 4.2);
+    `None` on the public read, like the id. `modalita` is `Freelancer.remoto` and
+    `fascia` the band of their current rate, both read when the proposal is, the way
+    the card is shown everywhere (§ 2.1)."""
 
     posizione: int
     freelancer_id: UUID | None
+    nome: str | None = None
+    cognome: str | None = None
     ruolo: str
     motivazione: str
     giorni_settimana: int | None
@@ -202,7 +210,8 @@ class TeamRequestCreated(BaseModel):
 class TeamRequestTalentRead(BaseModel):
     """One talent of a request, as the admin reads it: the name, the role proposed, the
     freelancer's own rate and the client's band from it, and the availability mail's
-    progress (D1), all `None` until the first send."""
+    progress (D1), all `None` until the first send. `contattabile` is false for a talent
+    whose card was deleted or `scartato`: the availability mail skips them."""
 
     freelancer_id: UUID
     nome: str
@@ -213,6 +222,7 @@ class TeamRequestTalentRead(BaseModel):
     mail_sent_at: datetime | None
     risposta: str | None
     risposta_at: datetime | None
+    contattabile: bool
 
 
 class TeamRequestRead(BaseModel):
@@ -290,3 +300,99 @@ class TeamRequestSummary(BaseModel):
     @classmethod
     def _paragraphs(cls, value: str) -> str:
         return clean_multiline(value, what="un riassunto")
+
+
+# ---- the talents' availability (REB-517, spec § 3.2, § 3.6) -------------------------------
+
+# `token_urlsafe(32)` is 43 characters: room to spare, and nothing unbounded is hashed.
+AVAILABILITY_TOKEN_MAX_LENGTH = 128
+
+
+class TeamAvailabilityAnswer(BaseModel):
+    """What the answer page posts on «Conferma»: the token from the mail's link and the
+    answer the link carried. An empty or unknown token is not a 422 but the same
+    `invalid` a spent one gets, so the page says one sentence for all of them."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    t: str = Field(max_length=AVAILABILITY_TOKEN_MAX_LENGTH)
+    risposta: Literal["si", "no"]
+
+
+class TeamAvailabilityOutcome(BaseModel):
+    """The answer recorded, or `invalid` for a token unknown, spent or expired alike."""
+
+    esito: Literal["si", "no", "invalid"]
+
+
+# ---- the talent cloud (REB-519, spec § 4.2) -------------------------------------------------
+
+# A skill typed in the one search box: longer than any skill a card holds, and bounded,
+# as every free text that reaches `ILIKE` is (`search.SEARCH_MAX_LENGTH`).
+COMPETENZA_MAX_LENGTH = 100
+
+
+class CloudTalentQuery(BaseModel):
+    """The cloud's filters (spec § 4.2), each optional and all together: a role of the
+    cards' own (`CloudTalentList.ruoli`), a seniority, one skill searched inside the
+    card's skills, a work mode, and a band of the client's price per day, its bottom at
+    or above `fascia_min` and its top at or below `fascia_max`, in whole euro. A blank
+    word narrows nothing. The words are checked by the service, so the API and the MCP
+    server refuse the same ones the same way."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    ruolo: str | None = Field(default=None, max_length=120)
+    seniority: str | None = Field(default=None, max_length=20)
+    competenza: str | None = Field(default=None, max_length=COMPETENZA_MAX_LENGTH)
+    modalita: str | None = Field(default=None, max_length=20)
+    fascia_min: int | None = Field(default=None, ge=0)
+    fascia_max: int | None = Field(default=None, ge=0)
+
+
+class CloudTalentRead(BaseModel):
+    """A talent as an admitted company reads them in the cloud (spec § 4.2): who they
+    are, the links they gave, whether rebase vetted them, the anonymous card (its
+    `luogo` left out: the CV is one click away), the work mode, the client's band and
+    whether there is a CV to open. Never the freelancer's own rate, their state, the
+    admin's notes and comments, nor their address or phone: those are not fields here,
+    so no read can carry them."""
+
+    freelancer_id: UUID
+    nome: str
+    cognome: str
+    linkedin_url: str | None
+    links: list[str]
+    vetted: bool
+    card: Card
+    modalita: str | None
+    fascia: Band | None
+    ha_cv: bool
+
+
+class CloudTalentList(BaseModel):
+    """The cloud's page: the talents the filters leave, vetted first then by name, at
+    most `cloud.CLOUD_LIST_CAP`, and `capped` when there were more (the page says so,
+    since the list has no second page); `ruoli` is every role of the cloud's cards once,
+    sorted, the role filter's choices whatever the filters narrowed."""
+
+    items: list[CloudTalentRead]
+    ruoli: list[str]
+    capped: bool
+
+
+class CloudRequestCreate(BaseModel):
+    """What the cloud files, with no form: «Assumi team» on the builder's proposal
+    (`proposal_id`) or «Richiedi» on one card (`freelancer_id`), exactly one of the two.
+    Who asks, and for which company, is the caller's grant (spec § 4.2)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    proposal_id: UUID | None = None
+    freelancer_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def _one_of_the_two(self) -> "CloudRequestCreate":
+        if (self.proposal_id is None) == (self.freelancer_id is None):
+            raise ValueError("serve una proposta oppure un talento, uno dei due")
+        return self

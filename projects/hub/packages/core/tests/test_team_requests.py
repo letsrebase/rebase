@@ -1,5 +1,6 @@
 """The team request (REB-512, spec § 3.2, § 3.5): a visitor's «Assumi team» on a proposal
-becomes a row the admin works, one talent per member, and a mail to rebase; and the
+becomes a row the admin works, one talent per member, and a mail to rebase; the
+availability mail to each talent and the answer they give (REB-517, spec § 3.6); and the
 daily cap on proposals (spec § 5).
 
 The freelancers, their cards and the proposals are written straight into the tables:
@@ -7,7 +8,9 @@ what is under test is what the request makes of a proposal, not how the engine w
 one (`test_team_builder.py`).
 """
 
+import hashlib
 import logging
+import re
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -20,12 +23,19 @@ from fakes_cards import CARD, MODEL
 from sqlalchemy import Engine, select, text, update
 from sqlalchemy.orm import Session
 
-from rebase_core.analytics import TEAM_REQUEST_SENT, Tracker
+from rebase_core.analytics import TEAM_REQUEST_SENT, TEAM_TALENT_ANSWER, Tracker
 from rebase_core.bands import Band
 from rebase_core.config import Settings
 from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, NotFound, TeamBuilderBusy, ValidationFailed
-from rebase_core.mail import Mail, team_request_mail
+from rebase_core.mail import (
+    AVAILABLE_GREEN,
+    CTA,
+    Mail,
+    RecordingSender,
+    team_availability_mail,
+    team_request_mail,
+)
 from rebase_core.models import (
     AdminAction,
     Freelancer,
@@ -37,10 +47,15 @@ from rebase_core.models import (
 )
 from rebase_core.team_caps import BUSY_SENTENCE, proposals_today, require_daily_room
 from rebase_core.team_requests import (
+    ALREADY_CONTACTED,
     ALREADY_REQUESTED,
+    ANSWER_MAX_AGE,
     NAMES_THE_COMPANY,
+    NO_SENDER,
+    NOBODY_TO_CONTACT,
     NOBODY_TO_HIRE,
     PROPOSAL_REFUSED,
+    REQUEST_CLOSED,
     TeamRequestService,
     names_the_company,
 )
@@ -544,6 +559,452 @@ def test_summary_of_a_request_with_no_proposal_is_refused(clean: Session) -> Non
     assert read.proposal is None and read.riassunto is None and read.descrizione is None
     with pytest.raises(InvalidState):
         service.set_summary(row.id, "Un riassunto.", admin)
+
+
+# ---- the availability mail and the answer (REB-517, spec § 3.2, § 3.6) ------------------------
+
+MISSING = UUID("00000000-0000-7000-8000-000000000000")
+
+
+class Refusing(RecordingSender):
+    """A provider that takes every mail but refuses the ones to `refused`."""
+
+    def __init__(self, *refused: str) -> None:
+        super().__init__()
+        self.refused = set(refused)
+
+    def send(self, mail: Mail) -> bool:
+        super().send(mail)
+        return mail.to not in self.refused
+
+
+def _mailer(
+    session: Session,
+    sender: RecordingSender | None = None,
+    *,
+    tracker: Tracker | None = None,
+    now: datetime = NOW,
+) -> TeamRequestService:
+    return TeamRequestService(
+        session,
+        settings=SETTINGS,
+        sender=sender if sender is not None else RecordingSender(),
+        tracker=tracker,
+        now=lambda: now,
+    )
+
+
+def _token(mail: Mail, risposta: str = "si") -> str:
+    """The raw token in the mail's link for `risposta`, on the hub's own origin."""
+    found = re.search(
+        rf"https://letsrebase\.com/hub/team/risposta\?t=([A-Za-z0-9_-]+)&r={risposta}\n",
+        mail.text,
+    )
+    assert found, mail.text
+    return found.group(1)
+
+
+def _sha256(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def _row(session: Session, request_id: UUID, freelancer_id: UUID) -> TeamRequestTalent:
+    session.expire_all()
+    row = session.scalar(
+        select(TeamRequestTalent).where(
+            TeamRequestTalent.request_id == request_id,
+            TeamRequestTalent.freelancer_id == freelancer_id,
+        )
+    )
+    assert row is not None
+    return row
+
+
+def _contacts(session: Session) -> list[dict[str, Any]]:
+    actions = session.scalars(
+        select(AdminAction)
+        .where(AdminAction.kind == "talents_contacted")
+        .order_by(AdminAction.created_at)
+    ).all()
+    return [action.payload for action in actions]
+
+
+def test_contact_mails_every_talent_once(clean: Session) -> None:
+    first = _talent(clean, 1, tariffa=Decimal("450.00"))
+    second = _talent(clean, 2, tariffa=None)
+    request = _public(
+        _service(clean), _proposal(clean, [first, second], roles=["Backend developer", "Designer"])
+    )
+    admin = _user(clean, "ivan@rebase.it", role="admin")
+    sender = RecordingSender()
+
+    read = _mailer(clean, sender).contact_talents(request.id, admin, only_silent=False)
+
+    assert read.stato == "contattata" and read.contacted_at == NOW
+    assert [talent.mail_sent_at for talent in read.talenti] == [NOW, NOW]
+    assert [talent.risposta for talent in read.talenti] == [None, None]
+    ada, bea = sender.sent
+    assert (ada.to, bea.to) == ("talento1@studio.it", "talento2@studio.it")
+    for mail in (ada, bea):
+        assert mail.subject == "Un progetto per te: sei disponibile?"
+        assert RIASSUNTO in mail.text
+        assert mail.html is not None
+        # One token per talent, behind both answers.
+        assert _token(mail, "si") == _token(mail, "no")
+        # No company and never the client's band: the talent reads their own rate.
+        for secret in ("Acme", "wile@acme.it", Band(min=500, max=650).label(), "fascia"):
+            assert secret not in mail.text and secret not in mail.html, secret
+    assert ada.text.startswith("Ciao Ada1,") and "Backend developer" in ada.text
+    assert "450 € al giorno" in ada.text
+    # No other talent: not the name, not the role.
+    assert "Ada2" not in ada.text and "Lovelace" not in ada.text and "Designer" not in ada.text
+    assert bea.text.startswith("Ciao Ada2,") and "Designer" in bea.text
+    assert "€" not in bea.text and "Backend developer" not in bea.text
+    assert _token(ada) != _token(bea)
+    # Each token is at rest as its SHA-256, never as itself.
+    for freelancer_id, mail in ((first, ada), (second, bea)):
+        row = _row(clean, request.id, freelancer_id)
+        assert row.token_hash == _sha256(_token(mail))
+        assert row.mail_sent_at == NOW
+
+    # A second «Contatta i talenti» mails nobody: writing again is «Rimanda», to the silent.
+    with pytest.raises(InvalidState) as again:
+        _mailer(clean, sender).contact_talents(request.id, admin, only_silent=False)
+
+    assert again.value.message == ALREADY_CONTACTED
+    assert ALREADY_CONTACTED == (
+        "I talenti sono già stati contattati: rimanda a chi non ha risposto."
+    )
+    assert len(sender.sent) == 2
+    assert _row(clean, request.id, first).token_hash == _sha256(_token(ada))
+    assert _contacts(clean) == [{"talenti": 2, "only_silent": False}]
+    [action] = clean.scalars(select(AdminAction).where(AdminAction.kind == "talents_contacted"))
+    assert (action.entity_type, action.entity_id, action.admin_id) == (
+        "team_request",
+        request.id,
+        admin,
+    )
+
+
+def test_contact_only_silent(clean: Session) -> None:
+    """«Rimanda a chi non ha risposto»: a fresh link to each talent with no answer, in
+    place of the one they had; a talent who answered is never mailed again."""
+    talents = [_talent(clean, n) for n in (1, 2, 3)]
+    request = _public(_service(clean), _proposal(clean, talents))
+    admin = _user(clean, "ivan@rebase.it", role="admin")
+    sender = RecordingSender()
+    service = _mailer(clean, sender)
+    service.contact_talents(request.id, admin, only_silent=False)
+    first, second, third = sender.sent
+    assert service.answer(_token(first), "si") == "si"
+    assert service.answer(_token(third), "no") == "no"
+    later = NOW + timedelta(days=2)
+
+    read = _mailer(clean, sender, now=later).contact_talents(request.id, admin, only_silent=True)
+
+    [again] = sender.sent[3:]
+    assert again.to == "talento2@studio.it"
+    assert _token(again) != _token(second)
+    assert [talent.mail_sent_at for talent in read.talenti] == [NOW, later, NOW]
+    assert [talent.risposta for talent in read.talenti] == ["si", None, "no"]
+    assert read.contacted_at == NOW  # the first send's
+    # The new link spent the old one, and answers.
+    assert service.answer(_token(second), "si") == "invalid"
+    assert _mailer(clean, now=later).answer(_token(again), "no") == "no"
+
+    # Everyone answered: there is nobody left to write to.
+    with pytest.raises(InvalidState) as nobody:
+        _mailer(clean, sender, now=later).contact_talents(request.id, admin, only_silent=True)
+
+    assert nobody.value.message == NOBODY_TO_CONTACT == "Non c'è nessun talento da contattare."
+    assert len(sender.sent) == 4
+    assert _contacts(clean) == [
+        {"talenti": 3, "only_silent": False},
+        {"talenti": 1, "only_silent": True},
+    ]
+
+
+def test_contact_skips_a_talent_gone_since_the_request(
+    clean: Session, logs: pytest.LogCaptureFixture
+) -> None:
+    talents = [_talent(clean, n) for n in (1, 2, 3)]
+    request = _public(_service(clean), _proposal(clean, talents))
+    admin = _user(clean, "ivan@rebase.it", role="admin")
+    clean.execute(update(Freelancer).where(Freelancer.id == talents[1]).values(deleted_at=NOW))
+    clean.execute(update(Freelancer).where(Freelancer.id == talents[2]).values(stato="scartato"))
+    clean.commit()
+    sender = RecordingSender()
+    service = _mailer(clean, sender)
+
+    read = service.contact_talents(request.id, admin, only_silent=False)
+
+    assert [mail.to for mail in sender.sent] == ["talento1@studio.it"]
+    assert [talent.mail_sent_at for talent in read.talenti] == [NOW, None, None]
+    # The page reads who can be written to at all.
+    assert [talent.contattabile for talent in read.talenti] == [True, False, False]
+    for gone in talents[1:]:
+        assert _row(clean, request.id, gone).token_hash is None
+    lines = [record.getMessage() for record in logs.records]
+    skipped = [line for line in lines if "not mailed" in line]
+    assert len(skipped) == 2
+    for line in skipped:
+        assert str(request.id) in line
+        for secret in ("Ada", "Lovelace", "studio.it"):
+            assert secret not in line
+
+    # «Rimanda» skips them too: with only them silent, nobody is left to write to.
+    assert service.answer(_token(sender.sent[0]), "si") == "si"
+    with pytest.raises(InvalidState) as nobody:
+        service.contact_talents(request.id, admin, only_silent=True)
+    assert nobody.value.message == NOBODY_TO_CONTACT
+    assert len(sender.sent) == 1
+
+
+def test_contact_refuses_a_summary_that_names_the_company(clean: Session) -> None:
+    talent = _talent(clean, 1)
+    request = _public(
+        _service(clean),
+        _proposal(clean, [talent], riassunto="ACME rifà il gestionale degli ordini."),
+    )
+    admin = _user(clean, "ivan@rebase.it", role="admin")
+    sender = RecordingSender()
+
+    with pytest.raises(InvalidState) as refused:
+        _mailer(clean, sender).contact_talents(request.id, admin, only_silent=False)
+
+    assert refused.value.message == NAMES_THE_COMPANY
+    assert sender.sent == []
+    read = _service(clean).get(request.id)
+    assert read.stato == "nuova" and read.contacted_at is None
+    assert _row(clean, request.id, talent).token_hash is None
+    assert _contacts(clean) == []
+
+    # Corrected, the summary goes out as the admin wrote it.
+    summary = "Un'azienda di logistica rifà il gestionale degli ordini."
+    _service(clean).set_summary(request.id, summary, admin)
+    _mailer(clean, sender).contact_talents(request.id, admin, only_silent=False)
+    [mail] = sender.sent
+    assert summary in mail.text and "ACME" not in mail.text
+
+
+def test_contact_needs_a_sender_and_an_open_request(clean: Session) -> None:
+    talent = _talent(clean, 1)
+    request = _public(_service(clean), _proposal(clean, [talent]))
+    admin = _user(clean, "ivan@rebase.it", role="admin")
+
+    with pytest.raises(InvalidState) as unsent:
+        _service(clean).contact_talents(request.id, admin, only_silent=False)
+    assert unsent.value.message == NO_SENDER
+
+    _service(clean).set_status(request.id, "chiusa", admin)
+    sender = RecordingSender()
+    with pytest.raises(InvalidState) as closed:
+        _mailer(clean, sender).contact_talents(request.id, admin, only_silent=False)
+    assert closed.value.message == REQUEST_CLOSED
+    assert REQUEST_CLOSED == "La richiesta è chiusa: riaprila prima di scrivere ai talenti."
+    assert sender.sent == []
+    assert _row(clean, request.id, talent).token_hash is None
+
+    with pytest.raises(NotFound):
+        _mailer(clean).contact_talents(MISSING, admin, only_silent=False)
+
+
+def test_a_refused_mail_leaves_no_link_and_rimanda_tries_again(
+    clean: Session, logs: pytest.LogCaptureFixture
+) -> None:
+    first, second = _talent(clean, 1), _talent(clean, 2)
+    request = _public(_service(clean), _proposal(clean, [first, second]))
+    admin = _user(clean, "ivan@rebase.it", role="admin")
+    refusing = Refusing("talento2@studio.it")
+
+    read = _mailer(clean, refusing).contact_talents(request.id, admin, only_silent=False)
+
+    assert [talent.mail_sent_at for talent in read.talenti] == [NOW, None]
+    # One mail left, so the request was contacted.
+    assert read.stato == "contattata" and read.contacted_at == NOW
+    assert _row(clean, request.id, second).token_hash is None
+    assert _mailer(clean).answer(_token(refusing.sent[1]), "si") == "invalid"
+    [warning] = [
+        record.getMessage() for record in logs.records if record.levelno >= logging.WARNING
+    ]
+    assert str(request.id) in warning
+    for secret in ("talento2", "studio.it", "Ada", "Lovelace"):
+        assert secret not in warning
+
+    # One talent has the mail, so the first send is spent; «Rimanda» writes to both silent.
+    with pytest.raises(InvalidState):
+        _mailer(clean).contact_talents(request.id, admin, only_silent=False)
+    sender = RecordingSender()
+    _mailer(clean, sender).contact_talents(request.id, admin, only_silent=True)
+    assert [mail.to for mail in sender.sent] == ["talento1@studio.it", "talento2@studio.it"]
+
+
+def test_a_first_send_refused_whole_leaves_the_request_as_it_was(
+    clean: Session, logs: pytest.LogCaptureFixture
+) -> None:
+    """No mail of the batch left: the request was not contacted, so it goes back to the
+    state it had, without the `contacted_at` the send wrote, and «Contatta i talenti»
+    is free again."""
+    talents = [_talent(clean, 1), _talent(clean, 2)]
+    request = _public(_service(clean), _proposal(clean, talents))
+    admin = _user(clean, "ivan@rebase.it", role="admin")
+
+    read = _mailer(clean, Refusing("talento1@studio.it", "talento2@studio.it")).contact_talents(
+        request.id, admin, only_silent=False
+    )
+
+    assert read.stato == "nuova" and read.contacted_at is None
+    assert [talent.mail_sent_at for talent in read.talenti] == [None, None]
+    undone = [line for line in (r.getMessage() for r in logs.records) if "again" in line]
+    assert undone == [
+        f"team request {request.id}: no availability mail left, the request is nuova again"
+    ]
+    retried = RecordingSender()
+    again = _mailer(clean, retried).contact_talents(request.id, admin, only_silent=False)
+    assert [mail.to for mail in retried.sent] == ["talento1@studio.it", "talento2@studio.it"]
+    assert again.stato == "contattata" and again.contacted_at == NOW
+
+    # A request reopened by hand keeps the `contacted_at` it already had: only the state
+    # this send moved goes back.
+    reopened = _public(_service(clean), _proposal(clean, [_talent(clean, 3)]), "Tre Srl")
+    _service(clean).set_status(reopened.id, "contattata", admin)
+    _service(clean).set_status(reopened.id, "nuova", admin)
+    later = NOW + timedelta(days=1)
+    read = _mailer(clean, Refusing("talento3@studio.it"), now=later).contact_talents(
+        reopened.id, admin, only_silent=False
+    )
+    assert read.stato == "nuova" and read.contacted_at == NOW
+
+
+def test_availability_records_yes_and_no(clean: Session) -> None:
+    first, second = _talent(clean, 1), _talent(clean, 2)
+    request = _public(_service(clean), _proposal(clean, [first, second]))
+    admin = _user(clean, "ivan@rebase.it", role="admin")
+    sender = RecordingSender()
+    _mailer(clean, sender).contact_talents(request.id, admin, only_silent=False)
+    capture = FakeCapture()
+    later = NOW + timedelta(hours=3)
+    service = _mailer(clean, tracker=Tracker(capture), now=later)
+
+    assert service.answer(_token(sender.sent[0], "si"), "si") == "si"
+    assert service.answer(_token(sender.sent[1], "no"), "no") == "no"
+
+    read = service.get(request.id)
+    assert [(talent.risposta, talent.risposta_at) for talent in read.talenti] == [
+        ("si", later),
+        ("no", later),
+    ]
+    [item] = service.list_recent(stato=None, origine=None).items
+    assert (item.talenti_totale, item.talenti_si) == (2, 1)
+    # Counted with the answer alone: no talent, no request, no address.
+    assert [(event, properties) for event, _, properties in capture.calls] == [
+        (TEAM_TALENT_ANSWER, {"risposta": "si", "$process_person_profile": False}),
+        (TEAM_TALENT_ANSWER, {"risposta": "no", "$process_person_profile": False}),
+    ]
+    assert TEAM_TALENT_ANSWER == "team_talento_risposta"
+
+
+def test_availability_token_is_one_use_and_expires(clean: Session) -> None:
+    talents = [_talent(clean, n) for n in (1, 2, 3)]
+    request = _public(_service(clean), _proposal(clean, talents))
+    admin = _user(clean, "ivan@rebase.it", role="admin")
+    sender = RecordingSender()
+    _mailer(clean, sender).contact_talents(request.id, admin, only_silent=False)
+    ada, bea, cleo = (_token(mail) for mail in sender.sent)
+    service = _mailer(clean)
+
+    assert service.answer(ada, "si") == "si"
+    # Spent: another answer, the same or the other, is refused and changes nothing.
+    assert service.answer(ada, "no") == "invalid"
+    assert service.answer(ada, "si") == "invalid"
+    assert _row(clean, request.id, talents[0]).risposta == "si"
+    # An unknown or an empty token is the same refusal.
+    assert service.answer("non-un-token", "si") == "invalid"
+    assert service.answer("", "no") == "invalid"
+    # Thirty days from the mail, and not a second more.
+    assert timedelta(days=30) == ANSWER_MAX_AGE
+    last = NOW + ANSWER_MAX_AGE - timedelta(seconds=1)
+    assert _mailer(clean, now=last).answer(bea, "no") == "no"
+    assert _mailer(clean, now=NOW + ANSWER_MAX_AGE).answer(cleo, "si") == "invalid"
+    assert _row(clean, request.id, talents[2]).risposta is None
+
+    with pytest.raises(ValidationFailed) as unknown:
+        service.answer(cleo, "forse")
+    assert unknown.value.details["field"] == "risposta"
+
+
+def _contrast_with_white(colour: str) -> float:
+    """WCAG 2's contrast ratio of white text on `colour` (`#rrggbb`)."""
+
+    def linear(channel: int) -> float:
+        value = channel / 255
+        return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+    red, green, blue = (int(colour[i : i + 2], 16) for i in (1, 3, 5))
+    luminance = 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+    return 1.05 / (luminance + 0.05)
+
+
+def test_the_availability_mail_carries_both_answers_and_escapes_the_summary() -> None:
+    yes = "https://letsrebase.com/hub/team/risposta?t=abc&r=si"
+    no = "https://letsrebase.com/hub/team/risposta?t=abc&r=no"
+
+    mail = team_availability_mail(
+        "ada@studio.it",
+        nome="Ada",
+        ruolo="Backend <developer>",
+        riassunto="Un gestionale <script>alert(1)</script>.",
+        tariffa=Decimal("1450.50"),
+        yes_url=yes,
+        no_url=no,
+    )
+
+    assert mail.to == "ada@studio.it"
+    assert mail.subject == "Un progetto per te: sei disponibile?"
+    assert f"Sono disponibile:\n{yes}\n" in mail.text
+    assert f"Non sono disponibile:\n{no}\n" in mail.text
+    assert "Backend <developer>" in mail.text
+    assert "1.450,50 € al giorno" in mail.text
+    assert "trenta giorni" in mail.text and "ti riscriviamo noi con i dettagli" in mail.text
+    html = mail.html
+    assert html is not None
+    assert "<script>" not in html and "&lt;script&gt;" in html
+    assert "Backend &lt;developer&gt;" in html
+    # Each link is a button and a bare URL, escaped in the attribute and in the text.
+    for url in (yes, no):
+        assert url not in html
+        assert html.count(url.replace("&", "&amp;")) == 3
+    # «Sono disponibile» on the green, «Non sono disponibile» on the brand's CTA red.
+    assert AVAILABLE_GREEN == "#29843b" and CTA == "#e5133e"
+    # White text on either button clears WCAG's 4.5:1 for text this size.
+    for colour in (AVAILABLE_GREEN, CTA):
+        assert _contrast_with_white(colour) >= 4.5, colour
+    green = html.index(f'bgcolor="{AVAILABLE_GREEN}"')
+    red = html.index(f'bgcolor="{CTA}"')
+    assert green < html.index(">Sono disponibile</a>") < red
+    assert red < html.index(">Non sono disponibile</a>")
+
+    unrated = team_availability_mail(
+        "ada@studio.it",
+        nome="Ada",
+        ruolo="Designer",
+        riassunto=None,
+        tariffa=None,
+        yes_url=yes,
+        no_url=no,
+    )
+    assert "€" not in unrated.text and "None" not in unrated.text
+    assert "tariffa giornaliera" in unrated.text
+    whole = team_availability_mail(
+        "ada@studio.it",
+        nome="",
+        ruolo="Designer",
+        riassunto="Un gestionale.",
+        tariffa=Decimal("450.00"),
+        yes_url=yes,
+        no_url=no,
+    )
+    assert whole.text.startswith("Ciao,\n") and "450 € al giorno" in whole.text
 
 
 # ---- the daily cap (spec § 5) --------------------------------------------------------------

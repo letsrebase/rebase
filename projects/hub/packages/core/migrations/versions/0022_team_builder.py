@@ -26,7 +26,7 @@ docstring states for this package and 0017's repeats for a set of brand new tabl
 retried deploy must not error on a table or a column the previous attempt already
 added. The check constraints are declared inside each `CREATE TABLE`, so they arrive
 with their table and need no `pg_constraint` guard of their own; the two partial unique
-indexes (`uq_team_requests_proposal_id`, `uq_talent_cloud_grants_user_id_live`) are
+indexes (`uq_team_requests_proposal_id`, `uq_talent_cloud_grants_user_company_live`) are
 `CREATE UNIQUE INDEX IF NOT EXISTS ... WHERE ...`, which Postgres accepts the same way
 as any other index.
 """
@@ -123,8 +123,10 @@ _INDEXES = (
     "ON team_request_talents (request_id, freelancer_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_team_request_talents_token_hash "
     "ON team_request_talents (token_hash)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_talent_cloud_grants_user_id_live "
-    "ON talent_cloud_grants (user_id) WHERE revoked_at IS NULL",
+    # One live grant per person and company (REB-518, spec § 2): a person behind two
+    # companies holds two, and a second «Apri» on the same request finds the first.
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_talent_cloud_grants_user_company_live "
+    "ON talent_cloud_grants (user_id, company_id) WHERE revoked_at IS NULL",
 )
 
 _FREELANCER_COLUMNS = (

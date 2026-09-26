@@ -3,18 +3,30 @@ cloud file, as the admin reads and works them, behind the admin cookie. A router
 own beside `admin.py`, under the same `/api/hub/team/requests` path the public route
 posts to, answering only other methods and the paths below it.
 
-«Contatta i talenti» is D1's (`/contact`); everything here reads or edits what an
-admin owns: the state, their note, and the summary the talents will read.
+Everything here reads or edits what an admin owns: the state, their note, and the
+summary the talents will read; and «Contatta i talenti» (REB-517, `/contact`), whose
+mails leave after the answer, in a session of their own, so a slow provider never holds
+the admin's page and the answer already shows every talent as contacted.
 """
 
+import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 
-from rebase_api.deps import AdminDep, SessionDep, SettingsDep
+from rebase_api.deps import AdminDep, SenderDep, SessionDep, SessionOpenerDep, SettingsDep
+from rebase_core.config import Settings
+from rebase_core.db import SessionOpener
+from rebase_core.mail import EmailSender
 from rebase_core.pagination import CURSOR_MAX_LENGTH
-from rebase_core.team_requests import LIST_LIMIT_DEFAULT, LIST_LIMIT_MAX, TeamRequestService
+from rebase_core.team_requests import (
+    LIST_LIMIT_DEFAULT,
+    LIST_LIMIT_MAX,
+    NO_SENDER,
+    AvailabilityBatch,
+    TeamRequestService,
+)
 from rebase_core.team_schemas import (
     TeamRequestList,
     TeamRequestNote,
@@ -24,6 +36,8 @@ from rebase_core.team_schemas import (
 )
 
 router = APIRouter(prefix="/api/hub/team", tags=["hub-admin"])
+
+_log = logging.getLogger(__name__)
 
 Limit = Annotated[int, Query(ge=1, le=LIST_LIMIT_MAX)]
 Word = Annotated[str | None, Query(max_length=20)]
@@ -96,3 +110,42 @@ def set_team_request_summary(
     return TeamRequestService(session, settings=settings).set_summary(
         request_id, change.riassunto, admin.id
     )
+
+
+def _deliver(
+    open_session: SessionOpener,
+    settings: Settings,
+    sender: EmailSender,
+    batch: AvailabilityBatch,
+) -> None:
+    """After the response: it never raises, since nobody is left to read it, and logs
+    the request's id alone."""
+    try:
+        with open_session() as session:
+            TeamRequestService(session, settings=settings, sender=sender).deliver(batch)
+    except Exception:
+        _log.exception("team request %s: sending the availability mails failed", batch.request_id)
+
+
+@router.post("/requests/{request_id}/contact", response_model=TeamRequestRead)
+def contact_team_talents(
+    admin: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    sender: SenderDep,
+    open_session: SessionOpenerDep,
+    background: BackgroundTasks,
+    request_id: UUID,
+    only_silent: bool = False,
+) -> TeamRequestRead:
+    """«Contatta i talenti», and with `only_silent` «Rimanda a chi non ha risposto»: a
+    mail to each talent with the two answers, sent after this answer. 409 with the
+    sentence for a closed request, a summary that names the company, a second first
+    time, or nobody left to write to; 503 without a mail key."""
+    if sender is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_SENDER)
+    read, batch = TeamRequestService(session, settings=settings).prepare_contact(
+        request_id, admin.id, only_silent=only_silent
+    )
+    background.add_task(_deliver, open_session, settings, sender, batch)
+    return read

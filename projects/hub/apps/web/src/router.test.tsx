@@ -45,6 +45,22 @@ describe('the team builder', () => {
     expect(router.state.location.pathname).toBe('/team')
     expect(router.state.matches.map((match) => match.routeId)).toEqual(['__root__', '/public', '/public/team'])
   })
+
+  it('answers the availability mail at /team/risposta, public, with the token and the answer', async () => {
+    // REB-517: the mail's links are `{hub_url}/team/risposta?t=…&r=si|no`.
+    const router = createRouter({
+      routeTree,
+      history: createMemoryHistory({ initialEntries: ['/team/risposta?t=abc_-1&r=no'] }),
+    })
+    await router.load()
+    expect(router.state.location.pathname).toBe('/team/risposta')
+    expect(router.state.matches.map((match) => match.routeId)).toEqual([
+      '__root__',
+      '/public',
+      '/public/team/risposta',
+    ])
+    expect(router.state.location.search).toEqual({ t: 'abc_-1', r: 'no' })
+  })
 })
 
 describe('«Richieste team» in the admin area', () => {
