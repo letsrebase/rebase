@@ -1,10 +1,10 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, RouterProvider, createMemoryHistory, createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { stripAnswerLink, takeAnswerLink } from '@/lib/answer-link'
+import { ANSWER_LINK_KEY, forgetAnswerLink, stripAnswerLink } from '@/lib/answer-link'
 import { TeamRisposta } from './TeamRisposta'
 
 function mount(path: string, { strict = false } = {}) {
@@ -26,12 +26,13 @@ function answering(status: number, body: unknown) {
 }
 
 const INVALID = 'Questo link non è più valido'
+const REOPEN = 'Riapri il link dalla mail.'
 
 afterEach(() => {
   vi.restoreAllMocks()
-  // The browser's own URL and the module's one-shot slot, whatever a test left there.
+  // The browser's own URL and the pair the module and the tab hold, whatever a test left.
   window.history.replaceState(null, '', '/')
-  takeAnswerLink()
+  forgetAnswerLink()
 })
 
 describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
@@ -85,7 +86,7 @@ describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
     expect(window.location.search).toBe('')
 
     // The router mounts at a clean path: the pair reaches the page only through
-    // `takeAnswerLink`'s one-shot read.
+    // `readAnswerLink`.
     mount('/team/risposta', { strict: true })
     expect(await screen.findByRole('heading', { name: 'Vuoi confermare che non sei disponibile?' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Conferma' }))
@@ -96,17 +97,61 @@ describe('the answer to the availability mail (REB-517, spec § 3.2)', () => {
     expect(JSON.parse(fetch.mock.calls[0]![1]?.body as string)).toEqual({ t: 'abc_-1', risposta: 'no' })
   })
 
-  it('says the same of a link with no token or no answer, and posts nothing', async () => {
+  it('asks to reopen the mail’s link when no token was ever read, and posts nothing', async () => {
     const fetch = vi.spyOn(globalThis, 'fetch')
     mount('/team/risposta?r=si')
-    expect(await screen.findByRole('heading', { name: INVALID })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: REOPEN })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: INVALID })).toBeNull()
     expect(screen.queryByRole('button')).toBeNull()
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('says the same of an answer that is neither yes nor no', async () => {
+  it('says the link is not valid for a token with no answer, or one neither yes nor no', async () => {
+    mount('/team/risposta?t=abc')
+    expect(await screen.findByRole('heading', { name: INVALID })).toBeInTheDocument()
+    cleanup()
     mount('/team/risposta?t=abc&r=forse')
     expect(await screen.findByRole('heading', { name: INVALID })).toBeInTheDocument()
+  })
+
+  it('asks again after a reload before «Conferma», then forgets the pair once answered', async () => {
+    const fetch = answering(200, { esito: 'si' })
+    window.history.replaceState(null, '', '/hub/team/risposta?t=abc_-1&r=si')
+    stripAnswerLink()
+    // What a reload finds: the tab's copy of the pair, nothing in the module's memory
+    // (`forgetAnswerLink` would drop both, so the copy is written back as it was).
+    const kept = window.sessionStorage.getItem(ANSWER_LINK_KEY)
+    forgetAnswerLink()
+    window.sessionStorage.setItem(ANSWER_LINK_KEY, kept ?? '')
+
+    mount('/team/risposta')
+    expect(await screen.findByRole('heading', { name: 'Vuoi confermare che sei disponibile?' })).toBeInTheDocument()
+    expect(fetch).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Conferma' }))
+
+    expect(await screen.findByRole('heading', { name: 'Grazie, abbiamo registrato la tua disponibilità' })).toBeInTheDocument()
+    expect(JSON.parse(fetch.mock.calls[0]![1]?.body as string)).toEqual({ t: 'abc_-1', risposta: 'si' })
+    expect(window.sessionStorage.getItem(ANSWER_LINK_KEY)).toBeNull()
+  })
+
+  it('forgets the pair on a 422 too, and keeps it when the post failed', async () => {
+    answering(422, { detail: 'Il token non è valido.' })
+    window.history.replaceState(null, '', '/hub/team/risposta?t=abc&r=no')
+    stripAnswerLink()
+    mount('/team/risposta')
+    await userEvent.click(await screen.findByRole('button', { name: 'Conferma' }))
+    expect(await screen.findByRole('heading', { name: INVALID })).toHaveFocus()
+    expect(window.sessionStorage.getItem(ANSWER_LINK_KEY)).toBeNull()
+    cleanup()
+    vi.restoreAllMocks()
+
+    answering(503, { detail: 'Il servizio non risponde. Riprova tra un minuto.' })
+    window.history.replaceState(null, '', '/hub/team/risposta?t=abc&r=no')
+    stripAnswerLink()
+    mount('/team/risposta')
+    await userEvent.click(await screen.findByRole('button', { name: 'Conferma' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Il servizio non risponde. Riprova tra un minuto.')
+    expect(JSON.parse(window.sessionStorage.getItem(ANSWER_LINK_KEY) ?? 'null')).toEqual({ t: 'abc', r: 'no' })
   })
 
   it('keeps the button when the post fails, with the API’s sentence', async () => {
