@@ -121,6 +121,18 @@ def _tax_refusal(exc: PydanticValidationError) -> ToolError:
     return ToolError(f"{field}: {field_reason(error)}")
 
 
+def _field_refusal(exc: PydanticValidationError) -> ToolError:
+    """A tool's input refused in the hub's Italian, «campo: motivo»: `field_reason`'s
+    words, and for a text past its limit the limit itself, the way the comment tools
+    say it («al massimo 4000 caratteri»). An optional text's limit is Pydantic's
+    `too_long`, a plain one's `string_too_long`: both carry `max_length`."""
+    error = exc.errors()[0]
+    field = ".".join(str(part) for part in error["loc"])
+    if error["type"] in {"string_too_long", "too_long"}:
+        return ToolError(f"{field}: al massimo {error['ctx']['max_length']} caratteri")
+    return ToolError(f"{field}: {field_reason(error)}")
+
+
 def _proposal(
     service: MatchService,
     freelancer_id: UUID,
@@ -821,13 +833,19 @@ def build_server(
         request_id: str, stato: str, note: str | None = None
     ) -> dict[str, Any]:
         """«Segna come contattata», «Chiudi» (spec § 3.5), con una nota facoltativa per
-        chi la rileggerà; `note` omesso lascia la nota com'era."""
+        chi la rileggerà; `note` omesso lascia la nota com'era. Una nota rifiutata
+        (oltre 4000 caratteri, o con un carattere nullo) lascia anche lo stato com'era."""
+        # The note is checked before anything is written: refused after `set_status`,
+        # it would leave the state moved and the call answering an error.
+        try:
+            cleaned = TeamRequestNote(note=note) if note is not None else None
+        except PydanticValidationError as exc:
+            raise _field_refusal(exc) from None
 
         def call(session: Session) -> TeamRequestRead:
             service = TeamRequestService(session, settings=team_settings())
             read = service.set_status(UUID(request_id), stato, admin().id)
-            if note is not None:
-                cleaned = TeamRequestNote(note=note)
+            if cleaned is not None:
                 read = service.set_note(UUID(request_id), cleaned.note, admin().id)
             return read
 

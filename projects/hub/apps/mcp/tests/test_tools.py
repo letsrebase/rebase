@@ -925,6 +925,39 @@ async def test_set_team_request_status_moves_it_and_records_an_optional_note(
     _wipe_team(factory)
 
 
+async def test_set_team_request_status_refuses_a_bad_note_before_moving_anything(
+    factory: sessionmaker[Session],
+) -> None:
+    """The note is checked before the state is written: a refused note leaves the
+    request where it was and answers the field's sentence, not Pydantic's."""
+    session = factory()
+    member = _talent_with_card(session)
+    session.close()
+    request_id = _team_request(factory, [member])
+    _seed_admin(factory)
+
+    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
+        long = await client.call_tool(
+            "set_team_request_status",
+            {"request_id": request_id, "stato": "contattata", "note": "x" * 4001},
+        )
+        assert long.is_error
+        assert long.content[0].text.endswith(": note: al massimo 4000 caratteri")
+        nul = await client.call_tool(
+            "set_team_request_status",
+            {"request_id": request_id, "stato": "chiusa", "note": "Richiamare\x00."},
+        )
+        assert nul.is_error
+        assert nul.content[0].text.endswith(
+            ": note: il testo contiene un carattere nullo (\\x00), non ammesso"
+        )
+
+        untouched = _payload(await client.call_tool("get_team_request", {"request_id": request_id}))
+        assert untouched["stato"] == "nuova" and untouched["note"] is None
+        assert untouched["contacted_at"] is None and untouched["closed_at"] is None
+    _wipe_team(factory)
+
+
 async def test_contact_team_talents_mails_once_then_rimanda_only_the_silent(
     factory: sessionmaker[Session],
 ) -> None:
