@@ -15,7 +15,8 @@ from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.documenso import DocumensoClient, client_from_settings
-from rebase_core.http import HttpCall, urllib_call
+from rebase_core.engagements import EngagementService
+from rebase_core.http import HttpCall, urllib_call, urllib_engagements_call
 from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.members import MemberService
 from rebase_core.schemas import MeRead
@@ -98,6 +99,26 @@ def get_http_call() -> HttpCall:
 HttpCallDep = Annotated[HttpCall, Depends(get_http_call)]
 
 
+def _engagements_call(http: HttpCall) -> HttpCall:
+    """The seam the link to Pigro reads through (REB-499): the request's own
+    `HttpCallDep`, so a test's override of `get_http_call` reaches it too, except that
+    production's ten-second `urllib_call` becomes `urllib_engagements_call`, whose 90
+    seconds leave room for the first link of a freelancer, which opens their space."""
+    return urllib_engagements_call if http is urllib_call else http
+
+
+def get_engagements(
+    session: SessionDep, settings: SettingsDep, http: HttpCallDep, sender: SenderDep
+) -> EngagementService:
+    """The link of an active match to its deal on Pigro, and that deal's hours
+    (REB-499): «Riprova su Pigro» and «Consuntivo». The freelancer's mail goes through
+    the request's own sender, as every other mail of the API does."""
+    return EngagementService(session, settings, _engagements_call(http), sender=sender)
+
+
+EngagementsDep = Annotated[EngagementService, Depends(get_engagements)]
+
+
 def get_tracker(settings: SettingsDep) -> Tracker | None:
     """The server half of the wizard's analytics (REB-215): `None` without a key, so a
     route that has one schedules the event and a route that has none does nothing."""
@@ -126,7 +147,11 @@ DocumensoDep = Annotated[DocumensoClient | None, Depends(get_documenso)]
 
 
 def get_signing_factory(
-    settings: SettingsDep, renderer: RendererDep, documenso: DocumensoDep, sender: SenderDep
+    settings: SettingsDep,
+    renderer: RendererDep,
+    documenso: DocumensoDep,
+    sender: SenderDep,
+    http: HttpCallDep,
 ) -> SigningFactory:
     """`SigningService` as this environment configures it, for any session: the request's
     own, or the one a background task opens for itself (the webhook's). Built by the
@@ -136,8 +161,11 @@ def get_signing_factory(
     `build` runs for every route behind `SigningDep` (a cancel, a refresh, a resend or the
     webhook among them), so parsing it here would 503 all of them on a malformed value.
     `SigningService` itself parses it once, lazily, only where a document is about to be
-    typeset (REB-406)."""
-    return signing_from_settings(settings, renderer, documenso=documenso, sender=sender)
+    typeset (REB-406). The engagement service it hands over, which links a match the
+    signature turns active (REB-499), reads through the seam `get_engagements` uses."""
+    return signing_from_settings(
+        settings, renderer, documenso=documenso, sender=sender, http=_engagements_call(http)
+    )
 
 
 SigningDep = Annotated[SigningFactory, Depends(get_signing_factory)]

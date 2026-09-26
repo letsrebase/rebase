@@ -147,7 +147,11 @@ the preview alike, from the `sweep` service in `docker-compose.yml` (REB-393). R
 it did with `docker logs rebase-sweep-1` (production) or `docker logs
 rebase-preview-sweep-1` (preview): each run prints «N documenti ripresi», and, when
 Documenso itself refused a confirmation or could not be reached (an expired, revoked or
-wrong token among them, REB-431), «, M non confermati» on the same line.
+wrong token among them, REB-431), «, M non confermati» on the same line. Then it links
+every active match still waiting for its deal on Pigro, or failed last time (REB-499),
+and adds «, N match collegati a Pigro», and «, M non collegati» when any stayed unlinked
+(the reason is on each match, `pigro_errore`); without `REBASE_PIGRO_ENGAGEMENTS_TOKEN`
+it links nothing and says 0.
 
 ## Running it
 

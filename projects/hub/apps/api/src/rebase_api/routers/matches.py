@@ -6,15 +6,28 @@ agreement too, and both PDFs are downloadable from here. «Invia per la firma» 
 match's documents through Documenso (`rebase_core.signing`, phase 3). The routes sit
 under `/api/hub/` beside the rest of the admin area. A contract that cannot be typeset
 is a 503 with a sentence (`main.domain_error_handler`).
+
+An active match is linked to its deal on Pigro (REB-499, `rebase_core.engagements`):
+«Riprova su Pigro» links it now, «Consuntivo» reads its hours. Both answer the split
+`routers/pigro.py` makes: 503 when this environment has no token for the CRM, 502 with
+the seam's sentence when the CRM does not answer.
 """
 
+from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import AdminDep, RendererDep, SessionDep, SettingsDep, SigningDep
+from rebase_api.deps import (
+    AdminDep,
+    EngagementsDep,
+    RendererDep,
+    SessionDep,
+    SettingsDep,
+    SigningDep,
+)
 from rebase_api.downloads import pdf_response
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import (
@@ -27,10 +40,12 @@ from rebase_core.contract_schemas import (
     MatchList,
     MatchPrefill,
     MatchRead,
+    MatchReport,
     SendReport,
 )
 from rebase_core.contracts.fields import signer_data
 from rebase_core.contracts.render import Renderer
+from rebase_core.engagements import PIGRO_NOT_CONFIGURED
 from rebase_core.errors import NotFound
 from rebase_core.fiscal import FiscalService
 from rebase_core.matches import (
@@ -40,6 +55,7 @@ from rebase_core.matches import (
     require_live_document,
     require_live_match,
 )
+from rebase_core.pigro import PigroUnavailable
 from rebase_core.search import SEARCH_MAX_LENGTH
 
 router = APIRouter(prefix="/api/hub", tags=["hub-admin"])
@@ -50,6 +66,13 @@ Limit = Annotated[int, Query(ge=1, le=LIST_LIMIT_MAX)]
 Offset = Annotated[int, Query(ge=0)]
 SearchQ = Annotated[str | None, Query(max_length=SEARCH_MAX_LENGTH)]
 Stato = Annotated[str | None, Query(max_length=20)]
+
+
+def _require_pigro(settings: Settings) -> None:
+    """503 with the sentence the match card shows when this environment has no token for
+    the CRM's door: the service alone would leave the match waiting without a word."""
+    if not settings.pigro_engagements_token:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, PIGRO_NOT_CONFIGURED)
 
 
 def _writing(session: Session, settings: Settings, renderer: Renderer) -> MatchService:
@@ -170,6 +193,50 @@ def cancel_match(
 def close_match(admin: AdminDep, session: SessionDep, match_id: UUID) -> MatchRead:
     require_live_match(session, match_id)
     return MatchService(session).close(match_id, admin.id)
+
+
+@router.post("/matches/{match_id}/pigro/link", response_model=MatchRead)
+def link_match_to_pigro(
+    admin: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    engagements: EngagementsDep,
+    match_id: UUID,
+) -> MatchRead:
+    """«Riprova su Pigro» (REB-499): the link to the match's deal runs now, as the
+    admin, and the match comes back as it stands, `collegato` or with the CRM's sentence
+    (`errore`, `rifiutato`). The browser waits for it, up to the 90 seconds the first
+    link of a freelancer takes to open their space. 409 for a match not active, 503
+    without the token."""
+    require_live_match(session, match_id)
+    _require_pigro(settings)
+    try:
+        return engagements.link(match_id, admin.id)
+    except PigroUnavailable as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+
+@router.get("/matches/{match_id}/report", response_model=MatchReport)
+def match_report(
+    _: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    engagements: EngagementsDep,
+    match_id: UUID,
+    da: date | None = None,
+    a: date | None = None,
+) -> MatchReport:
+    """«Consuntivo» (REB-499): the hours on the match's deal, asked of the CRM now and
+    stored nowhere, by default over the whole engagement (`da` the letter's start, `a`
+    today). 409 with where the link stands for a match not `collegato`, 422 naming `da`
+    for a period that ends before it starts, 502 with the seam's sentence when the CRM
+    does not answer with a report, 503 without the token."""
+    require_live_match(session, match_id)
+    _require_pigro(settings)
+    try:
+        return engagements.report(match_id, da, a)
+    except PigroUnavailable as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
 
 @router.post("/matches/{match_id}/send", response_model=SendReport)

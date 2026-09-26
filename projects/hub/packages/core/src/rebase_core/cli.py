@@ -164,7 +164,9 @@ def contracts_sweep() -> int:
     `docker-compose.yml` (REB-393). Prints the `unconfirmed` count only when it is not
     zero (REB-431): an expired, revoked or wrong token, or Documenso itself unreachable,
     otherwise failed silently, leaving a document `inviato` and «0 documenti ripresi»
-    printed every ten minutes with nothing to say why."""
+    printed every ten minutes with nothing to say why. Then the round that links active
+    matches to their deal on Pigro (REB-499): how many it linked, always, and how many
+    it tried and left unlinked, only when there are any."""
     settings = get_settings()
     session = session_factory(create_engine_from_settings(settings))()
     try:
@@ -174,6 +176,9 @@ def contracts_sweep() -> int:
     line = f"{result.touched} documenti ripresi"
     if result.unconfirmed:
         line += f", {result.unconfirmed} non confermati"
+    line += f", {result.linked} match collegati a Pigro"
+    if result.link_failed:
+        line += f", {result.link_failed} non collegati"
     print(line)
     return 0
 

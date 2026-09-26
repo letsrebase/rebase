@@ -584,6 +584,9 @@ ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fisca
 # REB-387 adds the matches' own kinds, on entity type `match` (phase 3 writes the last
 # four), and `fiscal_updated` on `freelancer_fiscal`, whose payload names the fields that
 # changed and never their values: a tax identifier is not copied into this table.
+# REB-498 adds `pigro_link` on `match`: an admin's «Riprova su Pigro», its payload the
+# outcome (`esito`) and the CRM's sentence (`errore`). No `CHECK` holds this list: it is
+# the record of what the code writes.
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -597,6 +600,7 @@ ADMIN_ACTION_KINDS = (
     "document_cancelled",
     "mail_resent",
     "notice_recorded",
+    "pigro_link",
 )
 
 

@@ -9,7 +9,6 @@ hand, since how a letter gets signed is `test_signing.py`'s business.
 import json
 import logging
 from collections.abc import Iterator
-from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -18,6 +17,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 import pytest
 from fakes_contracts import FakeRenderer
+from fakes_pigro import CUSTOMER, DEAL, DEAL_URL, PIGRO, TOKEN, RecordedPigro, linked_body
 from sqlalchemy import Engine, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -50,11 +50,6 @@ from rebase_core.pigro import (
 
 NOW = datetime(2026, 10, 2, 8, 0, tzinfo=UTC)
 SIGNED_AT = datetime(2026, 9, 30, 10, 0, tzinfo=UTC)
-TOKEN = "un-token-per-la-porta"
-PIGRO = "https://pigro.test"
-DEAL = UUID("0192e0a0-0000-7000-8000-00000000d3a1")
-CUSTOMER = UUID("0192e0a0-0000-7000-8000-00000000c057")
-DEAL_URL = f"{PIGRO}/ada-lovelace/app/deal/{DEAL}"
 DEAL_GONE = "Il deal di questa lettera è stato eliminato nello spazio."
 
 
@@ -65,27 +60,6 @@ def clean(hub_session: Session) -> Iterator[Session]:
     for table in TABLES:
         hub_session.execute(text(f"DELETE FROM {table}"))
     hub_session.commit()
-
-
-Answer = tuple[int, bytes] | Exception
-
-
-@dataclass
-class RecordedPigro:
-    """The CRM's door as a list of answers, one per call (the last one repeats), and
-    every request that reached it."""
-
-    answers: list[Answer]
-    calls: list[tuple[str, str, dict[str, str], bytes]] = field(default_factory=list)
-
-    def __call__(
-        self, method: str, url: str, headers: dict[str, str], body: bytes
-    ) -> tuple[int, bytes]:
-        self.calls.append((method, url, headers, body))
-        answer = self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
-        if isinstance(answer, Exception):
-            raise answer
-        return answer
 
 
 class FlakySender:
@@ -101,20 +75,6 @@ class FlakySender:
             return False
         self.sent.append(mail)
         return True
-
-
-def _linked(*, spazio_creato: bool = True, creato: bool = True) -> bytes:
-    return json.dumps(
-        {
-            "slug": "ada-lovelace",
-            "url": f"{PIGRO}/ada-lovelace/app/",
-            "customer_id": str(CUSTOMER),
-            "deal_id": str(DEAL),
-            "deal_url": DEAL_URL,
-            "spazio_creato": spazio_creato,
-            "creato": creato,
-        }
-    ).encode()
 
 
 def _settings(
@@ -303,7 +263,7 @@ def test_payload_refuses_a_letter_that_is_not_signed(clean: Session) -> None:
 def test_link_refuses_a_match_that_is_not_active(clean: Session) -> None:
     admin_id, freelancer_id, company_id = _setup(clean)
     match_id = _draft(clean, admin_id, freelancer_id, company_id)
-    http = RecordedPigro([(201, _linked())])
+    http = RecordedPigro([(201, linked_body())])
 
     with pytest.raises(InvalidState, match="Si collega a Pigro solo un match attivo."):
         _service(clean, http).link(match_id)
@@ -319,7 +279,7 @@ def test_link_without_token_marks_da_collegare_and_calls_nothing(
     # that existed before it: this one is read back on for the test.
     monkeypatch.setattr(logging.getLogger("rebase_core.engagements"), "disabled", False)
     _admin, match_id = _active(clean, pigro_stato=None)
-    http = RecordedPigro([(201, _linked())])
+    http = RecordedPigro([(201, linked_body())])
 
     with caplog.at_level(logging.INFO, logger="rebase_core.engagements"):
         read = _service(clean, http, settings=_settings(token="")).link(match_id)
@@ -335,7 +295,7 @@ def test_link_refuses_plain_http(clean: Session) -> None:
     """The bearer never travels in clear: a CRM named with `http://` is not asked at all,
     and the match says why. Plain HTTP to this machine stays open, for development."""
     _admin, match_id = _active(clean)
-    http = RecordedPigro([(201, _linked())])
+    http = RecordedPigro([(201, linked_body())])
 
     read = _service(clean, http, settings=_settings(url="http://pigro.example")).link(match_id)
 
@@ -351,7 +311,9 @@ def test_link_refuses_plain_http(clean: Session) -> None:
 
 def test_link_on_201_is_collegato_and_mails_once(clean: Session) -> None:
     _admin, match_id = _active(clean)
-    http = RecordedPigro([(201, _linked()), (200, _linked(spazio_creato=False, creato=False))])
+    http = RecordedPigro(
+        [(201, linked_body()), (200, linked_body(spazio_creato=False, creato=False))]
+    )
     sender = RecordingSender()
     service = _service(clean, http, sender=sender)
 
@@ -397,7 +359,7 @@ def test_two_links_racing_send_one_mail(hub_engine: Engine, clean: Session) -> N
     second = EngagementService(
         other,
         _settings(),
-        RecordedPigro([(200, _linked(creato=False))]),
+        RecordedPigro([(200, linked_body(creato=False))]),
         sender=sender,
         now=lambda: NOW,
         today=lambda: TODAY,
@@ -408,7 +370,7 @@ def test_two_links_racing_send_one_mail(hub_engine: Engine, clean: Session) -> N
         method: str, url: str, headers: dict[str, str], body: bytes
     ) -> tuple[int, bytes]:
         raced.append(second.link(match_id).pigro_stato)
-        return 201, _linked()
+        return 201, linked_body()
 
     first = EngagementService(
         clean,
@@ -448,7 +410,7 @@ def test_a_link_while_the_mail_leaves_sends_no_second_mail(
                 second = EngagementService(
                     other,
                     _settings(),
-                    RecordedPigro([(200, _linked(creato=False))]),
+                    RecordedPigro([(200, linked_body(creato=False))]),
                     sender=self,
                     now=lambda: NOW,
                     today=lambda: TODAY,
@@ -458,7 +420,7 @@ def test_a_link_while_the_mail_leaves_sends_no_second_mail(
 
     sender = SenderThatRaces()
     try:
-        read = _service(clean, RecordedPigro([(201, _linked())]), sender=sender).link(match_id)
+        read = _service(clean, RecordedPigro([(201, linked_body())]), sender=sender).link(match_id)
     finally:
         other.close()
 
@@ -497,7 +459,7 @@ def test_link_holds_no_lock_during_the_call(hub_engine: Engine, clean: Session) 
             other.rollback()
         finally:
             other.close()
-        return 201, _linked()
+        return 201, linked_body()
 
     service = EngagementService(
         clean, _settings(), crm_while_another_session_writes, now=lambda: NOW, today=lambda: TODAY
@@ -601,7 +563,7 @@ def test_link_on_refused_connection_is_errore_with_the_sentence(clean: Session) 
         ((302, b""), ANSWERED_STATUS.format(status=302)),
         ((201, b"not json"), NOT_THE_SHAPE),
         ((201, b'{"slug": "ada-lovelace"}'), NOT_THE_SHAPE),
-        ((201, _linked().replace(b"https://", b"javascript://")), NOT_THE_SHAPE),
+        ((201, linked_body().replace(b"https://", b"javascript://")), NOT_THE_SHAPE),
         ((201, b"x" * 1_048_577), TOO_LONG),
     ],
 )
@@ -617,7 +579,7 @@ def test_link_on_any_other_answer_is_errore_with_the_seams_sentence(
 
 def test_link_after_an_error_clears_the_sentence(clean: Session) -> None:
     _admin, match_id = _active(clean)
-    http = RecordedPigro([(503, b""), (201, _linked())])
+    http = RecordedPigro([(503, b""), (201, linked_body())])
     service = _service(clean, http)
 
     assert service.link(match_id).pigro_stato == "errore"
@@ -631,7 +593,7 @@ def test_link_retries_a_refused_mail(clean: Session) -> None:
     stamp empty, so the next call (the sweep's) sends it and stamps it."""
     _admin, match_id = _active(clean)
     sender = FlakySender(refusals=1)
-    service = _service(clean, RecordedPigro([(201, _linked())]), sender=sender)
+    service = _service(clean, RecordedPigro([(201, linked_body())]), sender=sender)
 
     first = service.link(match_id)
 
@@ -646,7 +608,7 @@ def test_link_retries_a_refused_mail(clean: Session) -> None:
 
 def test_link_records_an_admin_action_when_an_admin_asked(clean: Session) -> None:
     admin_id, match_id = _active(clean)
-    http = RecordedPigro([(503, b""), (201, _linked())])
+    http = RecordedPigro([(503, b""), (201, linked_body())])
     service = _service(clean, http)
 
     service.link(match_id)
@@ -712,7 +674,7 @@ def test_link_pending_counts(clean: Session) -> None:
     letter = _letter(clean, broken)
     letter.stato = "generato"
     clean.commit()
-    answers = {waiting: (201, _linked()), failing: (503, b""), unmailed: (200, _linked())}
+    answers = {waiting: (201, linked_body()), failing: (503, b""), unmailed: (200, linked_body())}
     asked: list[UUID] = []
 
     def crm(method: str, url: str, headers: dict[str, str], body: bytes) -> tuple[int, bytes]:
@@ -746,7 +708,7 @@ def test_link_pending_skips_rifiutato(clean: Session) -> None:
     match = _match(clean, done)
     match.pigro_mail_sent_at = NOW
     clean.commit()
-    http = RecordedPigro([(201, _linked())])
+    http = RecordedPigro([(201, linked_body())])
 
     assert _service(clean, http, sender=RecordingSender()).link_pending() == PigroLinkResult(0, 0)
     assert http.calls == []
@@ -757,7 +719,7 @@ def test_link_pending_without_token_or_mail_sender(clean: Session) -> None:
     """No token: nothing is asked, the matches wait. No mail sender: a linked match
     missing only its mail has nothing left to do here, and is not asked again."""
     _admin, match_id = _active(clean, pigro_stato="collegato")
-    http = RecordedPigro([(200, _linked())])
+    http = RecordedPigro([(200, linked_body())])
 
     assert _service(
         clean, http, sender=RecordingSender(), settings=_settings(token="")
