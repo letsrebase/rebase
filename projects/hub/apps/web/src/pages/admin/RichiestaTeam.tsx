@@ -44,7 +44,9 @@ function place(luogo: AdminTeamProposal['luogo']): string {
   return luogo.dove ? `Da remoto · ${luogo.dove}` : 'Da remoto'
 }
 
-/** The team's bands per day and per month, as the company read them. */
+/** The team's bands per day and per month, as the company read them; «Tariffa da
+ *  definire» when a member has no rate. Never asked of an empty team, which has no price
+ *  at all rather than one to define. */
 function teamBands(economia: AdminTeamProposal['economia']): string {
   if (!economia.giorno || !economia.mese) return 'Tariffa da definire'
   return `${bandLabel(economia.giorno)} · ${bandLabel(economia.mese, 'mese')}`
@@ -127,7 +129,9 @@ function RequestPage({ request }: { request: TeamRequest }) {
               {request.descrizione ? <p className="whitespace-pre-wrap">{request.descrizione}</p> : '—'}
             </Row>
             <Row label="Luogo">{request.proposal ? place(request.proposal.luogo) : '—'}</Row>
-            {request.proposal && <Row label="Fascia del team">{teamBands(request.proposal.economia)}</Row>}
+            {request.proposal && request.proposal.team.length > 0 && (
+              <Row label="Fascia del team">{teamBands(request.proposal.economia)}</Row>
+            )}
           </dl>
           <SummaryEditor request={request} onSaved={apply} />
         </div>

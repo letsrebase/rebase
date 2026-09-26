@@ -113,7 +113,7 @@ describe('FreelancerOverrideDialog', () => {
     expect(screen.getByLabelText('Cognome')).toHaveValue('Lovelace')
     expect(screen.getByLabelText('LinkedIn')).toHaveValue('https://www.linkedin.com/in/ada')
     expect(screen.getByLabelText('Posizione')).toHaveValue('CTO')
-    expect(screen.getByLabelText('Tariffa a giornata (€)')).toHaveValue(500)
+    expect(screen.getByLabelText('Tariffa a giornata (€)')).toHaveValue('500.00')
     expect(screen.getByLabelText('Link (uno per riga)')).toHaveValue(
       'https://github.com/ada\nhttps://ada.dev',
     )
@@ -171,6 +171,49 @@ describe('FreelancerOverrideDialog', () => {
     expect(onSave.mock.calls[0]![0].links).toEqual(['https://one.dev', 'https://two.dev'])
   })
 
+  it.each([
+    ['1.500', '1500.00'],
+    ['1.234,50', '1234.50'],
+  ])('sends a rate typed as «%s» as %s, whatever the browser’s locale (REB-485)', async (typed, sent) => {
+    const onSave = vi.fn<(data: FreelancerOverride) => void>()
+    mountFreelancer({ onSave })
+    const rate = screen.getByLabelText('Tariffa a giornata (€)')
+    await userEvent.clear(rate)
+    await userEvent.type(rate, typed)
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[0]![0].tariffa_giornaliera).toBe(sent)
+  })
+
+  it('says a rate that is not an amount is not one, and keeps Save off (REB-485)', async () => {
+    const onSave = vi.fn<(data: FreelancerOverride) => void>()
+    mountFreelancer({ onSave })
+    const rate = screen.getByLabelText('Tariffa a giornata (€)')
+    await userEvent.clear(rate)
+    await userEvent.type(rate, 'tanto')
+    expect(screen.getByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
+    expect(rate).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
+    // 150000, over the ceiling: read as 150 it would have gone through.
+    await userEvent.clear(rate)
+    await userEvent.type(rate, '150.000')
+    expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it.each(['12,345', '12.3456', '0x10', '1,000.00'])(
+    'refuses a rate typed as «%s» before any request (REB-485)',
+    async (typed) => {
+      const onSave = vi.fn<(data: FreelancerOverride) => void>()
+      mountFreelancer({ onSave })
+      const rate = screen.getByLabelText('Tariffa a giornata (€)')
+      await userEvent.clear(rate)
+      await userEvent.type(rate, typed)
+      expect(screen.getByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
+      expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
+      expect(onSave).not.toHaveBeenCalled()
+    },
+  )
+
   it('disables Save when nome or cognome is blank, and never lets it through', async () => {
     const onSave = vi.fn<(data: FreelancerOverride) => void>()
     mountFreelancer({ onSave })
@@ -201,7 +244,7 @@ describe('CompanyOverrideDialog', () => {
     expect(screen.getByLabelText('Progetto')).toHaveValue('Piattaforma di prenotazione')
     expect(screen.getByLabelText('Da quando')).toHaveValue('2026-10-01')
     expect(screen.getByLabelText('Durata')).toHaveValue('3 mesi')
-    expect(screen.getByLabelText('Budget a giornata (€)')).toHaveValue(450)
+    expect(screen.getByLabelText('Budget a giornata (€)')).toHaveValue('450.00')
     expect(screen.getByLabelText('Numero di persone')).toHaveValue(2)
     expect(screen.getByRole('combobox', { name: 'Modalità' })).toHaveTextContent('Da remoto')
     expect(screen.queryByLabelText('Giorni in sede a settimana')).toBeNull()
@@ -271,6 +314,28 @@ describe('CompanyOverrideDialog', () => {
     await userEvent.click(screen.getByRole('checkbox', { name: 'Rimuovi il profilo LinkedIn del referente' }))
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     expect(onSave.mock.calls[0]![0].linkedin_url).toBeNull()
+  })
+
+  it('sends a budget typed as «1.500» as 1500, whatever the browser’s locale (REB-485)', async () => {
+    const onSave = vi.fn<(data: CompanyOverride) => void>()
+    mountCompany({ onSave })
+    const budget = screen.getByLabelText('Budget a giornata (€)')
+    await userEvent.clear(budget)
+    await userEvent.type(budget, '1.500')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(onSave.mock.calls[0]![0].budget_giornaliero).toBe('1500.00')
+  })
+
+  it('says a budget that is not an amount is not one, and keeps Save off (REB-485)', async () => {
+    const onSave = vi.fn<(data: CompanyOverride) => void>()
+    mountCompany({ onSave })
+    const budget = screen.getByLabelText('Budget a giornata (€)')
+    await userEvent.clear(budget)
+    await userEvent.type(budget, 'tanto')
+    expect(screen.getByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
+    expect(budget).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: 'Salva' })).toBeDisabled()
+    expect(onSave).not.toHaveBeenCalled()
   })
 
   it('disables Save when a required project field is blank', async () => {

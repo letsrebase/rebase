@@ -1,6 +1,7 @@
 """The hub's seam onto Claude (REB-508): what one call to `AnthropicCall.complete`
-sends, what a refusal and a provider outage turn into, and the three settings the two
-future callers (the card writer, spec § 5.1, and the proposal engine, § 3.4) share.
+sends, what a refusal and a provider outage turn into, what the tokens count, the
+client's retries and timeout, and the three settings the two callers (the card writer,
+spec § 5.1, and the proposal engine, § 3.4) share.
 
 The network is the only thing faked, the way `test_mail.py` and `test_documenso.py`
 fake it: a stub stands in for `anthropic.Anthropic` itself, recording
@@ -42,7 +43,7 @@ REQUEST = LlmRequest(
         }
     ],
     messages=[{"role": "user", "content": "Il CV e la tariffa sono qui sotto."}],
-    schema={
+    json_schema={
         "type": "object",
         "properties": {"riassunto": {"type": "string"}},
         "required": ["riassunto"],
@@ -67,11 +68,16 @@ class _StopDetails:
 
 class _Usage:
     def __init__(
-        self, input_tokens: int, output_tokens: int, cache_read_input_tokens: int | None
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        cache_read_input_tokens: int | None,
+        cache_creation_input_tokens: int | None = None,
     ) -> None:
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
         self.cache_read_input_tokens = cache_read_input_tokens
+        self.cache_creation_input_tokens = cache_creation_input_tokens
 
 
 class _Message:
@@ -171,11 +177,10 @@ def test_complete_sends_the_documented_request() -> None:
             "thinking": {"type": "adaptive"},
             "output_config": {
                 "effort": "medium",
-                "format": {"type": "json_schema", "schema": REQUEST.schema},
+                "format": {"type": "json_schema", "schema": REQUEST.json_schema},
             },
             "system": REQUEST.system,
             "messages": REQUEST.messages,
-            "timeout": 50.0,
             "inference_geo": "eu",
         }
     ]
@@ -286,8 +291,10 @@ def test_recording_call_keeps_requests() -> None:
     assert call.requests == [REQUEST, REQUEST]
 
 
-def test_request_carries_timeout_and_eu_geo() -> None:
-    """Under nginx's own 60-second cut, and inference stays in the EU (spec § 6)."""
+def test_request_carries_eu_geo_and_leaves_the_timeout_to_the_client() -> None:
+    """Inference stays in the EU (spec § 6). The timeout is not the request's: the
+    client's holds for each attempt, the retry's included
+    (`test_the_sdk_client_is_built_on_first_use`)."""
     message = _Message(
         content=[_Block("text", "Ecco la scheda.")],
         stop_reason="end_turn",
@@ -301,8 +308,43 @@ def test_request_carries_timeout_and_eu_geo() -> None:
     call.complete(REQUEST)
 
     [kwargs] = stub.beta.messages.calls
-    assert kwargs["timeout"] == 50.0
+    assert "timeout" not in kwargs
     assert kwargs["inference_geo"] == "eu"
+
+
+def test_input_tokens_count_the_cache_writes() -> None:
+    """A proposal that writes the catalogue's prefix again pays for those tokens as
+    input: the row and the event say what was paid, and the cache reads stay apart."""
+    message = _Message(
+        content=[_Block("text", "{}")],
+        stop_reason="end_turn",
+        stop_details=None,
+        usage=_Usage(
+            input_tokens=300,
+            output_tokens=90,
+            cache_read_input_tokens=0,
+            cache_creation_input_tokens=12000,
+        ),
+        model=MODEL,
+    )
+    call = AnthropicCall(API_KEY, MODEL, client=StubClient(message))  # type: ignore[arg-type]
+
+    response = call.complete(REQUEST)
+
+    assert response.input_tokens == 12300
+    assert response.cache_read_tokens == 0
+    assert response.output_tokens == 90
+
+    # A warm cache: nothing written, the prefix read.
+    message.usage = _Usage(
+        input_tokens=300,
+        output_tokens=90,
+        cache_read_input_tokens=12000,
+        cache_creation_input_tokens=None,
+    )
+    warm = AnthropicCall(API_KEY, MODEL, client=StubClient(message))  # type: ignore[arg-type]
+    read = warm.complete(REQUEST)
+    assert (read.input_tokens, read.cache_read_tokens) == (300, 12000)
 
 
 # ---- the schema, as the API takes it (REB-510) -----------------------------------------
@@ -357,7 +399,7 @@ def test_the_schema_sent_carries_only_what_the_api_takes() -> None:
     raw = _Squadra.model_json_schema()
     assert "$defs" in raw and {"maxItems", "maxLength"} <= {k for n in _nodes(raw) for k in n}
 
-    call.complete(REQUEST.model_copy(update={"schema": raw}))
+    call.complete(REQUEST.model_copy(update={"json_schema": raw}))
 
     [kwargs] = stub.beta.messages.calls
     sent = kwargs["output_config"]["format"]["schema"]
@@ -373,11 +415,15 @@ def test_the_schema_sent_carries_only_what_the_api_takes() -> None:
 
 def test_the_sdk_client_is_built_on_first_use(monkeypatch: pytest.MonkeyPatch) -> None:
     """`LlmDep` builds an `AnthropicCall` on every wizard post, most of them without a
-    CV: constructing one must not open an SDK client nobody uses."""
-    built: list[str] = []
+    CV: constructing one must not open an SDK client nobody uses.
 
-    def fake_client(*, api_key: str) -> object:
-        built.append(api_key)
+    And the client it builds retries once, with 40 seconds an attempt: the SDK's own
+    two retries at 50 seconds each ran a stalled provider to about 151 seconds, past
+    the 90 the host vhost gives `/api/hub/team/proposals`."""
+    built: list[dict[str, Any]] = []
+
+    def fake_client(**kwargs: Any) -> object:
+        built.append(kwargs)
         return object()
 
     monkeypatch.setattr(llm.anthropic, "Anthropic", fake_client)
@@ -385,4 +431,7 @@ def test_the_sdk_client_is_built_on_first_use(monkeypatch: pytest.MonkeyPatch) -
     assert built == []
 
     assert call.client is call.client
-    assert built == [API_KEY]
+    assert built == [{"api_key": API_KEY, "max_retries": 1, "timeout": 40.0}]
+    # The worst case: two attempts and the half second the SDK waits between them.
+    attempts = 1 + built[0]["max_retries"]
+    assert attempts * built[0]["timeout"] + 0.5 < 90

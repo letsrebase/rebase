@@ -880,6 +880,8 @@ def test_an_admin_reads_and_regenerates_the_anonymous_card(
     assert body["freelancer_id"] == freelancer_id
     assert body["card"] == CARD
     assert body["modalita"] == "remoto"
+    # The client's band from the rate (450 plus 40%), which the page shows as it is.
+    assert body["fascia"] == {"min": 500, "max": 650}
     assert body["cv_sha256"] == hashlib.sha256(CV).hexdigest()
     assert body["model"] == "claude-opus-5" and body["generated_at"] is not None
     assert body["error"] is None

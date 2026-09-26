@@ -20,6 +20,7 @@ from fakes_cards import CARD, MODEL, card_response, text_pdf
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from rebase_core.bands import Band
 from rebase_core.cards import (
     CARD_MAX_TOKENS,
     CARD_SCHEMA,
@@ -173,7 +174,7 @@ def test_card_from_a_cv(clean: Session) -> None:
     assert {
         key: value for key, value in Card.model_json_schema().items() if key != "description"
     } == CARD_SCHEMA
-    assert request.schema == CARD_SCHEMA
+    assert request.json_schema == CARD_SCHEMA
     assert CARD_SCHEMA["additionalProperties"] is False
     assert CARD_SCHEMA["required"] == list(Card.model_fields)
     assert {"type": "null"} in CARD_SCHEMA["properties"]["luogo"]["anyOf"]
@@ -191,6 +192,26 @@ def test_card_from_a_cv(clean: Session) -> None:
     row.remoto = "ibrido"
     clean.commit()
     assert CardWriter(clean, None).read(freelancer_id).modalita == "ibrido"
+
+
+def test_the_read_carries_the_clients_band_from_the_rate(clean: Session) -> None:
+    """REB-514: the admin's talent page shows the band a company reads, from the rate on
+    file when the card is shown and never stored with it: 450 € a day plus 40% is 630,
+    in «500–650». No rate, no band; and a talent with no card yet still has one."""
+    freelancer_id = _apply(clean)
+    CardWriter(clean, RecordingCall([card_response()]), now=lambda: NOW).write(freelancer_id)
+    assert CardWriter(clean, None).read(freelancer_id).fascia == Band(min=500, max=650)
+
+    row = clean.get(Freelancer, freelancer_id)
+    assert row is not None
+    row.tariffa_giornaliera = None
+    clean.commit()
+    assert CardWriter(clean, None).read(freelancer_id).fascia is None
+
+    without_cv = _apply(clean, email="grace@studio.it", cv=None)
+    read = CardWriter(clean, None).read(without_cv)
+    assert read.card is None
+    assert read.fascia == Band(min=500, max=650)
 
 
 def test_card_follows_the_cv(clean: Session) -> None:
@@ -285,7 +306,7 @@ IDENTIFYING = "La scheda cita la persona o un indirizzo."
         (card_response({**CARD, "competenze": [f"skill {n}" for n in range(21)]}), "shape"),
         (card_response({**CARD, "sintesi": "x" * 401}), "shape"),
         # A valid card that names the person or carries an address (spec § 2.1).
-        (card_response({**CARD, "sintesi": "Il profilo di lovelace, backend."}), "identifying"),
+        (card_response({**CARD, "sintesi": "Il profilo di Lovelace, backend."}), "identifying"),
         (card_response({**CARD, "competenze": ["Python", "www.ada.dev"]}), "identifying"),
         (card_response({**CARD, "luogo": "https://maps.example/torino"}), "identifying"),
         (card_response({**CARD, "sintesi": "Scrivete a ada@studio.it."}), "identifying"),
@@ -300,7 +321,7 @@ IDENTIFYING = "La scheda cita la persona o un indirizzo."
         "anni_61",
         "21_competenze",
         "sintesi_401",
-        "surname_lower_case",
+        "surname",
         "www_in_competenze",
         "http_in_luogo",
         "at_in_sintesi",
@@ -331,6 +352,30 @@ def test_max_tokens_and_bad_json_are_errors(
     assert str(freelancer_id) in logs.text and kind in logs.text
     for secret in ("ruolo backend", "Lovelace", "lovelace", "Torino", "www.ada", "studio.it"):
         assert secret not in logs.text
+
+
+@pytest.mark.parametrize("named", ["Conti", "CONTI"])
+def test_a_surname_that_is_a_word_is_the_person_only_with_a_capital(
+    clean: Session, named: str
+) -> None:
+    """Conti, Grande, Porta: a surname that is also a word parks nobody for the word
+    written in lower case, «la dashboard dei conti»; with a capital, or in capitals, it
+    is the person."""
+    freelancer_id = _apply(clean, cognome="Conti")
+    sintesi = "Backend developer senior: ha rifatto la dashboard dei conti di una banca."
+    llm = RecordingCall(
+        [
+            card_response({**CARD, "sintesi": sintesi}),
+            card_response({**CARD, "sintesi": f"Il profilo di {named}, backend developer."}),
+        ]
+    )
+
+    written = CardWriter(clean, llm).write(freelancer_id)
+    assert written.error is None and written.card is not None
+    assert written.card.sintesi == sintesi
+
+    named_card = CardWriter(clean, llm).write(freelancer_id, force=True)
+    assert named_card.error == IDENTIFYING
 
 
 def test_a_surname_inside_a_longer_word_is_not_the_person(clean: Session) -> None:
@@ -563,6 +608,26 @@ def test_refresh_stale_limits_and_counts(clean: Session) -> None:
 
     # Nothing left: no CV, a deleted card and a current one are never picked.
     assert writer.refresh_stale(limit=2) == CardsRefreshed(written=0, failed=0)
+
+
+def test_refresh_stale_skips_a_turned_down_talent(clean: Session) -> None:
+    """The backfill sends no CV of a person turned down (`scartato`): the catalogue
+    would never show the card, so the CV would reach Anthropic for nothing."""
+    turned_down = _apply(clean, "a@studio.it", text_pdf("Il CV di chi è stato scartato."))
+    kept = _apply(clean, "b@studio.it", text_pdf("Il CV di chi resta."))
+    row = clean.get(Freelancer, turned_down)
+    assert row is not None
+    row.stato = "scartato"
+    clean.commit()
+    llm = RecordingCall([card_response()])
+
+    assert CardWriter(clean, llm).refresh_stale() == CardsRefreshed(written=1, failed=0)
+
+    [request] = llm.requests
+    assert "chi resta" in _user_text(request) and "scartato" not in _user_text(request)
+    assert (stored := _stored(clean, kept)) is not None and stored.card == CARD
+    assert _stored(clean, turned_down) is None
+    assert CardWriter(clean, llm).refresh_stale() == CardsRefreshed(written=0, failed=0)
 
 
 def test_refresh_stale_stops_at_an_outage(clean: Session) -> None:

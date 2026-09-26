@@ -122,6 +122,36 @@ describe('/me/edit', () => {
     expect(fetchSpy.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
   })
 
+  it.each([
+    ['1.500', '1500.00'],
+    ['1.234,50', '1234.50'],
+  ])('saves a rate typed as «%s» as %s (REB-485)', async (typed, sent) => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, PROFILE))
+    mount()
+    const user = userEvent.setup()
+    const rate = await screen.findByLabelText('Tariffa a giornata')
+    expect(rate).toHaveValue('450.00')
+    await user.clear(rate)
+    await user.type(rate, typed)
+    await user.click(screen.getByRole('button', { name: 'Salva' }))
+    await screen.findByRole('heading', { name: 'La tua area' })
+    const patch = fetchSpy.mock.calls.find(([, init]) => init?.method === 'PATCH')!
+    expect(JSON.parse(patch[1]!.body as string).tariffa_giornaliera).toBe(sent)
+  })
+
+  it('refuses a rate whose thousands put it over the ceiling, before it saves (REB-485)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, PROFILE))
+    mount()
+    const user = userEvent.setup()
+    const rate = await screen.findByLabelText('Tariffa a giornata')
+    await user.clear(rate)
+    // 150000: read as 150 it would have been saved.
+    await user.type(rate, '150.000')
+    await user.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
+    expect(fetchSpy.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false)
+  })
+
   it('shows a stored profile as its name and saves it back as the profile (ORB-203)', async () => {
     const WITH_LINKEDIN = { ...PROFILE, linkedin_url: 'https://www.linkedin.com/in/ada' }
     const fetchSpy = vi

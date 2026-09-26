@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bandFor, bandLabel } from './bands'
+import { bandLabel } from './bands'
 import { formatEuro } from './format'
 
 // Written as escapes on purpose: both characters are invisible or look-alikes in an editor.
@@ -29,23 +29,5 @@ describe('bandLabel', () => {
   it('never breaks a line before «€», with the same space formatEuro writes', () => {
     expect(bandLabel({ min: 400, max: 500 })).not.toContain(' €')
     expect(formatEuro('450')).toContain(`${NBSP}€`)
-  })
-})
-
-/** Core's `test_band_for_adds_forty_percent_to_the_rate`: the admin's talent page shows
- *  the band a company would read for this person, from the rate on file now. */
-describe('bandFor', () => {
-  it('adds forty percent to the rate and places it in the band whose bottom it reaches', () => {
-    // 214.28 x 1.4 = 299.992: under 300. 214.29 x 1.4 = 300.006: 300 or more.
-    expect(bandFor('214.28')).toEqual({ min: 0, max: 300 })
-    expect(bandFor('214.29')).toEqual({ min: 300, max: 400 })
-    expect(bandFor('250.00')).toEqual({ min: 300, max: 400 })
-    expect(bandFor('450.00')).toEqual({ min: 500, max: 650 })
-    expect(bandFor('571.43')).toEqual({ min: 800, max: null })
-    expect(bandFor('571.42')).toEqual({ min: 650, max: 800 })
-  })
-
-  it('has no band without a rate', () => {
-    expect(bandFor(null)).toBeNull()
   })
 })

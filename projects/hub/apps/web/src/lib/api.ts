@@ -321,11 +321,14 @@ export interface TeamRequestsFilters {
 
 /** A talent's anonymous card as the admin reads it (§ 5.1): the last card written and
  *  when, from which model, and the last failure, which may sit beside an older card.
- *  `card` is `null` until a CV produces one; `modalita` is the profile's own, read now. */
+ *  `card` is `null` until a CV produces one; `modalita` is the profile's own and
+ *  `fascia` the client's band of the rate on file, both read now by core, `null`
+ *  without a mode or a rate. */
 export interface FreelancerCard {
   freelancer_id: string
   card: Scheda | null
   modalita: Remoto | null
+  fascia: Band | null
   cv_sha256: string | null
   model: string | null
   generated_at: string | null

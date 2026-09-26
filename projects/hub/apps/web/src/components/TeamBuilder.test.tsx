@@ -171,7 +171,7 @@ describe('TeamBuilder, the result', () => {
 
     const backend = people[0]!
     expect(within(backend).getByRole('heading', { name: 'Backend developer' })).toBeInTheDocument()
-    expect(backend).toHaveTextContent('Sviluppatore backend, senior, 9 anni di esperienza')
+    expect(backend).toHaveTextContent('Sviluppatore backend, Senior, 9 anni di esperienza')
     expect(backend).toHaveTextContent('Ha costruito le API di pagamento di due banche.')
     expect(backend).toHaveTextContent(PROPOSAL.team[0]!.scheda.sintesi)
     for (const skill of ['Python', 'FastAPI', 'PostgreSQL']) {
@@ -181,7 +181,7 @@ describe('TeamBuilder, the result', () => {
     expect(backend.textContent).toContain(`400${DASH}500${NBSP}€ al giorno`)
 
     const frontend = people[1]!
-    expect(frontend).toHaveTextContent('Sviluppatrice frontend, mid, 1 anno di esperienza')
+    expect(frontend).toHaveTextContent('Sviluppatrice frontend, Mid, 1 anno di esperienza')
     expect(frontend).toHaveTextContent('Ibrido')
     expect(frontend.textContent).toContain(`500${DASH}650${NBSP}€ al giorno`)
 
