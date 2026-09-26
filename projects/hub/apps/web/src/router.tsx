@@ -215,6 +215,13 @@ const meNewCompany = createRoute({
   path: '/new-company',
   component: NuovaRichiestaAzienda,
 })
+// The talent cloud (REB-518 opens its door, D3 builds the page): a placeholder until
+// then, only so the nav's «Talent cloud» link has a route to point at.
+const meCloud = createRoute({
+  getParentRoute: () => me,
+  path: '/cloud',
+  component: () => <p className="p-6 text-sm text-muted-foreground">Il talent cloud è quasi pronto.</p>,
+})
 // `/io`, `/io/modifica` and `/io/modifica-azienda` each renamed their own segment, not
 // just the shared `/io` prefix, so a deep link to any of the three needs its own
 // redirect: TanStack Router does not cascade a parent's rename onto a child route that
@@ -468,7 +475,7 @@ export const routeTree = root.addChildren([
     unsubscribe,
   ]),
   signedInLayout.addChildren([
-    me.addChildren([meIndex, meEdit, meEditCompany, meNewCompany]),
+    me.addChildren([meIndex, meEdit, meEditCompany, meNewCompany, meCloud]),
     meRedirect,
     meEditRedirect,
     meEditCompanyRedirect,

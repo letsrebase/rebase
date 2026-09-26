@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { distinctId } from '@rebase/analytics/browser'
 import { useWizardAnalytics } from '@/lib/analytics'
 import { ApiError, requestPeople, type CompanyRequest } from '@/lib/api'
+import { TEAM_BUILDER_ORIGIN } from '@/lib/format'
 import { resolveAttribution } from '@/lib/utm'
 import { clearDraft, loadDraft, saveDraft } from '@/wizard/draft'
 import { ChoiceField, LongTextField, TextField } from '@/wizard/fields'
@@ -286,6 +287,21 @@ function Intro() {
   )
 }
 
+/** Above the form when the team builder's beta box opened the wizard (REB-518, spec
+ *  § 4.3): this request is how a company asks for the talent cloud, and the origin it
+ *  carries tells the admin so. */
+function TalentCloudNote() {
+  return (
+    <aside
+      role="note"
+      aria-label="Talent cloud"
+      className="mx-auto mb-8 w-full max-w-2xl border-l-4 border-(--landing-ink) bg-card px-4 py-3 text-sm"
+    >
+      Stai chiedendo l’accesso al talent cloud: compila la richiesta e ti ricontattiamo noi.
+    </aside>
+  )
+}
+
 function ResumedNote({ onRestart }: { onRestart: () => void }) {
   return (
     <aside
@@ -314,6 +330,8 @@ export function CompanyWizard() {
   const [attempt, setAttempt] = useState(0)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<{ message: string; field?: string } | null>(null)
+  // The origin as the request will carry it (`resolveAttribution`), read once.
+  const [forTalentCloud] = useState(() => resolveAttribution(searchStr).origine === TEAM_BUILDER_ORIGIN)
 
   // Once the application is in, nothing is saved again, whatever React still has to
   // flush: the next visit must open a blank form, not the one just sent.
@@ -375,6 +393,7 @@ export function CompanyWizard() {
 
   return (
     <>
+      {forTalentCloud && <TalentCloudNote />}
       {resumed && <ResumedNote onRestart={restart} />}
       <Wizard
         key={attempt}

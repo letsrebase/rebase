@@ -739,3 +739,40 @@ def team_availability_mail(
         )
     )
     return Mail(to=to, subject=subject, text=text, html=_frame(subject, "\n".join(rows)))
+
+
+def talent_cloud_opened_mail(to: str, *, nome: str, azienda: str, url: str) -> Mail:
+    """The talent cloud open for a company (REB-518, spec § 4.1), to the referente of the
+    request an admin opened it from: the subject names the company, the body says what
+    the cloud is and that the way in is the one they already have, the magic link to
+    their area, and the one button is the cloud's page there (`url`), which sends a
+    signed-out visitor to the login first. The name and the company's were typed in the
+    company wizard, so both are escaped in the HTML, and so is the link."""
+    e = html_escape.escape
+    subject = f"Il talent cloud di rebase è aperto per {azienda}"
+    greeting = f"Ciao {nome}," if nome else "Ciao,"
+    opened = (
+        f"il talent cloud di rebase è aperto per {azienda}: i profili dei talenti della "
+        "community, per nome e con il CV, e il team builder per chiederci un team o una "
+        "persona sola, senza moduli da compilare."
+    )
+    enter = (
+        "Lo trovi nella tua area su rebase. Si entra con la tua email, senza password: ti "
+        "mandiamo un link e sei dentro."
+    )
+    text = f"{greeting}\n\n{opened}\n\n{enter}\n\n{url}\n\nNoi di rebase\n"
+    safe_url = e(url, quote=True)
+    small = f'style="margin:24px 0 0 0;font-size:13px;line-height:1.5;color:{INK_QUIET};'
+    body = "\n".join(
+        (
+            f'<p style="margin:0 0 20px 0;">{e(greeting)}</p>',
+            f'<p style="margin:0 0 20px 0;">{e(opened)}</p>',
+            f'<p style="margin:0 0 24px 0;">{e(enter)}</p>',
+            _button(safe_url, "Apri il talent cloud"),
+            f'<p {small}word-break:break-all;">'
+            "Se il bottone non si apre, copia questo indirizzo nel browser:<br>"
+            f"{_quiet_link(safe_url, safe_url)}</p>",
+            '<p style="margin:24px 0 0 0;">Noi di rebase</p>',
+        )
+    )
+    return Mail(to=to, subject=subject, text=text, html=_frame(subject, body))

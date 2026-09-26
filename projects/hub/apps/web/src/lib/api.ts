@@ -396,6 +396,8 @@ export interface Freelancer {
   /** `null` while the card is live; a moment once an admin soft-deletes it (REB-347),
    *  reversed by `restoreFreelancer` (REB-355). */
   deleted_at: string | null
+  /** When an admin marked the talent «Verificato» (REB-518), `null` otherwise. */
+  vetted_at: string | null
 }
 
 export interface Company {
@@ -421,6 +423,26 @@ export interface Company {
   commenti: Comment[]
   /** Same soft-delete as `Freelancer.deleted_at`. */
   deleted_at: string | null
+  /** The talent cloud open for this request's referente (REB-518): the detail carries
+   *  it while it is live, the list leaves it `null`. */
+  talent_cloud_grant: TalentCloudGrant | null
+}
+
+/** A grant of the talent cloud (REB-518, spec § 4.1): the request it was opened from,
+ *  the referente by name, who opened it and when; `revoked_at` is `null` while live. */
+export interface TalentCloudGrant {
+  id: string
+  user_id: string
+  company_id: string
+  azienda: string
+  referente: string
+  email: string
+  granted_by: string
+  granted_by_nome: string | null
+  granted_at: string
+  revoked_by: string | null
+  revoked_by_nome: string | null
+  revoked_at: string | null
 }
 
 /** One remark in a row's thread: appended, signed and dated, never edited. */
@@ -463,12 +485,15 @@ export interface AdminAction {
     | 'mail_resent'
     | 'document_cancelled'
     | 'notice_recorded'
+    /** «Segna come verificato» / «Togli la verifica» (REB-518): `payload.vetted` says which. */
+    | 'vetted'
   admin_id: string
   admin_nome: string
   payload: {
     changed?: string[]
     before?: Record<string, unknown>
     after?: Record<string, unknown>
+    vetted?: boolean
   }
   created_at: string
 }
@@ -572,6 +597,10 @@ export interface Talento {
   origine: 'form' | 'wizard' | 'admin'
   utm_source: string | null
   created_at: string
+  /** REB-518: the «Verificato» pill's date, and whether Claude's anonymous card exists;
+   *  a bare sign-up has neither. */
+  vetted_at: string | null
+  ha_scheda_anonima: boolean
 }
 
 /** What an admin found about a signup on the public web (ORB-155): a name, maybe a
@@ -1074,6 +1103,9 @@ export const admin = {
   deleteFreelancer: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}`, { method: 'DELETE' }),
   restoreFreelancer: (id: string) =>
     request<Freelancer>(`/api/hub/freelancers/${id}/restore`, { method: 'POST' }),
+  /** «Segna come verificato» (`true`) and «Togli la verifica» (`false`), REB-518. */
+  setVetted: (id: string, vetted: boolean) =>
+    request<Freelancer>(`/api/hub/freelancers/${id}/vetted`, json({ vetted })),
   /** The anonymous card Claude wrote from the CV (REB-510), with the last failure. */
   freelancerCard: (id: string) => request<FreelancerCard>(`/api/hub/freelancers/${id}/card`),
   /** «Rigenera scheda»: the card written again from the current CV, now. A failure is
@@ -1124,6 +1156,15 @@ export const admin = {
    *  reverses it. Never a hard delete (REB-347/355). */
   deleteCompany: (id: string) => request<Company>(`/api/hub/companies/${id}`, { method: 'DELETE' }),
   restoreCompany: (id: string) => request<Company>(`/api/hub/companies/${id}/restore`, { method: 'POST' }),
+  /** «Apri il talent cloud» (REB-518): the live grant to the request's referente, new
+   *  (201, with a mail to them) or already there (200, no mail). */
+  openTalentCloud: (companyId: string) =>
+    request<TalentCloudGrant>(`/api/hub/companies/${companyId}/cloud`, { method: 'POST' }),
+  /** «Revoca il talent cloud»: 409 with the API's sentence when nothing is live. */
+  revokeTalentCloud: (companyId: string) =>
+    request<TalentCloudGrant>(`/api/hub/companies/${companyId}/cloud`, { method: 'DELETE' }),
+  /** Every grant, live and closed, newest first (capped by the API, not paginated). */
+  talentCloudGrants: () => request<TalentCloudGrant[]>('/api/hub/cloud/grants'),
   /** Every card and every bare sign-up as one list (REB-282/283), `stato` `lead` for
    *  the bare ones alone -- the read model «Talenti» replaced «Developer e CTO» and
    *  «Iscrizioni» with. `filters` beside `stato` and `cursor` are REB-285's search and
@@ -1276,6 +1317,8 @@ export interface Me {
   /** CV, rate, position and remote preference all present. Always `false` without a
    *  card (`ha_scheda`). */
   completa: boolean
+  /** Whether a talent cloud grant of theirs is live (REB-518): «Talent cloud» in the nav. */
+  talent_cloud: boolean
 }
 
 /** The seven answers a member may change. The email is not among them. */

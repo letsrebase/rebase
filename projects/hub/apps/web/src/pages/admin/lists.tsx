@@ -27,6 +27,7 @@ import {
   type FreelancerOverride,
   type Remoto,
   type Talento,
+  type TalentCloudGrant,
   type TalentiFilters,
 } from '@/lib/api'
 import { SEARCH_DEBOUNCE_MS, isFilterActive, useDebounce } from '@/lib/adminList'
@@ -36,6 +37,11 @@ import {
   FREELANCER_STATES,
   REMOTO_LABELS,
   STATE_LABELS,
+  TEAM_BUILDER_ORIGIN,
+  TEAM_BUILDER_ORIGIN_LABEL,
+  VETTED_LABEL,
+  VETTED_MARK_LABEL,
+  VETTED_UNMARK_LABEL,
   formatBytes,
   formatDate,
   formatDateTime,
@@ -64,6 +70,22 @@ function StatePill({ stato }: { stato: string }) {
       {STATE_LABELS[stato] ?? stato}
     </Badge>
   )
+}
+
+/** Beside the state pill on a talent an admin marked verified (REB-518): the flag the
+ *  talent cloud shows as its badge. */
+function VettedPill() {
+  return (
+    <Badge variant="pill" dot="accent">
+      {VETTED_LABEL}
+    </Badge>
+  )
+}
+
+/** On a company request that came from the team builder's beta box (REB-518), whose
+ *  referente asked for the talent cloud: the admin knows who to call about it. */
+function TeamBuilderPill() {
+  return <Badge variant="pill">{TEAM_BUILDER_ORIGIN_LABEL}</Badge>
 }
 
 /** Beside the state pill on a card that is missing the CV, the rate, the position or
@@ -429,6 +451,18 @@ export function AdminTalenti() {
 function TalentoRow({ item }: { item: Talento }) {
   const name = [item.nome, item.cognome].filter(Boolean).join(' ')
   const to = item.stato === 'lead' ? '/admin/talent/$id' : '/admin/freelance/$id'
+  const client = useQueryClient()
+  // «Segna come verificato» / «Togli la verifica» (REB-518): the list is read again, so
+  // the pill follows the server's word, and so does the talent's own page.
+  const vet = useMutation({
+    mutationFn: (vetted: boolean) => admin.setVetted(item.id, vetted),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['talenti'] })
+      void client.invalidateQueries({ queryKey: ['freelancer', item.id] })
+    },
+  })
+  const vetFailure =
+    vet.error instanceof ApiError ? vet.error.message : vet.error ? 'Non riesco a salvare la verifica.' : null
   return (
     <TableRow>
       <TableCell>
@@ -436,22 +470,51 @@ function TalentoRow({ item }: { item: Talento }) {
           {name || '—'}
         </Link>
         <p className="text-xs text-muted-foreground">{item.email}</p>
+        {vetFailure && (
+          <p role="alert" className="text-xs text-destructive">
+            {vetFailure}
+          </p>
+        )}
       </TableCell>
       <TableCell>
-        <StatePill stato={item.stato} />
+        <div className="flex flex-wrap items-center gap-1.5">
+          <StatePill stato={item.stato} />
+          {item.vetted_at && <VettedPill />}
+        </div>
       </TableCell>
       <TableCell className="text-muted-foreground">{item.origine}</TableCell>
       <TableCell className="text-right text-muted-foreground">{formatDate(item.created_at)}</TableCell>
       <TableCell className="w-12 text-right">
-        {item.stato !== 'lead' && <TalentoMenu id={item.id} label={name || item.email} />}
+        {item.stato !== 'lead' && (
+          <TalentoMenu
+            id={item.id}
+            label={name || item.email}
+            vetted={!!item.vetted_at}
+            vetting={vet.isPending}
+            onVet={(vetted) => vet.mutate(vetted)}
+          />
+        )}
       </TableCell>
     </TableRow>
   )
 }
 
 /** The row's own actions (REB-387), on a card only: a bare sign-up has no card to match
- *  and no contract to read. The name keeps linking to the card. */
-function TalentoMenu({ id, label }: { id: string; label: string }) {
+ *  and no contract to read. The name keeps linking to the card. REB-518 adds the vetted
+ *  flag, on or off, last. */
+function TalentoMenu({
+  id,
+  label,
+  vetted,
+  vetting,
+  onVet,
+}: {
+  id: string
+  label: string
+  vetted: boolean
+  vetting: boolean
+  onVet: (vetted: boolean) => void
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -469,6 +532,9 @@ function TalentoMenu({ id, label }: { id: string; label: string }) {
           <Link to="/admin/freelance/$id/contracts" params={{ id }}>
             Match e contratti
           </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={vetting} onSelect={() => onVet(!vetted)}>
+          {vetted ? VETTED_UNMARK_LABEL : VETTED_MARK_LABEL}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
@@ -895,6 +961,7 @@ export function AdminFreelancerDetail() {
       <Header title={`${f.nome} ${f.cognome}`}>
         <div className="flex flex-wrap items-center gap-2">
           <StatePill stato={f.stato} />
+          {f.vetted_at && <VettedPill />}
           {!f.completa && <IncompletePill />}
           {f.cv_filename !== null && f.cv_size !== null && f.deleted_at === null && (
             <>
@@ -970,6 +1037,9 @@ export function AdminFreelancerDetail() {
               : `${f.accessi} · ultimo ${formatDateTime(f.ultimo_accesso)}`}
           </Row>
           <Row label="Scheda">{ownership(f)}</Row>
+          <Row label="Verifica">
+            {f.vetted_at ? `${VETTED_LABEL} il ${formatDate(f.vetted_at)}` : 'Non verificato'}
+          </Row>
         </dl>
         {f.deleted_at === null && (
           <StatusEditor
@@ -1176,6 +1246,11 @@ export function AdminCompanies() {
                         <Link to="/admin/companies/$id" params={{ id: item.id }} className="font-medium hover:underline">
                           {item.nome_azienda}
                         </Link>
+                        {item.origine === TEAM_BUILDER_ORIGIN && (
+                          <span className="ml-2">
+                            <TeamBuilderPill />
+                          </span>
+                        )}
                         <p className="text-xs text-muted-foreground">{item.referente} · {item.email}</p>
                       </TableCell>
                       <TableCell className="max-w-xs truncate">{item.progetto}</TableCell>
@@ -1199,6 +1274,58 @@ export function AdminCompanies() {
         </>
       )}
     </>
+  )
+}
+
+/** «Talent cloud» on a company request's page (REB-518, spec § 4.1): whether the
+ *  request's referente can open the private cloud, and the one button that opens it,
+ *  with a mail to them, or closes it again. Only this request's grant: the same person
+ *  may hold another company's, which that request's page shows. */
+function TalentCloudDoor({
+  grant,
+  opening,
+  revoking,
+  onOpen,
+  onRevoke,
+  error,
+}: {
+  grant: TalentCloudGrant | null
+  opening: boolean
+  revoking: boolean
+  onOpen: () => void
+  onRevoke: () => void
+  error: Error | null
+}) {
+  const failure =
+    error instanceof ApiError ? error.message : error ? 'Non riesco a cambiare l’accesso al talent cloud.' : null
+  return (
+    <section aria-label="Talent cloud" className="space-y-3 px-6 pb-6">
+      <h2 className="text-sm font-medium">Talent cloud</h2>
+      {grant ? (
+        <p className="text-sm">
+          Aperto il {formatDate(grant.granted_at)}
+          {grant.granted_by_nome ? ` da ${grant.granted_by_nome}` : ''} per {grant.referente} ({grant.email}).
+        </p>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Il referente non vede il talent cloud. Aprirlo gli manda una mail con il link.
+        </p>
+      )}
+      {grant ? (
+        <Button type="button" variant="outline" size="sm" onClick={onRevoke} disabled={revoking}>
+          {revoking ? 'Revoco…' : 'Revoca il talent cloud'}
+        </Button>
+      ) : (
+        <Button type="button" size="sm" onClick={onOpen} disabled={opening}>
+          {opening ? 'Apro…' : 'Apri il talent cloud'}
+        </Button>
+      )}
+      {failure && (
+        <p role="alert" className="text-sm text-destructive">
+          {failure}
+        </p>
+      )}
+    </section>
   )
 }
 
@@ -1247,6 +1374,13 @@ export function AdminCompanyDetail() {
     client.setQueryData<Company>(['company', id], (current) =>
       current && { ...current, commenti: [created, ...current.commenti] },
     )
+  // The door of the talent cloud (REB-518): the answer is the grant, live after «Apri»
+  // and closed after «Revoca», kept on the cached request as its own read carries it.
+  function setGrant(grant: TalentCloudGrant | null) {
+    client.setQueryData<Company>(['company', id], (current) => current && { ...current, talent_cloud_grant: grant })
+  }
+  const openCloud = useMutation({ mutationFn: () => admin.openTalentCloud(id), onSuccess: setGrant })
+  const revokeCloud = useMutation({ mutationFn: () => admin.revokeTalentCloud(id), onSuccess: () => setGrant(null) })
   if (row.isError) return <Empty>Richiesta non trovata.</Empty>
   if (row.isPending) return <Empty>Caricamento…</Empty>
   const c = row.data
@@ -1268,6 +1402,7 @@ export function AdminCompanyDetail() {
       <Header title={c.nome_azienda}>
         <div className="flex flex-wrap items-center gap-2">
           <StatePill stato={c.stato} />
+          {c.origine === TEAM_BUILDER_ORIGIN && <TeamBuilderPill />}
           {c.deleted_at === null && (
             <Button type="button" variant="outline" size="sm" onClick={() => setOverrideOpen(true)}>
               Modifica richiesta
@@ -1310,6 +1445,18 @@ export function AdminCompanyDetail() {
           />
         )}
       </div>
+      {c.deleted_at === null && (
+        <TalentCloudDoor
+          grant={c.talent_cloud_grant ?? null}
+          opening={openCloud.isPending}
+          revoking={revokeCloud.isPending}
+          onOpen={() => openCloud.mutate()}
+          onRevoke={() => revokeCloud.mutate()}
+          // The failure of the button on screen: «Revoca» while a grant is live,
+          // «Apri» otherwise, so an old refusal of the other one never lingers.
+          error={c.talent_cloud_grant ? revokeCloud.error : openCloud.error}
+        />
+      )}
       <AuditTrail
         kind="companies"
         id={c.id}

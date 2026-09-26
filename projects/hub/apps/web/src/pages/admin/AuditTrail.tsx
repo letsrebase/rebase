@@ -12,6 +12,16 @@ const KIND_LABELS: Record<AdminAction['kind'], string> = {
   mail_resent: 'Mail di firma reinviata',
   document_cancelled: 'Contratto quadro annullato',
   notice_recorded: 'Disdetta registrata',
+  vetted: 'Verifica',
+}
+
+/** The entry's word: its kind's, except `vetted` (REB-518), one kind both ways, whose
+ *  payload says whether the mark went on or came off. */
+function kindLabel(action: AdminAction): string {
+  if (action.kind === 'vetted' && action.payload.vetted !== undefined) {
+    return action.payload.vetted ? 'Segnato come verificato' : 'Verifica tolta'
+  }
+  return KIND_LABELS[action.kind]
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -112,7 +122,7 @@ export function AuditTrail({
             return (
               <li key={action.id} className="space-y-2 px-4 py-3">
                 <p className="flex flex-wrap items-baseline gap-x-2 text-xs text-muted-foreground">
-                  <Badge variant="pill">{KIND_LABELS[action.kind]}</Badge>
+                  <Badge variant="pill">{kindLabel(action)}</Badge>
                   <span className="font-medium text-foreground">{action.admin_nome}</span>
                   <time dateTime={action.created_at}>{formatDateTime(action.created_at)}</time>
                 </p>

@@ -29,6 +29,7 @@ from rebase_api.downloads import cv_response
 from rebase_core.admin_tokens import AdminList, AdminRead
 from rebase_core.audit import AdminActionRead
 from rebase_core.cards import CardWriter
+from rebase_core.cloud import TalentCloudService
 from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
 from rebase_core.errors import TeamBuilderOff
@@ -53,7 +54,9 @@ from rebase_core.schemas import (
     LoginStats,
     SignupList,
     StatusChange,
+    TalentCloudGrantRead,
     TalentoList,
+    VettedChange,
 )
 from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import SignupService
@@ -215,6 +218,15 @@ def clear_freelancer_cv(
     return FreelancerService(session).clear_cv(freelancer_id, admin.id)
 
 
+@router.post("/freelancers/{freelancer_id}/vetted", response_model=FreelancerRead)
+def set_freelancer_vetted(
+    admin: AdminDep, session: SessionDep, freelancer_id: UUID, change: VettedChange
+) -> FreelancerRead:
+    """«Segna come verificato» with `{vetted: true}`, «Togli la verifica» with `false`
+    (REB-518): the talent cloud's badge, recorded as a `vetted` entry of the trail."""
+    return FreelancerService(session).set_vetted(freelancer_id, change.vetted, admin.id)
+
+
 @router.get("/freelancers/{freelancer_id}/card", response_model=FreelancerCardRead)
 def get_freelancer_card(
     _: AdminDep, session: SessionDep, freelancer_id: UUID
@@ -336,6 +348,59 @@ def revert_company_action(
     """Puts a field back to the value a past `overridden` entry names in its own
     `before`, itself recorded as a fresh override."""
     return CompanyService(session).revert(company_id, action_id, admin.id)
+
+
+# ---- the talent cloud's door (REB-518) ---------------------------------------------------
+
+
+def _send_cloud_opened(sender: EmailSender, mail: Mail, grant_id: UUID) -> None:
+    """After the response, like `_send`: a refusal is logged by the grant's id alone."""
+    if not sender.send(mail):
+        _log.warning("talent cloud grant %s: the mail was refused by the provider", grant_id)
+
+
+@router.post(
+    "/companies/{company_id}/cloud",
+    response_model=TalentCloudGrantRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def open_talent_cloud(
+    admin: AdminDep,
+    session: SessionDep,
+    settings: SettingsDep,
+    sender: SenderDep,
+    background: BackgroundTasks,
+    response: Response,
+    company_id: UUID,
+) -> TalentCloudGrantRead:
+    """«Apri il talent cloud» on a company request's page: 201 with the grant to the
+    request's referente, whose mail leaves after this answer; 200 with the grant
+    already live for that person and request, a double click included, and no mail.
+    Without a mail key the cloud opens all the same and nobody is mailed."""
+    read, mail = TalentCloudService(session, settings).grant(company_id, admin.id)
+    if mail is None:
+        response.status_code = status.HTTP_200_OK
+    elif sender is None:
+        _log.info("talent cloud grant %s: no mail sender, not mailed", read.id)
+    else:
+        background.add_task(_send_cloud_opened, sender, mail, read.id)
+    return read
+
+
+@router.delete("/companies/{company_id}/cloud", response_model=TalentCloudGrantRead)
+def revoke_talent_cloud(
+    admin: AdminDep, session: SessionDep, company_id: UUID
+) -> TalentCloudGrantRead:
+    """«Revoca il talent cloud»: closes this request's live grant only; 409 with the
+    sentence when none is live."""
+    return TalentCloudService(session).revoke(company_id, admin.id)
+
+
+@router.get("/cloud/grants", response_model=list[TalentCloudGrantRead])
+def list_talent_cloud_grants(_: AdminDep, session: SessionDep) -> list[TalentCloudGrantRead]:
+    """Every grant, live and closed, newest first; capped (`cloud.LIST_CAP`), not
+    paginated: a grant is a company admitted by hand."""
+    return TalentCloudService(session).list()
 
 
 @router.get("/logins", response_model=LoginStats)

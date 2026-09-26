@@ -15,8 +15,11 @@ from rebase_core.models import CARD_SENIORITIES
 from rebase_core.team_words import (
     TALENT_ANSWER_LABELS,
     TALENT_WAITING_LABEL,
+    TEAM_BUILDER_ORIGIN,
+    TEAM_BUILDER_ORIGIN_LABEL,
     TEAM_ORIGIN_LABELS,
     TEAM_REQUEST_STATE_LABELS,
+    VETTED_LABEL,
 )
 
 REPO = Path(__file__).resolve().parents[5]
@@ -82,6 +85,23 @@ def test_the_web_says_in_attesa_as_the_core_does() -> None:
     found = re.search(r"^export const TALENT_WAITING_LABEL = '([^'\\]*)'$", source, re.MULTILINE)
     assert found is not None, f"TALENT_WAITING_LABEL is not a string constant in {FORMAT_TS.name}"
     assert found.group(1) == TALENT_WAITING_LABEL
+
+
+@pytest.mark.parametrize(
+    ("name", "core"),
+    [
+        # REB-518: the talent's «Verificato» pill, and a company request that came from
+        # the team builder's beta box (`?da=team-builder`), with the word its row shows.
+        ("VETTED_LABEL", VETTED_LABEL),
+        ("TEAM_BUILDER_ORIGIN", TEAM_BUILDER_ORIGIN),
+        ("TEAM_BUILDER_ORIGIN_LABEL", TEAM_BUILDER_ORIGIN_LABEL),
+    ],
+)
+def test_the_web_says_one_word_as_the_core_does(name: str, core: str) -> None:
+    source = FORMAT_TS.read_text(encoding="utf-8")
+    found = re.search(rf"^export const {name} = '([^'\\]*)'$", source, re.MULTILINE)
+    assert found is not None, f"{name} is not a string constant in {FORMAT_TS.name}"
+    assert found.group(1) == core
 
 
 def test_the_web_names_every_seniority_a_card_can_carry_and_no_other() -> None:

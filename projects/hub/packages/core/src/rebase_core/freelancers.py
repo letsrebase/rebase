@@ -129,6 +129,7 @@ def freelancer_read(row: Freelancer, user: User) -> FreelancerRead:
         created_at=row.created_at,
         updated_at=row.updated_at,
         deleted_at=row.deleted_at,
+        vetted_at=row.vetted_at,
     )
 
 
@@ -512,6 +513,25 @@ class FreelancerService:
             "cleared",
             admin_id,
             {"changed": ["cv"], "before": before, "after": dict.fromkeys(before, None)},
+        )
+        return freelancer_read(row, user)
+
+    def set_vetted(self, freelancer_id: UUID, vetted: bool, admin_id: UUID) -> FreelancerRead:
+        """«Segna come verificato» and «Togli la verifica» (REB-518): the manual flag the
+        talent cloud shows as a badge, the date and the admin on the row, and one
+        `vetted` entry in the trail naming which way it went. A mark already there, or
+        one already off, is left alone and records nothing: the date is the first
+        verification's, not the last click's."""
+        row = self._require(freelancer_id)
+        user = self.session.get(User, row.user_id)
+        assert user is not None
+        if vetted == (row.vetted_at is not None):
+            return freelancer_read(row, user)
+        row.vetted_at = utcnow() if vetted else None
+        row.vetted_by = admin_id if vetted else None
+        self.session.commit()
+        AdminActionService(self.session).record(
+            ENTITY, row.id, "vetted", admin_id, {"vetted": vetted}
         )
         return freelancer_read(row, user)
 

@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from rebase_core.cloud import TalentCloudService
 from rebase_core.comments import CommentService
 from rebase_core.errors import NotFound
 from rebase_core.freelancers import check_cv, cv_of
@@ -141,7 +142,7 @@ class MemberService:
         """The full `GET /me` shape for whoever `user_id` names: the identity off
         `users`, plus the freelancer card's own fields when one exists and the most
         recent company request's own fields when one exists (REB-314), blank
-        otherwise."""
+        otherwise, and whether a talent cloud grant of theirs is live (REB-518)."""
         user = self.session.get(User, user_id)
         if user is None:
             raise NotFound("user", user_id)
@@ -173,6 +174,7 @@ class MemberService:
             azienda_giorni_presenza=company.giorni_presenza if company else None,
             azienda_numero_risorse=company.numero_risorse if company else None,
             azienda_figura_richiesta=company.figura_richiesta if company else None,
+            talent_cloud=TalentCloudService(self.session).for_user(user_id) is not None,
         )
 
     # ---- what another product may ask ------------------------------------------------

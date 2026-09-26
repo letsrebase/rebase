@@ -18,6 +18,7 @@ from rebase_core.audit import (
     supplied_changes,
     utcnow,
 )
+from rebase_core.cloud import TalentCloudService
 from rebase_core.comments import CommentService
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import COMPANY_STATES, Company, User
@@ -225,11 +226,13 @@ class CompanyService:
         )
 
     def get(self, company_id: UUID) -> CompanyRead:
-        """The row with its thread of comments, newest first. Only here: the list
-        leaves `commenti` empty."""
+        """The row with its thread of comments, newest first, and since REB-518 the
+        talent cloud its referente holds for it while it is open. Only here: the list
+        leaves both empty."""
         row, user = self._require(company_id)
         read = _to_read(row, user)
         read.commenti = CommentService(self.session).list(ENTITY, company_id)
+        read.talent_cloud_grant = TalentCloudService(self.session).for_company(company_id)
         return read
 
     def set_status(self, company_id: UUID, change: StatusChange) -> CompanyRead:

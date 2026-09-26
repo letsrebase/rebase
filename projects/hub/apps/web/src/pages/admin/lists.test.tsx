@@ -911,7 +911,165 @@ describe('the talent row menu and the card link to its contracts (REB-387)', () 
     mount('/admin/talent')
     await userEvent.click(await screen.findByRole('button', { name: 'Azioni per Ada Lovelace' }))
     const items = await screen.findAllByRole('menuitem')
-    expect(items.map((item) => item.textContent)).toEqual(['Crea match', 'Match e contratti'])
+    expect(items.map((item) => item.textContent)).toEqual([
+      'Crea match',
+      'Match e contratti',
+      'Segna come verificato',
+    ])
     expect(items[0]!.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/match\/new$/)
+  })
+})
+
+/** A card an admin marked «Verificato» (REB-518). */
+const VETTED_TALENTO = { ...CARD_TALENTO, vetted_at: '2026-09-25T09:00:00Z', ha_scheda_anonima: true }
+
+describe('«Verificato» on Talenti and on the talent (REB-518)', () => {
+  it('shows the pill on a vetted row only', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { totale: 2, items: [VETTED_TALENTO, LEAD_TALENTO], per_stato: {} }),
+    )
+    mount('/admin/talent')
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    expect(within(cellUnder(ada, 'Stato')).getByText('Verificato')).toBeInTheDocument()
+    const bob = screen.getByText('bob@example.org').closest('tr')!
+    expect(within(bob).queryByText('Verificato')).toBeNull()
+  })
+
+  it('marks a row verified from its menu and reads the list again', async () => {
+    let vetted = false
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/hub/freelancers/f1/vetted' && init?.method === 'POST') {
+        vetted = JSON.parse(init.body as string).vetted
+        return answer(200, { ...COMPLETE, id: 'f1', vetted_at: vetted ? '2026-09-26T10:00:00Z' : null })
+      }
+      const row = vetted ? VETTED_TALENTO : CARD_TALENTO
+      return answer(200, { totale: 1, items: [row], per_stato: {} })
+    })
+    mount('/admin/talent')
+    await userEvent.click(await screen.findByRole('button', { name: 'Azioni per Ada Lovelace' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Segna come verificato' }))
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    await within(ada).findByText('Verificato')
+    expect(spy).toHaveBeenCalledWith(
+      '/api/hub/freelancers/f1/vetted',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ vetted: true }) }),
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Azioni per Ada Lovelace' }))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Togli la verifica' }))
+    await waitFor(() => expect(within(ada).queryByText('Verificato')).toBeNull())
+    expect(spy).toHaveBeenCalledWith(
+      '/api/hub/freelancers/f1/vetted',
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ vetted: false }) }),
+    )
+  })
+
+  it('says on the talent\'s page whether and since when it is verified', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f2': { ...COMPLETE, vetted_at: '2026-09-25T09:00:00Z' },
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': noCard('f2'),
+    })
+    mount('/admin/freelance/f2')
+    const banner = await screen.findByRole('banner')
+    expect(within(banner).getByText('Verificato')).toBeInTheDocument()
+    expect(screen.getByText('Verificato il 25 set 2026')).toBeInTheDocument()
+  })
+
+  it('says a talent nobody verified is not', async () => {
+    routeFetch({
+      'GET /api/hub/freelancers/f2': { ...COMPLETE, vetted_at: null },
+      'GET /api/hub/freelancers/f2/audit': [],
+      'GET /api/hub/freelancers/f2/card': noCard('f2'),
+    })
+    mount('/admin/freelance/f2')
+    const banner = await screen.findByRole('banner')
+    expect(within(banner).queryByText('Verificato')).toBeNull()
+    expect(screen.getByText('Non verificato')).toBeInTheDocument()
+  })
+})
+
+/** A company request that came from the team builder's beta box (spec § 4.3). */
+const COMPANY_TEAM_BUILDER = { ...COMPANY_A, origine: 'team-builder', talent_cloud_grant: null }
+
+/** The live grant `POST /api/hub/companies/c1/cloud` answers (REB-518). */
+const GRANT = {
+  id: 'g1',
+  user_id: 'u1',
+  company_id: 'c1',
+  azienda: 'Rossi Studio',
+  referente: 'Mario Rossi',
+  email: 'mario@rossi.it',
+  granted_by: 'a1',
+  granted_by_nome: 'Ivan',
+  granted_at: '2026-09-26T10:00:00Z',
+  revoked_by: null,
+  revoked_by_nome: null,
+  revoked_at: null,
+}
+
+describe('«da team builder» and the talent cloud on Aziende (REB-518)', () => {
+  it('names the team builder on the row of a request that came from it, and on no other', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { totale: 2, items: [COMPANY_TEAM_BUILDER, COMPANY_B], per_stato: {} }),
+    )
+    mount('/admin/companies')
+    const rossi = (await screen.findByText('Rossi Studio')).closest('tr')!
+    expect(within(rossi).getByText('da team builder')).toBeInTheDocument()
+    const bianchi = screen.getByText('Bianchi Srl').closest('tr')!
+    expect(within(bianchi).queryByText('da team builder')).toBeNull()
+  })
+
+  it('opens the talent cloud to the referente from the request, then revokes it', async () => {
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/hub/companies/c1/audit') return answer(200, [])
+      if (url === '/api/hub/companies/c1/cloud' && init?.method === 'POST') return answer(201, GRANT)
+      if (url === '/api/hub/companies/c1/cloud' && init?.method === 'DELETE') {
+        return answer(200, { ...GRANT, revoked_at: '2026-09-26T11:00:00Z', revoked_by: 'a1' })
+      }
+      return answer(200, COMPANY_TEAM_BUILDER)
+    })
+    mount('/admin/companies/c1')
+    await screen.findByRole('heading', { name: 'Rossi Studio' })
+    expect(within(screen.getByRole('banner')).getByText('da team builder')).toBeInTheDocument()
+    const section = screen.getByRole('region', { name: 'Talent cloud' })
+    expect(within(section).getByText(/Il referente non vede il talent cloud/)).toBeInTheDocument()
+
+    await userEvent.click(within(section).getByRole('button', { name: 'Apri il talent cloud' }))
+    await within(section).findByText(/Aperto il 26 set 2026 da Ivan per Mario Rossi/)
+    expect(spy).toHaveBeenCalledWith('/api/hub/companies/c1/cloud', expect.objectContaining({ method: 'POST' }))
+
+    await userEvent.click(within(section).getByRole('button', { name: 'Revoca il talent cloud' }))
+    await within(section).findByRole('button', { name: 'Apri il talent cloud' })
+    expect(spy).toHaveBeenCalledWith('/api/hub/companies/c1/cloud', expect.objectContaining({ method: 'DELETE' }))
+  })
+
+  it('reads a grant already live and shows the API\'s sentence when a revoke is refused', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/hub/companies/c1/audit') return answer(200, [])
+      if (url === '/api/hub/companies/c1/cloud' && init?.method === 'DELETE') {
+        return answer(409, { detail: 'Il talent cloud non è aperto per questa azienda.' })
+      }
+      return answer(200, { ...COMPANY_TEAM_BUILDER, talent_cloud_grant: GRANT })
+    })
+    mount('/admin/companies/c1')
+    const section = await screen.findByRole('region', { name: 'Talent cloud' })
+    await userEvent.click(within(section).getByRole('button', { name: 'Revoca il talent cloud' }))
+    expect(await within(section).findByRole('alert')).toHaveTextContent(
+      'Il talent cloud non è aperto per questa azienda.',
+    )
+  })
+
+  it('offers no door on a deleted request', async () => {
+    routeFetch({
+      'GET /api/hub/companies/c1': { ...COMPANY_A, deleted_at: '2026-09-23T10:00:00Z' },
+      'GET /api/hub/companies/c1/audit': [],
+    })
+    mount('/admin/companies/c1')
+    await screen.findByRole('heading', { name: 'Rossi Studio' })
+    expect(screen.queryByRole('region', { name: 'Talent cloud' })).toBeNull()
   })
 })
