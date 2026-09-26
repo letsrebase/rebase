@@ -134,13 +134,15 @@ jobs:
 
       # Reads `.snyk`, whose `exclude.code` keeps the test trees out, and the ignores made
       # in Snyk's UI, which come back as suppressions and are not filed. An inline
-      # `deepcode ignore` comment does nothing: the org runs Consistent Ignores.
+      # `deepcode ignore` comment does nothing: the org runs Consistent Ignores. A clean
+      # run (exit 0) writes no file at all, unlike `snyk test` (checked on 2026-09-26 with
+      # CLI 1.1307.4), so an empty SARIF stands in for it.
       - name: Scan the code
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
           snyk code test --org="$SNYK_ORG" --json-file-output="$SNYK_JSON/code.json" || [ $? -eq 1 ]
-          test -s "$SNYK_JSON/code.json"
+          [ -s "$SNYK_JSON/code.json" ] || echo '{"version":"2.1.0","runs":[]}' > "$SNYK_JSON/code.json"
 
       # The images the way ci.yml's tier 3 builds them: the project's compose file from
       # its own directory, with the same throwaway values for the variables compose

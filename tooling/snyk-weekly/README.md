@@ -17,7 +17,8 @@ winter time:
    honoured, and given to Snyk as that venv's `pip freeze`. Stripping the markers
    instead fails: `pywin32` and `colorama` cannot install on Linux, and Snyk stops on
    SNYK-OS-PYTHON-0013.
-3. **`snyk code test`**, which reads `.snyk` and the ignores made in Snyk's UI.
+3. **`snyk code test`**, which reads `.snyk` and the ignores made in Snyk's UI. A clean
+   run writes no JSON file at all, so the workflow writes an empty SARIF in its place.
 4. **`snyk container test`** on the five images the repository builds, built as
    `ci.yml` builds them: `pigrocrm-api`, `pigrocrm-web`, `rebase-api`, `rebase-web`,
    `website-web`.
@@ -50,7 +51,8 @@ GitHub's 65,536 characters, dropping the least severe rows first and saying so.
 - **Findings, and last week's card or issue still open:** the new report goes on it as a
   comment, and nothing new is filed; a worse week raises the card's priority, a better
   one leaves it. The other half of the pair is only created when it never existed; a
-  card or an issue somebody closed is not refiled.
+  card or an issue somebody closed is not refiled. A pair linked one way only (a link
+  back that failed) is linked both ways the next week.
 - **An advisory with no fix yet counts like any other.** Most rows today are Debian
   packages in the API images waiting for a Debian update, and the report's second line
   says how many rows can be fixed now. Waiting is written on the open card, which stays

@@ -66,6 +66,13 @@ test("maps Snyk Code levels to severities and skips what was ignored in Snyk's U
   assert.ok(!findings.some((f) => f.id === "javascript/DOMXSS"), "the accepted DOMXSS ignore is not reported");
 });
 
+test("reads the empty SARIF the workflow writes for a clean Snyk Code run", () => {
+  const { rows, errors, scanned } = buildReport([["code.json", { version: "2.1.0", runs: [] }]]);
+  assert.deepEqual(rows, []);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(scanned, ["Snyk Code"]);
+});
+
 test("still reports a finding whose ignore is only under review", () => {
   const sarif = load("code.json");
   const domxss = sarif.runs[0].results.find((r) => r.ruleId === "javascript/DOMXSS");

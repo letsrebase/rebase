@@ -130,6 +130,12 @@ export async function fileReport({ title, report, summary, priority, scanErrors 
     // A dry run on a machine without the key is a preview, not a failure.
     if (!(dryRun && !linear)) failures.push(`Linear: ${linearError}`);
   }
+  // The marker search can find an open card that belongs to another week's issue, when
+  // the card this issue names was closed; that card is not this issue's pair.
+  if (openGithub && openLinear && openLinear.githubNumber != null && openLinear.githubNumber !== openGithub.number) {
+    log(`${openLinear.identifier} belongs to GitHub issue #${openLinear.githubNumber}, not #${openGithub.number}: left alone`);
+    openLinear = null;
+  }
   if (openGithub) log(`Open GitHub issue from a previous run: #${openGithub.number} (${openGithub.url})`);
   if (openLinear) log(`Open Linear card from a previous run: ${openLinear.identifier} (${openLinear.url})`);
 
@@ -188,6 +194,26 @@ export async function fileReport({ title, report, summary, priority, scanErrors 
       } catch (e) {
         failures.push(`Linear: linking ${target.identifier} to #${issue.number} failed (${e.message})`);
       }
+    }
+  }
+
+  // 3b. A pair found open but linked one way only (the link back failed last week, or
+  // the card was found by its marker for an issue that never recorded it) is linked
+  // now, rather than staying half-linked for as long as both are open.
+  if (openGithub && openLinear && !linearError) {
+    if (openLinear.githubNumber == null) {
+      act(`link ${openLinear.identifier} to GitHub issue #${openGithub.number}`);
+      if (!dryRun) {
+        try {
+          await linear.update(openLinear.id, `${openLinear.description}\n\nGitHub issue: ${openGithub.url}`);
+        } catch (e) {
+          failures.push(`Linear: linking ${openLinear.identifier} to #${openGithub.number} failed (${e.message})`);
+        }
+      }
+    }
+    if (!openGithub.linearIdentifier) {
+      act(`record ${openLinear.identifier} on GitHub issue #${openGithub.number}`);
+      if (!dryRun) await github.updateBody(openGithub.number, recordCard(openGithub.body, openLinear));
     }
   }
 

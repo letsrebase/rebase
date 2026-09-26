@@ -151,6 +151,34 @@ test("second week: comments on both, creates nothing", async () => {
   assert.ok(github.calls[0][2].includes(REPORT));
 });
 
+test("a pair linked one way only is linked both ways the next week", async () => {
+  // Last week the card's link back failed: the issue names REB-590, the card no issue.
+  const github = fakeGithub({ open: openIssue("REB-590") });
+  const linear = fakeLinear({ open: openCard(null) });
+  const result = await run({ github, linear });
+  assert.deepEqual(result.failures, []);
+  const update = linear.calls.find((c) => c[0] === "update");
+  assert.equal(update[1], "uuid-590");
+  assert.equal(parseGithubLink(update[2], REPO), 400);
+  assert.ok(!github.calls.some((c) => c[0] === "create" || c[0] === "updateBody"));
+
+  // The other way round: the card links the issue, the issue names no card.
+  const github2 = fakeGithub({ open: openIssue(null) });
+  const linear2 = fakeLinear({ open: openCard(400) });
+  await run({ github: github2, linear: linear2 });
+  const body = github2.calls.find((c) => c[0] === "updateBody");
+  assert.equal(parseLinearLink(body[2]), "REB-590");
+  assert.ok(!linear2.calls.some((c) => c[0] === "create" || c[0] === "update"));
+});
+
+test("an open card that belongs to another issue is not taken for this issue's pair", async () => {
+  const github = fakeGithub({ open: openIssue("REB-580") });
+  const linear = fakeLinear({ open: openCard(399) });
+  await run({ github, linear });
+  assert.deepEqual(linear.calls, []);
+  assert.deepEqual(github.calls.map((c) => c[0]), ["comment"]);
+});
+
 test("a clean week says so on what is open and files nothing new", async () => {
   const github = fakeGithub({ open: openIssue("REB-590") });
   const linear = fakeLinear({ open: openCard(400) });
