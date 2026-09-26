@@ -3,20 +3,23 @@
 from datetime import date, datetime
 from decimal import Decimal
 
+import pytest
+from pydantic import ValidationError
+
 from rebase_core.campaigns.schemas import AziendeFiltri, ScheduleRequest, TalentiFiltri
 
 # What «Nuova campagna» sends with every filter filled: the same literals
-# `apps/web/src/pages/admin/CreaCampagna.test.tsx` expects the wizard to post
-# (`TALENTI_FILTRI`, `AZIENDE_FILTRI`). A field renamed or retyped on either side
-# fails one of the two tests.
+# `apps/web/src/pages/admin/CreaCampagna.test.tsx` expects the page to post
+# (`TALENTI_SENT`, `AZIENDE_SENT`, amounts with two decimals since REB-485). A field
+# renamed or retyped on either side fails one of the two tests.
 TALENTI_FILTRI = {
     "lista": "talenti",
     "stato": "attivo",
     "q": "react",
     "posizione": "Frontend",
     "remoto": "ibrido",
-    "tariffa_min": "300",
-    "tariffa_max": "500",
+    "tariffa_min": "300.00",
+    "tariffa_max": "500.00",
     "origine": "home",
     "utm_source": "linkedin",
     "has_cv": True,
@@ -28,8 +31,8 @@ AZIENDE_FILTRI = {
     "lista": "aziende",
     "stato": "in_corso",
     "q": "block",
-    "budget_min": "200",
-    "budget_max": "400",
+    "budget_min": "200.00",
+    "budget_max": "400.00",
     "periodo_da": "2026-10-01",
     "origine": "home",
     "creato_da": "2026-01-01",
@@ -56,3 +59,22 @@ def test_the_wizards_company_filters_are_the_servers_fields_and_types() -> None:
     filtri = AziendeFiltri.model_validate(AZIENDE_FILTRI)
     assert filtri.budget_min == Decimal("200") and filtri.periodo_da == date(2026, 10, 1)
     assert filtri.creato_a == datetime(2026, 9, 1)
+
+
+@pytest.mark.parametrize("amount", ["12.345", "-1", "1e3.5"])
+def test_a_filter_amount_keeps_cents_at_most_and_is_never_negative(amount: str) -> None:
+    """The editor reads a stored amount back with two decimals: a third would come back
+    rounded, and the list with it (REB-526)."""
+    with pytest.raises(ValidationError):
+        TalentiFiltri.model_validate({"lista": "talenti", "tariffa_min": amount})
+    with pytest.raises(ValidationError):
+        AziendeFiltri.model_validate({"lista": "aziende", "budget_max": amount})
+
+
+def test_a_filter_amount_with_cents_is_kept_as_it_is_however_large() -> None:
+    """No ceiling the editor's field does not have: an amount it sends is one this
+    takes (CodeRabbit on #432)."""
+    filtri = TalentiFiltri.model_validate({"lista": "talenti", "tariffa_min": "12.30"})
+    assert filtri.tariffa_min == Decimal("12.30")
+    huge = AziendeFiltri.model_validate({"lista": "aziende", "budget_max": "123456789012.00"})
+    assert huge.budget_max == Decimal("123456789012.00")

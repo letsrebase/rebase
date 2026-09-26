@@ -88,6 +88,26 @@ export function campaignMoment(campagna: Pick<Campaign, 'stato' | 'programmata_p
   return null
 }
 
+/** A moment's time of day in Rome, «10:32»: when the draft was saved, when the test left. */
+export function romeTime(iso: string): string {
+  return romeClock.format(new Date(iso))
+}
+
+/** «1 persona», «83 persone»: the count on the send button. */
+export function peopleLabel(count: number): string {
+  return `${count} ${count === 1 ? 'persona' : 'persone'}`
+}
+
+const scheduleDay = new Intl.DateTimeFormat('it-IT', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' })
+
+/** The «Programma» inputs as the send button says them, «lun 28 set, 09:00». The
+ *  inputs already hold a Rome day and time, so the day is formatted as a calendar
+ *  date (at UTC) and never shifted through the browser's own zone. */
+export function scheduleLabel(giorno: string, ora: string): string {
+  const [year, month, day] = giorno.split('-').map(Number)
+  return `${scheduleDay.format(new Date(Date.UTC(year!, month! - 1, day!)))}, ${ora}`
+}
+
 const POLL_MS = 10_000
 /** Resend's delivery and bounce events land seconds to minutes after the last mail. */
 const AFTER_SEND_MS = 5 * 60 * 1000
