@@ -75,3 +75,13 @@ class TeamBuilderOff(DomainError):
     sender."""
 
     code = "team_builder_off"
+
+
+class TeamBuilderBusy(DomainError):
+    """The team builder is on but full: every slot of the API process is taken
+    (`REBASE_TEAM_BUILDER_CONCURRENCY`), or today's proposals reached
+    `REBASE_TEAM_BUILDER_DAILY_CAP` (spec § 5, `team_caps.py`). `message` is «Troppe
+    richieste in questo momento: riprova tra un minuto.» for both, since a visitor does
+    the same thing either way. A 503 with `Retry-After`, like the limiter's 429."""
+
+    code = "team_builder_busy"

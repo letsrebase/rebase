@@ -4,17 +4,19 @@
 ever reaches a `freelancer_cards` row; `FreelancerCardRead` and `CardsRefreshed` are
 what the card writer answers (REB-510, `cards.py`). `TeamProposalCreate` is what a
 visitor asks the engine for and `TeamProposalRead` what it answers (REB-511,
-`team_builder.py`, § 3.3), with `Band` from `bands.py`. The request's models, § 3.5,
-come with the tasks that build the routes reading them (C5 to D4), kept out of
-`schemas.py`, already the size of a chapter, the same reasoning `contract_schemas.py`
+`team_builder.py`, § 3.3), with `Band` from `bands.py`. The request's models, § 3.2 and
+§ 3.5, are what a visitor's «Assumi team» sends and what the admin reads and edits
+(REB-512, `team_requests.py`); the tasks after it (D1 to D4) extend them here, kept out
+of `schemas.py`, already the size of a chapter, the same reasoning `contract_schemas.py`
 gives for its own flow.
 """
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Literal, NamedTuple
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from rebase_core.bands import Band
 
@@ -23,12 +25,15 @@ from rebase_core.bands import Band
 # repeating them: re-exported here so a caller of this module still finds them beside
 # `Card`.
 from rebase_core.models import (
+    AZIENDA_MAX_LENGTH,
     CARD_SENIORITIES,
     TALENT_ANSWERS,
     TEAM_PROPOSAL_ORIGINS,
     TEAM_REQUEST_ORIGINS,
     TEAM_REQUEST_STATES,
+    TELEFONO_MAX_LENGTH,
 )
+from rebase_core.schemas import PROGETTO_MAX_LENGTH, _clean_text, clean_multiline
 from rebase_core.validation import SafeStr
 
 __all__ = [
@@ -44,6 +49,15 @@ __all__ = [
     "TeamMemberRead",
     "TeamProposalCreate",
     "TeamProposalRead",
+    "TeamRequestCreate",
+    "TeamRequestCreated",
+    "TeamRequestList",
+    "TeamRequestListItem",
+    "TeamRequestNote",
+    "TeamRequestRead",
+    "TeamRequestStatus",
+    "TeamRequestSummary",
+    "TeamRequestTalentRead",
 ]
 
 
@@ -148,3 +162,127 @@ class TeamProposalRead(BaseModel):
     previous_id: UUID | None
     origine: str
     created_at: datetime
+
+
+# ---- the request (REB-512, spec § 3.2, § 3.5) -----------------------------------------------
+
+# The engine's own ceiling on a summary (`team_builder.ProposalAnswer`), kept by the admin's
+# edit so what the talents read is never longer than what Claude may write.
+RIASSUNTO_MAX_LENGTH = 1500
+
+
+class TeamRequestCreate(BaseModel):
+    """What «Assumi team» sends from the public page: the proposal, and who to call back.
+    The company's name and the phone follow the company wizard's own rules
+    (`CompanyCreate`): trimmed, no control character, never only spaces."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    proposal_id: UUID
+    azienda: SafeStr = Field(min_length=1, max_length=AZIENDA_MAX_LENGTH)
+    email: EmailStr
+    telefono: SafeStr = Field(min_length=6, max_length=TELEFONO_MAX_LENGTH)
+
+    @field_validator("azienda", "telefono", mode="after")
+    @classmethod
+    def _trimmed(cls, value: str) -> str:
+        return _clean_text(value, what="un valore")
+
+
+class TeamRequestCreated(BaseModel):
+    """What the public route answers, and all it answers: the request's id."""
+
+    id: UUID
+
+
+class TeamRequestTalentRead(BaseModel):
+    """One talent of a request, as the admin reads it: the name, the role proposed, the
+    freelancer's own rate and the client's band from it, and the availability mail's
+    progress (D1), all `None` until the first send."""
+
+    freelancer_id: UUID
+    nome: str
+    cognome: str
+    ruolo: str
+    tariffa_giornaliera: Decimal | None
+    fascia: Band | None
+    mail_sent_at: datetime | None
+    risposta: str | None
+    risposta_at: datetime | None
+
+
+class TeamRequestRead(BaseModel):
+    """A request's page in «Richieste team» (§ 3.5). `proposal` is the admin's read of
+    the proposal (ids and the card's place kept), `None` for a single-talent request
+    from the cloud; `riassunto` and `descrizione` are the proposal's, the summary being
+    the copy the admin edits before the talents read it."""
+
+    id: UUID
+    proposal: TeamProposalRead | None
+    riassunto: str | None
+    descrizione: str | None
+    origine: str
+    azienda: str
+    email: str
+    telefono: str | None
+    user_id: UUID | None
+    company_id: UUID | None
+    stato: str
+    note: str | None
+    talenti: list[TeamRequestTalentRead]
+    contacted_at: datetime | None
+    closed_at: datetime | None
+    created_at: datetime
+
+
+class TeamRequestListItem(BaseModel):
+    """One row of «Richieste team»: who, from where, when, where it stands, and «N sì su
+    M» from the talents' answers."""
+
+    id: UUID
+    azienda: str
+    origine: str
+    stato: str
+    created_at: datetime
+    contacted_at: datetime | None
+    talenti_totale: int
+    talenti_si: int
+
+
+class TeamRequestList(BaseModel):
+    """A page of the list, newest first; `next_cursor` is `None` on the last page."""
+
+    items: list[TeamRequestListItem]
+    next_cursor: str | None = None
+
+
+class TeamRequestStatus(BaseModel):
+    """«Segna come contattata», «Chiudi»: one of `TEAM_REQUEST_STATES`, checked by the
+    service so the API and the MCP server refuse the same words the same way."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    stato: str = Field(min_length=1, max_length=20)
+
+
+class TeamRequestNote(BaseModel):
+    """The admin's own note on a request; `null` or only spaces clears it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    note: SafeStr | None = Field(default=None, max_length=PROGETTO_MAX_LENGTH)
+
+
+class TeamRequestSummary(BaseModel):
+    """«Salva il riassunto»: the summary the talents will read (D1's mail), never empty,
+    in lines and paragraphs but with no other control character, the rule the company's
+    own project description follows (`clean_multiline`)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    riassunto: SafeStr = Field(min_length=1, max_length=RIASSUNTO_MAX_LENGTH)
+
+    @field_validator("riassunto", mode="after")
+    @classmethod
+    def _paragraphs(cls, value: str) -> str:
+        return clean_multiline(value, what="un riassunto")

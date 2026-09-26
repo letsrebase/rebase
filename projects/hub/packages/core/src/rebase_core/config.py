@@ -125,6 +125,14 @@ class Settings(BaseSettings):
     # Off switches the feature without touching the key above: the two callers read it,
     # this file only declares it.
     team_builder_enabled: bool = True
+    # How many proposals the API process runs at once (spec § 5): the next one answers
+    # 503 «Troppe richieste» at once rather than queue on the thread pool the member
+    # area and the webhooks share. It bounds load, not spend: that is the cap below.
+    team_builder_concurrency: int = Field(default=4, ge=1)
+    # Proposals a day, public and cloud together, counted on `team_proposals` since
+    # midnight in Rome (`team_caps.py`); once reached, the same 503 until tomorrow. A
+    # proposal that asked no model (an empty catalogue) cost nothing and does not count.
+    team_builder_daily_cap: int = 300
 
 
 @lru_cache(maxsize=1)

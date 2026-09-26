@@ -7,8 +7,10 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from rebase_api.deps import SessionDep
+from rebase_api.ratelimit import RETRY_AFTER_SECONDS
 from rebase_api.routers import (
     admin,
+    admin_team,
     campaigns,
     companies,
     documenso,
@@ -18,6 +20,7 @@ from rebase_api.routers import (
     pigro,
     resend,
     signups,
+    team,
     tokens,
 )
 from rebase_core import analytics
@@ -28,6 +31,7 @@ from rebase_core.errors import (
     LlmUnavailable,
     NotFound,
     SigningUnavailable,
+    TeamBuilderBusy,
     TeamBuilderOff,
     ValidationFailed,
 )
@@ -47,7 +51,8 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
     """A domain error is a sentence and a status, never a stack trace. `NotFound` is a
     404, `ValidationFailed` a 422 in FastAPI's own shape so a form can point at the
     field, `LlmUnavailable` a 502, `ContractFailed` a 503, `DocumensoFailed` a 502,
-    `SigningUnavailable` a 503, `TeamBuilderOff` a 503, anything else a 409."""
+    `SigningUnavailable` a 503, `TeamBuilderOff` a 503, `TeamBuilderBusy` a 503 with
+    `Retry-After`, anything else a 409."""
     assert isinstance(exc, DomainError)
     if isinstance(exc, NotFound):
         return JSONResponse({"detail": exc.message}, status_code=404)
@@ -82,6 +87,14 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
         return JSONResponse({"detail": exc.message}, status_code=503)
     if isinstance(exc, TeamBuilderOff):
         return JSONResponse({"detail": exc.message}, status_code=503)
+    if isinstance(exc, TeamBuilderBusy):
+        # Every slot taken, or the day's proposals spent: the sentence says «tra un
+        # minuto», and so does the header, as the limiter's own 429 does.
+        return JSONResponse(
+            {"detail": exc.message},
+            status_code=503,
+            headers={"Retry-After": str(RETRY_AFTER_SECONDS)},
+        )
     return JSONResponse({"detail": exc.message}, status_code=409)
 
 
@@ -100,6 +113,8 @@ def create_app() -> FastAPI:
     app.include_router(pigro.router)
     app.include_router(resend.router)
     app.include_router(tokens.router)
+    app.include_router(team.router)
+    app.include_router(admin_team.router)
 
     @app.get("/health")
     def health(session: SessionDep) -> dict[str, str]:

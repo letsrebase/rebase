@@ -49,6 +49,7 @@ if TYPE_CHECKING:
 
 APPLICATION_COMPLETED = "iscrizione_completata"
 TEAM_PROPOSAL_GENERATED = "team_proposta_generata"
+TEAM_REQUEST_SENT = "team_richiesta_inviata"
 
 Kind = Literal["freelance", "azienda"]
 

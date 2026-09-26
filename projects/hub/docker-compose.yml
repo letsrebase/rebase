@@ -47,6 +47,10 @@ x-api-environment: &api-environment
   REBASE_ANTHROPIC_API_KEY: ${REBASE_ANTHROPIC_API_KEY:-}
   REBASE_TEAM_BUILDER_MODEL: ${REBASE_TEAM_BUILDER_MODEL:-claude-opus-5}
   REBASE_TEAM_BUILDER_ENABLED: ${REBASE_TEAM_BUILDER_ENABLED:-true}
+  # Proposals at once in this process, and a day: past either, 503 «Troppe richieste».
+  # Not empty defaults: an int field fails at start-up on an empty value.
+  REBASE_TEAM_BUILDER_CONCURRENCY: ${REBASE_TEAM_BUILDER_CONCURRENCY:-4}
+  REBASE_TEAM_BUILDER_DAILY_CAP: ${REBASE_TEAM_BUILDER_DAILY_CAP:-300}
 
 services:
   db:
