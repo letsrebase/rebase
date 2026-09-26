@@ -716,6 +716,7 @@ class PigroLinkResult(NamedTuple):
     failed: int
 
 class ReportDayInvoice(BaseModel):
+    tipo: str            # "fattura" | "proforma": a proforma 5/2026 and an invoice 5/2026 stay apart
     numero: str          # the invoice's label, as in `fatture`
     ore: Decimal         # that day's hours on it, two places
 
@@ -806,7 +807,9 @@ class EngagementService:
   `pigro_mail_sent_at = now()` as a claim (`claimed = True`). Commit. Only when
   `claimed`: `sender.send(engagement_ready_mail(...))`; a refusal re-locks, sets
   `pigro_mail_sent_at = None`, commits. Two `link` calls racing on one match send one
-  mail: the second sees the claim under the lock.
+  mail: the second sees the claim under the lock. A crash between the claim's commit
+  and the provider's answer leaves the claim set and no mail sent: a rare, accepted
+  gap, stated here rather than closed.
   With `admin_id`: `AdminActionService(session).record(entity_type="match",
   entity_id=match_id, kind="pigro_link", admin_id=admin_id, payload={"esito":
   stato, "errore": pigro_errore})`. Answer `MatchService(session).get(match_id)`.
