@@ -49,6 +49,7 @@ def _printed(value: object) -> str | None:
 def _read(document: ContractDocument, match: Match | None, today: date) -> MemberContract:
     active, renewal, last_notice = framework_dates(document, today)
     data = document.data or {}
+    pigro_url = match.pigro_url if match is not None and match.pigro_stato == "collegato" else None
     return MemberContract(
         id=document.id,
         kind=document.kind,
@@ -64,6 +65,7 @@ def _read(document: ContractDocument, match: Match | None, today: date) -> Membe
         attivo=active,
         rinnovo=renewal,
         ultimo_giorno_disdetta=last_notice,
+        pigro_url=pigro_url,
     )
 
 

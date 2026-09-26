@@ -61,6 +61,7 @@ from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.framework import ROME, rome_today
 from rebase_core.http import MAX_BODY_BYTES, HttpCall
 from rebase_core.mail import EmailSender, engagement_ready_mail
+from rebase_core.match_words import pigro_state_sentence
 from rebase_core.matches import ENTITY, MatchService
 from rebase_core.models import Company, ContractDocument, Freelancer, Match, User
 from rebase_core.pigro import (
@@ -142,18 +143,6 @@ def _printed_date(data: Mapping[str, Any], key: str) -> date | None:
     if not isinstance(value, str):
         raise ContractFailed(f"{key} is {value!r}, not a date as a contract writes it")
     return parse_italian_date(value)
-
-
-def _pigro_state_sentence(pigro_stato: str | None, pigro_errore: str | None) -> str:
-    """Why a match has no report: where its link stands, in the words its card uses."""
-    if pigro_stato == DA_COLLEGARE:
-        return "Pigro non ha ancora il deal: riprova o aspetta lo sweep."
-    if pigro_stato == ERRORE:
-        return f"Pigro non ha risposto: {pigro_errore or NOT_ANSWERING}"
-    if pigro_stato == RIFIUTATO:
-        refused = "Pigro ha rifiutato il collegamento"
-        return f"{refused}: {pigro_errore}" if pigro_errore else f"{refused}."
-    return "Il match non è collegato a Pigro: si collega quando la lettera è firmata."
 
 
 def _refusal(raw: bytes, status: int) -> str:
@@ -564,7 +553,7 @@ class EngagementService:
             raise PigroUnavailable(HTTPS_ONLY)
         if match.pigro_stato != COLLEGATO:
             raise InvalidState(
-                _pigro_state_sentence(match.pigro_stato, match.pigro_errore),
+                pigro_state_sentence(match.pigro_stato, match.pigro_errore),
                 pigro_stato=match.pigro_stato,
             )
         pigro_url, giorni_previsti = match.pigro_url, match.giorni_previsti

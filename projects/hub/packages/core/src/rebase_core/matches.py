@@ -174,6 +174,8 @@ def _match_words(
         framework_stato,
         _printed(letter, "data-inizio"),
         _printed(letter, "data-fine"),
+        pigro_stato=match.pigro_stato,
+        pigro_errore=match.pigro_errore,
     )
 
 

@@ -789,6 +789,37 @@ def test_only_an_active_match_can_be_closed(clean: Session) -> None:
     assert service.close(match.id, admin_id).stato == "concluso"
 
 
+def test_an_active_matchs_situazione_says_where_its_hours_stand_on_pigro(clean: Session) -> None:
+    """`get` and `list_all` both read `match_words` through `_match_words` (REB-498,
+    spec § 3.5): the wiring, not the sentences themselves, which `test_match_words.py`
+    covers."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    match = service.create(freelancer_id, _body(company_id), admin_id)
+    letter = clean.get(ContractDocument, match.lettera.id)
+    assert letter is not None
+    letter.stato = "firmato"
+    letter.signed_at = datetime(2026, 9, 28, 9, 0, tzinfo=UTC)
+    letter.signed_pdf = PDF
+    row = clean.get(Match, match.id)
+    assert row is not None
+    row.stato = "attivo"
+    row.pigro_stato = "da_collegare"
+    clean.commit()
+
+    read = service.get(match.id)
+    assert read.situazione.endswith(" Pigro non ha ancora il deal: riprova o aspetta lo sweep.")
+    assert read.altre_azioni == ["chiudi", "riprova_pigro"]
+    listed = service.list_all(stato=None, q=None, limit=100, offset=0).items[0]
+    assert listed.situazione == read.situazione
+
+    row.pigro_stato = "collegato"
+    clean.commit()
+    read = service.get(match.id)
+    assert read.situazione.endswith(" Le ore si consuntivano su Pigro.")
+    assert read.altre_azioni == ["chiudi"]
+
+
 def test_the_contracts_page_reads_the_active_framework_its_dates_and_the_matches_newest_first(
     clean: Session,
 ) -> None:

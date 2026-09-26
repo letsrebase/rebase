@@ -471,7 +471,14 @@ export type DocumentStato = 'generato' | 'in_attesa' | 'inviato' | 'firmato' | '
 
 /** What an admin can do next on a document or a match (REB-477), as the core's
  *  `match_words` names it: the page maps each to its button and its API call. */
-export type Action = 'invia' | 'reinvia_email' | 'aggiorna_stato' | 'annulla' | 'chiudi' | 'registra_disdetta'
+export type Action =
+  | 'invia'
+  | 'reinvia_email'
+  | 'aggiorna_stato'
+  | 'annulla'
+  | 'chiudi'
+  | 'registra_disdetta'
+  | 'riprova_pigro'
 
 /** A freelancer's tax data, as the two contracts print them. */
 export interface FiscalData {

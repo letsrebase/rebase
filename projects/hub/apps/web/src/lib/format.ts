@@ -76,6 +76,7 @@ export const ACTION_LABELS: Record<Action, string> = {
   annulla: 'Annulla',
   chiudi: 'Chiudi match',
   registra_disdetta: 'Registra disdetta',
+  riprova_pigro: 'Riprova su Pigro',
 }
 /** The same button while its request runs. */
 export const ACTION_PENDING_LABELS: Record<Action, string> = {
@@ -85,6 +86,7 @@ export const ACTION_PENDING_LABELS: Record<Action, string> = {
   annulla: 'Annullo…',
   chiudi: 'Chiudo…',
   registra_disdetta: 'Registro…',
+  riprova_pigro: 'Collego a Pigro…',
 }
 
 /** REB-392: a contract's state in the freelancer's own words, gendered to the document:

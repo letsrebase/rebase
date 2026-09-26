@@ -22,7 +22,13 @@ if TYPE_CHECKING:
     from rebase_core.contract_schemas import LetteraFields, SendReport
 
 Action = Literal[
-    "invia", "reinvia_email", "aggiorna_stato", "annulla", "chiudi", "registra_disdetta"
+    "invia",
+    "reinvia_email",
+    "aggiorna_stato",
+    "annulla",
+    "chiudi",
+    "registra_disdetta",
+    "riprova_pigro",
 ]
 # Where the freelancer's framework agreement stands when a match is about to be saved:
 # one must leave first (none, or one generated and never sent), one is out for signature
@@ -61,6 +67,12 @@ DOCUMENT_STATE_LABELS = {
 
 DRAFT_TEXT = " Il testo è ancora in bozza."
 MISSING_TAX_DATA = "Mancano i dati fiscali del freelance: servono prima di salvare."
+# Where an active match's link to Pigro stands (`models.PIGRO_STATES`), read again here,
+# each module its own copy of the four words rather than an import (`engagements.py`
+# does the same): `None` until the trigger runs, one of the other four after (REB-498).
+DA_COLLEGARE, COLLEGATO, ERRORE, RIFIUTATO = "da_collegare", "collegato", "errore", "rifiutato"
+PIGRO_RETRY_STATES = (DA_COLLEGARE, ERRORE, RIFIUTATO)
+PIGRO_LINKED = "Le ore si consuntivano su Pigro."
 WHAT_LEAVES_FIRST: dict[FrameworkStep, str] = {
     "da_inviare": (
         "Prima parte il contratto quadro; la lettera di incarico parte da sola dopo la sua firma."
@@ -114,6 +126,22 @@ def _refusal(letter: DocumentFacts) -> str:
 def _flat(text: str) -> str:
     """A paragraph the letter may print on several lines, on one line."""
     return " ".join(text.split())
+
+
+def pigro_state_sentence(pigro_stato: str | None, pigro_errore: str | None) -> str:
+    """Why an active match has no report yet, with the CRM's own words folded in
+    (spec § 3.5): the empty string for `None` (the match is not active) and for
+    `collegato` (nothing wrong -- `match_words` says that one itself, since it also has
+    good news to report). Read by `match_words`, for the card's `situazione`, and by
+    `EngagementService.report`, for the `InvalidState` a match not `collegato` refuses
+    with."""
+    if pigro_stato == DA_COLLEGARE:
+        return "Pigro non ha ancora il deal: riprova o aspetta lo sweep."
+    if pigro_stato == ERRORE:
+        return f"Pigro non ha risposto: {pigro_errore}"
+    if pigro_stato == RIFIUTATO:
+        return f"Pigro ha rifiutato il collegamento: {pigro_errore}"
+    return ""
 
 
 def document_words(document: DocumentFacts) -> Words:
@@ -177,13 +205,20 @@ def match_words(
     framework_stato: str | None,
     letter_start: str | None,
     letter_end: str | None,
+    *,
+    pigro_stato: str | None = None,
+    pigro_errore: str | None = None,
 ) -> Words:
     """`framework_stato` is where the freelancer's framework agreement stands
     (`framework.framework_states`): `firmato` for an active one, else the pending one's
     `inviato` or `generato`, `None` when there is none. A waiting letter leaves by itself
     after one out for signature; otherwise «Invia per la firma» sends it (an active one,
     its release missed), sends the framework agreement first (one generated and never
-    sent) or writes a new one (none, or one cancelled or refused)."""
+    sent) or writes a new one (none, or one cancelled or refused). `pigro_stato` and
+    `pigro_errore` are the match's own (REB-498): for an `attivo` match they add one
+    sentence to `situazione` about where its hours are, and, short of `collegato`, a
+    «Riprova su Pigro» among `altre_azioni`; irrelevant, and left `None`, for every other
+    state."""
     numero = letter.numero
     if stato == "bozza":
         return (
@@ -232,12 +267,19 @@ def match_words(
             list(AWAITING_COPY[stato]),
         )
     if stato == "attivo":
-        return (
+        sentence = (
             f"Lettera n. {numero} firmata{_on(letter.signed_on)}"
-            f"{_period(letter_start, letter_end)}.",
-            None,
-            ["chiudi"],
+            f"{_period(letter_start, letter_end)}."
         )
+        note = (
+            PIGRO_LINKED
+            if pigro_stato == COLLEGATO
+            else pigro_state_sentence(pigro_stato, pigro_errore)
+        )
+        altre_azioni: list[Action] = ["chiudi"]
+        if pigro_stato in PIGRO_RETRY_STATES:
+            altre_azioni.append("riprova_pigro")
+        return (f"{sentence} {note}" if note else sentence, None, altre_azioni)
     if stato == "concluso":
         return f"Lettera n. {numero}{_period(letter_start, letter_end)}.", None, []
     if stato == "annullato":

@@ -535,7 +535,9 @@ class MemberContract(BaseModel):
     """A contract as its freelancer reads it in «Contratti» (REB-392): never the PDF's
     bytes and never `data`. `cliente` and the two dates are a letter's, as the letter
     prints them; `signing_url` is there only while the document waits for the
-    signature, since its path is the signer's token."""
+    signature, since its path is the signer's token. `pigro_url` is the letter's
+    match's own (REB-498), set only once that match is `collegato`: «Le tue ore su
+    Pigro» has somewhere to point (spec § 3.6)."""
 
     id: UUID
     kind: str
@@ -551,6 +553,7 @@ class MemberContract(BaseModel):
     attivo: bool
     rinnovo: date | None
     ultimo_giorno_disdetta: date | None
+    pigro_url: str | None
 
 
 class MemberContracts(BaseModel):

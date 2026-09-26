@@ -17,10 +17,12 @@ from rebase_core.documenso import REJECTED, Outcome
 from rebase_core.match_words import (
     DOCUMENT_STATE_LABELS,
     MATCH_STATE_LABELS,
+    Action,
     DocumentFacts,
     check_sentences,
     document_words,
     match_words,
+    pigro_state_sentence,
     send_report_sentence,
 )
 from rebase_core.models import MATCH_STATES
@@ -329,6 +331,77 @@ def test_an_active_match_says_when_its_letter_was_signed_and_its_period(
         f"Lettera n. 2026-003 firmata il 28 settembre 2026{period}.",
         None,
         ["chiudi"],
+    )
+
+
+# ---- an active match's link to Pigro (REB-498, spec § 3.5) -----------------------------
+
+
+def test_an_active_match_with_no_pigro_state_adds_nothing() -> None:
+    """A match older than migration 0021, or read before the trigger ran: nothing to add
+    yet."""
+    letter = _lettera("firmato", signed_on=SIGNED, ha_pdf_firmato=True)
+    assert match_words("attivo", letter, None, START, None, pigro_stato=None) == (
+        "Lettera n. 2026-003 firmata il 28 settembre 2026, dal 1° ottobre 2026.",
+        None,
+        ["chiudi"],
+    )
+
+
+@pytest.mark.parametrize(
+    ("pigro_stato", "pigro_errore", "note", "altre_azioni"),
+    [
+        ("collegato", None, "Le ore si consuntivano su Pigro.", ["chiudi"]),
+        (
+            "da_collegare",
+            None,
+            "Pigro non ha ancora il deal: riprova o aspetta lo sweep.",
+            ["chiudi", "riprova_pigro"],
+        ),
+        (
+            "errore",
+            "Pigro non risponde.",
+            "Pigro non ha risposto: Pigro non risponde.",
+            ["chiudi", "riprova_pigro"],
+        ),
+        (
+            "rifiutato",
+            "Il deal di questa lettera è stato eliminato nello spazio.",
+            "Pigro ha rifiutato il collegamento: Il deal di questa lettera è stato eliminato "
+            "nello spazio.",
+            ["chiudi", "riprova_pigro"],
+        ),
+    ],
+)
+def test_an_active_match_says_where_its_hours_stand_on_pigro(
+    pigro_stato: str, pigro_errore: str | None, note: str, altre_azioni: list[Action]
+) -> None:
+    letter = _lettera("firmato", signed_on=SIGNED, ha_pdf_firmato=True)
+    assert match_words(
+        "attivo", letter, None, START, None, pigro_stato=pigro_stato, pigro_errore=pigro_errore
+    ) == (
+        f"Lettera n. 2026-003 firmata il 28 settembre 2026, dal 1° ottobre 2026. {note}",
+        None,
+        altre_azioni,
+    )
+
+
+def test_pigro_state_sentence_says_nothing_before_a_deal_or_once_one_is_linked() -> None:
+    """`report`'s own `InvalidState` never needs a sentence for these two: a match not
+    yet active has no report to refuse, and `collegato` has one to answer instead."""
+    assert pigro_state_sentence(None, None) == ""
+    assert pigro_state_sentence("collegato", None) == ""
+
+
+def test_pigro_state_sentence_names_the_state_and_folds_in_the_crms_own_words() -> None:
+    assert pigro_state_sentence("da_collegare", None) == (
+        "Pigro non ha ancora il deal: riprova o aspetta lo sweep."
+    )
+    assert pigro_state_sentence("errore", "Pigro non risponde.") == (
+        "Pigro non ha risposto: Pigro non risponde."
+    )
+    assert pigro_state_sentence("rifiutato", "Il deal è stato eliminato nello spazio.") == (
+        "Pigro ha rifiutato il collegamento: Il deal è stato eliminato nello spazio."
     )
 
 
