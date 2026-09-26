@@ -98,11 +98,14 @@ export function useAutosave(key: string | null, initial: Campaign | null): Autos
 
   const settled = useDebounce(key, AUTOSAVE_MS)
   useEffect(() => {
-    if (settled === null || settled === failedKey) return
+    // Only the form as it stands: a settled key the form has already left is older than
+    // what the test or «Invia» may just have saved, and saving it would put the old
+    // draft back after them (Greptile, #432 round 2).
+    if (settled === null || settled !== key || settled === failedKey) return
     // `save` returns early when this draft is the stored one; a failure is already in
     // `error`, where the page shows it.
     enqueue(() => save(settled)).catch(() => undefined)
-  }, [settled, failedKey, enqueue, save])
+  }, [settled, key, failedKey, enqueue, save])
 
   return { campaign, savedKey, saving, error, savedAt, run }
 }

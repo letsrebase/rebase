@@ -136,6 +136,16 @@ function stored(value: unknown, { day = false }: { day?: boolean } = {}): string
   return day ? text.slice(0, 10) : text
 }
 
+/** A stored amount back into its input, with two decimals. The server writes a machine
+ *  decimal, where a dot is always the decimal point, but the field reads what it holds
+ *  the Italian way (REB-485): a draft that stored «1.500» (1.5, typed into the old
+ *  number input) would come back as 1500. «1.50» cannot be misread. */
+function storedAmount(value: unknown): string {
+  const text = stored(value)
+  const number = Number(text)
+  return text.trim() !== '' && Number.isFinite(number) ? number.toFixed(2) : text
+}
+
 /** The name a draft is saved under while the title field is empty: `nome` is
  *  `min_length=1` server-side (fix 1, REB-472 round 1), and a blank one never leaves
  *  this page (REB-524 strips it server-side too). */
@@ -230,8 +240,8 @@ export function formFromCampaign(c: Campaign): CampaignForm {
         q: stored(f.q),
         posizione: stored(f.posizione),
         remoto: stored(f.remoto) || ANY,
-        tariffa_min: stored(f.tariffa_min),
-        tariffa_max: stored(f.tariffa_max),
+        tariffa_min: storedAmount(f.tariffa_min),
+        tariffa_max: storedAmount(f.tariffa_max),
         origine: stored(f.origine),
         utm_source: stored(f.utm_source),
         has_cv: boolToSelect(f.has_cv as boolean | undefined),
@@ -247,8 +257,8 @@ export function formFromCampaign(c: Campaign): CampaignForm {
     aziende: {
       stato,
       q: stored(f.q),
-      budget_min: stored(f.budget_min),
-      budget_max: stored(f.budget_max),
+      budget_min: storedAmount(f.budget_min),
+      budget_max: storedAmount(f.budget_max),
       periodo_da: stored(f.periodo_da, { day: true }),
       origine: stored(f.origine),
       creato_da: stored(f.creato_da, { day: true }),

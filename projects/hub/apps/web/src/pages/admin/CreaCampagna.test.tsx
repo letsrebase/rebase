@@ -358,6 +358,34 @@ describe('«Nuova campagna» on one page (REB-526)', () => {
     expect(await sendBar().findByText('Hai cambiato la campagna dopo la prova: mandane un’altra.', {}, SAVED)).toBeInTheDocument()
   })
 
+  it('never saves back a draft older than the one the test has just saved', async () => {
+    let patches = 0
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns/c1/test': () => json({ ...TESTED, oggetto: 'Manca solo il CV!?' }),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+      'PATCH /api/hub/campaigns/c1': () =>
+        (patches += 1) === 1 ? json({ detail: 'Riprova.' }, 503) : json({ ...DRAFT, oggetto: 'Manca solo il CV!?' }),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await screen.findByText('riceverà la mail', { exact: false }, SAVED)
+    await userEvent.type(screen.getByLabelText('Oggetto'), '!')
+    await screen.findByText('Non salvata: Riprova.', {}, SAVED)
+    // Another keystroke and the test at once, before the draft settles again.
+    await userEvent.type(screen.getByLabelText('Oggetto'), '?')
+    await userEvent.click(screen.getByRole('button', { name: 'Mandami una prova' }))
+    await screen.findByText(/Prova inviata alle/)
+    await new Promise((resolve) => setTimeout(resolve, 900))
+    expect(bodies(calls, 'PATCH', /\/campaigns\/c1$/).map((body) => body.oggetto)).toEqual([
+      'Manca solo il CV!',
+      'Manca solo il CV!?',
+    ])
+    expect(sendBar().getByRole('button', { name: 'Invia a 1 persona' })).toBeEnabled()
+  })
+
   it('saves a burst of typing once, and patches the campaign it created', async () => {
     const calls = api({
       'GET /api/hub/me': () => json(ME),
@@ -671,6 +699,23 @@ describe('the edit route', () => {
     await userEvent.type(screen.getByLabelText('Oggetto'), '!')
     await vi.waitFor(() => expect(bodies(calls, 'PATCH', /\/campaigns\/c1$/)).toHaveLength(1), SAVED)
     expect(lastSaved(calls).filtri).toEqual(TALENTI_SENT)
+  })
+
+  it('reads a stored amount as the decimal the server wrote, never as Italian thousands', async () => {
+    // «1.500» typed into REB-472's number input was 1.5, and the server kept the string.
+    const editCampaign = { ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti', tariffa_min: '1.500' } }
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'GET /api/hub/campaigns/c1': () => json({ campagna: editCampaign, conteggi: COUNTS_EMPTY, destinatari: [] }),
+      'PATCH /api/hub/campaigns/c1': () => json(editCampaign),
+    })
+    mountEdit('c1')
+    expect(await screen.findByLabelText('Tariffa min (€/giorno)')).toHaveValue('1.50')
+    await userEvent.type(screen.getByLabelText('Oggetto'), '!')
+    await vi.waitFor(() => expect(bodies(calls, 'PATCH', /\/campaigns\/c1$/)).toHaveLength(1), SAVED)
+    expect(lastSaved(calls).filtri).toEqual({ lista: 'talenti', tariffa_min: '1.50' })
   })
 
   it('follows a new state with the action, and keeps the mail the admin wrote', async () => {
