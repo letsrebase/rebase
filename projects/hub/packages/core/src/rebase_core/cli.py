@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import DEFAULT_NAME, AdminTokenService
+from rebase_core.campaigns.sender import campaign_sender_from_settings
+from rebase_core.campaigns.tick import run_tick
 from rebase_core.cards import CardWriter
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.fields import ContractFailed, Value, merge_data
@@ -180,6 +182,27 @@ def contracts_sweep() -> int:
     return 0
 
 
+def campaigns_tick() -> int:
+    """`rebase campaigns-tick`: one pass of the campaigns loop (P-REB-41). Runs every
+    minute from the `campaigns` service in `docker-compose.yml`. Without a Resend key it
+    sends nothing and says so, and exits 0 so the loop keeps running."""
+    settings = get_settings()
+    sender = campaign_sender_from_settings(settings)
+    if sender is None:
+        print("invio non configurato: nessuna campagna parte senza REBASE_RESEND_API_KEY")
+        return 0
+    session = session_factory(create_engine_from_settings(settings))()
+    try:
+        result = run_tick(session, sender, settings)
+    finally:
+        session.close()
+    print(
+        f"{result.campagne} campagne, {result.inviate} inviate, "
+        f"{result.saltate} saltate, {result.fallite} fallite"
+    )
+    return 0
+
+
 def cards_refresh(limit: int) -> int:
     """`rebase cards-refresh [--limit N]`: the anonymous card of every freelancer whose CV
     has none yet, or has changed since, `limit` at a time, the oldest first (REB-510).
@@ -346,6 +369,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "contracts-sweep",
         help="Rifà quanto un riavvio o una mail rifiutata hanno lasciato indietro",
     )
+    sub.add_parser(
+        "campaigns-tick",
+        help="Invia le campagne arrivate alla loro ora, una mail alla volta",
+    )
     cards_parser = sub.add_parser(
         "cards-refresh",
         help="Scrive la scheda anonima di chi ha un CV nuovo o cambiato, i più vecchi prima",
@@ -378,6 +405,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return documenso_check(get_settings())
     if args.command == "contracts-sweep":
         return contracts_sweep()
+    if args.command == "campaigns-tick":
+        return campaigns_tick()
     if args.command == "cards-refresh":
         return cards_refresh(args.limit)
     if args.command == "createtoken":

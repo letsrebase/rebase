@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from rebase_core import cli, signing
+from rebase_core.campaigns.tick import TickResult
 from rebase_core.cli import main
 from rebase_core.config import Settings
 from rebase_core.llm import AnthropicCall
@@ -83,6 +84,31 @@ def test_the_documenso_check_command_dispatches_to_documenso_check(
     assert main(["documenso-check"]) == 1
 
     assert "la firma è spenta" in capsys.readouterr().err
+
+
+def test_the_campaigns_tick_command_runs_one_pass_and_prints_what_it_did(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None, resend_api_key="k"))  # type: ignore[call-arg]
+    monkeypatch.setattr(
+        cli,
+        "session_factory",
+        lambda _engine: lambda: type("S", (), {"close": lambda self: None})(),
+    )
+    monkeypatch.setattr(cli, "create_engine_from_settings", lambda _settings: None)
+    monkeypatch.setattr(
+        cli, "run_tick", lambda *_a, **_k: TickResult(campagne=1, inviate=2, saltate=1, fallite=0)
+    )
+    assert main(["campaigns-tick"]) == 0
+    assert capsys.readouterr().out.strip() == "1 campagne, 2 inviate, 1 saltate, 0 fallite"
+
+
+def test_without_a_key_the_tick_sends_nothing_and_says_so(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    assert main(["campaigns-tick"]) == 0
+    assert "invio non configurato" in capsys.readouterr().out
 
 
 class _FakeCardWriter:

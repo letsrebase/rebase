@@ -518,6 +518,19 @@ class CommentCreate(BaseModel):
     testo: SafeStr = Field(min_length=1, max_length=COMMENT_MAX_LENGTH)
 
 
+def card_is_complete(
+    cv_size: int | None,
+    tariffa_giornaliera: Decimal | None,
+    posizione: str | None,
+    remoto: str | None,
+) -> bool:
+    """The same four values `_is_complete` reads, over the raw columns rather than a
+    card object: CV, rate, position and remote option all there. Anything else that
+    reads these four fields -- a campaign's journey state among them -- calls this
+    instead of copying the check."""
+    return all(value is not None for value in (cv_size, tariffa_giornaliera, posizione, remoto))
+
+
 def _is_complete(card: "MemberProfile | FreelancerRead | MeRead") -> bool:
     """CV, rate, position and remote option all there. What «Da completare» in the admin
     area and the notice in the member area read (ORB-155), and what the welcome mailing
@@ -526,10 +539,7 @@ def _is_complete(card: "MemberProfile | FreelancerRead | MeRead") -> bool:
 
     No longer "a card the wizard would have accepted": the wizard accepts one without a
     CV, and this stays the fuller bar, which is the point of having it."""
-    return all(
-        value is not None
-        for value in (card.cv_size, card.tariffa_giornaliera, card.posizione, card.remoto)
-    )
+    return card_is_complete(card.cv_size, card.tariffa_giornaliera, card.posizione, card.remoto)
 
 
 class MemberProfile(BaseModel):

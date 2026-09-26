@@ -103,6 +103,16 @@ class Settings(BaseSettings):
     # sent end to end without waiting for it to lose its `draft` status.
     contracts_allow_draft: bool = False
 
+    # --- campaigns (P-REB-41) --------------------------------------------------------
+    # Who a campaign mail is from: a person, as the two September waves were, not the
+    # magic link's «Rebase». Its replies land in the same inbox.
+    campaign_from: str = "Ivan di rebase <ciao@letsrebase.com>"
+    # Nobody gets two campaigns closer than this many days (spec § 5.3). It also makes a
+    # wave of several campaigns scheduled for the same minute one mail per person.
+    campaign_gap_days: int = 3
+    # The `whsec_` secret Resend shows for this environment's webhook (spec § 6.1).
+    # Empty: the webhook answers 503 and delivery, bounces and complaints are not read.
+    resend_webhook_secret: str = ""
     # --- Claude: the team builder's seam (`llm.py`, REB-508) --------------------------
     # `AnthropicCall`'s key, for its two callers: the anonymous card (spec § 5.1) and the
     # team proposal (spec § 3.4). Empty: `call_from_settings` answers `None` and each
