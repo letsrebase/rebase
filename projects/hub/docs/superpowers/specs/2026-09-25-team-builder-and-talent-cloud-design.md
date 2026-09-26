@@ -181,7 +181,8 @@ those at the API's boot:
 
 `seniority` is one of `junior`, `mid`, `senior`, `lead`; `luogo` is the city or region
 the CV names, or null, required in the schema (null, not absent) and never rendered
-outside the admin's talent page; `sintesi` is two sentences at most, Italian, with no
+on the public page (the admin's talent page and the cloud, which shows the CV itself,
+may carry it); `sintesi` is two sentences at most, Italian, with no
 name, no company name and no link; the writer checks that last rule itself, and a
 card that carries the freelancer's surname as a word in `ruolo`, `sintesi`, `competenze`
 or `settori` (not in `luogo` or `lingue`: Messina, Russo and Tedesco are a city and two
