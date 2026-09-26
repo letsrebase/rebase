@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import type { AudiencePreview, CampaignTemplate } from '@/lib/api'
 import { COMPANY_STATES, FREELANCER_LIST_STATES, REMOTO_LABELS, STATE_LABELS } from '@/lib/format'
-import { FilterField } from '../lists'
+import { AmountFilter, FilterField } from '../lists'
 import {
   ANY,
   NONE,
@@ -57,7 +57,7 @@ function SelectFilter({
   )
 }
 
-/** A text, amount or date filter: an amount is a day rate or a budget in euro. */
+/** A text or date filter. */
 function InputFilter({
   id,
   label,
@@ -71,11 +71,10 @@ function InputFilter({
   label: string
   value: string
   onChange: (value: string) => void
-  kind?: 'text' | 'amount' | 'date'
+  kind?: 'text' | 'date'
   maxLength?: number
   placeholder?: string
 }) {
-  const amount = kind === 'amount' ? { type: 'number', min: 0, step: '0.01', inputMode: 'decimal' as const } : {}
   return (
     <FilterField label={label} htmlFor={id}>
       <Input
@@ -85,10 +84,15 @@ function InputFilter({
         placeholder={placeholder}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        {...amount}
       />
     </FilterField>
   )
+}
+
+/** A day rate or a budget in euro, read the Italian way as on the lists (REB-485); the
+ *  form keeps what was typed, `''` when empty. */
+function EuroFilter({ id, label, value, onChange }: { id: string; label: string; value: string; onChange: (value: string) => void }) {
+  return <AmountFilter id={id} label={label} value={value || undefined} onChange={(typed) => onChange(typed ?? '')} />
 }
 
 const STATE_OPTIONS = (states: readonly string[]): [string, string][] =>
@@ -139,17 +143,15 @@ function TalentiFiltri({
             options={Object.entries(REMOTO_LABELS)}
             onChange={(remoto) => onChange({ remoto })}
           />
-          <InputFilter
+          <EuroFilter
             id="campagna-talenti-tariffa-min"
             label="Tariffa min (€/giorno)"
-            kind="amount"
             value={value.tariffa_min}
             onChange={(tariffa_min) => onChange({ tariffa_min })}
           />
-          <InputFilter
+          <EuroFilter
             id="campagna-talenti-tariffa-max"
             label="Tariffa max (€/giorno)"
-            kind="amount"
             value={value.tariffa_max}
             onChange={(tariffa_max) => onChange({ tariffa_max })}
           />
@@ -211,17 +213,15 @@ function AziendeFiltri({
       </div>
       {altri && (
         <div className="grid gap-4 sm:grid-cols-2">
-          <InputFilter
+          <EuroFilter
             id="campagna-aziende-budget-min"
             label="Budget min (€/giorno)"
-            kind="amount"
             value={value.budget_min}
             onChange={(budget_min) => onChange({ budget_min })}
           />
-          <InputFilter
+          <EuroFilter
             id="campagna-aziende-budget-max"
             label="Budget max (€/giorno)"
-            kind="amount"
             value={value.budget_max}
             onChange={(budget_max) => onChange({ budget_max })}
           />

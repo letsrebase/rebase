@@ -133,9 +133,7 @@ function preview() {
   return within(screen.getByTestId('anteprima-mail'))
 }
 
-/** Every Talenti filter filled, as the page must send it: the same literal
- *  `test_campaign_schemas.py` validates against the server's `TalentiFiltri`, so a
- *  renamed or retyped field fails on one side or the other. */
+/** Every Talenti filter filled, as the admin types it. */
 const TALENTI_FILTRI = {
   lista: 'talenti',
   stato: 'attivo',
@@ -152,8 +150,13 @@ const TALENTI_FILTRI = {
   creato_a: '2026-09-01',
 }
 
-/** Every company filter filled; `test_campaign_schemas.py` validates the same literal
- *  against `AziendeFiltri`. */
+/** What the page sends for them, an amount as the lists send it since REB-485 (two
+ *  decimals and a dot): the same literal `test_campaign_schemas.py` validates against the
+ *  server's `TalentiFiltri`, so a renamed or retyped field fails on one side or the other. */
+const TALENTI_SENT = { ...TALENTI_FILTRI, tariffa_min: '300.00', tariffa_max: '500.00' }
+
+/** Every company filter filled, as the admin types it; `AZIENDE_SENT` below is what
+ *  `test_campaign_schemas.py` validates against `AziendeFiltri`. */
 const AZIENDE_FILTRI = {
   lista: 'aziende',
   stato: 'in_corso',
@@ -165,6 +168,7 @@ const AZIENDE_FILTRI = {
   creato_da: '2026-01-01',
   creato_a: '2026-09-01',
 }
+const AZIENDE_SENT = { ...AZIENDE_FILTRI, budget_min: '200.00', budget_max: '400.00' }
 
 describe('«Nuova campagna» on one page (REB-526)', () => {
   it('fills the mail from the state, saves it by itself, counts the list, and sends after a test', async () => {
@@ -490,7 +494,7 @@ describe('filters (REB-472, carried over)', () => {
     await pick('Ha fatto accesso', 'No')
     day('Creato dal', '2026-01-01')
     day('Creato al', '2026-09-01')
-    await vi.waitFor(() => expect(lastSaved(calls).filtri).toEqual(TALENTI_FILTRI), SAVED)
+    await vi.waitFor(() => expect(lastSaved(calls).filtri).toEqual(TALENTI_SENT), SAVED)
   })
 
   it('sends every company filter under the server\'s own name and type', async () => {
@@ -513,7 +517,24 @@ describe('filters (REB-472, carried over)', () => {
     await userEvent.type(screen.getByLabelText('Pagina di provenienza'), 'home')
     day('Creata dal', '2026-01-01')
     day('Creata al', '2026-09-01')
-    await vi.waitFor(() => expect(lastSaved(calls).filtri).toEqual(AZIENDE_FILTRI), SAVED)
+    await vi.waitFor(() => expect(lastSaved(calls).filtri).toEqual(AZIENDE_SENT), SAVED)
+  })
+
+  it('reads a day rate the Italian way, as the lists do (REB-485), and drops one that is not an amount', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti' } }, 201),
+      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, fonte: 'filtri', stato_percorso: null, filtri: { lista: 'talenti' } }),
+    })
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Filtri' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Altri filtri' }))
+    await userEvent.type(screen.getByLabelText('Tariffa min (€/giorno)'), '1.500')
+    await userEvent.type(screen.getByLabelText('Tariffa max (€/giorno)'), 'tanto')
+    expect(screen.getByText('Serve una cifra, in euro.')).toBeInTheDocument()
+    await vi.waitFor(() => expect(lastSaved(calls).filtri).toEqual({ lista: 'talenti', tariffa_min: '1500.00' }), SAVED)
   })
 
   it('draws the list with the shared Table primitive', async () => {
@@ -576,7 +597,7 @@ describe('the edit route', () => {
     expect(screen.getByRole('combobox', { name: 'Da remoto' })).toHaveTextContent('Ibrido')
     await userEvent.type(screen.getByLabelText('Oggetto'), '!')
     await vi.waitFor(() => expect(bodies(calls, 'PATCH', /\/campaigns\/c1$/)).toHaveLength(1), SAVED)
-    expect(lastSaved(calls).filtri).toEqual(TALENTI_FILTRI)
+    expect(lastSaved(calls).filtri).toEqual(TALENTI_SENT)
   })
 
   it('follows a new state with the action, and keeps the mail the admin wrote', async () => {

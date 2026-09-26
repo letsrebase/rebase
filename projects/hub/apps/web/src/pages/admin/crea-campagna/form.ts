@@ -1,3 +1,4 @@
+import { amountFilter } from '@/lib/amount'
 import type { AudiencePreview, Campaign, CampaignAzione, CampaignDraft, CampaignMeta, CampaignTemplate } from '@/lib/api'
 
 export type Fonte = 'stato' | 'filtri'
@@ -142,6 +143,8 @@ export function defaultNome(fonte: Fonte): string {
   return fonte === 'filtri' ? 'Campagna da filtri' : 'Nuova campagna'
 }
 
+/** The filters as the server takes them. An amount goes as the lists send it (REB-485),
+ *  two decimals and a dot, and one that is not an amount narrows nothing, as there. */
 function filtriOf(form: CampaignForm): Record<string, unknown> | null {
   if (form.fonte !== 'filtri') return null
   if (form.lista === 'talenti') {
@@ -152,8 +155,8 @@ function filtriOf(form: CampaignForm): Record<string, unknown> | null {
       q: typed(t.q),
       posizione: typed(t.posizione),
       remoto: picked(t.remoto),
-      tariffa_min: typed(t.tariffa_min),
-      tariffa_max: typed(t.tariffa_max),
+      tariffa_min: amountFilter(typed(t.tariffa_min)),
+      tariffa_max: amountFilter(typed(t.tariffa_max)),
       origine: typed(t.origine),
       utm_source: typed(t.utm_source),
       has_cv: selectToBool(t.has_cv),
@@ -167,8 +170,8 @@ function filtriOf(form: CampaignForm): Record<string, unknown> | null {
     lista: form.lista,
     stato: picked(a.stato),
     q: typed(a.q),
-    budget_min: typed(a.budget_min),
-    budget_max: typed(a.budget_max),
+    budget_min: amountFilter(typed(a.budget_min)),
+    budget_max: amountFilter(typed(a.budget_max)),
     periodo_da: typed(a.periodo_da),
     origine: typed(a.origine),
     creato_da: typed(a.creato_da),

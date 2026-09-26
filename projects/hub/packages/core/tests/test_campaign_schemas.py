@@ -6,17 +6,17 @@ from decimal import Decimal
 from rebase_core.campaigns.schemas import AziendeFiltri, ScheduleRequest, TalentiFiltri
 
 # What «Nuova campagna» sends with every filter filled: the same literals
-# `apps/web/src/pages/admin/CreaCampagna.test.tsx` expects the wizard to post
-# (`TALENTI_FILTRI`, `AZIENDE_FILTRI`). A field renamed or retyped on either side
-# fails one of the two tests.
+# `apps/web/src/pages/admin/CreaCampagna.test.tsx` expects the page to post
+# (`TALENTI_SENT`, `AZIENDE_SENT`, amounts with two decimals since REB-485). A field
+# renamed or retyped on either side fails one of the two tests.
 TALENTI_FILTRI = {
     "lista": "talenti",
     "stato": "attivo",
     "q": "react",
     "posizione": "Frontend",
     "remoto": "ibrido",
-    "tariffa_min": "300",
-    "tariffa_max": "500",
+    "tariffa_min": "300.00",
+    "tariffa_max": "500.00",
     "origine": "home",
     "utm_source": "linkedin",
     "has_cv": True,
@@ -28,8 +28,8 @@ AZIENDE_FILTRI = {
     "lista": "aziende",
     "stato": "in_corso",
     "q": "block",
-    "budget_min": "200",
-    "budget_max": "400",
+    "budget_min": "200.00",
+    "budget_max": "400.00",
     "periodo_da": "2026-10-01",
     "origine": "home",
     "creato_da": "2026-01-01",
