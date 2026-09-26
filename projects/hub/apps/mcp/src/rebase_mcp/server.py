@@ -815,8 +815,9 @@ def build_server(
         per campo, con i nomi dell'API: per il cliente `cliente_ragione_sociale`,
         `cliente_piva`, `cliente_sede`; per le condizioni i campi della lettera, come
         `ruolo`, `attivita`, `data_inizio` e `data_fine` (AAAA-MM-GG), `impegno`, `luogo`,
-        `compenso` (IVA esclusa), `unita`, `giorni_pagamento`, `fine_mese`. Un campo
-        omesso resta come lo propone l'hub, `null` lo svuota. Risponde anche `cliente` e
+        `compenso` (IVA esclusa, anche all'italiana: «1.500», «1.234,50»), `unita`,
+        `giorni_pagamento`, `fine_mese`. Un campo omesso resta come lo propone l'hub,
+        `null` lo svuota. Risponde anche `cliente` e
         `condizioni` come verrebbero scritti. Un campo sconosciuto, o obbligatorio e
         rimasto vuoto, è rifiutato con il suo nome. Solo lettura."""
         freelancer, company = UUID(freelancer_id), UUID(company_id)

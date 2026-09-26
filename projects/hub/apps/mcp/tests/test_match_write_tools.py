@@ -266,6 +266,32 @@ async def test_preview_match_answers_the_sentences_and_writes_nothing(world: Wor
     assert world.written() == before
 
 
+@pytest.mark.parametrize(("typed", "fee"), [("1.500", "1500"), ("1.234,50", "1234.50")])
+async def test_preview_match_reads_the_fee_the_italian_way(
+    world: World, typed: str, fee: str
+) -> None:
+    """REB-485: an agent passing «1.500» as the fee means fifteen hundred."""
+    async with Client(world.server()) as client:
+        body = await _call(
+            client,
+            "preview_match",
+            freelancer_id=world.freelancer_id,
+            company_id=world.company_id,
+            cliente=CLIENTE,
+            condizioni={"compenso": typed},
+        )
+        garbage = await _refused(
+            client,
+            "preview_match",
+            freelancer_id=world.freelancer_id,
+            company_id=world.company_id,
+            cliente=CLIENTE,
+            condizioni={"compenso": "tanto"},
+        )
+    assert Decimal(body["condizioni"]["compenso"]) == Decimal(fee)
+    assert "condizioni.compenso: non valido" in garbage
+
+
 async def test_create_match_saves_the_draft_with_the_fields_given(world: World) -> None:
     async with Client(world.server()) as client:
         body = await _create(client, world, cliente=CLIENTE, condizioni={"ruolo": "Staff engineer"})

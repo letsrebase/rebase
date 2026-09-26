@@ -1490,6 +1490,29 @@ def test_the_proposal_lays_the_given_fields_over_the_prefill(clean: Session) -> 
 
 
 @pytest.mark.parametrize(
+    ("typed", "fee"),
+    [
+        ("1.500", Decimal("1500")),
+        ("1.234,50", Decimal("1234.50")),
+        ("480,50", Decimal("480.50")),
+        ("480.50", Decimal("480.50")),
+        # A number is already one: it goes to the letter as it is.
+        (480, Decimal("480")),
+        (Decimal("480.50"), Decimal("480.50")),
+    ],
+)
+def test_the_proposal_reads_a_fee_typed_the_italian_way(
+    clean: Session, typed: object, fee: Decimal
+) -> None:
+    """REB-485: «1.500» is fifteen hundred, where Pydantic alone reads one and a half."""
+    _admin_id, freelancer_id, company_id = _setup(clean)
+    proposal = _service(clean).proposal(
+        freelancer_id, company_id, cliente=CLIENTE_REST, lettera={"compenso": typed}
+    )
+    assert proposal.lettera.compenso == fee
+
+
+@pytest.mark.parametrize(
     ("cliente", "lettera", "field"),
     [
         ({**CLIENTE_REST, "nome": "ACME"}, None, "cliente.nome"),
