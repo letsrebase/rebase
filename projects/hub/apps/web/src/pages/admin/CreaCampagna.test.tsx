@@ -248,6 +248,51 @@ describe('«Nuova campagna» on one page (REB-526)', () => {
     expect(bodies(calls, 'POST', /\/schedule$/)).toEqual([{ esclusi: ['ada@studio.it'] }])
   })
 
+  it('forgets the unticks when another state brings another list', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE, TEMPLATE2]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE_TWO),
+      'POST /api/hub/campaigns/c1/test': () => json({ ...TESTED, stato_percorso: 'profilo_incompleto', azione: 'scheda_completa' }),
+      'POST /api/hub/campaigns/c1/schedule': () => json({ ...TESTED, stato: 'programmata' }),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, stato_percorso: 'profilo_incompleto', azione: 'scheda_completa' }),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await screen.findByText('riceveranno la mail', { exact: false }, SAVED)
+    await userEvent.click(screen.getByRole('button', { name: /Mostra l.elenco/ }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'ada@studio.it' }))
+    expect(screen.getByText(/1 tolte da te/)).toBeInTheDocument()
+    await pick('Stato del percorso', 'Profilo da completare')
+    expect(screen.queryByText(/tolte da te/)).not.toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'ada@studio.it' })).toBeChecked()
+    await vi.waitFor(() => expect(bodies(calls, 'PATCH', /\/campaigns\/c1$/)).toHaveLength(1), SAVED)
+    await userEvent.click(screen.getByRole('button', { name: 'Mandami una prova' }))
+    await userEvent.click(await sendBar().findByRole('button', { name: 'Invia a 2 persone' }, SAVED))
+    await screen.findByText('pagina campagna')
+    expect(bodies(calls, 'POST', /\/schedule$/)).toEqual([{ esclusi: [] }])
+  })
+
+  it('keeps a typed name and still fills the mail from the state picked after it', async () => {
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE, TEMPLATE2]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, nome: 'CV di settembre' }, 201),
+      'PATCH /api/hub/campaigns/c1': () => json({ ...DRAFT, nome: 'CV di settembre' }),
+    })
+    mount()
+    await userEvent.type(await screen.findByLabelText('Nome della campagna'), 'CV di settembre')
+    await pick('Stato del percorso', 'Manca solo il CV')
+    expect(screen.getByLabelText('Nome della campagna')).toHaveValue('CV di settembre')
+    expect(screen.getByLabelText('Oggetto')).toHaveValue('Manca solo il CV')
+    // Until the admin writes into the mail, another state still rewrites it.
+    await pick('Stato del percorso', 'Profilo da completare')
+    expect(screen.getByLabelText('Oggetto')).toHaveValue('Completa il profilo')
+    expect(screen.getByLabelText('Nome della campagna')).toHaveValue('CV di settembre')
+  })
+
   it('shows another person on request in the preview', async () => {
     api({
       'GET /api/hub/me': () => json(ME),
@@ -346,6 +391,10 @@ describe('«Nuova campagna» on one page (REB-526)', () => {
     await userEvent.type(screen.getByLabelText('Oggetto'), '!')
     expect(await screen.findByText('Non salvata: La campagna non è più una bozza.', {}, SAVED)).toBeInTheDocument()
     expect(sendBar().getByText('Le modifiche non sono salvate: La campagna non è più una bozza.')).toBeInTheDocument()
+    // Undoing the edit brings the form back to what the server holds: nothing unsaved.
+    await userEvent.type(screen.getByLabelText('Oggetto'), '{Backspace}')
+    expect(await screen.findByText(/Bozza salvata alle/, {}, SAVED)).toBeInTheDocument()
+    expect(screen.queryByText(/Non salvata/)).not.toBeInTheDocument()
   })
 
   it('says why the list is missing when the first save or the list fails', async () => {

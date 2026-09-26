@@ -57,7 +57,13 @@ export function useAutosave(key: string | null, initial: Campaign | null): Autos
   const save = useCallback(
     async (target: string): Promise<Campaign> => {
       const current = stored.current
-      if (current.campaign && target === current.key) return current.campaign
+      if (current.campaign && target === current.key) {
+        // Back to what the server holds (a failed edit undone): nothing is unsaved, so
+        // no failure is left to show.
+        setError(null)
+        setFailedKey(null)
+        return current.campaign
+      }
       const body = JSON.parse(target) as CampaignDraft
       setSaving(true)
       try {

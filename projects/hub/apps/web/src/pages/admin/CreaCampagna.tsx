@@ -62,8 +62,9 @@ function Editor({ initial }: { initial: Campaign | null }) {
 
   const [form, setForm] = useState<CampaignForm>(() => (initial ? formFromCampaign(initial) : EMPTY_FORM))
   // Once the admin has written into the mail, picking another state must not overwrite
-  // it (spec § 1). A stored campaign's mail is the admin's already.
-  const [touched, setTouched] = useState(initial !== null)
+  // it (spec § 1); the same for the name, on its own. A stored campaign's are the
+  // admin's already.
+  const [touched, setTouched] = useState({ mail: initial !== null, nome: initial !== null })
   const [esclusi, setEsclusi] = useState<string[]>([])
   const [persona, setPersona] = useState<string | null>(null)
   const [mode, setMode] = useState<Quando>('adesso')
@@ -96,16 +97,24 @@ function Editor({ initial }: { initial: Campaign | null }) {
   const riceventi = audience.data?.righe.filter((row) => row.escluso === null && !esclusi.includes(row.email)) ?? []
   const personaRow = riceventi.find((row) => row.email === persona) ?? riceventi[0] ?? null
 
+  // Another source is another list: an untick made on the old one must not leave out
+  // someone who is on the new one too.
   function changeSource(patch: Partial<CampaignForm>) {
     setForm((current) => ({ ...current, ...patch }))
+    setEsclusi([])
   }
   function changeMail(patch: Partial<CampaignForm>) {
     setForm((current) => ({ ...current, ...patch }))
-    setTouched(true)
+    setTouched((current) => ({ ...current, mail: true }))
+  }
+  function changeNome(nome: string) {
+    setForm((current) => ({ ...current, nome }))
+    setTouched((current) => ({ ...current, nome: true }))
   }
   function pickTemplate(value: string) {
     const template = templates.data?.find((item) => item.stato_percorso === value)
     setForm((current) => withTemplate(current, template, value, touched))
+    setEsclusi([])
   }
   function toggle(email: string, included: boolean) {
     setEsclusi((current) => (included ? current.filter((item) => item !== email) : [...current, email]))
@@ -158,7 +167,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
             maxLength={CAMPAIGN_MAX_LENGTH.nome}
             placeholder={defaultNome(form.fonte)}
             value={form.nome}
-            onChange={(event) => changeMail({ nome: event.target.value })}
+            onChange={(event) => changeNome(event.target.value)}
             className="-mx-2.5 h-auto max-w-xl border-transparent py-0.5 text-2xl font-semibold tracking-tight hover:border-border md:text-2xl"
           />
         </div>

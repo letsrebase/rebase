@@ -259,15 +259,22 @@ export function formFromCampaign(c: Campaign): CampaignForm {
 
 /** A state picked from «Stato del percorso». The action always follows the template,
  *  since it is not the admin's to set for a state (fix 4, REB-472 round 1); the mail
- *  follows it only until the admin has written into it (spec § 1). */
-export function withTemplate(form: CampaignForm, template: CampaignTemplate | undefined, value: string, touched: boolean): CampaignForm {
+ *  follows it only until the admin has written into it (spec § 1), and the name only
+ *  until the admin has typed one: the name is not the mail, so typing the title first
+ *  must not stop the template from filling the mail. */
+export function withTemplate(
+  form: CampaignForm,
+  template: CampaignTemplate | undefined,
+  value: string,
+  touched: { mail: boolean; nome: boolean },
+): CampaignForm {
   const next = { ...form, statoPercorso: value }
   if (!template) return next
   next.azione = template.azione
-  if (touched) return next
+  if (!touched.nome) next.nome = template.etichetta
+  if (touched.mail) return next
   return {
     ...next,
-    nome: template.etichetta,
     oggetto: template.oggetto,
     testo: template.testo,
     bottoneTesto: template.bottone_testo,
