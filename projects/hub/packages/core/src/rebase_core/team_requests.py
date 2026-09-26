@@ -1,6 +1,7 @@
 """The team request (REB-512, spec § 3.2, § 3.5): a company's «Assumi team» on a proposal
 becomes a row the admin works by hand, one talent per member of the team, and a mail to
-rebase's own address.
+rebase's own address, which `create` builds and hands back: the route sends it after the
+response, so a slow or failing provider never holds or undoes a request already filed.
 
 **A proposal is requested once.** The insert relies on `uq_team_requests_proposal_id`:
 two clicks in two sessions both pass every check and the index lets one of them in; the
@@ -12,9 +13,10 @@ than a day; the cloud's (D3), a cloud proposal of its own user. One sentence for
 refusal, so the answer does not say which proposals exist. A proposal with nobody in it
 (nobody fit, or the catalogue was empty) has nobody to hire, and says so.
 
-**The summary is checked, not refused, here.** A summary that names the company is
-logged, by the request's id alone: the refusal is the availability mail's, when the
-talents are about to read it (D1), and until then the admin edits it (`set_summary`).
+**The summary is checked, then refused when it is written.** A proposal's summary that
+names the company is logged at creation, by the request's id alone, since the visitor
+cannot change it; the admin's own edit (`set_summary`) that still names it is refused,
+and so is the availability mail (D1), before the talents read it.
 
 Nothing here logs a name, an address, a phone or a text: the log lines carry ids.
 """
@@ -35,7 +37,7 @@ from rebase_core.audit import AdminActionService, field_changes, utcnow
 from rebase_core.bands import band_for
 from rebase_core.config import Settings
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
-from rebase_core.mail import EmailSender, team_request_mail
+from rebase_core.mail import EmailSender, Mail, team_request_mail
 from rebase_core.models import (
     TEAM_REQUEST_ORIGINS,
     TEAM_REQUEST_STATES,
@@ -66,23 +68,31 @@ ALREADY_REQUESTED = "Questa proposta è già stata richiesta."
 PROPOSAL_REFUSED = "Questa proposta non esiste o è scaduta: chiedi di nuovo il team."
 NOBODY_TO_HIRE = "Questa proposta non ha nessuno da assumere."
 NO_SUMMARY = "Questa richiesta è per un talento solo: non ha un riassunto da modificare."
+NAMES_THE_COMPANY = "Il riassunto nomina l'azienda: correggilo prima di scrivere ai talenti."
 UNIQUE_PROPOSAL_INDEX = "uq_team_requests_proposal_id"
 _SORT = SortSpec("created_at", "datetime")
 # A word of the company's name, as `names_the_company` reads one: letters and digits.
 _WORD = re.compile(r"[^\W_]+")
-# Shorter words are legal forms and articles («S.r.l.», «di»), not the company.
-_NAME_WORD_MIN_LENGTH = 3
+# Shorter words are articles and initials («di», «Ars», «3M»), too common to be the name.
+_NAME_WORD_MIN_LENGTH = 4
+# The legal forms, with or without their dots: «S.r.l.» names the kind of company, not
+# which one, and «srls» is the one of four letters.
+_LEGAL_FORMS = frozenset({"srl", "srls", "spa", "snc", "sas"})
 
 
 def names_the_company(riassunto: str, azienda: str) -> bool:
-    """Any word of three letters or more of `azienda`, case-insensitively, inside the
-    summary as a whole word: «Acme S.r.l.» is named by «ACME rifà il gestionale», and
-    «Data Srl» is not by «un database»."""
-    for word in _WORD.findall(azienda):
-        if len(word) < _NAME_WORD_MIN_LENGTH:
+    """Any word of four letters or more of `azienda` that is not a legal form,
+    case-insensitively, inside the summary as a whole word: «Acme S.r.l.» is named by
+    «ACME rifà il gestionale», «Data Srl» is not by «un database», and «Acme Srls» is
+    not by «una srls di Torino»."""
+    for token in azienda.split():
+        if token.replace(".", "").strip(",;:").casefold() in _LEGAL_FORMS:
             continue
-        if re.search(rf"(?<![^\W_]){re.escape(word)}(?![^\W_])", riassunto, re.IGNORECASE):
-            return True
+        for word in _WORD.findall(token):
+            if len(word) < _NAME_WORD_MIN_LENGTH or word.casefold() in _LEGAL_FORMS:
+                continue
+            if re.search(rf"(?<![^\W_]){re.escape(word)}(?![^\W_])", riassunto, re.IGNORECASE):
+                return True
     return False
 
 
@@ -94,8 +104,9 @@ def _violates_unique_proposal(exc: IntegrityError) -> bool:
 
 
 class TeamRequestService:
-    """`sender` is `None` without a mail key: the request is filed and the admin finds
-    it in «Richieste team», with no mail. `tracker` is `None` without PostHog."""
+    """`sender` is the availability mails' (D1, `None` without a mail key); the request's
+    own mail to rebase is handed back by `create` for the caller to send after its
+    response. `tracker` is `None` without PostHog."""
 
     def __init__(
         self,
@@ -122,9 +133,10 @@ class TeamRequestService:
         user_id: UUID | None,
         company_id: UUID | None,
         telefono: str | None = None,
-    ) -> TeamRequestRead:
+    ) -> tuple[TeamRequestRead, Mail]:
         """The request for `data.proposal_id`, with one talent per member of its team,
-        and the mail to `settings.contracts_mail`. `telefono`, when given, is stored in
+        and the mail to `settings.contracts_mail` (`request_mail`), built and not sent:
+        the caller sends it after its own answer. `telefono`, when given, is stored in
         place of `data.telefono`: the cloud's route (D3) files with the user's own."""
         if origine not in TEAM_REQUEST_ORIGINS:
             raise ValueError(f"unknown origin {origine!r}")
@@ -157,10 +169,25 @@ class TeamRequestService:
         self.session.commit()
         if names_the_company(proposal.riassunto, row.azienda):
             logger.warning("team request %s: the summary names the company", row.id)
-        self._mail(row, proposal.riassunto)
         if self.tracker is not None:
             self.tracker.team_event(TEAM_REQUEST_SENT, {"origine": origine})
-        return self.get(row.id)
+        read = self.get(row.id)
+        return read, self.request_mail(read)
+
+    def request_mail(self, read: TeamRequestRead) -> Mail:
+        """«Nuova richiesta team da …» to rebase's contracts address: the summary of the
+        proposal, or for a request of one talent with no proposal (D3) that talent's
+        name, and the link to the request's page, where the contacts are."""
+        talento = None
+        if read.proposal is None and read.talenti:
+            talento = f"{read.talenti[0].nome} {read.talenti[0].cognome}".strip()
+        return team_request_mail(
+            self.settings.contracts_mail,
+            azienda=read.azienda,
+            riassunto=read.riassunto,
+            talento=talento,
+            url=f"{self.settings.hub_url.rstrip('/')}/admin/team/{read.id}",
+        )
 
     # ---- the admin's list and page ----------------------------------------------------
 
@@ -291,12 +318,16 @@ class TeamRequestService:
 
     def set_summary(self, request_id: UUID, riassunto: str, admin_id: UUID) -> TeamRequestRead:
         """«Salva il riassunto»: the proposal's summary, the text the talents will read
-        (D1), rewritten by the admin; recorded on the request, where it was edited."""
+        (D1), rewritten by the admin; recorded on the request, where it was edited. A
+        summary that still names the company (`names_the_company`) is refused with the
+        sentence the availability mail refuses it with, before anything is written."""
         row = self.session.get(TeamRequest, request_id)
         if row is None:
             raise NotFound(ENTITY, request_id)
         if row.proposal_id is None:
             raise InvalidState(NO_SUMMARY)
+        if names_the_company(riassunto, row.azienda):
+            raise InvalidState(NAMES_THE_COMPANY)
         proposal = self.session.get(
             TeamProposal, row.proposal_id, with_for_update=True, populate_existing=True
         )
@@ -407,20 +438,3 @@ class TeamRequestService:
         AdminActionService(self.session).record(
             ENTITY, request_id, "overridden", admin_id, field_changes(before, after)
         )
-
-    def _mail(self, row: TeamRequest, riassunto: str) -> None:
-        """«Nuova richiesta team da …» to rebase's contracts address, with the summary and
-        the link to the request's page. A refusal is logged by the request's id alone."""
-        if self.sender is None:
-            logger.info("team request %s: no mail sender, not mailed", row.id)
-            return
-        url = f"{self.settings.hub_url.rstrip('/')}/admin/team/{row.id}"
-        mail = team_request_mail(
-            self.settings.contracts_mail,
-            azienda=row.azienda,
-            riassunto=riassunto,
-            talento=None,
-            url=url,
-        )
-        if not self.sender.send(mail):
-            logger.warning("team request %s: the provider refused the mail", row.id)

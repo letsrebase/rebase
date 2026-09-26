@@ -10,11 +10,16 @@ the webhooks share, so the one past `REBASE_TEAM_BUILDER_CONCURRENCY` answers 50
 once; and for room in the day (`team_caps.require_daily_room`). Both answer the same
 «Troppe richieste» sentence. What the public read carries is C4's (`TeamBuilder`): no
 freelancer id and no place of a card.
+
+The request's mail to rebase leaves after the answer, as a background task, the way the
+magic link does: the request is committed by then, so a slow provider does not hold the
+201 and a failing one does not turn it into a 500.
 """
 
 import logging
+from uuid import UUID
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, BackgroundTasks, Request, status
 
 from rebase_api.deps import (
     ProposalSlotsDep,
@@ -26,6 +31,7 @@ from rebase_api.deps import (
 )
 from rebase_api.ratelimit import spend_one
 from rebase_core.errors import TeamBuilderBusy, TeamBuilderOff
+from rebase_core.mail import EmailSender, Mail
 from rebase_core.team_builder import OFF_SENTENCE
 from rebase_core.team_caps import BUSY_SENTENCE, require_daily_room
 from rebase_core.team_requests import TeamRequestService
@@ -39,6 +45,13 @@ from rebase_core.team_schemas import (
 router = APIRouter(prefix="/api/hub/team", tags=["hub"])
 
 _log = logging.getLogger(__name__)
+
+
+def _send(sender: EmailSender, mail: Mail, request_id: UUID) -> None:
+    """Runs after the response: a refusal is logged by the request's id alone, never
+    the address, the company or the summary."""
+    if not sender.send(mail):
+        _log.warning("team request %s: the provider refused the mail", request_id)
 
 
 @router.post("/proposals", response_model=TeamProposalRead)
@@ -76,12 +89,18 @@ def request_team(
     settings: SettingsDep,
     sender: SenderDep,
     tracker: TrackerDep,
+    background: BackgroundTasks,
 ) -> TeamRequestCreated:
     """«Invia la richiesta»: 201 with the request's id; 409 on a proposal already
     requested, a second click included; 422 on a proposal older than a day, not a
-    public one, or with nobody in it."""
+    public one, or with nobody in it. Without a mail key the request is filed all the
+    same and waits in «Richieste team»."""
     spend_one(request)
-    read = TeamRequestService(session, settings=settings, sender=sender, tracker=tracker).create(
+    read, mail = TeamRequestService(session, settings=settings, tracker=tracker).create(
         data, origine="pubblico", user_id=None, company_id=None
     )
+    if sender is None:
+        _log.info("team request %s: no mail sender, not mailed", read.id)
+    else:
+        background.add_task(_send, sender, mail, read.id)
     return TeamRequestCreated(id=read.id)

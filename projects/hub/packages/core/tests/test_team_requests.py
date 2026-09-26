@@ -25,7 +25,7 @@ from rebase_core.bands import Band
 from rebase_core.config import Settings
 from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, NotFound, TeamBuilderBusy, ValidationFailed
-from rebase_core.mail import RecordingSender, team_request_mail
+from rebase_core.mail import Mail, team_request_mail
 from rebase_core.models import (
     AdminAction,
     Freelancer,
@@ -38,12 +38,13 @@ from rebase_core.models import (
 from rebase_core.team_caps import BUSY_SENTENCE, proposals_today, require_daily_room
 from rebase_core.team_requests import (
     ALREADY_REQUESTED,
+    NAMES_THE_COMPANY,
     NOBODY_TO_HIRE,
     PROPOSAL_REFUSED,
     TeamRequestService,
     names_the_company,
 )
-from rebase_core.team_schemas import TeamRequestCreate
+from rebase_core.team_schemas import TeamRequestCreate, TeamRequestRead
 
 HUB = Path(__file__).resolve().parents[3]
 NOW = datetime(2026, 9, 26, 9, 30, tzinfo=UTC)
@@ -187,21 +188,23 @@ def _data(proposal_id: UUID, azienda: str = AZIENDA) -> TeamRequestCreate:
 
 
 def _service(
-    session: Session,
-    *,
-    sender: RecordingSender | None = None,
-    tracker: Tracker | None = None,
-    settings: Settings = SETTINGS,
+    session: Session, *, tracker: Tracker | None = None, settings: Settings = SETTINGS
 ) -> TeamRequestService:
-    return TeamRequestService(
-        session, settings=settings, sender=sender, tracker=tracker, now=lambda: NOW
-    )
+    return TeamRequestService(session, settings=settings, tracker=tracker, now=lambda: NOW)
 
 
-def _public(service: TeamRequestService, proposal_id: UUID, azienda: str = AZIENDA) -> Any:
+def _create(
+    service: TeamRequestService, proposal_id: UUID, azienda: str = AZIENDA
+) -> tuple[TeamRequestRead, Mail]:
     return service.create(
         _data(proposal_id, azienda), origine="pubblico", user_id=None, company_id=None
     )
+
+
+def _public(
+    service: TeamRequestService, proposal_id: UUID, azienda: str = AZIENDA
+) -> TeamRequestRead:
+    return _create(service, proposal_id, azienda)[0]
 
 
 # ---- create --------------------------------------------------------------------------------
@@ -211,13 +214,9 @@ def test_request_from_a_proposal_files_the_talents_and_mails(clean: Session) -> 
     first = _talent(clean, 1, tariffa=Decimal("450.00"))
     second = _talent(clean, 2, tariffa=None)
     proposal_id = _proposal(clean, [first, second], roles=["Backend developer", "Designer"])
-    sender = RecordingSender()
     capture = FakeCapture()
 
-    read = _public(
-        _service(clean, sender=sender, tracker=Tracker(capture)),
-        proposal_id,
-    )
+    read, mail = _create(_service(clean, tracker=Tracker(capture)), proposal_id)
 
     assert read.origine == "pubblico"
     assert read.azienda == AZIENDA
@@ -245,50 +244,61 @@ def test_request_from_a_proposal_files_the_talents_and_mails(clean: Session) -> 
     ).all()
     assert {row.ruolo for row in stored} == {"Backend developer", "Designer"}
 
-    [mail] = sender.sent
+    # The mail is built, not sent: the route sends it after its answer.
     assert mail.to == "ciao@letsrebase.com"
     assert mail.subject == "Nuova richiesta team da Acme S.r.l."
     assert RIASSUNTO in mail.text
     assert f"https://letsrebase.com/hub/admin/team/{read.id}" in mail.text
     assert mail.html is not None and f"/admin/team/{read.id}" in mail.html
+    # It names no talent: the names are on the request's page, behind the admin cookie.
+    for talent in read.talenti:
+        assert talent.cognome not in mail.text and talent.cognome not in mail.html
+    assert "Lovelace" not in mail.text + mail.html
 
     [(event, _, properties)] = capture.calls
     assert event == TEAM_REQUEST_SENT == "team_richiesta_inviata"
     assert properties == {"origine": "pubblico", "$process_person_profile": False}
 
 
-def test_request_without_a_sender_is_still_filed(clean: Session) -> None:
-    proposal_id = _proposal(clean, [_talent(clean, 1)])
+def test_the_mail_of_a_single_talent_request_names_the_talent(clean: Session) -> None:
+    """`request_mail` is what the cloud's «Richiedi» (D3) reuses: a request of one
+    talent and no proposal says who was asked, in place of a summary."""
+    talent = _talent(clean, 1)
+    row = TeamRequest(origine="cloud", azienda="Acme", email="wile@acme.it", stato="nuova")
+    clean.add(row)
+    clean.flush()
+    clean.add(TeamRequestTalent(request_id=row.id, freelancer_id=talent, ruolo="Backend"))
+    clean.commit()
+    service = _service(clean)
 
-    read = _public(_service(clean), proposal_id)
+    mail = service.request_mail(service.get(row.id))
 
-    assert clean.get(TeamRequest, read.id) is not None
+    assert mail.subject == "Nuova richiesta team da Acme"
+    assert "Ada1 Lovelace1" in mail.text and "talent cloud" in mail.text
+    assert f"/admin/team/{row.id}" in mail.text
 
 
 def test_request_is_unique_per_proposal(clean: Session, hub_engine: Engine) -> None:
     """Two clicks in two sessions: the unique index decides, and the loser is a 409."""
     proposal_id = _proposal(clean, [_talent(clean, 1)])
-    sender = RecordingSender()
     factory = session_factory(hub_engine)
     with factory() as one, factory() as two:
-        first = _public(_service(one, sender=sender), proposal_id)
+        first = _public(_service(one), proposal_id)
         with pytest.raises(InvalidState) as refused:
-            _public(_service(two, sender=sender), proposal_id)
+            _public(_service(two), proposal_id)
 
     assert refused.value.message == ALREADY_REQUESTED == "Questa proposta è già stata richiesta."
     assert refused.value.details == {"proposal_id": str(proposal_id)}
     clean.expire_all()
     assert clean.scalars(select(TeamRequest.id)).all() == [first.id]
     assert len(clean.scalars(select(TeamRequestTalent)).all()) == 1
-    assert len(sender.sent) == 1
 
 
 def test_request_refuses_an_old_proposal(clean: Session) -> None:
     talent = _talent(clean, 1)
     day_old = _proposal(clean, [talent], created_at=NOW - timedelta(days=1))
     fresh = _proposal(clean, [talent], created_at=NOW - timedelta(days=1) + timedelta(seconds=1))
-    sender = RecordingSender()
-    service = _service(clean, sender=sender)
+    service = _service(clean)
 
     with pytest.raises(ValidationFailed) as refused:
         _public(service, day_old)
@@ -304,7 +314,7 @@ def test_request_refuses_a_proposal_of_another_origin_or_none(clean: Session) ->
     owner = _user(clean, "referente@acme.it")
     cloud = _proposal(clean, [talent], origine="cloud", user_id=owner)
     admin = _proposal(clean, [talent], origine="admin", user_id=owner)
-    service = _service(clean, sender=RecordingSender())
+    service = _service(clean)
 
     for proposal_id in (cloud, admin, UUID("00000000-0000-7000-8000-000000000000")):
         with pytest.raises(ValidationFailed) as refused:
@@ -318,10 +328,8 @@ def test_request_refuses_a_proposal_of_another_origin_or_none(clean: Session) ->
 
 def test_request_refuses_a_proposal_with_nobody(clean: Session) -> None:
     empty = _proposal(clean, [], model="", riassunto="Al momento nessun profilo corrisponde.")
-    sender = RecordingSender()
-
     with pytest.raises(ValidationFailed) as refused:
-        _public(_service(clean, sender=sender), empty)
+        _public(_service(clean), empty)
 
     assert refused.value.details == {
         "entity": "team_request",
@@ -330,7 +338,6 @@ def test_request_refuses_a_proposal_with_nobody(clean: Session) -> None:
     }
     assert NOBODY_TO_HIRE == "Questa proposta non ha nessuno da assumere."
     assert clean.scalars(select(TeamRequest)).all() == []
-    assert sender.sent == []
 
 
 def test_request_logs_a_summary_that_names_the_company(
@@ -340,7 +347,7 @@ def test_request_logs_a_summary_that_names_the_company(
         clean, [_talent(clean, 1)], riassunto="ACME rifà il gestionale degli ordini."
     )
 
-    read = _public(_service(clean, sender=RecordingSender()), proposal_id)
+    read = _public(_service(clean), proposal_id)
 
     warnings = [record for record in logs.records if record.levelno == logging.WARNING]
     [record] = warnings
@@ -352,33 +359,21 @@ def test_request_logs_a_summary_that_names_the_company(
     assert clean.get(TeamRequest, read.id) is not None
 
 
-def test_request_logs_nothing_personal_when_the_mail_is_refused(
-    clean: Session, logs: pytest.LogCaptureFixture
-) -> None:
-    class Refusing(RecordingSender):
-        def send(self, mail: Any) -> bool:
-            super().send(mail)
-            return False
-
-    proposal_id = _proposal(clean, [_talent(clean, 1)])
-
-    read = _public(_service(clean, sender=Refusing()), proposal_id)
-
-    [record] = [record for record in logs.records if record.levelno == logging.WARNING]
-    logged = record.getMessage()
-    assert str(read.id) in logged
-    assert "ciao@letsrebase.com" not in logged and "Acme" not in logged
-
-
 @pytest.mark.parametrize(
     ("riassunto", "azienda", "expected"),
     [
         ("Acme rifà il gestionale.", "Acme S.r.l.", True),
         ("Un'azienda rifà il gestionale per ACME.", "Acme S.r.l.", True),
         ("Il gestionale di una rete di negozi.", "Rete Negozi Italia", True),
-        # Words under three letters are not the company: «S», «r», «l», «di».
+        # The legal forms are the kind of company, not which one, dotted or not.
         ("Un'azienda di logistica, una S.r.l. di Torino.", "Acme S.r.l.", False),
-        ("Un'app per le prenotazioni.", "Di Più", False),
+        ("Una srls di Torino rifà il gestionale.", "Acme Srls", False),
+        ("Una SpA della logistica.", "Acme S.p.A.", False),
+        ("Una snc e una sas.", "Rossi & Bianchi Snc", False),
+        # Words under four letters are not the company either: «Di», «Più», «Ars».
+        ("Un'app per le prenotazioni, di più.", "Di Più", False),
+        ("L'ars dell'ospitalità.", "Ars Nova", False),
+        ("Un portale per Nova, un'azienda di eventi.", "Ars Nova", True),
         # A whole word, not a piece of one: «data» is not in «database».
         ("Un database per un'azienda di logistica.", "Data Srl", False),
         ("Un'azienda di logistica rifà il gestionale.", "Caffè Nero", False),
@@ -420,7 +415,7 @@ def test_team_request_mail_escapes_what_the_visitor_typed() -> None:
 def test_list_filters_and_pages_by_cursor(clean: Session) -> None:
     first = _talent(clean, 1)
     second = _talent(clean, 2)
-    service = _service(clean, sender=RecordingSender())
+    service = _service(clean)
     oldest = _public(service, _proposal(clean, [first, second]), "Uno Srl")
     middle = _public(service, _proposal(clean, [first]), "Due Srl")
     newest = _public(service, _proposal(clean, [second]), "Tre Srl")
@@ -467,7 +462,7 @@ def test_get_of_a_missing_request_is_not_found(clean: Session) -> None:
 
 
 def test_status_note_and_summary_record_the_admin(clean: Session) -> None:
-    service = _service(clean, sender=RecordingSender())
+    service = _service(clean)
     request = _public(service, _proposal(clean, [_talent(clean, 1)]))
     admin = _user(clean, "ivan@rebase.it", role="admin")
 
@@ -485,6 +480,15 @@ def test_status_note_and_summary_record_the_admin(clean: Session) -> None:
     noted = service.set_note(request.id, "  Richiamare lunedì.  ", admin)
     assert noted.note == "Richiamare lunedì."
     assert service.set_note(request.id, "   ", admin).note is None
+
+    # A summary that still names the company is refused before anything is written.
+    with pytest.raises(InvalidState) as named:
+        service.set_summary(request.id, "ACME rifà il gestionale: backend Python.", admin)
+    assert named.value.message == NAMES_THE_COMPANY
+    assert NAMES_THE_COMPANY == (
+        "Il riassunto nomina l'azienda: correggilo prima di scrivere ai talenti."
+    )
+    assert service.get(request.id).riassunto == RIASSUNTO
 
     summary = "Un'azienda di logistica rifà il gestionale: backend Python, sei mesi."
     edited = service.set_summary(request.id, summary, admin)

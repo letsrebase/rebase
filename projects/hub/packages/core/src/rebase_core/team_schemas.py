@@ -33,7 +33,7 @@ from rebase_core.models import (
     TEAM_REQUEST_STATES,
     TELEFONO_MAX_LENGTH,
 )
-from rebase_core.schemas import PROGETTO_MAX_LENGTH, _clean_text, clean_multiline
+from rebase_core.schemas import PROGETTO_MAX_LENGTH, clean_multiline, clean_text
 from rebase_core.validation import SafeStr
 
 __all__ = [
@@ -187,7 +187,7 @@ class TeamRequestCreate(BaseModel):
     @field_validator("azienda", "telefono", mode="after")
     @classmethod
     def _trimmed(cls, value: str) -> str:
-        return _clean_text(value, what="un valore")
+        return clean_text(value, what="un valore")
 
 
 class TeamRequestCreated(BaseModel):

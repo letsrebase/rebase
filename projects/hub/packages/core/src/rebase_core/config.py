@@ -132,7 +132,7 @@ class Settings(BaseSettings):
     # Proposals a day, public and cloud together, counted on `team_proposals` since
     # midnight in Rome (`team_caps.py`); once reached, the same 503 until tomorrow. A
     # proposal that asked no model (an empty catalogue) cost nothing and does not count.
-    team_builder_daily_cap: int = 300
+    team_builder_daily_cap: int = Field(default=300, ge=1)
 
 
 @lru_cache(maxsize=1)

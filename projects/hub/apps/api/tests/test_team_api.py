@@ -2,6 +2,7 @@
 request, their caps and their sentences, and the admin's «Richieste team»."""
 
 import json
+import logging
 import re
 import threading
 from collections.abc import Iterator
@@ -16,7 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_llm
+from rebase_api.deps import get_llm, get_sender
 from rebase_api.ratelimit import SIGNUPS_PER_MINUTE, reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.errors import LlmUnavailable
@@ -348,10 +349,14 @@ def test_public_request_is_201_then_409(
     assert created.json() == {"id": request_id}
     row = team.get(TeamRequest, UUID(request_id))
     assert row is not None and row.origine == "pubblico" and row.azienda == "Acme S.r.l."
+    # Sent after the answer, by the background task the route queued.
     [mail] = sender.sent
     assert mail.to == "ciao@letsrebase.com"
     assert mail.subject == "Nuova richiesta team da Acme S.r.l."
     assert f"/admin/team/{request_id}" in mail.text
+    # No talent is named: the fixture's surname is on the request's page only.
+    assert mail.html is not None
+    assert "Lovelace" not in mail.text and "Lovelace" not in mail.html
 
     again = client.post(
         "/api/hub/team/requests", json={"proposal_id": str(proposal_id), **CONTACTS}
@@ -360,6 +365,49 @@ def test_public_request_is_201_then_409(
     assert again.status_code == 409
     assert again.json() == {"detail": ALREADY}
     assert len(sender.sent) == 1
+
+
+def test_public_request_without_a_mail_key_is_still_filed(
+    client: TestClient, team: Session
+) -> None:
+    # No `get_sender` override: the settings carry no Resend key, so there is no sender.
+    proposal_id = _proposal_row(team, [_talent(team)])
+
+    created = client.post(
+        "/api/hub/team/requests", json={"proposal_id": str(proposal_id), **CONTACTS}
+    )
+
+    assert created.status_code == 201, created.text
+    assert team.get(TeamRequest, UUID(created.json()["id"])) is not None
+
+
+def test_public_request_logs_nothing_personal_when_the_mail_is_refused(
+    client: TestClient, team: Session, caplog: pytest.LogCaptureFixture
+) -> None:
+    class Refusing(RecordingSender):
+        def send(self, mail: Any) -> bool:
+            super().send(mail)
+            return False
+
+    refusing = Refusing()
+    client.app.dependency_overrides[get_sender] = lambda: refusing  # type: ignore[attr-defined]
+    # Alembic's `fileConfig` disabled every logger it does not list, this one among them.
+    logging.getLogger("rebase_api.routers.team").disabled = False
+    caplog.set_level(logging.INFO, logger="rebase_api.routers.team")
+    proposal_id = _proposal_row(team, [_talent(team)])
+
+    created = client.post(
+        "/api/hub/team/requests", json={"proposal_id": str(proposal_id), **CONTACTS}
+    )
+
+    # The request stands: the refusal came after the answer.
+    assert created.status_code == 201, created.text
+    assert len(refusing.sent) == 1
+    [record] = [record for record in caplog.records if record.levelno == logging.WARNING]
+    logged = record.getMessage()
+    assert created.json()["id"] in logged
+    for secret in ("ciao@letsrebase.com", "wile@acme.it", "Acme", "gestionale", "345"):
+        assert secret not in logged
 
 
 def test_public_request_refuses_an_old_a_cloud_or_an_empty_proposal(
