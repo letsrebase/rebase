@@ -11,6 +11,7 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
     admin,
     as_admin,
     clean,
+    company,
     draft,
     person,
 )
@@ -27,7 +28,7 @@ from rebase_core.campaigns.service import (
 )
 from rebase_core.campaigns.tick import run_tick
 from rebase_core.errors import InvalidState, ValidationFailed
-from rebase_core.models import Campaign, CampaignRecipient, Login, User
+from rebase_core.models import Campaign, CampaignRecipient, Company, Freelancer, Login, User
 
 NO_PAUSE = lambda _seconds: None  # noqa: E731
 GAP = timedelta(days=SETTINGS.campaign_gap_days, hours=1)
@@ -129,3 +130,40 @@ def test_a_follow_up_keeps_its_list_and_action_but_its_mail_is_rewritten(
         service.update(follow.id, CampaignPatch(azione="cv"))
     with pytest.raises(ValidationFailed, match=LIST_IS_FIXED):
         service.update(follow.id, CampaignPatch(fonte="stato", stato_percorso="completo"))
+
+
+def test_a_soft_deleted_card_drops_its_row_from_the_follow_up(clean: Session) -> None:  # noqa: F811  (fixture)
+    clock = Clock(NOW)
+    parent = sent_to(clean, clock, "ada@studio.it", "bob@studio.it")
+    ada = clean.query(User).filter(User.email == "ada@studio.it").one()
+    card = clean.query(Freelancer).filter(Freelancer.user_id == ada.id).one()
+    clean.execute(update(Freelancer).where(Freelancer.id == card.id).values(deleted_at=clock.at))
+    clean.commit()
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    follow = service.follow_up(parent.id, admin(clean).id)
+    preview = service.audience(follow.id)
+    assert [r.email for r in preview.righe] == ["bob@studio.it"]
+
+
+def test_a_referente_whose_company_is_soft_deleted_is_not_listed(clean: Session) -> None:  # noqa: F811  (fixture)
+    clock = Clock(NOW)
+    parent = sent_to(clean, clock, "ada@studio.it")
+    biz = company(clean, "cleo@studio.it")
+    clean.add(
+        CampaignRecipient(
+            campaign_id=parent.id,
+            email="cleo@studio.it",
+            tipo="azienda",
+            codice="c",
+            prima={"richieste": {str(biz.id): biz.updated_at.isoformat()}},
+            disiscrizione_token="t-cleo",
+            stato="inviata",
+            inviata_at=clock.at,
+        )
+    )
+    clean.execute(update(Company).where(Company.id == biz.id).values(deleted_at=clock.at))
+    clean.commit()
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    follow = service.follow_up(parent.id, admin(clean).id)
+    preview = service.audience(follow.id)
+    assert [r.email for r in preview.righe] == ["ada@studio.it"]

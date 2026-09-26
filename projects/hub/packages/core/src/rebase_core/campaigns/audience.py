@@ -66,7 +66,11 @@ def _not_done(session: Session, campaign: Campaign) -> list[Candidate]:
     action. Read live, not from `azione_at` alone: the tick stamps once a minute and
     only for 30 days after a mail, and whoever acted since must not be written to
     again (Review Focus 2). Each person keeps the snapshot links the earlier row
-    froze: their user, card, lead and open requests."""
+    froze: their user, card, lead and open requests. A row is also dropped, not shown
+    with a reason, when the person it named is gone from the hub -- a soft-deleted card,
+    or a referente whose every open request's company is soft-deleted -- the same way
+    `candidates_for_state` never lists them for a `stato` or `filtri` campaign; a lead
+    row stays, since a lead who made a card since is caught by `done_at`."""
     parent = session.get(Campaign, campaign.segue_id) if campaign.segue_id else None
     if parent is None:
         return []
@@ -79,20 +83,50 @@ def _not_done(session: Session, campaign: Campaign) -> list[Candidate]:
         )
         .order_by(CampaignRecipient.email)
     ).all()
-    return [
-        Candidate(
-            email=row.email,
-            nome=row.nome,
-            tipo=row.tipo,
-            user_id=row.user_id,
-            freelancer_id=row.freelancer_id,
-            signup_id=row.signup_id,
-            company_ids=tuple(UUID(key) for key in (row.prima or {}).get("richieste", {})),
-            pigro_slugs=tuple(row.pigro_slugs),
+    freelancer_ids = {row.freelancer_id for row in rows if row.freelancer_id is not None}
+    alive_freelancers = (
+        set(
+            session.scalars(
+                select(Freelancer.id).where(
+                    Freelancer.id.in_(freelancer_ids), Freelancer.deleted_at.is_(None)
+                )
+            )
         )
-        for row in rows
-        if done_at(session, row, parent.azione, since=row.inviata_at) is None
-    ]
+        if freelancer_ids
+        else set()
+    )
+    company_ids = {UUID(key) for row in rows for key in (row.prima or {}).get("richieste", {})}
+    alive_companies = (
+        set(
+            session.scalars(
+                select(Company.id).where(Company.id.in_(company_ids), Company.deleted_at.is_(None))
+            )
+        )
+        if company_ids
+        else set()
+    )
+    found: list[Candidate] = []
+    for row in rows:
+        if row.freelancer_id is not None and row.freelancer_id not in alive_freelancers:
+            continue
+        richieste = tuple(UUID(key) for key in (row.prima or {}).get("richieste", {}))
+        if richieste and not any(cid in alive_companies for cid in richieste):
+            continue
+        if done_at(session, row, parent.azione, since=row.inviata_at) is not None:
+            continue
+        found.append(
+            Candidate(
+                email=row.email,
+                nome=row.nome,
+                tipo=row.tipo,
+                user_id=row.user_id,
+                freelancer_id=row.freelancer_id,
+                signup_id=row.signup_id,
+                company_ids=richieste,
+                pigro_slugs=tuple(row.pigro_slugs),
+            )
+        )
+    return found
 
 
 def _filtered(session: Session, raw: dict[str, Any]) -> list[Candidate]:
