@@ -285,17 +285,24 @@ proposals written: an admin's own and one with an empty catalogue (no call made)
 not count, and a call that failed is bounded by `spend_one` and the concurrency cap,
 not by this one.
 
-**`/api/hub/team/proposals` needs 90 seconds on the host vhost.** A proposal holds the
-request while Claude writes, and the seam gives up after two attempts of 40 seconds
-(`llm.py`, `_TIMEOUT_SECONDS` and `_MAX_RETRIES`), near 81 seconds; nginx's default of
-60 would answer the visitor 504 while the proposal goes on. The repository's copies
-of the host vhosts, `projects/website/deploy/letsrebase.conf` and
-`preview.letsrebase.conf`, carry the location beside `location ^~ /api/hub/`, which an
-exact match outranks; the installed vhost in `/etc/nginx/sites-available/` gets it by
-hand, as the MCP location did. Production's:
+**`/api/hub/team/proposals` needs 90 seconds on the host vhost, and so does
+`/api/hub/me/cloud/proposals`**, the same builder inside the talent cloud (REB-519). A
+proposal holds the request while Claude writes, and the seam gives up after two
+attempts of 40 seconds (`llm.py`, `_TIMEOUT_SECONDS` and `_MAX_RETRIES`), near 81
+seconds; nginx's default of 60 would answer the visitor 504 while the proposal goes
+on. The repository's copies of the host vhosts, `projects/website/deploy/letsrebase.conf`
+and `preview.letsrebase.conf`, carry both locations beside `location ^~ /api/hub/`,
+which an exact match outranks; the installed vhost in `/etc/nginx/sites-available/`
+gets them by hand, as the MCP location did. Production's:
 
 ```
 location = /api/hub/team/proposals {
+    client_max_body_size 6M;
+    proxy_pass http://127.0.0.1:8084;
+    include /etc/nginx/snippets/orbiters-proxy.conf;
+    proxy_read_timeout 90s;
+}
+location = /api/hub/me/cloud/proposals {
     client_max_body_size 6M;
     proxy_pass http://127.0.0.1:8084;
     include /etc/nginx/snippets/orbiters-proxy.conf;
