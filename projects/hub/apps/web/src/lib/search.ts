@@ -16,8 +16,10 @@ export function parseSearch(searchStr: string): Record<string, unknown> {
   const parsed: Record<string, unknown> = { ...defaultParseSearch(searchStr) }
   const raw = new URLSearchParams(searchStr)
   for (const param of AMOUNT_PARAMS) {
-    const value = raw.get(param)
-    if (value !== null && !value.startsWith('"')) parsed[param] = value
+    // Only a single, unquoted value: a repeated parameter stays the list the default
+    // makes, which `strParam` refuses, rather than quietly becoming its first value.
+    const [value, ...more] = raw.getAll(param)
+    if (value !== undefined && more.length === 0 && !value.trimStart().startsWith('"')) parsed[param] = value
   }
   return parsed
 }

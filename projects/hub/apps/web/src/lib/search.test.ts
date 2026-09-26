@@ -21,6 +21,16 @@ describe('parseSearch keeps an amount as it was typed in the address (REB-531)',
     expect(parseSearch('?tariffa_min=%221.500%22')).toEqual({ tariffa_min: '1.500' })
   })
 
+  it('leaves a quoted amount with spaces before it as the default reads it', () => {
+    expect(parseSearch('?tariffa_min=%20%221.500%22')).toEqual(defaultParseSearch('?tariffa_min=%20%221.500%22'))
+  })
+
+  it('leaves a repeated amount parameter as the default reads it, not its first value', () => {
+    const search = '?tariffa_min=1.500&tariffa_min=50'
+    expect(parseSearch(search)).toEqual(defaultParseSearch(search))
+    expect(Array.isArray(parseSearch(search).tariffa_min)).toBe(true)
+  })
+
   it('leaves every other parameter as the default reads it', () => {
     const search = '?stato=nuovo&has_cv=true&tariffa_max=1.500&n=3&q=%22ciao%22'
     const { tariffa_max, ...rest } = parseSearch(search)
