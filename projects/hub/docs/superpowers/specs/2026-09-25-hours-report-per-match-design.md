@@ -227,7 +227,8 @@ router and by nothing else yet) does, in order:
    missing», which step 2 resumes.
 4. **The customer «rebase»**, in the space, as `Actor.rebase()` (§ 2.5): found by
    `CustomerRepository.match_by_fiscal_id` on the VAT number when the body carries one,
-   else by `CustomerRepository.find_by_name`, an exact query over the live customers
+   then by `CustomerRepository.find_by_name` when that finds nothing (so a VAT number the
+   signer data gains later never doubles the customer), an exact query over the live customers
    (the list method is a paginated trigram search and is never used for this); created
    if missing with the fiscal fields of the body and the note «Creato da rebase
    per la lettera n. 3/2026. rebase legge le ore dei deal di questo cliente per
@@ -251,7 +252,7 @@ router and by nothing else yet) does, in order:
 
 `422` for a body that does not validate, `401` for a wrong or missing bearer, `404` when
 the token is not configured, `503` when `PIGROCRM_PUBLIC_URL` is empty or the space's
-database cannot be created or reached. The route is not throttled per client: the only
+database cannot be created or reached, and when the address's lock is held by another call past its timeout (a busy answer the hub retries, never a refusal). The route is not throttled per client: the only
 caller holds the token.
 
 ### 2.4 `GET /api/rebase/engagements/{match_id}/report`
