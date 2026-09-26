@@ -139,7 +139,8 @@ function stored(value: unknown, { day = false }: { day?: boolean } = {}): string
 /** A stored amount back into its input, with two decimals. The server writes a machine
  *  decimal, where a dot is always the decimal point, but the field reads what it holds
  *  the Italian way (REB-485): a draft that stored «1.500» (1.5, typed into the old
- *  number input) would come back as 1500. «1.50» cannot be misread. */
+ *  number input) would come back as 1500. «1.50» cannot be misread, and two decimals
+ *  are exact because the server keeps cents at most (`FilterAmount`). */
 function storedAmount(value: unknown): string {
   const text = stored(value)
   const number = Number(text)

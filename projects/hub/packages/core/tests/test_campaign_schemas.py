@@ -3,6 +3,9 @@
 from datetime import date, datetime
 from decimal import Decimal
 
+import pytest
+from pydantic import ValidationError
+
 from rebase_core.campaigns.schemas import AziendeFiltri, ScheduleRequest, TalentiFiltri
 
 # What «Nuova campagna» sends with every filter filled: the same literals
@@ -56,3 +59,18 @@ def test_the_wizards_company_filters_are_the_servers_fields_and_types() -> None:
     filtri = AziendeFiltri.model_validate(AZIENDE_FILTRI)
     assert filtri.budget_min == Decimal("200") and filtri.periodo_da == date(2026, 10, 1)
     assert filtri.creato_a == datetime(2026, 9, 1)
+
+
+@pytest.mark.parametrize("amount", ["12.345", "-1", "1e3.5"])
+def test_a_filter_amount_keeps_cents_at_most_and_is_never_negative(amount: str) -> None:
+    """The editor reads a stored amount back with two decimals: a third would come back
+    rounded, and the list with it (REB-526)."""
+    with pytest.raises(ValidationError):
+        TalentiFiltri.model_validate({"lista": "talenti", "tariffa_min": amount})
+    with pytest.raises(ValidationError):
+        AziendeFiltri.model_validate({"lista": "aziende", "budget_max": amount})
+
+
+def test_a_filter_amount_with_cents_or_none_is_kept_as_it_is() -> None:
+    filtri = TalentiFiltri.model_validate({"lista": "talenti", "tariffa_min": "12.30"})
+    assert filtri.tariffa_min == Decimal("12.30")
