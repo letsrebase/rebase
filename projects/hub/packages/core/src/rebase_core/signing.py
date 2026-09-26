@@ -40,6 +40,9 @@ deliveries' own background tasks among them -- does everything once; a lost back
 task or a restart between steps leaves whichever of the two mail columns is unset, which
 the next `finish` reads as still to do for that recipient alone (REB-391).
 
+`signing_from_settings` builds this service as an environment configures it, the one
+builder both the admin API and the admin MCP server use (REB-478).
+
 `sweep` is the recovery `rebase contracts-sweep` runs, every ten minutes on production and
 the preview alike, from the `sweep` service in `docker-compose.yml` (REB-393): `finish`
 again, for every document a webhook or an admin's «Aggiorna stato» never reached.
@@ -53,7 +56,8 @@ Documenso before the row, and «Registra disdetta» (`record_notice`).
 import logging
 from collections.abc import Callable, Mapping
 from datetime import date, datetime
-from typing import NamedTuple
+from enum import Enum
+from typing import Final, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import exists, or_, select
@@ -63,13 +67,14 @@ from rebase_core.audit import AdminActionService, utcnow
 from rebase_core.config import Settings
 from rebase_core.contract_schemas import ContractDocumentRead, MatchRead, SendReport
 from rebase_core.contracts.fields import ContractFailed, Value, signer_data
-from rebase_core.contracts.render import Renderer, text_version
+from rebase_core.contracts.render import ContractRenderer, Renderer, text_version
 from rebase_core.documenso import (
     COMPLETED,
     REJECTED,
     UNREACHABLE,
     DocumensoClient,
     Outcome,
+    client_from_settings,
     fields_from_blanks,
     outcome_from_envelope,
 )
@@ -85,6 +90,7 @@ from rebase_core.mail import (
     Attachment,
     EmailSender,
     document_name,
+    sender_from_settings,
     signed_copy_mail,
     signing_cancelled_mail,
     signing_request_mail,
@@ -1051,3 +1057,51 @@ class SigningService:
         if self.sender is None:
             raise SigningUnavailable(NO_SENDER)
         return self.sender
+
+
+SigningFactory = Callable[[Session], SigningService]
+
+
+class _FromSettings(Enum):
+    """`signing_from_settings`' own default: a collaborator not handed in is built from
+    the settings, while `None` handed in means that one is off."""
+
+    TOKEN = "from settings"
+
+
+FROM_SETTINGS: Final = _FromSettings.TOKEN
+
+
+def signing_from_settings(
+    settings: Settings,
+    renderer: Renderer | None = None,
+    *,
+    documenso: DocumensoClient | None | _FromSettings = FROM_SETTINGS,
+    sender: EmailSender | None | _FromSettings = FROM_SETTINGS,
+) -> SigningFactory:
+    """`SigningService` as this environment configures it, for any session: the one
+    builder the admin API's `get_signing_factory` and the admin MCP server both use
+    (REB-478), so a setting reaches both doors or neither. The renderer defaults to
+    `ContractRenderer`; Documenso and the mail sender are built from the settings unless
+    handed in (the API hands its own dependencies, which a test overrides), and `None`
+    handed in means off. `REBASE_SIGNER_JSON` goes over raw: `SigningService` parses it
+    only where a document is about to be typeset, so a malformed value fails the send it
+    breaks and nothing else (REB-406)."""
+    typesetter = renderer if renderer is not None else ContractRenderer()
+
+    def build(session: Session) -> SigningService:
+        return SigningService(
+            session,
+            renderer=typesetter,
+            documenso=(
+                client_from_settings(settings)
+                if isinstance(documenso, _FromSettings)
+                else documenso
+            ),
+            sender=sender_from_settings(settings) if isinstance(sender, _FromSettings) else sender,
+            signer_json=settings.signer_json,
+            contracts_mail=settings.contracts_mail,
+            allow_draft=settings.contracts_allow_draft,
+        )
+
+    return build

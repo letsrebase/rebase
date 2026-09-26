@@ -102,3 +102,14 @@ def test_the_hub_compose_file_runs_the_sweep_on_a_loop_with_no_port() -> None:
 
 def test_documenso_compose_file_carries_no_sweep_of_its_own() -> None:
     assert "sweep" not in _documenso()
+
+
+def test_the_hub_compose_file_runs_the_campaigns_loop_every_minute_with_no_port() -> None:
+    """`rebase campaigns-tick` (P-REB-41): a loop like the sweep's, every minute, since
+    «Invia adesso» promises the mail within one."""
+    services = _compose().split("\nservices:", 1)[1]
+    loop = services.split("\n  campaigns:", 1)[1].split("\n  sweep:", 1)[0]
+    assert "while :; do sleep 60; uv run --no-sync rebase campaigns-tick; done" in loop
+    assert "init: true" in loop
+    assert "environment: *api-environment" in loop
+    assert "ports:" not in loop

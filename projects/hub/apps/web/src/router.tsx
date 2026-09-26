@@ -18,8 +18,12 @@ import { AdminGuard } from '@/pages/admin/AdminGuard'
 import { AdminGuida } from '@/pages/admin/Guida'
 import { AdminPigro } from '@/pages/admin/Pigro'
 import { AdminContratti } from '@/pages/admin/Contratti'
+import { AdminCampagna } from '@/pages/admin/Campagna'
+import { AdminCampagne } from '@/pages/admin/Campagne'
+import { AdminCreaCampagna } from '@/pages/admin/CreaCampagna'
 import { AdminCreaMatch } from '@/pages/admin/CreaMatch'
 import { AdminMatches } from '@/pages/admin/Matches'
+import { Disiscrizione } from '@/pages/Disiscrizione'
 import { Thanks } from '@/pages/Thanks'
 import {
   AdminCompanies,
@@ -158,6 +162,13 @@ const verifyRedirect = createRoute({
   },
 })
 
+const unsubscribe = createRoute({
+  getParentRoute: () => publicLayout,
+  path: '/disiscrizione',
+  validateSearch: (search: Record<string, unknown>): { t: string } => ({ t: typeof search.t === 'string' ? search.t : '' }),
+  component: Disiscrizione,
+})
+
 const signedInLayout = createRoute({
   getParentRoute: () => root,
   id: 'signedIn',
@@ -290,7 +301,7 @@ const adminFreelanceContracts = createRoute({
   path: '/freelance/$id/contracts',
   component: AdminContratti,
 })
-// REB-387: the five-step «Crea match», from the talent row's menu and the contracts page.
+// REB-387, REB-476: the three-step «Crea match», from the talent row's menu and the contracts page.
 const adminFreelanceMatchNew = createRoute({
   getParentRoute: () => adminArea,
   path: '/freelance/$id/match/new',
@@ -318,6 +329,22 @@ const adminMatches = createRoute({
     stato: strParam(search.stato),
     q: strParam(search.q),
   }),
+})
+// P-REB-41: the list, a stub for the new/edit form (Task 20) and a stub for the
+// detail (Task 21). `adminCampaignNew` sits before `adminCampaign` in the tree below --
+// TanStack ranks a static segment over `$id` either way, but the list reads in the
+// order a person follows.
+const adminCampaigns = createRoute({ getParentRoute: () => adminArea, path: '/campaigns', component: AdminCampagne })
+const adminCampaignNew = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/campaigns/new',
+  component: AdminCreaCampagna,
+})
+const adminCampaign = createRoute({ getParentRoute: () => adminArea, path: '/campaigns/$id', component: AdminCampagna })
+const adminCampaignEdit = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/campaigns/$id/edit',
+  component: AdminCreaCampagna,
 })
 const adminCompanies = createRoute({
   getParentRoute: () => adminArea,
@@ -404,6 +431,7 @@ export const routeTree = root.addChildren([
     loginRedirect,
     verify,
     verifyRedirect,
+    unsubscribe,
   ]),
   signedInLayout.addChildren([
     me.addChildren([meIndex, meEdit, meEditCompany, meNewCompany]),
@@ -421,6 +449,10 @@ export const routeTree = root.addChildren([
       adminFreelanceMatchNew,
       adminFreelanceRedirect,
       adminMatches,
+      adminCampaigns,
+      adminCampaignNew,
+      adminCampaign,
+      adminCampaignEdit,
       adminCompanies,
       adminCompaniesRedirect,
       adminCompaniesDetail,
@@ -443,5 +475,10 @@ export const router = createRouter({ routeTree, basepath: '/hub' })
 declare module '@tanstack/react-router' {
   interface Register {
     router: typeof router
+  }
+  interface HistoryState {
+    /** A sentence the page navigated to shows on arrival: «Crea match» leaves the send
+     *  report's, or that the draft is saved, for «Match e contratti» (REB-476). */
+    notice?: string
   }
 }

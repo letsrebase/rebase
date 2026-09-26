@@ -1,0 +1,999 @@
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { useNavigate, useParams } from '@tanstack/react-router'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Button } from '@rebase/ui/button'
+import { Checkbox } from '@rebase/ui/checkbox'
+import { Input } from '@rebase/ui/input'
+import { Label } from '@rebase/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
+import { Textarea } from '@rebase/ui/textarea'
+import {
+  admin,
+  ApiError,
+  type AudiencePreview,
+  type Campaign,
+  type CampaignAzione,
+  type CampaignDraft,
+  type CampaignMeta,
+} from '@/lib/api'
+import { AZIONE_LABELS, CAMPAIGN_MAX_LENGTH, META_LABELS, defaultSchedule, personalise } from '@/lib/campaigns'
+import { COMPANY_STATES, FREELANCER_LIST_STATES, REMOTO_LABELS, STATE_LABELS } from '@/lib/format'
+import { useMe } from '@/lib/me'
+import { FilterField, Header } from './lists'
+
+const STEPS = ['Chi', 'Cosa', 'Prova', 'Quando'] as const
+
+type Fonte = 'stato' | 'filtri'
+type Lista = 'talenti' | 'aziende'
+
+// A `Select` cannot take an item with value `""` -- Radix reserves it for "nothing
+// picked yet", which is exactly what an unset filter or an unset template is here.
+const NONE = ''
+const ANY = 'tutti'
+
+function boolToSelect(value: boolean | undefined): string {
+  return value === undefined ? ANY : value ? 'si' : 'no'
+}
+
+function selectToBool(value: string): boolean | undefined {
+  return value === 'si' ? true : value === 'no' ? false : undefined
+}
+
+/** The Talenti list's own filters (spec § 2), field for field the server's
+ *  `TalentiFiltri` (`rebase_core/campaigns/schemas.py`) and the list page's
+ *  `TalentiFilters`: every value a string as its input holds it, `ANY` for a `Select`
+ *  left on «Tutti». `filtriPayload` below turns it into the server's shape. */
+interface TalentiFiltriForm {
+  stato: string
+  q: string
+  posizione: string
+  remoto: string
+  tariffa_min: string
+  tariffa_max: string
+  origine: string
+  utm_source: string
+  has_cv: string
+  con_accessi: string
+  creato_da: string
+  creato_a: string
+}
+
+/** The company list's own filters, the server's `AziendeFiltri`. */
+interface AziendeFiltriForm {
+  stato: string
+  q: string
+  budget_min: string
+  budget_max: string
+  periodo_da: string
+  origine: string
+  creato_da: string
+  creato_a: string
+}
+
+const TALENTI_FILTRI_EMPTY: TalentiFiltriForm = {
+  stato: ANY,
+  q: '',
+  posizione: '',
+  remoto: ANY,
+  tariffa_min: '',
+  tariffa_max: '',
+  origine: '',
+  utm_source: '',
+  has_cv: ANY,
+  con_accessi: ANY,
+  creato_da: '',
+  creato_a: '',
+}
+const AZIENDE_FILTRI_EMPTY: AziendeFiltriForm = {
+  stato: ANY,
+  q: '',
+  budget_min: '',
+  budget_max: '',
+  periodo_da: '',
+  origine: '',
+  creato_da: '',
+  creato_a: '',
+}
+
+/** What a text, number or date input sends: nothing when it is empty. */
+function typed(value: string): string | undefined {
+  return value.trim() === '' ? undefined : value.trim()
+}
+
+/** What a `Select` sends: nothing while it reads «Tutti». */
+function picked(value: string): string | undefined {
+  return value === ANY ? undefined : value
+}
+
+/** A stored filter value back into its input: a decimal the server keeps as a string
+ *  (or a number, from an older row), a day out of a stored `datetime`. */
+function stored(value: unknown, { day = false }: { day?: boolean } = {}): string {
+  const text = typeof value === 'string' ? value : typeof value === 'number' ? String(value) : ''
+  return day ? text.slice(0, 10) : text
+}
+
+/** What the edit route seeds Chi's own filter fields with, out of `Campaign.filtri`
+ *  (a bag the server never types further): a plain function so the effect that calls
+ *  it stays a flat list of `setState`s, none of them behind a nested condition. The
+ *  server always writes its own `lista` into that bag (`filtriPayload` below sends it
+ *  on every save), so this reads that key directly rather than guessing the list from
+ *  which of the Talenti-only fields happen to be present -- a filter with neither
+ *  `has_cv` nor `con_accessi` set is still a Talenti filter (fix 2, REB-472 round 1). */
+function seedFiltri(c: Campaign): { lista: Lista; talenti: TalentiFiltriForm; aziende: AziendeFiltriForm } {
+  const empty = { lista: 'talenti' as Lista, talenti: TALENTI_FILTRI_EMPTY, aziende: AZIENDE_FILTRI_EMPTY }
+  if (c.fonte !== 'filtri' || !c.filtri) return empty
+  const f = c.filtri as Record<string, unknown>
+  const lista: Lista = f.lista === 'aziende' ? 'aziende' : 'talenti'
+  const stato = stored(f.stato) || ANY
+  if (lista === 'talenti') {
+    return {
+      lista,
+      talenti: {
+        stato,
+        q: stored(f.q),
+        posizione: stored(f.posizione),
+        remoto: stored(f.remoto) || ANY,
+        tariffa_min: stored(f.tariffa_min),
+        tariffa_max: stored(f.tariffa_max),
+        origine: stored(f.origine),
+        utm_source: stored(f.utm_source),
+        has_cv: boolToSelect(f.has_cv as boolean | undefined),
+        con_accessi: boolToSelect(f.con_accessi as boolean | undefined),
+        creato_da: stored(f.creato_da, { day: true }),
+        creato_a: stored(f.creato_a, { day: true }),
+      },
+      aziende: AZIENDE_FILTRI_EMPTY,
+    }
+  }
+  return {
+    lista,
+    talenti: TALENTI_FILTRI_EMPTY,
+    aziende: {
+      stato,
+      q: stored(f.q),
+      budget_min: stored(f.budget_min),
+      budget_max: stored(f.budget_max),
+      periodo_da: stored(f.periodo_da, { day: true }),
+      origine: stored(f.origine),
+      creato_da: stored(f.creato_da, { day: true }),
+      creato_a: stored(f.creato_a, { day: true }),
+    },
+  }
+}
+
+function failureMessage(error: unknown): string | null {
+  if (!error) return null
+  if (error instanceof ApiError) return error.message
+  return 'Qualcosa è andato storto.'
+}
+
+function Failure({ message }: { message: string | null }) {
+  if (!message) return null
+  return (
+    <p role="alert" className="text-sm text-destructive">
+      {message}
+    </p>
+  )
+}
+
+function Footer({
+  onBack,
+  next,
+  pending,
+  ready = true,
+  failure,
+}: {
+  onBack?: () => void
+  next: string
+  pending: boolean
+  ready?: boolean
+  failure: string | null
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {onBack && (
+          <Button type="button" variant="outline" onClick={onBack}>
+            Indietro
+          </Button>
+        )}
+        <Button type="submit" disabled={pending || !ready}>
+          {pending ? 'Un momento…' : next}
+        </Button>
+      </div>
+      <Failure message={failure} />
+    </div>
+  )
+}
+
+function AudienceTable({
+  audience,
+  esclusi,
+  onToggle,
+}: {
+  audience: AudiencePreview
+  esclusi: string[]
+  onToggle: (email: string, included: boolean) => void
+}) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-muted-foreground">
+        {audience.incluse} incluse, {audience.escluse} escluse
+      </p>
+      <div className="border border-border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nome</TableHead>
+              <TableHead>Indirizzo</TableHead>
+              <TableHead>Includi</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {audience.righe.map((row) => {
+              const forced = row.escluso !== null
+              // A row the rules leave out is never «Includi»: unticked and disabled.
+              const checked = !forced && !esclusi.includes(row.email)
+              return (
+                <TableRow key={row.email}>
+                  <TableCell>{row.nome ?? '—'}</TableCell>
+                  <TableCell>{row.email}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        aria-label={row.email}
+                        checked={checked}
+                        disabled={forced}
+                        onCheckedChange={(value) => onToggle(row.email, value === true)}
+                      />
+                      {row.escluso && <span className="text-xs text-muted-foreground">{row.escluso}</span>}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  )
+}
+
+/** «Nuova campagna» (P-REB-41, REB-472): four steps from a state or a filter to a
+ *  scheduled send, the same shape `CreaMatch.tsx` uses -- step state, an ordered list
+ *  of step names and a footer with «Indietro»/«Avanti». Chi's own «Avanti» does double
+ *  duty: the first press writes the draft and loads the audience preview without
+ *  leaving the step, so the admin sees who is left out and why before moving on; the
+ *  next press advances to Cosa. The edit route (`/admin/campaigns/$id/edit`) loads the
+ *  existing campaign and starts here too -- the API itself refuses a save once the
+ *  campaign has left «bozza», and that refusal surfaces the same way any other one
+ *  does, in the step's own alert. */
+export function AdminCreaCampagna() {
+  const { id: idParam } = useParams({ strict: false }) as { id?: string }
+  const navigate = useNavigate()
+  const me = useMe()
+
+  const [step, setStep] = useState(0)
+  const [campaign, setCampaign] = useState<Campaign | null>(null)
+
+  const [fonte, setFonte] = useState<Fonte>('stato')
+  const [statoPercorso, setStatoPercorso] = useState<string | null>(null)
+  const [lista, setLista] = useState<Lista>('talenti')
+  const [talentiFiltri, setTalentiFiltri] = useState<TalentiFiltriForm>(TALENTI_FILTRI_EMPTY)
+  const [aziendeFiltri, setAziendeFiltri] = useState<AziendeFiltriForm>(AZIENDE_FILTRI_EMPTY)
+
+  const [nome, setNome] = useState('')
+  const [oggetto, setOggetto] = useState('')
+  const [testo, setTesto] = useState('')
+  const [bottoneTesto, setBottoneTesto] = useState('')
+  const [bottoneMeta, setBottoneMeta] = useState<CampaignMeta>('area')
+  const [azione, setAzione] = useState<CampaignAzione>('entrato')
+  // Once the admin has written into Cosa's own fields, picking another state must not
+  // overwrite what they wrote (spec § 1).
+  const [contentTouched, setContentTouched] = useState(false)
+
+  const [audience, setAudience] = useState<AudiencePreview | null>(null)
+  const [esclusi, setEsclusi] = useState<string[]>([])
+
+  const [mode, setMode] = useState<'adesso' | 'programma'>('adesso')
+  // Filled when «Programma» is chosen, not when the page opens: a wizard left open for
+  // an hour must not propose a moment already past.
+  const [when, setWhen] = useState({ giorno: '', ora: '' })
+
+  const templates = useQuery({ queryKey: ['campaignTemplates'], queryFn: admin.campaignTemplates })
+  const editing = useQuery({
+    queryKey: ['campaign', idParam],
+    queryFn: () => admin.campaign(idParam!),
+    enabled: idParam !== undefined,
+  })
+
+  const seeded = useRef(false)
+  useEffect(() => {
+    if (!editing.data || seeded.current) return
+    seeded.current = true
+    const c = editing.data.campagna
+    const filtri = seedFiltri(c)
+    setCampaign(c)
+    setFonte(c.fonte === 'filtri' ? 'filtri' : 'stato')
+    setStatoPercorso(c.stato_percorso)
+    setLista(filtri.lista)
+    setTalentiFiltri(filtri.talenti)
+    setAziendeFiltri(filtri.aziende)
+    setNome(c.nome)
+    setOggetto(c.oggetto)
+    setTesto(c.testo)
+    setBottoneTesto(c.bottone_testo)
+    setBottoneMeta(c.bottone_meta)
+    setAzione(c.azione)
+    // Already saved content: a template pick from here on must not clobber it.
+    setContentTouched(true)
+  }, [editing.data])
+
+  function selectTemplate(value: string) {
+    setStatoPercorso(value)
+    setAudience(null)
+    setEsclusi([])
+    const template = templates.data?.find((item) => item.stato_percorso === value)
+    if (!template) return
+    // Azione is disabled in Cosa whenever the source is a state (it isn't the admin's
+    // to set), so it must always follow the picked template even once other content is
+    // touched -- otherwise a stale action from an earlier pick could never be corrected
+    // (fix 4, REB-472 round 1).
+    setAzione(template.azione)
+    if (contentTouched) return
+    setNome(template.etichetta)
+    setOggetto(template.oggetto)
+    setTesto(template.testo)
+    setBottoneTesto(template.bottone_testo)
+    setBottoneMeta(template.bottone_meta)
+  }
+
+  function chooseFonte(next: Fonte) {
+    if (next === fonte) return
+    setFonte(next)
+    setAudience(null)
+    setEsclusi([])
+  }
+
+  // Any change to a filter field invalidates the audience preview already on screen
+  // (fix 3, REB-472 round 1): otherwise «Avanti» would move on with a list the admin
+  // never actually saw, since a loaded `audience` short-circuits the next «Avanti» to a
+  // plain step change instead of reloading it.
+  function updateTalentiFiltri(patch: Partial<TalentiFiltriForm>) {
+    setTalentiFiltri((current) => ({ ...current, ...patch }))
+    setAudience(null)
+    setEsclusi([])
+  }
+  function updateAziendeFiltri(patch: Partial<AziendeFiltriForm>) {
+    setAziendeFiltri((current) => ({ ...current, ...patch }))
+    setAudience(null)
+    setEsclusi([])
+  }
+
+  function filtriPayload(): Record<string, unknown> | null {
+    if (fonte !== 'filtri') return null
+    if (lista === 'talenti') {
+      const t = talentiFiltri
+      return {
+        lista,
+        stato: picked(t.stato),
+        q: typed(t.q),
+        posizione: typed(t.posizione),
+        remoto: picked(t.remoto),
+        tariffa_min: typed(t.tariffa_min),
+        tariffa_max: typed(t.tariffa_max),
+        origine: typed(t.origine),
+        utm_source: typed(t.utm_source),
+        has_cv: selectToBool(t.has_cv),
+        con_accessi: selectToBool(t.con_accessi),
+        creato_da: typed(t.creato_da),
+        creato_a: typed(t.creato_a),
+      }
+    }
+    const a = aziendeFiltri
+    return {
+      lista,
+      stato: picked(a.stato),
+      q: typed(a.q),
+      budget_min: typed(a.budget_min),
+      budget_max: typed(a.budget_max),
+      periodo_da: typed(a.periodo_da),
+      origine: typed(a.origine),
+      creato_da: typed(a.creato_da),
+      creato_a: typed(a.creato_a),
+    }
+  }
+
+  function chooseProgramma() {
+    if (mode !== 'programma') setWhen(defaultSchedule())
+    setMode('programma')
+  }
+
+  // Chi has no Nome field (that's Cosa's); a filtered campaign with nothing typed yet
+  // must still create with a non-empty `nome` (`CampaignDraft.nome` is `min_length=1`
+  // server-side, fix 1, REB-472 round 1) -- the admin renames it in Cosa.
+  function defaultNome(): string {
+    return fonte === 'filtri' ? 'Campagna da filtri' : 'Nuova campagna'
+  }
+
+  function buildPayload(): CampaignDraft {
+    return {
+      nome: nome.trim() || defaultNome(),
+      fonte,
+      stato_percorso: fonte === 'stato' ? statoPercorso : null,
+      filtri: filtriPayload(),
+      oggetto,
+      testo,
+      bottone_testo: bottoneTesto,
+      bottone_meta: bottoneMeta,
+      azione,
+    }
+  }
+
+  const advanceChi = useMutation({
+    mutationFn: async () => {
+      const payload = buildPayload()
+      const saved = campaign ? await admin.updateCampaign(campaign.id, payload) : await admin.createCampaign(payload)
+      const preview = await admin.campaignAudience(saved.id)
+      return { saved, preview }
+    },
+    onSuccess: ({ saved, preview }) => {
+      setCampaign(saved)
+      setAudience(preview)
+      setEsclusi([])
+      // The default name from `defaultNome()` was sent, not typed: show it in Cosa's
+      // own Nome field so the admin edits it rather than finds it blank.
+      if (!nome.trim()) setNome(saved.nome)
+    },
+  })
+
+  function chiNext() {
+    if (audience) {
+      setStep(1)
+      return
+    }
+    advanceChi.mutate()
+  }
+
+  const saveCosa = useMutation({
+    mutationFn: () => admin.updateCampaign(campaign!.id, buildPayload()),
+    onSuccess: (saved) => {
+      setCampaign(saved)
+      setStep(2)
+    },
+  })
+
+  const testCampaign = useMutation({
+    mutationFn: () => admin.testCampaign(campaign!.id),
+    onSuccess: (saved) => setCampaign(saved),
+  })
+
+  const schedule = useMutation({
+    mutationFn: () =>
+      admin.scheduleCampaign(campaign!.id, mode === 'programma' ? { giorno: when.giorno, ora: when.ora, esclusi } : { esclusi }),
+    onSuccess: (saved) => void navigate({ to: '/admin/campaigns/$id', params: { id: saved.id } }),
+  })
+
+  function toggleEsclusione(email: string, included: boolean) {
+    setEsclusi((current) => (included ? current.filter((item) => item !== email) : [...current, email]))
+  }
+
+  const chiReady = fonte === 'stato' ? statoPercorso !== null : true
+  const cosaReady = nome.trim() !== '' && oggetto.trim() !== '' && testo.trim() !== '' && bottoneTesto.trim() !== ''
+  const firstIncluded = audience?.righe.find((row) => row.escluso === null) ?? null
+
+  return (
+    <>
+      <Header title={idParam ? 'Modifica campagna' : 'Nuova campagna'} />
+      <ol aria-label="Passi" className="flex flex-wrap gap-x-4 gap-y-1 border-b px-6 py-3 text-sm">
+        {STEPS.map((label, index) => (
+          <li
+            key={label}
+            aria-current={index === step ? 'step' : undefined}
+            className={index === step ? 'font-medium' : 'text-muted-foreground'}
+          >
+            {index + 1}. {label}
+          </li>
+        ))}
+      </ol>
+      <div className="max-w-3xl space-y-4 p-6">
+        {step === 0 && (
+          <form
+            className="space-y-4"
+            onSubmit={(event: FormEvent) => {
+              event.preventDefault()
+              chiNext()
+            }}
+          >
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Da chi parte la campagna">
+              <Button
+                type="button"
+                variant={fonte === 'stato' ? 'default' : 'outline'}
+                aria-pressed={fonte === 'stato'}
+                onClick={() => chooseFonte('stato')}
+              >
+                Uno stato del percorso
+              </Button>
+              <Button
+                type="button"
+                variant={fonte === 'filtri' ? 'default' : 'outline'}
+                aria-pressed={fonte === 'filtri'}
+                onClick={() => chooseFonte('filtri')}
+              >
+                Filtri
+              </Button>
+            </div>
+            {fonte === 'stato' && (
+              <div className="max-w-sm space-y-1.5">
+                <Label htmlFor="campagna-stato-percorso">Stato del percorso</Label>
+                <Select value={statoPercorso ?? NONE} onValueChange={selectTemplate}>
+                  <SelectTrigger id="campagna-stato-percorso" aria-label="Stato del percorso" className="w-full">
+                    <SelectValue placeholder="Scegli uno stato" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(templates.data ?? []).map((template) => (
+                      <SelectItem key={template.stato_percorso} value={template.stato_percorso}>
+                        {template.etichetta}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {fonte === 'filtri' && (
+              <div className="space-y-4">
+                <div className="max-w-sm space-y-1.5">
+                  <Label htmlFor="campagna-lista">Lista</Label>
+                  <Select
+                    value={lista}
+                    onValueChange={(value) => {
+                      setLista(value as Lista)
+                      setAudience(null)
+                      setEsclusi([])
+                    }}
+                  >
+                    <SelectTrigger id="campagna-lista" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="talenti">Talenti</SelectItem>
+                      <SelectItem value="aziende">Aziende</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {lista === 'talenti' ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FilterField label="Stato" htmlFor="campagna-talenti-stato">
+                      <Select value={talentiFiltri.stato} onValueChange={(value) => updateTalentiFiltri({ stato: value })}>
+                        <SelectTrigger id="campagna-talenti-stato" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ANY}>Tutti</SelectItem>
+                          {FREELANCER_LIST_STATES.map((state) => (
+                            <SelectItem key={state} value={state}>
+                              {STATE_LABELS[state] ?? state}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FilterField>
+                    <FilterField label="Cerca" htmlFor="campagna-talenti-q">
+                      <Input
+                        id="campagna-talenti-q"
+                        maxLength={200}
+                        value={talentiFiltri.q}
+                        onChange={(event) => updateTalentiFiltri({ q: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Posizione" htmlFor="campagna-talenti-posizione">
+                      <Input
+                        id="campagna-talenti-posizione"
+                        maxLength={160}
+                        value={talentiFiltri.posizione}
+                        onChange={(event) => updateTalentiFiltri({ posizione: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Da remoto" htmlFor="campagna-talenti-remoto">
+                      <Select value={talentiFiltri.remoto} onValueChange={(value) => updateTalentiFiltri({ remoto: value })}>
+                        <SelectTrigger id="campagna-talenti-remoto" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ANY}>Tutti</SelectItem>
+                          {Object.entries(REMOTO_LABELS).map(([value, label]) => (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FilterField>
+                    <FilterField label="Tariffa min (€/giorno)" htmlFor="campagna-talenti-tariffa-min">
+                      <Input
+                        id="campagna-talenti-tariffa-min"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        value={talentiFiltri.tariffa_min}
+                        onChange={(event) => updateTalentiFiltri({ tariffa_min: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Tariffa max (€/giorno)" htmlFor="campagna-talenti-tariffa-max">
+                      <Input
+                        id="campagna-talenti-tariffa-max"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        value={talentiFiltri.tariffa_max}
+                        onChange={(event) => updateTalentiFiltri({ tariffa_max: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Pagina di provenienza" htmlFor="campagna-talenti-origine">
+                      <Input
+                        id="campagna-talenti-origine"
+                        maxLength={40}
+                        placeholder="home, pigrocrm…"
+                        value={talentiFiltri.origine}
+                        onChange={(event) => updateTalentiFiltri({ origine: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="UTM source" htmlFor="campagna-talenti-utm-source">
+                      <Input
+                        id="campagna-talenti-utm-source"
+                        maxLength={200}
+                        value={talentiFiltri.utm_source}
+                        onChange={(event) => updateTalentiFiltri({ utm_source: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Ha un CV" htmlFor="campagna-talenti-cv">
+                      <Select value={talentiFiltri.has_cv} onValueChange={(value) => updateTalentiFiltri({ has_cv: value })}>
+                        <SelectTrigger id="campagna-talenti-cv" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ANY}>Tutti</SelectItem>
+                          <SelectItem value="si">Sì</SelectItem>
+                          <SelectItem value="no">No</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FilterField>
+                    <FilterField label="Ha fatto accesso" htmlFor="campagna-talenti-accessi">
+                      <Select
+                        value={talentiFiltri.con_accessi}
+                        onValueChange={(value) => updateTalentiFiltri({ con_accessi: value })}
+                      >
+                        <SelectTrigger id="campagna-talenti-accessi" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ANY}>Tutti</SelectItem>
+                          <SelectItem value="si">Sì</SelectItem>
+                          <SelectItem value="no">No</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FilterField>
+                    <FilterField label="Creato dal" htmlFor="campagna-talenti-creato-da">
+                      <Input
+                        id="campagna-talenti-creato-da"
+                        type="date"
+                        value={talentiFiltri.creato_da}
+                        onChange={(event) => updateTalentiFiltri({ creato_da: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Creato al" htmlFor="campagna-talenti-creato-a">
+                      <Input
+                        id="campagna-talenti-creato-a"
+                        type="date"
+                        value={talentiFiltri.creato_a}
+                        onChange={(event) => updateTalentiFiltri({ creato_a: event.target.value })}
+                      />
+                    </FilterField>
+                  </div>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FilterField label="Stato" htmlFor="campagna-aziende-stato">
+                      <Select value={aziendeFiltri.stato} onValueChange={(value) => updateAziendeFiltri({ stato: value })}>
+                        <SelectTrigger id="campagna-aziende-stato" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={ANY}>Tutti</SelectItem>
+                          {COMPANY_STATES.map((state) => (
+                            <SelectItem key={state} value={state}>
+                              {STATE_LABELS[state] ?? state}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FilterField>
+                    <FilterField label="Cerca" htmlFor="campagna-aziende-q">
+                      <Input
+                        id="campagna-aziende-q"
+                        maxLength={200}
+                        value={aziendeFiltri.q}
+                        onChange={(event) => updateAziendeFiltri({ q: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Budget min (€/giorno)" htmlFor="campagna-aziende-budget-min">
+                      <Input
+                        id="campagna-aziende-budget-min"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        value={aziendeFiltri.budget_min}
+                        onChange={(event) => updateAziendeFiltri({ budget_min: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Budget max (€/giorno)" htmlFor="campagna-aziende-budget-max">
+                      <Input
+                        id="campagna-aziende-budget-max"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        value={aziendeFiltri.budget_max}
+                        onChange={(event) => updateAziendeFiltri({ budget_max: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Periodo dal" htmlFor="campagna-aziende-periodo-da">
+                      <Input
+                        id="campagna-aziende-periodo-da"
+                        type="date"
+                        value={aziendeFiltri.periodo_da}
+                        onChange={(event) => updateAziendeFiltri({ periodo_da: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Pagina di provenienza" htmlFor="campagna-aziende-origine">
+                      <Input
+                        id="campagna-aziende-origine"
+                        maxLength={40}
+                        placeholder="home, pigrocrm…"
+                        value={aziendeFiltri.origine}
+                        onChange={(event) => updateAziendeFiltri({ origine: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Creata dal" htmlFor="campagna-aziende-creato-da">
+                      <Input
+                        id="campagna-aziende-creato-da"
+                        type="date"
+                        value={aziendeFiltri.creato_da}
+                        onChange={(event) => updateAziendeFiltri({ creato_da: event.target.value })}
+                      />
+                    </FilterField>
+                    <FilterField label="Creata al" htmlFor="campagna-aziende-creato-a">
+                      <Input
+                        id="campagna-aziende-creato-a"
+                        type="date"
+                        value={aziendeFiltri.creato_a}
+                        onChange={(event) => updateAziendeFiltri({ creato_a: event.target.value })}
+                      />
+                    </FilterField>
+                  </div>
+                )}
+              </div>
+            )}
+            {audience && <AudienceTable audience={audience} esclusi={esclusi} onToggle={toggleEsclusione} />}
+            <Footer next="Avanti" pending={advanceChi.isPending} ready={chiReady} failure={failureMessage(advanceChi.error)} />
+          </form>
+        )}
+        {step === 1 && campaign && (
+          <form
+            className="max-w-xl space-y-4"
+            onSubmit={(event: FormEvent) => {
+              event.preventDefault()
+              saveCosa.mutate()
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="campagna-nome">Nome</Label>
+              <Input
+                id="campagna-nome"
+                required
+                maxLength={CAMPAIGN_MAX_LENGTH.nome}
+                value={nome}
+                onChange={(event) => {
+                  setNome(event.target.value)
+                  setContentTouched(true)
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="campagna-oggetto">Oggetto</Label>
+              <Input
+                id="campagna-oggetto"
+                required
+                maxLength={CAMPAIGN_MAX_LENGTH.oggetto}
+                value={oggetto}
+                onChange={(event) => {
+                  setOggetto(event.target.value)
+                  setContentTouched(true)
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="campagna-testo">Testo</Label>
+              <Textarea
+                id="campagna-testo"
+                required
+                rows={8}
+                maxLength={CAMPAIGN_MAX_LENGTH.testo}
+                value={testo}
+                onChange={(event) => {
+                  setTesto(event.target.value)
+                  setContentTouched(true)
+                }}
+              />
+              <p className="text-xs text-muted-foreground">{'{nome}'} diventa il nome della persona</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="campagna-bottone-testo">Testo del bottone</Label>
+              <Input
+                id="campagna-bottone-testo"
+                required
+                maxLength={CAMPAIGN_MAX_LENGTH.bottone_testo}
+                value={bottoneTesto}
+                onChange={(event) => {
+                  setBottoneTesto(event.target.value)
+                  setContentTouched(true)
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="campagna-bottone-meta">Dove porta</Label>
+              <Select
+                value={bottoneMeta}
+                onValueChange={(value) => {
+                  setBottoneMeta(value as CampaignMeta)
+                  setContentTouched(true)
+                }}
+              >
+                <SelectTrigger id="campagna-bottone-meta" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(META_LABELS).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="campagna-azione">Azione</Label>
+              <Select
+                value={azione}
+                onValueChange={(value) => {
+                  setAzione(value as CampaignAzione)
+                  setContentTouched(true)
+                }}
+                disabled={fonte === 'stato'}
+              >
+                <SelectTrigger id="campagna-azione" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(AZIONE_LABELS)
+                    .filter(([value]) => value !== 'pigro_cliente')
+                    .map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Footer
+              onBack={() => setStep(0)}
+              next="Avanti"
+              pending={saveCosa.isPending}
+              ready={cosaReady}
+              failure={failureMessage(saveCosa.error)}
+            />
+          </form>
+        )}
+        {step === 2 && campaign && (
+          <div className="space-y-4">
+            <div className="max-w-md space-y-3 border p-4">
+              <p className="text-sm">
+                <span className="font-medium">Oggetto:</span> {oggetto}
+              </p>
+              <p className="whitespace-pre-wrap text-sm">{personalise(testo, firstIncluded?.nome ?? null)}</p>
+              <Button type="button" disabled>
+                {bottoneTesto}
+              </Button>
+              {/* The mail's own footer, word for word (`campaigns/render.py`'s `UNSUBSCRIBE_LINE`). */}
+              <p className="text-xs text-muted-foreground">
+                Non vuoi più ricevere queste mail? <span className="underline">Disiscriviti</span>
+              </p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={() => setStep(1)}>
+                  Indietro
+                </Button>
+                <Button type="button" variant="outline" onClick={() => testCampaign.mutate()} disabled={testCampaign.isPending}>
+                  {testCampaign.isPending ? 'Un momento…' : 'Mandami una prova'}
+                </Button>
+                <Button type="button" onClick={() => setStep(3)}>
+                  Avanti
+                </Button>
+              </div>
+              {testCampaign.isSuccess && me.data && <p className="text-sm">Prova inviata a {me.data.email}</p>}
+              <Failure message={failureMessage(testCampaign.error)} />
+            </div>
+          </div>
+        )}
+        {step === 3 && campaign && (
+          <div className="max-w-md space-y-4">
+            <div className="flex flex-wrap gap-2" role="group" aria-label="Quando parte">
+              <Button type="button" variant={mode === 'adesso' ? 'default' : 'outline'} aria-pressed={mode === 'adesso'} onClick={() => setMode('adesso')}>
+                Invia adesso
+              </Button>
+              <Button
+                type="button"
+                variant={mode === 'programma' ? 'default' : 'outline'}
+                aria-pressed={mode === 'programma'}
+                onClick={chooseProgramma}
+              >
+                Programma
+              </Button>
+            </div>
+            {mode === 'programma' && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="campagna-giorno">Giorno</Label>
+                  <Input
+                    id="campagna-giorno"
+                    type="date"
+                    required
+                    value={when.giorno}
+                    onChange={(event) => setWhen({ ...when, giorno: event.target.value })}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="campagna-ora">Ora</Label>
+                  <Input
+                    id="campagna-ora"
+                    type="time"
+                    required
+                    value={when.ora}
+                    onChange={(event) => setWhen({ ...when, ora: event.target.value })}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground sm:col-span-2">ora di Roma</p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" onClick={() => setStep(2)}>
+                  Indietro
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => schedule.mutate()}
+                  disabled={!campaign.pronta || schedule.isPending || (mode === 'programma' && (!when.giorno || !when.ora))}
+                >
+                  {schedule.isPending ? 'Un momento…' : mode === 'programma' ? 'Programma' : 'Invia'}
+                </Button>
+              </div>
+              {!campaign.pronta && (
+                <p className="text-sm text-muted-foreground">
+                  {campaign.prova_inviata_at === null
+                    ? 'Manda prima una prova dal passo Prova.'
+                    : 'Hai modificato la campagna dopo la prova: mandane un’altra dal passo Prova.'}
+                </p>
+              )}
+              <Failure message={failureMessage(schedule.error)} />
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}

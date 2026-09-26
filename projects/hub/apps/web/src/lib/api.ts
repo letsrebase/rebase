@@ -469,6 +469,10 @@ export interface CompanyList {
 export type MatchStato = 'bozza' | 'in_firma' | 'attivo' | 'concluso' | 'annullato'
 export type DocumentStato = 'generato' | 'in_attesa' | 'inviato' | 'firmato' | 'annullato' | 'disdetto'
 
+/** What an admin can do next on a document or a match (REB-477), as the core's
+ *  `match_words` names it: the page maps each to its button and its API call. */
+export type Action = 'invia' | 'reinvia_email' | 'aggiorna_stato' | 'annulla' | 'chiudi' | 'registra_disdetta'
+
 /** A freelancer's tax data, as the two contracts print them. */
 export interface FiscalData {
   codice_fiscale: string
@@ -506,6 +510,10 @@ export interface ContractDocument {
   rinnovo: string | null
   ultimo_giorno_disdetta: string | null
   nuova_versione: boolean
+  /** What happened and what comes next, in a sentence (REB-477). */
+  situazione: string
+  prossima_azione: Action | null
+  altre_azioni: Action[]
 }
 
 export interface Match {
@@ -523,6 +531,10 @@ export interface Match {
   cancelled_at: string | null
   updated_at: string
   lettera: ContractDocument
+  /** Same as the document's: the match's sentence and its actions (REB-477). */
+  situazione: string
+  prossima_azione: Action | null
+  altre_azioni: Action[]
 }
 
 /** One row of the admin's «Match» list (REB-413): never a tax field and never
@@ -544,6 +556,8 @@ export interface MatchListItem {
   created_at: string
   created_by_nome: string
   created_by_email: string
+  /** The match's sentence, the one `Match` carries (REB-477). */
+  situazione: string
 }
 
 /** `GET /api/hub/matches`'s shape (REB-413): newest first, `totale` counting every
@@ -559,6 +573,118 @@ export interface MatchList {
 export interface MatchesFilters {
   stato?: string
   q?: string
+}
+
+// ---- campaigns (P-REB-41) -------------------------------------------------------------
+
+export type CampaignStato = 'bozza' | 'programmata' | 'in_invio' | 'inviata' | 'annullata'
+export type CampaignAzione =
+  | 'entrato'
+  | 'cv'
+  | 'scheda_completa'
+  | 'profilo_creato'
+  | 'richiesta_aggiornata'
+  | 'pigro_cliente'
+export type CampaignMeta = 'area' | 'wizard' | 'pigro' | 'richiesta'
+export type RecipientStato = 'in_coda' | 'inviata' | 'saltata' | 'fallita'
+
+export interface Campaign {
+  id: string
+  nome: string
+  slug: string
+  fonte: 'stato' | 'filtri' | 'lista'
+  stato_percorso: string | null
+  filtri: Record<string, unknown> | null
+  oggetto: string
+  testo: string
+  bottone_testo: string
+  bottone_meta: CampaignMeta
+  azione: CampaignAzione
+  stato: CampaignStato
+  contenuto_at: string
+  programmata_per: string | null
+  prova_inviata_at: string | null
+  inviata_at: string | null
+  created_at: string
+  /** A test has left since the last edit: «Invia» is enabled only then. */
+  pronta: boolean
+}
+
+export interface CampaignCounts {
+  destinatari: number
+  in_coda: number
+  inviate: number
+  saltate: number
+  fallite: number
+  consegnate: number
+  rimbalzate: number
+}
+
+export interface CampaignListItem extends Campaign {
+  conteggi: CampaignCounts
+}
+
+export interface CampaignList {
+  items: CampaignListItem[]
+}
+
+export interface CampaignRecipient {
+  id: string
+  email: string
+  nome: string | null
+  tipo: string
+  stato: RecipientStato
+  motivo: string | null
+  inviata_at: string | null
+  consegnata_at: string | null
+  rimbalzata_at: string | null
+}
+
+export interface CampaignDetail {
+  campagna: Campaign
+  conteggi: CampaignCounts
+  destinatari: CampaignRecipient[]
+}
+
+export interface AudienceRow {
+  email: string
+  nome: string | null
+  tipo: string
+  escluso: string | null
+}
+
+export interface AudiencePreview {
+  righe: AudienceRow[]
+  incluse: number
+  escluse: number
+}
+
+export interface CampaignTemplate {
+  stato_percorso: string
+  etichetta: string
+  oggetto: string
+  testo: string
+  bottone_testo: string
+  bottone_meta: CampaignMeta
+  azione: CampaignAzione
+}
+
+export interface CampaignDraft {
+  nome: string
+  fonte: 'stato' | 'filtri'
+  stato_percorso?: string | null
+  filtri?: Record<string, unknown> | null
+  oggetto: string
+  testo: string
+  bottone_testo: string
+  bottone_meta: CampaignMeta
+  azione: CampaignAzione
+}
+
+export interface ScheduleRequest {
+  giorno?: string | null
+  ora?: string | null
+  esclusi: string[]
 }
 
 /** «Match e contratti»: the framework agreement at the top, every one of them, the
@@ -658,13 +784,22 @@ export interface Cliente {
 export type ClienteDraft = { [K in keyof Cliente]: string | null }
 
 /** `id` is optional and client-generated (REB-406): one per wizard run, sent with both
- *  «Salva come bozza» and «Invia per la firma», so a retry after the response is lost
+ *  «Salva senza inviare» and «Invia per la firma», so a retry after the response is lost
  *  writes nothing new -- the server returns the match already written under it. */
 export interface MatchCreate {
   id?: string
   company_id: string
   cliente: Cliente
   lettera: Lettera
+}
+
+/** What saving a match would do, in sentences, with nothing written (REB-476):
+ *  «Controlla e invia» shows `riepilogo` and `cosa_succede` as they come. */
+export interface MatchCheck {
+  riepilogo: string[]
+  cosa_succede: string
+  quadro_necessario: boolean
+  dati_fiscali_mancanti: boolean
 }
 
 export interface MatchPrefill {
@@ -714,6 +849,19 @@ function listQuery({ q, cursor, limit }: ListPageParams): string {
 }
 
 export const admin = {
+  campaigns: () => request<CampaignList>('/api/hub/campaigns'),
+  campaignTemplates: () => request<CampaignTemplate[]>('/api/hub/campaigns/templates'),
+  campaign: (id: string) => request<CampaignDetail>(`/api/hub/campaigns/${id}`),
+  createCampaign: (data: CampaignDraft) => request<Campaign>('/api/hub/campaigns', json(data)),
+  updateCampaign: (id: string, data: Partial<CampaignDraft>) =>
+    request<Campaign>(`/api/hub/campaigns/${id}`, { ...json(data), method: 'PATCH' }),
+  campaignAudience: (id: string) => request<AudiencePreview>(`/api/hub/campaigns/${id}/audience`),
+  testCampaign: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/test`, { method: 'POST' }),
+  scheduleCampaign: (id: string, data: ScheduleRequest) =>
+    request<Campaign>(`/api/hub/campaigns/${id}/schedule`, json(data)),
+  campaignToDraft: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/draft`, { method: 'POST' }),
+  cancelCampaign: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/cancel`, { method: 'POST' }),
+  neverWrite: (email: string) => request<{ ok: boolean }>('/api/hub/campaigns/never-write', json({ email })),
   freelancer: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}`),
   cvUrl: (id: string) => `/api/hub/freelancers/${id}/cv`,
   moveFreelancer: (id: string, stato: string, note: string | null) =>
@@ -840,10 +988,14 @@ export const admin = {
     request<MatchPrefill>(
       `/api/hub/freelancers/${freelancerId}/matches/prefill?company_id=${encodeURIComponent(companyId)}`,
     ),
-  /** Step 5's preview: a PDF typeset now and saved nowhere. */
+  /** «Controlla e invia»'s sentences (REB-476): a 422 names the field as `createMatch`
+   *  would, and nothing is written. */
+  matchCheck: (freelancerId: string, payload: MatchCreate) =>
+    request<MatchCheck>(`/api/hub/freelancers/${freelancerId}/matches/check`, json(payload)),
+  /** «Controlla e invia»'s previews: a PDF typeset now and saved nowhere. */
   matchPreview: (freelancerId: string, payload: MatchCreate, documento: 'lettera' | 'quadro') =>
     requestBlob(`/api/hub/freelancers/${freelancerId}/matches/preview?documento=${documento}`, json(payload)),
-  /** «Salva come bozza»: the draft match with its numbered letter. */
+  /** «Salva senza inviare»: the draft match with its numbered letter. */
   createMatch: (freelancerId: string, payload: MatchCreate) =>
     request<Match>(`/api/hub/freelancers/${freelancerId}/matches`, json(payload)),
   cancelMatch: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/cancel`, { method: 'POST' }),
@@ -975,4 +1127,11 @@ export const member = {
   /** A signed copy, a plain href like `cvUrl`: the route answers an attachment. */
   contractPdfUrl: (documentId: string) => `/api/hub/me/contracts/${documentId}/pdf`,
   logout: () => request<void>('/api/hub/me/logout', { method: 'POST' }),
+}
+
+// ---- campaigns, the public part -----------------------------------------------------------
+
+export const campaigns = {
+  unsubscribe: (t: string) =>
+    request<{ ok: boolean }>(`/api/hub/campagne/disiscrizione?t=${encodeURIComponent(t)}`, { method: 'POST' }),
 }

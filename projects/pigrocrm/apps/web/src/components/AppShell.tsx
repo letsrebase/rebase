@@ -45,6 +45,7 @@ import { api, toProblem, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useAuth, useIsAdmin } from '@/lib/auth'
 import { canSeeSettingsTab } from '@/lib/permissions'
+import { writeRegisterHandoffEmail } from '@/lib/registerHandoff'
 import { roleLabel } from '@/lib/roles'
 import { tenantPrefix } from '@/lib/tenant'
 import { cn } from '@rebase/ui/cn'
@@ -644,7 +645,12 @@ export function AppShell({
                     </span>
                   </DropdownMenuItem>
                 ))}
-              <DropdownMenuItem onSelect={() => go('/app/register')}>
+              <DropdownMenuItem
+                onSelect={() => {
+                  if (user) writeRegisterHandoffEmail(user.email)
+                  go('/app/register')
+                }}
+              >
                 <Plus className="size-4" />
                 Crea un nuovo spazio
               </DropdownMenuItem>

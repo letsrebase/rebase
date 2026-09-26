@@ -27,6 +27,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 })
 
 import { api } from '@/lib/api'
+import { writeRegisterHandoffEmail } from '@/lib/registerHandoff'
 import { SignupPage } from './register'
 
 const GET = api.GET as unknown as ReturnType<typeof vi.fn>
@@ -35,6 +36,7 @@ const POST = api.POST as unknown as ReturnType<typeof vi.fn>
 const NOBODY = { membro: false, nome: null, cognome: null, spazi: 0 }
 const MEMBER = { membro: true, nome: 'Ada', cognome: 'Lovelace', spazi: 0 }
 const OWNER = { membro: true, nome: 'Ada', cognome: 'Lovelace', spazi: 1 }
+const OTHER = { membro: true, nome: 'Zoe', cognome: 'Nkosi', spazi: 1 }
 
 /** `POST` answers by path: the member question, the link, the signup. */
 function answers(by: Record<string, unknown>) {
@@ -51,6 +53,7 @@ beforeEach(() => {
   GET.mockReset()
   POST.mockReset()
   navigate.mockReset()
+  sessionStorage.clear()
   GET.mockResolvedValue({ data: { slug: 'ada-lovelace', disponibile: true } })
 })
 
@@ -281,5 +284,130 @@ describe('the signup wizard', () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
     expect(screen.getByRole('status')).toHaveTextContent(/\/beta è libero/)
+  })
+})
+
+describe('the fast path (REB-488)', () => {
+  it('lands on the name step directly, with no email or owner screen, even for an address that already owns a space', async () => {
+    writeRegisterHandoffEmail('ada@studio.it')
+    answers({ '/api/tenants/member': OWNER })
+    render(<SignupPage />)
+    expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Con quale email ti conosciamo?')).toBeNull()
+    expect(screen.queryByText('Hai già uno spazio')).toBeNull()
+    expect(await screen.findByText(/Sei dei nostri: ciao Ada/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toHaveValue('Ada Lovelace')
+  })
+
+  it('clears the handoff from sessionStorage once read, so a reload of this page never re-arms it', () => {
+    writeRegisterHandoffEmail('ada@studio.it')
+    answers({ '/api/tenants/member': NOBODY })
+    render(<SignupPage />)
+    expect(sessionStorage.getItem('pigrocrm:register-handoff-email')).toBeNull()
+  })
+
+  it('ignores a handoff written more than 30s ago, the same shared-tab-reuse case Greptile raised', async () => {
+    sessionStorage.setItem(
+      'pigrocrm:register-handoff-email',
+      JSON.stringify({ email: 'ada@studio.it', issuedAt: Date.now() - 60_000 }),
+    )
+    render(<SignupPage />)
+    expect(await screen.findByLabelText('Con quale email ti conosciamo?')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Come si chiama il tuo spazio?')).toBeNull()
+  })
+
+  it('titles the card for an additional space, not the first one', async () => {
+    writeRegisterHandoffEmail('ada@studio.it')
+    answers({ '/api/tenants/member': NOBODY })
+    render(<SignupPage />)
+    expect(await screen.findByText('Crea un nuovo spazio')).toBeInTheDocument()
+  })
+
+  it('creates the space with the email the caller already knew, and the membro flag the background lookup answered', async () => {
+    writeRegisterHandoffEmail('ada@studio.it')
+    answers({ '/api/tenants/member': OWNER, '/api/tenants/': { slug: 'ada-lovelace' } })
+    const go = vi.fn()
+    render(<SignupPage go={go} />)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Crea lo spazio' }))
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/tenants/', {
+        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'ada@studio.it', membro: true },
+      }),
+    )
+    await waitFor(() => expect(go).toHaveBeenCalledWith('/ada-lovelace/app/'))
+  })
+
+  it('never overwrites a name the person already started typing while the background lookup is still in flight', async () => {
+    writeRegisterHandoffEmail('ada@studio.it')
+    let resolveMember: (value: { data: unknown; response: { status: number } }) => void = () => {}
+    POST.mockImplementation(((path: string) =>
+      path === '/api/tenants/member'
+        ? new Promise((resolve) => (resolveMember = resolve))
+        : Promise.resolve({ data: {}, response: { status: 200 } })) as never)
+    const user = userEvent.setup()
+    render(<SignupPage />)
+    await user.type(screen.getByLabelText('Come si chiama il tuo spazio?'), 'Studio Bob')
+    resolveMember({ data: OWNER, response: { status: 200 } })
+    expect(await screen.findByText(/Sei dei nostri/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toHaveValue('Studio Bob')
+  })
+
+  it('drops a fast-path answer that lands after the person went back to a different email', async () => {
+    writeRegisterHandoffEmail('ada@studio.it')
+    let resolveOriginal: (value: { data: unknown; response: { status: number } }) => void = () => {}
+    let calls = 0
+    POST.mockImplementation(((path: string) => {
+      if (path === '/api/tenants/member') {
+        calls += 1
+        return calls === 1
+          ? new Promise((resolve) => (resolveOriginal = resolve))
+          : Promise.resolve({ data: MEMBER, response: { status: 200 } })
+      }
+      return Promise.resolve({ data: {}, response: { status: 200 } })
+    }) as never)
+    const user = userEvent.setup()
+    render(<SignupPage />)
+    await user.click(screen.getByRole('button', { name: 'Indietro' }))
+    await throughStepOne(user, 'bob@studio.it')
+    expect(await screen.findByText(/Sei dei nostri: ciao Ada/)).toBeInTheDocument()
+    // The abandoned fast-path lookup (still tied to ada@studio.it) answers late, for
+    // an email nobody is looking at anymore -- it must not land over bob's answer.
+    resolveOriginal({ data: OTHER, response: { status: 200 } })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(screen.getByText(/Sei dei nostri: ciao Ada/)).toBeInTheDocument()
+    expect(screen.queryByText(/ciao Zoe/)).toBeNull()
+  })
+
+  it('keeps the copy in step with the form after backing out of the fast path', async () => {
+    writeRegisterHandoffEmail('ada@studio.it')
+    answers({ '/api/tenants/member': NOBODY })
+    const user = userEvent.setup()
+    render(<SignupPage />)
+    expect(screen.getByText('Crea un nuovo spazio')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Indietro' }))
+    expect(screen.getByText('Crea il tuo spazio')).toBeInTheDocument()
+    expect(screen.getByText(/1 di 2/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Con quale email ti conosciamo?')).toBeInTheDocument()
+  })
+
+  it('keeps the create button disabled until the background member lookup settles, even once the slug is free', async () => {
+    writeRegisterHandoffEmail('ada@studio.it')
+    let resolveMember: (value: { data: unknown; response: { status: number } }) => void = () => {}
+    POST.mockImplementation(((path: string) =>
+      path === '/api/tenants/member'
+        ? new Promise((resolve) => (resolveMember = resolve))
+        : Promise.resolve({ data: {}, response: { status: 200 } })) as never)
+    const user = userEvent.setup()
+    render(<SignupPage />)
+    await user.type(screen.getByLabelText('Come si chiama il tuo spazio?'), 'Studio Bob')
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/è libero/))
+    expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeDisabled()
+    resolveMember({ data: MEMBER, response: { status: 200 } })
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
+    )
   })
 })

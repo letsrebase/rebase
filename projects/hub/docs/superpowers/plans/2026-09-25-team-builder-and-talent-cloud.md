@@ -522,7 +522,7 @@ class TeamRequestService:
     def set_summary(self, request_id: UUID, riassunto: str, admin_id: UUID) -> TeamRequestRead: ...
 ```
 
-  `create`: the proposal must exist, be public (`origine == "public"`) and younger than
+  `create`: the proposal must exist, be public (`origine == "pubblico"`) and younger than
   a day (`ValidationFailed`);
   the insert relies on `uq_team_requests_proposal_id`, and an `IntegrityError` on it
   becomes `InvalidState("Questa proposta è già stata richiesta.", proposal_id=...)`

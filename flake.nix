@@ -281,15 +281,15 @@
               core = ./projects/pigrocrm/packages/core;
             };
             # `rebase_core.contracts.render` shells out to bare `pandoc` and `typst`,
-            # and `.brand` reads the palette and the typeface at the repository's own
-            # paths (`REPO = parents[7]`), which a store venv does not have. Both
-            # binaries and a copy of the two files go into this derivation, the files
-            # at `share/hub-api/brand`; `postBuild` then rewraps `bin/rebase` (the CLI:
-            # `contracts-check`, `contracts-sweep`) and `bin/uvicorn` (both
-            # `rebase_api.main:app` and `rebase_mcp.http:app` run from it, one venv for
-            # both) with `makeWrapper`, so every entry point that can render a contract
-            # finds `pandoc`, `typst` and the brand on its own, with nothing set by a
-            # caller (REB-403).
+            # and `.brand` reads the palette, the typeface and the echo logo at the
+            # repository's own paths (`REPO = parents[7]`), which a store venv does not
+            # have. Both binaries and a copy of the three files go into this
+            # derivation, the files at `share/hub-api/brand`; `postBuild` then rewraps
+            # `bin/rebase` (the CLI: `contracts-check`, `contracts-sweep`) and
+            # `bin/uvicorn` (both `rebase_api.main:app` and `rebase_mcp.http:app` run
+            # from it, one venv for both) with `makeWrapper`, so every entry point that
+            # can render a contract finds `pandoc`, `typst` and the brand on its own,
+            # with nothing set by a caller (REB-403, the echo since REB-479).
             hub-api = pkgs.symlinkJoin {
               name = "hub-api";
               paths = [
@@ -308,6 +308,8 @@
                     "$out/share/hub-api/brand/palette.css"
                   install -Dm444 ${./shared/brand/fonts/outfit-variable-latin.woff2} \
                     "$out/share/hub-api/brand/fonts/outfit-variable-latin.woff2"
+                  install -Dm444 ${./shared/brand/echo/echo-ink-watermelon-outlines-260.png} \
+                    "$out/share/hub-api/brand/echo/echo-ink-watermelon-outlines-260.png"
                 '')
               ];
               nativeBuildInputs = [ pkgs.makeWrapper ];

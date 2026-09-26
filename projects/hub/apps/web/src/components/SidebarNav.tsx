@@ -8,6 +8,7 @@ import {
   LogIn,
   LogOut,
   Plug,
+  Send,
   ShieldCheck,
   UserRound,
 } from 'lucide-react'
@@ -21,10 +22,12 @@ import { useLogout } from '@/lib/me'
  *  overlapping views of the same people, are one entry, «Talenti», over the read
  *  model that merges them (REB-283); the rest keep their label, icon and path. «Match»
  *  (REB-413) lists every match the milestone's other four admin pages create, between
- *  the two lists it draws its rows from. */
+ *  the two lists it draws its rows from. «Campagne» (P-REB-41) lists the mails an
+ *  admin sends the community, one state and one outcome at a time. */
 const ADMIN_NAV = [
   { to: '/admin/talent', label: 'Talenti', icon: UserRound },
   { to: '/admin/matches', label: 'Match', icon: Handshake },
+  { to: '/admin/campaigns', label: 'Campagne', icon: Send },
   { to: '/admin/companies', label: 'Aziende', icon: Briefcase },
   { to: '/admin/pigro', label: 'Istanze Pigro', icon: Boxes },
   { to: '/admin/guide', label: 'La guida', icon: BookOpen },

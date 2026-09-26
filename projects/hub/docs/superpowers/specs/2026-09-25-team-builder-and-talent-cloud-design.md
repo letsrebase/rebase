@@ -216,8 +216,8 @@ the visitor.
 
 - `POST /api/hub/team/proposals` (public, behind the wizards' `spend_one` speed bump):
   `{descrizione, nota?, previous_id?}` → `TeamProposalRead` (§ 3.3). `previous_id`
-  must name a proposal of the caller's origin (`public` here, `cloud` on the cloud's
-  route, where it must also be the caller's own) younger than a day, else `422`; the
+  must name a proposal of the caller's origin (`pubblico` here, `cloud` on the
+  cloud's route, where it must also be the caller's own) younger than a day, else `422`; the
   proposal's id, a UUID with random bits the caller received, is its capability. `503` with «Il team builder è spento.» when
   `REBASE_TEAM_BUILDER_ENABLED` is false or no API key is configured
   (`TeamBuilderOff`, a domain error the API maps to `503`); `503` with «Troppe
