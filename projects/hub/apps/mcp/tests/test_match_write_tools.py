@@ -280,6 +280,44 @@ async def test_create_match_saves_the_draft_with_the_fields_given(world: World) 
     assert world.document(body["lettera"]["id"]).data["ruolo"] == "Staff engineer"
 
 
+async def test_create_match_saves_the_expected_days_beside_the_letter(world: World) -> None:
+    """`giorni_previsti` (REB-501, spec § 3.4) sits on the match, forwarded into
+    `MatchCreate` beside `cliente`/`condizioni` rather than inside them: the letter's own
+    fields and text (the summary this asserts against) do not change from this number."""
+    async with Client(world.server()) as client:
+        body = await _create(
+            client,
+            world,
+            cliente=CLIENTE,
+            condizioni={"ruolo": "Staff engineer"},
+            giorni_previsti=40,
+        )
+    assert body["giorni_previsti"] == 40
+    assert world.document(body["lettera"]["id"]).data["ruolo"] == "Staff engineer"
+    assert "giorni_previsti" not in world.document(body["lettera"]["id"]).data
+
+
+async def test_create_match_with_no_giorni_previsti_leaves_it_unset(world: World) -> None:
+    async with Client(world.server()) as client:
+        body = await _create(client, world, cliente=CLIENTE)
+    assert body["giorni_previsti"] is None
+
+
+async def test_create_match_refuses_an_out_of_range_giorni_previsti(world: World) -> None:
+    before = world.written()
+    async with Client(world.server()) as client:
+        refused = await _refused(
+            client,
+            "create_match",
+            freelancer_id=world.freelancer_id,
+            company_id=world.company_id,
+            cliente=CLIENTE,
+            giorni_previsti=0,
+        )
+    assert refused == "giorni_previsti: non valido"
+    assert world.written() == before
+
+
 async def test_create_match_with_no_fields_takes_the_hubs_proposal(world: World) -> None:
     """The client as the same company's last match named it, the letter from the request,
     the card and rebase's own terms: a second match for a known client needs nothing."""
