@@ -1,0 +1,225 @@
+# The weekly Snyk scan (REB-525): four scans of `main`, their JSON kept as an artifact,
+# and one report filed where the week's work is picked up: a Linear card and a GitHub
+# issue, linked to each other, or a comment on last week's while either is still open.
+# Nothing is fixed or ignored here; a person does that from the card.
+#
+# Why this exists next to the Snyk dashboard's own GitHub import: the import never read
+# `uv.lock` (python-multipart 0.0.20 went unseen until 2026-09-25), and its Dockerfile
+# projects scan the upstream base image rather than what `docker compose build` makes of
+# it, so they stay red after the images we ship are fixed (REB-461, REB-462). This
+# workflow scans the Python deps through a pip export and the images as they are built.
+#
+# `snyk monitor` is never run here: it would add CLI projects to the org next to the
+# GitHub-imported ones. Every scan below is a `snyk test`, which records nothing.
+#
+# The procedure (what runs, the two secrets and how to rotate them, the dry run) is in
+# tooling/snyk-weekly/README.md.
+name: snyk weekly
+
+on:
+  # Monday at 06:00 UTC: 08:00 in Rome in summer and 07:00 in winter, so always after
+  # Dependabot's 06:00 Europe/Rome run (.github/dependabot.yml) and its PRs. `schedule`
+  # only ever runs the version of this file on the default branch.
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Scan, print the report and what would be filed, and file nothing
+        type: boolean
+        default: false
+
+# One run at a time, and never cancelled: two runs at once could both find nothing open
+# and file the same week twice.
+concurrency:
+  group: snyk-weekly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  scan:
+    name: scan and file
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # The org the dashboard already uses (app.snyk.io, `ciao`), named so a token that
+      # belongs to more than one org still tests against this one.
+      SNYK_ORG: ciao
+      # The CLI is a pinned binary checked against its published SHA-256, and moves by
+      # hand: Dependabot reads no version from a `run` step. Take the checksum from
+      # https://downloads.snyk.io/cli/v<version>/snyk-linux.sha256 when bumping.
+      SNYK_VERSION: 1.1307.4
+      SNYK_SHA256: b0baee4fa4d7d11b7df927a1046cf8137a8a89fafac8101a45c3c0e0777ddc35
+    steps:
+      # The job's token is handed to the filing step alone, not left in .git/config for
+      # every build and scan below.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # The same uv as `_python-gate.yml` and `ci.yml`, which is the one that wrote uv.lock.
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: '0.9.24'
+
+      - name: Install the Snyk CLI
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          if [ -z "$SNYK_TOKEN" ]; then
+            echo '::error title=snyk-weekly::The SNYK_TOKEN secret is not set (tooling/snyk-weekly/README.md).'
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/bin" "$RUNNER_TEMP/snyk-json"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/bin/snyk" "https://downloads.snyk.io/cli/v${SNYK_VERSION}/snyk-linux"
+          echo "${SNYK_SHA256}  $RUNNER_TEMP/bin/snyk" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/bin/snyk"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          echo "SNYK_JSON=$RUNNER_TEMP/snyk-json" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/bin/snyk" --version
+
+      # Every scan below exits 0 when it finds nothing and 1 when it finds something,
+      # and both are results: `|| [ $? -eq 1 ]` lets a finding through. Anything else
+      # (2 is a CLI or auth failure, 3 no supported project) fails the step, and with it
+      # the job, before anything is filed from a partial set of scans. SNYK_TOKEN is set
+      # on the steps that run Snyk and on no other.
+
+      # The lockfile is read as it is: nothing is installed, so there is no node_modules
+      # for `--all-projects` to wander into, and every workspace package is its own
+      # project (seven on 2026-09-26). devDependencies are left out, as the dashboard's
+      # import leaves them out. `--fail-fast` turns one project Snyk cannot test into a
+      # failed step, where without it the CLI would exit 0 or 1 and only say so inside
+      # the JSON (the script still reports such an error as "Did not scan").
+      - name: Scan the pnpm workspace
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          snyk test --all-projects --fail-fast --org="$SNYK_ORG" --json-file-output="$SNYK_JSON/pnpm.json" || [ $? -eq 1 ]
+          test -s "$SNYK_JSON/pnpm.json"
+
+      # Snyk cannot read uv.lock ("Could not detect package manager"), so the locked
+      # production dependencies of every workspace member go through pip: exported
+      # without the members themselves, installed into a throwaway venv with their
+      # environment markers honoured, and handed to Snyk as the venv's own `pip freeze`.
+      # Stripping the markers instead makes `pywin32` and `colorama` part of the file,
+      # and Snyk stops on SNYK-OS-PYTHON-0013 because they cannot be installed on Linux.
+      # The venv lives outside the checkout, where Snyk Code below does not look, and is
+      # installed in a step of its own, without the Snyk token.
+      - name: Export and install the Python dependencies
+        run: |
+          work="$RUNNER_TEMP/snyk-python"
+          mkdir -p "$work"
+          uv export --frozen --no-dev --all-packages --no-emit-workspace --no-hashes -o "$work/requirements.lock.txt"
+          cd "$work"
+          uv venv --seed --python "$(cat "$GITHUB_WORKSPACE/.python-version")" .venv
+          uv pip install --python .venv/bin/python -r requirements.lock.txt
+          .venv/bin/python -m pip freeze > requirements.txt
+          wc -l requirements.txt
+
+      - name: Scan the Python dependencies
+        working-directory: ${{ runner.temp }}/snyk-python
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          snyk test --file=requirements.txt --package-manager=pip --command=.venv/bin/python \
+            --org="$SNYK_ORG" --json-file-output="$SNYK_JSON/python.json" || [ $? -eq 1 ]
+          test -s "$SNYK_JSON/python.json"
+
+      # Reads `.snyk`, whose `exclude.code` keeps the test trees out, and the ignores made
+      # in Snyk's UI, which come back as suppressions and are not filed. An inline
+      # `deepcode ignore` comment does nothing: the org runs Consistent Ignores. A clean
+      # run (exit 0) writes no file at all, unlike `snyk test` (checked on 2026-09-26 with
+      # CLI 1.1307.4), so an empty SARIF stands in for it.
+      - name: Scan the code
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          status=0
+          snyk code test --org="$SNYK_ORG" --json-file-output="$SNYK_JSON/code.json" || status=$?
+          if [ "$status" -gt 1 ]; then exit "$status"; fi
+          # Only a clean run stands for "nothing found"; a run that found something and
+          # wrote nothing is a failure, not a clean week.
+          if [ "$status" -eq 0 ] && [ ! -s "$SNYK_JSON/code.json" ]; then
+            echo '{"version":"2.1.0","runs":[]}' > "$SNYK_JSON/code.json"
+          fi
+          test -s "$SNYK_JSON/code.json"
+
+      # The images the way ci.yml's tier 3 builds them: the project's compose file from
+      # its own directory, with the same throwaway values for the variables compose
+      # interpolates before a build. Only `api` and `web`: the other services (mcp,
+      # campaigns, sweep) build the same Dockerfile.api into the same image. `--file`
+      # gives Snyk the Dockerfile, so it names the base image and its upgrade.
+      - name: Build and scan the pigrocrm images
+        working-directory: projects/pigrocrm
+        env:
+          POSTGRES_PASSWORD: build-only-never-used
+          PIGROCRM_JWT_SECRET: build-only-never-used-and-long-enough-for-the-validator
+          PIGROCRM_DATA_DIR: ./build-only-never-mounted
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          docker compose build api web
+          for service in api web; do
+            snyk container test "pigrocrm-$service" --file="Dockerfile.$service" --org="$SNYK_ORG" \
+              --json-file-output="$SNYK_JSON/image-pigrocrm-$service.json" || [ $? -eq 1 ]
+            test -s "$SNYK_JSON/image-pigrocrm-$service.json"
+          done
+
+      - name: Build and scan the hub images
+        working-directory: projects/hub
+        env:
+          POSTGRES_PASSWORD: build-only-never-used
+          REBASE_DATA_DIR: ./build-only-never-mounted
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          docker compose -p rebase build api web
+          for service in api web; do
+            snyk container test "rebase-$service" --file="Dockerfile.$service" --org="$SNYK_ORG" \
+              --json-file-output="$SNYK_JSON/image-rebase-$service.json" || [ $? -eq 1 ]
+            test -s "$SNYK_JSON/image-rebase-$service.json"
+          done
+
+      - name: Build and scan the website image
+        working-directory: projects/website
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        run: |
+          docker compose build web
+          snyk container test website-web --file=Dockerfile --org="$SNYK_ORG" \
+            --json-file-output="$SNYK_JSON/image-website-web.json" || [ $? -eq 1 ]
+          test -s "$SNYK_JSON/image-website-web.json"
+
+      # Kept whatever happened above, so a failed run still shows what the scans that
+      # finished had found.
+      - name: Keep the JSON
+        id: upload
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: snyk-json
+          path: ${{ runner.temp }}/snyk-json/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Only after every scan finished: a report built from a partial set would read as
+      # clean where it only was not looked at. The whole table also goes to this run's
+      # job summary.
+      - name: File the report
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          # `false` on a scheduled run, which has no inputs, so Monday always files. A
+          # manual run from any branch but main is always a dry run: the report says
+          # `main`, and a branch's findings are not the week's.
+          DRY_RUN: ${{ inputs.dry_run == true || github.ref != 'refs/heads/main' }}
+        run: |
+          args=(--dir "$SNYK_JSON" --artifact-url "$ARTIFACT_URL")
+          if [ "$DRY_RUN" = true ]; then args+=(--dry-run); fi
+          node tooling/snyk-weekly/snyk-weekly.mjs "${args[@]}"

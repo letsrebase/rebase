@@ -1,0 +1,83 @@
+{
+  "ok": false,
+  "packageManager": "pip",
+  "projectName": "vulnpy",
+  "displayTargetFile": "requirements.txt",
+  "dependencyCount": 6,
+  "uniqueCount": 3,
+  "summary": "3 vulnerable dependency paths",
+  "vulnerabilities": [
+    {
+      "id": "SNYK-PYTHON-PYTHONMULTIPART-15117506",
+      "title": "Directory Traversal",
+      "severity": "high",
+      "packageName": "python-multipart",
+      "name": "python-multipart",
+      "version": "0.0.20",
+      "identifiers": {
+        "CVE": [
+          "CVE-2026-24486"
+        ],
+        "CWE": [
+          "CWE-22"
+        ]
+      },
+      "fixedIn": [
+        "0.0.22"
+      ],
+      "from": [
+        "vulnpy@0.0.0",
+        "python-multipart@0.0.20"
+      ],
+      "packageManager": "pip"
+    },
+    {
+      "id": "SNYK-PYTHON-PYTHONMULTIPART-16078395",
+      "title": "Excessive Iteration",
+      "severity": "medium",
+      "packageName": "python-multipart",
+      "name": "python-multipart",
+      "version": "0.0.20",
+      "identifiers": {
+        "CVE": [
+          "CVE-2026-40347"
+        ],
+        "CWE": [
+          "CWE-834"
+        ]
+      },
+      "fixedIn": [
+        "0.0.26"
+      ],
+      "from": [
+        "vulnpy@0.0.0",
+        "python-multipart@0.0.20"
+      ],
+      "packageManager": "pip"
+    },
+    {
+      "id": "SNYK-PYTHON-REQUESTS-6928867",
+      "title": "Always-Incorrect Control Flow Implementation",
+      "severity": "medium",
+      "packageName": "requests",
+      "name": "requests",
+      "version": "2.31.0",
+      "identifiers": {
+        "CVE": [
+          "CVE-2024-35195"
+        ],
+        "CWE": [
+          "CWE-670"
+        ]
+      },
+      "fixedIn": [
+        "2.32.2"
+      ],
+      "from": [
+        "vulnpy@0.0.0",
+        "requests@2.31.0"
+      ],
+      "packageManager": "pip"
+    }
+  ]
+}

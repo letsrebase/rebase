@@ -175,6 +175,19 @@ async def test_companies_search_filter_and_walk_the_same_page(clean: Any) -> Non
     assert len(set(ids)) == 3
 
 
+async def test_a_filter_amount_is_read_with_italian_thousands(clean: Any) -> None:
+    """REB-485: «1.500» as a floor is fifteen hundred; read as 1.5 it let both through."""
+    _card(clean, "Ada", "Lovelace", "ada@studio.it", "1200")
+    _card(clean, "Bruno", "Neri", "bruno@studio.it", "1800")
+    _company(clean, "ACME Srl", "wile@acme.it", "Un backend developer per tre mesi.", "1200")
+    _company(clean, "Rossi Lab", "paperone@rossilab.it", "Una pipeline dati.", "1800")
+    async with _server(clean) as client:
+        priced = _payload(await client.call_tool("list_talenti", {"tariffa_min": "1.500"}))
+        rich = _payload(await client.call_tool("list_aziende", {"budget_min": "1.234,50"}))
+    assert [item["email"] for item in priced["items"]] == ["bruno@studio.it"]
+    assert [item["email"] for item in rich["items"]] == ["paperone@rossilab.it"]
+
+
 async def test_a_garbage_decimal_or_date_answers_an_italian_sentence(clean: Any) -> None:
     async with _server(clean) as client:
         bad_number = await client.call_tool("list_talenti", {"tariffa_min": "tanto"})

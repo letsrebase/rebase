@@ -405,6 +405,11 @@ async def test_the_proposals_answer_the_domains_the_owner_wrote_to_and_store_not
         1, frm=MAILBOX, to="Marco Bianchi <marco@acme.it>", thread="t1"
     )
     fake_gmail.messages["m2"] = _mail(2, frm="news@newsletter.com", to=MAILBOX, thread="t2")
+    # Counted before the call, not asserted to be zero after it: the test database is
+    # one per xdist worker, and a file that ran earlier on the same worker may have
+    # committed a customer of its own (test_log_time_concurrency.py seeds one).
+    messages_before = mcp_session.scalar(select(func.count()).select_from(GmailMessage))
+    customers_before = mcp_session.scalar(select(func.count()).select_from(Customer))
 
     async with Client(open_server) as client:
         result = await client.call_tool(SUGGEST, {})
@@ -413,5 +418,5 @@ async def test_the_proposals_answer_the_domains_the_owner_wrote_to_and_store_not
     proposals = payload["result"] if isinstance(payload, dict) else payload
     assert [proposal["dominio"] for proposal in proposals] == ["acme.it"]
     assert proposals[0]["persone"][0]["nome"] == "Marco Bianchi"
-    assert mcp_session.execute(select(func.count()).select_from(GmailMessage)).scalar_one() == 0
-    assert mcp_session.execute(select(func.count()).select_from(Customer)).scalar_one() == 0
+    assert mcp_session.scalar(select(func.count()).select_from(GmailMessage)) == messages_before
+    assert mcp_session.scalar(select(func.count()).select_from(Customer)) == customers_before

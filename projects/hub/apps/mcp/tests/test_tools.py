@@ -2,6 +2,7 @@
 
 import json
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -354,6 +355,35 @@ async def test_a_card_is_written_from_a_signup_with_its_sources_in_the_thread(
             {"signup_id": signup_id, "nome": "Ada", "cognome": "Lovelace", "fonti": []},
         )
         assert refused.is_error
+    _wipe(factory)
+
+
+async def test_a_card_from_a_signup_reads_its_rate_with_italian_thousands(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-485: through the same reading as every other amount tool, and a rate that is
+    not one is refused in a sentence naming the field, not a `decimal` traceback."""
+    _seed(factory, ["ada@studio.it"])
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        lead_rows = _payload(await client.call_tool("list_talenti", {"stato": "lead"}))
+        signup_id = lead_rows["items"][0]["id"]
+        draft = {
+            "signup_id": signup_id,
+            "nome": "Ada",
+            "cognome": "Lovelace",
+            "fonti": ["https://www.linkedin.com/in/ada"],
+        }
+        refused = await client.call_tool(
+            "create_freelancer_from_signup", {**draft, "tariffa_giornaliera": "tanto"}
+        )
+        assert refused.is_error and "tariffa_giornaliera" in refused.content[0].text
+        created = _payload(
+            await client.call_tool(
+                "create_freelancer_from_signup", {**draft, "tariffa_giornaliera": "1.500"}
+            )
+        )
+        # The draft answers the value it wrote, before the column's two decimals.
+        assert Decimal(created["tariffa_giornaliera"]) == Decimal("1500")
     _wipe(factory)
 
 

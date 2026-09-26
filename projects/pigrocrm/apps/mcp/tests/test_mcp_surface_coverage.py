@@ -600,6 +600,19 @@ _COPERTE_O_UMANE: dict[Method, str] = {
         "spaces are not the titolare's CRM data, and an agent acting in one space has no "
         "business listing everybody else's"
     ),
+    ("EngagementService", "ensure"): (
+        "the engagements door another product, the hub, calls under its own "
+        "PIGROCRM_ENGAGEMENTS_TOKEN (spec 2026-09-25 §2.3): setting up a match's space, "
+        "customer and deal is the hub's own act on a signed letter, never something an "
+        "agent inside a space decides on the titolare's behalf, and no per-space schema "
+        "changed for it (§2.6)"
+    ),
+    ("EngagementService", "report"): (
+        "reads a match's hours back for the same hub door (spec 2026-09-25 §2.4), never "
+        "for an agent in the space: the deal's own hours are already `list_time_entries`, "
+        "and this route reads nothing else of the space -- not its customers, not its "
+        "other deals, not an invoice these hours do not sit on"
+    ),
     ("TenantService", "count_for_owner"): (
         "il registro degli spazi non e' superficie di uno spazio: lo legge la registrazione "
         "(`POST /api/tenants/member`, ORB-173) per dire a chi torna che ha gia' aperto degli "
