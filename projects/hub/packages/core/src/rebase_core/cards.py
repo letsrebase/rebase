@@ -99,20 +99,28 @@ _ADDRESS = re.compile(r"https?://|www\.|@", re.IGNORECASE)
 
 
 def _identifies(card: Card, cognome: str) -> bool:
-    """Whether the card names the person, by the surname as a whole word in any case in
-    the role, the summary, the skills or the sectors, or carries a link or an email
-    address anywhere. `luogo` and `lingue` are not read for the surname: Messina,
-    Ferrara or Milano is a city the CV may name, Russo, Greco or Tedesco a language the
-    person may speak, and a card refused for its own CV's place would be refused again
-    on «Rigenera». The prompt forbids both; this is what a card that ignored it runs into
+    """Whether the card names the person, by the surname as a whole word written with a
+    capital in the role, the summary, the skills or the sectors, or carries a link or an
+    email address anywhere.
+
+    A capital, because a person's name has one in a sentence and many surnames are
+    words too: Conti is in «la dashboard dei conti», Grande in «grande distribuzione»,
+    Porta in «porta avanti», and a card refused for them is parked until the CV changes.
+    So the surname counts in any case but all lower case: «Conti» and «CONTI» are the
+    person, «conti» is not; of a surname of two words, one capital is enough («de
+    Luca»). `luogo` and `lingue` are not read for the surname: Messina, Ferrara or
+    Milano is a city the CV may name, Russo, Greco or Tedesco a language the person may
+    speak, and a card refused for its own CV's place would be refused again on
+    «Rigenera». The prompt forbids both; this is what a card that ignored it runs into
     before it reaches a page."""
     named = [card.ruolo, card.sintesi, *card.competenze, *card.settori]
     every = [*named, *card.lingue, *([card.luogo] if card.luogo is not None else [])]
     surname = cognome.strip()
     if surname:
         person = re.compile(rf"\b{re.escape(surname)}\b", re.IGNORECASE)
-        if any(person.search(value) for value in named):
-            return True
+        for value in named:
+            if any(not found.group().islower() for found in person.finditer(value)):
+                return True
     return any(_ADDRESS.search(value) for value in every)
 
 
@@ -212,7 +220,9 @@ class CardWriter:
         """Every live freelancer whose CV is neither the card's nor the failed one,
         oldest first, `limit` at a time: the backlog `rebase cards-refresh` works
         through, one batch per run. The hash is computed by Postgres, so the CVs'
-        bytes never leave the database to be compared.
+        bytes never leave the database to be compared. Nor is a turned-down person's
+        CV sent (`stato = 'scartato'`): the catalogue would never show their card
+        (`team_builder.cloud_visible`), so it would be a CV at Anthropic for nothing.
 
         The batch stops at the first outage (`LlmUnavailable`), counted as not done: a
         run of 429s would otherwise walk the whole batch for nothing, and the CVs after
@@ -226,6 +236,7 @@ class CardWriter:
             .outerjoin(FreelancerCard, FreelancerCard.freelancer_id == Freelancer.id)
             .where(
                 Freelancer.deleted_at.is_(None),
+                Freelancer.stato != "scartato",
                 Freelancer.cv_bytes.is_not(None),
                 digest.is_distinct_from(FreelancerCard.cv_sha256),
                 digest.is_distinct_from(FreelancerCard.error_cv_sha256),
