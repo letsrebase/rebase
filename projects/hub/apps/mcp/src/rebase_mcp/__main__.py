@@ -16,6 +16,8 @@ from rebase_core.contracts.render import ContractRenderer
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.errors import DomainError
 from rebase_core.http import urllib_call
+from rebase_core.llm import call_from_settings
+from rebase_core.mail import sender_from_settings
 from rebase_core.signing import signing_from_settings
 from rebase_mcp.server import build_server
 
@@ -45,6 +47,8 @@ def main() -> int:
         http=urllib_call,
         renderer=renderer,
         signing=signing_from_settings(settings, renderer),
+        llm=call_from_settings(settings),
+        sender=sender_from_settings(settings),
     ).run("stdio")
     return 0
 

@@ -19,6 +19,7 @@ writes a contract takes the renderer and `SigningService` as `build_server` is h
 them: the core's `signing_from_settings` for the real ones, test doubles in the tests.
 """
 
+import logging
 from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from decimal import Decimal
@@ -31,11 +32,13 @@ from mcp.server.context import ServerMiddleware
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.amounts import NotAnAmount, italian_amount
+from rebase_core.cards import CardWriter
+from rebase_core.cloud import TalentCloudService
 from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
 from rebase_core.config import Settings
@@ -46,7 +49,9 @@ from rebase_core.errors import DomainError, NotFound, ValidationFailed
 from rebase_core.fiscal import FiscalService
 from rebase_core.freelancers import LEAD_STATE, FreelancerService
 from rebase_core.http import HttpCall
+from rebase_core.llm import LlmCall
 from rebase_core.logins import LoginService
+from rebase_core.mail import EmailSender
 from rebase_core.match_words import send_report_sentence
 from rebase_core.matches import (
     ENTITY,
@@ -55,7 +60,7 @@ from rebase_core.matches import (
     require_live_document,
     require_live_match,
 )
-from rebase_core.models import Freelancer, Signup, User
+from rebase_core.models import Freelancer, FreelancerCard, Signup, User
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
 from rebase_core.schemas import (
@@ -70,6 +75,17 @@ from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import LIST_LIMIT_DEFAULT
 from rebase_core.signing import SigningFactory, SigningService
 from rebase_core.talenti import TalentiService
+from rebase_core.team_builder import TeamBuilder
+from rebase_core.team_requests import (
+    LIST_LIMIT_DEFAULT as TEAM_REQUEST_LIST_LIMIT_DEFAULT,
+)
+from rebase_core.team_requests import TeamRequestService
+from rebase_core.team_schemas import (
+    TeamProposalCreate,
+    TeamRequestNote,
+    TeamRequestRead,
+    TeamRequestSummary,
+)
 
 SessionFactory = sessionmaker[Session]
 # Who is calling: resolved by the transport, read by the tools that sign something.
@@ -92,6 +108,8 @@ PIGRO_NOT_CONFIGURED = "Il registro di Pigro non è configurato: manca REBASE_PI
 # (`lettera.compenso`); the tools take them as `condizioni`, and a refusal says so.
 LETTER_PART, CONDITIONS_PART = "lettera.", "condizioni."
 TAX_DATA_SAVED = {"dati_fiscali": "salvati"}
+
+logger = logging.getLogger(__name__)
 
 
 def _tax_refusal(exc: PydanticValidationError) -> ToolError:
@@ -195,6 +213,8 @@ def build_server(
     middleware: Sequence[ServerMiddleware[Any]] | None = None,
     renderer: Renderer | None = None,
     signing: SigningFactory | None = None,
+    llm: LlmCall | None = None,
+    sender: EmailSender | None = None,
 ) -> MCPServer:
     """`admin` answers the admin behind the current call; `settings` and `http` are what
     reaches the CRM, for `list_pigro_spaces` and for the `pigro_slug` of `get_talento`,
@@ -206,7 +226,14 @@ def build_server(
     `settings`; `signing` builds the `SigningService` the signing tools call
     (`signing_from_settings`). The transports hand the real ones; a test hands
     `FakeRenderer` and a service over fakes. Without them a contract is not written and
-    a send answers that signing is not active here, as the admin area does."""
+    a send answers that signing is not active here, as the admin area does.
+
+    `llm` is the Claude seam (REB-508, `call_from_settings`) `propose_team` and
+    `regenerate_freelancer_card` call, `None` without a key -- then, as the admin area
+    already does, they refuse with the team builder's own sentence rather than a
+    silent no-op; `sender` is the availability mails' and the talent cloud's
+    (`sender_from_settings`), `None` without a mail key. A test hands `RecordingCall`
+    and `RecordingSender`, the same way `mail.py`'s own tests do."""
     mcp = MCPServer("rebase", instructions=INSTRUCTIONS, middleware=middleware)
     signer_json = settings.signer_json if settings is not None else ""
 
@@ -214,6 +241,14 @@ def build_server(
         if signing is not None:
             return signing(session)
         return SigningService(session, renderer=renderer)
+
+    def team_settings() -> Settings:
+        """The team requests, the engine and the cloud all need real settings (a hub
+        URL, a contracts mailbox); the same `assert`-narrowing `cloud.py`'s own
+        `grant` uses for the same reason. A server built for tools that never touch
+        this family (most of this suite's tests) still needs none."""
+        assert settings is not None, "i tool del team builder e del cloud richiedono `settings`"
+        return settings
 
     @mcp.tool()
     def create_freelancer_from_signup(
@@ -318,6 +353,23 @@ def build_server(
             )
         )
 
+    def _freelancer_talento(session: Session, freelancer_id: UUID) -> dict[str, Any]:
+        """`get_talento`'s answer for a card: `FreelancerDetail`
+        (`FreelancerService.get`), plus `ha_scheda_anonima` (REB-518, spec § 8), which
+        that schema does not carry -- only `TalentoRead` (`list_talenti`) does. The
+        same predicate `talenti._has_anonymous_card` runs for the list: a card the
+        writer retired to SQL `NULL` after a failure is none."""
+        detail = FreelancerService(session, settings, http).get(freelancer_id)
+        has_card = session.scalar(
+            select(
+                exists().where(
+                    FreelancerCard.freelancer_id == freelancer_id,
+                    func.jsonb_typeof(FreelancerCard.card) == "object",
+                )
+            )
+        )
+        return {**detail.model_dump(mode="json"), "ha_scheda_anonima": bool(has_card)}
+
     @mcp.tool()
     def get_talento(talento_id: str) -> dict[str, Any]:
         """Un talento, per id: la riga che `list_talenti` mostra, letta una per una.
@@ -328,12 +380,14 @@ def build_server(
         spazio Pigro quando l'indirizzo ne ha uno. Per un'iscrizione senza scheda
         risponde la riga nuda, `stato` `lead`, da cui la scheda si crea con
         `create_freelancer_from_signup`; un id la cui email ha ormai una scheda
-        risponde la scheda, come la lista. Solo lettura."""
+        risponde la scheda, come la lista. Ogni riga con una scheda porta anche
+        `vetted_at` (REB-518, `None` se non verificato) e `ha_scheda_anonima`, se Claude
+        ne ha scritta una da proporre nel team builder. Solo lettura."""
         key = UUID(talento_id)
 
-        def call(session: Session) -> BaseModel:
+        def call(session: Session) -> dict[str, Any]:
             if session.get(Freelancer, key) is not None:
-                return FreelancerService(session, settings, http).get(key)
+                return _freelancer_talento(session, key)
             signup = session.get(Signup, key)
             if signup is None:
                 raise NotFound("talento", key)
@@ -345,7 +399,7 @@ def build_server(
                 .where(func.lower(User.email) == signup.email.lower())
             ).first()
             if holder is not None:
-                return FreelancerService(session, settings, http).get(holder[0])
+                return _freelancer_talento(session, holder[0])
             return TalentoRead(
                 id=signup.id,
                 nome=signup.nome,
@@ -356,9 +410,9 @@ def build_server(
                 origine="form",
                 utm_source=signup.utm_source,
                 created_at=signup.created_at,
-            )
+            ).model_dump(mode="json")
 
-        return _run(call)
+        return _call(call)
 
     @mcp.tool()
     def get_freelancer(freelancer_id: str) -> dict[str, Any]:
@@ -477,6 +531,44 @@ def build_server(
         nome, tipo e dimensione di quello che c'era. Non reversibile da qui: per
         rimetterlo serve che la persona lo carichi di nuovo dalla sua area."""
         return _run(lambda s: FreelancerService(s).clear_cv(UUID(freelancer_id), admin().id))
+
+    @mcp.tool()
+    def set_freelancer_vetted(freelancer_id: str, vetted: bool) -> dict[str, Any]:
+        """«Segna come verificato» (`vetted` vero) o «Togli la verifica» (falso, REB-518):
+        il bollino «Verificato da rebase» che il talent cloud mostra accanto al profilo.
+        Una marca già messa, o già tolta, non scrive nulla: la data resta quella della
+        prima verifica, non dell'ultimo clic."""
+        return _run(
+            lambda s: FreelancerService(s).set_vetted(UUID(freelancer_id), vetted, admin().id)
+        )
+
+    @mcp.tool()
+    def get_freelancer_card(freelancer_id: str) -> dict[str, Any]:
+        """La scheda anonima che Claude ha scritto dal CV (REB-510, spec § 2.1): ruolo,
+        seniority, anni di esperienza, competenze, settori, lingue e una sintesi in due
+        frasi, mai il nome della persona né un suo link. `modalita` è la modalità di
+        lavoro del profilo ora e `fascia` la banda di prezzo dalla tariffa attuale,
+        entrambe lette al volo, mai memorizzate sulla scheda; `cv_sha256`, `model` e
+        `generated_at` di quando è stata scritta. `card` è `None` finché nessun CV ha
+        ancora prodotto una scheda; `error` l'ultimo motivo per cui non c'è, o per cui
+        quella che c'è è più vecchia del CV attuale. Solo lettura; per riscriverla c'è
+        `regenerate_freelancer_card`."""
+        return _run(lambda s: CardWriter(s, None).read(UUID(freelancer_id)))
+
+    @mcp.tool()
+    def regenerate_freelancer_card(freelancer_id: str) -> dict[str, Any]:
+        """«Rigenera scheda»: la scheda anonima riscritta ora dal CV attuale, anche da
+        un CV che aveva già fallito e che altrimenti non si ritenta finché non cambia.
+        Un fallimento di Claude risponde comunque la scheda precedente con `error`,
+        come lo mostra la pagina. Senza una chiave di Claude configurata risponde che
+        il team builder è spento, invece di lasciare la scheda com'era fingendo di
+        averla riscritta."""
+        if llm is None:
+            # `CardWriter.write` itself has no opinion on a missing key -- it just
+            # answers the card unchanged, `list_pigro_spaces`'s own precondition,
+            # checked before `_call` the same way.
+            raise ToolError("Il team builder è spento.")
+        return _run(lambda s: CardWriter(s, llm).write(UUID(freelancer_id), force=True))
 
     @mcp.tool()
     def get_freelancer_audit(freelancer_id: str, limit: int = 50) -> list[dict[str, Any]]:
@@ -667,6 +759,148 @@ def build_server(
         return _run(
             lambda s: CompanyService(s).revert(UUID(company_id), UUID(action_id), admin().id)
         )
+
+    # ---- the team requests, the engine, and the talent cloud (REB-520, spec § 8) -------
+
+    @mcp.tool()
+    def list_team_requests(
+        stato: str | None = None,
+        origine: str | None = None,
+        limit: int = TEAM_REQUEST_LIST_LIMIT_DEFAULT,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """«Richieste team» (spec § 3.5), dalla più recente: azienda, origine, stato,
+        quando è arrivata, e quanti talenti sono stati chiesti e quanti hanno già
+        risposto sì. `stato` e `origine` filtrano sulle parole che quei campi usano; una
+        parola che non è una di quelle è rifiutata nominando il campo. `next_cursor` è
+        il cursore opaco della pagina successiva, `None` all'ultima. Solo lettura."""
+        return _run(
+            lambda s: TeamRequestService(s, settings=team_settings()).list_recent(
+                stato=stato, origine=origine, limit=limit, cursor=cursor
+            )
+        )
+
+    @mcp.tool()
+    def get_team_request(request_id: str) -> dict[str, Any]:
+        """Una richiesta team, per id (spec § 3.5): la proposta con i talenti per nome
+        e la loro tariffa e fascia, il riassunto e il luogo che i talenti leggeranno, i
+        contatti dell'azienda, lo stato, la nota dell'admin, e la risposta di ciascun
+        talento con il suo orario. Solo lettura."""
+        return _run(lambda s: TeamRequestService(s, settings=team_settings()).get(UUID(request_id)))
+
+    @mcp.tool()
+    def set_team_request_summary(request_id: str, riassunto: str) -> dict[str, Any]:
+        """«Salva il riassunto» (spec § 3.5): il testo che i talenti leggeranno nella
+        mail di disponibilità, riscritto qui dall'admin prima di scrivere loro.
+        Rifiutato con la stessa frase di `contact_team_talents` se nomina ancora
+        l'azienda: il riassunto va corretto dove è scritto."""
+        change = TeamRequestSummary(riassunto=riassunto)
+        return _run(
+            lambda s: TeamRequestService(s, settings=team_settings()).set_summary(
+                UUID(request_id), change.riassunto, admin().id
+            )
+        )
+
+    @mcp.tool()
+    def contact_team_talents(request_id: str, only_silent: bool = False) -> dict[str, Any]:
+        """«Contatta i talenti» (`only_silent` falso, la prima volta) o «Rimanda a chi
+        non ha risposto» (vero, spec § 3.6): una mail a ciascun talento del team con il
+        riassunto, il ruolo proposto e la propria tariffa, e due link, «Sono
+        disponibile» e «Non sono disponibile», buoni per trenta giorni. Rifiutato, con
+        la sua frase, per una richiesta chiusa, un riassunto che nomina ancora
+        l'azienda, una seconda prima volta, o nessun talento rimasto da scrivere;
+        senza una chiave di invio configurata risponde che l'invio non è attivo qui."""
+        return _run(
+            lambda s: TeamRequestService(
+                s, settings=team_settings(), sender=sender
+            ).contact_talents(UUID(request_id), admin().id, only_silent=only_silent)
+        )
+
+    @mcp.tool()
+    def set_team_request_status(
+        request_id: str, stato: str, note: str | None = None
+    ) -> dict[str, Any]:
+        """«Segna come contattata», «Chiudi» (spec § 3.5), con una nota facoltativa per
+        chi la rileggerà; `note` omesso lascia la nota com'era."""
+
+        def call(session: Session) -> TeamRequestRead:
+            service = TeamRequestService(session, settings=team_settings())
+            read = service.set_status(UUID(request_id), stato, admin().id)
+            if note is not None:
+                cleaned = TeamRequestNote(note=note)
+                read = service.set_note(UUID(request_id), cleaned.note, admin().id)
+            return read
+
+        return _run(call)
+
+    @mcp.tool()
+    def propose_team(
+        descrizione: str, nota: str | None = None, previous_id: str | None = None
+    ) -> dict[str, Any]:
+        """Propone un team da una descrizione di progetto (spec § 3.3, § 3.4), come il
+        box pubblico, ma a nome dell'admin (`origine` `admin`): il riassunto, una carta
+        per persona con ruolo, motivazione, giorni a settimana e fascia di prezzo, e la
+        fascia del team al giorno e al mese. Non conta per il limite giornaliero delle
+        richieste pubbliche. `previous_id`, una propria proposta più recente di un
+        giorno, la rigenera con la squadra precedente come punto di partenza; `nota`
+        cosa cambiare («togli il designer»). Nessun profilo che corrisponde risponde
+        comunque con una squadra vuota e la frase del motivo; senza una chiave di
+        Claude configurata, o a interruttore spento, risponde che il team builder è
+        spento."""
+        data = TeamProposalCreate(
+            descrizione=descrizione,
+            nota=nota,
+            previous_id=UUID(previous_id) if previous_id else None,
+        )
+        return _run(
+            lambda s: TeamBuilder(s, llm, team_settings()).propose(
+                data, origine="admin", user_id=admin().id
+            )
+        )
+
+    @mcp.tool()
+    def grant_talent_cloud(company_id: str) -> dict[str, Any]:
+        """«Apri il talent cloud» (spec § 4.1): apre alla referente di questa richiesta
+        l'accesso al cloud privato, e le manda «Il talent cloud di rebase è aperto per
+        …» quando è una concessione nuova; su una già viva per questa azienda e questa
+        persona risponde quella, senza mandare altro. `mail_inviata` dice se la mail è
+        partita; senza una chiave di invio configurata il cloud si apre comunque e
+        nessuno la riceve."""
+
+        def call(session: Session) -> dict[str, Any]:
+            read, mail = TalentCloudService(session, team_settings()).grant(
+                UUID(company_id), admin().id
+            )
+            mail_inviata = False
+            if mail is not None:
+                if sender is None:
+                    logger.info("talent cloud grant %s: no mail sender, not mailed", read.id)
+                else:
+                    mail_inviata = sender.send(mail)
+                    if not mail_inviata:
+                        logger.warning(
+                            "talent cloud grant %s: the mail was refused by the provider",
+                            read.id,
+                        )
+            return {**read.model_dump(mode="json"), "mail_inviata": mail_inviata}
+
+        return _call(call)
+
+    @mcp.tool()
+    def revoke_talent_cloud(company_id: str) -> dict[str, Any]:
+        """«Revoca il talent cloud» (spec § 4.1): chiude la concessione viva di questa
+        richiesta, e solo questa; un'altra azienda della stessa persona resta com'era e
+        il suo cloud resta aperto. Rifiutato, con la sua frase, quando non c'è nulla di
+        vivo da chiudere."""
+        return _run(lambda s: TalentCloudService(s).revoke(UUID(company_id), admin().id))
+
+    @mcp.tool()
+    def list_talent_cloud_grants() -> list[dict[str, Any]]:
+        """Ogni concessione del talent cloud, viva o chiusa, dalla più recente, fino a
+        200 (spec § 4.1, non paginate perché sono poche per un pezzo): per ciascuna,
+        chi l'ha aperta e quando, e chi l'ha eventualmente chiusa e quando. Solo
+        lettura."""
+        return _run_list(lambda s: TalentCloudService(s).list())
 
     @mcp.tool()
     def list_pigro_spaces() -> dict[str, Any]:
