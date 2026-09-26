@@ -725,7 +725,7 @@ class ReportDay(BaseModel):
     ore: Decimal
     descrizioni: list[str]
     fatture: list[str]           # distinct: ["12/2026"], ["12/2026", "proforma 3/2026"], or []
-    ore_per_fattura: list[ReportDayInvoice]   # that day's hours per invoice, unbilled hours excluded: [ReportDayInvoice(numero="12/2026", ore=Decimal("3.00"))]
+    ore_per_fattura: list[ReportDayInvoice]   # that day's hours per invoice, unbilled hours excluded: [ReportDayInvoice(tipo="fattura", numero="12/2026", ore=Decimal("3.00"))]
 
 class ReportWeek(BaseModel):
     settimana: str               # "2026-W40"
