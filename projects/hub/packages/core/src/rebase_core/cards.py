@@ -37,7 +37,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, null, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -57,16 +57,28 @@ logger = logging.getLogger(__name__)
 CARD_MAX_TOKENS = 2000
 NO_TEXT = "Il CV non ha testo leggibile."
 
-# `Card`'s own schema, as it stands: the seam (`AnthropicCall.complete`) strips what the
+# `Card`'s own schema: the seam (`AnthropicCall.complete`) strips what the
 # structured-output API refuses, and `Card.model_validate` enforces all of it on the
-# answer.
-CARD_SCHEMA = Card.model_json_schema()
+# answer. Without the root `description`, which is `Card`'s docstring, written for
+# whoever maintains it rather than for the model.
+CARD_SCHEMA = {
+    key: value for key, value in Card.model_json_schema().items() if key != "description"
+}
 
 Failure = Literal["no_text", "refusal", "max_tokens", "shape", "identifying", "unavailable"]
 Outcome = Literal["written", "failed", "unavailable", "unchanged", "deleted", "superseded"]
 
-# The last successful generation, written together and retired together.
-_CARD_COLUMNS = ("cv_sha256", "card", "model", "input_tokens", "output_tokens", "generated_at")
+# The last successful generation, written together and retired together. `card` is
+# retired with SQL `NULL`, never `None`: the JSONB type binds `None` as the JSON value
+# `null`, which `card IS NOT NULL` (the catalogue's filter) still counts as a card.
+_RETIRED: dict[str, Any] = {
+    "cv_sha256": None,
+    "card": null(),
+    "model": None,
+    "input_tokens": None,
+    "output_tokens": None,
+    "generated_at": None,
+}
 
 # What the admin reads beside the card: ours, short, and never what the model said.
 _FAILURES: dict[Failure, str] = {
@@ -86,17 +98,21 @@ _ADDRESS = re.compile(r"https?://|www\.|@", re.IGNORECASE)
 
 
 def _identifies(card: Card, cognome: str) -> bool:
-    """Whether any text of the card names the person, by the surname as a whole word in
-    any case, or carries a link or an email address. The prompt forbids both; this is
-    what a card that ignored it runs into before it reaches a page."""
-    texts = [card.ruolo, card.sintesi, *card.competenze, *card.settori, *card.lingue]
-    if card.luogo is not None:
-        texts.append(card.luogo)
+    """Whether the card names the person, by the surname as a whole word in any case in
+    the role, the summary, the skills or the sectors, or carries a link or an email
+    address anywhere. `luogo` and `lingue` are not read for the surname: Messina,
+    Ferrara or Milano is a city the CV may name, Russo, Greco or Tedesco a language the
+    person may speak, and a card refused for its own CV's place would be refused again
+    on «Rigenera». The prompt forbids both; this is what a card that ignored it runs into
+    before it reaches a page."""
+    named = [card.ruolo, card.sintesi, *card.competenze, *card.settori]
+    every = [*named, *card.lingue, *([card.luogo] if card.luogo is not None else [])]
     surname = cognome.strip()
-    person = re.compile(rf"\b{re.escape(surname)}\b", re.IGNORECASE) if surname else None
-    return any(
-        _ADDRESS.search(value) or (person is not None and person.search(value)) for value in texts
-    )
+    if surname:
+        person = re.compile(rf"\b{re.escape(surname)}\b", re.IGNORECASE)
+        if any(person.search(value) for value in named):
+            return True
+    return any(_ADDRESS.search(value) for value in every)
 
 
 _SYSTEM = """\
@@ -353,7 +369,7 @@ class CardWriter:
                 )
             )
             if written_from is not None and written_from != digest:
-                values = {**dict.fromkeys(_CARD_COLUMNS), **values}
+                values = {**_RETIRED, **values}
         insert = pg_insert(FreelancerCard).values(freelancer_id=freelancer_id, **values)
         self.session.execute(
             insert.on_conflict_do_update(

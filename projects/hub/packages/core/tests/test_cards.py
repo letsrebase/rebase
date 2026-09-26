@@ -76,6 +76,17 @@ def _stored(session: Session, freelancer_id: UUID) -> FreelancerCard | None:
     return session.get(FreelancerCard, freelancer_id, populate_existing=True)
 
 
+def _card_is_sql_null(session: Session, freelancer_id: UUID) -> bool:
+    """The column as SQL sees it: JSON `null` reads back as `None` in Python, but it is
+    `IS NOT NULL` to the catalogue's filter, which is what a retired card must not be."""
+    return bool(
+        session.execute(
+            text("SELECT card IS NULL FROM freelancer_cards WHERE freelancer_id = :id"),
+            {"id": freelancer_id},
+        ).scalar_one()
+    )
+
+
 def _user_text(request: LlmRequest) -> str:
     return "\n".join(block["text"] for message in request.messages for block in message["content"])
 
@@ -156,7 +167,13 @@ def test_card_from_a_cv(clean: Session) -> None:
     # enforces it on the answer (the over-limit cases below).
     [request] = llm.requests
     assert request.max_tokens == CARD_MAX_TOKENS == 2000
-    assert request.schema == CARD_SCHEMA == Card.model_json_schema()
+    # `Card`'s schema without its docstring, which is written for developers, not for
+    # the model.
+    assert "description" not in CARD_SCHEMA
+    assert {
+        key: value for key, value in Card.model_json_schema().items() if key != "description"
+    } == CARD_SCHEMA
+    assert request.schema == CARD_SCHEMA
     assert CARD_SCHEMA["additionalProperties"] is False
     assert CARD_SCHEMA["required"] == list(Card.model_fields)
     assert {"type": "null"} in CARD_SCHEMA["properties"]["luogo"]["anyOf"]
@@ -221,6 +238,7 @@ def test_failed_cv_is_not_retried(clean: Session, logs: pytest.LogCaptureFixture
     stored = _stored(clean, freelancer_id)
     assert stored is not None and stored.error_cv_sha256 == _sha(CV_2026)
     assert (stored.card, stored.model, stored.input_tokens) == (None, None, None)
+    assert _card_is_sql_null(clean, freelancer_id)
     assert str(freelancer_id) in logs.text and "refusal" in logs.text
     assert "Lovelace" not in logs.text
 
@@ -306,6 +324,7 @@ def test_max_tokens_and_bad_json_are_errors(
     stored = _stored(clean, freelancer_id)
     assert stored is not None and stored.error_cv_sha256 == _sha(CV)
     assert stored.input_tokens is None
+    assert _card_is_sql_null(clean, freelancer_id)
     assert CardWriter(clean, llm).write(freelancer_id).error == read.error
     assert len(llm.requests) == 1
     # The log names the freelancer and the kind of failure, and nothing else.
@@ -350,6 +369,7 @@ def test_a_scan_replacing_a_cv_retires_its_card(clean: Session) -> None:
     assert (read.card, read.cv_sha256, read.error) == (None, None, NO_TEXT)
     stored = _stored(clean, freelancer_id)
     assert stored is not None and stored.error_cv_sha256 == _sha(SCAN)
+    assert _card_is_sql_null(clean, freelancer_id)
 
 
 def test_the_same_cv_refused_on_regenerate_keeps_its_card(clean: Session) -> None:
@@ -365,6 +385,25 @@ def test_the_same_cv_refused_on_regenerate_keeps_its_card(clean: Session) -> Non
     assert read.error
     stored = _stored(clean, freelancer_id)
     assert stored is not None and stored.error_cv_sha256 == _sha(CV)
+
+
+def test_a_surname_that_is_a_place_or_a_language_is_the_cvs_own(clean: Session) -> None:
+    """Messina, Ferrara, Russo, Greco: a surname can be the city the CV names or a
+    language the person speaks, so `luogo` and `lingue` are not read for the surname;
+    the same word in the summary is still the person."""
+    freelancer_id = _apply(clean, cognome="Messina")
+    llm = RecordingCall(
+        [
+            card_response({**CARD, "luogo": "Messina"}),
+            card_response({**CARD, "luogo": "Messina", "sintesi": "Il profilo di Messina."}),
+        ]
+    )
+
+    placed = CardWriter(clean, llm).write(freelancer_id)
+    assert placed.error is None and placed.card is not None and placed.card.luogo == "Messina"
+
+    named = CardWriter(clean, llm).write(freelancer_id, force=True)
+    assert named.error == IDENTIFYING
 
 
 def test_http_as_a_skill_is_not_a_link(clean: Session) -> None:
