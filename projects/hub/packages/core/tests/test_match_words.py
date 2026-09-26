@@ -26,6 +26,7 @@ from rebase_core.match_words import (
     send_report_sentence,
 )
 from rebase_core.models import MATCH_STATES
+from rebase_core.pigro import NOT_ANSWERING
 from rebase_core.signing import (
     CANCELLED_BY_REBASE,
     CANCELLED_ON_DOCUMENSO,
@@ -403,6 +404,17 @@ def test_pigro_state_sentence_names_the_state_and_folds_in_the_crms_own_words() 
     assert pigro_state_sentence("rifiutato", "Il deal è stato eliminato nello spazio.") == (
         "Pigro ha rifiutato il collegamento: Il deal è stato eliminato nello spazio."
     )
+
+
+def test_pigro_state_sentence_without_a_stored_error_still_says_pigro_did_not_answer() -> None:
+    """`pigro_errore` is typed `str | None`: an `errore` state written with none stored
+    (a race, or a row from before the column was backfilled) reads as a sentence, never
+    «Pigro non ha risposto: None»."""
+    assert pigro_state_sentence("errore", None) == f"Pigro non ha risposto: {NOT_ANSWERING}"
+
+
+def test_pigro_state_sentence_without_a_stored_error_still_says_pigro_refused() -> None:
+    assert pigro_state_sentence("rifiutato", None) == "Pigro ha rifiutato il collegamento."
 
 
 def test_a_closed_match_says_its_period() -> None:

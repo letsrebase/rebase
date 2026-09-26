@@ -17,6 +17,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Literal
 
 from rebase_core.contracts.fields import FEE, italian_date, rendered
+from rebase_core.pigro import NOT_ANSWERING
 
 if TYPE_CHECKING:
     from rebase_core.contract_schemas import LetteraFields, SendReport
@@ -134,13 +135,16 @@ def pigro_state_sentence(pigro_stato: str | None, pigro_errore: str | None) -> s
     `collegato` (nothing wrong -- `match_words` says that one itself, since it also has
     good news to report). Read by `match_words`, for the card's `situazione`, and by
     `EngagementService.report`, for the `InvalidState` a match not `collegato` refuses
-    with."""
+    with. `pigro_errore` is typed `str | None` and this holds it: a state written before
+    the CRM ever answered (or an old row with the column not yet backfilled) still gets
+    a sentence, the generic one `rebase_core.pigro`'s own seam uses."""
     if pigro_stato == DA_COLLEGARE:
         return "Pigro non ha ancora il deal: riprova o aspetta lo sweep."
     if pigro_stato == ERRORE:
-        return f"Pigro non ha risposto: {pigro_errore}"
+        return f"Pigro non ha risposto: {pigro_errore or NOT_ANSWERING}"
     if pigro_stato == RIFIUTATO:
-        return f"Pigro ha rifiutato il collegamento: {pigro_errore}"
+        refused = "Pigro ha rifiutato il collegamento"
+        return f"{refused}: {pigro_errore}" if pigro_errore else f"{refused}."
     return ""
 
 
