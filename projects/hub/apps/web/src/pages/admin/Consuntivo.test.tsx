@@ -10,7 +10,7 @@ import {
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { periodParam } from '@/lib/report'
+import { invoiceLabel, periodParam } from '@/lib/report'
 import { AdminConsuntivo } from './Consuntivo'
 
 function answer(status: number, body: unknown) {
@@ -34,15 +34,21 @@ const MATCH = {
   pigro_url: DEAL_URL,
 }
 
-const day = (data: string, fatture: string[] = [], descrizioni = ['Sviluppo']) => ({
+const FATTURA_12 = { numero: '12/2026', tipo: 'fattura' }
+const PROFORMA_4 = { numero: '4/2026', tipo: 'proforma' }
+
+/** A day of eight hours, all of them on `invoice` when there is one. */
+const day = (data: string, invoice?: { numero: string; tipo: string }, descrizioni = ['Sviluppo']) => ({
   data,
   ore: '8.00',
   descrizioni,
-  fatture,
+  fatture: invoice ? [invoiceLabel(invoice)] : [],
+  ore_per_fattura: invoice ? [{ ...invoice, ore: '8.00' }] : [],
 })
 
 /** A recorded report of the whole engagement: twelve days of eight hours, invoice
- *  12/2026 across September and October, a proforma in October, November not billed. */
+ *  12/2026 across September and October (on 2 October only 3 of the day's 8 hours, the
+ *  rest not billed yet), a proforma in October, November not billed. */
 const REPORT = {
   match_id: 'm1',
   pigro_url: DEAL_URL,
@@ -52,15 +58,21 @@ const REPORT = {
   totale_ore: '96.00',
   giorni_equivalenti: '12.00',
   avanzamento: '30.00',
-  ore_fatturate: '32.00',
-  ore_non_fatturate: '64.00',
+  ore_fatturate: '43.00',
+  ore_non_fatturate: '53.00',
   per_giorno: [
-    day('2026-09-29', ['12/2026'], ['Setup']),
-    day('2026-09-30', ['12/2026']),
-    day('2026-10-01', ['12/2026']),
-    { data: '2026-10-02', ore: '8.00', descrizioni: ['Sviluppo API', 'Riunione'], fatture: ['12/2026'] },
-    day('2026-10-05', ['proforma 4/2026']),
-    day('2026-10-06', ['proforma 4/2026']),
+    day('2026-09-29', FATTURA_12, ['Setup']),
+    day('2026-09-30', FATTURA_12),
+    day('2026-10-01', FATTURA_12),
+    {
+      data: '2026-10-02',
+      ore: '8.00',
+      descrizioni: ['Sviluppo API', 'Riunione'],
+      fatture: ['12/2026'],
+      ore_per_fattura: [{ ...FATTURA_12, ore: '3.00' }],
+    },
+    day('2026-10-05', PROFORMA_4),
+    day('2026-10-06', PROFORMA_4),
     day('2026-10-26'),
     day('2026-10-27'),
     day('2026-11-02'),
@@ -81,7 +93,7 @@ const REPORT = {
   ],
   fatture: [
     { numero: '4/2026', tipo: 'proforma', data: '2026-10-31', stato: 'confermata', stato_pagamento: 'da_incassare', ore: '16.00' },
-    { numero: '12/2026', tipo: 'fattura', data: '2026-10-02', stato: 'emessa', stato_pagamento: 'incassato', ore: '32.00' },
+    { numero: '12/2026', tipo: 'fattura', data: '2026-10-02', stato: 'emessa', stato_pagamento: 'incassato', ore: '27.00' },
   ],
 }
 
@@ -213,10 +225,11 @@ describe('«Consuntivo» (REB-503)', () => {
     ])
     expect(rows('Per mese')).toEqual([['Ottobre 2026', '48']])
     expect(headers('Fatture')).toEqual(['Numero', 'Data', 'Stato', 'Incasso', 'Ore'])
-    // 12/2026 holds 32 hours, 16 of them in October.
+    // 12/2026 holds 27 hours, 11 of them in October: 2 October gives it its own 3, not
+    // the day's 8 (REB-505).
     expect(rows('Fatture')).toEqual([
       ['proforma 4/2026', '31 ott 2026', 'Confermata', 'Da incassare', '16'],
-      ['12/2026', '2 ott 2026', 'Emessa', 'Incassato', '16'],
+      ['12/2026', '2 ott 2026', 'Emessa', 'Incassato', '11'],
     ])
     // The progress line is the engagement's, whatever the month.
     expect(screen.getByText('96 ore, 12 giorni su 40 previsti (30%)')).toBeInTheDocument()
@@ -247,7 +260,7 @@ describe('«Consuntivo» (REB-503)', () => {
     ])
     expect(rows('Fatture')).toEqual([
       ['proforma 4/2026', '31 ott 2026', 'Confermata', 'Da incassare', '16'],
-      ['12/2026', '2 ott 2026', 'Emessa', 'Incassato', '32'],
+      ['12/2026', '2 ott 2026', 'Emessa', 'Incassato', '27'],
     ])
   })
 

@@ -669,6 +669,7 @@ async def test_get_match_report_groups_the_crms_rows_by_day_week_and_month(
             "ore": "8.00",
             "descrizioni": ["Setup"],
             "fatture": ["12/2026"],
+            "ore_per_fattura": [{"numero": "12/2026", "tipo": "fattura", "ore": "8.00"}],
         }
         assert body["fatture"] == [
             {

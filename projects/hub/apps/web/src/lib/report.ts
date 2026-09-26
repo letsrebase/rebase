@@ -146,10 +146,12 @@ export function invoiceLabel(invoice: Pick<ReportInvoice, 'numero' | 'tipo'>): s
  *  period's hours on it. «Tutto l'incarico» is every invoice with all its hours, the
  *  CRM's own figure. A month shows only the invoices its days sit on: an invoice whose
  *  days all fall in the month keeps the CRM's figure too, and one that spans months
- *  (12/2026 over September and October) shows each month the hours of that month's days,
- *  summed from the days, which is all the report says of them. A day whose entries sit on
- *  two invoices gives its whole total to each there, since a day's total cannot be
- *  split; only an invoice that spans months can meet that case. */
+ *  (12/2026 over September and October) shows each month the hours that month's days
+ *  hold on it, each day's own share from `ore_per_fattura`. A day whose entries sit
+ *  partly on an invoice and partly on another or on none used to give its whole total
+ *  to each invoice there, since the report carried only the day's total; with each
+ *  invoice's share of the day in the report (REB-505) that limit is gone: 8 hours with 3
+ *  on 14/2026 give 14/2026 its 3. */
 export function periodInvoices(
   report: Pick<MatchReport, 'per_giorno' | 'fatture'>,
   period: string,
@@ -162,7 +164,10 @@ export function periodInvoices(
     const here = shown.filter(sitsOn)
     if (here.length === 0) return []
     if (here.length === report.per_giorno.filter(sitsOn).length) return [invoice]
-    return [{ ...invoice, ore: sumHours(here.map((day) => day.ore)) }]
+    const shares = here.flatMap((day) =>
+      day.ore_per_fattura.filter((share) => invoiceLabel(share) === label).map((share) => share.ore),
+    )
+    return [{ ...invoice, ore: sumHours(shares) }]
   })
 }
 

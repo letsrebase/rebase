@@ -494,15 +494,28 @@ class MatchList(BaseModel):
     items: list[MatchListItem]
 
 
+class ReportDayInvoice(BaseModel):
+    """A day's hours on one invoice (REB-505): the invoice as `ReportInvoice` names it,
+    by `numero` and `tipo`, and the day's entries on it summed."""
+
+    numero: str
+    tipo: str
+    ore: Decimal
+
+
 class ReportDay(BaseModel):
     """One day of hours on the match's deal (REB-498): the CRM answers one row per time
     entry, summed here. `fatture` names each invoice these hours sit on once, «12/2026»
-    for an invoice and «proforma 3/2026» for anything else, empty when none does yet."""
+    for an invoice and «proforma 3/2026» for anything else, empty when none does yet.
+    `ore_per_fattura` holds the same invoices in the same order, each with its own share
+    of the day, the hours on none left out (REB-505): a day of 8 hours with 3 on
+    12/2026 gives 12/2026 its 3, so a month can count an invoice's hours exactly."""
 
     data: date
     ore: Decimal
     descrizioni: list[str]
     fatture: list[str]
+    ore_per_fattura: list[ReportDayInvoice]
 
 
 class ReportWeek(BaseModel):

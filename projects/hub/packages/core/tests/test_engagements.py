@@ -1043,6 +1043,14 @@ def test_report_groups_by_iso_week_and_month() -> None:
         (date(2027, 1, 1), Decimal("4.00"), ["API"], []),
         (date(2027, 1, 4), Decimal("8.00"), ["Test"], []),
     ]
+    # The same invoices, each with its own share of the day (REB-505).
+    shares = [[(i.numero, i.tipo, i.ore) for i in d.ore_per_fattura] for d in fields["per_giorno"]]
+    assert shares == [
+        [("12/2026", "fattura", Decimal("12.00")), ("3/2026", "proforma", Decimal("2.50"))],
+        [("12/2026", "fattura", Decimal("8.00"))],
+        [],
+        [],
+    ]
     weeks = [(w.settimana, w.da, w.a, w.ore) for w in fields["per_settimana"]]
     assert weeks == [
         ("2026-W53", date(2026, 12, 28), date(2027, 1, 3), Decimal("26.50")),
@@ -1081,6 +1089,39 @@ def test_report_groups_by_iso_week_and_month() -> None:
     assert progress["ore_previste"] == Decimal("320.00") == 40 * HOURS_PER_DAY
     assert str(progress["avanzamento"]) == "30.00"
     assert group_report(_crm([]), 40)["avanzamento"] == Decimal("0.00")
+
+
+def test_report_gives_each_invoice_its_own_share_of_a_day() -> None:
+    """REB-505: 2 November holds 8 hours, 3 on invoice 14/2026 and 5 not billed, and
+    14/2026 gets its 3, never the day's 8. 3 November splits between 13/2026 and
+    14/2026, and a proforma numbered 14 stays apart from the invoice 14."""
+    thirteen, fourteen = _invoice("fattura", 13), _invoice("fattura", 14)
+    proforma = _invoice("proforma", 14)
+    crm = _crm(
+        [
+            _entry("2026-11-02", "3.00", "API", fourteen),
+            _entry("2026-11-02", "5.00", "Test"),
+            _entry("2026-11-03", "3.00", "API", thirteen),
+            _entry("2026-11-03", "2.50", "Riunione", fourteen),
+            _entry("2026-11-03", "1.25", "Setup", proforma),
+            _entry("2026-11-03", "1.25", "Setup", fourteen),
+        ]
+    )
+
+    days = group_report(crm, None)["per_giorno"]
+
+    assert [(d.data, d.ore, d.fatture) for d in days] == [
+        (date(2026, 11, 2), Decimal("8.00"), ["14/2026"]),
+        (date(2026, 11, 3), Decimal("8.00"), ["13/2026", "14/2026", "proforma 14/2026"]),
+    ]
+    assert [[(i.numero, i.tipo, i.ore) for i in d.ore_per_fattura] for d in days] == [
+        [("14/2026", "fattura", Decimal("3.00"))],
+        [
+            ("13/2026", "fattura", Decimal("3.00")),
+            ("14/2026", "fattura", Decimal("3.75")),
+            ("14/2026", "proforma", Decimal("1.25")),
+        ],
+    ]
 
 
 def test_report_refuses_a_match_not_linked(clean: Session) -> None:

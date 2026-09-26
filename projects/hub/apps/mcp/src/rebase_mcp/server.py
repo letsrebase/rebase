@@ -1003,14 +1003,14 @@ def build_server(
     ) -> dict[str, Any]:
         """Il consuntivo delle ore di un match, come «Consuntivo» nell'area admin: ore e
         giorni totali, l'avanzamento sui giorni previsti quando ce ne sono, il dettaglio
-        per giorno con le fatture di ciascuno, i totali per settimana e per mese, e le
-        fatture del periodo. `da` e `a` (AAAA-MM-GG) restringono il periodo, l'intero
-        incarico per difetto (dall'inizio della lettera a oggi). Rifiutato per un match
-        non collegato a Pigro, con la frase di dove sta il collegamento. Risponde un
-        errore anche quando Pigro non è configurato su questo ambiente o non risponde.
-        Solo lettura, con un'eccezione: un deal eliminato nello spazio del freelance
-        segna il match come rifiutato, finché il deal non torna e «Riprova» lo
-        ricollega."""
+        per giorno con le fatture di ciascuno e le ore su ognuna, i totali per settimana
+        e per mese, e le fatture del periodo. `da` e `a` (AAAA-MM-GG) restringono il
+        periodo, l'intero incarico per difetto (dall'inizio della lettera a oggi).
+        Rifiutato per un match non collegato a Pigro, con la frase di dove sta il
+        collegamento. Risponde un errore anche quando Pigro non è configurato su questo
+        ambiente o non risponde. Solo lettura, con un'eccezione: un deal eliminato nello
+        spazio del freelance segna il match come rifiutato, finché il deal non torna e
+        «Riprova» lo ricollega."""
         build_engagements = _require_engagements()
         key = UUID(match_id)
         start = _day(da, "da")

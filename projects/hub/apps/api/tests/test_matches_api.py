@@ -849,8 +849,20 @@ def test_get_report_answers_the_grouped_report(
         "ore_fatturate": "8.00",
         "ore_non_fatturate": "4.00",
         "per_giorno": [
-            {"data": "2026-10-01", "ore": "8.00", "descrizioni": ["Setup"], "fatture": ["12/2026"]},
-            {"data": "2026-10-02", "ore": "4.00", "descrizioni": ["API"], "fatture": []},
+            {
+                "data": "2026-10-01",
+                "ore": "8.00",
+                "descrizioni": ["Setup"],
+                "fatture": ["12/2026"],
+                "ore_per_fattura": [{"numero": "12/2026", "tipo": "fattura", "ore": "8.00"}],
+            },
+            {
+                "data": "2026-10-02",
+                "ore": "4.00",
+                "descrizioni": ["API"],
+                "fatture": [],
+                "ore_per_fattura": [],
+            },
         ],
         "per_settimana": [
             {"settimana": "2026-W40", "da": "2026-09-28", "a": "2026-10-04", "ore": "12.00"}

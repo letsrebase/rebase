@@ -46,6 +46,7 @@ from rebase_core.contract_schemas import (
     MatchRead,
     MatchReport,
     ReportDay,
+    ReportDayInvoice,
     ReportInvoice,
     ReportMonth,
     ReportWeek,
@@ -355,6 +356,21 @@ def _labels(entries: Iterable[_CrmEntry]) -> list[str]:
     return list(dict.fromkeys(_invoice_label(e.fattura) for e in entries if e.fattura is not None))
 
 
+def _hours_per_invoice(entries: Iterable[_CrmEntry]) -> list[ReportDayInvoice]:
+    """A day's hours on each invoice they sit on, in `_labels`' order, each summed from
+    that invoice's own entries: the hours on no invoice are left out, and a proforma
+    and an invoice with the same number stay apart (REB-505)."""
+    hours: dict[tuple[str, str], Decimal] = {}
+    for entry in entries:
+        if entry.fattura is not None:
+            key = (_invoice_number(entry.fattura), entry.fattura.tipo)
+            hours[key] = hours.get(key, Decimal(0)) + entry.ore
+    return [
+        ReportDayInvoice(numero=numero, tipo=tipo, ore=_hours(ore))
+        for (numero, tipo), ore in hours.items()
+    ]
+
+
 def group_report(crm: dict[str, Any], giorni_previsti: int | None) -> dict[str, Any]:
     """The CRM's report (one row per time entry) as `MatchReport`'s figures: summed by
     day, by ISO week (Monday to Sunday, «2026-W53» running into January) and by month,
@@ -378,6 +394,7 @@ def _group(report: _CrmReport, giorni_previsti: int | None) -> dict[str, Any]:
                 if e.descrizione is not None and e.descrizione.strip()
             ],
             fatture=_labels(entries),
+            ore_per_fattura=_hours_per_invoice(entries),
         )
         for day, entries in by_day.items()
     ]

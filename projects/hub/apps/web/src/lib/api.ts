@@ -742,13 +742,24 @@ export interface SendReport {
   mail_inviata: boolean | null
 }
 
+/** A day's hours on one invoice (REB-505), the invoice named by `numero` and `tipo` as
+ *  `ReportInvoice` names it. */
+export interface ReportDayInvoice {
+  numero: string
+  tipo: string
+  ore: string
+}
+
 /** One day of hours on the match's deal (REB-498): `fatture` names each invoice they
- *  sit on once, empty while none does. Hours are the API's decimal strings, two places. */
+ *  sit on once, empty while none does, and `ore_per_fattura` gives each of them its own
+ *  share of the day, the hours on none left out (REB-505). Hours are the API's decimal
+ *  strings, two places. */
 export interface ReportDay {
   data: string
   ore: string
   descrizioni: string[]
   fatture: string[]
+  ore_per_fattura: ReportDayInvoice[]
 }
 
 /** An ISO week, «2026-W40», from its Monday to its Sunday. */

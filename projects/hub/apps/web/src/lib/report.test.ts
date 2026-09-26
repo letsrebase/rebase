@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { MatchReport, ReportDay } from './api'
+import type { MatchReport, ReportDay, ReportDayInvoice } from './api'
 import {
   TUTTO,
   invoiceLabel,
@@ -16,11 +16,16 @@ import {
   sumHours,
 } from './report'
 
-const day = (data: string, ore: string, fatture: string[] = [], descrizioni: string[] = []): ReportDay => ({
+/** A day's hours on one invoice, a `fattura` unless `tipo` says otherwise. */
+const on = (numero: string, ore: string, tipo = 'fattura'): ReportDayInvoice => ({ numero, tipo, ore })
+
+/** A day as the hub sends it: `fatture` names the invoices of `shares`, in their order. */
+const day = (data: string, ore: string, shares: ReportDayInvoice[] = [], descrizioni: string[] = []): ReportDay => ({
   data,
   ore,
   descrizioni,
-  fatture,
+  fatture: shares.map(invoiceLabel),
+  ore_per_fattura: shares,
 })
 
 /** A recorded engagement from 28 September 2026: twelve days of eight hours, invoice
@@ -37,12 +42,12 @@ const REPORT: MatchReport = {
   ore_fatturate: '32.00',
   ore_non_fatturate: '64.00',
   per_giorno: [
-    day('2026-09-29', '8.00', ['12/2026']),
-    day('2026-09-30', '8.00', ['12/2026']),
-    day('2026-10-01', '8.00', ['12/2026']),
-    day('2026-10-02', '8.00', ['12/2026']),
-    day('2026-10-05', '8.00', ['proforma 4/2026']),
-    day('2026-10-06', '8.00', ['proforma 4/2026']),
+    day('2026-09-29', '8.00', [on('12/2026', '8.00')]),
+    day('2026-09-30', '8.00', [on('12/2026', '8.00')]),
+    day('2026-10-01', '8.00', [on('12/2026', '8.00')]),
+    day('2026-10-02', '8.00', [on('12/2026', '8.00')]),
+    day('2026-10-05', '8.00', [on('4/2026', '8.00', 'proforma')]),
+    day('2026-10-06', '8.00', [on('4/2026', '8.00', 'proforma')]),
     day('2026-10-26', '8.00'),
     day('2026-10-27', '8.00'),
     day('2026-11-02', '8.00'),
@@ -202,10 +207,63 @@ describe('the invoices of a period', () => {
     expect(periodInvoices(REPORT, TUTTO)).toEqual(REPORT.fatture)
   })
 
+  it('gives a two-month invoice only its own hours of a day partly unbilled (REB-505)', () => {
+    // 2 November: 8 hours, 3 of them on 14/2026 and 5 not billed yet.
+    const partly: Pick<MatchReport, 'per_giorno' | 'fatture'> = {
+      per_giorno: [day('2026-10-30', '8.00', [on('14/2026', '8.00')]), day('2026-11-02', '8.00', [on('14/2026', '3.00')])],
+      fatture: [
+        { numero: '14/2026', tipo: 'fattura', data: null, stato: 'bozza', stato_pagamento: 'da_incassare', ore: '11.00' },
+      ],
+    }
+    expect(periodInvoices(partly, '2026-11').map((i) => [invoiceLabel(i), i.ore])).toEqual([['14/2026', '3.00']])
+    expect(periodInvoices(partly, '2026-10').map((i) => [invoiceLabel(i), i.ore])).toEqual([['14/2026', '8.00']])
+    expect(periodInvoices(partly, TUTTO).map((i) => i.ore)).toEqual(['11.00'])
+  })
+
+  it('splits a day on two invoices between them, each with its own hours (REB-505)', () => {
+    // 3 November: 3 hours on 13/2026 and 5 on 14/2026, each invoice running into another month.
+    const split: Pick<MatchReport, 'per_giorno' | 'fatture'> = {
+      per_giorno: [
+        day('2026-10-30', '8.00', [on('13/2026', '8.00')]),
+        day('2026-11-03', '8.00', [on('13/2026', '3.00'), on('14/2026', '5.00')]),
+        day('2026-12-01', '8.00', [on('14/2026', '8.00')]),
+      ],
+      fatture: [
+        { numero: '14/2026', tipo: 'fattura', data: null, stato: 'bozza', stato_pagamento: 'da_incassare', ore: '13.00' },
+        { numero: '13/2026', tipo: 'fattura', data: '2026-11-30', stato: 'emessa', stato_pagamento: 'da_incassare', ore: '11.00' },
+      ],
+    }
+    expect(periodInvoices(split, '2026-11').map((i) => [invoiceLabel(i), i.ore])).toEqual([
+      ['14/2026', '5.00'],
+      ['13/2026', '3.00'],
+    ])
+  })
+
+  it('keeps apart a proforma and an invoice with the same number on one day', () => {
+    const same: Pick<MatchReport, 'per_giorno' | 'fatture'> = {
+      per_giorno: [
+        day('2026-10-30', '8.00', [on('5/2026', '8.00')]),
+        day('2026-11-03', '8.00', [on('5/2026', '6.00'), on('5/2026', '2.00', 'proforma')]),
+        day('2026-12-01', '8.00', [on('5/2026', '8.00', 'proforma')]),
+      ],
+      fatture: [
+        { numero: '5/2026', tipo: 'proforma', data: null, stato: 'bozza', stato_pagamento: 'da_incassare', ore: '10.00' },
+        { numero: '5/2026', tipo: 'fattura', data: '2026-11-30', stato: 'emessa', stato_pagamento: 'da_incassare', ore: '14.00' },
+      ],
+    }
+    expect(periodInvoices(same, '2026-11').map((i) => [invoiceLabel(i), i.ore])).toEqual([
+      ['proforma 5/2026', '2.00'],
+      ['5/2026', '6.00'],
+    ])
+  })
+
   it('keeps the CRM’s own hours for an invoice wholly inside the month, even on a day it shares', () => {
-    // 3 November: 3 hours on 13/2026 and 5 on 14/2026, a day's total the page cannot split.
+    // 3 November: 3 hours on 13/2026 and 5 on 14/2026, both invoices only in November.
     const shared: Pick<MatchReport, 'per_giorno' | 'fatture'> = {
-      per_giorno: [day('2026-11-02', '8.00', ['13/2026']), day('2026-11-03', '8.00', ['13/2026', '14/2026'])],
+      per_giorno: [
+        day('2026-11-02', '8.00', [on('13/2026', '8.00')]),
+        day('2026-11-03', '8.00', [on('13/2026', '3.00'), on('14/2026', '5.00')]),
+      ],
       fatture: [
         { numero: '14/2026', tipo: 'fattura', data: null, stato: 'bozza', stato_pagamento: 'da_incassare', ore: '5.00' },
         { numero: '13/2026', tipo: 'fattura', data: '2026-11-30', stato: 'emessa', stato_pagamento: 'da_incassare', ore: '11.00' },
