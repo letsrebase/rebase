@@ -157,8 +157,9 @@ function Pagamento({
 }
 
 /** «Giorni previsti» (REB-497): the match's, not the letter's, so it sits after the fee
- *  but outside `LetteraForm`. Optional, and no `min` or `max` the browser checks: the
- *  server names a wrong value, as it does for the letter's own numbers. */
+ *  but outside `LetteraForm`. Optional. In the open, unlike «Altre condizioni», so the
+ *  browser can check the column's bounds, and its default step of one refuses a fraction,
+ *  before the request; the server's own sentence stays the backstop (REB-502). */
 function GiorniPrevisti({
   value,
   onChange,
@@ -175,6 +176,8 @@ function GiorniPrevisti({
         id="match-giorni_previsti"
         type="number"
         inputMode="numeric"
+        min={1}
+        max={366}
         className="w-24"
         value={value}
         onChange={(event) => onChange(event.target.value)}

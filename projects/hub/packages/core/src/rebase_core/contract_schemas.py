@@ -286,6 +286,12 @@ class LetteraFields(LetteraDraft):
         return fields
 
 
+# «Giorni previsti» (REB-497): `ck_matches_giorni_previsti`'s bounds, and the sentence
+# that refuses a number outside them.
+GIORNI_PREVISTI_MIN, GIORNI_PREVISTI_MAX = 1, 366
+GIORNI_PREVISTI_RANGE = "I giorni previsti vanno da 1 a 366."
+
+
 class MatchCreate(BaseModel):
     """What «Chi e per chi» and «Condizioni», steps 1 and 2 of «Crea match», ask. The
     tax data step 1 asks are saved by their own route when the admin leaves that step,
@@ -304,7 +310,17 @@ class MatchCreate(BaseModel):
     lettera: LetteraFields
     # An admin's estimate of the engagement's billable days (REB-497), read back
     # unchanged; `Match.giorni_previsti` carries the same `CHECK`.
-    giorni_previsti: int | None = Field(default=None, ge=1, le=366)
+    giorni_previsti: int | None = None
+
+    @field_validator("giorni_previsti", mode="after")
+    @classmethod
+    def _expected_days_within_a_year(cls, value: int | None) -> int | None:
+        """From one day to a year, the column's own `CHECK`, refused in the admin's words
+        (REB-502): «Crea match» and the MCP tools show the sentence as it is, where
+        `Field(ge=, le=)` would answer Pydantic's English."""
+        if value is not None and not GIORNI_PREVISTI_MIN <= value <= GIORNI_PREVISTI_MAX:
+            raise PydanticCustomError("giorni_previsti_range", GIORNI_PREVISTI_RANGE)
+        return value
 
 
 class ContractDocumentRead(BaseModel):

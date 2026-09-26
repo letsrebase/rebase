@@ -3,6 +3,7 @@ numbers the law allows, and nothing that could carry the client's budget (REB-38
 
 from datetime import date
 from decimal import Decimal
+from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
@@ -91,6 +92,38 @@ def test_a_letter_turns_into_the_markdowns_own_keys_and_printable_values() -> No
 def test_a_letter_the_law_or_the_page_would_not_allow_is_refused(change: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         LetteraFields(**{**REQUIRED, **change})  # type: ignore[arg-type]
+
+
+def _match(giorni_previsti: int | None) -> MatchCreate:
+    cliente = {
+        "cliente_ragione_sociale": "Rossi Studio S.r.l.",
+        "cliente_piva": "01234567890",
+        "cliente_sede": "Milano",
+    }
+    return MatchCreate.model_validate(
+        {
+            "company_id": uuid4(),
+            "cliente": cliente,
+            "lettera": REQUIRED,
+            "giorni_previsti": giorni_previsti,
+        }
+    )
+
+
+@pytest.mark.parametrize("days", [0, -3, 367])
+def test_expected_days_outside_a_year_are_refused_in_the_admins_words(days: int) -> None:
+    """REB-502: the page and the MCP tools repeat this sentence, never Pydantic's English
+    «Input should be less than or equal to 366»."""
+    with pytest.raises(ValidationError) as refused:
+        _match(days)
+    (error,) = refused.value.errors()
+    assert error["loc"] == ("giorni_previsti",)
+    assert error["msg"] == "I giorni previsti vanno da 1 a 366."
+
+
+@pytest.mark.parametrize("days", [1, 366, None])
+def test_expected_days_from_one_to_366_or_none_are_taken(days: int | None) -> None:
+    assert _match(days).giorni_previsti == days
 
 
 def test_the_form_covers_every_field_of_the_letter_and_the_hub_fills_the_rest() -> None:

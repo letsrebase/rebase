@@ -314,7 +314,8 @@ async def test_create_match_refuses_an_out_of_range_giorni_previsti(world: World
             cliente=CLIENTE,
             giorni_previsti=0,
         )
-    assert refused == "giorni_previsti: non valido"
+    # The core's own sentence (REB-502), not Pydantic's English and no longer «non valido».
+    assert refused == "giorni_previsti: I giorni previsti vanno da 1 a 366."
     assert world.written() == before
 
 

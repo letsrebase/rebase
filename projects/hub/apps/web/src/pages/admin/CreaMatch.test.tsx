@@ -1092,6 +1092,10 @@ describe('«Giorni previsti», the expected days (REB-502)', () => {
     expect(giorni).toHaveAttribute('inputmode', 'numeric')
     expect(giorni).toHaveValue(null)
     expect(giorni).not.toBeRequired()
+    // The column's own bounds; the default step of one refuses a fraction.
+    expect(giorni).toHaveAttribute('min', '1')
+    expect(giorni).toHaveAttribute('max', '366')
+    expect(giorni).not.toHaveAttribute('step')
     expect(giorni).toHaveAccessibleDescription(HELP)
     const fee = screen.getByLabelText('Compenso, IVA esclusa (€)')
     expect(fee.compareDocumentPosition(giorni) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
@@ -1128,16 +1132,27 @@ describe('«Giorni previsti», the expected days (REB-502)', () => {
     expect(checked.lettera).not.toHaveProperty('giorni_previsti')
   })
 
-  it('names the expected days the server refused, and stays on «Condizioni»', async () => {
+  it.each(['0', '400', '12.5'])('leaves %s to the browser, which refuses it before any request', async (typed) => {
+    const spy = routes()
+    mount()
+    await toCondizioni()
+    await userEvent.type(screen.getByLabelText('Giorni previsti'), typed)
+    expect(screen.getByLabelText('Giorni previsti')).toBeInvalid()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')).toHaveLength(0)
+    current('2. Condizioni')
+  })
+
+  it('names the expected days the server refused, in its sentence, and stays on «Condizioni»', async () => {
     routes({
       'POST /api/hub/freelancers/f1/matches/check': () =>
-        answer(422, { detail: [{ loc: ['body', 'giorni_previsti'], msg: 'Input should be less than or equal to 366' }] }),
+        answer(422, { detail: [{ loc: ['body', 'giorni_previsti'], msg: 'I giorni previsti vanno da 1 a 366.' }] }),
     })
     mount()
     await toCondizioni()
-    await userEvent.type(screen.getByLabelText('Giorni previsti'), '400')
+    await userEvent.type(screen.getByLabelText('Giorni previsti'), '40')
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('Input should be less than or equal to 366')
+    expect(await screen.findByRole('alert')).toHaveTextContent('I giorni previsti vanno da 1 a 366.')
     expect(screen.getByLabelText('Giorni previsti')).toHaveAttribute('aria-invalid', 'true')
     current('2. Condizioni')
   })
