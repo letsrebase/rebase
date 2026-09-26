@@ -14,6 +14,7 @@ from rebase_core.match_words import DOCUMENT_STATE_LABELS, MATCH_STATE_LABELS, A
 from rebase_core.models import CARD_SENIORITIES
 from rebase_core.team_words import (
     TALENT_ANSWER_LABELS,
+    TALENT_WAITING_LABEL,
     TEAM_ORIGIN_LABELS,
     TEAM_REQUEST_STATE_LABELS,
 )
@@ -73,6 +74,14 @@ def test_the_web_labels_every_action_the_core_names_and_no_other(name: str) -> N
     assert web == core, (
         f"{name}: only on the web {sorted(web - core)}, only in the core {sorted(core - web)}"
     )
+
+
+def test_the_web_says_in_attesa_as_the_core_does() -> None:
+    """REB-517: the word for a talent mailed and silent is one string, not a map."""
+    source = FORMAT_TS.read_text(encoding="utf-8")
+    found = re.search(r"^export const TALENT_WAITING_LABEL = '([^'\\]*)'$", source, re.MULTILINE)
+    assert found is not None, f"TALENT_WAITING_LABEL is not a string constant in {FORMAT_TS.name}"
+    assert found.group(1) == TALENT_WAITING_LABEL
 
 
 def test_the_web_names_every_seniority_a_card_can_carry_and_no_other() -> None:

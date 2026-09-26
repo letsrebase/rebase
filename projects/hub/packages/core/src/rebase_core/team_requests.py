@@ -18,27 +18,42 @@ names the company is logged at creation, by the request's id alone, since the vi
 cannot change it; the admin's own edit (`set_summary`) that still names it is refused,
 and so is the availability mail (D1), before the talents read it.
 
+**Each talent answers once, on a page, never on a GET** (REB-517, spec § 3.2, § 3.6).
+«Contatta i talenti» mails every talent of the request once; «Rimanda a chi non ha
+risposto» mails again only who has not answered, each time with a fresh token in place
+of the old one, so a talent who answered is never mailed again. The token is the magic
+link's shape (`token_urlsafe(32)` sent, its SHA-256 at rest), good for one answer within
+thirty days of its mail; an unknown, spent or expired one is the same `invalid`, so the
+answer says nothing about which. The mails leave after the admin's answer
+(`prepare_contact`, then `deliver` in the route's background task): `mail_sent_at` is
+written with the token, so the page shows the talent as contacted at once, and taken
+back with the token if the provider refuses the mail, since that link reaches nobody.
+
 Nothing here logs a name, an address, a phone or a text: the log lines carry ids.
 """
 
+import hashlib
 import logging
 import re
-from collections.abc import Callable
+import secrets
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from rebase_core.analytics import TEAM_REQUEST_SENT, Tracker
+from rebase_core.analytics import TEAM_REQUEST_SENT, TEAM_TALENT_ANSWER, Tracker
 from rebase_core.audit import AdminActionService, field_changes, utcnow
 from rebase_core.bands import band_for
 from rebase_core.config import Settings
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
-from rebase_core.mail import EmailSender, Mail, team_request_mail
+from rebase_core.mail import EmailSender, Mail, team_availability_mail, team_request_mail
 from rebase_core.models import (
+    TALENT_ANSWERS,
     TEAM_REQUEST_ORIGINS,
     TEAM_REQUEST_STATES,
     Freelancer,
@@ -69,6 +84,16 @@ PROPOSAL_REFUSED = "Questa proposta non esiste o è scaduta: chiedi di nuovo il 
 NOBODY_TO_HIRE = "Questa proposta non ha nessuno da assumere."
 NO_SUMMARY = "Questa richiesta è per un talento solo: non ha un riassunto da modificare."
 NAMES_THE_COMPANY = "Il riassunto nomina l'azienda: correggilo prima di scrivere ai talenti."
+ALREADY_CONTACTED = "I talenti sono già stati contattati: rimanda a chi non ha risposto."
+NOBODY_TO_CONTACT = "Non c'è nessun talento da contattare."
+REQUEST_CLOSED = "La richiesta è chiusa: riaprila prima di scrivere ai talenti."
+NO_SENDER = (
+    "L'invio delle email non è attivo su questo ambiente: la mail non arriverebbe ai talenti."
+)
+# How long a talent can answer the availability mail (spec § 3.6), from when it left.
+ANSWER_MAX_AGE = timedelta(days=30)
+CONTACTED = "talents_contacted"
+Answer = Literal["si", "no", "invalid"]
 UNIQUE_PROPOSAL_INDEX = "uq_team_requests_proposal_id"
 _SORT = SortSpec("created_at", "datetime")
 # A word of the company's name, as `names_the_company` reads one: letters and digits.
@@ -94,6 +119,22 @@ def names_the_company(riassunto: str, azienda: str) -> bool:
             if re.search(rf"(?<![^\W_]){re.escape(word)}(?![^\W_])", riassunto, re.IGNORECASE):
                 return True
     return False
+
+
+def _token_hash(raw: str) -> str:
+    """How a token is kept: its SHA-256, the magic link's own (`users._hash`)."""
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class AvailabilityMail:
+    """One talent's availability mail, built by `prepare_contact` and sent by `deliver`:
+    the talent's row, the hash of the token the mail carries (so a delivery never
+    touches a row a later «Rimanda» gave another token), and the mail itself."""
+
+    talent_id: UUID
+    token_hash: str
+    mail: Mail
 
 
 def _violates_unique_proposal(exc: IntegrityError) -> bool:
@@ -341,6 +382,148 @@ class TeamRequestService:
         self._record(row.id, admin_id, {"riassunto": before}, {"riassunto": riassunto})
         return self.get(request_id)
 
+    # ---- the talents' availability (D1, spec § 3.2, § 3.6) ------------------------------
+
+    def contact_talents(
+        self, request_id: UUID, admin_id: UUID, *, only_silent: bool
+    ) -> TeamRequestRead:
+        """«Contatta i talenti» (`only_silent` false) and «Rimanda a chi non ha
+        risposto» (true), start to end: the tokens, then the mails through `sender`.
+        The API's route runs the two halves apart, `deliver` after its answer."""
+        if self.sender is None:
+            raise InvalidState(NO_SENDER)
+        _, mails = self.prepare_contact(request_id, admin_id, only_silent=only_silent)
+        self.deliver(request_id, mails)
+        return self.get(request_id)
+
+    def prepare_contact(
+        self, request_id: UUID, admin_id: UUID, *, only_silent: bool
+    ) -> tuple[TeamRequestRead, list[AvailabilityMail]]:
+        """The tokens and the mails, committed and not sent. Every talent the first
+        time, and a first time only: once anyone has the mail, writing again is
+        `only_silent`, to each talent with no answer. A talent whose card was deleted or
+        `scartato` since the request is skipped, and logged by id. Refused, before
+        anything is written: a closed request, a summary that names the company
+        (`names_the_company`), a second first time, and nobody left to write to. The
+        request becomes `contattata`, with `contacted_at` from its first send."""
+        row = self._lock(request_id)
+        if row.stato == "chiusa":
+            self.session.rollback()
+            raise InvalidState(REQUEST_CLOSED)
+        # Read fresh, as `_lock` reads the request: the summary may have been edited in
+        # another session since this one last saw it, and the mail sends what is there.
+        proposal = (
+            self.session.get(TeamProposal, row.proposal_id, populate_existing=True)
+            if row.proposal_id is not None
+            else None
+        )
+        riassunto = proposal.riassunto if proposal is not None else None
+        if riassunto is not None and names_the_company(riassunto, row.azienda):
+            self.session.rollback()
+            raise InvalidState(NAMES_THE_COMPANY)
+        talents = self._talent_rows(row, proposal, lock=True)
+        if not only_silent and any(talent.mail_sent_at is not None for talent, _, _ in talents):
+            self.session.rollback()
+            raise InvalidState(ALREADY_CONTACTED)
+        now = self.now()
+        page = f"{self.settings.hub_url.rstrip('/')}/team/risposta"
+        mails: list[AvailabilityMail] = []
+        for talent, freelancer, user in talents:
+            if talent.risposta is not None:
+                continue
+            if freelancer.deleted_at is not None or freelancer.stato == "scartato":
+                logger.info("team request %s: talent %s is gone, not mailed", row.id, talent.id)
+                continue
+            raw = secrets.token_urlsafe(32)
+            talent.token_hash = _token_hash(raw)
+            talent.mail_sent_at = now
+            mails.append(
+                AvailabilityMail(
+                    talent_id=talent.id,
+                    token_hash=talent.token_hash,
+                    mail=team_availability_mail(
+                        user.email,
+                        nome=user.nome,
+                        ruolo=talent.ruolo,
+                        riassunto=riassunto,
+                        tariffa=freelancer.tariffa_giornaliera,
+                        yes_url=f"{page}?t={raw}&r=si",
+                        no_url=f"{page}?t={raw}&r=no",
+                    ),
+                )
+            )
+        if not mails:
+            self.session.rollback()
+            raise InvalidState(NOBODY_TO_CONTACT)
+        if row.stato == "nuova":
+            row.stato = "contattata"
+        if row.contacted_at is None:
+            row.contacted_at = now
+        self.session.commit()
+        AdminActionService(self.session).record(
+            ENTITY, row.id, CONTACTED, admin_id, {"talenti": len(mails), "only_silent": only_silent}
+        )
+        return self.get(request_id), mails
+
+    def deliver(self, request_id: UUID, mails: Sequence[AvailabilityMail]) -> int:
+        """Sends each mail `prepare_contact` built, and answers how many the provider
+        accepted. An accepted one keeps its token and moves `mail_sent_at` to the moment
+        it left; a refused one takes both back, since that link reaches nobody, and is
+        logged by id, so «Rimanda» writes to that talent again."""
+        if self.sender is None:
+            raise InvalidState(NO_SENDER)
+        accepted = 0
+        for item in mails:
+            sent = self.sender.send(item.mail)
+            same = (
+                TeamRequestTalent.id == item.talent_id,
+                TeamRequestTalent.token_hash == item.token_hash,
+                TeamRequestTalent.risposta.is_(None),
+            )
+            if sent:
+                accepted += 1
+                values: dict[str, Any] = {"mail_sent_at": self.now()}
+            else:
+                logger.warning(
+                    "team request %s: the provider refused the mail to talent %s",
+                    request_id,
+                    item.talent_id,
+                )
+                values = {"token_hash": None, "mail_sent_at": None}
+            self.session.execute(update(TeamRequestTalent).where(*same).values(**values))
+            self.session.commit()
+        return accepted
+
+    def answer(self, raw_token: str, risposta: str) -> Answer:
+        """A talent's «Conferma» on the answer page: `risposta` recorded with its time
+        and counted (`team_talento_risposta`, the answer alone), or `invalid` for a token
+        that is unknown, already answered, or older than `ANSWER_MAX_AGE`, all alike."""
+        if risposta not in TALENT_ANSWERS:
+            raise ValidationFailed(ENTITY, "risposta", f"uno fra {', '.join(TALENT_ANSWERS)}")
+        if not raw_token:
+            return "invalid"
+        talent = self.session.scalar(
+            select(TeamRequestTalent)
+            .where(TeamRequestTalent.token_hash == _token_hash(raw_token))
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        now = self.now()
+        if (
+            talent is None
+            or talent.risposta is not None
+            or talent.mail_sent_at is None
+            or talent.mail_sent_at <= now - ANSWER_MAX_AGE
+        ):
+            self.session.rollback()
+            return "invalid"
+        talent.risposta = risposta
+        talent.risposta_at = now
+        self.session.commit()
+        if self.tracker is not None:
+            self.tracker.team_event(TEAM_TALENT_ANSWER, {"risposta": risposta})
+        return "si" if risposta == "si" else "no"
+
     # ---- helpers -----------------------------------------------------------------------
 
     def _requestable(
@@ -385,22 +568,30 @@ class TeamRequestService:
             raise ValidationFailed(ENTITY, "proposal_id", NOBODY_TO_HIRE)
         return members
 
-    def _talenti(
-        self, row: TeamRequest, proposal: TeamProposal | None
-    ) -> list[TeamRequestTalentRead]:
-        """The request's talents with their names and rates, in the proposal's order."""
+    def _talent_rows(
+        self, row: TeamRequest, proposal: TeamProposal | None, *, lock: bool = False
+    ) -> list[tuple[TeamRequestTalent, Freelancer, User]]:
+        """The request's talents with their cards and names, in the proposal's order;
+        `lock` takes the talents' rows for the send that writes their tokens."""
         order = (
             {UUID(member["freelancer_id"]): member["posizione"] for member in proposal.team}
             if proposal is not None
             else {}
         )
-        rows = self.session.execute(
+        stmt = (
             select(TeamRequestTalent, Freelancer, User)
             .join(Freelancer, Freelancer.id == TeamRequestTalent.freelancer_id)
             .join(User, User.id == Freelancer.user_id)
             .where(TeamRequestTalent.request_id == row.id)
-        ).all()
-        ordered = sorted(
+        )
+        if lock:
+            # Fresh rows, not the session's copies: an answer or a card deleted in
+            # another session since must count here.
+            stmt = stmt.with_for_update(of=TeamRequestTalent).execution_options(
+                populate_existing=True
+            )
+        rows = self.session.execute(stmt).tuples().all()
+        return sorted(
             rows,
             key=lambda found: (
                 order.get(found[0].freelancer_id, len(order) + 1),
@@ -408,6 +599,12 @@ class TeamRequestService:
                 found[2].nome,
             ),
         )
+
+    def _talenti(
+        self, row: TeamRequest, proposal: TeamProposal | None
+    ) -> list[TeamRequestTalentRead]:
+        """The request's talents with their names and rates, in the proposal's order."""
+        ordered = self._talent_rows(row, proposal)
         return [
             TeamRequestTalentRead(
                 freelancer_id=talent.freelancer_id,

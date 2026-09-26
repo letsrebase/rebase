@@ -171,8 +171,9 @@ describe('a team request, as the admin reads it (REB-514, spec § 3.5)', () => {
     expect(screen.getByRole('textbox', { name: 'Nota' })).toHaveValue('')
     expect(screen.getByRole('button', { name: 'Salva la nota' })).toBeInTheDocument()
 
-    // «Contatta i talenti» is D1's.
-    expect(screen.queryByRole('button', { name: /Contatta i talenti/ })).toBeNull()
+    // A talent already has the availability mail (D1): writing again is to the silent.
+    expect(screen.getByRole('button', { name: 'Rimanda a chi non ha risposto' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Contatta i talenti' })).toBeNull()
   })
 
   it('shows the team by name, each linking to the talent, with the role, the rate, the band and the answer', async () => {
@@ -333,3 +334,123 @@ describe('a team request, as the admin reads it (REB-514, spec § 3.5)', () => {
     expect(await screen.findByText('Richiesta non trovata.')).toBeInTheDocument()
   })
 })
+
+/** `REQUEST` before anyone was mailed: every talent silent, no answer, no send. */
+const FRESH = {
+  ...REQUEST,
+  talenti: REQUEST.talenti.map((talent) => ({ ...talent, mail_sent_at: null, risposta: null, risposta_at: null })),
+}
+
+/** Answers the page's read with `request`, and hands every write to `write`. */
+function serveRequest(request: unknown, write: (method: string, url: string) => Response) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = String(input)
+    const method = init?.method ?? 'GET'
+    if (method === 'GET' && url === '/api/hub/team/requests/r1') return answer(200, request)
+    if (method === 'GET') throw new Error(`unhandled fetch in this test: ${method} ${url}`)
+    return write(method, url)
+  })
+}
+
+describe('the talents’ availability on the request’s page (REB-517, spec § 3.5, § 3.6)', () => {
+  it('contacts every talent the first time, then offers to write again to the silent', async () => {
+    const calls: string[] = []
+    serveRequest(FRESH, (method, url) => {
+      calls.push(`${method} ${url}`)
+      return answer(200, {
+        ...FRESH,
+        stato: 'contattata',
+        contacted_at: '2026-09-26T08:00:00Z',
+        talenti: FRESH.talenti.map((talent) => ({ ...talent, mail_sent_at: '2026-09-26T08:00:00Z' })),
+      })
+    })
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    expect(within(team).queryByRole('button', { name: 'Rimanda a chi non ha risposto' })).toBeNull()
+    for (const link of within(team).getAllByRole('link')) {
+      expect(cellUnder(link.closest('tr')!, 'Risposta')).toHaveTextContent(/^—$/)
+    }
+    await userEvent.click(within(team).getByRole('button', { name: 'Contatta i talenti' }))
+
+    expect(await within(team).findByRole('button', { name: 'Rimanda a chi non ha risposto' })).toBeInTheDocument()
+    expect(calls).toEqual(['POST /api/hub/team/requests/r1/contact?only_silent=false'])
+    expect(within(team).getByRole('status')).toHaveTextContent('Mail in partenza')
+    for (const link of within(team).getAllByRole('link')) {
+      expect(cellUnder(link.closest('tr')!, 'Risposta')).toHaveTextContent(/^In attesa$/)
+    }
+    expect(within(screen.getByRole('region', { name: 'Stato' })).getByText('Contattata')).toBeInTheDocument()
+  })
+
+  it('writes again only to the silent with «Rimanda a chi non ha risposto»', async () => {
+    const calls: string[] = []
+    serveRequest(REQUEST, (method, url) => {
+      calls.push(`${method} ${url}`)
+      return answer(200, REQUEST)
+    })
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    await userEvent.click(within(team).getByRole('button', { name: 'Rimanda a chi non ha risposto' }))
+
+    expect(await within(team).findByRole('status')).toHaveTextContent('Mail in partenza')
+    expect(calls).toEqual(['POST /api/hub/team/requests/r1/contact?only_silent=true'])
+  })
+
+  it('shows the answers with their time, «In attesa» for the silent and «—» for who was never mailed', async () => {
+    serveRequest(
+      {
+        ...REQUEST,
+        talenti: [
+          { ...REQUEST.talenti[0], mail_sent_at: '2026-09-25T12:00:00Z', risposta: 'no', risposta_at: '2026-09-27T16:45:00Z' },
+          { ...REQUEST.talenti[1], risposta: null, risposta_at: null },
+        ],
+      },
+      () => answer(500, {}),
+    )
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    const ada = cellUnder(within(team).getByRole('link', { name: 'Ada Lovelace' }).closest('tr')!, 'Risposta')
+    expect(ada).toHaveTextContent(/^No · /)
+    expect(ada).toHaveTextContent('27 set 2026')
+    const grace = cellUnder(within(team).getByRole('link', { name: 'Grace Hopper' }).closest('tr')!, 'Risposta')
+    expect(grace).toHaveTextContent(/^In attesa$/)
+  })
+
+  it('shows the refusal of a summary that names the company, and keeps the button', async () => {
+    const refusal = "Il riassunto nomina l'azienda: correggilo prima di scrivere ai talenti."
+    serveRequest(FRESH, () => answer(409, { detail: refusal }))
+    mount()
+
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    await userEvent.click(within(team).getByRole('button', { name: 'Contatta i talenti' }))
+
+    expect(await within(team).findByRole('alert')).toHaveTextContent(refusal)
+    expect(within(team).getByRole('button', { name: 'Contatta i talenti' })).toBeEnabled()
+  })
+
+  it('offers nothing to send once everyone answered', async () => {
+    const answered = {
+      ...REQUEST,
+      talenti: REQUEST.talenti.map((talent) => ({
+        ...talent,
+        mail_sent_at: '2026-09-25T12:00:00Z',
+        risposta: 'si',
+        risposta_at: '2026-09-26T09:30:00Z',
+      })),
+    }
+    serveRequest(answered, () => answer(500, {}))
+    mount()
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    expect(within(team).queryByRole('button')).toBeNull()
+  })
+
+  it('offers nothing to send on a closed request', async () => {
+    serveRequest({ ...FRESH, stato: 'chiusa', closed_at: '2026-09-26T09:00:00Z' }, () => answer(500, {}))
+    mount()
+    const team = await screen.findByRole('region', { name: 'Il team' })
+    expect(within(team).queryByRole('button')).toBeNull()
+  })
+})
+

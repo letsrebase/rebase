@@ -87,6 +87,9 @@ export const TALENT_ANSWER_LABELS: Record<string, string> = {
   si: 'Sì',
   no: 'No',
 }
+/** A talent who has the availability mail and has not answered (D1): core's
+ *  `team_words.TALENT_WAITING_LABEL`, held equal by `tests/test_web_labels.py`. */
+export const TALENT_WAITING_LABEL = 'In attesa'
 
 /** A card's `seniority` (spec § 2.1), in the words a profile uses: the keys are core's
  *  `CARD_SENIORITIES`, which `tests/test_web_labels.py` holds this map to. */

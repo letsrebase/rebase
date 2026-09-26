@@ -16,6 +16,7 @@ import base64
 import html as html_escape
 import json
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Protocol
 
 from rebase_core.config import Settings
@@ -118,6 +119,11 @@ WATERMELON = "#ed254e"
 # White on raw Watermelon fails the body-text contrast floor; the landing's `.cta` uses
 # this darker step for the same reason (`--color-watermelon-strong`).
 CTA = "#e5133e"
+# «Sono disponibile» in the availability mail (spec § 3.6): the palette has no green, so
+# this one is the mail's own, proposed for Ivan to confirm on the pull request. White on
+# it measures 4.37:1 by WCAG's formula (the spec says 4.7:1), a little under the 4.5:1
+# floor `CTA` was darkened for; `#29843b`, a shade darker, measures 4.71:1.
+AVAILABLE_GREEN = "#2b8a3e"
 FONT = "Outfit, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Arial, sans-serif"
 # The landing's stepped shadow: the border colour, moved 8px right and down. A mail
 # client draws no box-shadow, so the step is a cell of ink behind the card.
@@ -147,13 +153,15 @@ def _mark() -> str:
     )
 
 
-def _button(href: str, label: str) -> str:
-    """The landing's `.cta`: a filled rectangle, hard edges, white text at weight 500."""
+def _button(href: str, label: str, colour: str = CTA) -> str:
+    """The landing's `.cta`: a filled rectangle, hard edges, white text at weight 500, on
+    `CTA` unless a mail offers two answers and colours them apart."""
     text = f"font-family:{FONT};font-size:17px;font-weight:500;color:#ffffff;"
     # The padding sits on the cell as well as on the anchor: Outlook's engine ignores
     # `display:inline-block` on a link and would shrink the box to the text.
     cell = (
-        f'bgcolor="{CTA}" style="background-color:{CTA};border:2px solid {CTA};padding:14px 24px;"'
+        f'bgcolor="{colour}" style="background-color:{colour};border:2px solid {colour};'
+        'padding:14px 24px;"'
     )
     return (
         f'<table {TABLE} style="border-collapse:collapse;">'
@@ -628,6 +636,105 @@ def team_request_mail(
             f'<p {small}word-break:break-all;">'
             "Se il bottone non si apre, copia questo indirizzo nel browser:<br>"
             f"{_quiet_link(safe_url, safe_url)}</p>",
+            '<p style="margin:24px 0 0 0;">Noi di rebase</p>',
+        )
+    )
+    return Mail(to=to, subject=subject, text=text, html=_frame(subject, "\n".join(rows)))
+
+
+def _euro(amount: Decimal) -> str:
+    """A daily rate the Italian way: «450 €», «1.450,50 €»; cents only when there are
+    some."""
+    places = 0 if amount == amount.to_integral_value() else 2
+    figure = f"{amount:,.{places}f}".replace(",", "_").replace(".", ",").replace("_", ".")
+    return f"{figure} €"
+
+
+def team_availability_mail(
+    to: str,
+    *,
+    nome: str,
+    ruolo: str,
+    riassunto: str | None,
+    tariffa: Decimal | None,
+    yes_url: str,
+    no_url: str,
+) -> Mail:
+    """The availability mail (REB-517, spec § 3.6), to one talent of a team request: rebase
+    has a project the person fits, the project's anonymous summary, the role proposed to
+    them, their own daily rate (never the client's band), and two answers, each a link
+    to the hub's answer page, which records nothing until the person confirms there.
+
+    It names no company, no product and no other talent: the summary is the one the
+    admin checked (`team_requests.names_the_company` refuses it otherwise), and a
+    request of one talent from the cloud, which has none, goes without it. The summary
+    and the role were written by a model and an admin, so both are escaped in the HTML,
+    and so are the links, which carry an `&`."""
+    e = html_escape.escape
+    subject = "Un progetto per te: sei disponibile?"
+    greeting = f"Ciao {nome}," if nome else "Ciao,"
+    intro = "abbiamo un progetto per cui il tuo profilo è adatto."
+    if riassunto:
+        intro += " Eccolo, in breve:"
+    role = f"Il ruolo che ti proponiamo: {ruolo}."
+    if tariffa is not None:
+        fee = (
+            "Il compenso sarebbe la tua tariffa giornaliera, quella del tuo profilo su "
+            f"rebase: {_euro(tariffa)} al giorno."
+        )
+    else:
+        fee = (
+            "Il compenso sarebbe la tua tariffa giornaliera: sul tuo profilo non c'è "
+            "ancora, la concordiamo con te."
+        )
+    ask = "Sei disponibile? Rispondi da qui:"
+    after = (
+        "Puoi rispondere una volta sola, entro trenta giorni. Se sei disponibile, ti "
+        "riscriviamo noi con i dettagli."
+    )
+    yes_label, no_label = "Sono disponibile", "Non sono disponibile"
+    text_parts = [greeting, intro]
+    if riassunto:
+        text_parts.append(riassunto)
+    text_parts.extend(
+        (
+            role,
+            fee,
+            "Sei disponibile? Rispondi da uno di questi due link:",
+            f"{yes_label}:\n{yes_url}",
+            f"{no_label}:\n{no_url}",
+            after,
+            "Noi di rebase",
+        )
+    )
+    text = "\n\n".join(text_parts) + "\n"
+    safe_yes, safe_no = e(yes_url, quote=True), e(no_url, quote=True)
+    small = f'style="margin:24px 0 0 0;font-size:13px;line-height:1.5;color:{INK_QUIET};'
+    # Two buttons, one under the other: side by side they overflow a phone's width.
+    spacer = 'height="12" style="height:12px;line-height:12px;font-size:0;"'
+    gap = f"<table {TABLE}><tr><td {spacer}>&nbsp;</td></tr></table>"
+    rows = [
+        f'<p style="margin:0 0 20px 0;">{e(greeting)}</p>',
+        f'<p style="margin:0 0 20px 0;">{e(intro)}</p>',
+    ]
+    if riassunto:
+        rows.append(
+            f'<p style="margin:0 0 20px 0;padding:0 0 0 16px;border-left:2px solid {INK};">'
+            f"{e(riassunto)}</p>"
+        )
+    rows.extend(
+        (
+            f'<p style="margin:0 0 20px 0;">{e(role)}</p>',
+            f'<p style="margin:0 0 20px 0;">{e(fee)}</p>',
+            f'<p style="margin:0 0 24px 0;">{e(ask)}</p>',
+            _button(safe_yes, yes_label, AVAILABLE_GREEN),
+            gap,
+            _button(safe_no, no_label),
+            f'<p {small}word-break:break-all;">'
+            "Se i bottoni non si aprono, copia uno di questi indirizzi nel browser:<br>"
+            f"{yes_label}: {_quiet_link(safe_yes, safe_yes)}<br>"
+            f"{no_label}: {_quiet_link(safe_no, safe_no)}</p>",
+            f'<p style="margin:24px 0 0 0;">{e(after)}</p>',
             '<p style="margin:24px 0 0 0;">Noi di rebase</p>',
         )
     )

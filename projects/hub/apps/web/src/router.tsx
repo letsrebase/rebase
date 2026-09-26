@@ -12,6 +12,7 @@ import { CompanyWizard } from '@/pages/CompanyWizard'
 import { FreelancerWizard } from '@/pages/FreelancerWizard'
 import { SignedInLayout } from '@/pages/SignedInLayout'
 import { Team } from '@/pages/Team'
+import { TeamRisposta } from '@/pages/TeamRisposta'
 import { AdminAccessi } from '@/pages/admin/Accessi'
 import { AdminAdmins } from '@/pages/admin/Admins'
 import { AdminAgenti } from '@/pages/admin/Agenti'
@@ -122,6 +123,17 @@ const companiesRedirect = createRoute({
 })
 // P-REB-43: the public team builder, with the wizards' chrome and no login.
 const team = createRoute({ getParentRoute: () => publicLayout, path: '/team', component: Team })
+// REB-517: where a talent answers the availability mail, public like the page above; the
+// page reads `t` and `r` itself and posts nothing until «Conferma».
+const teamAnswer = createRoute({
+  getParentRoute: () => publicLayout,
+  path: '/team/risposta',
+  validateSearch: (search: Record<string, unknown>): { t: string; r: string } => ({
+    t: strParam(search.t) ?? '',
+    r: strParam(search.r) ?? '',
+  }),
+  component: TeamRisposta,
+})
 const thanks = createRoute({
   getParentRoute: () => publicLayout,
   path: '/thanks',
@@ -446,6 +458,7 @@ export const routeTree = root.addChildren([
     companies,
     companiesRedirect,
     team,
+    teamAnswer,
     thanks,
     thanksRedirect,
     login,

@@ -14,6 +14,11 @@ freelancer id and no place of a card.
 The request's mail to rebase leaves after the answer, as a background task, the way the
 magic link does: the request is committed by then, so a slow provider does not hold the
 201 and a failing one does not turn it into a 500.
+
+A talent's answer to the availability mail (REB-517, spec § 3.2) is a post from the
+hub's page, never the mail's link itself, which a scanner may fetch: there is no GET
+here. The token is the only guard, 256 random bits and one answer, and the route sits
+behind the same speed bump as the wizards all the same.
 """
 
 import logging
@@ -36,6 +41,8 @@ from rebase_core.team_builder import OFF_SENTENCE
 from rebase_core.team_caps import BUSY_SENTENCE, require_daily_room
 from rebase_core.team_requests import TeamRequestService
 from rebase_core.team_schemas import (
+    TeamAvailabilityAnswer,
+    TeamAvailabilityOutcome,
     TeamProposalCreate,
     TeamProposalRead,
     TeamRequestCreate,
@@ -104,3 +111,20 @@ def request_team(
     else:
         background.add_task(_send, sender, mail, read.id)
     return TeamRequestCreated(id=read.id)
+
+
+@router.post("/availability", response_model=TeamAvailabilityOutcome)
+def answer_availability(
+    data: TeamAvailabilityAnswer,
+    request: Request,
+    session: SessionDep,
+    settings: SettingsDep,
+    tracker: TrackerDep,
+) -> TeamAvailabilityOutcome:
+    """«Conferma» on `/hub/team/risposta`: `{esito: "si" | "no"}` once recorded, and
+    `{esito: "invalid"}` for a token unknown, spent or expired, never saying which."""
+    spend_one(request)
+    esito = TeamRequestService(session, settings=settings, tracker=tracker).answer(
+        data.t, data.risposta
+    )
+    return TeamAvailabilityOutcome(esito=esito)

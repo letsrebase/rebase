@@ -287,3 +287,26 @@ class TeamRequestSummary(BaseModel):
     @classmethod
     def _paragraphs(cls, value: str) -> str:
         return clean_multiline(value, what="un riassunto")
+
+
+# ---- the talents' availability (REB-517, spec § 3.2, § 3.6) -------------------------------
+
+# `token_urlsafe(32)` is 43 characters: room to spare, and nothing unbounded is hashed.
+AVAILABILITY_TOKEN_MAX_LENGTH = 128
+
+
+class TeamAvailabilityAnswer(BaseModel):
+    """What the answer page posts on «Conferma»: the token from the mail's link and the
+    answer the link carried. An empty or unknown token is not a 422 but the same
+    `invalid` a spent one gets, so the page says one sentence for all of them."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    t: str = Field(max_length=AVAILABILITY_TOKEN_MAX_LENGTH)
+    risposta: Literal["si", "no"]
+
+
+class TeamAvailabilityOutcome(BaseModel):
+    """The answer recorded, or `invalid` for a token unknown, spent or expired alike."""
+
+    esito: Literal["si", "no", "invalid"]

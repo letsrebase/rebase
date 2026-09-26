@@ -551,7 +551,9 @@ ADMIN_ACTION_ENTITY_TYPES = ("freelancer", "company", "match", "freelancer_fisca
 # four), and `fiscal_updated` on `freelancer_fiscal`, whose payload names the fields that
 # changed and never their values: a tax identifier is not copied into this table.
 # REB-509 adds `vetted`, on entity type `freelancer`: «Vetted» flips `Freelancer.vetted_at`
-# on or off, not a field an "overridden"/"cleared" pair already describes.
+# on or off, not a field an "overridden"/"cleared" pair already describes. REB-517 adds
+# `talents_contacted`, on entity type `team_request`: «Contatta i talenti» and «Rimanda»,
+# with how many talents were mailed. Both in Python only: the column has no CHECK.
 ADMIN_ACTION_KINDS = (
     "overridden",
     "cleared",
@@ -566,6 +568,7 @@ ADMIN_ACTION_KINDS = (
     "mail_resent",
     "notice_recorded",
     "vetted",
+    "talents_contacted",
 )
 
 

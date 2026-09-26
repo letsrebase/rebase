@@ -216,6 +216,16 @@ export interface TeamRequestCreate {
   telefono: string
 }
 
+/** What the answer page posts on «Conferma» (D1, spec § 3.2): the mail's token and the
+ *  answer its link carried. */
+export interface TeamAvailabilityAnswer {
+  t: string
+  risposta: TalentAnswer
+}
+
+/** The answer recorded, or `invalid` for a link unknown, spent or expired alike. */
+export type TeamAvailabilityOutcome = TalentAnswer | 'invalid'
+
 export const team = {
   /** 503 when the builder is off or too busy, 502 when Claude does not answer, 422 on
    *  the description or a `previous_id` that is not a live public proposal: each with
@@ -223,6 +233,10 @@ export const team = {
   propose: (body: TeamProposalCreate) => request<TeamProposal>('/api/hub/team/proposals', json(body)),
   /** 201; 409 when the proposal is already requested, 422 when it is gone. */
   request: (body: TeamRequestCreate) => request<{ id: string }>('/api/hub/team/requests', json(body)),
+  /** A talent's «Conferma»: 200 with the outcome, whatever the token; 429 past the
+   *  wizards' speed bump. */
+  answer: (body: TeamAvailabilityAnswer) =>
+    request<{ esito: TeamAvailabilityOutcome }>('/api/hub/team/availability', json(body)),
 }
 
 // ---- the team builder, in the admin area (P-REB-43, spec § 2.1, § 3.5, § 5.1) --------------
@@ -1081,6 +1095,12 @@ export const admin = {
   /** «Salva il riassunto»: what the talents will read. */
   setTeamRequestSummary: (id: string, riassunto: string) =>
     request<TeamRequest>(`/api/hub/team/requests/${id}/summary`, { ...json({ riassunto }), method: 'PATCH' }),
+  /** «Contatta i talenti», or with `onlySilent` «Rimanda a chi non ha risposto» (D1):
+   *  the request with its talents contacted, the mails leaving after the answer; 409
+   *  with the API's sentence (a summary that names the company, among others), 503
+   *  without a mail key. */
+  contactTeamTalents: (id: string, onlySilent: boolean) =>
+    request<TeamRequest>(`/api/hub/team/requests/${id}/contact?only_silent=${onlySilent}`, { method: 'POST' }),
   companies: (filters: CompaniesFilters & { cursor?: string; limit?: number } = {}) => {
     const qs = filterQuery(filters)
     return request<CompanyList>(`/api/hub/companies${qs ? `?${qs}` : ''}`)
