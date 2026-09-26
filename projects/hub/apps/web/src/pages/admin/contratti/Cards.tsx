@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { ChevronDown, Download } from 'lucide-react'
 import { useRef, type ReactNode } from 'react'
 import { Badge } from '@rebase/ui/badge'
@@ -57,6 +58,22 @@ function DocumentLinks({ document }: { document: ContractDocument }) {
         </Button>
       )}
     </>
+  )
+}
+
+/** «Consuntivo» (REB-498): the hours of a match linked to its deal on Pigro, on the
+ *  admin's own page. */
+function ReportLink({ match }: { match: Match }) {
+  return (
+    <Button asChild variant="outline" size="sm">
+      <Link
+        // @ts-expect-error -- REB-503 registers this route in `router.tsx`, with its page: drop this line then.
+        to="/admin/matches/$id/report" params={{ id: match.id }}
+        aria-label={`Consuntivo del match con ${match.nome_azienda} come ${match.figura_richiesta}`}
+      >
+        Consuntivo
+      </Link>
+    </Button>
   )
 }
 
@@ -231,6 +248,7 @@ function MatchCard({ match, handles, busy }: { match: Match; handles: ActionHand
             moreLabel={`Altre azioni del match con ${match.nome_azienda} come ${match.figura_richiesta}`}
           >
             <DocumentLinks document={match.lettera} />
+            {match.pigro_stato === 'collegato' && <ReportLink match={match} />}
           </NextSteps>
           <p className="text-xs text-muted-foreground">{`Creato il ${formatDate(match.created_at)}`}</p>
         </CardContent>

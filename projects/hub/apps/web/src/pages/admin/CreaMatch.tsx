@@ -17,6 +17,7 @@ import {
   draftFromFiscal,
   failureOf,
   fiscalToSave,
+  giorniPrevistiToSend,
   olderFiscal,
   refillFiscal,
   typedAfterSave,
@@ -84,6 +85,8 @@ export function AdminCreaMatch() {
   const [cliente, setCliente] = useState<ClienteForm>(CLIENTE_EMPTY)
   const [editCliente, setEditCliente] = useState(false)
   const [lettera, setLettera] = useState<LetteraForm>(LETTERA_EMPTY)
+  // «Giorni previsti» (REB-497): the match's, so beside the letter's form, never in it.
+  const [giorni, setGiorni] = useState('')
   const [dayRate, setDayRate] = useState('')
   const [altreOpen, setAltreOpen] = useState(false)
   const [review, setReview] = useState<Review | null>(null)
@@ -113,7 +116,13 @@ export function AdminCreaMatch() {
 
   const payload = (): MatchCreate | null =>
     company
-      ? { id: matchId, company_id: company.id, cliente: toCliente(cliente), lettera: letteraToSend(lettera) }
+      ? {
+          id: matchId,
+          company_id: company.id,
+          cliente: toCliente(cliente),
+          lettera: letteraToSend(lettera),
+          giorni_previsti: giorniPrevistiToSend(giorni),
+        }
       : null
   // What the page shows now. A prefill, a tax save or a check can land after the admin
   // has moved on: picked another company, left the step, changed what the check was
@@ -155,6 +164,8 @@ export function AdminCreaMatch() {
       setCliente(client)
       setEditCliente(!clienteComplete(client))
       setLettera(withPayMode(form, payModeOf(form)))
+      // An estimate typed for another request is not this one's.
+      setGiorni('')
       setDayRate(form.compenso)
       setAltreOpen(false)
     },
@@ -326,6 +337,8 @@ export function AdminCreaMatch() {
           <CondizioniStep
             form={lettera}
             onChange={setLettera}
+            giorniPrevisti={giorni}
+            onGiorniPrevisti={setGiorni}
             dayRate={dayRate}
             altreOpen={altreOpen}
             onAltreOpen={setAltreOpen}
@@ -338,6 +351,7 @@ export function AdminCreaMatch() {
         {step === 2 && review && (
           <ControllaStep
             review={review}
+            giorniPrevisti={giorniPrevistiToSend(giorni)}
             nome={nome}
             onBack={() => {
               setReview(null)

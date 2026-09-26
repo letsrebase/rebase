@@ -55,6 +55,9 @@ const MATCH_A = {
   created_by_nome: 'Ivan',
   created_by_email: 'ivan@rebase.it',
   situazione: 'La lettera n. 2026-001 è pronta: il freelance non ha ancora ricevuto nulla.',
+  giorni_previsti: null,
+  pigro_stato: null,
+  pigro_url: null,
 }
 
 const MATCH_B = {
@@ -156,9 +159,35 @@ describe('the Match list (REB-413)', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 1, items: [noLetter] }))
     mount('/admin/matches')
     const row = (await screen.findByText('ada@studio.it')).closest('tr')!
-    expect(cellUnder(row, 'Lettera')).toHaveTextContent('')
-    expect(cellUnder(row, 'Periodo')).toHaveTextContent('')
-    expect(screen.queryByText('—')).toBeNull()
+    // The letter's two cells alone: «Pigro» has its own em dash for a match not active.
+    expect(cellUnder(row, 'Lettera').textContent).toBe('')
+    expect(cellUnder(row, 'Periodo').textContent).toBe('')
+  })
+
+  it('says in «Pigro» where each match’s link stands, and links a linked one to its deal (REB-502)', async () => {
+    const url = 'https://pigro.letsrebase.com/grace/app/deal/6f1c2d3e-0000-4000-8000-000000000009'
+    const linked = { ...MATCH_B, giorni_previsti: 40, pigro_stato: 'collegato', pigro_url: url }
+    const states = [
+      { ...MATCH_B, id: 'm4', freelancer_email: 'da-collegare@studio.it', pigro_stato: 'da_collegare' },
+      { ...MATCH_B, id: 'm5', freelancer_email: 'errore@studio.it', pigro_stato: 'errore' },
+      { ...MATCH_B, id: 'm6', freelancer_email: 'rifiutato@studio.it', pigro_stato: 'rifiutato' },
+    ]
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, { totale: 5, items: [MATCH_A, linked, ...states] }),
+    )
+    mount('/admin/matches')
+
+    const grace = (await screen.findByText('grace@studio.it')).closest('tr')!
+    const deal = within(cellUnder(grace, 'Pigro')).getByRole('link', { name: /Collegato/ })
+    expect(deal).toHaveAttribute('href', url)
+    expect(deal).toHaveAttribute('target', '_blank')
+    const row = (email: string) => screen.getByText(email).closest('tr')!
+    expect(cellUnder(row('da-collegare@studio.it'), 'Pigro')).toHaveTextContent(/^Da collegare$/)
+    expect(cellUnder(row('errore@studio.it'), 'Pigro')).toHaveTextContent(/^Errore$/)
+    expect(cellUnder(row('rifiutato@studio.it'), 'Pigro')).toHaveTextContent(/^Rifiutato$/)
+    expect(within(cellUnder(row('errore@studio.it'), 'Pigro')).queryByRole('link')).toBeNull()
+    // A match that is not active yet has no link to speak of.
+    expect(cellUnder(row('ada@studio.it'), 'Pigro')).toHaveTextContent(/^—$/)
   })
 
   it('filters by state through a chip, the URL and the request both carrying it', async () => {

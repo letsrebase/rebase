@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@rebase/ui/dialog'
-import { admin, ApiError, type ContractDocument, type Match } from '@/lib/api'
+import { admin, ApiError, matches, type ContractDocument, type Match } from '@/lib/api'
 import {
   MATCHES_HEADING_ID,
   QUADRO_HEADING_ID,
@@ -196,7 +196,9 @@ export function AdminContratti() {
     mutationFn: (documentId: string) => admin.recordNotice(documentId),
     onSuccess: saying('Disdetta registrata.'),
   })
-  const actions = [send, cancel, close, resend, update, cancelQuadro, recordNotice]
+  // «Riprova su Pigro» (REB-498): the card's sentence, read again, says how it went.
+  const linkPigro = useMutation({ mutationFn: (matchId: string) => matches.linkPigro(matchId), onSuccess: refresh })
+  const actions = [send, cancel, close, resend, update, cancelQuadro, recordNotice, linkPigro]
 
   if (contracts.isError) return <Empty>Non riesco a leggere i contratti di questa persona.</Empty>
   if (contracts.isPending) return <Empty>Caricamento…</Empty>
@@ -258,6 +260,14 @@ export function AdminContratti() {
         pendingLabel: `Chiudo ${which}`,
         run: from(() => setClosing(match)),
         pending: runningFor(close, match.id),
+      },
+      // No question first: linking again takes nothing back. The request may wait on the
+      // CRM for as long as a new space takes to open, and the button says so meanwhile.
+      riprova_pigro: {
+        label: `${ACTION_LABELS.riprova_pigro} per ${which}`,
+        pendingLabel: `Collego a Pigro ${which}`,
+        run: request(linkPigro, match.id, 'match', matchHeadingId(match.id)),
+        pending: runningFor(linkPigro, match.id),
       },
     }
   }

@@ -211,6 +211,18 @@ export function toLettera(form: LetteraForm): Lettera {
   }
 }
 
+/** «Giorni previsti» (REB-497), the admin's estimate of the engagement's billable days,
+ *  as `MatchCreate` takes it: a number, or `null` for an empty box (and for text that is
+ *  no number, which JSON would send as `null` anyway). A fraction or a number out of range
+ *  goes as typed, for the API to refuse by its field. The wizard keeps the box beside
+ *  `LetteraForm`, never in it, so `toLettera` cannot send it: `LetteraFields` refuses a
+ *  key it does not know, and nothing in the letter changes with this number. */
+export function giorniPrevistiToSend(text: string): number | null {
+  const value = text.trim()
+  const days = Number(value)
+  return value && Number.isFinite(days) ? days : null
+}
+
 /** The letter's fields as «Crea match» names them. The client's budget has no label
  *  here, because it has no field anywhere in this flow (spec § 1h). The page asks
  *  `modalita` and `unita` as one choice, «Come si paga», and `giorni_pagamento` inside

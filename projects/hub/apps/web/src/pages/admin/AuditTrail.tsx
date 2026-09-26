@@ -12,6 +12,7 @@ const KIND_LABELS: Record<AdminAction['kind'], string> = {
   mail_resent: 'Mail di firma reinviata',
   document_cancelled: 'Contratto quadro annullato',
   notice_recorded: 'Disdetta registrata',
+  pigro_link: 'Collegamento a Pigro',
 }
 
 const FIELD_LABELS: Record<string, string> = {

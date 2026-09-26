@@ -1,4 +1,4 @@
-import type { Action } from './api'
+import type { Action, PigroStato } from './api'
 
 const euro = new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', useGrouping: 'always' })
 const day = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -66,6 +66,16 @@ export const DOCUMENT_STATE_LABELS: Record<string, string> = {
   firmato: 'Firmato',
   annullato: 'Annullato',
   disdetto: 'Disdetto',
+}
+
+/** Where a match's link to its deal on Pigro stands (REB-497), as the «Pigro» column on
+ *  the «Match» list reads it. The web's own words: the core writes the sentence, not a
+ *  label. */
+export const PIGRO_STATE_LABELS: Record<PigroStato, string> = {
+  collegato: 'Collegato',
+  da_collegare: 'Da collegare',
+  errore: 'Errore',
+  rifiutato: 'Rifiutato',
 }
 
 /** The words on the button for each step the core names (REB-477). */

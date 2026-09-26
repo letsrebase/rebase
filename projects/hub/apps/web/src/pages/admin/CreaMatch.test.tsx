@@ -1078,3 +1078,84 @@ describe('step 3, «Controlla e invia»', () => {
     expect(spy.mock.calls.some(([url]) => String(url).includes('/matches/m1/send'))).toBe(false)
   })
 })
+
+describe('«Giorni previsti», the expected days (REB-502)', () => {
+  const HELP = 'Per il consuntivo: 8 ore al giorno. Il testo della lettera resta quello di «Impegno».'
+
+  it('asks them on «Condizioni» after the fee, optional, a whole number, saying what they are for', async () => {
+    routes()
+    mount()
+    await toCondizioni()
+    const giorni = screen.getByLabelText('Giorni previsti')
+    expect(giorni).toHaveAttribute('id', 'match-giorni_previsti')
+    expect(giorni).toHaveAttribute('type', 'number')
+    expect(giorni).toHaveAttribute('inputmode', 'numeric')
+    expect(giorni).toHaveValue(null)
+    expect(giorni).not.toBeRequired()
+    expect(giorni).toHaveAccessibleDescription(HELP)
+    const fee = screen.getByLabelText('Compenso, IVA esclusa (€)')
+    expect(fee.compareDocumentPosition(giorni) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // In the open, not among the letter's own optional fields.
+    const altre = screen.getByText('Altre condizioni (facoltative)').closest('details')!
+    expect(altre).not.toContainElement(giorni)
+  })
+
+  it('sends them beside the letter, never inside it, and lists them on «Controlla e invia»', async () => {
+    const spy = routes()
+    mount()
+    await toCondizioni()
+    await userEvent.type(screen.getByLabelText('Giorni previsti'), '40')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByText('Giorni previsti: 40')).toBeInTheDocument()
+    const [checked] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
+    expect(checked.giorni_previsti).toBe(40)
+    expect(checked.lettera).not.toHaveProperty('giorni_previsti')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Salva senza inviare' }))
+    expect(await screen.findByText('pagina contratti')).toBeInTheDocument()
+    const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches')
+    expect(body.giorni_previsti).toBe(40)
+    expect(body.lettera).not.toHaveProperty('giorni_previsti')
+  })
+
+  it('sends null for an empty box, and «Controlla e invia» lists nothing for it', async () => {
+    const spy = routes()
+    mount()
+    await toControlla()
+    expect(screen.queryByText(/Giorni previsti/)).toBeNull()
+    const [checked] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
+    expect(checked).toHaveProperty('giorni_previsti', null)
+    expect(checked.lettera).not.toHaveProperty('giorni_previsti')
+  })
+
+  it('names the expected days the server refused, and stays on «Condizioni»', async () => {
+    routes({
+      'POST /api/hub/freelancers/f1/matches/check': () =>
+        answer(422, { detail: [{ loc: ['body', 'giorni_previsti'], msg: 'Input should be less than or equal to 366' }] }),
+    })
+    mount()
+    await toCondizioni()
+    await userEvent.type(screen.getByLabelText('Giorni previsti'), '400')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Input should be less than or equal to 366')
+    expect(screen.getByLabelText('Giorni previsti')).toHaveAttribute('aria-invalid', 'true')
+    current('2. Condizioni')
+  })
+
+  it('keeps them going back with the same request, and starts empty for another one', async () => {
+    routes()
+    mount()
+    await toCondizioni()
+    await userEvent.type(screen.getByLabelText('Giorni previsti'), '40')
+    await userEvent.click(screen.getByRole('button', { name: 'Indietro' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByLabelText('Giorni previsti')).toHaveValue(40)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Indietro' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cambia richiesta' }))
+    await userEvent.click(await screen.findByRole('button', { name: /Verdi Snc/ }))
+    expect(await screen.findByText('Verdi Snc · P.IVA 11122233344 · Torino')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByLabelText('Giorni previsti')).toHaveValue(null)
+  })
+})

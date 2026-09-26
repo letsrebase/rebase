@@ -67,6 +67,19 @@ const NOTICE_RECORDED: AdminAction = {
   created_at: '2026-09-24T09:00:00Z',
 }
 
+// «Riprova su Pigro» (REB-498), recorded on entity `match`: its payload is the outcome and
+// the CRM's sentence, not a diff, so the kind alone names it.
+const PIGRO_LINK: AdminAction = {
+  id: 'a5',
+  entity_type: 'match',
+  entity_id: 'm1',
+  kind: 'pigro_link',
+  admin_id: 'u1',
+  admin_nome: 'Ivan Bianchi',
+  payload: { esito: 'errore', errore: 'Pigro non risponde.' },
+  created_at: '2026-10-01T09:05:00Z',
+}
+
 function mount({ canRevert = true, onReverted = () => {} }: { canRevert?: boolean; onReverted?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(
@@ -110,6 +123,15 @@ describe('AuditTrail', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [NOTICE_RECORDED]))
     mount()
     await screen.findByText('Disdetta registrata')
+    expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
+  })
+
+  it('names a retried link to Pigro, with no diff and no revert button (REB-502)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [PIGRO_LINK]))
+    mount()
+    const entry = (await screen.findByText('Collegamento a Pigro')).closest('li')!
+    expect(entry).toHaveTextContent('Ivan Bianchi')
+    expect(entry.querySelector('dl')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
   })
 
