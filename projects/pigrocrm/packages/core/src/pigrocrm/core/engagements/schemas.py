@@ -71,7 +71,9 @@ class EngagementUpsert(BaseModel):
 class EngagementRead(BaseModel):
     """What the door set up for a match: the space, the customer and the deal, with the
     two links the hub shows. `creato` says whether this call wrote the deal's row (201)
-    or found it already there (200); `spazio_creato` whether it opened the space."""
+    or found it already there (200); `spazio_creato` whether the space was opened for
+    this match, said by the call that writes the row (a retry of a call that stopped on
+    the way included) and false on the calls after it."""
 
     slug: str
     url: str

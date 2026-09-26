@@ -676,6 +676,39 @@ def test_retry_after_deal_created_but_unrecorded_reuses_it(door: Door) -> None:
     assert (row.customer_id, row.deal_id) == (customer.id, deal.id)
 
 
+def test_retry_finds_its_deal_under_a_customer_the_freelancer_edited(door: Door) -> None:
+    """A failure between step 5 and step 6, and the freelancer renames the customer
+    «rebase» and changes its VAT number before the retry (Greptile on #427): the deal
+    is found by its marker under whichever customer it sits, and so is that customer.
+    Looked up by name or VAT number first, the retry would have made a second customer
+    and a second deal."""
+    _provision(door, "ada-lovelace")
+    match_id = uuid4()
+    first = door.service().ensure(match_id, _upsert())
+    with session_factory(door.registry)() as registry:
+        registry.execute(
+            update(RebaseEngagement)
+            .where(RebaseEngagement.match_id == match_id)
+            .values(customer_id=None, deal_id=None)
+        )
+        registry.commit()
+    with _space(door, "ada-lovelace") as space:
+        space.execute(
+            update(Customer)
+            .where(Customer.id == first.customer_id)
+            .values(ragione_sociale="rebase (fornitore)", partita_iva="09876543210")
+        )
+        space.commit()
+
+    answer = door.service().ensure(match_id, _upsert())
+
+    assert (answer.customer_id, answer.deal_id) == (first.customer_id, first.deal_id)
+    assert answer.creato is True
+    with _space(door, "ada-lovelace") as space:
+        assert _count(space, Customer) == 1
+        assert _count(space, Deal) == 1
+
+
 def test_same_named_deal_without_marker_is_not_reused(door: Door) -> None:
     """The freelancer's own deal with the same label (the letter recorded by hand, say)
     carries no marker: it is not ours, ours is created beside it, and theirs is left as
@@ -786,6 +819,66 @@ def test_welcome_mail_is_sent_once_for_a_new_space(door: Door) -> None:
 
     door.service().ensure(uuid4(), _upsert(lettera={"numero": "4/2026"}))
     assert len(door.sender.sent) == 1
+
+
+def test_a_call_that_stops_after_opening_the_space_leaves_the_welcome_to_its_retry(
+    door: Door, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Greptile on #427: the welcome went out with the provisioning, so a call that
+    opened the space and then failed left a retry that found the space and its admin,
+    sent nothing, and answered `spazio_creato: false`. The row now records that this
+    match opened the space, and the call that completes the engagement sends the
+    welcome and says so: once."""
+    match_id = uuid4()
+    customer_step = EngagementService._customer
+
+    def stops(self: EngagementService, space: Session, data: EngagementUpsert) -> UUID:
+        raise RuntimeError("stopped after the space")
+
+    monkeypatch.setattr(EngagementService, "_customer", stops)
+    with pytest.raises(RuntimeError):
+        door.service().ensure(match_id, _upsert())
+    assert door.sender.sent == []
+    row = _row(door, match_id)
+    assert row is not None and row.space_created is True and row.deal_id is None
+
+    monkeypatch.setattr(EngagementService, "_customer", customer_step)
+    answer = door.service().ensure(match_id, _upsert())
+
+    assert answer.slug == "ada-lovelace"
+    assert answer.creato is True and answer.spazio_creato is True
+    assert [mail.to for mail in door.sender.sent] == [ADA]
+    assert "https://pigro.test/ada-lovelace/app/verify?t=" in door.sender.sent[0].text
+    again = door.service().ensure(match_id, _upsert())
+    assert again.creato is False and len(door.sender.sent) == 1
+
+
+def test_a_space_whose_admin_was_created_before_a_failure_still_gets_its_welcome(
+    door: Door, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same for a space left without its admin: the row says the space is opened
+    for this match before the admin exists, so a call that creates the admin and then
+    fails leaves the retry both the answer and the mail."""
+    _half_provisioned(door, "ada-lovelace", database=True)
+    match_id = uuid4()
+    customer_step = EngagementService._customer
+
+    def stops(self: EngagementService, space: Session, data: EngagementUpsert) -> UUID:
+        space.commit()  # the admin, as a step that commits on its own would leave it
+        raise RuntimeError("stopped after the admin")
+
+    monkeypatch.setattr(EngagementService, "_customer", stops)
+    with pytest.raises(RuntimeError):
+        door.service().ensure(match_id, _upsert())
+    with _space(door, "ada-lovelace") as space:
+        assert UserRepository(space).get_by_email(ADA) is not None
+    assert door.sender.sent == []
+
+    monkeypatch.setattr(EngagementService, "_customer", customer_step)
+    answer = door.service().ensure(match_id, _upsert())
+
+    assert answer.creato is True and answer.spazio_creato is True
+    assert [mail.to for mail in door.sender.sent] == [ADA]
 
 
 # --- report: a match's hours with their invoices (§ 2.4) -----------------------------

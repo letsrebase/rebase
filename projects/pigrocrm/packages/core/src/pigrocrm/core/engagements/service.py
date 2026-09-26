@@ -413,40 +413,51 @@ class EngagementService:
     def _ensure(self, match_id: UUID, data: EngagementUpsert, email: str) -> EngagementRead:
         with session_factory(self.registry_engine)() as registry:
             row = self._row(registry, match_id)
-            spazio_creato = False
             if row is not None:
                 tenant = self._tenant(registry, row)
                 if row.deal_id is not None:
                     return self._recorded(tenant, row.customer_id, row.deal_id, match_id)
                 # A previous call stopped between steps 3 and 6: resume at step 4, in the
-                # space it had already chosen.
+                # space it had already chosen, with what it recorded of that space.
             else:
                 owned = self._owned_space(registry, email)
-                if owned is None:
-                    tenant = self._provision(registry, data.freelancer, email)
-                    spazio_creato = True
-                else:
-                    tenant = owned
+                tenant = (
+                    owned
+                    if owned is not None
+                    else self._provision(registry, data.freelancer, email)
+                )
                 # Committed before the space is touched: a failure from here on leaves a
-                # row that says «space found, deal missing», which step 2 resumes.
-                row = RebaseEngagement(match_id=match_id, tenant_id=tenant.id)
+                # row that says «space found, deal missing», which step 2 resumes, and
+                # that says whether this match opened the space.
+                row = RebaseEngagement(
+                    match_id=match_id, tenant_id=tenant.id, space_created=owned is None
+                )
                 registry.add(row)
                 registry.commit()
 
             with self._space_session(tenant) as space:
-                if self._ensure_admin(space, data.freelancer, email):
+                if UserRepository(space).get_by_email(email) is None:
                     # A space whose provisioning a restart cut short after its registry
                     # row, whose database the next boot then created: nobody in it, and
-                    # the welcome never sent. It is opened now, and said so.
+                    # the welcome never sent. It is opened now, and said so; recorded
+                    # before the admin exists, so a failure in between still says it.
+                    if not row.space_created:
+                        row.space_created = True
+                        registry.commit()
+                    self._create_admin(space, data.freelancer, email)
+                customer_id, deal_id = self._customer_and_deal(space, match_id, data, email)
+                if row.space_created:
+                    # The welcome goes out with the call that completes the engagement,
+                    # not with the one that opened the space: a call that stops on the
+                    # way sends nothing, and the row tells its retry to send it. A call
+                    # that stops after this line, at the commit below, has its retry
+                    # send it again: two links rather than none.
                     self._welcome(space, tenant.slug, email)
-                    spazio_creato = True
-                customer_id = self._customer(space, data)
-                deal_id = self._deal(space, match_id, data, customer_id, email)
 
             row.customer_id = customer_id
             row.deal_id = deal_id
             registry.commit()
-            return self._answer(tenant.slug, customer_id, deal_id, spazio_creato, creato=True)
+            return self._answer(tenant.slug, customer_id, deal_id, row.space_created, creato=True)
 
     def _recorded(
         self, tenant: Tenant, customer_id: UUID | None, deal_id: UUID, match_id: UUID
@@ -493,12 +504,13 @@ class EngagementService:
         ).first()
 
     def _provision(self, registry: Session, freelancer: EngagementFreelancer, email: str) -> Tenant:
-        """A space in the freelancer's name, then the welcome the signup sends (spec
-        § 2.3 step 3): the slug from the name, `-2`, `-3`... in place of its tail while
-        the name is taken or reserved, up to `SLUG_SUFFIX_MAX`. A name taken between the
-        question and the insert (a namesake's signup at that moment) is `provision`'s
-        `Conflict` on that very slug, and moves on to the next candidate; any other
-        `Conflict`, or the last candidate's, is the caller's."""
+        """A space in the freelancer's name (spec § 2.3 step 3): the slug from the name,
+        `-2`, `-3`... in place of its tail while the name is taken or reserved, up to
+        `SLUG_SUFFIX_MAX`. A name taken between the question and the insert (a
+        namesake's signup at that moment) is `provision`'s `Conflict` on that very slug,
+        and moves on to the next candidate; any other `Conflict`, or the last
+        candidate's, is the caller's. The welcome the signup sends is not sent here but
+        by `_ensure` once the deal exists, from the row's `space_created`."""
         tenants = TenantService(registry, self.settings)
         nome = full_name(freelancer)
         base = slugify(nome) or FALLBACK_SLUG
@@ -520,10 +532,7 @@ class EngagementService:
                 if exc.details.get("slug") != candidate or n == SLUG_SUFFIX_MAX:
                     raise
                 continue
-            tenant = tenants.get(created.slug)
-            with self._space_session(tenant) as space:
-                self._welcome(space, tenant.slug, email)
-            return tenant
+            return tenants.get(created.slug)
         raise Conflict("tenant", "questo nome è già in uso", slug=base)
 
     def _welcome(self, space: Session, slug: str, email: str) -> None:
@@ -536,20 +545,31 @@ class EngagementService:
             self.sender.send(mail)
 
     @staticmethod
-    def _ensure_admin(space: Session, freelancer: EngagementFreelancer, email: str) -> bool:
-        """The space's admin with the freelancer's address, created when the space has
-        no user with it, the way `TenantService.provision` creates it: as
-        `Actor.system()`, with no password, entering by the welcome's link. `True`
-        when it was created now. A space `provision` finished always has it; one whose
-        provisioning stopped after the registry row does not, and without it the deal
-        would have no owner and the hub would mail a link nobody can enter."""
-        if UserRepository(space).get_by_email(email) is not None:
-            return False
+    def _create_admin(space: Session, freelancer: EngagementFreelancer, email: str) -> None:
+        """The space's admin with the freelancer's address, for a space that has no user
+        with it, created the way `TenantService.provision` creates it: as
+        `Actor.system()`, with no password, entering by the welcome's link. A space
+        `provision` finished always has it; one whose provisioning stopped after the
+        registry row does not, and without it the deal would have no owner and the hub
+        would mail a link nobody can enter."""
         UserService(space).create(
             UserCreate(email=email, password=None, nome=full_name(freelancer), ruolo="admin"),
             Actor.system(),
         )
-        return True
+
+    def _customer_and_deal(
+        self, space: Session, match_id: UUID, data: EngagementUpsert, email: str
+    ) -> tuple[UUID, UUID]:
+        """Steps 4 and 5. The live deal carrying this match's marker comes first, under
+        whichever customer it sits now: it is the one a previous call created and
+        failed to record, and its customer is the one that call found or created, even
+        after the freelancer renamed it or changed its VAT number. Only without it is
+        the customer looked up, or created, and the deal created under it."""
+        recorded = DealRepository(space).find_by_marker(deal_marker(match_id))
+        if recorded is not None:
+            return recorded.customer_id, recorded.id
+        customer_id = self._customer(space, data)
+        return customer_id, self._deal(space, match_id, data, customer_id, email)
 
     @contextmanager
     def _space_session(self, tenant: Tenant) -> Iterator[Session]:
@@ -607,15 +627,10 @@ class EngagementService:
         customer_id: UUID,
         email: str,
     ) -> UUID:
-        """Step 5: the letter's deal under that customer. The live deal carrying this
-        match's marker is the one a previous call created and failed to record, and is
-        reused; a deal with the same name and no marker is somebody else's, and ours is
-        created beside it, in the default open stage, owned by the space's admin whose
-        address is the freelancer's."""
-        marker = deal_marker(match_id)
-        recorded = DealRepository(space).find_by_marker(customer_id, marker)
-        if recorded is not None:
-            return recorded.id
+        """Step 5: the letter's deal under that customer, once `_customer_and_deal` has
+        found no deal with this match's marker. A deal with the same name and no marker
+        is somebody else's, and ours is created beside it, in the default open stage,
+        owned by the space's admin whose address is the freelancer's."""
         lettera = data.lettera
         owner = UserRepository(space).get_by_email(email)
         created = DealService(space).create(

@@ -6,7 +6,7 @@ does the same nothing twice rather than a second space, customer or deal.
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db.base import PrimaryKeyMixin
@@ -16,7 +16,10 @@ from pigrocrm.core.tenants.models import TenantsBase
 class RebaseEngagement(TenantsBase, PrimaryKeyMixin):
     """One row per hub match (spec 2026-09-25 § 2.2): which space, which customer and
     which deal the door set up for it. `match_id` is the hub's id and the idempotency
-    key; `deal_id` stays NULL between step 3 and step 6 of `EngagementService.ensure`."""
+    key; `deal_id` stays NULL between step 3 and step 6 of `EngagementService.ensure`.
+    `space_created` says the space was opened for this match (or its missing admin
+    created for it): the call that completes the row sends the welcome and answers
+    `spazio_creato` from it, so a call that stopped on the way loses neither."""
 
     __tablename__ = "rebase_engagements"
 
@@ -24,6 +27,9 @@ class RebaseEngagement(TenantsBase, PrimaryKeyMixin):
     tenant_id: Mapped[UUID] = mapped_column(ForeignKey("tenants.id"), nullable=False, index=True)
     customer_id: Mapped[UUID | None] = mapped_column(default=None)
     deal_id: Mapped[UUID | None] = mapped_column(default=None)
+    space_created: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
