@@ -2812,6 +2812,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rebase/engagements/{match_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upsert Engagement
+         * @description Crea o ritrova lo spazio del freelancer, il cliente «rebase» e il deal della
+         *     lettera per questo match dell'hub, sotto il bearer di `PIGROCRM_ENGAGEMENTS_TOKEN`
+         *     che solo l'hub possiede.
+         */
+        put: operations["upsert_engagement_api_rebase_engagements__match_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rebase/engagements/{match_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Engagement Report
+         * @description Legge le ore del deal di questo match nel periodo dato, con le fatture su cui
+         *     siedono, sotto lo stesso bearer di `PIGROCRM_ENGAGEMENTS_TOKEN` che solo l'hub
+         *     possiede.
+         */
+        get: operations["engagement_report_api_rebase_engagements__match_id__report_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/identity/spaces": {
         parameters: {
             query?: never;
@@ -5421,6 +5465,117 @@ export interface components {
             /** Regime Fiscale */
             regime_fiscale?: string | null;
         };
+        /** EngagementFreelancer */
+        EngagementFreelancer: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Nome */
+            nome: string;
+            /** Cognome */
+            cognome: string;
+        };
+        /** EngagementLetter */
+        EngagementLetter: {
+            /** Numero */
+            numero: string;
+            /** Ruolo */
+            ruolo: string;
+            /** Azienda */
+            azienda: string;
+            /**
+             * Data Inizio
+             * Format: date
+             */
+            data_inizio: string;
+            /** Data Fine */
+            data_fine?: string | null;
+            /** Compenso */
+            compenso: number | string;
+            /** Giorni Previsti */
+            giorni_previsti?: number | null;
+        };
+        /**
+         * EngagementRead
+         * @description What the door set up for a match: the space, the customer and the deal, with the
+         *     two links the hub shows. `creato` says whether this call wrote the deal's row (201)
+         *     or found it already there (200); `spazio_creato` whether it opened the space.
+         */
+        EngagementRead: {
+            /** Slug */
+            slug: string;
+            /** Url */
+            url: string;
+            /**
+             * Customer Id
+             * Format: uuid
+             */
+            customer_id: string;
+            /**
+             * Deal Id
+             * Format: uuid
+             */
+            deal_id: string;
+            /** Deal Url */
+            deal_url: string;
+            /** Spazio Creato */
+            spazio_creato: boolean;
+            /** Creato */
+            creato: boolean;
+        };
+        /**
+         * EngagementRebase
+         * @description rebase's own fiscal data, as the customer «rebase» in the freelancer's space.
+         */
+        EngagementRebase: {
+            /** Ragione Sociale */
+            ragione_sociale: string;
+            /** Partita Iva */
+            partita_iva?: string | null;
+            /** Codice Fiscale */
+            codice_fiscale?: string | null;
+            /** Indirizzo */
+            indirizzo?: string | null;
+            /** Pec */
+            pec?: string | null;
+            /** Codice Sdi */
+            codice_sdi?: string | null;
+        };
+        /**
+         * EngagementReport
+         * @description The answer of `GET /api/rebase/engagements/{match_id}/report`. `ore_fatturate` is
+         *     the CRM's own billed (`billed_entry_ids`: on a line of an issued `fattura`), so it
+         *     agrees with the deal's summary; `ore_non_fatturate` is every other hour of the
+         *     period; `fatture` has one row per invoice among the entries, newest first.
+         */
+        EngagementReport: {
+            /** Slug */
+            slug: string;
+            /** Deal Url */
+            deal_url: string;
+            deal: components["schemas"]["ReportDeal"];
+            /** Giorni */
+            giorni: components["schemas"]["ReportEntry"][];
+            /** Totale Ore */
+            totale_ore: string;
+            /** Ore Fatturate */
+            ore_fatturate: string;
+            /** Ore Non Fatturate */
+            ore_non_fatturate: string;
+            /** Fatture */
+            fatture: components["schemas"]["ReportInvoice"][];
+        };
+        /**
+         * EngagementUpsert
+         * @description The body of `PUT /api/rebase/engagements/{match_id}`.
+         */
+        EngagementUpsert: {
+            freelancer: components["schemas"]["EngagementFreelancer"];
+            lettera: components["schemas"]["EngagementLetter"];
+            rebase: components["schemas"]["EngagementRebase"];
+        };
         /** EntitySchema */
         EntitySchema: {
             /** Entity Type */
@@ -7650,6 +7805,71 @@ export interface components {
              * Format: date
              */
             orizzonte_al: string;
+        };
+        /**
+         * ReportDeal
+         * @description The letter's deal as it stands, `stato` as the deal's own page reads it
+         *     (`DealTimeSummary.stato`).
+         */
+        ReportDeal: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Nome */
+            nome: string;
+            /** Tariffa Oraria */
+            tariffa_oraria: string | null;
+            /** Ore Preventivate */
+            ore_preventivate: string | null;
+            /** Stato */
+            stato: string;
+        };
+        /**
+         * ReportEntry
+         * @description One time entry of the deal: a day with two entries is two rows, and the hub sums.
+         */
+        ReportEntry: {
+            /**
+             * Data
+             * Format: date
+             */
+            data: string;
+            /** Ore */
+            ore: string;
+            /** Descrizione */
+            descrizione: string;
+            /** Fatturabile */
+            fatturabile: boolean;
+            fattura: components["schemas"]["ReportInvoice"] | null;
+        };
+        /**
+         * ReportInvoice
+         * @description An invoice some of the report's hours sit on. `data` is its `data_emissione`;
+         *     `ore` only on the report's `fatture` list, the hours of this report on it, and
+         *     `None` on an entry's own `fattura`.
+         */
+        ReportInvoice: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Tipo */
+            tipo: string;
+            /** Anno */
+            anno: number | null;
+            /** Numero */
+            numero: number | null;
+            /** Stato */
+            stato: string;
+            /** Stato Pagamento */
+            stato_pagamento: string;
+            /** Data */
+            data: string | null;
+            /** Ore */
+            ore?: string | null;
         };
         /**
          * RevenueByCustomer
@@ -30748,6 +30968,286 @@ export interface operations {
                 headers: {
                     /** @description Secondi da attendere prima di riprovare. */
                     "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
+        };
+    };
+    upsert_engagement_api_rebase_engagements__match_id__put: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                match_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EngagementUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementRead"];
+                };
+            };
+            /** @description Lo spazio, il cliente «rebase» e il deal della lettera sono stati creati ora, per la prima volta con questo match. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementRead"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description PIGROCRM_PUBLIC_URL non è configurato, lo spazio del freelancer non è raggiungibile in questo momento, oppure un'altra chiamata sta preparando lo spazio dello stesso indirizzo: si riprova più tardi. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        detail: string;
+                    };
+                };
+            };
+        };
+    };
+    engagement_report_api_rebase_engagements__match_id__report_get: {
+        parameters: {
+            query?: {
+                da?: string | null;
+                a?: string | null;
+            };
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                match_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EngagementReport"];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description PIGROCRM_PUBLIC_URL non è configurato, lo spazio del freelancer non è raggiungibile in questo momento, oppure un'altra chiamata sta preparando lo spazio dello stesso indirizzo: si riprova più tardi. */
+            503: {
+                headers: {
                     [name: string]: unknown;
                 };
                 content: {
