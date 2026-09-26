@@ -386,17 +386,17 @@ in `cloud_visible`; this record assumes no opt-out, as he said on the first roun
 ## 5. The Claude seam
 
 `rebase_core/llm.py`: a `LlmCall` protocol, `complete(request: LlmRequest) ->
-LlmResponse`, with `LlmRequest(system: list[dict], messages: list[dict], schema: dict,
+LlmResponse`, with `LlmRequest(system: list[dict], messages: list[dict], json_schema: dict,
 max_tokens: int)` and `LlmResponse(text: str | None, stop_reason: str, refusal_category:
-str | None, model: str, input_tokens: int, output_tokens: int, cache_read_tokens: int)`;
+str | None, model: str, input_tokens: int, output_tokens: int, cache_read_tokens: int)`
+(`input_tokens` counts the cache writes too, so the row says what was paid);
 `LlmUnavailable(DomainError)`, mapped to `502` by the API and answered as a sentence by
 the MCP server; `AnthropicCall(api_key, model, *, client=None)` implements the protocol
 with the official `anthropic` SDK (a pinned dependency of `rebase_core`):
 `client.beta.messages.create(model, max_tokens, betas=["server-side-fallback-2026-07-01"],
 fallbacks="default", thinking={"type": "adaptive"}, output_config={"effort": "medium",
 "format": {"type": "json_schema", "schema": ...}}, inference_geo="eu", system=[...with
-cache_control...], messages=[...])`, a request timeout of fifty seconds (under nginx's
-sixty), reading the first text block and passing `stop_reason` through;
+cache_control...], messages=[...])`, a request timeout of forty seconds per attempt with one retry, so the worst case stays under the vhost's ninety seconds, reading the first text block and passing `stop_reason` through;
 `RecordingCall(responses)` in the same module answers scripted responses and keeps the
 requests, the way `RecordingSender` does for mail. Two callers: the card writer
 (§ 5.1) and the engine (§ 3.4). The key is `REBASE_ANTHROPIC_API_KEY`; the model
