@@ -7,6 +7,7 @@ import { admin, ApiError, type Fiscal, type FiscalData } from '@/lib/api'
 import {
   draftFromFiscal,
   fiscalLine,
+  newerFiscal,
   refillFiscal,
   toFiscalData,
   typedAfterSave,
@@ -64,24 +65,21 @@ export function FiscalSection({
   onSaved: () => void
 }) {
   // The draft, with the fields typed in and not saved yet, and the saved record it was
-  // last filled from. A newer record (a save here or elsewhere, a refetch) refills the
-  // form while it stays open, except in those fields, so a save never writes back a value
-  // older than the record. Adjusted while rendering rather than in an effect: React's
-  // pattern for state that follows a prop. One state, so a save's success reads the draft
-  // as it is then.
-  const [form, setForm] = useState<{ draft: FiscalDraft; typed: ReadonlySet<FiscalKey> }>(() => ({
-    draft: draftFromFiscal(fiscale),
-    typed: new Set(),
-  }))
+  // last filled from. Only a newer record (a save here or elsewhere, a refetch) refills
+  // the form while it stays open, and never those fields, so a save never writes back a
+  // value older than the record. Adjusted while rendering rather than in an effect:
+  // React's pattern for state that follows a prop. One state, so a save's success reads
+  // the draft as it is then.
+  const [form, setForm] = useState<{ draft: FiscalDraft; typed: ReadonlySet<FiscalKey>; held: Fiscal | null }>(
+    () => ({ draft: draftFromFiscal(fiscale), typed: new Set(), held: fiscale }),
+  )
   const { draft } = form
-  const version = fiscale?.updated_at ?? null
-  const [filledFrom, setFilledFrom] = useState(version)
-  if (version !== filledFrom) {
-    setFilledFrom(version)
-    setForm({ draft: refillFiscal(form.draft, fiscale, form.typed), typed: form.typed })
+  if (newerFiscal(fiscale, form.held)) {
+    setForm({ draft: refillFiscal(form.draft, fiscale, form.typed), typed: form.typed, held: fiscale })
   }
   function change(next: FiscalDraft) {
     setForm((current) => ({
+      ...current,
       draft: next,
       typed: new Set([...current.typed, ...typedFiscalFields(current.draft, next)]),
     }))
@@ -89,10 +87,16 @@ export function FiscalSection({
   const [saved, setSaved] = useState(false)
   const save = useMutation({
     mutationFn: (data: FiscalData) => admin.saveFiscal(freelancerId, data),
-    onSuccess: (_record, sent) => {
-      // The fields saved as they read now take the record that comes back; one typed in
-      // again while the save was on its way keeps its text.
-      setForm((current) => ({ ...current, typed: typedAfterSave(current.draft, current.typed, sent) }))
+    onSuccess: (record, sent) => {
+      // The fields saved as they read now take the record the save answered, at once, or
+      // the newer one the form already holds when the answer is older; one typed in again
+      // while the save was on its way keeps its text. From here only a record newer than
+      // the one held refills the form.
+      setForm((current) => {
+        const typed = typedAfterSave(current.draft, current.typed, sent)
+        const held = newerFiscal(record, current.held) ? record : current.held
+        return { draft: refillFiscal(current.draft, held, typed), typed, held }
+      })
       setSaved(true)
       onSaved()
     },

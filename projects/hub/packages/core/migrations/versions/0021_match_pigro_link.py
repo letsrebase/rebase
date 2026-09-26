@@ -1,7 +1,7 @@
 """matches: the expected days, the letter's numbers and the Pigro link
 
 Revision ID: 0021
-Revises: 0019
+Revises: 0020
 
 REB-497, milestone B1. `giorni_previsti` is an admin's estimate of the engagement's
 billable days, read on «Crea match» and nowhere validated against anything but its own
@@ -35,7 +35,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "0021"
-down_revision: str | Sequence[str] | None = "0019"
+down_revision: str | Sequence[str] | None = "0020"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

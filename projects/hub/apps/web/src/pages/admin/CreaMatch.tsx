@@ -175,11 +175,15 @@ export function AdminCreaMatch() {
     onSuccess: (saved, { data, companyId }) => {
       // The tax data are the freelancer's, whichever request is picked now: what the
       // server saved is what the page shows from here, except in a field the admin has
-      // typed in since, for the request now picked.
-      holdFiscal(saved)
+      // typed in since, for the request now picked, and unless the page already holds a
+      // newer record, which the new request's prefill may have brought.
       const typed = typedAfterSave(shown.current.fiscal, fiscalTyped.current, data)
       fiscalTyped.current = typed
-      setFiscal((current) => refillFiscal(current, saved, typed))
+      // The fields saved as sent take the newest record: this save's, or the newer one
+      // already held, so none keeps text a later save would write back over it.
+      if (!olderFiscal(saved, heldFiscal.current)) holdFiscal(saved)
+      const newest = heldFiscal.current
+      setFiscal((current) => refillFiscal(current, newest, typed))
       // Closing the section and moving on belong to the request they were saved for;
       // after a switch the admin may have opened the section again for the new one. A
       // field typed in again while the save was on its way is not saved yet: the section

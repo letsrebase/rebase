@@ -39,6 +39,12 @@ x-api-environment: &api-environment
   # A draft text never leaves for signature; only the preview sets this true. Not an
   # empty default: a bool field fails at start-up on an empty value.
   REBASE_CONTRACTS_ALLOW_DRAFT: ${REBASE_CONTRACTS_ALLOW_DRAFT:-false}
+  # Campaigns (P-REB-41): who the mail is from, the minimum gap between two campaigns
+  # to one person, and the secret of this environment's Resend webhook. Not an empty
+  # default for the gap: an int field fails at start-up on an empty value.
+  REBASE_CAMPAIGN_FROM: ${REBASE_CAMPAIGN_FROM:-Ivan di rebase <ciao@letsrebase.com>}
+  REBASE_CAMPAIGN_GAP_DAYS: ${REBASE_CAMPAIGN_GAP_DAYS:-3}
+  REBASE_RESEND_WEBHOOK_SECRET: ${REBASE_RESEND_WEBHOOK_SECRET:-}
 
 services:
   db:
@@ -98,6 +104,26 @@ services:
     environment: *api-environment
     ports:
       - '${REBASE_MCP_PORT:-127.0.0.1:8088}:8001'
+
+  campaigns:
+    # `rebase campaigns-tick` (P-REB-41): sends the campaigns whose time has come, one
+    # mail at a time, every minute, on both stacks. A loop, never a one-shot, for the
+    # same reason as `sweep`: `_deploy-compose.yml` fails a deploy on any container not
+    # `running`. Harmless without REBASE_RESEND_API_KEY: it prints why and sends nothing.
+    # Read with `docker logs rebase-campaigns-1` (production) or
+    # `rebase-preview-campaigns-1` (preview).
+    build:
+      context: ../..
+      dockerfile: projects/hub/Dockerfile.api
+    restart: unless-stopped
+    init: true
+    command: ['sh', '-c', 'while :; do sleep 60; uv run --no-sync rebase campaigns-tick; done']
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment: *api-environment
 
   sweep:
     # `rebase contracts-sweep` (REB-391), scheduled here rather than by the host, so both

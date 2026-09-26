@@ -153,6 +153,95 @@ and adds «, N match collegati a Pigro», and «, M non collegati» when any sta
 (the reason is on each match, `pigro_errore`); without `REBASE_PIGRO_ENGAGEMENTS_TOKEN`
 it links nothing and says 0.
 
+## Campaigns
+
+Since P-REB-41 «Invia una campagna» the `campaigns` service in `docker-compose.yml` runs
+`rebase campaigns-tick` on a loop, every minute, on both stacks. Each pass is one call
+of `run_tick` (`rebase_core.campaigns.tick`), inside a session advisory lock so two
+passes never overlap: it takes every campaign whose `programmata_per` has come, and
+every campaign an earlier pass left `in_invio`, and sends their queued recipients
+through `campaign_sender_from_settings` (`rebase_core.campaigns.sender`), one mail at a
+time and one mail a second, leaving Resend's other request a second to the magic link.
+A loop, never a one-shot, for the same reason as `sweep`: `_deploy-compose.yml` fails a
+deploy on any container that is not `running`. Without `REBASE_RESEND_API_KEY` the
+command prints why and exits 0, so the loop keeps running and sends nothing -- the
+preview carries no key. Read what it did with `docker logs rebase-campaigns-1`
+(production) or `docker logs rebase-preview-campaigns-1` (preview): each run prints one
+line, «N campagne, M inviate, S saltate, F fallite». `campagne` is how many due
+campaigns this pass touched, and `inviate` and `saltate` are recipients this pass
+actually sent to or skipped. `fallite` are rows this pass marked `fallita`: a mail
+Resend refused outright (a 422, say), a row whose third attempt failed too (a timeout,
+a 429 or a 5xx leaves the row `in_coda` for the next pass, with the same
+`Idempotency-Key`), and a row whose checks or render raised, marked rather than let it
+wedge every campaign after it (controller ruling R14). A 401 or 403 (a revoked or
+restricted key, a domain Resend no longer sends for) marks nothing: the pass stops that
+campaign with its rows still `in_coda` and logs «campaign <id> stopped this tick:
+Resend 401», and the send resumes on the first pass after the key is fixed. No
+address and no key ever appears in these lines or anywhere else in the logs.
+
+**Scripts written for one campaign wave never live under `/opt/hub`.** The deploy syncs
+the whole repository there with `rsync -az --delete` (`.github/workflows/
+_deploy-compose.yml`), so anything dropped into the checkout by hand that is not in the
+repository is gone on the next deploy: a one-off `outreach-r2` directory of scripts for
+the September waves, placed under `/opt/hub` rather than committed or kept outside the
+checkout, was wiped this way on 24/09. A wave's own scripts belong in the repository (if
+they are worth keeping) or outside `/opt/hub` entirely, the same rule `REBASE_DATA_DIR`
+follows for Postgres's own files.
+
+**Four rules keep an address out of a campaign, and only one of them is an opt-out.**
+`exclusions()` (`rebase_core.campaigns.audience`) runs when the list is shown, when it
+is frozen and again right before each mail, and leaves out, with the reason on screen:
+an admin, by `User.role == "admin"` (`REASON_ADMIN`, no row needed); an address with a
+row in `campaign_optouts` -- `fonte='link'` for the recipient's own unsubscribe,
+`'reclamo'` for a spam complaint Resend reports, `'admin'` for «Non scrivere mai»,
+which is how the team goes in rather than relying on the role check; an address that
+hard-bounced on any earlier campaign (`campaign_recipients.rimbalzata_at`, no optout
+row); and an address another campaign reached in the last `REBASE_CAMPAIGN_GAP_DAYS`
+(3), the gap rule that also turns several campaigns scheduled for the same minute into
+one mail per person. Before each mail the tick also checks whether the action is
+already done (`done_at`) and, for a list built from a state or from filters, whether
+the person is still on it. That list is rebuilt once per pass, since it is a scan of
+every card; an opt-out or a bounce recorded mid-pass keeps a queued mail from leaving.
+Optouts are campaigns-only: the magic link, the welcome mail and the contracts flow
+keep reaching an opted-out address, since none of those is a campaign. The unsubscribe
+route (`POST /api/hub/campagne/disiscrizione`) has no rate limit on purpose: Gmail and
+Yahoo send RFC 8058's one-click POST from a few server addresses, the token is 256
+random bits and the write is idempotent.
+
+`POST /api/hub/webhooks/resend` is that webhook: Resend signs every call with Svix, and
+the route verifies the raw body against `REBASE_RESEND_WEBHOOK_SECRET` before parsing
+it as JSON, then turns `email.delivered`, `email.bounced`, `email.clicked` and
+`email.complained` into a row on `campaign_recipients`
+(`rebase_core.campaigns.webhook`). Ivan sets it up once per environment:
+
+1. In Resend, go to Webhooks, then «Add endpoint».
+   - Production: `https://letsrebase.com/api/hub/webhooks/resend`.
+   - Preview: `https://preview.letsrebase.com/api/hub/webhooks/resend`, only once the
+     preview has a Resend key.
+2. Select the events `email.delivered`, `email.bounced`, `email.clicked` and
+   `email.complained`.
+3. Copy the `whsec_…` value into that environment's `${DEPLOY_PATH}/.env` as
+   `REBASE_RESEND_WEBHOOK_SECRET`.
+4. Recreate the api container with the next deploy, or with
+   `docker compose -p rebase --env-file ... up -d api` from `projects/hub`.
+5. Verify the webhook: send yourself a test from «Nuova campagna», then open the
+   endpoint in Resend's Webhooks page. Its delivery log must show `200` for the
+   `email.delivered` of that test. A `401` means the secret in `.env` is not this
+   endpoint's.
+
+A key without the secret is refused on purpose: with `REBASE_RESEND_API_KEY` set and
+`REBASE_RESEND_WEBHOOK_SECRET` empty, «Mandami una prova», «Invia» and «Programma»
+answer 503 «Manca il webhook di Resend: configuralo prima di inviare, vedi AGENTS.md.»
+before they touch the campaign, since a campaign sent that way would never learn about
+its deliveries, bounces or complaints.
+
+Resend's webhook covers every mail the team sends, magic links included. Those arrive
+untagged and are acknowledged without effect. A tagged event whose recipient row is not
+in this database answers 503, so that Resend retries it (for about a day) while the tick
+commits the row. **So the preview must never get a key on production's Resend team**:
+each environment would then 503 the other's tagged events, and Resend would retry every
+one of them for a day. Give the preview its own Resend team, or no key at all.
+
 ## Running it
 
 From the repository root:

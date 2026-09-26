@@ -19,6 +19,7 @@ import {
   letteraForm,
   olderFiscal,
   letteraToSend,
+  newerFiscal,
   machineAmount,
   matchOf,
   payModeOf,
@@ -241,6 +242,12 @@ describe('«Crea match» in three steps (REB-476)', () => {
     expect(olderFiscal(null, held)).toBe(true)
     expect(olderFiscal(record('2026-09-23T10:00:00Z'), null)).toBe(false)
     expect(olderFiscal(null, null)).toBe(false)
+    expect(newerFiscal(record('2026-09-25T11:00:00Z'), held)).toBe(true)
+    expect(newerFiscal(record('2026-09-25T10:00:00+00:00'), held)).toBe(false)
+    expect(newerFiscal(record('2026-09-23T10:00:00Z'), held)).toBe(false)
+    expect(newerFiscal(record('2026-09-23T10:00:00Z'), null)).toBe(true)
+    expect(newerFiscal(null, held)).toBe(false)
+    expect(newerFiscal(null, null)).toBe(false)
   })
 
   it('keeps typed only the fields changed after the save was sent', () => {

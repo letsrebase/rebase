@@ -588,6 +588,68 @@ describe('step 1, «Chi e per chi»', () => {
     expect(bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')).toHaveLength(1)
   })
 
+  it('keeps a newer tax record the new request’s prefill brought when an older save lands after it', async () => {
+    const save = deferred<Response>()
+    const spy = routes({
+      'PUT /api/hub/freelancers/f1/fiscal': () => save.promise,
+      // Read after somebody else saved the tax data again, later than this page's save.
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c9': prefill({
+        cliente: { cliente_ragione_sociale: 'Verdi Snc', cliente_piva: '11122233344', cliente_sede: 'Torino' },
+        fiscale: { ...FISCALE, partita_iva: '05555555555', updated_at: '2026-09-25T12:00:00Z' },
+      }),
+    })
+    mount()
+    await pick(/Rossi Studio/)
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
+    const domicilio = screen.getByLabelText('Domicilio professionale')
+    await userEvent.clear(domicilio)
+    await userEvent.type(domicilio, 'Via Po 2, Torino')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cambia richiesta' }))
+    await pick(/Verdi Snc/)
+    expect(screen.getByText('Salvati: CF LVLDAA85T50H501Z · P.IVA 05555555555')).toBeInTheDocument()
+    save.resolve(
+      answer(200, { ...FISCALE, partita_iva: '01234567899', domicilio: 'Via Po 2, Torino', updated_at: '2026-09-25T10:00:00Z' }),
+    )
+
+    await waitFor(() => expect(bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')).toHaveLength(1))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Avanti' })).toBeEnabled())
+    expect(screen.getByText('Salvati: CF LVLDAA85T50H501Z · P.IVA 05555555555')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
+    expect(screen.getByLabelText('Partita IVA')).toHaveValue('05555555555')
+  })
+
+  it('shows the newer record in a field an older tax save answered for, and keeps one typed again', async () => {
+    const save = deferred<Response>()
+    const spy = routes({
+      'PUT /api/hub/freelancers/f1/fiscal': () => save.promise,
+      'GET /api/hub/freelancers/f1/matches/prefill?company_id=c9': prefill({
+        cliente: { cliente_ragione_sociale: 'Verdi Snc', cliente_piva: '11122233344', cliente_sede: 'Torino' },
+        fiscale: { ...FISCALE, partita_iva: '05555555555', domicilio: 'Via Verdi 5, Torino', updated_at: '2026-09-25T12:00:00Z' },
+      }),
+    })
+    mount()
+    await pick(/Rossi Studio/)
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
+    await userEvent.clear(screen.getByLabelText('Domicilio professionale'))
+    await userEvent.type(screen.getByLabelText('Domicilio professionale'), 'Via Po 2, Torino')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cambia richiesta' }))
+    await pick(/Verdi Snc/)
+    // For the new request: the domicilio as the save on its way sent it, and a PEC.
+    await userEvent.click(screen.getByRole('button', { name: 'Modifica i dati fiscali' }))
+    const domicilio = screen.getByLabelText('Domicilio professionale')
+    await userEvent.clear(domicilio)
+    await userEvent.type(domicilio, 'Via Po 2, Torino')
+    await userEvent.type(screen.getByLabelText('PEC, se ce l’ha'), 'ada@pec.it')
+    save.resolve(answer(200, { ...FISCALE, domicilio: 'Via Po 2, Torino', updated_at: '2026-09-25T10:00:00Z' }))
+
+    await waitFor(() => expect(bodies(spy, 'PUT', '/api/hub/freelancers/f1/fiscal')).toHaveLength(1))
+    await waitFor(() => expect(screen.getByLabelText('Domicilio professionale')).toHaveValue('Via Verdi 5, Torino'))
+    expect(screen.getByLabelText('Partita IVA')).toHaveValue('05555555555')
+    expect(screen.getByLabelText('PEC, se ce l’ha')).toHaveValue('ada@pec.it')
+  })
+
   /** Picks Rossi, sends an edited tax save that the test holds back, and moves to Verdi.
    *  Any later save is answered at once with what it sent. */
   async function saveHeldThenSwitch(late: ReturnType<typeof deferred<Response>>) {

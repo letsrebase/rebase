@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.analytics import Tracker, tracker_from_settings
+from rebase_core.campaigns.sender import CampaignSender, campaign_sender_from_settings
 from rebase_core.config import Settings, get_settings
 from rebase_core.contracts.render import ContractRenderer, Renderer
 from rebase_core.db import create_engine_from_settings, session_factory
@@ -88,6 +89,15 @@ def get_sender(settings: SettingsDep) -> EmailSender | None:
 
 
 SenderDep = Annotated[EmailSender | None, Depends(get_sender)]
+
+
+def get_campaign_sender(settings: SettingsDep) -> CampaignSender | None:
+    """Campaigns' own Resend seam (P-REB-41): the member area's plus the id, the tags,
+    the headers and the idempotency key. `None` without a key."""
+    return campaign_sender_from_settings(settings)
+
+
+CampaignSenderDep = Annotated[CampaignSender | None, Depends(get_campaign_sender)]
 
 
 def get_http_call() -> HttpCall:

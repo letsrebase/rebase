@@ -59,6 +59,14 @@ export function olderFiscal(record: Fiscal | null, held: Fiscal | null): boolean
   return Date.parse(record.updated_at) < Date.parse(held.updated_at)
 }
 
+/** Whether `record` is newer than `held`, the tax record a form was last filled from:
+ *  only a newer one refills it, so a refetch older than a save, or no record at all,
+ *  never puts older values back. */
+export function newerFiscal(record: Fiscal | null, held: Fiscal | null): record is Fiscal {
+  if (record === null) return false
+  return held === null || Date.parse(record.updated_at) > Date.parse(held.updated_at)
+}
+
 /** The typed fields a save did not cover, because their text changed after it was sent
  *  (compared as sent, trimmed): once the save succeeds only these stay typed, and the
  *  others take the record that comes back. */

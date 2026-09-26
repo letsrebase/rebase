@@ -5,6 +5,7 @@ import { BrandMark } from '@/components/BrandMark'
 import { SidebarNav } from '@/components/SidebarNav'
 import { useMediaQuery } from '@/hooks/use-media-query'
 import { Button } from '@rebase/ui/button'
+import { Loader } from '@rebase/ui/loader'
 import { Sheet, SheetContent, SheetTrigger } from '@rebase/ui/sheet'
 import { useIdentify } from '@/lib/analytics'
 import { useMe } from '@/lib/me'
@@ -48,7 +49,14 @@ export function SignedInLayout() {
     if (!me.isPending && me.data === null) void navigate({ to: '/login', replace: true })
   }, [me.isPending, me.data, navigate])
 
-  if (me.isPending) return <p className="p-8 text-sm text-muted-foreground">Caricamento…</p>
+  if (me.isPending) {
+    return (
+      <div className="flex min-h-screen items-center justify-center gap-2 p-8 text-sm text-muted-foreground">
+        <Loader className="size-8" />
+        Caricamento…
+      </div>
+    )
+  }
   if (!me.data) return null
   const isAdmin = me.data.role === 'admin'
 
