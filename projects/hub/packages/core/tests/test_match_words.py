@@ -20,8 +20,6 @@ from rebase_core.match_words import (
     MATCH_STATE_LABELS,
     PIGRO_NOT_CONFIGURED,
     PROFILE_WITHOUT_NAME,
-    SIGNER_CF_TOO_LONG,
-    SIGNER_PEC_INVALID,
     Action,
     DocumentFacts,
     check_sentences,
@@ -428,9 +426,7 @@ def test_without_the_token_a_match_with_no_pigro_state_still_adds_nothing() -> N
     )
 
 
-@pytest.mark.parametrize(
-    "sentence", [PROFILE_WITHOUT_NAME, SIGNER_PEC_INVALID, SIGNER_CF_TOO_LONG, HTTPS_ONLY]
-)
+@pytest.mark.parametrize("sentence", [PROFILE_WITHOUT_NAME, HTTPS_ONLY])
 def test_the_hubs_own_errore_sentences_are_shown_alone(sentence: str) -> None:
     """A link the hub never sent: «Pigro non ha risposto» would say a call was made."""
     assert pigro_state_sentence("errore", sentence) == sentence

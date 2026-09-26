@@ -133,23 +133,14 @@ def _flat(text: str) -> str:
 PIGRO_NOT_CONFIGURED = "Consuntivo non configurato su questo ambiente."
 # The `errore`s the hub records without asking the CRM (`EngagementService.payload` and
 # `_put`), each shown alone on the card, since «Pigro non ha risposto» would say a call
-# was made: the door wants a name and a surname, rebase's own PEC and tax code as the
-# CRM's customer rules take them (an address, at most 16 characters), and a CRM on
-# HTTPS, since the bearer never travels in clear.
+# was made: the door wants a name and a surname, and a CRM on HTTPS, since the bearer
+# never travels in clear.
 PROFILE_WITHOUT_NAME = (
     "Il freelance non ha nome e cognome sul profilo: il collegamento a Pigro riparte "
     "quando il profilo è completo."
 )
-SIGNER_PEC_INVALID = (
-    "La PEC di rebase in REBASE_SIGNER_JSON non è un indirizzo valido: il collegamento a "
-    "Pigro riparte quando è corretta."
-)
-SIGNER_CF_TOO_LONG = (
-    "Il codice fiscale di rebase in REBASE_SIGNER_JSON supera i 16 caratteri: il "
-    "collegamento a Pigro riparte quando è corretto."
-)
 HTTPS_ONLY = "Pigro è raggiungibile solo su https."
-NOT_ASKED = frozenset({PROFILE_WITHOUT_NAME, SIGNER_PEC_INVALID, SIGNER_CF_TOO_LONG, HTTPS_ONLY})
+NOT_ASKED = frozenset({PROFILE_WITHOUT_NAME, HTTPS_ONLY})
 
 
 def pigro_state_sentence(pigro_stato: str | None, pigro_errore: str | None) -> str:

@@ -69,8 +69,6 @@ from rebase_core.match_words import (
     HTTPS_ONLY,
     PIGRO_NOT_CONFIGURED,
     PROFILE_WITHOUT_NAME,
-    SIGNER_CF_TOO_LONG,
-    SIGNER_PEC_INVALID,
     pigro_state_sentence,
 )
 from rebase_core.matches import ENTITY, MatchService
@@ -177,7 +175,7 @@ def _printed_date(data: Mapping[str, Any], key: str) -> date | None:
 
 def normalise_fiscal_code(value: str | None) -> str | None:
     """rebase's tax code as the CRM is sent it: spaces gone, upper case, `None` for a
-    blank. Its length is `payload`'s to check."""
+    blank. Its length is `payload`'s to check: over 16 characters it is not sent."""
     if value is None:
         return None
     return "".join(value.split()).upper() or None
@@ -430,9 +428,8 @@ def _group(report: _CrmReport, giorni_previsti: int | None) -> dict[str, Any]:
 
 class _NotAsked(Exception):
     """A match the hub will not send to the CRM yet, with the sentence its card shows
-    (`PROFILE_WITHOUT_NAME`, `SIGNER_PEC_INVALID`, `SIGNER_CF_TOO_LONG`): recorded as
-    `errore`, never as `rifiutato`, since it is the hub's own data to complete, and a
-    retry after that may well succeed."""
+    (`PROFILE_WITHOUT_NAME`): recorded as `errore`, never as `rifiutato`, since it is
+    the hub's own data to complete, and a retry after that may well succeed."""
 
     def __init__(self, sentence: str) -> None:
         super().__init__(sentence)
@@ -488,22 +485,20 @@ class EngagementService:
         """The door's `PUT` body (spec § 2.3): the freelancer, the letter as the match
         kept it (its printed data for a match older than migration 0021), and rebase as
         `REBASE_SIGNER_JSON` names it over `rebase.json`, normalised to the CRM's own
-        customer rules. Refused for a letter not signed: only an active match links.
-        Refused with `_NotAsked` for a freelancer whose name or surname is empty, and for
-        a PEC or a tax code of rebase's that the CRM's door would refuse in English:
-        `link` records it as `errore`, so the sweep and «Riprova» try again once the
-        profile or `REBASE_SIGNER_JSON` is complete."""
+        customer rules: a PEC that is not an address, or a tax code longer than 16
+        characters, is sent as `null`, as a VAT number that is not eleven digits is, so a
+        typo never blocks the link and the space's fiscal profile is completed later.
+        Refused for a letter not signed: only an active match links. Refused with
+        `_NotAsked` for a freelancer whose name or surname is empty, which the CRM's door
+        would refuse in English: `link` records it as `errore`, so the sweep and
+        «Riprova» try again once the profile is complete."""
         if letter.stato != "firmato":
             raise InvalidState(LETTER_NOT_SIGNED, stato=letter.stato)
         if not user.nome.strip() or not user.cognome.strip():
             raise _NotAsked(PROFILE_WITHOUT_NAME)
         signer = merge_data(company_defaults(), signer_data(self.settings.signer_json))
         pec = _text(signer.get("rebase-pec"))
-        if pec is not None and not _is_email(pec):
-            raise _NotAsked(SIGNER_PEC_INVALID)
         codice_fiscale = normalise_fiscal_code(_text(signer.get("rebase-cf")))
-        if codice_fiscale is not None and len(codice_fiscale) > FISCAL_CODE_MAX_LENGTH:
-            raise _NotAsked(SIGNER_CF_TOO_LONG)
         data = letter.data
         start = match.lettera_data_inizio or _printed_date(data, "data-inizio")
         if start is None:
@@ -526,9 +521,13 @@ class EngagementService:
             "rebase": {
                 "ragione_sociale": _text(signer.get("rebase-ragione-sociale")),
                 "partita_iva": normalise_vat(_text(signer.get("rebase-piva"))),
-                "codice_fiscale": codice_fiscale,
+                "codice_fiscale": (
+                    codice_fiscale
+                    if codice_fiscale is not None and len(codice_fiscale) <= FISCAL_CODE_MAX_LENGTH
+                    else None
+                ),
                 "indirizzo": sede[:ADDRESS_MAX_LENGTH] if sede is not None else None,
-                "pec": pec,
+                "pec": pec if pec is not None and _is_email(pec) else None,
                 "codice_sdi": sdi if sdi is not None and len(sdi) == SDI_LENGTH else None,
             },
         }

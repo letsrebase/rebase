@@ -49,8 +49,6 @@ from rebase_core.match_words import (
     HTTPS_ONLY,
     PIGRO_NOT_CONFIGURED,
     PROFILE_WITHOUT_NAME,
-    SIGNER_CF_TOO_LONG,
-    SIGNER_PEC_INVALID,
     pigro_state_sentence,
 )
 from rebase_core.matches import MatchService
@@ -304,31 +302,31 @@ def test_payload_sends_rebase_pec_and_tax_code_as_the_crm_takes_them(clean: Sess
 
 
 @pytest.mark.parametrize(
-    ("field", "value", "sentence"),
+    ("field", "value", "key"),
     [
-        ("rebase-pec", "rebase at pec", SIGNER_PEC_INVALID),
-        ("rebase-pec", "rebase@", SIGNER_PEC_INVALID),
-        ("rebase-cf", "RSSMRA80A01H501UX", SIGNER_CF_TOO_LONG),
+        ("rebase-pec", "rebase at pec", "pec"),
+        ("rebase-pec", "rebase@", "pec"),
+        ("rebase-cf", "RSSMRA80A01H501UX", "codice_fiscale"),
     ],
 )
-def test_link_with_rebase_data_the_crm_would_refuse_asks_nothing(
-    clean: Session, field: str, value: str, sentence: str
+def test_link_sends_rebase_data_the_crm_would_refuse_as_null(
+    clean: Session, field: str, value: str, key: str
 ) -> None:
     """A PEC that is not an address, a tax code longer than 16: the CRM's door would
-    refuse either in English, so neither leaves. The match waits as `errore` with the
-    hub's own sentence, which the card shows alone, and the sweep tries again once
-    `REBASE_SIGNER_JSON` is fixed."""
+    refuse either in English, so it is dropped, as a VAT number that is not eleven
+    digits is. The link goes through all the same: a typo never blocks it, and the
+    space's fiscal profile is completed later."""
     _admin, match_id = _active(clean)
     http = RecordedPigro([(201, linked_body())])
     settings = _settings(signer={**SIGNER, field: value})
 
     read = _service(clean, http, settings=settings).link(match_id)
 
-    assert (read.pigro_stato, read.pigro_errore) == ("errore", sentence)
-    assert http.calls == []
-    assert pigro_state_sentence("errore", read.pigro_errore) == sentence
-
-    assert _service(clean, http).link(match_id).pigro_stato == "collegato"
+    assert (read.pigro_stato, read.pigro_errore) == ("collegato", None)
+    [(_method, _url, _headers, sent)] = http.calls
+    rebase = json.loads(sent)["rebase"]
+    assert rebase[key] is None
+    assert rebase["partita_iva"] == "00000000000"
 
 
 def test_payload_refuses_a_letter_that_is_not_signed(clean: Session) -> None:
