@@ -151,6 +151,7 @@ would close that circle against a half-initialised module.
 | `tenant_id` | UUID, FK `tenants.id`, indexed | the space |
 | `customer_id` | UUID, nullable | the customer «rebase» in that space |
 | `deal_id` | UUID, nullable | the deal for the letter; `NULL` while step 4 of § 2.3 has not completed |
+| `space_created` | boolean, not null, default false | true when the door opened the space for this match; the completing call sends the welcome from it and answers `spazio_creato` from it, the calls after that answer false |
 | `created_at`, `updated_at` | timestamptz | |
 
 The registry has no Alembic history (`create_all`, `tenants/database.py`); the table is
@@ -218,11 +219,13 @@ router and by nothing else yet) does, in order:
    oldest first; none means `TenantService.provision` with `TenantSignup(slug, nome, email,
    membro=True)`, `nome` being `f"{nome} {cognome}"` cut to the signup's 200 characters,
    the slug from `slugify(f"{nome} {cognome}")` with `-2`, `-3`... in place of its tail
-   while `availability` says the name is taken or reserved. Then exactly what the signup
-   route does after provisioning (the magic link and the welcome mail,
-   `MagicLinkService.request` and `welcome_mail`), moved out of the router into a
-   function both call, so a space born here and a space born at the signup are told the
-   same way. The engagement row is written with the `tenant_id` and no deal yet, and
+   while `availability` says the name is taken or reserved. The welcome (the magic link
+   and the welcome mail, `MagicLinkService.request` and `welcome_mail`, moved out of the
+   signup router into a function both call, so a space born here and a space born at
+   the signup are told the same way) does not go out here: it goes out with the call
+   that completes the engagement, after the deal exists, and only when the row says the
+   space was created, so a call cut short never leaves a space nobody can enter. The
+   engagement row is written with the `tenant_id`, `space_created` and no deal yet, and
    committed: a failure from here on leaves a row that says «space found, deal
    missing», which step 2 resumes.
 4. **The customer «rebase»**, in the space, as `Actor.rebase()` (§ 2.5): found by
@@ -242,8 +245,9 @@ router and by nothing else yet) does, in order:
    data_fine`, `owner_id` the space's admin whose email is the freelancer's, the default
    open stage, and the note «Creato da rebase per la lettera n. 3/2026 con Acme S.r.l.
    rebase legge le ore di questo deal per la rendicontazione al cliente.» whose last
-   line is the marker `rebase:match=<match_id>`. Before creating, the live deal under
-   that customer whose note carries this match's marker is reused
+   line is the marker `rebase:match=<match_id>`. Before creating, the live deal in the space
+   whose note carries this match's marker is reused, whatever its customer (a retry
+   after a rename still finds its own deal)
    (`DealRepository.find_by_marker`, an exact query, never the paginated list): it is
    the deal a previous call created and failed to record (a failure between steps 5
    and 6). A deal with the same name and no marker is somebody else's and is left
