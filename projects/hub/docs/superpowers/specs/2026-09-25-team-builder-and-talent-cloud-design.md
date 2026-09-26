@@ -322,7 +322,9 @@ white text is 4.7:1) and «Non sono disponibile» on `CTA`, and `_button` gains 
 parameter. Ivan reads the wording and picks the colours on the PR before it ships.
 `contact_talents` refuses, with «Il riassunto nomina l'azienda: correggilo prima di
 scrivere ai talenti.» (a `409`), a summary that contains the request's `azienda` whole,
-as a phrase, whatever its length («HP», «3M» included), or any distinctive word of it
+as a phrase, whatever its length, when the name carries an initialism in capitals
+(«HP», «3M», «IBM Italia»: a name written like ordinary words, «Di Più», would flag
+ordinary text), or any distinctive word of it
 (four letters or more, case-insensitively; the legal forms and the generic company
 words «logistica», «software», «studio», «servizi» and their kind do not count, since
 the prompt itself describes a company by its kind); the admin's
