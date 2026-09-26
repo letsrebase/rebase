@@ -15,7 +15,9 @@ from typing import Any
 import anthropic
 import httpx2
 import pytest
+from pydantic import BaseModel, Field
 
+from rebase_core import llm
 from rebase_core.config import Settings
 from rebase_core.errors import DomainError
 from rebase_core.llm import (
@@ -301,3 +303,86 @@ def test_request_carries_timeout_and_eu_geo() -> None:
     [kwargs] = stub.beta.messages.calls
     assert kwargs["timeout"] == 50.0
     assert kwargs["inference_geo"] == "eu"
+
+
+# ---- the schema, as the API takes it (REB-510) -----------------------------------------
+
+
+class _Membro(BaseModel):
+    nome: str = Field(min_length=1, max_length=40)
+    giorni: int = Field(ge=1, le=5)
+
+
+class _Squadra(BaseModel):
+    """A nested model, the shape C4's proposal will have: `$defs`, a `$ref`, a list with
+    `maxItems`, a nullable string with `maxLength`."""
+
+    membri: list[_Membro] = Field(max_length=6)
+    nota: str | None = Field(max_length=200)
+
+
+_UNSUPPORTED = {"minLength", "maxLength", "minimum", "maximum", "maxItems"}
+
+
+def _nodes(node: Any) -> list[dict[str, Any]]:
+    """Every schema node under `node`, the maps of names (`properties`, `$defs`) walked
+    through rather than read as nodes themselves."""
+    if isinstance(node, list):
+        return [found for item in node for found in _nodes(item)]
+    if not isinstance(node, dict):
+        return []
+    found = [node]
+    for key, value in node.items():
+        if key in ("properties", "$defs"):
+            found += [inner for sub in value.values() for inner in _nodes(sub)]
+        else:
+            found += _nodes(value)
+    return found
+
+
+def test_the_schema_sent_carries_only_what_the_api_takes() -> None:
+    """The structured-output API refuses length, range and list-size keywords: the seam
+    strips them from every schema it sends, at every depth and in `$defs`, and closes
+    every object, so a caller hands `Model.model_json_schema()` as it is and validates
+    the answer with the same model."""
+    message = _Message(
+        content=[_Block("text", "{}")],
+        stop_reason="end_turn",
+        stop_details=None,
+        usage=_Usage(input_tokens=1, output_tokens=1, cache_read_input_tokens=0),
+        model=MODEL,
+    )
+    stub = StubClient(message)
+    call = AnthropicCall(API_KEY, MODEL, client=stub)  # type: ignore[arg-type]
+    raw = _Squadra.model_json_schema()
+    assert "$defs" in raw and {"maxItems", "maxLength"} <= {k for n in _nodes(raw) for k in n}
+
+    call.complete(REQUEST.model_copy(update={"schema": raw}))
+
+    [kwargs] = stub.beta.messages.calls
+    sent = kwargs["output_config"]["format"]["schema"]
+    assert "_Membro" in sent["$defs"]
+    nodes = _nodes(sent)
+    assert not {key for node in nodes for key in node} & _UNSUPPORTED
+    objects = [node for node in nodes if node.get("type") == "object"]
+    assert len(objects) == 2
+    assert all(node["additionalProperties"] is False for node in objects)
+    # The caller's own schema is left as it was: it is still what validates the answer.
+    assert raw == _Squadra.model_json_schema()
+
+
+def test_the_sdk_client_is_built_on_first_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`LlmDep` builds an `AnthropicCall` on every wizard post, most of them without a
+    CV: constructing one must not open an SDK client nobody uses."""
+    built: list[str] = []
+
+    def fake_client(*, api_key: str) -> object:
+        built.append(api_key)
+        return object()
+
+    monkeypatch.setattr(llm.anthropic, "Anthropic", fake_client)
+    call = AnthropicCall(API_KEY, MODEL)
+    assert built == []
+
+    assert call.client is call.client
+    assert built == [API_KEY]

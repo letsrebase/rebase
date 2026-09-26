@@ -67,16 +67,33 @@ class LlmCall(Protocol):
 
 class AnthropicCall:
     """`client` is a keyword-only override: production leaves it out and gets
-    `anthropic.Anthropic(api_key=...)`; the tests hand a stub that records
-    `beta.messages.create`'s kwargs and answers a canned response, no network."""
+    `anthropic.Anthropic(api_key=...)`, built on the first call rather than here, since
+    the API builds one of these for every request that might write a card (`LlmDep`)
+    and most never do; the tests hand a stub that records `beta.messages.create`'s
+    kwargs and answers a canned response, no network.
+
+    The schema of every request goes out through the SDK's own `transform_schema`
+    (REB-510): the structured-output API refuses length, range and list-size keywords
+    (`maxLength`, `minimum`, `maxItems`, ...), which every Pydantic model with a `Field`
+    limit writes, so the SDK moves them into the property's description and closes every
+    object, `$defs` included. A caller hands `Model.model_json_schema()` as it is and
+    validates the answer with the same model, which is where those limits still bite."""
 
     def __init__(
         self, api_key: str, model: str, *, client: anthropic.Anthropic | None = None
     ) -> None:
-        self.client = client if client is not None else anthropic.Anthropic(api_key=api_key)
+        self._api_key = api_key
+        self._client = client
         self.model = model
 
+    @property
+    def client(self) -> anthropic.Anthropic:
+        if self._client is None:
+            self._client = anthropic.Anthropic(api_key=self._api_key)
+        return self._client
+
     def complete(self, request: LlmRequest) -> LlmResponse:
+        schema = anthropic.transform_schema(request.schema)
         try:
             response = self.client.beta.messages.create(
                 model=self.model,
@@ -86,7 +103,7 @@ class AnthropicCall:
                 thinking={"type": "adaptive"},
                 output_config={
                     "effort": "medium",
-                    "format": {"type": "json_schema", "schema": request.schema},
+                    "format": {"type": "json_schema", "schema": schema},
                 },
                 # `LlmRequest.system`/`.messages` are already the SDK's own wire shape;
                 # this cast is the one place in the hub that trusts it, so the two
