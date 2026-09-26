@@ -321,8 +321,11 @@ and white on Watermelon fails the contrast floor, which is why every mail button
 white text is 4.7:1) and «Non sono disponibile» on `CTA`, and `_button` gains a colour
 parameter. Ivan reads the wording and picks the colours on the PR before it ships.
 `contact_talents` refuses, with «Il riassunto nomina l'azienda: correggilo prima di
-scrivere ai talenti.» (a `409`), a summary that contains any word of three letters or
-more of the request's `azienda`, case-insensitively.
+scrivere ai talenti.» (a `409`), a summary that contains any distinctive word of the
+request's `azienda` (four letters or more, case-insensitively; the legal forms and the
+generic company words «logistica», «software», «studio», «servizi» and their kind do
+not count, since the prompt itself describes a company by its kind); the admin's
+«Salva il riassunto» refuses the same way, so the summary is fixed where it is written.
 
 ## 4. The private face
 
