@@ -22,11 +22,13 @@ from zoneinfo import ZoneInfo
 
 from psycopg.errors import LockNotAvailable
 from sqlalchemy import Connection, Engine, create_engine, func, select, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
+from pigrocrm.core.auth.schemas import UserCreate
+from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.customers.schemas import CustomerCreate
@@ -73,6 +75,7 @@ LOCK = text("SELECT pg_advisory_lock(hashtext(:email))")
 UNLOCK = text("SELECT pg_advisory_unlock(hashtext(:email))")
 BUSY = "Un'altra chiamata sta preparando lo spazio di questo indirizzo: riprova tra poco."
 GONE = "Il deal di questa lettera è stato eliminato nello spazio."
+REVERSED = "La data di fine precede quella di inizio."
 # The report reads the deal's hours through `TimeEntryService.list`, this many a page
 # (its own cap), until the cursor runs out.
 REPORT_PAGE_SIZE = 200
@@ -83,6 +86,33 @@ RATE_PLACES = Decimal("0.000001")
 FALLBACK_SLUG = "spazio"
 # `-2` ... `-50`: past this many namesakes the name is not what is wrong.
 SLUG_SUFFIX_MAX = 50
+
+
+class EngagementBusy(Exception):
+    """Another call has held the freelancer's address for longer than `LOCK_TIMEOUT`.
+    Not a refusal of this request but a «not now»: the router answers it `503`, which
+    the hub retries, where a `409` would file the match as refused for good. It
+    carries no address: the answer is `BUSY` and nothing else."""
+
+    def __init__(self) -> None:
+        super().__init__(BUSY)
+
+
+class SpaceUnreachable(Exception):
+    """A database error inside a space: its database missing (a provisioning a restart
+    cut short after the registry row), unreachable, or not migrated yet. Carries the
+    tenant's id, the one name of the space a log line may hold (never its slug, which
+    is the freelancer's name, nor the address); the database error is its cause."""
+
+    def __init__(self, tenant_id: UUID) -> None:
+        super().__init__(f"space {tenant_id} unreachable")
+        self.tenant_id = tenant_id
+
+
+def full_name(freelancer: EngagementFreelancer) -> str:
+    """`Ada Lovelace`, cut to the signup's 200 characters: the space's name and its
+    admin's, the same on a space the door opens and on an admin it completes."""
+    return f"{freelancer.nome} {freelancer.cognome}"[:SPACE_NAME_MAX_LENGTH]
 
 
 def deal_name(numero: str, ruolo: str, azienda: str) -> str:
@@ -153,7 +183,9 @@ class EngagementService:
         commits on its own, the row is committed before the space is touched), and a
         transaction-level lock would go at the first of those commits. So two letters of
         one freelancer activating together open one space, and two retries of one match
-        wait for each other from the first step to the last."""
+        wait for each other from the first step to the last. A wait longer than
+        `LOCK_TIMEOUT` is `EngagementBusy`, and a database error inside the space is
+        `SpaceUnreachable`: both a «not now», never a refusal."""
         self._require_public_url()
         email = str(data.freelancer.email).strip().lower()
         with self.registry_engine.connect() as lock:
@@ -168,7 +200,7 @@ class EngagementService:
             except OperationalError as exc:
                 if not isinstance(exc.orig, LockNotAvailable):
                     raise
-                raise Conflict(ENTITY, BUSY, email=email) from exc
+                raise EngagementBusy() from exc
             try:
                 # Out of the transaction the lock was taken in: the lock is the
                 # session's, and the connection waits idle, not idle in a transaction.
@@ -187,9 +219,10 @@ class EngagementService:
         invoice these hours do not sit on.
 
         `da` defaults to the day the deal was created and `a` to today, both in the
-        CRM's zone; a period that ends before it starts or spans over `REPORT_MAX_DAYS`
-        is refused. No row for the match, or a row a call left before its deal existed,
-        is `NotFound`; a deal deleted in the space is `ensure`'s `Conflict`."""
+        CRM's zone; a period that ends before it starts, or spans over
+        `REPORT_MAX_DAYS`, is refused, each with its own sentence. No row for the
+        match, or a row a call left before its deal existed, is `NotFound`; a deal
+        deleted in the space is `ensure`'s `Conflict`."""
         self._require_public_url()
         with session_factory(self.registry_engine)() as registry:
             row = self._row(registry, match_id)
@@ -277,7 +310,9 @@ class EngagementService:
             else deal.created_at.astimezone(ZoneInfo(self.settings.timezone)).date()
         )
         last = a if a is not None else today_local(self.settings)
-        if last < first or (last - first).days > REPORT_MAX_DAYS:
+        if last < first:
+            raise ValidationFailed(ENTITY, "periodo", REVERSED)
+        if (last - first).days > REPORT_MAX_DAYS:
             raise ValidationFailed(ENTITY, "periodo", f"al massimo {REPORT_MAX_DAYS} giorni")
         return first, last
 
@@ -399,6 +434,12 @@ class EngagementService:
                 registry.commit()
 
             with self._space_session(tenant) as space:
+                if self._ensure_admin(space, data.freelancer, email):
+                    # A space whose provisioning a restart cut short after its registry
+                    # row, whose database the next boot then created: nobody in it, and
+                    # the welcome never sent. It is opened now, and said so.
+                    self._welcome(space, tenant.slug, email)
+                    spazio_creato = True
                 customer_id = self._customer(space, data)
                 deal_id = self._deal(space, match_id, data, customer_id, email)
 
@@ -459,7 +500,7 @@ class EngagementService:
         `Conflict` on that very slug, and moves on to the next candidate; any other
         `Conflict`, or the last candidate's, is the caller's."""
         tenants = TenantService(registry, self.settings)
-        nome = f"{freelancer.nome} {freelancer.cognome}"
+        nome = full_name(freelancer)
         base = slugify(nome) or FALLBACK_SLUG
         for n in range(1, SLUG_SUFFIX_MAX + 1):
             suffix = "" if n == 1 else f"-{n}"
@@ -470,7 +511,7 @@ class EngagementService:
                 created = tenants.provision(
                     TenantSignup(
                         slug=candidate,
-                        nome=nome[:SPACE_NAME_MAX_LENGTH],
+                        nome=nome,
                         email=email,
                         membro=True,
                     )
@@ -480,42 +521,68 @@ class EngagementService:
                     raise
                 continue
             tenant = tenants.get(created.slug)
-            self._welcome(tenant, email)
+            with self._space_session(tenant) as space:
+                self._welcome(space, tenant.slug, email)
             return tenant
         raise Conflict("tenant", "questo nome è già in uso", slug=base)
 
-    def _welcome(self, tenant: Tenant, email: str) -> None:
+    def _welcome(self, space: Session, slug: str, email: str) -> None:
         """What the signup sends after provisioning, sent at once: nothing here is a
         request waiting on it."""
         if self.sender is None:
             return
-        with self._space_session(tenant) as space:
-            mail = welcome(space, self.settings, self.sender, email, tenant.slug, membro=True)
+        mail = welcome(space, self.settings, self.sender, email, slug, membro=True)
         if mail is not None:
             self.sender.send(mail)
 
+    @staticmethod
+    def _ensure_admin(space: Session, freelancer: EngagementFreelancer, email: str) -> bool:
+        """The space's admin with the freelancer's address, created when the space has
+        no user with it, the way `TenantService.provision` creates it: as
+        `Actor.system()`, with no password, entering by the welcome's link. `True`
+        when it was created now. A space `provision` finished always has it; one whose
+        provisioning stopped after the registry row does not, and without it the deal
+        would have no owner and the hub would mail a link nobody can enter."""
+        if UserRepository(space).get_by_email(email) is not None:
+            return False
+        UserService(space).create(
+            UserCreate(email=email, password=None, nome=full_name(freelancer), ruolo="admin"),
+            Actor.system(),
+        )
+        return True
+
     @contextmanager
     def _space_session(self, tenant: Tenant) -> Iterator[Session]:
+        """A session on the space's own database for one step. A database error in it
+        leaves as `SpaceUnreachable`, so the router's `503` can say which space."""
+        tenant_id = tenant.id
         engine = create_engine(
             tenant_database_url(self.settings, tenant_database_name(tenant.slug)), future=True
         )
         try:
             with session_factory(engine)() as space:
                 yield space
+        except SQLAlchemyError as exc:
+            raise SpaceUnreachable(tenant_id) from exc
         finally:
             engine.dispose()
 
     def _customer(self, space: Session, data: EngagementUpsert) -> UUID:
-        """Step 4: the customer «rebase», by VAT number when the body carries one, else
-        by its exact name among the live customers; created when missing. An existing
-        one is left as it is: its fields are the freelancer's to edit."""
+        """Step 4: the customer «rebase», by VAT number when the body carries one, then
+        by its exact name among the live customers; created when neither finds it. The
+        name is tried after a VAT number that finds nothing too: a space whose customer
+        was created before the signer data had a VAT number keeps that one customer,
+        rather than gain a second the day the number arrives. An existing one is left as
+        it is: its fields are the freelancer's to edit."""
         rebase = data.rebase
         customers = CustomerRepository(space)
         found = (
             customers.match_by_fiscal_id(partita_iva=rebase.partita_iva, codice_fiscale=None)
             if rebase.partita_iva is not None
-            else customers.find_by_name(rebase.ragione_sociale)
+            else None
         )
+        if found is None:
+            found = customers.find_by_name(rebase.ragione_sociale)
         if found is not None:
             return found.id
         created = CustomerService(space).create(

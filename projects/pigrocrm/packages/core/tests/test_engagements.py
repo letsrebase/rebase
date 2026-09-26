@@ -37,7 +37,7 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import session_factory, today_local
-from pigrocrm.core.db.sidecar import drop_database
+from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
@@ -48,7 +48,13 @@ from pigrocrm.core.engagements.schemas import (
     ReportDeal,
     ReportInvoice,
 )
-from pigrocrm.core.engagements.service import EngagementService, deal_marker, deal_name
+from pigrocrm.core.engagements.service import (
+    EngagementBusy,
+    EngagementService,
+    SpaceUnreachable,
+    deal_marker,
+    deal_name,
+)
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.mail import RecordingSender
@@ -58,9 +64,11 @@ from pigrocrm.core.tenants import (
     TenantAvailability,
     TenantService,
     TenantSignup,
+    ensure_defaults,
     ensure_tenants_database,
 )
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
+from pigrocrm.core.tenants.service import migrate_to_head
 from pigrocrm.core.timetracking.models import TimeEntry
 from pigrocrm.core.timetracking.schemas import TimeEntryCreate
 from pigrocrm.core.timetracking.service import TimeEntryService
@@ -77,6 +85,7 @@ DEAL_NOTE = (
 DEAL_NAME = "Lettera n. 3/2026 · Backend developer per Acme S.r.l."
 GONE = "Il deal di questa lettera è stato eliminato nello spazio."
 BUSY = "Un'altra chiamata sta preparando lo spazio di questo indirizzo: riprova tra poco."
+REVERSED = "La data di fine precede quella di inizio."
 
 
 def _settings_for(engine: Engine, *, public_url: str = "https://pigro.test") -> Settings:
@@ -147,6 +156,24 @@ def _provision(door: Door, slug: str, email: str = ADA) -> UUID:
             TenantSignup(slug=slug, nome="Ada Lovelace", email=email)
         )
     return tenant.id
+
+
+def _half_provisioned(door: Door, slug: str, *, database: bool) -> UUID:
+    """A registry row `provision` committed before a restart cut it short: no user in
+    the space. With `database`, the space as the next boot's `ensure-space-defaults`
+    leaves it -- created, migrated, furnished -- and without, no database at all."""
+    with session_factory(door.registry)() as registry:
+        tenant = Tenant(slug=slug, db_name=tenant_database_name(slug), owner_email=ADA)
+        registry.add(tenant)
+        registry.commit()
+        tenant_id = tenant.id
+    if database:
+        url = tenant_database_url(door.settings, tenant_database_name(slug))
+        create_database_if_missing(door.settings, url)
+        migrate_to_head(door.settings, url.render_as_string(hide_password=False))
+        with _space(door, slug) as space:
+            ensure_defaults(space)
+    return tenant_id
 
 
 @contextmanager
@@ -303,6 +330,26 @@ def test_second_call_answers_the_same_ids_and_creates_nothing(door: Door) -> Non
     with _space(door, "ada-lovelace") as space:
         assert _count(space, Customer) == 1
         assert _count(space, Deal) == 1
+
+    # A retry whose body changed since is answered the recorded ids too, and writes
+    # nothing: not a second customer or deal, not the new rate on the recorded deal.
+    changed = door.service().ensure(
+        match_id,
+        _upsert(
+            lettera={"numero": "9/2026", "compenso": "800.00"},
+            rebase={"ragione_sociale": "rebase S.p.A.", "partita_iva": "09876543210"},
+        ),
+    )
+    assert (changed.creato, changed.customer_id, changed.deal_id) == (
+        False,
+        first.customer_id,
+        first.deal_id,
+    )
+    with _space(door, "ada-lovelace") as space:
+        assert _count(space, Customer) == 1 and _count(space, Deal) == 1
+        recorded = space.get(Deal, first.deal_id)
+        assert recorded is not None
+        assert (recorded.nome, str(recorded.tariffa_oraria)) == (DEAL_NAME, "50.000000")
 
     # The row's ids are answered (spec § 2.3 step 2), not what the deal points at now.
     with _space(door, "ada-lovelace") as space:
@@ -462,21 +509,23 @@ def test_two_addresses_at_once_open_two_spaces(door: Door) -> None:
     assert sorted(mail.to for mail in door.sender.sent) == [ADA, "grace@studio.it"]
 
 
-def test_a_held_lock_times_out_as_a_conflict(door: Door, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_held_lock_times_out_as_busy(door: Door, monkeypatch: pytest.MonkeyPatch) -> None:
     """A call that hangs while holding an address must not pin every later call for
-    it: the wait is bounded by `lock_timeout`, and the answer says to try again."""
+    it: the wait is bounded by `lock_timeout`, and the answer says to try again -- a
+    «not now» (`EngagementBusy`, the router's 503), not a `Conflict` the hub would file
+    as refused for good -- and carries no address."""
     monkeypatch.setattr(engagements_service, "LOCK_TIMEOUT", "200ms")
     with door.registry.connect() as holder:
         holder.execute(text("SELECT pg_advisory_lock(hashtext(:e))"), {"e": ADA})
         try:
-            with pytest.raises(Conflict) as refused:
+            with pytest.raises(EngagementBusy) as refused:
                 door.service().ensure(uuid4(), _upsert())
         finally:
             holder.execute(text("SELECT pg_advisory_unlock(hashtext(:e))"), {"e": ADA})
             holder.commit()
 
-    assert refused.value.details["reason"] == BUSY
-    assert refused.value.details["email"] == ADA
+    assert not isinstance(refused.value, Conflict)
+    assert refused.value.args == (BUSY,)
     assert _owned(door) == []
 
 
@@ -550,6 +599,48 @@ def test_half_written_row_is_completed(door: Door) -> None:
     )
 
 
+def test_a_space_left_without_its_admin_gets_one_and_the_welcome_once(door: Door) -> None:
+    """`provision` commits the registry row before it creates the database: a restart
+    in between leaves a row whose space the next boot creates and furnishes, with
+    nobody in it. The door, finding it as the address's own, creates the admin the
+    way `provision` does and sends the welcome -- once, whatever the calls after --
+    so the deal has an owner and the hub's link leads somewhere."""
+    _half_provisioned(door, "ada-lovelace", database=True)
+
+    answer = door.service().ensure(uuid4(), _upsert())
+
+    assert answer.slug == "ada-lovelace" and answer.creato is True
+    # Opened now, as far as the freelancer can tell: the hub's mail says so.
+    assert answer.spazio_creato is True
+    assert _owned(door) == ["ada-lovelace"]
+    with _space(door, "ada-lovelace") as space:
+        admin = UserRepository(space).get_by_email(ADA)
+        assert admin is not None
+        assert (admin.ruolo, admin.nome, admin.password_hash) == ("admin", "Ada Lovelace", None)
+        deal = space.get(Deal, answer.deal_id)
+        assert deal is not None and deal.owner_id == admin.id
+    assert [mail.to for mail in door.sender.sent] == [ADA]
+    assert "https://pigro.test/ada-lovelace/app/verify?t=" in door.sender.sent[0].text
+
+    again = door.service().ensure(uuid4(), _upsert(lettera={"numero": "4/2026"}))
+    assert again.slug == "ada-lovelace" and again.spazio_creato is False
+    assert len(door.sender.sent) == 1
+
+
+def test_a_space_without_its_database_is_unreachable_by_tenant_id(door: Door) -> None:
+    """The same restart with no boot after it: the space has no database. The call is a
+    «not now» naming the tenant's id (never the slug or the address), which the router
+    logs with the match's id, so an operator can find the row."""
+    tenant_id = _half_provisioned(door, "ada-lovelace", database=False)
+
+    with pytest.raises(SpaceUnreachable) as unreachable:
+        door.service().ensure(uuid4(), _upsert())
+
+    assert unreachable.value.tenant_id == tenant_id
+    assert "ada-lovelace" not in str(unreachable.value) and ADA not in str(unreachable.value)
+    assert door.sender.sent == []
+
+
 def test_retry_after_deal_created_but_unrecorded_reuses_it(door: Door) -> None:
     """A failure between step 5 and step 6: the deal exists with this match's marker,
     and the row has no `deal_id`. The retry finds the customer by its exact name (no
@@ -608,6 +699,21 @@ def test_same_named_deal_without_marker_is_not_reused(door: Door) -> None:
         assert _count(space, Deal, Deal.nome == DEAL_NAME) == 2
         untouched = space.get(Deal, theirs.id)
         assert untouched is not None and untouched.note == "La mia lettera."
+
+
+def test_a_vat_number_that_finds_nothing_falls_back_to_the_name(door: Door) -> None:
+    """The customer «rebase» a body without a VAT number created, found by its name the
+    day the signer data gains one: the same customer, not a second one, and left as it
+    is (no VAT number written onto it)."""
+    no_vat = door.service().ensure(uuid4(), _upsert(rebase={"partita_iva": None}))
+
+    with_vat = door.service().ensure(uuid4(), _upsert(lettera={"numero": "4/2026"}))
+
+    assert with_vat.customer_id == no_vat.customer_id
+    with _space(door, "ada-lovelace") as space:
+        assert _count(space, Customer) == 1
+        customer = space.get(Customer, no_vat.customer_id)
+        assert customer is not None and customer.partita_iva is None
 
 
 # --- ensure: the edges ---------------------------------------------------------------
@@ -890,20 +996,21 @@ def test_report_defaults_and_caps_the_period(door: Door, monkeypatch: pytest.Mon
 
     assert [g.data for g in report.giorni] == [date(2026, 10, 2), date(2026, 10, 31)]
 
-    for da, a in (
-        (date(2024, 1, 1), date(2024, 1, 1) + timedelta(days=801)),
-        (date(2026, 10, 2), date(2026, 10, 1)),
+    for da, a, reason in (
+        (date(2024, 1, 1), date(2024, 1, 1) + timedelta(days=801), "al massimo 800 giorni"),
+        (date(2026, 10, 2), date(2026, 10, 1), REVERSED),
     ):
         with pytest.raises(ValidationFailed) as refused:
             door.service().report(match_id, da=da, a=a)
         assert refused.value.details == {
             "entity": "engagement",
             "field": "periodo",
-            "reason": "al massimo 800 giorni",
+            "reason": reason,
         }
     # `a` alone before the deal's first day is the same reversed period.
-    with pytest.raises(ValidationFailed):
+    with pytest.raises(ValidationFailed) as refused:
         door.service().report(match_id, a=date(2026, 10, 1))
+    assert refused.value.details["reason"] == REVERSED
 
 
 def test_report_accepts_exactly_800_days(door: Door) -> None:

@@ -20,7 +20,11 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.engagements.schemas import EngagementRead, EngagementReport, EngagementUpsert
-from pigrocrm.core.engagements.service import EngagementService
+from pigrocrm.core.engagements.service import (
+    EngagementBusy,
+    EngagementService,
+    SpaceUnreachable,
+)
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.mail import EmailSender
 from pigrocrm_api.deps import SettingsDep, TenantsRegistryDep
@@ -79,22 +83,43 @@ def _service(
     return EngagementService(bind, settings, sender)
 
 
-def _run[T](action: Callable[[], T]) -> T:
-    """Runs one call into `EngagementService`, turning both ways the door answers "not
-    now" into a 503 in one place: `ValidationFailed` on `public_url` is a missing
-    setting, the installation's fault, not the caller's (spec § 2.1); `SQLAlchemyError`
-    is the space's database gone, unreachable, or the registry's own connection lost.
-    Logged by type only, never the message -- which can carry a statement's own bound
-    parameters (`EngagementService.LOCK`'s address) into the traceback, the same reason
-    `EngagementService._unlock` logs its own failure by type alone."""
+def _run[T](match_id: UUID, action: Callable[[], T]) -> T:
+    """Runs one call into `EngagementService` for `match_id`, turning every way the
+    door answers "not now" into a 503 in one place, which the hub retries (a 409 or a
+    422 it files as refused, for good): `ValidationFailed` on `public_url` is a missing
+    setting, the installation's fault, not the caller's (spec § 2.1); `EngagementBusy`
+    is another call still holding the freelancer's address; `SpaceUnreachable` is the
+    space's database missing, unreachable or not migrated yet; any other
+    `SQLAlchemyError` is the registry's own connection lost.
+
+    The last two are logged with the match's id and, for a space, the tenant's id, so
+    a space a restart left half-provisioned can be found from the log; never its slug
+    (the freelancer's name) nor the address. The error by type only, never its message
+    -- which can carry a statement's own bound parameters (`EngagementService.LOCK`'s
+    address) into the traceback, the same reason `EngagementService._unlock` logs its
+    own failure by type alone."""
     try:
         return action()
     except ValidationFailed as exc:
         if exc.details.get("field") != "public_url":
             raise
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, exc.message) from exc
+    except EngagementBusy as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except SpaceUnreachable as exc:
+        logger.warning(
+            "engagements: match %s, space %s not reachable (%s)",
+            match_id,
+            exc.tenant_id,
+            type(exc.__cause__).__name__,
+        )
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SPAZIO_NON_RAGGIUNGIBILE) from exc
     except SQLAlchemyError as exc:
-        logger.warning("engagements: the door's own call failed (%s)", type(exc).__name__)
+        logger.warning(
+            "engagements: match %s, the door's own call failed (%s)",
+            match_id,
+            type(exc).__name__,
+        )
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, SPAZIO_NON_RAGGIUNGIBILE) from exc
 
 
@@ -118,8 +143,9 @@ def _plain_response(description: str) -> dict[str, Any]:
 
 
 _UNAVAILABLE_RESPONSE = _plain_response(
-    "PIGROCRM_PUBLIC_URL non è configurato, oppure lo spazio del freelancer non è "
-    "raggiungibile in questo momento."
+    "PIGROCRM_PUBLIC_URL non è configurato, lo spazio del freelancer non è raggiungibile "
+    "in questo momento, oppure un'altra chiamata sta preparando lo spazio dello stesso "
+    "indirizzo: si riprova più tardi."
 )
 
 
@@ -148,7 +174,7 @@ def upsert_engagement(
     """Crea o ritrova lo spazio del freelancer, il cliente «rebase» e il deal della
     lettera per questo match dell'hub, sotto il bearer di `PIGROCRM_ENGAGEMENTS_TOKEN`
     che solo l'hub possiede."""
-    answer = _run(lambda: _service(registry, settings, sender).ensure(match_id, data))
+    answer = _run(match_id, lambda: _service(registry, settings, sender).ensure(match_id, data))
     response.status_code = status.HTTP_201_CREATED if answer.creato else status.HTTP_200_OK
     return answer
 
@@ -169,4 +195,4 @@ def engagement_report(
     """Legge le ore del deal di questo match nel periodo dato, con le fatture su cui
     siedono, sotto lo stesso bearer di `PIGROCRM_ENGAGEMENTS_TOKEN` che solo l'hub
     possiede."""
-    return _run(lambda: _service(registry, settings, sender).report(match_id, da=da, a=a))
+    return _run(match_id, lambda: _service(registry, settings, sender).report(match_id, da=da, a=a))

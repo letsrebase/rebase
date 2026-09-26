@@ -11,6 +11,7 @@ starts. Unlike `test_tenants_api.py`'s fixed `SLUG`, the slug here is whatever
 the registry lists rather than one name it assumes.
 """
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date, timedelta
@@ -18,17 +19,20 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID, uuid4
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session
 
+import pigrocrm.core.engagements.service as engagements_service
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.deals.service import DealService
+from pigrocrm.core.engagements.service import BUSY, GONE, REVERSED
 from pigrocrm.core.tenants import ensure_tenants_database
 from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
 from pigrocrm.core.timetracking.schemas import TimeEntryCreate
@@ -40,6 +44,10 @@ from pigrocrm_api.ratelimit import reset_rate_limit
 ENGAGEMENTS_TOKEN = "un-token-per-la-porta"
 REGISTRY_TOKEN = "un-token-lungo-solo-per-questa-suite"
 FREELANCER_EMAIL = "ada@studio.it"
+# How `Conflict` renders its message (`errors.py`): the problem's `detail` carries the
+# entity before the sentence, and `reason` the sentence alone, which is what the hub
+# shows.
+GONE_DETAIL = f"engagement: {GONE}"
 
 
 def _upsert(**parts: dict[str, Any]) -> dict[str, Any]:
@@ -304,6 +312,35 @@ def test_report_answers_the_hours(door_client: TestClient, container_settings: S
     assert body["ore_non_fatturate"] == "16.00"
 
 
+def _gone_problem(refused: httpx.Response) -> None:
+    """The deleted deal's 409 as the hub reads it: a problem document whose `reason`
+    is the sentence alone, beside the `detail` `Conflict` builds from it."""
+    assert refused.status_code == 409, refused.text
+    body = refused.json()
+    assert body["code"] == "conflict"
+    assert body["reason"] == GONE
+    assert body["detail"] == GONE_DETAIL
+
+
+def test_put_of_deleted_deal_is_409(door_client: TestClient, container_settings: Settings) -> None:
+    """Spec § 2.3 step 2 over HTTP: the match's deal deleted in the space, a retry of
+    the PUT is refused and nothing is recreated."""
+    match_id = uuid4()
+    created = door_client.put(
+        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
+    )
+    assert created.status_code == 201, created.text
+    linked = created.json()
+    with _space(container_settings, linked["slug"]) as space:
+        DealService(space).soft_delete(UUID(linked["deal_id"]), Actor.system())
+
+    refused = door_client.put(
+        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
+    )
+    _gone_problem(refused)
+    assert refused.json()["match_id"] == str(match_id)
+
+
 def test_report_of_deleted_deal_is_409(
     door_client: TestClient, container_settings: Settings
 ) -> None:
@@ -317,7 +354,7 @@ def test_report_of_deleted_deal_is_409(
         DealService(space).soft_delete(UUID(linked["deal_id"]), Actor.system())
 
     refused = door_client.get(f"/api/rebase/engagements/{match_id}/report", headers=_bearer())
-    assert refused.status_code == 409, refused.text
+    _gone_problem(refused)
 
 
 def test_report_of_unknown_match_is_404(door_client: TestClient) -> None:
@@ -328,9 +365,9 @@ def test_report_of_unknown_match_is_404(door_client: TestClient) -> None:
 
 
 def test_report_reversed_period_is_422(door_client: TestClient) -> None:
-    """`a` before `da` is the same refusal `ValidationFailed("engagement", "periodo",
-    ...)` gives for a span over 800 days (`test_engagements.py`'s own coverage): here
-    only the wire shape of the problem document is new."""
+    """`a` before `da` is a `ValidationFailed("engagement", "periodo", ...)` like a span
+    over 800 days, with a sentence of its own (`test_engagements.py`'s own coverage):
+    here only the wire shape of the problem document is new."""
     match_id = uuid4()
     created = door_client.put(
         f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
@@ -347,27 +384,90 @@ def test_report_reversed_period_is_422(door_client: TestClient) -> None:
     assert body["code"] == "validation_failed"
     assert body["entity"] == "engagement"
     assert body["field"] == "periodo"
-    assert body["reason"] == "al massimo 800 giorni"
+    assert body["reason"] == REVERSED
+
+
+class _Lines(logging.Handler):
+    """The router's own log lines, on a handler of the logger itself: not `caplog`,
+    whose handler hangs off the root, which the provisioning's migration rebuilds
+    (`fileConfig` in `env.py`, the same reason `test_migrations.py`'s REB-190 test
+    brings its own)."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.lines: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.lines.append(record.getMessage())
 
 
 def test_unreachable_space_is_503(door_client: TestClient, container_settings: Settings) -> None:
     """After the space exists, its database going away must not surface as a 500:
-    `_run` in `routers/engagements.py` turns any `SQLAlchemyError` into a 503, on both
-    routes, without ever logging the address a lock statement's parameters would carry."""
+    `_run` in `routers/engagements.py` turns it into a 503, on both routes, and logs
+    the match's id and the tenant's -- enough to find a space a restart left without
+    its database -- never its slug nor the address a lock statement's parameters would
+    carry."""
     match_id = uuid4()
     created = door_client.put(
         f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
     )
     assert created.status_code == 201, created.text
     slug = created.json()["slug"]
+    registry = ensure_tenants_database(container_settings)
+    try:
+        with registry.connect() as connection:
+            tenant_id = connection.execute(
+                text("SELECT id FROM tenants WHERE slug = :slug"), {"slug": slug}
+            ).scalar_one()
+    finally:
+        registry.dispose()
     drop_database(
         container_settings, tenant_database_url(container_settings, tenant_database_name(slug))
     )
 
-    again = door_client.put(
-        f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
-    )
-    assert again.status_code == 503, again.text
+    router_log = logging.getLogger("pigrocrm_api.routers.engagements")
+    grab = _Lines()
+    router_log.addHandler(grab)
+    try:
+        again = door_client.put(
+            f"/api/rebase/engagements/{match_id}", json=_upsert(), headers=_bearer()
+        )
+        assert again.status_code == 503, again.text
 
-    report = door_client.get(f"/api/rebase/engagements/{match_id}/report", headers=_bearer())
-    assert report.status_code == 503, report.text
+        report = door_client.get(f"/api/rebase/engagements/{match_id}/report", headers=_bearer())
+        assert report.status_code == 503, report.text
+    finally:
+        router_log.removeHandler(grab)
+
+    assert len(grab.lines) == 2
+    for line in grab.lines:
+        assert str(match_id) in line and str(tenant_id) in line
+        assert slug not in line and FREELANCER_EMAIL not in line
+
+
+def test_busy_address_is_503_without_the_address(
+    door_client: TestClient, container_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Another call holding the freelancer's address past the lock's timeout is a «not
+    now»: 503, which the hub retries, not the 409 it would file as refused for good;
+    and the answer carries the sentence, not the address."""
+    monkeypatch.setattr(engagements_service, "LOCK_TIMEOUT", "200ms")
+    registry = ensure_tenants_database(container_settings)
+    try:
+        with registry.connect() as holder:
+            holder.execute(text("SELECT pg_advisory_lock(hashtext(:e))"), {"e": FREELANCER_EMAIL})
+            try:
+                busy = door_client.put(
+                    f"/api/rebase/engagements/{uuid4()}", json=_upsert(), headers=_bearer()
+                )
+            finally:
+                holder.execute(
+                    text("SELECT pg_advisory_unlock(hashtext(:e))"), {"e": FREELANCER_EMAIL}
+                )
+                holder.commit()
+    finally:
+        registry.dispose()
+
+    assert busy.status_code == 503, busy.text
+    assert busy.json() == {"detail": BUSY}
+    assert FREELANCER_EMAIL not in busy.text

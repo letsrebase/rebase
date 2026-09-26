@@ -69,8 +69,9 @@ class CustomerRepository:
         """The live customer whose `ragione_sociale` is exactly this one, oldest first:
         an identity check, as `match_by_fiscal_id` is for the VAT number (the
         engagements door finds the customer «rebase» this way when the body carries no
-        VAT number, spec 2026-09-25 § 2.3 step 4). Not `list`'s search, which is a
-        case-folding `ilike` answered a page at a time: a first page is not the set.
+        VAT number, or one no customer has, spec 2026-09-25 § 2.3 step 4). Not `list`'s
+        search, which is a case-folding `ilike` answered a page at a time: a first page
+        is not the set.
         """
         stmt = (
             select(Customer)
