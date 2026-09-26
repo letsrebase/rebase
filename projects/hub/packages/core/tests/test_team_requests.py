@@ -386,6 +386,11 @@ def test_request_logs_a_summary_that_names_the_company(
         ("Lo studio Bianchi digitalizza le pratiche.", "Studio Legale Bianchi", True),
         ("Una software house in Italia rifà la sua app.", "Nexa Software Italia", False),
         ("NEXA rifà la sua app.", "Nexa Software Italia", True),
+        # The whole name as a phrase, however short, before the word rule even runs.
+        ("HP lancia un nuovo laptop.", "HP", True),
+        ("Il nuovo chip del computer.", "HP", False),
+        # The legal form is the kind of company: a summary rarely repeats it.
+        ("IBM Italia lancia un progetto.", "IBM Italia S.r.l.", True),
     ],
 )
 def test_names_the_company_words(riassunto: str, azienda: str, expected: bool) -> None:

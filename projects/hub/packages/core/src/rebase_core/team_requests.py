@@ -132,11 +132,33 @@ _GENERIC_WORDS = frozenset(
 
 
 def names_the_company(riassunto: str, azienda: str) -> bool:
-    """Any word of four letters or more of `azienda` that is neither a legal form nor a
-    generic word of a company's kind, case-insensitively, inside the summary as a whole
-    word: «Acme S.r.l.» is named by «ACME rifà il gestionale», «Data Srl» is not by «un
-    database», «Acme Srls» is not by «una srls di Torino», and «Logistica Veneta
-    S.r.l.» is not by «un'azienda di logistica»."""
+    """First, `azienda` as one phrase — legal-form tokens dropped, the rest rejoined —
+    matched inside the summary case-insensitively, as a whole word on both ends,
+    whatever its length, when one of its tokens is written all in capitals: an
+    initialism such as «HP», «3M» or «IBM» is too short for the word rule below and
+    would slip through it, and a company spelling its own name in capitals means
+    exactly that spelling. «HP» is named by «HP lancia un progetto» and not by «un
+    nuovo chip» (a word boundary, not shared letters), and «IBM Italia S.r.l.» is named
+    by «IBM Italia lancia un progetto», its legal form being the kind of company, not
+    which one, and rarely repeated in a summary. A name typed in ordinary case, such as
+    «Di Più», is left to the word rule below, so everyday Italian is not mistaken for it.
+
+    Below that, any word of four letters or more of `azienda` that is neither a legal
+    form nor a generic word of a company's kind, case-insensitively, inside the summary
+    as a whole word: «Acme S.r.l.» is named by «ACME rifà il gestionale», «Data Srl» is
+    not by «un database», «Acme Srls» is not by «una srls di Torino», and «Logistica
+    Veneta S.r.l.» is not by «un'azienda di logistica»."""
+    kept = [
+        token
+        for token in azienda.split()
+        if token.replace(".", "").strip(",;:").casefold() not in _LEGAL_FORMS
+    ]
+    if any(token.replace(".", "").strip(",;:").isupper() for token in kept):
+        phrase = " ".join(kept)
+        if phrase and re.search(
+            rf"(?<![^\W_]){re.escape(phrase)}(?![^\W_])", riassunto, re.IGNORECASE
+        ):
+            return True
     for token in azienda.split():
         if token.replace(".", "").strip(",;:").casefold() in _LEGAL_FORMS:
             continue
