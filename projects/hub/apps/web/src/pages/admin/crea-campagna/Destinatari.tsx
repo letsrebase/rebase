@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from '@tanstack/react-router'
 import { Button } from '@rebase/ui/button'
 import { Checkbox } from '@rebase/ui/checkbox'
 import { Input } from '@rebase/ui/input'
@@ -361,6 +362,7 @@ export function Destinatari({
   audienceError,
   esclusi,
   onToggle,
+  segue,
 }: {
   form: CampaignForm
   templates: CampaignTemplate[]
@@ -372,6 +374,10 @@ export function Destinatari({
   audienceError: string | null
   esclusi: readonly string[]
   onToggle: (email: string, included: boolean) => void
+  /** The campaign a `lista` draft follows (Task 6), by name, for the sentence and the
+   *  link to it; `null` for a `stato`/`filtri` form, and while its own name has not
+   *  loaded yet. */
+  segue: { id: string; nome: string } | null
 }) {
   // Open by itself when a stored filter lives in there (the edit route), so no filter
   // that shapes the list is ever out of sight.
@@ -381,63 +387,76 @@ export function Destinatari({
       <h2 id="campagna-destinatari" className="text-lg font-semibold">
         Destinatari
       </h2>
-      <div className="flex flex-wrap gap-2" role="group" aria-label="Da chi parte la campagna">
-        {(
-          [
-            ['stato', 'Uno stato del percorso'],
-            ['filtri', 'Filtri'],
-          ] as [Fonte, string][]
-        ).map(([fonte, text]) => (
-          <Button
-            key={fonte}
-            type="button"
-            variant={form.fonte === fonte ? 'default' : 'outline'}
-            aria-pressed={form.fonte === fonte}
-            onClick={() => onChange({ fonte })}
-          >
-            {text}
-          </Button>
-        ))}
-      </div>
-      {form.fonte === 'stato' ? (
-        <div className="max-w-sm space-y-1.5">
-          <Label htmlFor="campagna-stato-percorso">Stato del percorso</Label>
-          <Select value={form.statoPercorso ?? NONE} onValueChange={onTemplate}>
-            <SelectTrigger id="campagna-stato-percorso" aria-label="Stato del percorso" className="w-full">
-              <SelectValue placeholder="Scegli uno stato" />
-            </SelectTrigger>
-            <SelectContent>
-              {templates.map((template) => (
-                <SelectItem key={template.stato_percorso} value={template.stato_percorso}>
-                  {template.etichetta}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="max-w-sm space-y-1.5">
-            <Label htmlFor="campagna-lista">Lista</Label>
-            <Select value={form.lista} onValueChange={(lista) => onChange({ lista: lista as Lista })}>
-              <SelectTrigger id="campagna-lista" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="talenti">Talenti</SelectItem>
-                <SelectItem value="aziende">Aziende</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          {form.lista === 'talenti' ? (
-            <TalentiFiltri value={form.talenti} altri={altri} onChange={(patch) => onChange({ talenti: { ...form.talenti, ...patch } })} />
-          ) : (
-            <AziendeFiltri value={form.aziende} altri={altri} onChange={(patch) => onChange({ aziende: { ...form.aziende, ...patch } })} />
+      {form.fonte === 'lista' ? (
+        <p className="text-sm">
+          Chi ha ricevuto «{segue?.nome ?? '…'}» e non ha ancora fatto l’azione.{' '}
+          {segue && (
+            <Link to="/admin/campaigns/$id" params={{ id: segue.id }} className="underline">
+              Vedi la campagna
+            </Link>
           )}
-          <Button type="button" variant="ghost" size="sm" aria-expanded={altri} onClick={() => setAltri(!altri)}>
-            {altri ? 'Meno filtri' : 'Altri filtri'}
-          </Button>
-        </div>
+        </p>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Da chi parte la campagna">
+            {(
+              [
+                ['stato', 'Uno stato del percorso'],
+                ['filtri', 'Filtri'],
+              ] as [Fonte, string][]
+            ).map(([fonte, text]) => (
+              <Button
+                key={fonte}
+                type="button"
+                variant={form.fonte === fonte ? 'default' : 'outline'}
+                aria-pressed={form.fonte === fonte}
+                onClick={() => onChange({ fonte })}
+              >
+                {text}
+              </Button>
+            ))}
+          </div>
+          {form.fonte === 'stato' ? (
+            <div className="max-w-sm space-y-1.5">
+              <Label htmlFor="campagna-stato-percorso">Stato del percorso</Label>
+              <Select value={form.statoPercorso ?? NONE} onValueChange={onTemplate}>
+                <SelectTrigger id="campagna-stato-percorso" aria-label="Stato del percorso" className="w-full">
+                  <SelectValue placeholder="Scegli uno stato" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((template) => (
+                    <SelectItem key={template.stato_percorso} value={template.stato_percorso}>
+                      {template.etichetta}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="max-w-sm space-y-1.5">
+                <Label htmlFor="campagna-lista">Lista</Label>
+                <Select value={form.lista} onValueChange={(lista) => onChange({ lista: lista as Lista })}>
+                  <SelectTrigger id="campagna-lista" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="talenti">Talenti</SelectItem>
+                    <SelectItem value="aziende">Aziende</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {form.lista === 'talenti' ? (
+                <TalentiFiltri value={form.talenti} altri={altri} onChange={(patch) => onChange({ talenti: { ...form.talenti, ...patch } })} />
+              ) : (
+                <AziendeFiltri value={form.aziende} altri={altri} onChange={(patch) => onChange({ aziende: { ...form.aziende, ...patch } })} />
+              )}
+              <Button type="button" variant="ghost" size="sm" aria-expanded={altri} onClick={() => setAltri(!altri)}>
+                {altri ? 'Meno filtri' : 'Altri filtri'}
+              </Button>
+            </div>
+          )}
+        </>
       )}
       {audienceError ? (
         <p role="alert" className="text-sm text-destructive">

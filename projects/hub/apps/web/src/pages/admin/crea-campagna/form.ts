@@ -1,7 +1,7 @@
 import { amountFilter } from '@/lib/amount'
 import type { AudiencePreview, Campaign, CampaignAzione, CampaignDraft, CampaignMeta, CampaignTemplate } from '@/lib/api'
 
-export type Fonte = 'stato' | 'filtri'
+export type Fonte = 'stato' | 'filtri' | 'lista'
 export type Lista = 'talenti' | 'aziende'
 
 // A `Select` cannot take an item with value `""` -- Radix reserves it for "nothing
@@ -103,6 +103,9 @@ export interface CampaignForm {
   bottoneTesto: string
   bottoneMeta: CampaignMeta
   azione: CampaignAzione
+  /** The campaign a `lista` draft follows (`Campaign.segue_id`): `null` for a `stato`
+   *  or `filtri` form, which picks its own audience instead. */
+  segueId: string | null
 }
 
 export const EMPTY_FORM: CampaignForm = {
@@ -117,6 +120,7 @@ export const EMPTY_FORM: CampaignForm = {
   bottoneTesto: '',
   bottoneMeta: 'area',
   azione: 'entrato',
+  segueId: null,
 }
 
 /** What a text, number or date input sends: nothing when it is empty. */
@@ -190,9 +194,25 @@ function filtriOf(form: CampaignForm): Record<string, unknown> | null {
   }
 }
 
+/** What a `lista` saves: the mail alone. Whom it reaches and what it measures come from
+ *  the campaign it follows, and the API refuses a change to either (`LIST_IS_FIXED`). */
+export type ListaPatch = Pick<CampaignDraft, 'nome' | 'oggetto' | 'testo' | 'bottone_testo' | 'bottone_meta'>
+
 /** The draft the page saves, or `null` while there is nothing to save yet: a state
- *  source with no state picked has no list and no template behind it. */
-export function payloadOf(form: CampaignForm): CampaignDraft | null {
+ *  source with no state picked has no list and no template behind it. A `lista` is
+ *  never new on this page (Task 3's `follow-up` creates it), so it always has a body:
+ *  the mail, with no `fonte` -- the API's `CampaignPatch.fonte` does not accept
+ *  `'lista'`, and a change to `stato_percorso`/`filtri`/`azione` is refused either way. */
+export function payloadOf(form: CampaignForm): CampaignDraft | ListaPatch | null {
+  if (form.fonte === 'lista') {
+    return {
+      nome: form.nome.trim() || defaultNome(form.fonte),
+      oggetto: form.oggetto,
+      testo: form.testo,
+      bottone_testo: form.bottoneTesto,
+      bottone_meta: form.bottoneMeta,
+    }
+  }
   if (form.fonte === 'stato' && form.statoPercorso === null) return null
   return {
     nome: form.nome.trim() || defaultNome(form.fonte),
@@ -209,7 +229,7 @@ export function payloadOf(form: CampaignForm): CampaignDraft | null {
 
 /** The key a save is compared by. `JSON.stringify` drops the `undefined` of an empty
  *  filter, as the request body does, so two forms that send the same body compare equal. */
-export function keyOf(payload: CampaignDraft | null): string | null {
+export function keyOf(payload: CampaignDraft | ListaPatch | null): string | null {
   return payload === null ? null : JSON.stringify(payload)
 }
 
@@ -221,13 +241,14 @@ export function formFromCampaign(c: Campaign): CampaignForm {
   const base: CampaignForm = {
     ...EMPTY_FORM,
     nome: c.nome,
-    fonte: c.fonte === 'filtri' ? 'filtri' : 'stato',
+    fonte: c.fonte,
     statoPercorso: c.stato_percorso,
     oggetto: c.oggetto,
     testo: c.testo,
     bottoneTesto: c.bottone_testo,
     bottoneMeta: c.bottone_meta,
     azione: c.azione,
+    segueId: c.segue_id,
   }
   if (c.fonte !== 'filtri' || !c.filtri) return base
   const f = c.filtri as Record<string, unknown>
@@ -295,9 +316,12 @@ export function withTemplate(
 
 /** What decides who is on the list: the list is reloaded when this changes and never
  *  on an edit of the mail alone. The action is not part of it: whoever has already
- *  done it is skipped when the mail leaves (`campaigns/tick.py`), not left off the list. */
-export function audienceSource(c: { fonte: string; stato_percorso?: string | null; filtri?: Record<string, unknown> | null }): string {
-  return JSON.stringify([c.fonte, c.stato_percorso ?? null, c.filtri ?? null])
+ *  done it is skipped when the mail leaves (`campaigns/tick.py`), not left off the list.
+ *  A `lista` body (`ListaPatch`) carries none of these -- its audience is fixed by the
+ *  campaign it follows -- so `fonte` is optional and such a body always keys as
+ *  `[null, null, null]`, a key that never changes and so never goes stale. */
+export function audienceSource(c: { fonte?: string; stato_percorso?: string | null; filtri?: Record<string, unknown> | null }): string {
+  return JSON.stringify([c.fonte ?? null, c.stato_percorso ?? null, c.filtri ?? null])
 }
 
 export interface AudienceCount {

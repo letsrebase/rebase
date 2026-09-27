@@ -72,6 +72,15 @@ function Editor({ initial }: { initial: Campaign | null }) {
   // hour must not propose a moment already past.
   const [when, setWhen] = useState({ giorno: '', ora: '' })
 
+  // The parent's name, for the sentence and the link in Destinatari (Task 6): a `lista`
+  // never picks its own audience, so it names whose it inherited instead.
+  const parent = useQuery({
+    queryKey: ['campaign', form.segueId],
+    queryFn: () => admin.campaign(form.segueId!),
+    enabled: form.fonte === 'lista' && form.segueId !== null,
+  })
+  const segue = parent.data ? { id: parent.data.campagna.id, nome: parent.data.campagna.nome } : null
+
   const payload = payloadOf(form)
   const key = keyOf(payload)
   const save = useAutosave(key, initial)
@@ -89,7 +98,10 @@ function Editor({ initial }: { initial: Campaign | null }) {
   const savedPayload = save.savedKey ? (JSON.parse(save.savedKey) as CampaignDraft) : null
   const stale =
     audience.isPlaceholderData ||
-    (payload !== null && savedPayload !== null && audienceSource(payload) !== audienceSource(savedPayload))
+    // `payload` may be a `ListaPatch`, which carries none of `audienceSource`'s fields
+    // on purpose (a `lista`'s key is always `[null, null, null]`): the cast changes
+    // nothing at runtime, only what the type checker already knows from `form.fonte`.
+    (payload !== null && savedPayload !== null && audienceSource(payload as CampaignDraft) !== audienceSource(savedPayload))
   const count = audience.data ? countAudience(audience.data, esclusi) : null
   // Until the first save lands there is no list to load, so a failed create is the
   // list's failure too.
@@ -158,7 +170,9 @@ function Editor({ initial }: { initial: Campaign | null }) {
     <div className="flex min-h-full flex-col">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b px-6 py-5">
         <div className="min-w-0 flex-1 space-y-1">
-          <h1 className="text-sm text-muted-foreground">{initial ? 'Modifica campagna' : 'Nuova campagna'}</h1>
+          <h1 className="text-sm text-muted-foreground">
+            {form.fonte === 'lista' ? 'Riscrivi a chi non ha fatto niente' : initial ? 'Modifica campagna' : 'Nuova campagna'}
+          </h1>
           <Label htmlFor="campagna-nome" className="sr-only">
             Nome della campagna
           </Label>
@@ -186,6 +200,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
             audienceError={listFailure}
             esclusi={esclusi}
             onToggle={toggle}
+            segue={segue}
           />
           <Messaggio form={form} onChange={changeMail} />
         </div>
