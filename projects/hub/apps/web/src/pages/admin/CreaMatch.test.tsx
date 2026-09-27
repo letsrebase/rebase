@@ -245,7 +245,7 @@ describe('«Crea match» in three steps (REB-476)', () => {
       attivita: 'Piattaforma di prenotazione',
       modalita: 'a giornata',
       unita: 'a giornata',
-      compenso: '450',
+      compenso: '450.00',
       giorni_pagamento: 30,
       fine_mese: true,
       risultati: null,
@@ -790,7 +790,7 @@ describe('step 2, «Condizioni»', () => {
     expect(body.lettera).toMatchObject({
       modalita: 'a corpo',
       unita: 'a corpo',
-      compenso: '12000',
+      compenso: '12000.00',
       risultati: 'Il modulo di prenotazione',
     })
   })
@@ -808,7 +808,7 @@ describe('step 2, «Condizioni»', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
     await screen.findByRole('button', { name: 'Salva senza inviare' })
     const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
-    expect(body.lettera).toMatchObject({ modalita: 'a giornata', unita: 'a giornata', compenso: '450', risultati: null })
+    expect(body.lettera).toMatchObject({ modalita: 'a giornata', unita: 'a giornata', compenso: '450.00', risultati: null })
   })
 
   it('keeps a fee the admin typed when switching between «A giornata» and «A corpo»', async () => {
@@ -835,6 +835,34 @@ describe('step 2, «Condizioni»', () => {
     await screen.findByRole('button', { name: 'Salva senza inviare' })
     const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
     expect(body.lettera.compenso).toBe('480.50')
+  })
+
+  it('sends a fee typed as «1,500» as 1.50, the one form no reader takes for 1500 (REB-485)', async () => {
+    const spy = routes()
+    mount()
+    await toCondizioni()
+    const fee = screen.getByLabelText('Compenso, IVA esclusa (€)')
+    await userEvent.clear(fee)
+    await userEvent.type(fee, '1,500')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    await screen.findByRole('button', { name: 'Salva senza inviare' })
+    const [body] = bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')
+    expect(body.lettera.compenso).toBe('1.50')
+  })
+
+  it('refuses a fee with three decimals before any request (REB-485)', async () => {
+    const spy = routes()
+    mount()
+    await toCondizioni()
+    const fee = screen.getByLabelText('Compenso, IVA esclusa (€)')
+    await userEvent.clear(fee)
+    await userEvent.type(fee, '1234,567')
+    await userEvent.click(screen.getByRole('button', { name: 'Avanti' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Serve una cifra, in euro.')
+    expect(screen.getByLabelText('Compenso, IVA esclusa (€)')).toHaveAttribute('aria-invalid', 'true')
+    expect(bodies(spy, 'POST', '/api/hub/freelancers/f1/matches/check')).toEqual([])
+    expect(spy.mock.calls.some(([url]) => String(url).includes('/matches/preview'))).toBe(false)
+    current('2. Condizioni')
   })
 
   it('shows an empty, required fee for a card without a day rate and names the fee the server refused', async () => {

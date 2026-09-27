@@ -19,7 +19,7 @@ allowed to run -- is what lands the two halves on the same person.
 """
 
 import logging
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import (
@@ -36,6 +36,7 @@ from pydantic import ValidationError
 
 from rebase_api.deps import SenderDep, SessionDep, SettingsDep, TrackerDep
 from rebase_api.ratelimit import spend_one
+from rebase_core.amounts import NotAnAmount, italian_amount
 from rebase_core.freelancers import ALREADY_HAS_CARD_NOTE, FreelancerService
 from rebase_core.mail import EmailSender, Mail
 from rebase_core.schemas import DISTINCT_ID_MAX_LENGTH, Ack, FreelancerCreate, SignupUtm
@@ -55,9 +56,11 @@ def _send_existing_card_mail(sender: EmailSender, mail: Mail) -> None:
 
 
 def _decimal(value: str, field: str) -> Decimal:
+    """The wizard's rate as the person typed it, read the Italian way: «1.500» is 1500,
+    «1.234,50» is 1234.50 (`rebase_core.amounts`, REB-485)."""
     try:
-        return Decimal(value.replace(",", ".").strip())
-    except (InvalidOperation, AttributeError) as exc:
+        return italian_amount(value)
+    except NotAnAmount as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=[{"loc": ["body", field], "msg": "serve un numero", "type": "value_error"}],

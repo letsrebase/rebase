@@ -105,6 +105,36 @@ async def test_override_freelancer_writes_the_delta_and_leaves_untouched_fields_
     _wipe(factory)
 
 
+async def test_an_override_reads_the_amount_with_italian_thousands(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-485: the rate and the budget an agent passes the Italian way."""
+    freelancer_id = _seed_freelancer(factory)
+    company_id = _seed_company(factory)
+    _seed_admin(factory)
+    async with Client(build_server(factory, lambda: IVAN)) as client:
+        card = _payload(
+            await client.call_tool(
+                "override_freelancer",
+                {"freelancer_id": freelancer_id, "tariffa_giornaliera": "1.500"},
+            )
+        )
+        request = _payload(
+            await client.call_tool(
+                "override_company", {"company_id": company_id, "budget_giornaliero": "1.234,50"}
+            )
+        )
+        refused = await client.call_tool(
+            "override_freelancer", {"freelancer_id": freelancer_id, "tariffa_giornaliera": "tanto"}
+        )
+    # Compared as numbers: the answer carries the value written, before the column's
+    # two decimals.
+    assert Decimal(card["tariffa_giornaliera"]) == Decimal("1500")
+    assert Decimal(request["budget_giornaliero"]) == Decimal("1234.50")
+    assert refused.is_error and "tariffa_giornaliera" in refused.content[0].text
+    _wipe(factory)
+
+
 async def test_an_empty_string_clears_a_nullable_field_and_a_required_one_is_refused(
     factory: sessionmaker[Session],
 ) -> None:

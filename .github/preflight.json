@@ -189,6 +189,7 @@
         "projects/hub/apps/api/**",
         "projects/hub/apps/mcp/**",
         "projects/hub/packages/**",
+        "projects/hub/apps/web/src/lib/amount_cases.json",
         "projects/hub/conftest.py",
         "pyproject.toml",
         "uv.lock"

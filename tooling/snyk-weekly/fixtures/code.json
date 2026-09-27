@@ -1,0 +1,178 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "SnykCode",
+          "rules": [
+            {
+              "id": "javascript/DOMXSS",
+              "name": "DOMXSS",
+              "shortDescription": {
+                "text": "DOM-based Cross-site Scripting (XSS)"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "cwe": [
+                  "CWE-79"
+                ]
+              }
+            },
+            {
+              "id": "javascript/HardcodedNonCryptoSecret",
+              "name": "HardcodedNonCryptoSecret",
+              "shortDescription": {
+                "text": "Hardcoded Non-Cryptographic Secret"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "cwe": [
+                  "CWE-547"
+                ]
+              }
+            },
+            {
+              "id": "python/InsecureHash",
+              "name": "InsecureHash",
+              "shortDescription": {
+                "text": "Use of Password Hash With Insufficient Computational Effort"
+              },
+              "defaultConfiguration": {
+                "level": "note"
+              },
+              "properties": {
+                "cwe": [
+                  "CWE-916"
+                ]
+              }
+            },
+            {
+              "id": "python/OR",
+              "name": "OR",
+              "shortDescription": {
+                "text": "Open Redirect"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "cwe": [
+                  "CWE-601"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "javascript/DOMXSS",
+          "level": "warning",
+          "message": {
+            "text": "Unsanitized input from a React useState value flows into a React dynamic 'href' attribute, where it is used to dynamically construct the HTML page on client side. This may result in a DOM Based Cross-Site Scripting attack (DOMXSS)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "projects/hub/apps/web/src/pages/admin/Pigro.tsx"
+                },
+                "region": {
+                  "startLine": 103,
+                  "endLine": 103
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "identity": "33b21507-bdbf-4bef-a35a-e1d329f5044a"
+          },
+          "suppressions": [
+            {
+              "status": "accepted",
+              "kind": "external",
+              "properties": {
+                "category": "not-vulnerable"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "javascript/HardcodedNonCryptoSecret",
+          "level": "error",
+          "message": {
+            "text": "Avoid hardcoding values that are meant to be secret. Found a hardcoded string used in here."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "projects/pigrocrm/apps/web/src/lib/registerHandoff.ts"
+                },
+                "region": {
+                  "startLine": 22,
+                  "endLine": 22
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "identity": "0729d876-ed28-498c-95e6-73aa736242b5"
+          }
+        },
+        {
+          "ruleId": "python/InsecureHash",
+          "level": "note",
+          "message": {
+            "text": "hashlib.sha1 is insecure. Consider changing it to a secure hashing algorithm."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "projects/hub/packages/core/src/rebase_core/campaigns/render.py"
+                },
+                "region": {
+                  "startLine": 44,
+                  "endLine": 44
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "identity": "f9c9b418-4a2e-4291-9e26-b59932120048"
+          }
+        },
+        {
+          "ruleId": "python/OR",
+          "level": "warning",
+          "message": {
+            "text": "Unsanitized input from an HTTP parameter flows into fastapi.responses.RedirectResponse, where it is used as input for request redirection. This may result in an Open Redirect vulnerability."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "projects/hub/apps/api/src/rebase_api/routers/campaigns.py"
+                },
+                "region": {
+                  "startLine": 40,
+                  "endLine": 40
+                }
+              }
+            }
+          ],
+          "fingerprints": {
+            "identity": "6ce2e456-d1c9-4624-adf0-9f5f3c08487f"
+          }
+        }
+      ]
+    }
+  ]
+}

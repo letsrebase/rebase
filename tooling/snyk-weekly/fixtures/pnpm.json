@@ -1,0 +1,180 @@
+[
+  {
+    "ok": true,
+    "packageManager": "pnpm",
+    "projectName": "vuln-root",
+    "displayTargetFile": "package.json",
+    "dependencyCount": 0,
+    "uniqueCount": 0,
+    "summary": "No known vulnerabilities",
+    "vulnerabilities": []
+  },
+  {
+    "ok": false,
+    "packageManager": "pnpm",
+    "projectName": "vuln-app",
+    "displayTargetFile": "packages/app/package.json",
+    "dependencyCount": 25,
+    "uniqueCount": 4,
+    "summary": "4 vulnerable dependency paths",
+    "vulnerabilities": [
+      {
+        "id": "SNYK-JS-AXIOS-16298058",
+        "title": "HTTP Response Splitting",
+        "severity": "critical",
+        "packageName": "axios",
+        "name": "axios",
+        "version": "1.6.0",
+        "identifiers": {
+          "CVE": [
+            "CVE-2026-42035"
+          ],
+          "CWE": [
+            "CWE-113"
+          ]
+        },
+        "fixedIn": [
+          "0.31.1",
+          "1.15.1"
+        ],
+        "from": [
+          "vuln-app@0.0.0",
+          "axios@1.6.0"
+        ],
+        "packageManager": "npm"
+      },
+      {
+        "id": "SNYK-JS-LODASH-1040724",
+        "title": "Code Injection",
+        "severity": "high",
+        "packageName": "lodash",
+        "name": "lodash",
+        "version": "4.17.20",
+        "identifiers": {
+          "CVE": [
+            "CVE-2021-23337"
+          ],
+          "CWE": [
+            "CWE-94"
+          ]
+        },
+        "fixedIn": [
+          "4.17.21"
+        ],
+        "from": [
+          "vuln-app@0.0.0",
+          "lodash@4.17.20"
+        ],
+        "packageManager": "npm"
+      },
+      {
+        "id": "SNYK-JS-LODASH-1018905",
+        "title": "Regular Expression Denial of Service (ReDoS)",
+        "severity": "medium",
+        "packageName": "lodash",
+        "name": "lodash",
+        "version": "4.17.20",
+        "identifiers": {
+          "CVE": [
+            "CVE-2020-28500"
+          ],
+          "CWE": [
+            "CWE-400"
+          ]
+        },
+        "fixedIn": [
+          "4.17.21"
+        ],
+        "from": [
+          "vuln-app@0.0.0",
+          "lodash@4.17.20"
+        ],
+        "packageManager": "npm"
+      },
+      {
+        "id": "SNYK-JS-MINIMIST-2429795",
+        "title": "Prototype Pollution",
+        "severity": "low",
+        "packageName": "minimist",
+        "name": "minimist",
+        "version": "1.2.5",
+        "identifiers": {
+          "CVE": [
+            "CVE-2021-44906"
+          ],
+          "CWE": [
+            "CWE-1321"
+          ]
+        },
+        "fixedIn": [
+          "0.2.4",
+          "1.2.6"
+        ],
+        "from": [
+          "vuln-app@0.0.0",
+          "minimist@1.2.5"
+        ],
+        "packageManager": "npm"
+      }
+    ]
+  },
+  {
+    "ok": false,
+    "packageManager": "pnpm",
+    "projectName": "vuln-site",
+    "displayTargetFile": "packages/site/package.json",
+    "dependencyCount": 1,
+    "uniqueCount": 2,
+    "summary": "2 vulnerable dependency paths",
+    "vulnerabilities": [
+      {
+        "id": "SNYK-JS-LODASH-1040724",
+        "title": "Code Injection",
+        "severity": "high",
+        "packageName": "lodash",
+        "name": "lodash",
+        "version": "4.17.20",
+        "identifiers": {
+          "CVE": [
+            "CVE-2021-23337"
+          ],
+          "CWE": [
+            "CWE-94"
+          ]
+        },
+        "fixedIn": [
+          "4.17.21"
+        ],
+        "from": [
+          "vuln-site@0.0.0",
+          "lodash@4.17.20"
+        ],
+        "packageManager": "npm"
+      },
+      {
+        "id": "SNYK-JS-LODASH-1018905",
+        "title": "Regular Expression Denial of Service (ReDoS)",
+        "severity": "medium",
+        "packageName": "lodash",
+        "name": "lodash",
+        "version": "4.17.20",
+        "identifiers": {
+          "CVE": [
+            "CVE-2020-28500"
+          ],
+          "CWE": [
+            "CWE-400"
+          ]
+        },
+        "fixedIn": [
+          "4.17.21"
+        ],
+        "from": [
+          "vuln-site@0.0.0",
+          "lodash@4.17.20"
+        ],
+        "packageManager": "npm"
+      }
+    ]
+  }
+]

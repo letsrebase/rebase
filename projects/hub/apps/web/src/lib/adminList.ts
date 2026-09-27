@@ -23,6 +23,6 @@ export function useDebounce<T>(value: T, delayMs: number): T {
  *  otherwise non-empty table down to nothing, the plain sentence when the table itself
  *  has nothing in it yet: a zero from a filter and a zero from an empty table are
  *  different facts, and only one of them goes away by clearing something. */
-export function isFilterActive(filters: Record<string, unknown>): boolean {
-  return Object.values(filters).some((value) => value !== undefined && value !== '')
+export function isFilterActive(filters: object): boolean {
+  return Object.values(filters).some((value: unknown) => value !== undefined && value !== '')
 }
