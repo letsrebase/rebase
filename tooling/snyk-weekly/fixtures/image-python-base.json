@@ -1,0 +1,103 @@
+{
+  "ok": false,
+  "packageManager": "deb",
+  "projectName": "docker-image|python",
+  "dependencyCount": 106,
+  "uniqueCount": 4,
+  "summary": "4 vulnerable dependency paths",
+  "vulnerabilities": [
+    {
+      "id": "SNYK-DEBIAN12-ZLIB-6008963",
+      "title": "Integer Overflow or Wraparound",
+      "severity": "critical",
+      "packageName": "zlib",
+      "name": "zlib/zlib1g",
+      "version": "1:1.2.13.dfsg-1",
+      "identifiers": {
+        "CVE": [
+          "CVE-2023-45853"
+        ],
+        "CWE": [
+          "CWE-190"
+        ]
+      },
+      "fixedIn": [],
+      "from": [
+        "docker-image|python@3.12.0-slim-bookworm",
+        "zlib/zlib1g@1:1.2.13.dfsg-1"
+      ],
+      "packageManager": "debian:12"
+    },
+    {
+      "id": "SNYK-DEBIAN12-ZLIB-19520487",
+      "title": "Out-of-bounds Write",
+      "severity": "high",
+      "packageName": "zlib",
+      "name": "zlib/zlib1g",
+      "version": "1:1.2.13.dfsg-1",
+      "identifiers": {
+        "CVE": [
+          "CVE-2026-85091"
+        ],
+        "CWE": [
+          "CWE-787"
+        ]
+      },
+      "fixedIn": [],
+      "from": [
+        "docker-image|python@3.12.0-slim-bookworm",
+        "zlib/zlib1g@1:1.2.13.dfsg-1"
+      ],
+      "packageManager": "debian:12"
+    },
+    {
+      "id": "SNYK-DEBIAN12-EXPAT-7855507",
+      "title": "XML External Entity (XXE) Injection",
+      "severity": "high",
+      "packageName": "expat",
+      "name": "expat/libexpat1",
+      "version": "2.5.0-1",
+      "identifiers": {
+        "CVE": [
+          "CVE-2024-45490"
+        ],
+        "CWE": [
+          "CWE-611"
+        ]
+      },
+      "fixedIn": [
+        "2.5.0-1+deb12u1"
+      ],
+      "from": [
+        "docker-image|python@3.12.0-slim-bookworm",
+        "expat/libexpat1@2.5.0-1"
+      ],
+      "packageManager": "debian:12"
+    },
+    {
+      "id": "SNYK-DEBIAN12-ACL-17677867",
+      "title": "Time-of-check Time-of-use (TOCTOU)",
+      "severity": "low",
+      "packageName": "acl",
+      "name": "acl/libacl1",
+      "version": "2.3.1-3",
+      "identifiers": {
+        "CVE": [
+          "CVE-2026-54370"
+        ],
+        "CWE": [
+          "CWE-367"
+        ]
+      },
+      "fixedIn": [],
+      "from": [
+        "docker-image|python@3.12.0-slim-bookworm",
+        "coreutils@9.1-1",
+        "acl/libacl1@2.3.1-3"
+      ],
+      "packageManager": "debian:12"
+    }
+  ],
+  "path": "python:3.12.0-slim-bookworm",
+  "docker": {}
+}
