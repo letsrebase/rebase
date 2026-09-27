@@ -15,6 +15,12 @@ from rebase_core.models import (
 )
 from rebase_core.search import SEARCH_MAX_LENGTH
 
+# A filter's amount is kept like every other amount the hub stores: euro with cents at
+# most and never below zero, with no ceiling the editor's own field lacks. The editor
+# sends two decimals (REB-485) and reads a stored one back with two decimals, which is
+# exact only because nothing here keeps a third (REB-526, Greptile on #432).
+FilterAmount = Annotated[Decimal, Field(ge=0, decimal_places=2)]
+
 
 class TalentiFiltri(BaseModel):
     """The Talenti list's own filters (`GET /api/hub/talent`, `talenti.py:191`), stored
@@ -26,8 +32,8 @@ class TalentiFiltri(BaseModel):
     q: str | None = Field(default=None, max_length=SEARCH_MAX_LENGTH)
     posizione: str | None = Field(default=None, max_length=160)
     remoto: str | None = Field(default=None, max_length=10)
-    tariffa_min: Decimal | None = None
-    tariffa_max: Decimal | None = None
+    tariffa_min: FilterAmount | None = None
+    tariffa_max: FilterAmount | None = None
     origine: str | None = Field(default=None, max_length=40)
     utm_source: str | None = Field(default=None, max_length=200)
     has_cv: bool | None = None
@@ -42,8 +48,8 @@ class AziendeFiltri(BaseModel):
     lista: Literal["aziende"]
     stato: str | None = Field(default=None, max_length=20)
     q: str | None = Field(default=None, max_length=SEARCH_MAX_LENGTH)
-    budget_min: Decimal | None = None
-    budget_max: Decimal | None = None
+    budget_min: FilterAmount | None = None
+    budget_max: FilterAmount | None = None
     periodo_da: date | None = None
     origine: str | None = Field(default=None, max_length=40)
     creato_da: datetime | None = None
