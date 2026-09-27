@@ -7,9 +7,12 @@ import {
   RECIPIENT_STATE_LABELS,
   campaignMoment,
   defaultSchedule,
+  peopleLabel,
   personalise,
   refetchEvery,
+  romeTime,
   romeToday,
+  scheduleLabel,
 } from './campaigns'
 
 describe('personalise', () => {
@@ -145,5 +148,23 @@ describe('refetchEvery', () => {
   it('never polls a draft or a cancelled campaign', () => {
     expect(refetchEvery({ stato: 'bozza', inviata_at: null }, now)).toBe(false)
     expect(refetchEvery({ stato: 'annullata', inviata_at: null }, now)).toBe(false)
+  })
+})
+
+describe('the send button\'s words', () => {
+  it('counts one person in the singular and the rest in the plural', () => {
+    expect(peopleLabel(1)).toBe('1 persona')
+    expect(peopleLabel(0)).toBe('0 persone')
+    expect(peopleLabel(83)).toBe('83 persone')
+  })
+
+  it('says a Rome day and time as typed, whatever the browser\'s zone', () => {
+    expect(scheduleLabel('2026-09-28', '09:00')).toBe('lun 28 set, 09:00')
+    expect(scheduleLabel('2026-10-25', '02:30')).toBe('dom 25 ott, 02:30')
+  })
+
+  it('reads a stored moment as the time in Rome', () => {
+    expect(romeTime('2026-09-26T08:32:00Z')).toBe('10:32')
+    expect(romeTime('2026-12-01T08:32:00Z')).toBe('09:32')
   })
 })
