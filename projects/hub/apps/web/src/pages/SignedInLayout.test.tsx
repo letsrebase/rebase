@@ -64,6 +64,9 @@ function mount(path = '/admin/talent') {
       negato: search.negato === true || search.negato === 'true' ? true : undefined,
     }),
   })
+  // REB-518: a stub, so a mount at /me/cloud has somewhere real to land -- the sidebar
+  // active-state tests below are about the nav, not this page's own content.
+  const cloud = createRoute({ getParentRoute: () => me, path: '/cloud', component: () => <h1>Cloud</h1> })
   const adminArea = createRoute({ getParentRoute: () => signedIn, path: '/admin', component: AdminGuard })
   const adminTalent = createRoute({
     getParentRoute: () => adminArea,
@@ -73,7 +76,7 @@ function mount(path = '/admin/talent') {
   const router = createRouter({
     routeTree: root.addChildren([
       login,
-      signedIn.addChildren([me.addChildren([ioIndex]), adminArea.addChildren([adminTalent])]),
+      signedIn.addChildren([me.addChildren([ioIndex, cloud]), adminArea.addChildren([adminTalent])]),
     ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
@@ -212,6 +215,24 @@ describe('the sidebar, gated on role', () => {
     mount('/me')
     await screen.findByRole('link', { name: /La tua area/ })
     expect(screen.queryByRole('link', { name: 'Talent cloud' })).toBeNull()
+  })
+
+  it('marks only «Talent cloud» active on /me/cloud, not «La tua area» too (REB-518)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { ...ADA, talent_cloud: true }))
+    mount('/me/cloud')
+    const cloud = await screen.findByRole('link', { name: 'Talent cloud' })
+    const area = screen.getByRole('link', { name: /La tua area/ })
+    expect(cloud.className.split(' ')).toContain('active')
+    expect(area.className.split(' ')).not.toContain('active')
+  })
+
+  it('marks only «La tua area» active on /me, not «Talent cloud» (REB-518)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { ...ADA, talent_cloud: true }))
+    mount('/me')
+    const area = await screen.findByRole('link', { name: /La tua area/ })
+    const cloud = screen.getByRole('link', { name: 'Talent cloud' })
+    expect(area.className.split(' ')).toContain('active')
+    expect(cloud.className.split(' ')).not.toContain('active')
   })
 
   it('hides the admin group and its eyebrow for a member, keeping "La tua area"', async () => {

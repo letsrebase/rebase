@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useLocation } from '@tanstack/react-router'
 import {
   BookOpen,
   Boxes,
@@ -49,6 +49,15 @@ const ADMIN_NAV = [
 const NAV_LINK =
   'relative flex items-center gap-2 px-2 py-1.5 text-sm transition-colors before:absolute before:left-0 before:top-1/2 before:size-1.5 before:-translate-y-1/2 before:bg-transparent before:content-[""] text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground [&.active]:bg-sidebar-accent [&.active]:font-medium [&.active]:text-sidebar-foreground [&.active]:before:bg-sidebar-primary'
 
+/** `/me/cloud` (REB-518) is a child route of `/me`, same as `/me/edit` and its
+ *  siblings, so TanStack's own prefix matching would keep "La tua area" lit up there
+ *  too -- both entries active at once. It should stay lit for `/me` itself and its
+ *  other children, the way the admin entries stay lit for theirs (e.g. `Talenti` on
+ *  `/admin/talent/$id`), just not for the one child that carries its own nav entry. */
+function isMeActive(pathname: string): boolean {
+  return pathname === '/me' || (pathname.startsWith('/me/') && !pathname.startsWith('/me/cloud'))
+}
+
 /**
  * The whole sidebar, in one render: brand, the member's own entry, the admin group
  * gated on role, and the footer with the address and «Esci». `SignedInLayout` mounts
@@ -73,6 +82,8 @@ export function SidebarNav({
   onNavigate?: () => void
 }) {
   const logout = useLogout()
+  const pathname = useLocation({ select: (location) => location.pathname })
+  const meActive = isMeActive(pathname)
 
   return (
     <>
@@ -88,7 +99,13 @@ export function SidebarNav({
         rebase
       </Link>
       <nav className="flex flex-col gap-1">
-        <Link to="/me" onClick={onNavigate} className={cn(NAV_LINK, drawer && 'min-h-11')}>
+        <Link
+          to="/me"
+          onClick={onNavigate}
+          activeOptions={{ exact: true }}
+          aria-current={meActive ? 'page' : undefined}
+          className={cn(NAV_LINK, meActive && 'active', drawer && 'min-h-11')}
+        >
           <Home className="size-4" aria-hidden="true" />
           La tua area
         </Link>
