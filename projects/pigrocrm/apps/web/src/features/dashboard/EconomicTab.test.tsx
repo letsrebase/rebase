@@ -294,7 +294,22 @@ describe('EconomicTab', () => {
 
     // Every row of it, which is what «la scheda completa» means: the figures above answer
     // "how much do I owe", the card answers "out of what, at which rates".
-    expect(await screen.findByText('Stima fiscale 2026')).toBeInTheDocument()
+    //
+    // Two dependent round trips, not one: `EconomicTab`'s own `useEconomicOverview` gates
+    // everything below it (`EconomicTab.tsx`), and `FiscalPanel` only mounts -- starting
+    // its own `useFiscalEstimate` fetch -- once that resolves, so this text needs both
+    // queries' fetch-then-render cycles to finish in sequence, twice the chain most of
+    // this file's other `findBy*` calls wait on. That also means the whole card (this
+    // title, every row below, the note) and everything above it (the charts, the cards)
+    // are already committed by the time this resolves, which is why the synchronous
+    // `getByText`/`getByRole` calls that follow stay safe without their own `findBy*`.
+    // What is not enough is the default one-second `asyncUtilTimeout`: on a loaded full
+    // `pnpm --filter web test` run the doubled chain lost that race (REB-416), the same
+    // shape `vite.config.ts`'s own `testTimeout: 20_000` comment already describes for
+    // the suite as a whole. Matching that headroom here.
+    expect(
+      await screen.findByText('Stima fiscale 2026', {}, { timeout: 10_000 }),
+    ).toBeInTheDocument()
     for (const label of [
       'Coefficiente di redditività',
       'Imponibile',
