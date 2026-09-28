@@ -179,11 +179,13 @@ _HER = re.compile(
 )
 # A feminine participle or adjective is the person's only where no other noun can be
 # the one it agrees with: at the start of a field or of a sentence («Esperta in
-# cloud»), after «è» («È specializzata in API»), after «profilo», or made a noun by
-# «una» or «un'» («un'esperta»). After any other noun it is that noun's («un'agenzia
+# cloud»), after a comma, a semicolon or a colon, where it follows the role
+# («Backend developer, specializzata in API», what the preview's cards wrote), after
+# «è» («È specializzata in API»), after «profilo», or made a noun by «una» or «un'»
+# («un'esperta»). Directly after any other noun it is that noun's («un'agenzia
 # specializzata», «una piattaforma certificata») and says nothing of the person.
 _HER_PARTICIPLE = re.compile(
-    r"(?:^|[.!?]\s+|\b(?:è|profilo|una)\s+|\bun['’])"
+    r"(?:^|[.!?,;:]\s+|\b(?:è|profilo|una)\s+|\bun['’])"
     r"(specializzata|esperta|laureata|certificata|appassionata|diplomata)\b",
     re.IGNORECASE,
 )
@@ -197,11 +199,10 @@ def _gendered(card: Card) -> list[str]:
 
     A net under the prompt's rule, not the rule, and not a gate: a hit asks for one
     rewrite, and the card is written whatever it answers. So it misses what it is not
-    sure of, a feminine form not listed («è stata», «brava»), a participle after a comma
-    («Backend developer, specializzata in API», since «una startup, specializzata in
-    pagamenti» reads the same) or a word between the article and the role («una backend
-    developer»); and «è» after a feminine subject that is not the person («la
-    piattaforma è certificata») is a hit, one call for nothing."""
+    sure of, a feminine form not listed («è stata», «brava») or a word between the
+    article and the role («una backend developer»); and a participle after a feminine
+    subject that is not the person, «la piattaforma è certificata» or the rare «una
+    startup, specializzata in pagamenti», is a hit, one call for nothing."""
     found: list[tuple[int, str]] = []
     for value in (card.ruolo, card.sintesi, *card.competenze, *card.settori):
         spots = [(hit.start(), hit.group()) for hit in _HER.finditer(value)]

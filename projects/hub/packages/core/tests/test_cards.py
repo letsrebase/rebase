@@ -529,7 +529,10 @@ def test_the_prompt_keeps_the_gender_out() -> None:
         ("sintesi", "Il profilo appassionata di UX, nove anni.", ["appassionata"]),
         ("sintesi", "Un'esperta di dati, e una diplomata in ragioneria.", ["esperta", "diplomata"]),
         ("competenze", ["Python", "Certificata AWS Solutions Architect"], ["certificata"]),
-        ("ruolo", "Sviluppatrice, esperta di cloud", ["sviluppatrice"]),
+        # After a comma, a semicolon or a colon it follows the role: the preview's form.
+        ("sintesi", "Backend developer, specializzata in API Python.", ["specializzata"]),
+        ("sintesi", "Nove anni di backend; esperta di AWS.", ["esperta"]),
+        ("ruolo", "Sviluppatrice, esperta di cloud", ["sviluppatrice", "esperta"]),
     ],
 )
 def test_the_guard_reads_what_refers_to_the_person(
