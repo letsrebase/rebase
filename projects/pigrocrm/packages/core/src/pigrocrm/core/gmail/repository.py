@@ -521,6 +521,36 @@ class GmailRepository:
         )
         return written.scalar_one_or_none() is not None
 
+    def delete_editable_draft(self, draft_id: UUID) -> bool:
+        """Removes a draft only while it can still be edited, and answers whether it did
+        (REB-560).
+
+        The delete's own twin of the claim above and of `update_editable_draft`,
+        conditional for the same reason. The delete reads the row and checks that it is
+        editable, and a claim can commit in between -- a DELETE conditioned on the id
+        alone would then remove a draft already `in_invio`, and the send, which records
+        its outcome against the row it reloads after its claim, would find nothing to
+        write it onto: the previous system's `404 Offerta non trovata per registrare
+        l'invio email`, with the mail already delivered. With `send_state` in this
+        `WHERE` as well, the row decides whichever order the two arrive in: a claim that
+        commits first leaves this statement zero rows to touch, and a delete that removes
+        the row first leaves the claim's own `WHERE` nothing to match.
+
+        `RETURNING` and not `rowcount`, and `synchronize_session=False`, for the reasons
+        the claim above gives -- the loser here would otherwise expire an ORM copy the
+        caller still means to raise a `Conflict` from.
+        """
+        deleted = self.session.execute(
+            delete(EmailDraft)
+            .where(
+                EmailDraft.id == draft_id,
+                EmailDraft.send_state.in_(sorted(EDITABLE_SEND_STATES)),
+            )
+            .returning(EmailDraft.id)
+            .execution_options(synchronize_session=False)
+        )
+        return deleted.scalar_one_or_none() is not None
+
     # --- resolving an unknown send outcome --------------------------------------------
 
     def uncertain_draft_ids(self, account_id: UUID) -> list[UUID]:

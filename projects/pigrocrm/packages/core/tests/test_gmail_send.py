@@ -843,3 +843,103 @@ def test_an_edit_that_read_the_draft_before_the_claim_is_refused_after_it(
     finally:
         if customer_id is not None and user_id is not None and account_id is not None:
             _cleanup(db_engine, customer_id=customer_id, user_id=user_id, account_id=account_id)
+
+
+# --- refusing a delete the claim has already won (REB-560) -----------------------------
+
+
+def test_a_delete_that_read_the_draft_before_the_claim_is_refused_after_it(
+    db_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """REB-560's acceptance test. Two real connections, pinned in the one order the
+    claim alone cannot see. The delete reads the draft while it is still a `bozza` and
+    passes the editability check on that copy, the claim commits, and only then does the
+    delete try to remove the row, before the send reloads the row to compose it.
+
+    A delete conditioned on the id alone would remove the row the send has already
+    claimed, and the send would have nothing left to record its outcome against -- the
+    previous system's `404 Offerta non trovata per registrare l'invio email`, with the
+    mail already delivered. Refused instead, like any write of a draft in flight: the row
+    survives, and the send that claimed it finishes and writes `inviato` onto it.
+    """
+    factory = session_factory(db_engine)
+    customer_id: UUID | None = None
+    user_id: UUID | None = None
+    account_id: UUID | None = None
+    try:
+        with factory() as setup:
+            account = connected_account(setup)
+            user_id, account_id = account.user_id, account.id
+            customer = _customer(setup)
+            customer_id = customer.id
+            read = _draft(setup, account, customer)
+            setup.commit()
+            actor = actor_for(account)
+
+        delete_read_the_row = Event()
+        claim_committed = Event()
+        delete_finished = Event()
+        require_editable = EmailDraftService._require_editable
+        claim = GmailRepository.claim_draft_for_send
+        compose = EmailSendService._compose
+
+        def check_once_the_claim_committed(self: EmailDraftService, draft: EmailDraft) -> None:
+            # The delete's cheap check, on the copy it loaded before the claim: it passes
+            # on that copy, and the delete tries to write only once the claim is in.
+            delete_read_the_row.set()
+            assert claim_committed.wait(30), "the claim never committed"
+            require_editable(self, draft)
+
+        def claim_once_the_delete_read_the_row(
+            self: GmailRepository, *args: Any, **kwargs: Any
+        ) -> bool:
+            assert delete_read_the_row.wait(30), "the delete never read the row"
+            return claim(self, *args, **kwargs)
+
+        def compose_once_the_delete_is_done(self: EmailSendService, *args: Any) -> str:
+            # The claim is committed by now: let the delete go on, and compose only after
+            # it has, from the row as it then stands.
+            claim_committed.set()
+            assert delete_finished.wait(30), "the delete never finished"
+            return compose(self, *args)
+
+        monkeypatch.setattr(EmailDraftService, "_require_editable", check_once_the_claim_committed)
+        monkeypatch.setattr(
+            GmailRepository, "claim_draft_for_send", claim_once_the_delete_read_the_row
+        )
+        monkeypatch.setattr(EmailSendService, "_compose", compose_once_the_delete_is_done)
+        fake = FakeGmail()
+
+        def delete() -> str:
+            try:
+                with factory() as session:
+                    try:
+                        draft_service(session).delete(read.id, actor)
+                    except Conflict as refused:
+                        return f"refused:{refused.details.get('send_state')}"
+                    return "deleted"
+            finally:
+                delete_finished.set()
+
+        def send() -> str:
+            with factory() as session:
+                sent = send_service(session, fake, settings=gmail_settings()).send(read.id, actor)
+                return sent.send_state
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            deleted = pool.submit(delete)
+            sent = pool.submit(send)
+            assert deleted.result(timeout=60) == "refused:in_invio"
+            assert sent.result(timeout=60) == "inviato"
+
+        left = message_from_string(_sent_raw(fake), policy=email_policy).get_body(("plain",))
+        assert left is not None
+        assert "è già pronta l’offerta" in str(left.get_content())
+        with factory() as check:
+            row = check.get(EmailDraft, read.id)
+            assert row is not None
+            assert row.send_state == "inviato"
+            assert row.body_markdown == BODY
+    finally:
+        if customer_id is not None and user_id is not None and account_id is not None:
+            _cleanup(db_engine, customer_id=customer_id, user_id=user_id, account_id=account_id)

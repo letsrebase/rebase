@@ -279,9 +279,24 @@ class EmailDraftService:
         l'invio email» with the mail already delivered."""
         actor.require_write("delete_email_draft")
         draft = self._get(draft_id)
+        # A cheap read that answers the ordinary case. Not the guarantee: a send can claim
+        # the draft between this read and the write below, which is why the delete itself
+        # is conditional (`GmailRepository.delete_editable_draft`, REB-560).
         self._require_editable(draft)
-        self.session.delete(draft)
+
+        if not self.repo.delete_editable_draft(draft_id):
+            state = self.session.execute(
+                select(EmailDraft.send_state).where(EmailDraft.id == draft_id)
+            ).scalar_one_or_none()
+            if state is None:
+                raise NotFound(ENTITY, draft_id)
+            raise Conflict(ENTITY, _ALREADY_GONE, send_state=state)
         self.session.commit()
+        # The write was a Core DELETE, so the copy loaded above does not know the row is
+        # gone: an ORM `Session.delete` would leave the session's identity map having
+        # expunged it, and this has to earn that same fact by hand, or a `get` on this
+        # same session right after would answer from the stale copy instead of a 404.
+        self.session.expunge(draft)
 
     def repo_draft(self, draft_id: UUID) -> EmailDraft:
         """The ORM row. For the send path of B2-5 and the reconciliation of B2-6, which
