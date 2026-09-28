@@ -422,3 +422,81 @@ def test_a_non_parse_error_from_done_at_propagates_instead_of_dropping_the_row(
     monkeypatch.setattr(audience_module, "done_at", raising)
     with pytest.raises(RuntimeError, match="boom"):
         waiting_rows(clean, parent)
+
+
+def test_a_row_whose_richieste_is_not_a_string_keyed_dict_is_left_out_and_logged(
+    clean: Session,  # noqa: F811  (fixture)
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """CodeRabbit Major on PR #444: `{"richieste": [123]}` made `UUID(123)` raise
+    `AttributeError`, breaking the whole list before the row could be left out. The
+    shape is checked explicitly instead of widening the `except`, so a real bug
+    elsewhere is not swallowed along with it."""
+    logging.getLogger("rebase_core.campaigns.audience").disabled = False
+    parent = campaign_row(clean, azione="richiesta_aggiornata")
+    fine = company(clean, "fine4@studio.it")
+    good = CampaignRecipient(
+        campaign_id=parent.id,
+        email="fine4@studio.it",
+        tipo="azienda",
+        codice="1",
+        prima={"richieste": {str(fine.id): fine.updated_at.isoformat()}},
+        disiscrizione_token="t-good4",
+        stato="inviata",
+        inviata_at=T0,
+    )
+    broken = CampaignRecipient(
+        campaign_id=parent.id,
+        email="rotta4@studio.it",
+        tipo="azienda",
+        codice="2",
+        prima={"richieste": [123]},
+        disiscrizione_token="t-broken4",
+        stato="inviata",
+        inviata_at=T0,
+    )
+    clean.add_all([good, broken])
+    clean.commit()
+    with caplog.at_level(logging.ERROR, logger="rebase_core.campaigns.audience"):
+        rows = waiting_rows(clean, parent)
+    assert [r.email for r in rows] == ["fine4@studio.it"]
+    assert str(broken.id) in caplog.text
+
+
+@pytest.mark.parametrize("bad_prima", [["not", "a", "dict"], "not-a-dict"])
+def test_a_row_whose_prima_is_not_a_dict_is_left_out_and_logged(
+    clean: Session,  # noqa: F811  (fixture)
+    caplog: pytest.LogCaptureFixture,
+    bad_prima: object,
+) -> None:
+    """The same shape check applies to `prima` itself, not only `richieste`: a row
+    whose snapshot is a list or a string, not a dict, must not raise inside `.get`."""
+    logging.getLogger("rebase_core.campaigns.audience").disabled = False
+    parent = campaign_row(clean, azione="richiesta_aggiornata")
+    fine = company(clean, "fine5@studio.it")
+    good = CampaignRecipient(
+        campaign_id=parent.id,
+        email="fine5@studio.it",
+        tipo="azienda",
+        codice="1",
+        prima={"richieste": {str(fine.id): fine.updated_at.isoformat()}},
+        disiscrizione_token="t-good5",
+        stato="inviata",
+        inviata_at=T0,
+    )
+    broken = CampaignRecipient(
+        campaign_id=parent.id,
+        email="rotta5@studio.it",
+        tipo="azienda",
+        codice="2",
+        prima=bad_prima,  # type: ignore[arg-type]
+        disiscrizione_token="t-broken5",
+        stato="inviata",
+        inviata_at=T0,
+    )
+    clean.add_all([good, broken])
+    clean.commit()
+    with caplog.at_level(logging.ERROR, logger="rebase_core.campaigns.audience"):
+        rows = waiting_rows(clean, parent)
+    assert [r.email for r in rows] == ["fine5@studio.it"]
+    assert str(broken.id) in caplog.text

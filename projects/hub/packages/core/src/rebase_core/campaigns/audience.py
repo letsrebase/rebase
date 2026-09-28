@@ -76,19 +76,22 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
     or `filtri` campaign; a lead row stays, since a lead who made a card since is caught
     by `done_at`.
 
-    A row whose own snapshot is broken -- a `prima["richieste"]` key that is not a UUID,
-    or a value `done_at` cannot parse as a timestamp (`richiesta_aggiornata`'s own
-    `datetime.fromisoformat`) -- must not break the whole list. Only the parse errors a
-    malformed snapshot itself raises (`ValueError`, `TypeError`, `KeyError` if `done_at`
-    ever indexes the snapshot directly) are caught below, never a bare `except
+    A row whose own snapshot is broken -- `prima` or `prima["richieste"]` of the wrong
+    shape (a list, a string), a `richieste` key that is not a UUID, or a value `done_at`
+    cannot parse as a timestamp (`richiesta_aggiornata`'s own `datetime.fromisoformat`)
+    -- must not break the whole list. The wrong shape is checked explicitly before any
+    parsing, never folded into a broadened `except`, which would also swallow a real
+    bug elsewhere (CodeRabbit Major, PR #444). Past the shape check, only the parse
+    errors a malformed value itself raises (`ValueError`, `TypeError`, `KeyError` if
+    `done_at` ever indexes the snapshot directly) are caught below, never a bare `except
     Exception`: anything else -- a transient database error, an unrelated bug --
     propagates rather than silently dropping an eligible person (Greptile P1, PR #444).
     No savepoint either, unlike `outcome.stamp_outcomes`'s own per-row one (REB-533):
     every parse error caught here is pure Python, always raised after any SQL `done_at`
     issued for the row already succeeded, so the session's transaction is never left
-    aborted (Greptile P2, PR #444). A row whose snapshot does raise one of these is left
-    out, the safe side: it never lets a mail reach someone who may already have acted,
-    and it is logged by id."""
+    aborted (Greptile P2, PR #444). A row whose snapshot fails a shape check or a parse
+    is left out, the safe side: it never lets a mail reach someone who may already have
+    acted, and it is logged by id."""
     rows = session.scalars(
         select(CampaignRecipient)
         .where(
@@ -112,10 +115,22 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
     )
     richieste_by_row: dict[UUID, tuple[UUID, ...]] = {}
     for row in rows:
+        # The shape is checked explicitly, not folded into the `except` below: `prima`
+        # or `richieste` of the wrong shape (a list, a string) must not raise inside a
+        # broadened `except`, which would also swallow a real bug elsewhere
+        # (CodeRabbit Major on PR #444). `prima` is a dict or `None`; `richieste`, once
+        # defaulted, is a dict whose keys are strings -- anything else leaves the row
+        # out the same way a key `UUID` cannot parse does.
+        prima = row.prima
+        if prima is not None and not isinstance(prima, dict):
+            _log.error("waiting row %s left out: prima is not a dict", row.id)
+            continue
+        richieste = (prima or {}).get("richieste", {})
+        if not isinstance(richieste, dict) or not all(isinstance(key, str) for key in richieste):
+            _log.error("waiting row %s left out: richieste is not a string-keyed dict", row.id)
+            continue
         try:
-            richieste_by_row[row.id] = tuple(
-                UUID(key) for key in (row.prima or {}).get("richieste", {})
-            )
+            richieste_by_row[row.id] = tuple(UUID(key) for key in richieste)
         except (TypeError, ValueError) as exc:
             _log.error("waiting row %s left out: %s", row.id, type(exc).__name__)
     company_ids = {cid for ids in richieste_by_row.values() for cid in ids}
