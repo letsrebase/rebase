@@ -52,6 +52,18 @@ on:
         required: false
         default: true
         type: boolean
+      shard:
+        description: >-
+          `k/n`: run only the k-th of n slices of the test files under `tests`, so a
+          caller can spread one suite over n jobs that run side by side. The sorted file
+          list is sliced by position (every n-th file, offset k), so the slices are
+          deterministic, disjoint and together the whole suite; nothing is balanced by
+          duration. Empty runs every file in this one job. A shard whose every test is
+          deselected by a marker in `pytest-args` exits 5 and goes red, so shard a job
+          only when each slice is sure to keep some tests.
+        required: false
+        default: ''
+        type: string
 
 jobs:
   gate:
@@ -108,8 +120,62 @@ jobs:
           typst --version
           pdftotext -v 2>&1 | head -1
 
+      # Whole files, never single tests, so `--dist loadfile` and the module-scoped
+      # fixtures behind it hold inside a shard exactly as they do in a full run. The
+      # list is printed so a red shard's log says what it selected without a second
+      # run. Slicing by position rather than by a recorded duration keeps this a shell
+      # line with no plugin, no durations file to refresh and no cache to miss; the
+      # cost is that a shard can be heavier than its siblings by whatever the biggest
+      # files weigh: roughly the difference between a third of the suite and somewhat
+      # more, never the difference between three jobs and one.
+      - name: Select this shard's files
+        id: shard
+        if: inputs.shard != ''
+        env:
+          SHARD: ${{ inputs.shard }}
+          ROOTS: ${{ inputs.tests }}
+        run: |
+          set -euo pipefail
+          k=${SHARD%/*}; n=${SHARD#*/}
+          # `4/3` would silently rerun shard 1 and `0/3` shard 3, and a bare `3` parses
+          # as k=n=3: each a green run that skipped a third of the suite.
+          if ! [[ "$SHARD" =~ ^[1-9][0-9]*/[1-9][0-9]*$ ]] || [ "$k" -gt "$n" ]; then
+            echo "::error::shard must be k/n with 1 <= k <= n, got '${SHARD}'"
+            exit 1
+          fi
+          # `LC_ALL=C`, so the order (and so the slices) is the same on every machine:
+          # under en_US `test_cli.py` and `test_cli_digest.py` swap places, and a shard
+          # reproduced on a devbox would not hold the file that failed on the runner.
+          # ROOTS is a space-separated list on purpose, the same one `Test` expands.
+          # shellcheck disable=SC2086
+          # Both of pytest's default module patterns, since nothing sets `python_files`:
+          # a `foo_test.py` would otherwise run in the full lane and in no shard.
+          files=$(find $ROOTS \( -name 'test_*.py' -o -name '*_test.py' \) | LC_ALL=C sort | awk -v n="$n" -v k="$k" 'NR % n == k % n')
+          if [ -z "$files" ]; then
+            echo "::error::shard ${SHARD} selected no file under ${ROOTS}"
+            exit 1
+          fi
+          echo "shard ${SHARD}: $(echo "$files" | wc -l) files"
+          echo "$files"
+          # One path per line, in a file, and only the file's path as the output: the
+          # names come from the tree under test, so they are data for the next step to
+          # read, never text an expression pastes into a shell line.
+          printf '%s\n' "$files" > "$RUNNER_TEMP/pytest-shard-files"
+          echo "files-path=$RUNNER_TEMP/pytest-shard-files" >> "$GITHUB_OUTPUT"
+
       - name: Test
         # testcontainers starts PostgreSQL itself; no service container needed, and
         # under `-n` each worker starts its own, which is what makes the workers
-        # independent rather than fighting over one database.
-        run: uv run pytest -q ${{ inputs.pytest-args }} ${{ inputs.tests }}
+        # independent rather than fighting over one database. With a `shard`, the
+        # paths are that shard's files; without one, the roots the caller named.
+        env:
+          SHARD_FILES_PATH: ${{ steps.shard.outputs.files-path }}
+          TEST_ROOTS: ${{ inputs.tests }}
+        run: |
+          set -euo pipefail
+          if [ -n "$SHARD_FILES_PATH" ]; then
+            mapfile -t paths < "$SHARD_FILES_PATH"
+          else
+            read -r -a paths <<< "$TEST_ROOTS"
+          fi
+          uv run pytest -q ${{ inputs.pytest-args }} "${paths[@]}"
