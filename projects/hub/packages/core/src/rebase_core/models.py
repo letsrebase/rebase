@@ -1147,6 +1147,8 @@ class TalentCloudGrant(Base, PrimaryKeyMixin):
             postgresql_where=text("revoked_at IS NULL"),
         ),
     )
+
+
 # ---- referrals: an existing member's link to who they brought in (P-REB-44) -----------
 
 REFERRAL_KINDS = ("freelancer", "company")
