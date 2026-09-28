@@ -121,7 +121,9 @@ It is `saltato` with the exception's type on that mailbox's line, on `stderr`, a
 **frames of its traceback** follow that line on `stderr` too, which makes it exit 1. Both
 land in the cron's own log, `/var/log/pigrocrm-gmail-sync.log`, not in the API's logs:
 the cycle runs in the `pigrocrm` process that `docker compose exec` starts, not in
-uvicorn. The frames name the file, the line and the function that failed. The
+uvicorn. The frames name the file, the line and the function that failed. A space whose
+settings or mailboxes could not be read before any cycle (`studio-rossi: saltato (…)`)
+gets its frames the same way, so the log says which read failed. The
 exception's message is withheld on purpose, and running `pigrocrm gmail-sync` again by
 hand does not show it either, since it takes the same path: a psycopg or SQLAlchemy
 message can carry the database URL or a statement's parameters (a correspondent's
@@ -204,9 +206,9 @@ essere lì` rather than `… non è una casella collegata`.
 | Line, on `stderr` | What happened | What to do |
 | --- | --- | --- |
 | `studio-rossi owner@…: <a sentence from the table above>` | That mailbox, in that space, could not be synchronised, for the reason the sentence gives. The mailboxes after it were | As in the table, in that space: the mailbox's owner reconnects it from «Impostazioni → Gmail» |
-| `studio-rossi: saltato (ProgrammingError)` | That space's schema is behind the image. **This command migrates nothing**, like the digest: only `pigrocrm ensure-space-defaults`, in the API image's CMD, migrates a space (ORB-189) | Restart the API, which migrates it, then run the line by hand |
+| `studio-rossi: saltato (ProgrammingError)`, then the frames of its traceback | That space's schema is behind the image. **This command migrates nothing**, like the digest: only `pigrocrm ensure-space-defaults`, in the API image's CMD, migrates a space (ORB-189) | Restart the API, which migrates it, then run the line by hand |
 | `studio-rossi owner@…: saltato (ProgrammingError)`, then the frames of its traceback | The same, noticed inside that mailbox's cycle rather than before it | As above |
-| `studio-rossi: saltato (OperationalError)` | That space's database does not answer. The other spaces were synchronised | Check that database |
+| `studio-rossi: saltato (OperationalError)`, then the frames of its traceback | That space's database does not answer. The other spaces were synchronised | Check that database |
 | `studio-rossi owner@…: saltato (…)` with another type, then the frames of its traceback | A failure nobody foresaw, named by its type and never its text (a psycopg error can carry the URL, password included). The frames right below it, in this same log, say where it broke | Read the frames here. The message is withheld from this log on purpose; to read it, use the Python shell above |
 | `registro degli spazi non raggiungibile (…)` | The registry does not answer: no space was visited, the root was | Check the database and the `PIGROCRM_*` of the `.env`, then run the line by hand |
 | `… non è fra le caselle degli spazi letti (…): uno spazio non è stato letto, e potrebbe essere lì` | `--email` matched no mailbox among the installations read, and at least one was not read | Fix what the `saltato` or `registro` line above says, then run the line again |

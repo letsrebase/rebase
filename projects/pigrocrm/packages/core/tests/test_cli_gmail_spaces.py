@@ -302,9 +302,9 @@ def test_a_space_whose_schema_lags_is_skipped_on_its_own_line(
     is one `saltato` line naming the exception's type and never its text (a psycopg
     error can carry the URL), and the space after it is synchronised all the same.
 
-    Inside a mailbox's cycle the failure is one nobody foresaw, so the frames of its
-    traceback follow the line, for whoever has to find where it broke. Only the frames:
-    the message is the text the line leaves out, for the same reason."""
+    The frames of its traceback follow the line, for whoever has to find which read broke:
+    the space's settings or its mailboxes before any cycle, or a statement inside one.
+    Only the frames: the message is the text the line leaves out, for the same reason."""
     _connect(settings, ONE)
     _connect(settings, TWO)
     engine = _engine(settings, ONE)
@@ -326,11 +326,10 @@ def test_a_space_whose_schema_lags_is_skipped_on_its_own_line(
         else f"{_line(ONE, ONE)}saltato (ProgrammingError)"
     )
     assert skipped in captured.err
-    if where == "mailbox":
-        assert 'File "' in captured.err
-        assert "in sync" in captured.err
-    else:
-        assert 'File "' not in captured.err
+    # The frames follow the line in both places, and they name the read that failed:
+    # the space's own settings before any mailbox, the cycle's `sync` inside one.
+    assert 'File "' in captured.err
+    assert ("in effective_settings" if where == "space" else "in sync") in captured.err
     # `relation "gmail_known_addresses" does not exist`, or the same for the other table:
     # the message, which is what can carry a URL or a statement's parameters.
     assert "does not exist" not in captured.err
@@ -364,7 +363,8 @@ def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
     assert _run() == 1
 
     captured = capsys.readouterr()
-    assert captured.err.strip().endswith(f"gmail-sync {ONE}: saltato (OperationalError)")
+    assert f"gmail-sync {ONE}: saltato (OperationalError)" in captured.err
+    assert 'File "' in captured.err
     assert _line(TWO, TWO) in captured.out
     assert _watermark(settings, TWO) is not None
 
@@ -448,7 +448,8 @@ def test_no_mailbox_is_not_claimed_while_a_space_could_not_be_read(
 
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert len(captured.err.strip().splitlines()) == 1
+    # One line of log; a space's read that failed is followed by its frames.
+    assert len([line for line in captured.err.splitlines() if "gmail-sync" in line]) == 1
     assert "nessuna casella" not in captured.err
 
 

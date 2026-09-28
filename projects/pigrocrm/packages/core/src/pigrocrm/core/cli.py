@@ -529,7 +529,8 @@ def gmail_sync(email: str | None) -> int:
     type, as the digest prints it, and the mailbox after it still gets its cycle. The
     frames of its traceback follow that line on stderr, into the cron's own log (the
     cycle runs in this process, not in the API's), so that where it broke can be found;
-    its message does not, for the reason the type stands in for it everywhere here.
+    its message does not, for the reason the type stands in for it everywhere here. A
+    space whose settings or mailboxes cannot be read gets its frames the same way.
     """
     from sqlalchemy import create_engine, select
 
@@ -584,6 +585,10 @@ def gmail_sync(email: str | None) -> int:
                 print(
                     f"{_now()} gmail-sync {label}: saltato ({type(exc).__name__})", file=sys.stderr
                 )
+                # Which read failed, the space's settings or its mailboxes: the frames say
+                # it and the type alone does not. The message stays out, as in
+                # `_sync_mailbox`.
+                traceback.print_tb(exc.__traceback__, file=sys.stderr)
                 failed = unread = True
                 continue
             connected.extend(address for _, address in mailboxes)
