@@ -22,6 +22,7 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+import rebase_core.campaigns.audience as audience_module
 from rebase_core.campaigns.actions import done_at, snapshot
 from rebase_core.campaigns.audience import (
     REASON_ADMIN,
@@ -329,7 +330,7 @@ def test_a_row_with_a_broken_richieste_snapshot_is_left_out_and_logged(
         email="rotta@studio.it",
         tipo="azienda",
         codice="2",
-        prima={"richieste": {str(rotta.id): "non-una-data"}},
+        prima={"richieste": {str(rotta.id): "not-a-date"}},
         disiscrizione_token="t-broken",
         stato="inviata",
         inviata_at=T0,
@@ -371,7 +372,7 @@ def test_the_follow_ups_preview_and_schedule_survive_a_broken_parent_row(
             email="rotta2@studio.it",
             tipo="azienda",
             codice="2",
-            prima={"richieste": {str(rotta.id): "non-una-data"}},
+            prima={"richieste": {str(rotta.id): "not-a-date"}},
             disiscrizione_token="t-broken2",
             stato="inviata",
             inviata_at=T0,
@@ -390,3 +391,34 @@ def test_the_follow_ups_preview_and_schedule_survive_a_broken_parent_row(
     service.send_test(follow.id, as_admin(who), RecordingCampaignSender())
     scheduled = service.schedule(follow.id, ScheduleRequest())
     assert scheduled.stato == "programmata"
+
+
+def test_a_non_parse_error_from_done_at_propagates_instead_of_dropping_the_row(
+    clean: Session,  # noqa: F811  (fixture)
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Greptile P1 on PR #444: only a malformed snapshot's own parse errors are caught
+    (`ValueError`, `TypeError`, `KeyError`); a transient database error or an unrelated
+    bug must propagate rather than silently drop an eligible person from the list."""
+    parent = campaign_row(clean, azione="richiesta_aggiornata")
+    fine = company(clean, "fine3@studio.it")
+    clean.add(
+        CampaignRecipient(
+            campaign_id=parent.id,
+            email="fine3@studio.it",
+            tipo="azienda",
+            codice="1",
+            prima={"richieste": {str(fine.id): fine.updated_at.isoformat()}},
+            disiscrizione_token="t-good3",
+            stato="inviata",
+            inviata_at=T0,
+        )
+    )
+    clean.commit()
+
+    def raising(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(audience_module, "done_at", raising)
+    with pytest.raises(RuntimeError, match="boom"):
+        waiting_rows(clean, parent)

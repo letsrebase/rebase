@@ -78,10 +78,17 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
 
     A row whose own snapshot is broken -- a `prima["richieste"]` key that is not a UUID,
     or a value `done_at` cannot parse as a timestamp (`richiesta_aggiornata`'s own
-    `datetime.fromisoformat`) -- must not break the whole list, the same isolation
-    `outcome.stamp_outcomes` already gives each row its own savepoint for. Such a row is
-    left out, the safe side: it never lets a mail reach someone who may already have
-    acted, and it is logged by id."""
+    `datetime.fromisoformat`) -- must not break the whole list. Only the parse errors a
+    malformed snapshot itself raises (`ValueError`, `TypeError`, `KeyError` if `done_at`
+    ever indexes the snapshot directly) are caught below, never a bare `except
+    Exception`: anything else -- a transient database error, an unrelated bug --
+    propagates rather than silently dropping an eligible person (Greptile P1, PR #444).
+    No savepoint either, unlike `outcome.stamp_outcomes`'s own per-row one (REB-533):
+    every parse error caught here is pure Python, always raised after any SQL `done_at`
+    issued for the row already succeeded, so the session's transaction is never left
+    aborted (Greptile P2, PR #444). A row whose snapshot does raise one of these is left
+    out, the safe side: it never lets a mail reach someone who may already have acted,
+    and it is logged by id."""
     rows = session.scalars(
         select(CampaignRecipient)
         .where(
@@ -131,9 +138,8 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
         if richieste and not any(cid in alive_companies for cid in richieste):
             continue
         try:
-            with session.begin_nested():
-                done = done_at(session, row, parent.azione, since=row.inviata_at)
-        except Exception as exc:  # one broken row must not wedge the whole list (R14)
+            done = done_at(session, row, parent.azione, since=row.inviata_at)
+        except (ValueError, TypeError, KeyError) as exc:  # a malformed snapshot only
             _log.error("waiting row %s left out: %s", row.id, type(exc).__name__)
             continue
         if done is not None:
