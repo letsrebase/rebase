@@ -65,6 +65,9 @@ export const queryKeys = {
   invoicePdfs: (id: string) => ['invoice-pdf', id] as const,
   invoicePdf: (id: string, documentId: string) => ['invoice-pdf', id, documentId] as const,
   fiscalProfile: ['fiscal-profile'] as const,
+  // The space's own settings (`GET /api/settings/space`): the panel in Impostazioni reads
+  // and writes it, and the get-started invoice door reads the same entry.
+  spaceSettings: ['settings', 'space'] as const,
   timeEntries: (params?: unknown) => ['time-entries', params ?? {}] as const,
   // One key per month, and the prefix `['calendario']` on purpose: a commitment whose
   // date moved is stale in two months at once, so every write invalidates the prefix

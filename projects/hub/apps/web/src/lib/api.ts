@@ -27,7 +27,7 @@ interface ValidationItem {
 }
 
 async function fail(response: Response): Promise<never> {
-  let detail: unknown = null
+  let detail: unknown
   try {
     detail = (await response.json())?.detail
   } catch {

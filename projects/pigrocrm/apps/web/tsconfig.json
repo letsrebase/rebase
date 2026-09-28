@@ -17,8 +17,7 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "skipLibCheck": true,
-    "types": ["node", "vitest/globals", "@testing-library/jest-dom"],
-    "baseUrl": ".",
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom", "vite/client"],
     "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src", "e2e"]
