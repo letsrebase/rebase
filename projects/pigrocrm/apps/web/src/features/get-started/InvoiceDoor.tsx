@@ -37,7 +37,6 @@ import { queryKeys } from '@/lib/query'
 import { useCreateCustomer } from '@/features/customers/queries'
 import { useDocument, useUploadVersion } from '@/features/documents/queries'
 import { UploadDropzone } from '@/features/documents/UploadDropzone'
-import { SPACE_SETTINGS_KEY } from '@/features/settings/SpacePanel'
 import { ConnectAgentPanel } from '@/features/tokens/ConnectAgentPanel'
 import type { CreatedToken } from '@/features/tokens/queries'
 import { useUnsavedTokenGuard } from '@/features/tokens/useUnsavedTokenGuard'
@@ -382,7 +381,7 @@ function Handoff({
     staleTime: 0,
   })
   const settings = useQuery({
-    queryKey: SPACE_SETTINGS_KEY,
+    queryKey: queryKeys.spaceSettings,
     queryFn: () => unwrap(api.GET('/api/settings/space')),
     enabled: !registered.data,
   })
