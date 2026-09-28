@@ -121,11 +121,43 @@ It is `saltato` with the exception's type on that mailbox's line, on `stderr`, a
 **frames of its traceback** follow that line on `stderr` too, which makes it exit 1. Both
 land in the cron's own log, `/var/log/pigrocrm-gmail-sync.log`, not in the API's logs:
 the cycle runs in the `pigrocrm` process that `docker compose exec` starts, not in
-uvicorn. The frames say where it broke; the exception's message is left out, because a
-psycopg or SQLAlchemy message can carry the database URL or a statement's parameters (a
-correspondent's address), which this log promises never to hold. To read the message,
-run the line by hand in a shell inside the container with the failing space's database
-at hand.
+uvicorn. The frames name the file, the line and the function that failed. The
+exception's message is withheld on purpose, and running `pigrocrm gmail-sync` again by
+hand does not show it either, since it takes the same path: a psycopg or SQLAlchemy
+message can carry the database URL or a statement's parameters (a correspondent's
+address), which this log promises never to hold.
+
+To read the message, run that one mailbox's cycle from a Python shell in the container,
+where it reaches only your terminal and no file. This is a real cycle: when it succeeds
+it synchronises the mailbox, exactly as the cron would have.
+
+```
+cd /opt/pigrocrm/projects/pigrocrm && docker compose --env-file ../../.env exec api uv run --no-sync python
+```
+
+```python
+from pigrocrm.core import cli
+from pigrocrm.core.config import get_settings
+from pigrocrm.core.gmail.repository import GmailRepository
+from pigrocrm.core.gmail.sync import GmailSyncService
+from pigrocrm.core.gmail.tokens import GoogleTokenClient
+from pigrocrm.core.gmail.transport import GmailTransport
+from pigrocrm.core.tenants import SpaceRegistry
+
+slug, address = "studio-rossi", "owner@studio-rossi.example"  # slug None for the root
+spaces = SpaceRegistry(get_settings())
+with spaces.session_factory(slug)() as session:
+    settings = spaces.effective_settings(slug, session)
+    account = next(a for a in GmailRepository(session).all_accounts() if a.email_address == address)
+    transport = GmailTransport()
+    tokens = GoogleTokenClient(
+        client_id=settings.google_client_id,
+        client_secret=settings.google_client_secret,
+        transport=transport,
+    )
+    service = GmailSyncService(session, settings=settings, transport=transport, tokens=tokens)
+    print(service.sync(cli._cron_actor(session, account)))
+```
 
 Il log non contiene mai un oggetto, un indirizzo di un corrispondente o un corpo di
 messaggio: quello che il comando stampa sono i contatori di `SyncReport`, dove non c'è
@@ -175,7 +207,7 @@ essere lì` rather than `… non è una casella collegata`.
 | `studio-rossi: saltato (ProgrammingError)` | That space's schema is behind the image. **This command migrates nothing**, like the digest: only `pigrocrm ensure-space-defaults`, in the API image's CMD, migrates a space (ORB-189) | Restart the API, which migrates it, then run the line by hand |
 | `studio-rossi owner@…: saltato (ProgrammingError)`, then the frames of its traceback | The same, noticed inside that mailbox's cycle rather than before it | As above |
 | `studio-rossi: saltato (OperationalError)` | That space's database does not answer. The other spaces were synchronised | Check that database |
-| `studio-rossi owner@…: saltato (…)` with another type, then the frames of its traceback | A failure nobody foresaw, named by its type and never its text (a psycopg error can carry the URL, password included). The frames right below it, in this same log, say where it broke | Read the frames here; for the message, run the line by hand inside the container |
+| `studio-rossi owner@…: saltato (…)` with another type, then the frames of its traceback | A failure nobody foresaw, named by its type and never its text (a psycopg error can carry the URL, password included). The frames right below it, in this same log, say where it broke | Read the frames here. The message is withheld from this log on purpose; to read it, use the Python shell above |
 | `registro degli spazi non raggiungibile (…)` | The registry does not answer: no space was visited, the root was | Check the database and the `PIGROCRM_*` of the `.env`, then run the line by hand |
 | `… non è fra le caselle degli spazi letti (…): uno spazio non è stato letto, e potrebbe essere lì` | `--email` matched no mailbox among the installations read, and at least one was not read | Fix what the `saltato` or `registro` line above says, then run the line again |
 
