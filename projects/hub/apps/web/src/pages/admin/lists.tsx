@@ -435,6 +435,9 @@ export function AdminTalenti() {
                   <TableRow>
                     <TableHead>Chi</TableHead>
                     <TableHead>Stato</TableHead>
+                    <TableHead className="text-right">Tariffa</TableHead>
+                    <TableHead>Modalità</TableHead>
+                    <TableHead>LinkedIn</TableHead>
                     <TableHead>Provenienza</TableHead>
                     <TableHead className="text-right">Quando</TableHead>
                     <TableHead className="w-12"><span className="sr-only">Azioni</span></TableHead>
@@ -474,6 +477,25 @@ function TalentoRow({ item }: { item: Talento }) {
       <TableCell>
         <StatePill stato={item.stato} />
       </TableCell>
+      <TableCell className="text-right text-muted-foreground">
+        {item.tariffa_giornaliera === null ? '—' : formatEuro(item.tariffa_giornaliera)}
+      </TableCell>
+      <TableCell className="text-muted-foreground">{remotoLabel(item.remoto)}</TableCell>
+      <TableCell>
+        {item.linkedin_url && isHttpUrl(item.linkedin_url) ? (
+          <a
+            href={item.linkedin_url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`LinkedIn di ${name || item.email}`}
+            className="text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            LinkedIn
+          </a>
+        ) : (
+          '—'
+        )}
+      </TableCell>
       <TableCell className="text-muted-foreground">{item.origine}</TableCell>
       <TableCell className="text-right text-muted-foreground">{formatDate(item.created_at)}</TableCell>
       <TableCell className="w-12 text-right">
@@ -481,6 +503,24 @@ function TalentoRow({ item }: { item: Talento }) {
       </TableCell>
     </TableRow>
   )
+}
+
+/** `TalentoRead.remoto` is `str | None`, not narrowed to `Remoto` (REB-558 review): the
+ *  database column allows any string, so a value outside `REMOTO_LABELS`' three keys
+ *  reads «—» rather than rendering blank. */
+function remotoLabel(value: string | null): string {
+  if (value === null) return '—'
+  return (REMOTO_LABELS as Record<string, string>)[value] ?? '—'
+}
+
+/** Only an address that can actually open in a new tab becomes a link (REB-558): the
+ *  card's own guard against a stray value that reached the column unvalidated. */
+function isHttpUrl(value: string): boolean {
+  try {
+    return ['http:', 'https:'].includes(new URL(value).protocol)
+  } catch {
+    return false
+  }
 }
 
 /** The row's own actions (REB-387), on a card only: a bare sign-up has no card to match
