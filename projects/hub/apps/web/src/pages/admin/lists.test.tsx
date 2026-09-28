@@ -94,9 +94,13 @@ const CARD_TALENTO = {
   origine: 'wizard',
   utm_source: 'linkedin',
   created_at: '2026-09-10T10:00:00Z',
+  // REB-558: a card's own day rate and work mode.
+  tariffa_giornaliera: '450.00',
+  remoto: 'remoto',
 }
 
-/** A bare sign-up in `talenti` (ORB-163): `stato` `lead`, no card behind it yet. */
+/** A bare sign-up in `talenti` (ORB-163): `stato` `lead`, no card behind it yet, so
+ *  no rate and no mode (REB-558). */
 const LEAD_TALENTO = {
   id: 's2',
   nome: 'Bob',
@@ -107,6 +111,8 @@ const LEAD_TALENTO = {
   origine: 'form',
   utm_source: 'newsletter',
   created_at: '2026-09-08T10:00:00Z',
+  tariffa_giornaliera: null,
+  remoto: null,
 }
 
 /** A company request in `GET /api/hub/companies` (REB-286's own new coverage: the
@@ -274,16 +280,58 @@ describe('the Talenti list (REB-282/283)', () => {
     const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
     expect(within(cellUnder(ada, 'Stato')).getByText('Nuovo')).toBeInTheDocument()
     expect(cellUnder(ada, 'Provenienza')).toHaveTextContent('wizard')
-    const adaLink = within(ada).getByRole('link')
+    const adaLink = within(ada).getByRole('link', { name: 'Ada Lovelace' })
     expect(adaLink.getAttribute('href')).toMatch(/\/admin\/freelance\/f1$/)
+    // REB-558: a card's own day rate, work mode and LinkedIn link.
+    expect(cellUnder(ada, 'Tariffa')).toHaveTextContent('450')
+    expect(cellUnder(ada, 'Modalità')).toHaveTextContent('Da remoto')
+    const adaLinkedin = within(ada).getByRole('link', { name: 'LinkedIn di Ada Lovelace' })
+    expect(adaLinkedin.getAttribute('href')).toBe('https://www.linkedin.com/in/ada')
+    expect(adaLinkedin.getAttribute('target')).toBe('_blank')
+    expect(adaLinkedin.getAttribute('rel')).toBe('noreferrer')
 
     const bob = screen.getByText('bob@example.org').closest('tr')!
     expect(within(cellUnder(bob, 'Stato')).getByText('Lead')).toBeInTheDocument()
     expect(cellUnder(bob, 'Provenienza')).toHaveTextContent('form')
-    const bobLink = within(bob).getByRole('link')
+    const bobLink = within(bob).getByRole('link', { name: 'Bob Ross' })
     expect(bobLink.getAttribute('href')).toMatch(/\/admin\/talent\/s2$/)
+    // REB-558: a lead has no rate and no mode, but keeps its LinkedIn link.
+    expect(cellUnder(bob, 'Tariffa')).toHaveTextContent('—')
+    expect(cellUnder(bob, 'Modalità')).toHaveTextContent('—')
+    expect(within(bob).getByRole('link', { name: 'LinkedIn di Bob Ross' })).toBeInTheDocument()
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('2')
+  })
+
+  it('reads the LinkedIn cell as «—» for anything other than an http(s) address (REB-558)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, {
+        totale: 1,
+        items: [{ ...CARD_TALENTO, linkedin_url: 'javascript:alert(1)' }],
+        per_stato: { nuovo: 1 },
+      }),
+    )
+    mount('/admin/talent')
+
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    expect(cellUnder(ada, 'LinkedIn')).toHaveTextContent('—')
+    expect(within(ada).queryByRole('link', { name: /LinkedIn/ })).not.toBeInTheDocument()
+  })
+
+  it('reads the Modalità cell as «—» for a stored value outside the three known ones (REB-558)', async () => {
+    // `TalentoRead.remoto` is `str | None` on the API, not narrowed to `Remoto`: a
+    // stray value must not render blank.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, {
+        totale: 1,
+        items: [{ ...CARD_TALENTO, remoto: 'boh' }],
+        per_stato: { nuovo: 1 },
+      }),
+    )
+    mount('/admin/talent')
+
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    expect(cellUnder(ada, 'Modalità')).toHaveTextContent('—')
   })
 
   it('filters by state through the same pills as before, «Lead» included', async () => {

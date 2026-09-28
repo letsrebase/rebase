@@ -743,7 +743,11 @@ class TalentoRead(BaseModel):
     person filled in themselves (`compilata_da == "persona"`), `admin` for one an admin
     drafted from research (`compilata_da == "admin"`, ORB-155). Distinct from
     `Freelancer.origine`/`Signup`'s own UTM columns, which name the page and the
-    campaign a submission started from, not the channel that created the row."""
+    campaign a submission started from, not the channel that created the row.
+
+    `tariffa_giornaliera` and `remoto` (REB-558) are a card's own two columns, the same
+    ones `FreelancerRead` carries; a bare sign-up has neither, so both stay `None` for
+    a `lead` row."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -756,6 +760,8 @@ class TalentoRead(BaseModel):
     origine: TalentoOrigine
     utm_source: str | None = None
     created_at: datetime
+    tariffa_giornaliera: Decimal | None = None
+    remoto: str | None = None
 
 
 class TalentoList(BaseModel):
