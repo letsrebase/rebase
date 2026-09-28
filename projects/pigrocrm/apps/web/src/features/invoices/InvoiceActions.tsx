@@ -23,7 +23,7 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { toProblem, type ProblemDetail } from '@/lib/api'
+import { isMissingFile, toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import { toIsoDate } from '@/lib/dates'
 import { formatInvoiceNumber } from './format'
@@ -546,10 +546,10 @@ function missingFilesSentence(
  * detail for each is written for a log: `invoice_artifact <uuid>#xml not found` (REB-168,
  * seen on production 2026-09-11), `document_blob <key> not found`. It becomes a sentence
  * naming the file, and «Rigenera documenti» when that button is on the page: it produces a
- * missing file and repairs a lost one with identical bytes (`produce_artifacts`). Keyed on
- * the status, which `toProblem` always takes from the response, rather than on the
- * entity, so a lost `document_blob` gets the same sentence. Any other failure keeps the
- * server's `detail` as every other action on this bar does.
+ * missing file and repairs a lost one with identical bytes (`produce_artifacts`). Keyed
+ * on the status via `isMissingFile` (`lib/api.ts`), rather than on the entity, so a lost
+ * `document_blob` gets the same sentence. Any other failure keeps the server's `detail`
+ * as every other action on this bar does.
  */
 function downloadErrorSentence(
   problem: ProblemDetail,
@@ -557,7 +557,7 @@ function downloadErrorSentence(
   noun: 'fattura' | 'proforma',
   canRegenerate: boolean,
 ): string {
-  if (problem.status !== 404) return problem.detail
+  if (!isMissingFile(problem)) return problem.detail
   const file = kind === 'xml' ? 'L’XML FatturaPA' : 'Il PDF'
   const retry = canRegenerate ? ' Premi «Rigenera documenti» per generarlo di nuovo.' : ''
   return `${file} di questa ${noun} non è disponibile.${retry}`

@@ -3,7 +3,12 @@ import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { RowActions } from '@/components/RowActions'
 import { useCanWrite } from '@/lib/auth'
 import { toProblem, type ProblemDetail } from '@/lib/api'
-import { downloadDocument, useDocumentVersions, useRegenerateVersion } from './queries'
+import {
+  documentDownloadErrorMessage,
+  downloadDocument,
+  useDocumentVersions,
+  useRegenerateVersion,
+} from './queries'
 
 const BYTES_PER_KILOBYTE = 1024
 
@@ -40,8 +45,19 @@ function formatDateTime(iso: string): string {
  * Every version, newest first. Nothing here overwrites anything: regeneration adds a
  * new version rather than replacing the one it was built from, which is what makes
  * "una versione di sei mesi prima si rigenera identica" a check anyone can run.
+ *
+ * `documentTitle` names the document for a failed download's banner (REB-388): a
+ * version row shows only its number and its size, never a filename of its own, so a
+ * "file the person clicked" sentence has nowhere else to get the name from. The one
+ * caller (`routes/app/documents/$documentId.tsx`) already has `record.titolo` at hand.
  */
-export function VersionHistory({ documentId }: { documentId: string }) {
+export function VersionHistory({
+  documentId,
+  documentTitle,
+}: {
+  documentId: string
+  documentTitle: string
+}) {
   // REB-294: «Rigenera» is `regenerate_document` (`collaboratore`); the download is a
   // read. The item is dropped from the menu -- not disabled -- because unlike a
   // template-less version (a state of *this row*), a readonly actor can never
@@ -94,7 +110,14 @@ export function VersionHistory({ documentId }: { documentId: string }) {
                     onSelect: () => {
                       setProblem(null)
                       void downloadDocument(documentId, version.numero).catch(
-                        (error: unknown) => setProblem(toProblem(error)),
+                        (error: unknown) =>
+                          setProblem({
+                            ...toProblem(error),
+                            detail: documentDownloadErrorMessage(
+                              error,
+                              `${documentTitle} (v${version.numero})`,
+                            ),
+                          }),
                       )
                     },
                   },

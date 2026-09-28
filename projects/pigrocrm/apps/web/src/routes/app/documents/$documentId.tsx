@@ -56,7 +56,7 @@ function DocumentDetail() {
       overview={
         <div className="space-y-6">
           <OfferStatePicker document={record} />
-          <VersionHistory documentId={record.id} />
+          <VersionHistory documentId={record.id} documentTitle={record.titolo} />
         </div>
       }
     />

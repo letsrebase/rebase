@@ -71,7 +71,7 @@ async function openRowMenu(numero: number) {
 describe('VersionHistory', () => {
   it('lists every version newest first, with its size', async () => {
     mockGet.mockReturnValue(ok(VERSIONS))
-    render(<VersionHistory documentId="doc-1" />, { wrapper })
+    render(<VersionHistory documentId="doc-1" documentTitle="Contratto Rossi" />, { wrapper })
     const items = await screen.findAllByRole('listitem')
     expect(items[0]).toHaveTextContent('v2')
     expect(items[1]).toHaveTextContent('v1')
@@ -86,7 +86,7 @@ describe('VersionHistory', () => {
    */
   it('offers regeneration on every row, enabled only where a template backs it', async () => {
     mockGet.mockReturnValue(ok(VERSIONS))
-    render(<VersionHistory documentId="doc-1" />, { wrapper })
+    render(<VersionHistory documentId="doc-1" documentTitle="Contratto Rossi" />, { wrapper })
     await openRowMenu(2)
     expect(screen.getByRole('menuitem', { name: 'Rigenera' })).not.toHaveAttribute('aria-disabled')
     await userEvent.keyboard('{Escape}')
@@ -105,7 +105,7 @@ describe('VersionHistory', () => {
       .mockResolvedValue(new Response('%PDF', { status: 200 }))
     globalThis.URL.createObjectURL = vi.fn(() => 'blob:x')
     globalThis.URL.revokeObjectURL = vi.fn()
-    render(<VersionHistory documentId="doc-1" />, { wrapper })
+    render(<VersionHistory documentId="doc-1" documentTitle="Contratto Rossi" />, { wrapper })
     await openRowMenu(2)
     await userEvent.click(screen.getByRole('menuitem', { name: 'Scarica' }))
     await waitFor(() => {
@@ -117,14 +117,41 @@ describe('VersionHistory', () => {
 
   it('shows the server error instead of an empty history when the request fails', async () => {
     mockGet.mockReturnValue(failed({ code: 'http_error', detail: 'Non disponibile' }, 503))
-    render(<VersionHistory documentId="doc-1" />, { wrapper })
+    render(<VersionHistory documentId="doc-1" documentTitle="Contratto Rossi" />, { wrapper })
     expect(await screen.findByRole('alert')).toHaveTextContent('Non disponibile')
+  })
+
+  /** What Ivan saw for invoices before REB-168, now reproduced for a version (REB-388):
+   *  a stored file gone from disk still 404s, and the banner used to show the server's
+   *  own log line, `document_blob <key> not found`. It names the file -- the document's
+   *  title and the version clicked -- instead, in Italian, never the raw key. */
+  it('turns a 404 on download into a sentence naming the file, never the raw identifier', async () => {
+    mockGet.mockReturnValue(ok(VERSIONS))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: 'about:blank',
+          title: 'Not Found',
+          status: 404,
+          code: 'not_found',
+          detail: 'document_blob acme-0123/doc-1/v2.pdf not found',
+          entity: 'document_blob',
+        }),
+        { status: 404, headers: { 'content-type': 'application/problem+json' } },
+      ),
+    )
+    render(<VersionHistory documentId="doc-1" documentTitle="Contratto Rossi" />, { wrapper })
+    await openRowMenu(2)
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Scarica' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('«Contratto Rossi (v2)»')
+    expect(alert).not.toHaveTextContent('document_blob')
   })
 
   it('posts a regeneration for the version it was asked about', async () => {
     mockGet.mockReturnValue(ok(VERSIONS))
     mockPost.mockReturnValue(ok({ ...VERSIONS[0], numero: 3 }))
-    render(<VersionHistory documentId="doc-1" />, { wrapper })
+    render(<VersionHistory documentId="doc-1" documentTitle="Contratto Rossi" />, { wrapper })
     await openRowMenu(2)
     await userEvent.click(screen.getByRole('menuitem', { name: 'Rigenera' }))
     await waitFor(() => {

@@ -439,6 +439,21 @@ export function fieldErrorFrom(problem: ProblemDetail): { field: string; message
 }
 
 /**
+ * Whether a failed download or preview means the file itself is gone -- the row's
+ * document, the version it named, or the bytes stored under its key, all `NotFound`
+ * on the server and all mapped to 404 (`errors.py`). Keyed on status, not on
+ * `problem.entity`: to whoever pressed the button the file is equally missing
+ * either way, and the server's own `detail` for any of them is a log line
+ * (`invoice_artifact <uuid>#xml not found`, `document_blob <key> not found`) that
+ * must never reach the screen. `InvoiceActions` and `InvoicePdfPreview` keyed their
+ * own sentence on this same check before it had a name (REB-168); the documents
+ * tab and its version history reuse it rather than repeat it (REB-388).
+ */
+export function isMissingFile(problem: ProblemDetail): boolean {
+  return problem.status === 404
+}
+
+/**
  * Throws the problem document itself, so every consumer gets structured data --
  * never a raw `Response` or an untyped `unknown`.
  *

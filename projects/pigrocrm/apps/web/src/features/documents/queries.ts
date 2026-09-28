@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, fetchWithRefresh, toProblem, unwrap } from '@/lib/api'
+import { api, fetchWithRefresh, isMissingFile, toProblem, unwrap } from '@/lib/api'
 import type { StatusTone } from '@/components/StatusPill'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -326,4 +326,22 @@ export async function downloadDocument(documentId: string, numero?: number): Pro
   anchor.click()
   anchor.remove()
   URL.revokeObjectURL(url)
+}
+
+/**
+ * What `DocumentsTab` and `VersionHistory` show for a failed `downloadDocument`. A 404
+ * means the document, the version asked for, or its stored file is gone -- the server's
+ * own `detail` for any of them is a log line (`document_blob <key> not found`) that must
+ * never reach the screen, the same fact `InvoiceActions` and `InvoicePdfPreview` act on
+ * for the invoice pages (REB-168), recognised here through the same `isMissingFile`
+ * rather than a second 404 check. `fileName` is the name shown in the row the person
+ * clicked -- the document's `titolo`, or that title with its version number -- so the
+ * banner names what they were after instead of the identifier the server logged. Any
+ * other failure keeps the server's own `detail`, as every other action on these two
+ * tabs does.
+ */
+export function documentDownloadErrorMessage(error: unknown, fileName: string): string {
+  const problem = toProblem(error)
+  if (!isMissingFile(problem)) return problem.detail
+  return `Il file «${fileName}» non è disponibile: il file archiviato non esiste più.`
 }

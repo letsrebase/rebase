@@ -166,6 +166,33 @@ describe('DocumentsTab', () => {
     )
   })
 
+  /** What Ivan saw for invoices before REB-168, now reproduced for documents (REB-388):
+   *  a stored file gone from disk still 404s, and the banner used to show the server's
+   *  own log line, `document_blob <key> not found`. It names the file that was clicked
+   *  instead, in Italian, never the raw key. */
+  it('turns a 404 on download into a sentence naming the file, never the raw identifier', async () => {
+    mockGet.mockReturnValue(ok({ items: [DOCUMENT], next_cursor: null }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: 'about:blank',
+          title: 'Not Found',
+          status: 404,
+          code: 'not_found',
+          detail: 'document_blob acme-0123/doc-1/v1.pdf not found',
+          entity: 'document_blob',
+        }),
+        { status: 404, headers: { 'content-type': 'application/problem+json' } },
+      ),
+    )
+    render(<DocumentsTab owner={{ customerId: 'c-1' }} />, { wrapper })
+    await openRowMenu('Offerta 2026-01')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Scarica' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('«Offerta 2026-01»')
+    expect(alert).not.toHaveTextContent('document_blob')
+  })
+
   it('archives a document through the delete endpoint', async () => {
     mockGet.mockReturnValue(ok({ items: [DOCUMENT], next_cursor: null }))
     mockDelete.mockReturnValue(ok(undefined))
