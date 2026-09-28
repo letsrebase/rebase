@@ -1,11 +1,12 @@
 """Queries only. Never commits -- the service owns the transaction."""
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, text, update
+from sqlalchemy import case, delete, func, null, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
@@ -480,6 +481,46 @@ class GmailRepository:
             .execution_options(synchronize_session=False)
         )
         return claimed.scalar_one_or_none() is not None
+
+    def update_editable_draft(self, draft_id: UUID, values: Mapping[str, Any]) -> bool:
+        """Writes an edit to a draft only while the draft can still be edited, and answers
+        whether it did (REB-419).
+
+        The edit's twin of the claim above, conditional for the same reason. The edit reads
+        the row, checks that it is editable and validates the new fields, and a claim can
+        commit in between. A write conditioned on the id alone would then land on a draft
+        already `in_invio`, and the send, which composes from the row it reloads after its
+        claim, would carry text nobody reviewed while the revision the person named still
+        matched when the claim checked it. With `send_state` in this `WHERE` as well, the
+        row decides whichever order the two arrive in: an edit that writes first moves
+        `updated_at` and the claim refuses the send, and a claim that commits first leaves
+        this write zero rows to touch.
+
+        `send_state` becomes `bozza`, which from the two editable states is exactly the
+        rule an edit has always followed: a `fallito` draft that is edited is a draft
+        again, and its `last_error` goes with it, since the sentence describes text that
+        is no longer there. `last_error` is read from the row as it was, so a `bozza`
+        keeps whatever it held. `synchronize_session=False` and `RETURNING`, for the
+        reasons the claim gives.
+        """
+        written = self.session.execute(
+            update(EmailDraft)
+            .where(
+                EmailDraft.id == draft_id,
+                EmailDraft.send_state.in_(sorted(EDITABLE_SEND_STATES)),
+            )
+            .values(
+                **values,
+                send_state="bozza",
+                last_error=case(
+                    (EmailDraft.send_state == "fallito", null()),
+                    else_=EmailDraft.last_error,
+                ),
+            )
+            .returning(EmailDraft.id)
+            .execution_options(synchronize_session=False)
+        )
+        return written.scalar_one_or_none() is not None
 
     # --- resolving an unknown send outcome --------------------------------------------
 

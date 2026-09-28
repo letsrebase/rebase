@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from email import message_from_string
 from email.policy import default as email_policy
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -52,6 +52,7 @@ from pigrocrm.core.gmail.schemas import (
     EmailDraftSend,
     EmailDraftUpdate,
 )
+from pigrocrm.core.gmail.send import EmailSendService
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.storage.local import LocalFileStorage
 
@@ -728,3 +729,106 @@ def test_a_revision_without_a_timezone_is_not_a_revision() -> None:
     parsed, rather than compared against an aware column and answered with a 500."""
     with pytest.raises(PydanticValidationError):
         EmailDraftSend.model_validate({"updated_at": "2026-09-28T10:00:00"})
+
+
+def test_an_edit_that_read_the_draft_before_the_claim_cannot_land_after_it(
+    db_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the revision: the edit's own write. Two real connections, pinned
+    in the one order the claim alone cannot see. The edit reads the draft while it is
+    still a `bozza`, the claim commits, and only then does the edit try to write, before
+    the send reloads the row to compose it. An unconditional write would land on the
+    claimed draft and the mail would carry text nobody reviewed, with the revision the
+    person named still matching when it was checked. The edit is refused instead, and
+    what leaves is what the person read.
+    """
+    factory = session_factory(db_engine)
+    customer_id: UUID | None = None
+    user_id: UUID | None = None
+    account_id: UUID | None = None
+    try:
+        with factory() as setup:
+            account = connected_account(setup)
+            user_id, account_id = account.user_id, account.id
+            customer = _customer(setup)
+            customer_id = customer.id
+            read = _draft(setup, account, customer)
+            setup.commit()
+            actor = actor_for(account)
+
+        edit_read_the_row = Event()
+        claim_committed = Event()
+        edit_finished = Event()
+        write_edit = GmailRepository.update_editable_draft
+        claim = GmailRepository.claim_draft_for_send
+        compose = EmailSendService._compose
+
+        def write_once_the_claim_committed(
+            self: GmailRepository, *args: Any, **kwargs: Any
+        ) -> bool:
+            edit_read_the_row.set()
+            assert claim_committed.wait(30), "the claim never committed"
+            return write_edit(self, *args, **kwargs)
+
+        def claim_once_the_edit_read_the_row(
+            self: GmailRepository, *args: Any, **kwargs: Any
+        ) -> bool:
+            assert edit_read_the_row.wait(30), "the edit never read the row"
+            return claim(self, *args, **kwargs)
+
+        def compose_once_the_edit_is_done(self: EmailSendService, *args: Any) -> str:
+            # The claim is committed by now: let the edit try its write, and compose only
+            # after it has, from the row as it then stands.
+            claim_committed.set()
+            assert edit_finished.wait(30), "the edit never finished"
+            return compose(self, *args)
+
+        monkeypatch.setattr(
+            GmailRepository, "update_editable_draft", write_once_the_claim_committed
+        )
+        monkeypatch.setattr(
+            GmailRepository, "claim_draft_for_send", claim_once_the_edit_read_the_row
+        )
+        monkeypatch.setattr(EmailSendService, "_compose", compose_once_the_edit_is_done)
+        fake = FakeGmail()
+
+        def edit() -> str:
+            try:
+                with factory() as session:
+                    try:
+                        draft_service(session).update(
+                            read.id,
+                            EmailDraftUpdate(body_markdown="Un testo che nessuno ha riletto."),
+                            actor,
+                        )
+                    except Conflict as refused:
+                        return f"refused:{refused.details.get('send_state')}"
+                    return "written"
+            finally:
+                edit_finished.set()
+
+        def send() -> str:
+            with factory() as session:
+                sent = send_service(session, fake, settings=gmail_settings()).send(
+                    read.id, actor, expected_updated_at=read.updated_at
+                )
+                return sent.send_state
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            edited = pool.submit(edit)
+            sent = pool.submit(send)
+            assert edited.result(timeout=60) == "refused:in_invio"
+            assert sent.result(timeout=60) == "inviato"
+
+        left = message_from_string(_sent_raw(fake), policy=email_policy).get_body(("plain",))
+        assert left is not None
+        assert "è già pronta l’offerta" in str(left.get_content())
+        assert "nessuno ha riletto" not in str(left.get_content())
+        with factory() as check:
+            row = check.get(EmailDraft, read.id)
+            assert row is not None
+            assert row.send_state == "inviato"
+            assert row.body_markdown == BODY
+    finally:
+        if customer_id is not None and user_id is not None and account_id is not None:
+            _cleanup(db_engine, customer_id=customer_id, user_id=user_id, account_id=account_id)
