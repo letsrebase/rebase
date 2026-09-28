@@ -184,7 +184,7 @@
     },
     {
       "id": "hub-py-test",
-      "run": "uv run pytest -q projects/hub/packages/core/tests projects/hub/apps/api/tests projects/hub/apps/mcp/tests",
+      "run": "uv run pytest -q -n auto --dist loadfile projects/hub/packages/core/tests projects/hub/apps/api/tests projects/hub/apps/mcp/tests",
       "when": [
         "projects/hub/apps/api/**",
         "projects/hub/apps/mcp/**",
@@ -194,7 +194,7 @@
         "pyproject.toml",
         "uv.lock"
       ],
-      "why": "The hub's whole Python suite: a testcontainers Postgres brought to head by the hub's own migrations, about a minute. mypy is covered by pigrocrm-py-types, whose bare `uv run mypy` reads every source root in [tool.mypy] files."
+      "why": "The hub's whole Python suite: a testcontainers Postgres brought to head by the hub's own migrations, about a minute. mypy is covered by pigrocrm-py-types, whose bare `uv run mypy` reads every source root in [tool.mypy] files. `-n auto --dist loadfile` since REB-564, as the CRM lane: each xdist worker starts its own container from the session fixture and brings it to head with the hub's migrations, and `loadfile` keeps a file's tests on one worker; 1584 tests: 123s of Test serially on the hosted runner (run 36471954567), 84s there on four workers, and about a minute locally on four workers."
     },
     {
       "id": "hub-web-lint",

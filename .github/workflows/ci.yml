@@ -676,6 +676,12 @@ jobs:
         projects/hub/packages/core/tests
         projects/hub/apps/api/tests
         projects/hub/apps/mcp/tests
+      # The same shape as the CRM's gate and for the same reason (REB-564): the suite
+      # waits on PostgreSQL far more than it computes, each xdist worker gets its own
+      # container from the session fixture and brings it to head with the hub's own
+      # migrations, and `loadfile` keeps a file's tests on one worker. Serial, this was
+      # 123s of Test on run 36457557147 and the longest job of every hub run.
+      pytest-args: '-n auto --dist loadfile'
       # The contracts are typeset at request time since REB-387 (rebase_core.contracts),
       # and test_contract_render.py runs the real pandoc and Typst over both texts.
       renderer: true
