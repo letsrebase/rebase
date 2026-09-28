@@ -621,6 +621,7 @@ def test_the_caps_have_their_defaults_and_reach_the_container() -> None:
     for name, default in (
         ("REBASE_TEAM_BUILDER_CONCURRENCY", "4"),
         ("REBASE_TEAM_BUILDER_DAILY_CAP", "300"),
+        ("REBASE_CARDS_LOOP", "on"),  # the `cards` loop's own gate, no Settings field
     ):
         assert f"{name}: ${{{name}:-{default}}}" in compose, name
         assert f"{name}={default}" in example, name
