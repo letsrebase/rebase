@@ -340,6 +340,36 @@ def test_request_refuses_a_proposal_with_nobody(clean: Session) -> None:
     assert clean.scalars(select(TeamRequest)).all() == []
 
 
+def test_request_asks_only_whom_the_proposal_still_shows(
+    clean: Session, logs: pytest.LogCaptureFixture
+) -> None:
+    """A talent turned down, deleted or left without a card after the proposal is out
+    of its read (`TeamBuilder._read`), so the request does not ask them either; with
+    nobody left, there is nobody to hire."""
+    kept = _talent(clean, 1)
+    turned_down = _talent(clean, 2)
+    deleted = _talent(clean, 3)
+    no_card = _talent(clean, 4)
+    proposal_id = _proposal(clean, [kept, turned_down, deleted, no_card])
+    clean.execute(update(Freelancer).where(Freelancer.id == turned_down).values(stato="scartato"))
+    clean.execute(update(Freelancer).where(Freelancer.id == deleted).values(deleted_at=NOW))
+    clean.execute(text("DELETE FROM freelancer_cards WHERE freelancer_id = :id"), {"id": no_card})
+    clean.commit()
+
+    read = _public(_service(clean), proposal_id)
+
+    assert [talent.freelancer_id for talent in read.talenti] == [kept]
+    for position in (2, 3, 4):
+        assert f"member {position} is no longer in the catalogue" in logs.text
+
+    clean.execute(update(Freelancer).where(Freelancer.id == kept).values(stato="scartato"))
+    clean.commit()
+    alone = _proposal(clean, [kept])
+    with pytest.raises(ValidationFailed) as refused:
+        _public(_service(clean), alone)
+    assert refused.value.details["reason"] == NOBODY_TO_HIRE
+
+
 def test_request_logs_a_summary_that_names_the_company(
     clean: Session, logs: pytest.LogCaptureFixture
 ) -> None:

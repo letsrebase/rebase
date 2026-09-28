@@ -48,7 +48,7 @@ from rebase_core.models import (
     User,
 )
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
-from rebase_core.team_builder import TeamBuilder
+from rebase_core.team_builder import TeamBuilder, cloud_visible
 from rebase_core.team_schemas import (
     TeamRequestCreate,
     TeamRequestList,
@@ -132,7 +132,7 @@ _GENERIC_WORDS = frozenset(
 
 
 def names_the_company(riassunto: str, azienda: str) -> bool:
-    """First, `azienda` as one phrase — legal-form tokens dropped, the rest rejoined —
+    """First, `azienda` as one phrase (legal-form tokens dropped, the rest rejoined)
     matched inside the summary case-insensitively, as a whole word on both ends,
     whatever its length, when one of its tokens is written all in capitals: an
     initialism such as «HP», «3M» or «IBM» is too short for the word rule below and
@@ -435,14 +435,16 @@ class TeamRequestService:
         return proposal
 
     def _members(self, proposal: TeamProposal) -> list[tuple[UUID, str]]:
-        """Each member of the proposal's team, with the role proposed, who still has a
-        row: a talent hard-deleted since the proposal cannot be asked, and is logged by
-        position. A team with nobody in it (nobody fit, or the catalogue was empty) or
+        """Each member of the proposal's team, with the role proposed, whom the
+        proposal's own read still shows (`cloud_visible`, as `TeamBuilder._read`): a
+        talent deleted, turned down or left without a card since the proposal is not
+        asked, and is logged by position, so the request holds the team the visitor
+        saw. A team with nobody in it (nobody fit, or the catalogue was empty) or
         nobody left has nobody to hire, and says so."""
         wanted = [(UUID(member["freelancer_id"]), member) for member in proposal.team]
         existing = set(
             self.session.scalars(
-                select(Freelancer.id).where(
+                cloud_visible(select(Freelancer.id)).where(
                     Freelancer.id.in_([freelancer_id for freelancer_id, _ in wanted])
                 )
             )
@@ -451,7 +453,7 @@ class TeamRequestService:
         for freelancer_id, member in wanted:
             if freelancer_id not in existing:
                 logger.info(
-                    "team request on proposal %s: member %s is gone",
+                    "team request on proposal %s: member %s is no longer in the catalogue",
                     proposal.id,
                     member["posizione"],
                 )
