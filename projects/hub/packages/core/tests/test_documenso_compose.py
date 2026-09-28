@@ -108,7 +108,7 @@ def test_the_hub_compose_file_runs_the_cards_backlog_hourly_with_no_port() -> No
     services = _compose().split("\nservices:", 1)[1]
     cards = services.split("\n  cards:", 1)[1].split("\n  web:", 1)[0]
     assert (
-        'while :; do sleep 3600; if [ "${REBASE_CARDS_LOOP:-on}" = "on" ]; then uv run '
+        'while :; do sleep 3600; if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then uv run '
         '--no-sync rebase cards-refresh --limit 50; else echo "cards: loop off '
         '(REBASE_CARDS_LOOP)"; fi; done'
     ) in cards

@@ -59,7 +59,7 @@ x-api-environment: &api-environment
   # does not send CVs to Anthropic before the talents' mail (AGENTS.md, "The team
   # builder") has gone out. Set `off` in production until then, `on` once it has, and
   # `docker compose up -d cards` to recreate the service.
-  REBASE_CARDS_LOOP: ${REBASE_CARDS_LOOP:-on}
+  REBASE_CARDS_LOOP: ${REBASE_CARDS_LOOP:-off}
 
 services:
   db:
@@ -168,7 +168,7 @@ services:
     # someone running the command by hand, and follows its CV within the hour rather
     # than a day. A loop, never a one-shot, for the same reason as `campaigns`:
     # `_deploy-compose.yml` fails a deploy on any container not `running`. Gated by
-    # `REBASE_CARDS_LOOP` (`.env`, default `on`), no Python setting: a deploy that
+    # `REBASE_CARDS_LOOP` (`.env`, default `off`: a deploy on a host whose `.env` says nothing writes no card), no Python setting: a deploy that
     # already carries REBASE_ANTHROPIC_API_KEY must not start sending CVs to Anthropic
     # before the talents' mail (AGENTS.md, "The team builder") has gone out, so
     # production sets `REBASE_CARDS_LOOP=off` first and only turns it `on`
@@ -188,7 +188,7 @@ services:
       dockerfile: projects/hub/Dockerfile.api
     restart: unless-stopped
     init: true
-    command: ['sh', '-c', 'while :; do sleep 3600; if [ "${REBASE_CARDS_LOOP:-on}" = "on" ]; then uv run --no-sync rebase cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; done']
+    command: ['sh', '-c', 'while :; do sleep 3600; if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then uv run --no-sync rebase cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; done']
     depends_on:
       db:
         condition: service_healthy
