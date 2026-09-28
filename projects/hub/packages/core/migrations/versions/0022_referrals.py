@@ -1,4 +1,5 @@
-"""referrals, referral_rewards, referral_settings; users.referral_code
+"""referrals, referral_rewards, referral_settings; users.referral_code; matches'
+own snapshot of the company's day rate
 
 Revision ID: 0022
 Revises: 0021
@@ -9,9 +10,13 @@ from the hub admin area rather than from an environment variable (design record
 2026-09-26). `referral_settings` starts with one seeded row (10%/30%,
 `ReferralService.get_settings` never inserts a second), so a fresh environment reads a
 rate from the first request rather than from a service-layer default that could drift
-from what the database actually holds. Conditional like every migration of this
-package: a retried deploy passes over what the previous attempt already added, never
-run outside a throwaway test database.
+from what the database actually holds. `matches.company_budget_giornaliero` is a
+snapshot at match creation, the same reason `lettera_compenso` (migration 0021)
+already is one: a reward is computed at signing, which can be weeks later, and an
+edit to the company's own request afterward must never move a reward this match
+already promised. Conditional like every migration of this package: a retried
+deploy passes over what the previous attempt already added, never run outside a
+throwaway test database.
 """
 
 from collections.abc import Sequence
@@ -27,6 +32,7 @@ _TS = "TIMESTAMP WITH TIME ZONE"
 
 _UPGRADE_STATEMENTS = (
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code VARCHAR(10)",
+    "ALTER TABLE matches ADD COLUMN IF NOT EXISTS company_budget_giornaliero NUMERIC(10, 2)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_users_referral_code ON users (referral_code)",
     "CREATE TABLE IF NOT EXISTS referrals ("
     "id UUID PRIMARY KEY, "
@@ -84,5 +90,6 @@ def downgrade() -> None:
         "DROP TABLE IF EXISTS referrals",
         "DROP INDEX IF EXISTS uq_users_referral_code",
         "ALTER TABLE users DROP COLUMN IF EXISTS referral_code",
+        "ALTER TABLE matches DROP COLUMN IF EXISTS company_budget_giornaliero",
     ):
         op.execute(statement)

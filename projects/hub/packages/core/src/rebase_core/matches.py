@@ -673,6 +673,12 @@ class MatchService:
                 lettera_data_inizio=data.lettera.data_inizio,
                 lettera_data_fine=data.lettera.data_fine,
                 lettera_compenso=data.lettera.compenso,
+                # A referral reward reads this later, at signing, which can be weeks
+                # after the request the budget belonged to (P-REB-44); snapshotted
+                # here for the same reason `lettera_compenso` already is, so an edit
+                # to the company's own request afterward never changes what a reward
+                # already promised.
+                company_budget_giornaliero=company.budget_giornaliero,
             )
             self.session.add(match)
             try:

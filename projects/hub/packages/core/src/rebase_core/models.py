@@ -430,6 +430,11 @@ class Match(Base, PrimaryKeyMixin, TimestampMixin):
     lettera_data_inizio: Mapped[date | None] = mapped_column(Date, default=None)
     lettera_data_fine: Mapped[date | None] = mapped_column(Date, default=None)
     lettera_compenso: Mapped[Decimal | None] = mapped_column(Numeric(7, 2), default=None)
+    # The company's own day rate, copied the same way and for the same reason as
+    # `lettera_compenso` (P-REB-44): a referral reward is computed at signing, which
+    # can be weeks after this match's own request, so an edit to the company's
+    # request afterward never moves a reward this match already promised.
+    company_budget_giornaliero: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), default=None)
     # The Pigro link this match carries once it turns active: `NULL` until then, one of
     # `PIGRO_STATES` after. `pigro_linked_at` is set only the once, when `collegato` is
     # first reached; `pigro_attempted_at` on every attempt, successful or not, for the

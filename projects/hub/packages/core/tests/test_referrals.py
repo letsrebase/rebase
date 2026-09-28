@@ -29,7 +29,7 @@ from rebase_core.errors import ValidationFailed
 from rebase_core.freelancers import FreelancerService
 from rebase_core.mail import RecordingSender
 from rebase_core.matches import MatchService
-from rebase_core.models import Match, Referral, ReferralReward, User
+from rebase_core.models import Company, Match, Referral, ReferralReward, User
 from rebase_core.referrals import ReferralService, reward_base
 from rebase_core.schemas import CompanyCreate, FreelancerCreate
 
@@ -462,3 +462,92 @@ def test_set_price_only_before_confirmation(clean: Session) -> None:
     service.set_state(reward.id, "confermato", admin_id)
     with pytest.raises(ValidationFailed, match="prima della conferma"):
         service.set_price(reward.id, Decimal("1"), Decimal("1"))
+
+
+def test_list_rewards_shows_a_referral_before_any_letter_is_signed(clean: Session) -> None:
+    """Regression: the ledger used to start from `ReferralReward`, so a referral
+    that had only just signed up, with no letter signed yet, never had a row at all
+    -- the admin had no way to tell it existed (Greptile, P-REB-44)."""
+    referrer_id = _member(clean)
+    code = ReferralService(clean).code_for(referrer_id)
+    _card(clean, rif=code)
+    service = ReferralService(clean)
+
+    page = service.list_rewards()
+
+    assert len(page.items) == 1
+    item = page.items[0]
+    assert item.referred_nome == "Ada Lovelace"
+    assert item.reward_id is None
+    assert item.stato is None
+    assert item.rate is None
+    assert (item.base_amount, item.reward_amount) == (None, None)
+
+
+def test_set_state_refuses_to_confirm_an_unpriced_reward(clean: Session) -> None:
+    """The same rule `set_price` already enforces from the other side (Greptile,
+    P-REB-44): a fixed-price letter with no estimate leaves a reward with no figure,
+    and confirming it anyway would make it unpriceable forever, since `set_price`
+    itself only accepts `da_confermare`."""
+    referrer_id = _member(clean)
+    code = ReferralService(clean).code_for(referrer_id)
+    admin_id = _admin(clean)
+    freelancer_id = _card(clean, rif=code)
+    company_id = _request(clean)
+    _fiscal(clean, freelancer_id, admin_id)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    body = _match_body(company_id, giorni_previsti=None)
+    body.lettera.modalita = body.lettera.unita = "a corpo"
+    match = MatchService(clean, renderer, SIGNER, today=lambda: TODAY).create(
+        freelancer_id, body, admin_id
+    )
+    _signing(clean, renderer, fake, RecordingSender()).send_match(match.id, admin_id)
+    match = clean.get(Match, match.id)
+    assert match is not None
+    _sign_the_letter(clean, renderer, fake, match)
+    reward = clean.scalar(select(ReferralReward))
+    assert reward is not None and reward.reward_amount is None
+    service = ReferralService(clean)
+
+    with pytest.raises(ValidationFailed, match="prezzato prima di confermarlo"):
+        service.set_state(reward.id, "confermato", admin_id)
+
+
+def test_reward_reads_the_matchs_own_budget_snapshot_not_a_later_company_edit(
+    clean: Session,
+) -> None:
+    """Regression: this used to re-read `Company.budget_giornaliero` live, at signing
+    time; an admin editing the company's request between the match and the signature
+    would silently change a reward the match had already promised (Greptile,
+    P-REB-44). `matches.company_budget_giornaliero` snapshots it at match creation,
+    the same way `lettera_compenso` already does."""
+    referrer_id = _member(clean)
+    code = ReferralService(clean).code_for(referrer_id)
+    admin_id = _admin(clean)
+    freelancer_id = _card(clean, rif=code)
+    company_id = _request(clean)
+    _fiscal(clean, freelancer_id, admin_id)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    match = MatchService(clean, renderer, SIGNER, today=lambda: TODAY).create(
+        freelancer_id, _match_body(company_id), admin_id
+    )
+    match_row = clean.get(Match, match.id)
+    assert match_row is not None
+    assert match_row.company_budget_giornaliero == Decimal("800.00")
+
+    company = clean.get(Company, company_id)
+    assert company is not None
+    company.budget_giornaliero = Decimal("2000")
+    clean.commit()
+
+    _signing(clean, renderer, fake, RecordingSender()).send_match(match.id, admin_id)
+    match = clean.get(Match, match.id)
+    assert match is not None
+    _sign_the_letter(clean, renderer, fake, match)
+
+    reward = clean.scalar(select(ReferralReward))
+    assert reward is not None
+    # (800 - 450) * 20, the budget at match creation, never the 2000 it became after.
+    assert reward.base_amount == Decimal("7000.00")

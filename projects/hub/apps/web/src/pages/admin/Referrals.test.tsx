@@ -11,7 +11,8 @@ function answer(status: number, body: unknown) {
 const SETTINGS = { rate_freelancer: '0.1000', rate_company: '0.3000', updated_at: '2026-09-26T10:00:00Z', updated_by_nome: 'Ivan' }
 
 const CONFIRMED_REWARD = {
-  id: 'r1',
+  referral_id: 'ref1',
+  reward_id: 'r1',
   kind: 'freelancer',
   referrer_nome: 'Mario Rossi',
   referrer_email: 'mario@community.it',
@@ -29,11 +30,24 @@ const CONFIRMED_REWARD = {
 
 const UNPRICED_REWARD = {
   ...CONFIRMED_REWARD,
-  id: 'r2',
+  referral_id: 'ref2',
+  reward_id: 'r2',
   kind: 'company',
   referred_nome: 'ACME S.r.l.',
   base_amount: null,
   reward_amount: null,
+}
+
+const PENDING_REFERRAL = {
+  ...CONFIRMED_REWARD,
+  referral_id: 'ref3',
+  reward_id: null,
+  kind: 'freelancer',
+  referred_nome: 'Grace Hopper',
+  rate: null,
+  base_amount: null,
+  reward_amount: null,
+  stato: null,
 }
 
 /** Branches on the path, not on call order: this page fires the settings and the
@@ -72,6 +86,14 @@ describe('the Referral admin page (P-REB-44)', () => {
     expect(screen.getByText('700,00 €')).toBeInTheDocument()
     expect(screen.getByLabelText('Percentuale, segnalazione di un freelance')).toHaveValue(10)
     expect(screen.getByLabelText("Percentuale, segnalazione di un'azienda")).toHaveValue(30)
+  })
+
+  it('shows a reward rate to two decimals, not rounded to a whole percent', async () => {
+    // Regression: the row used to round to toFixed(0), so a valid 10.50% rate read
+    // as 11% and an admin could not check how the amount was computed (Greptile).
+    mount([{ ...CONFIRMED_REWARD, rate: '0.1050' }])
+    await screen.findByText('Ada Lovelace')
+    expect(screen.getByText('7.000,00 € · 10.50%')).toBeInTheDocument()
   })
 
   it('saves a new pair of rates', async () => {
@@ -174,6 +196,18 @@ describe('the Referral admin page (P-REB-44)', () => {
     await user.click(screen.getByRole('button', { name: 'Prezza' }))
 
     await waitFor(() => expect(priced).toEqual({ base_amount: '1000', reward_amount: '300' }))
+  })
+
+  it('shows a referral with no reward yet, instead of hiding it until one exists', async () => {
+    // Regression: the ledger used to start from the reward row, so a referral that
+    // had only just signed up, with no letter signed for it yet, never appeared at
+    // all -- the admin had no way to tell it existed (Greptile, P-REB-44).
+    mount([PENDING_REFERRAL])
+    await screen.findByText('Grace Hopper')
+    expect(screen.getByText('In attesa del primo contratto firmato')).toBeInTheDocument()
+    expect(screen.getByText('In attesa')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Conferma' })).toBeNull()
+    expect(screen.queryByLabelText('Base, €')).toBeNull()
   })
 
   it('shows an empty state with no referral yet', async () => {

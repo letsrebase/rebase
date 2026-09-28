@@ -1465,18 +1465,22 @@ export interface MemberReferral {
 export type RewardStato = 'da_confermare' | 'confermato' | 'pagato'
 
 /** One row of the admin's referral ledger (`GET /api/hub/referrals`): the referrer,
- *  who was referred, and the reward as it was computed or as an admin priced it. */
+ *  who was referred, and the reward as it was computed or as an admin priced it.
+ *  `reward_id` is `null` until the referred party's first letter is signed -- the
+ *  row is on the ledger from the moment the referral itself is made, not only once
+ *  a reward exists for it. */
 export interface ReferralLedgerItem {
-  id: string
+  referral_id: string
+  reward_id: string | null
   kind: 'freelancer' | 'company'
   referrer_nome: string
   referrer_email: string
   referred_nome: string
   match_id: string | null
-  rate: string
+  rate: string | null
   base_amount: string | null
   reward_amount: string | null
-  stato: RewardStato
+  stato: RewardStato | null
   note: string | null
   created_at: string
   confirmed_at: string | null

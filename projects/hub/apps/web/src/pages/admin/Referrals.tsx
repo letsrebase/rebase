@@ -16,6 +16,7 @@ const STATE_LABELS: Record<string, string> = {
   da_confermare: 'Da confermare',
   confermato: 'Confermato',
   pagato: 'Pagato',
+  in_attesa: 'In attesa',
 }
 const KIND_LABELS: Record<string, string> = { freelancer: 'Freelance', company: 'Azienda' }
 const NEXT_STATE: Record<RewardStato, RewardStato | null> = {
@@ -103,21 +104,21 @@ function RateFields({ data }: { data: ReferralSettings }) {
   )
 }
 
-function PriceForm({ reward, onPriced }: { reward: ReferralLedgerItem; onPriced: () => void }) {
+function PriceForm({ rewardId, onPriced }: { rewardId: string; onPriced: () => void }) {
   const [base, setBase] = useState('')
   const [euroReward, setEuroReward] = useState('')
   const price = useMutation({
-    mutationFn: () => admin.setReferralPrice(reward.id, base, euroReward),
+    mutationFn: () => admin.setReferralPrice(rewardId, base, euroReward),
     onSuccess: onPriced,
   })
   return (
     <div className="flex flex-wrap items-end gap-2">
       <div className="space-y-1">
-        <Label htmlFor={`base-${reward.id}`} className="text-xs">
+        <Label htmlFor={`base-${rewardId}`} className="text-xs">
           Base, €
         </Label>
         <Input
-          id={`base-${reward.id}`}
+          id={`base-${rewardId}`}
           type="number"
           min={0}
           step="0.01"
@@ -127,11 +128,11 @@ function PriceForm({ reward, onPriced }: { reward: ReferralLedgerItem; onPriced:
         />
       </div>
       <div className="space-y-1">
-        <Label htmlFor={`reward-${reward.id}`} className="text-xs">
+        <Label htmlFor={`reward-${rewardId}`} className="text-xs">
           Reward, €
         </Label>
         <Input
-          id={`reward-${reward.id}`}
+          id={`reward-${rewardId}`}
           type="number"
           min={0}
           step="0.01"
@@ -156,10 +157,11 @@ function PriceForm({ reward, onPriced }: { reward: ReferralLedgerItem; onPriced:
 function ReferralRow({ item }: { item: ReferralLedgerItem }) {
   const client = useQueryClient()
   const move = useMutation({
-    mutationFn: (stato: RewardStato) => admin.setReferralState(item.id, stato),
+    mutationFn: ({ id, stato }: { id: string; stato: RewardStato }) => admin.setReferralState(id, stato),
     onSuccess: () => void client.invalidateQueries({ queryKey: LEDGER_KEY }),
   })
-  const next = NEXT_STATE[item.stato]
+  const rewardId = item.reward_id
+  const next = item.stato ? NEXT_STATE[item.stato] : null
 
   return (
     <TableRow>
@@ -172,31 +174,33 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
         <p className="text-xs text-muted-foreground">{item.referrer_email}</p>
       </TableCell>
       <TableCell>
-        {item.base_amount === null || item.reward_amount === null ? (
-          <PriceForm reward={item} onPriced={() => void client.invalidateQueries({ queryKey: LEDGER_KEY })} />
+        {rewardId === null ? (
+          <p className="text-sm text-muted-foreground">In attesa del primo contratto firmato</p>
+        ) : item.base_amount === null || item.reward_amount === null ? (
+          <PriceForm rewardId={rewardId} onPriced={() => void client.invalidateQueries({ queryKey: LEDGER_KEY })} />
         ) : (
           <>
             <p className="font-medium">{formatEuro(item.reward_amount)}</p>
             <p className="text-xs text-muted-foreground">
-              {formatEuro(item.base_amount)} · {(Number(item.rate) * 100).toFixed(0)}%
+              {formatEuro(item.base_amount)} · {item.rate !== null ? (Number(item.rate) * 100).toFixed(2) : '-'}%
             </p>
           </>
         )}
       </TableCell>
       <TableCell>
-        <Badge variant="pill">{STATE_LABELS[item.stato] ?? item.stato}</Badge>
+        <Badge variant="pill">{STATE_LABELS[item.stato ?? 'in_attesa'] ?? item.stato}</Badge>
       </TableCell>
       <TableCell className="text-right text-muted-foreground">{formatDate(item.created_at)}</TableCell>
       <TableCell className="text-right">
-        {next && (item.stato === 'da_confermare' ? item.reward_amount !== null : true) && (
+        {rewardId !== null && next && (item.stato === 'da_confermare' ? item.reward_amount !== null : true) && (
           <Button
             type="button"
             variant="outline"
             size="sm"
             disabled={move.isPending}
-            onClick={() => move.mutate(next)}
+            onClick={() => move.mutate({ id: rewardId, stato: next })}
           >
-            {NEXT_LABEL[item.stato]}
+            {item.stato ? NEXT_LABEL[item.stato] : ''}
           </Button>
         )}
       </TableCell>
@@ -275,7 +279,7 @@ export function AdminReferrals() {
                 </TableHeader>
                 <TableBody>
                   {items.map((item) => (
-                    <ReferralRow key={item.id} item={item} />
+                    <ReferralRow key={item.referral_id} item={item} />
                   ))}
                 </TableBody>
               </Table>

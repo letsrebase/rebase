@@ -38,20 +38,27 @@ class MemberReferral(BaseModel):
 
 class ReferralLedgerItem(BaseModel):
     """One row of the admin's referral ledger: the referrer, who was referred, and the
-    reward as it was computed or as an admin priced it by hand."""
+    reward as it was computed or as an admin priced it by hand. `reward_id` is `None`
+    until the referred party's first letter is signed -- a referral is on this ledger
+    from the moment it is made, not only once a reward exists for it (P-REB-44:
+    hiding a referral until money is owed makes the ledger say there are none when
+    some are simply still open). `referral_id` is the row's stable identity;
+    `reward_id` is what the state and price actions below key on, and is `None` when
+    there is nothing yet to confirm or price."""
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: UUID
+    referral_id: UUID
+    reward_id: UUID | None
     kind: str
     referrer_nome: str
     referrer_email: str
     referred_nome: str
     match_id: UUID | None
-    rate: Decimal
+    rate: Decimal | None
     base_amount: Decimal | None
     reward_amount: Decimal | None
-    stato: str
+    stato: str | None
     note: str | None
     created_at: datetime
     confirmed_at: datetime | None

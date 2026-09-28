@@ -177,12 +177,15 @@ class ReferralService:
         caller's unit of work, so a reward and the signature that earned it land
         together or not at all. `document.data` is that letter's own printed fields
         (`_lettera_data`), read here rather than re-derived, so a reward matches
-        exactly what the letter said the day it was signed."""
+        exactly what the letter said the day it was signed. The budget itself comes
+        from `match.company_budget_giornaliero`, snapshotted at match creation, never
+        a live read of `Company.budget_giornaliero`: a company's own request can be
+        edited weeks after the match, and the reward this match already promised must
+        never move because of it."""
         settings = self.get_settings()
-        company = self.session.get(Company, match.company_id)
-        assert company is not None
         modalita = str(document.data.get("modalita") or document.data.get("unita") or "")
         compenso = match.lettera_compenso
+        budget = match.company_budget_giornaliero
         for kind, entity_id, rate in (
             ("freelancer", match.freelancer_id, settings.rate_freelancer),
             ("company", match.company_id, settings.rate_company),
@@ -194,10 +197,8 @@ class ReferralService:
                 continue
             base = (
                 None
-                if compenso is None
-                else reward_base(
-                    company.budget_giornaliero, compenso, modalita, match.giorni_previsti
-                )
+                if compenso is None or budget is None
+                else reward_base(budget, compenso, modalita, match.giorni_previsti)
             )
             reward = None if base is None else (base * rate).quantize(_CENT)
             self.session.execute(
@@ -273,50 +274,60 @@ class ReferralService:
     # ---- the admin's ledger ----------------------------------------------------------
 
     def _to_ledger_item(
-        self, reward: ReferralReward, kind: str, entity_id: UUID, referrer_nome: str, referrer_email: str
+        self,
+        referral: Referral,
+        reward: ReferralReward | None,
+        referrer_nome: str,
+        referrer_email: str,
     ) -> ReferralLedgerItem:
-        document = self.session.get(ContractDocument, reward.document_id)
-        if kind == "freelancer":
+        if referral.kind == "freelancer":
             fname = self.session.execute(
                 select(User.nome, User.cognome)
                 .select_from(Freelancer)
                 .join(User, User.id == Freelancer.user_id)
-                .where(Freelancer.id == entity_id)
+                .where(Freelancer.id == referral.entity_id)
             ).first()
             referred_nome = f"{fname.nome} {fname.cognome}".strip() if fname else "-"
         else:
-            company = self.session.get(Company, entity_id)
+            company = self.session.get(Company, referral.entity_id)
             referred_nome = company.nome_azienda if company is not None else "-"
+        match_id = None
+        if reward is not None:
+            document = self.session.get(ContractDocument, reward.document_id)
+            match_id = document.match_id if document is not None else None
         return ReferralLedgerItem(
-            id=reward.id,
-            kind=kind,
+            referral_id=referral.id,
+            reward_id=reward.id if reward is not None else None,
+            kind=referral.kind,
             referrer_nome=referrer_nome,
             referrer_email=referrer_email,
             referred_nome=referred_nome,
-            match_id=document.match_id if document is not None else None,
-            rate=reward.rate,
-            base_amount=reward.base_amount,
-            reward_amount=reward.reward_amount,
-            stato=reward.stato,
-            note=reward.note,
-            created_at=reward.created_at,
-            confirmed_at=reward.confirmed_at,
-            paid_at=reward.paid_at,
+            match_id=match_id,
+            rate=reward.rate if reward is not None else None,
+            base_amount=reward.base_amount if reward is not None else None,
+            reward_amount=reward.reward_amount if reward is not None else None,
+            stato=reward.stato if reward is not None else None,
+            note=reward.note if reward is not None else None,
+            created_at=referral.created_at,
+            confirmed_at=reward.confirmed_at if reward is not None else None,
+            paid_at=reward.paid_at if reward is not None else None,
         )
 
     def _ledger_query(self) -> Select[Any]:
+        """Starts from `Referral`, outer-joined to its reward, so a referral with no
+        reward yet (the referred party has not signed a first letter) still has a row
+        on the ledger (P-REB-44) instead of being invisible until one exists."""
         referrer = User.__table__.alias("referrer")
         return (
             select(
+                Referral,
                 ReferralReward,
-                Referral.kind,
-                Referral.entity_id,
                 referrer.c.nome.label("referrer_nome"),
                 referrer.c.email.label("referrer_email"),
             )
-            .select_from(ReferralReward)
-            .join(Referral, Referral.id == ReferralReward.referral_id)
+            .select_from(Referral)
             .join(referrer, referrer.c.id == Referral.referrer_user_id)
+            .outerjoin(ReferralReward, ReferralReward.referral_id == Referral.id)
         )
 
     def list_rewards(
@@ -332,24 +343,18 @@ class ReferralService:
             stmt = stmt.where(ReferralReward.stato == stato)
         if cursor:
             value, row_id = decode_cursor(_SORT, cursor)
-            stmt = stmt.where(
-                keyset_predicate(ReferralReward.created_at, ReferralReward.id, value, row_id)
-            )
+            stmt = stmt.where(keyset_predicate(Referral.created_at, Referral.id, value, row_id))
         rows = self.session.execute(
-            stmt.order_by(ReferralReward.created_at.desc(), ReferralReward.id.desc()).limit(
-                limit + 1
-            )
+            stmt.order_by(Referral.created_at.desc(), Referral.id.desc()).limit(limit + 1)
         ).all()
         page_rows = rows[:limit]
         next_cursor = None
         if len(rows) > limit and page_rows:
             last = page_rows[-1]
-            next_cursor = encode_cursor(
-                _SORT, last.ReferralReward.created_at, last.ReferralReward.id
-            )
+            next_cursor = encode_cursor(_SORT, last.Referral.created_at, last.Referral.id)
         items = [
             self._to_ledger_item(
-                row.ReferralReward, row.kind, row.entity_id, row.referrer_nome, row.referrer_email
+                row.Referral, row.ReferralReward, row.referrer_nome, row.referrer_email
             )
             for row in page_rows
         ]
@@ -362,7 +367,7 @@ class ReferralService:
         if row is None:
             raise NotFound(ENTITY, reward_id)
         return self._to_ledger_item(
-            row.ReferralReward, row.kind, row.entity_id, row.referrer_nome, row.referrer_email
+            row.Referral, row.ReferralReward, row.referrer_nome, row.referrer_email
         )
 
     def _require_reward(self, reward_id: UUID) -> ReferralReward:
@@ -376,7 +381,11 @@ class ReferralService:
         backwards: a wrong click is undone by an admin, from the ledger, not by this
         service quietly accepting any state from any state. Tracking only -- moving a
         reward to `pagato` records that the transfer happened outside the hub; nothing
-        here moves money."""
+        here moves money. Refuses to confirm a reward with no figure yet -- the same
+        rule `set_price` already enforces from the other side, so a fixed-price letter
+        with no estimate cannot be confirmed unpriced and then left unpriceable
+        forever, whether the call comes from the ledger's own UI or straight at this
+        endpoint."""
         row = self._require_reward(reward_id)
         if stato not in STATE_ORDER:
             raise ValidationFailed(ENTITY, "stato", "stato non valido")
@@ -384,6 +393,8 @@ class ReferralService:
         next_state = STATE_ORDER[index + 1] if row.stato != "pagato" else "niente"
         if STATE_ORDER.index(stato) != index + 1:
             raise ValidationFailed(ENTITY, "stato", f"da {row.stato} si passa solo a {next_state}")
+        if stato == "confermato" and row.reward_amount is None:
+            raise ValidationFailed(ENTITY, "stato", "il reward va prezzato prima di confermarlo")
         row.stato = stato
         if stato == "confermato":
             row.confirmed_by, row.confirmed_at = admin_id, utcnow()
