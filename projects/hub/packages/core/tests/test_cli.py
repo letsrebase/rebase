@@ -14,6 +14,8 @@ from rebase_core import cli, signing
 from rebase_core.campaigns.tick import TickResult
 from rebase_core.cli import main
 from rebase_core.config import Settings
+from rebase_core.engagements import EngagementService
+from rebase_core.http import urllib_engagements_call
 from rebase_core.signing import SweepResult
 
 
@@ -51,8 +53,11 @@ def test_the_contracts_sweep_command_builds_the_signing_service_and_prints_the_c
     # Built by `signing_from_settings`: without a Documenso or a mail key, both are off.
     kwargs = _FakeSigningService.instances[0].kwargs
     assert (kwargs["documenso"], kwargs["sender"]) == (None, None)
+    # And with the link to Pigro, over the seam that waits for a new space (REB-499).
+    assert isinstance(kwargs["engagements"], EngagementService)
+    assert kwargs["engagements"].http is urllib_engagements_call
     out = capsys.readouterr().out
-    assert out.strip() == "3 documenti ripresi"
+    assert out.strip() == "3 documenti ripresi, 0 match collegati a Pigro"
 
 
 def test_the_contracts_sweep_command_also_prints_the_unconfirmed_count_when_it_is_not_zero(
@@ -68,7 +73,30 @@ def test_the_contracts_sweep_command_also_prints_the_unconfirmed_count_when_it_i
     assert main(["contracts-sweep"]) == 0
 
     out = capsys.readouterr().out
-    assert out.strip() == "1 documenti ripresi, 2 non confermati"
+    assert out.strip() == "1 documenti ripresi, 2 non confermati, 0 match collegati a Pigro"
+
+
+def test_contracts_sweep_prints_the_pigro_counts(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """REB-499: the round after the documents says how many active matches it linked to
+    their deal on Pigro, always, and how many it tried and left unlinked when there are
+    any, so a CRM that stopped answering shows on the same line."""
+    monkeypatch.setattr(cli, "get_settings", lambda: Settings(_env_file=None))  # type: ignore[call-arg]
+    monkeypatch.setattr(signing, "SigningService", _FakeSigningService)
+    _FakeSigningService.result = SweepResult(touched=2, unconfirmed=0, linked=3, link_failed=1)
+
+    assert main(["contracts-sweep"]) == 0
+
+    out = capsys.readouterr().out
+    assert out.strip() == "2 documenti ripresi, 3 match collegati a Pigro, 1 non collegati"
+
+    _FakeSigningService.result = SweepResult(touched=0, unconfirmed=1, linked=1, link_failed=0)
+
+    assert main(["contracts-sweep"]) == 0
+
+    out = capsys.readouterr().out
+    assert out.strip() == "0 documenti ripresi, 1 non confermati, 1 match collegati a Pigro"
 
 
 def test_the_documenso_check_command_dispatches_to_documenso_check(

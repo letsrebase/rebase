@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Download, PenLine } from 'lucide-react'
+import { Clock, Download, PenLine } from 'lucide-react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { member, type MemberContract } from '@/lib/api'
@@ -97,6 +97,24 @@ function Letter({ lettera }: { lettera: MemberContract }) {
       </div>
       <p className="text-muted-foreground">{[lettera.cliente, period].filter(Boolean).join(', ')}</p>
       <Actions document={lettera} />
+      {lettera.pigro_url && (
+        // Only once the letter's match is linked to its deal on Pigro (spec § 3.6).
+        <div className="space-y-2">
+          <Button asChild variant="outline" size="sm">
+            {/* The API keeps only an http(s) address the CRM answered for the deal's page. */}
+            <a
+              href={lettera.pigro_url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Le tue ore su Pigro per la lettera n. ${lettera.numero}`}
+            >
+              <Clock className="mr-2 size-4" aria-hidden="true" />
+              Le tue ore su Pigro
+            </a>
+          </Button>
+          <p className="text-muted-foreground">rebase legge le ore di questo progetto per la rendicontazione al cliente.</p>
+        </div>
+      )}
     </li>
   )
 }

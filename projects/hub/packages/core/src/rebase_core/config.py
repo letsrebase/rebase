@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     # also where a space is linked: `{pigro_api_url}/<slug>/app/`.
     pigro_api_url: str = "https://pigro.letsrebase.com"
     pigro_registry_token: str = ""
+    # The CRM's door for rebase's engagements (REB-498): an active match is linked to a
+    # deal in its freelancer's space, and the hub reads that deal's hours, with the
+    # value PigroCRM reads as `PIGROCRM_ENGAGEMENTS_TOKEN`, never the registry's. Empty
+    # means the link is skipped (the match waits as `da_collegare`) and the report and
+    # «Riprova» answer 503 with a sentence, as signing does without Documenso.
+    pigro_engagements_token: str = ""
 
     # --- the contracts (REB-387) -----------------------------------------------------
     # Who signs for rebase, as the `rebase-*` fields of the framework agreement and the
