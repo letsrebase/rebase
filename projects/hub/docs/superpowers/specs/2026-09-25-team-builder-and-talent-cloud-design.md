@@ -454,14 +454,13 @@ Anthropic's API to write an anonymous description of the profile (role, seniorit
 skills, sectors, languages), every time the CV changes or an admin asks for it again;
 the description a visitor types on the team builder is sent to the same API, with the
 anonymous descriptions of every profile, to propose a team; Anthropic processes the
-data on rebase's behalf under its data processing terms, does not train on it, and
-under those same terms the processing may happen outside the European Union (a link to
-Anthropic's privacy page, whose host is added to the site's allowlist of external
-links in the same commit); a visitor of the public page sees the description without
-the name; a company rebase admits to the talent cloud sees the profile by name with
-the CV, links included, and the CV carries what the freelancer wrote in it; how to ask
-for the description to be deleted, at the address the page already gives. The
-existing talents' mail is § 4.4.
+data on rebase's behalf under its data processing terms and does not train on it, with
+no promise about where the processing happens (a link to Anthropic's privacy page, whose
+host is added to the site's allowlist of external links in the same commit); a visitor
+of the public page sees the description without the name; a company rebase admits to
+the talent cloud sees the profile by name with the CV, links included, and the CV
+carries what the freelancer wrote in it; how to ask for the description to be deleted,
+at the address the page already gives. The existing talents' mail is § 4.4.
 
 Settings: `REBASE_ANTHROPIC_API_KEY`, `REBASE_TEAM_BUILDER_MODEL`,
 `REBASE_TEAM_BUILDER_ENABLED` (compose default `true`), `REBASE_TEAM_BUILDER_CONCURRENCY`,
