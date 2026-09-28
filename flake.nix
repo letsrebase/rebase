@@ -35,9 +35,12 @@
     flake-parts.lib.mkFlake { inherit inputs; } {
       # The two renderer binaries below are the upstream Linux release tarballs, one
       # per architecture in `rendererReleases`, so these are the systems the shell,
-      # the packages and the modules exist for. A Mac is not among them: from one,
-      # name the system and let a Linux builder in nix.conf do the work
-      # (`nix build .#packages.x86_64-linux.pigrocrm-api`, as preflight.json does).
+      # the packages and the modules exist for. A Mac is not among them, and this
+      # repository has no Linux builder of its own any more (qasimodo.com is gone,
+      # 2026-09-25). `nix build .#packages.x86_64-linux.pigrocrm-api`, as
+      # preflight.json does, still needs one; `scripts/nix-pnpm-hash.sh` builds the
+      # one value that changes by hand, the pnpm store hash below, in a `nixos/nix`
+      # container instead.
       # Only x86_64-linux is exercised by the VM tests today.
       systems = [
         "x86_64-linux"
@@ -187,8 +190,12 @@
           # every Vite build below; its input is exactly what `pnpm install` reads
           # (the three workspace files and every package.json), so a source change
           # does not refetch it. `hash` is the one value in this file that has to be
-          # updated by hand: every change to pnpm-lock.yaml changes it, the build
-          # fails naming the hash it got, and that hash goes here.
+          # updated by hand: every change to pnpm-lock.yaml changes it. This is a
+          # fixed-output derivation, so a stale hash whose output already sits in the
+          # local store builds "successfully" instead of failing and naming the new
+          # one (REB-452); `scripts/nix-pnpm-hash.sh` computes it against a fake hash
+          # instead, in a `nixos/nix` container, since there is no Linux builder for
+          # this repository any more.
           pnpmDeps = pkgs.fetchPnpmDeps {
             pname = "rebase-pnpm-deps";
             version = "0";
@@ -210,7 +217,7 @@
                 )
               );
             };
-            hash = "sha256-zJRUfQgklA+dikh6JQ0M+hbd/EpLlIFxr0Tj5NaZO1Q=";
+            hash = "sha256-UOvuIKvwrgkY3a6Hm0BfYoIkIuzOOeWUoX1cbzaQ02U=";
           };
 
           # A Vite deployable: the `dist/` of one workspace package, built the way its
@@ -484,6 +491,13 @@
                     enable = true;
                     domain = "hub.test";
                   };
+                  # A Resend key only the campaigns tick sees (REB-523), so its pass
+                  # gets past «invio non configurato» and reads the database; the API
+                  # and the sweep keep the environment the rest of this test probes.
+                  # No campaign exists here, so the pass sends nothing and never
+                  # reaches Resend.
+                  systemd.services.rebase-hub-campaigns-tick.environment.REBASE_RESEND_API_KEY =
+                    "re_unused_on_purpose";
                 };
                 testScript = ''
                   machine.wait_for_unit("rebase-hub-api.service")
@@ -525,6 +539,21 @@
                       "journalctl -u rebase-hub-contracts-sweep --no-pager -o cat"
                   )
                   assert "0 documenti ripresi, 1 non confermati" in out, out
+                  # The campaigns tick (REB-523): its timer is active and fires its
+                  # oneshot, and the timer does it alone, a minute after boot, with no
+                  # `systemctl start` from here. The line is a full pass against the
+                  # database under the unit's own user and environment (the key above
+                  # gets it past «invio non configurato»), on a database with no
+                  # campaign in it.
+                  machine.wait_for_unit("rebase-hub-campaigns-tick.timer")
+                  machine.succeed(
+                      "systemctl list-timers --no-pager rebase-hub-campaigns-tick.timer"
+                      " | grep -F 'rebase-hub-campaigns-tick.service'"
+                  )
+                  machine.wait_until_succeeds(
+                      "journalctl -u rebase-hub-campaigns-tick --no-pager -o cat"
+                      " | grep -Fx '0 campagne, 0 inviate, 0 saltate, 0 fallite, 0 esiti registrati'"
+                  )
                   # The renderer itself: pandoc, Typst and the brand are wrapped onto
                   # `bin/rebase` inside the package (REB-403), so this runs under the
                   # unit's own sandbox with nothing set by the caller, the way the CRM's
@@ -567,6 +596,7 @@
                 machine.succeed("curl -fsS http://localhost/terms >/dev/null")
                 machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' http://localhost/termini | grep -Fx '301 http://localhost/terms'")
                 machine.succeed("curl -fsS http://localhost/pitch >/dev/null")
+                machine.succeed("curl -fsS http://localhost/company >/dev/null")
                 # The community page's old name, with its query string kept.
                 machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' 'http://localhost/orbiters?x=1' | grep -Fx '301 http://localhost/community?x=1'")
                 # The two files the build generates from the same map.
@@ -1076,9 +1106,10 @@
                 Restart = "on-failure";
                 RestartSec = 5;
               };
-              # The oneshot sweep is not this: on failure it waits for the timer's next
-              # tick rather than restarting fast, the way the compose loop's own
-              # `while :; do sleep 600; ...; done` does.
+              # The oneshots a timer fires (the sweep, the campaigns tick) are not
+              # this: on failure one waits for its timer's next tick rather than
+              # restarting fast, the way the compose loops' own
+              # `while :; do sleep N; ...; done` do.
               sweepServiceConfig = hardening // {
                 Type = "oneshot";
                 User = "rebase";
@@ -1216,6 +1247,45 @@
                         OnUnitActiveSec = "10min";
                       };
                     };
+                    # The compose stack's `campaigns` service (docker-compose.yml,
+                    # P-REB-41): `rebase campaigns-tick` sends the campaigns whose time
+                    # has come. Compose runs it as a loop that sleeps a minute between
+                    # calls; here it is a oneshot a timer fires on the same cadence,
+                    # shaped like the sweep above (REB-523). Two ticks never run at
+                    # once: a timer only ever starts its unit, and a start that lands
+                    # while the oneshot is still running (a long send goes one mail a
+                    # second) joins that run instead of launching a second process.
+                    # `run_tick` also holds a Postgres advisory lock for the whole
+                    # pass, which covers a tick started by hand. A oneshot has no start
+                    # timeout by default, so a long send is never cut short. Without
+                    # REBASE_RESEND_API_KEY it prints why and sends nothing.
+                    systemd.services.rebase-hub-campaigns-tick = {
+                      description = "rebase hub campaigns tick";
+                      inherit unitConfig;
+                      after = [ "rebase-hub-api.service" ];
+                      wants = [ "rebase-hub-api.service" ];
+                      inherit environment;
+                      serviceConfig = sweepServiceConfig // {
+                        ExecStart = "${cfg.package}/bin/rebase campaigns-tick";
+                      };
+                    };
+                    # `OnUnitActiveSec`, as the sweep's timer, rather than
+                    # `OnCalendar=minutely`: a minute from the last run's start (the
+                    # compose loop counts from its end, one tick's length later), and
+                    # no wall-clock alignment shared with every other minutely timer on
+                    # the host.
+                    systemd.timers.rebase-hub-campaigns-tick = {
+                      description = "rebase hub campaigns tick, every minute";
+                      wantedBy = [ "timers.target" ];
+                      timerConfig = {
+                        OnBootSec = "1min";
+                        OnUnitActiveSec = "1min";
+                        # systemd's default accuracy is a minute, which would let a
+                        # one-minute timer stretch to two; the sweep's ten minutes can
+                        # afford it, a campaign's send time is what this one is for.
+                        AccuracySec = "1s";
+                      };
+                    };
 
                     # projects/hub/deploy/nginx.conf for the SPA, and the API locations
                     # the host's letsrebase.conf routes to the hub.
@@ -1289,7 +1359,7 @@
               imports = [ self.nixosModules.nginx-headers ];
 
               options.services.rebase-website = {
-                enable = lib.mkEnableOption "the rebase website: the landing, the product and community pages, the policies and the pitch";
+                enable = lib.mkEnableOption "the rebase website: the landing, the product and community pages, the policies, the pitch and the deck for companies";
                 package = lib.mkOption {
                   type = lib.types.package;
                   default = own.website;
@@ -1321,8 +1391,10 @@
                         return = "301 /community$is_args$args";
                         extraConfig = "absolute_redirect off;";
                       };
-                      # The pitch deck, a page shared by link (ORB-153).
+                      # The pitch deck, a page shared by link (ORB-153), and the deck for
+                      # companies (REB-553), the same kind of page.
                       "= /pitch" = page "pitch.html";
+                      "= /company" = page "company.html";
                       "= /privacy" = page "privacy.html";
                       "= /terms" = page "terms.html";
                       "= /termini" = {

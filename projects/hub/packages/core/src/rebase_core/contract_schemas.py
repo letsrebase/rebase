@@ -76,7 +76,8 @@ LETTERA_TEXT_FIELDS = (
 )
 
 # The letter's fields the hub fills itself, never the admin on «Condizioni»: the number,
-# the framework's date, the two parties, and the four signing fields.
+# the framework's date, the two parties, the referral's own attribution (P-REB-44,
+# `rebase_core.referrals.ReferralService.referrer_name`) and the four signing fields.
 LETTER_AUTO_FIELDS = frozenset(
     {
         "numero",
@@ -88,6 +89,7 @@ LETTER_AUTO_FIELDS = frozenset(
         "cliente-ragione-sociale",
         "cliente-piva",
         "cliente-sede",
+        "azienda-segnalata-da",
         "luogo-firma",
         "data-firma",
         "firma-rebase",

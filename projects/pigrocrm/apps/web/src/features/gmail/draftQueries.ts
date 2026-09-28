@@ -158,14 +158,20 @@ export function useDeleteDraft() {
  * attempt is a second email in somebody's client's inbox. React Query does not retry
  * mutations by default and this relies on that; what `PendingDrafts` restates is that a
  * *person* cannot press it twice either.
+ *
+ * It names the revision the person read, `updated_at` exactly as the list answered it
+ * (REB-419): the server sends only that one, and refuses with `draft_changed` if the
+ * draft was edited since. The string goes back untouched: a `Date` in between would drop
+ * the microseconds the server compares.
  */
 export function useSendDraft() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (draftId: string) =>
+    mutationFn: (read: Pick<EmailDraftRead, 'id' | 'updated_at'>) =>
       unwrap(
         api.POST('/api/email-drafts/{draft_id}/send', {
-          params: { path: { draft_id: draftId } },
+          params: { path: { draft_id: read.id } },
+          body: { updated_at: read.updated_at },
         }),
       ),
     onSettled: () => invalidateOutcome(queryClient),

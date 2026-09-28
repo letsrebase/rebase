@@ -58,9 +58,22 @@ const IVAN = {
 }
 
 /** The row's one action lives behind the «⋯» menu since the 2026-09-08 revision
- *  (design spec §4); the trigger is labelled per month so a list of them is unambiguous. */
+ *  (design spec §4); the trigger is labelled per month so a list of them is unambiguous.
+ *  `findByRole` already waits on the right thing -- the trigger only exists once
+ *  `usePeriodLocks()` resolves and the row renders, so there is no earlier signal to
+ *  wait on instead. What is not enough is the default one-second `asyncUtilTimeout`: on
+ *  a loaded full `pnpm --filter web test` run this lost the race (REB-405), the same
+ *  shape `vite.config.ts`'s own `testTimeout: 20_000` comment already describes for the
+ *  suite as a whole. Matching that headroom here. */
 async function openRowMenu(mese: string) {
-  await userEvent.click(await screen.findByRole('button', { name: `Azioni per ${mese}` }))
+  await userEvent.click(
+    // The button renders from `locks.data`, so waiting on it here is waiting on the data.
+    await screen.findByRole('button', { name: `Azioni per ${mese}` }, { timeout: 10_000 }),
+  )
+  // Radix opens the menu content into a portal, so the trigger's click resolving does
+  // not itself guarantee the content has mounted: wait for the menu here so every
+  // caller's own `getByRole('menuitem', ...)` right after `openRowMenu` stays safe.
+  await screen.findByRole('menu')
 }
 
 function renderPanel() {
@@ -113,6 +126,11 @@ describe('PeriodsPanel', () => {
     renderPanel()
     await openRowMenu('marzo 2026')
     await userEvent.click(screen.getByRole('menuitem', { name: /riapri/i }))
+    // Not just that some confirmation ran: the caller's own sentence, so a menu item that
+    // skipped the guard (or asked something else) still fails here.
+    expect(mockConfirm).toHaveBeenCalledWith(
+      'Riaprire marzo 2026? Le ore e i costi di quel mese tornano modificabili, e la riapertura viene registrata.',
+    )
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/requires one of/i))
   })
 

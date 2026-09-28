@@ -439,6 +439,25 @@ export function fieldErrorFrom(problem: ProblemDetail): { field: string; message
 }
 
 /**
+ * Whether a failed download or preview means the file itself is gone -- the row's
+ * document, the version it named, or the bytes stored under its key, all `NotFound`
+ * on the server and all mapped to 404 (`errors.py`). Keyed on status alone, not on
+ * `problem.entity`: recognising the failure never needs to know *which* of the three
+ * is gone, only that the answer is "not there", and the server's own `detail` for any
+ * of them is a log line (`invoice_artifact <uuid>#xml not found`, `document_blob <key>
+ * not found`) that must never reach the screen. `InvoiceActions` and
+ * `InvoicePdfPreview` keyed their own sentence on this same check before it had a name
+ * (REB-168); the documents tab and its version history reuse it rather than repeat it
+ * (REB-388). Recognition stays entity-agnostic even where a caller's own *wording*
+ * later reads `problem.entity` for itself, as `documentDownloadErrorMessage`
+ * (`features/documents/queries.ts`) does to tell a lost `document_blob` from a
+ * `document`/`document_version` that is no longer there at all.
+ */
+export function isMissingFile(problem: ProblemDetail): boolean {
+  return problem.status === 404
+}
+
+/**
  * Throws the problem document itself, so every consumer gets structured data --
  * never a raw `Response` or an untyped `unknown`.
  *

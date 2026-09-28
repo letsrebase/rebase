@@ -34,7 +34,12 @@ from rebase_core.contracts.render import (
 EXAMPLE = Path(__file__).resolve().parents[3] / "content" / "contratti" / "incarico.esempio.json"
 # 55 mm, the room a pen needs, in points.
 SIGNATURE_WIDTH_PT = 155.0
-LETTER_BLANKS = {"data-firma", "firma-rebase", "firma-professionista", "rebase-rappresentante"}
+LETTER_BLANKS = {
+    "data-firma",
+    "firma-rebase",
+    "firma-professionista",
+    "rebase-rappresentante",
+}
 
 
 def _example() -> dict[str, Value]:

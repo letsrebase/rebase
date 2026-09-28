@@ -5,7 +5,7 @@ import { AMOUNT_PROBLEM, euroAmount, sentAmount } from '@/lib/amount'
 import { useWizardAnalytics } from '@/lib/analytics'
 import { ApiError, requestPeople, type CompanyRequest } from '@/lib/api'
 import { TEAM_BUILDER_ORIGIN } from '@/lib/format'
-import { resolveAttribution } from '@/lib/utm'
+import { resolveAttribution, resolveReferral } from '@/lib/utm'
 import { clearDraft, loadDraft, saveDraft } from '@/wizard/draft'
 import { ChoiceField, LongTextField, TextField } from '@/wizard/fields'
 import { screensFromFields, Wizard, type Field } from '@/wizard/Wizard'
@@ -360,6 +360,7 @@ export function CompanyWizard() {
         },
         resolveAttribution(searchStr),
         distinctId(),
+        resolveReferral(searchStr),
       )
       sent.current = true
       clearDraft(COMPANY_DRAFT_KEY)

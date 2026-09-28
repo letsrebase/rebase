@@ -122,6 +122,7 @@ def apply(
     utm_id: Annotated[str | None, Form()] = None,
     origine: Annotated[str | None, Form()] = None,
     distinct_id: Annotated[str | None, Form(max_length=DISTINCT_ID_MAX_LENGTH)] = None,
+    rif: Annotated[str | None, Form()] = None,
 ) -> Ack:
     spend_one(request)
     try:
@@ -143,6 +144,7 @@ def apply(
                 utm_id=utm_id,
                 origine=origine or None,
             ),
+            rif=rif or None,
         )
     except ValidationError as exc:
         raise _validation_422(exc) from exc

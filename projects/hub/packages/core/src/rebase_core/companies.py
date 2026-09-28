@@ -23,6 +23,7 @@ from rebase_core.comments import CommentService
 from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.models import COMPANY_STATES, Company, User
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
+from rebase_core.referrals import ReferralService
 from rebase_core.schemas import (
     CompanyCreate,
     CompanyList,
@@ -156,6 +157,10 @@ class CompanyService:
         )
         self.session.add(row)
         self.session.commit()
+        if not richiedente_esistente:
+            ReferralService(self.session).link_signup(
+                "company", row.id, data.rif, new_user_id=user.id
+            )
         return _to_read(row, user), richiedente_esistente
 
     def list_recent(

@@ -97,9 +97,15 @@ Two edits to `.github/workflows/ci.yml`, and no new workflow file:
 ```yaml
   # in the `changes` job
   outputs:
-    <name>_py: ${{ steps.filter.outputs.<name>_py }}
+    <name>_py: ${{ steps.tag.outputs.<name>_py || steps.filter.outputs.<name>_py }}
   # ... and the matching filter block. Underscores, never dashes: a dash in an output
-  # name is invalid expression syntax and the run dies with no job started.
+  # name is invalid expression syntax and the run dies with no job started. Both
+  # sources, in that order: the `tag` step answers on a release tag, the filter on a
+  # diff. An output that reads the filter alone is empty on your tag, so every job of
+  # yours is skipped there, `ci` concludes green, and the deploy ships code the tag's
+  # run never built. The `tag` step also needs your project: one line in the `case` of
+  # the `base` step (`<name>-v*) project=<name> ;;`) and one in the `case` of the
+  # `tag` step, listing your jobs and the shared packages you depend on.
 
   <name>-py:
     needs: changes
@@ -171,8 +177,12 @@ configuration, one systemd unit per compose service (the API, its MCP server), t
 `checks.<name>` VM test that boots it and probes what the host's nginx would: the
 health path, the SPA on a deep link, the API behind its prefix, the MCP server refusing
 a call with no token. A `pnpm-lock.yaml` change moves the pnpm store hash in
-`flake.nix`; the `nix-packages` preflight check fails naming the new one, and that is
-where it goes.
+`flake.nix`. `fetchPnpmDeps` is a fixed-output derivation, so a stale hash whose
+output already sits in the local Nix store builds "successfully" instead of the
+`nix-packages` preflight check failing and naming the new one; there is also no
+Linux builder for this repository any more, so `scripts/nix-pnpm-hash.sh` computes
+it against a fake hash in a `nixos/nix` container instead, and that is where it
+goes.
 
 A project that ships nothing (a library, a shared asset) adds nothing here.
 
@@ -186,12 +196,14 @@ Two environments, two triggers, and no deploy logic of your own:
 A bare `v1.2.0` cannot work here: it does not say which project it releases. The tag
 is project-scoped for the same reason the directory is.
 
-The tag is also a push `ci.yml` listens to (`tags: ['*-v*']`), so it earns a full CI
-run of its own, every job, and `_deploy-compose.yml` gates the production deploy on
-that run rather than on the trunk's run for the same commit. The trunk tier is
-path-scoped: a docs-only commit after a red change to your project gets a trunk run
-where every one of your jobs is skipped and `ci` concludes success, and a tag on that
-commit would otherwise ship the red code. The price is one full run per release.
+The tag is also a push `ci.yml` listens to (`tags: ['*-v*']`), so it earns a CI run
+of its own, every job of your project and of the shared packages it uses and nothing
+else (REB-563), and `_deploy-compose.yml` gates the production deploy on that run
+rather than on the trunk's run for the same commit. The trunk tier is path-scoped: a
+docs-only commit after a red change to your project gets a trunk run where every one
+of your jobs is skipped and `ci` concludes success, and a tag on that commit would
+otherwise ship the red code. The tag's run never skips your project, which is what
+the two `case` lines above buy; a prefix `changes` does not know keeps the full run.
 
 The mechanism lives in `.github/workflows/_deploy-compose.yml` and is shared. What a
 project writes is a caller, `deploy-<name>.yml`, with one job per environment, each
@@ -419,9 +431,10 @@ because a copy drifts, which is exactly what an earlier version of this section 
 (REB-45). What a new monorepo project needs is an initiative of its own, named as the
 directory reads to people (`PigroCRM`, not `pigrocrm`) and created by hand in the Linear
 UI since the MCP surface cannot create one, and a first project under it with a scope
-that can actually close, a lead and both members (the members in the UI too, since
-`save_project` has no field for them): the initiative is the permanent container, the
-project is the release, and neither gets a row anywhere in this repository anymore
+that can actually close and a lead (`docs/tracker.md` § Where things are:
+membership beyond the lead is optional, so nothing else about who is on it is
+fixed): the initiative is the permanent container, the project is the release, and
+neither gets a row anywhere in this repository anymore
 (`docs/tracker.md` § Where things are, which dropped its own project snapshot for
 the same drift, REB-460). Repository-wide work that belongs to no product
 (CI cost, the licence, this documentation) goes under the `Monorepo` initiative; it went

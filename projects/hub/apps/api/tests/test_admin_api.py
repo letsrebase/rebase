@@ -191,6 +191,21 @@ def test_talenti_merges_cards_and_leads_and_counts_per_state(
     assert only_new["totale"] == 1
 
 
+def test_talenti_carries_the_cards_rate_and_mode_null_for_a_lead(
+    client: TestClient, admin: None, sender: RecordingSender
+) -> None:
+    """REB-558: the list item the admin talent table reads carries a card's own day
+    rate and work mode, and `None` for both on a bare sign-up, which has neither."""
+    _signup(client, sender, "lead@studio.it")
+    _apply(client, "ada@studio.it")
+
+    by_email = {item["email"]: item for item in client.get("/api/hub/talent").json()["items"]}
+    assert by_email["ada@studio.it"]["tariffa_giornaliera"] == "450.00"
+    assert by_email["ada@studio.it"]["remoto"] == "remoto"
+    assert by_email["lead@studio.it"]["tariffa_giornaliera"] is None
+    assert by_email["lead@studio.it"]["remoto"] is None
+
+
 def test_a_card_drafted_from_research_reads_origine_admin_on_talenti(
     client: TestClient, admin: None, sender: RecordingSender
 ) -> None:

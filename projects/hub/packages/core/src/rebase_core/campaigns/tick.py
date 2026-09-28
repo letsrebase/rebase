@@ -161,6 +161,19 @@ def _claim(session: Session, campaign_id: UUID, now: datetime) -> Campaign | Non
     return None
 
 
+def _earliest_webhook_moment(row: CampaignRecipient) -> datetime | None:
+    """The earliest of the four timestamps `webhook.py` can have written on this row
+    (delivery, a permanent bounce, the first click, a complaint), each already the
+    event's own moment rather than when the webhook happened to process it. `None`
+    when the webhook wrote none of them yet."""
+    moments = [
+        m
+        for m in (row.consegnata_at, row.rimbalzata_at, row.primo_clic_at, row.reclamo_at)
+        if m is not None
+    ]
+    return min(moments) if moments else None
+
+
 def _send(
     session: Session,
     campaign: Campaign,
@@ -189,6 +202,28 @@ def _send(
         ).first()
         if row is None:
             break
+        webhook_moment = _earliest_webhook_moment(row)
+        if row.resend_id is not None or webhook_moment is not None:
+            # Resend's webhook already told us this row's own mail (matched by the `r`
+            # tag, `webhook.py`): an earlier tick sent it and died between Resend's
+            # answer and its own commit, leaving the row `in_coda` forever after. The
+            # retried `Idempotency-Key` would answer harmlessly for 24 hours, but past
+            # that Resend forgets the key and a bare retry would send a second mail
+            # (DECISIONS.md, the retry row). Trust what the webhook already knows
+            # instead of calling Resend again. `inviata_at` takes the earliest of the
+            # webhook's own timestamps (`_earliest_webhook_moment`), each the event's
+            # own moment, not when this tick noticed it, since outcome stamping and the
+            # gap rule both read `inviata_at` as "since when": stamping it with this
+            # tick's `now` -- possibly long after the real send, if the loop was down
+            # for a while -- would miss whatever the recipient already did in between
+            # and understate how long ago they were reached. `clock()` is a fallback
+            # for a `resend_id` with none of the four columns set, which no event
+            # `webhook.py` handles today can actually leave behind (every branch that
+            # reaches its shared `resend_id` write has just set one of them).
+            row.stato, row.inviata_at = "inviata", webhook_moment or clock()
+            result.inviate += 1
+            session.commit()
+            continue
         try:
             # Right before this mail, not once per pass (spec § 5.3): a pass sends one
             # mail a second, so an opt-out, a «Non scrivere mai» or a bounce recorded

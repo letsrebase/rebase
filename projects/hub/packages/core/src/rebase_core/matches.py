@@ -87,6 +87,7 @@ from rebase_core.models import (
     Match,
     User,
 )
+from rebase_core.referrals import ReferralService
 from rebase_core.search import matches_any
 
 ENTITY = "match"
@@ -95,6 +96,10 @@ QUADRO, LETTERA = "quadro", "lettera"
 DOCUMENT_BY_KIND = {QUADRO: "contratto-quadro", LETTERA: "lettera-di-incarico"}
 SIGNED_ELECTRONICALLY = "firmato elettronicamente"
 PEC_MISSING = "non indicata"
+# The common case: a party nobody referred prints this instead of a blank, hand-fillable
+# line -- `PEC_MISSING`'s own convention for a fact that is usually absent, not a
+# signature waiting to happen.
+SEGNALATO_NONE = "nessuno"
 DAY_RATE = "a giornata"
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
@@ -668,6 +673,12 @@ class MatchService:
                 lettera_data_inizio=data.lettera.data_inizio,
                 lettera_data_fine=data.lettera.data_fine,
                 lettera_compenso=data.lettera.compenso,
+                # A referral reward reads this later, at signing, which can be weeks
+                # after the request the budget belonged to (P-REB-44); snapshotted
+                # here for the same reason `lettera_compenso` already is, so an edit
+                # to the company's own request afterward never changes what a reward
+                # already promised.
+                company_budget_giornaliero=company.budget_giornaliero,
             )
             self.session.add(match)
             try:
@@ -793,6 +804,10 @@ class MatchService:
             "professionista-domicilio": fiscal.domicilio,
             "professionista-email": user.email,
             "professionista-pec": fiscal.pec or PEC_MISSING,
+            "segnalato-da": ReferralService(self.session).referrer_name(
+                "freelancer", fiscal.freelancer_id
+            )
+            or SEGNALATO_NONE,
             **self._signing_fields(today),
         }
 
@@ -827,6 +842,10 @@ class MatchService:
             "cliente-ragione-sociale": data.cliente.cliente_ragione_sociale,
             "cliente-piva": data.cliente.cliente_piva,
             "cliente-sede": data.cliente.cliente_sede,
+            "azienda-segnalata-da": ReferralService(self.session).referrer_name(
+                "company", data.company_id
+            )
+            or SEGNALATO_NONE,
             **self._signing_fields(today),
         }
 

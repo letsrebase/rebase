@@ -1,11 +1,12 @@
 """Queries only. Never commits -- the service owns the transaction."""
 
 import hashlib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, text, update
+from sqlalchemy import case, delete, func, null, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm import Session
@@ -99,12 +100,11 @@ class GmailRepository:
         it is disconnected" indistinguishable from "there is none". `cli.py` drops them
         for its own question.
 
-        For `pigrocrm gmail-sync`, which has to tell "there is one, use it" from "there
-        are two, say which" -- a question `any_account` answers by picking, which is
-        right for the reply signal and wrong for a cron that would otherwise leave one
-        mailbox silently unsynchronised. Same ordering, for the same reason: an
-        arbitrary row order would make the CLI's own error message list the mailboxes
-        differently between two identical calls.
+        For `pigrocrm gmail-sync`, which synchronises every one of them (REB-404) --
+        not the one `any_account` would pick, which is right for the reply signal and
+        wrong for a cron that would otherwise leave the others silently unsynchronised.
+        Ordered, so that two identical runs print their lines, and the CLI's list of the
+        mailboxes an `--email` did not match, in the same order.
         """
         return list(
             self.session.execute(
@@ -409,7 +409,14 @@ class GmailRepository:
 
     # --- the send claim ---------------------------------------------------------------
 
-    def claim_draft_for_send(self, draft_id: UUID, now: datetime, account_id: UUID) -> bool:
+    def claim_draft_for_send(
+        self,
+        draft_id: UUID,
+        now: datetime,
+        account_id: UUID,
+        *,
+        expected_updated_at: datetime | None = None,
+    ) -> bool:
         """Moves a draft out of an editable state into `in_invio` in one statement, and
         answers whether *this* caller is the one that moved it.
 
@@ -446,13 +453,23 @@ class GmailRepository:
         `delete_messages_for` both give: the DBAPI's row count is typed only on
         `CursorResult`, and this answer decides whether an email is sent -- it has to come
         from somewhere the type system agrees exists.
+
+        `expected_updated_at` is the revision the person read (REB-419), and it joins the
+        guard for the same reason `send_state` is in it: a check made before this
+        statement is a check an edit committed a moment later walks past. Equality, not
+        "not newer than": the one revision that may leave is the one on screen. `None`
+        leaves the guard as it was before, for an in-process caller of
+        `EmailSendService.send` with no read to name; the REST route always passes one.
         """
+        guard = [
+            EmailDraft.id == draft_id,
+            EmailDraft.send_state.in_(sorted(EDITABLE_SEND_STATES)),
+        ]
+        if expected_updated_at is not None:
+            guard.append(EmailDraft.updated_at == expected_updated_at)
         claimed = self.session.execute(
             update(EmailDraft)
-            .where(
-                EmailDraft.id == draft_id,
-                EmailDraft.send_state.in_(sorted(EDITABLE_SEND_STATES)),
-            )
+            .where(*guard)
             .values(
                 send_state="in_invio",
                 send_attempted_at=now,
@@ -463,6 +480,46 @@ class GmailRepository:
             .execution_options(synchronize_session=False)
         )
         return claimed.scalar_one_or_none() is not None
+
+    def update_editable_draft(self, draft_id: UUID, values: Mapping[str, Any]) -> bool:
+        """Writes an edit to a draft only while the draft can still be edited, and answers
+        whether it did (REB-419).
+
+        The edit's twin of the claim above, conditional for the same reason. The edit reads
+        the row, checks that it is editable and validates the new fields, and a claim can
+        commit in between. A write conditioned on the id alone would then land on a draft
+        already `in_invio`, and the send, which composes from the row it reloads after its
+        claim, would carry text nobody reviewed while the revision the person named still
+        matched when the claim checked it. With `send_state` in this `WHERE` as well, the
+        row decides whichever order the two arrive in: an edit that writes first moves
+        `updated_at` and the claim refuses the send, and a claim that commits first leaves
+        this write zero rows to touch.
+
+        `send_state` becomes `bozza`, which from the two editable states is exactly the
+        rule an edit has always followed: a `fallito` draft that is edited is a draft
+        again, and its `last_error` goes with it, since the sentence describes text that
+        is no longer there. `last_error` is read from the row as it was, so a `bozza`
+        keeps whatever it held. `synchronize_session=False` and `RETURNING`, for the
+        reasons the claim gives.
+        """
+        written = self.session.execute(
+            update(EmailDraft)
+            .where(
+                EmailDraft.id == draft_id,
+                EmailDraft.send_state.in_(sorted(EDITABLE_SEND_STATES)),
+            )
+            .values(
+                **values,
+                send_state="bozza",
+                last_error=case(
+                    (EmailDraft.send_state == "fallito", null()),
+                    else_=EmailDraft.last_error,
+                ),
+            )
+            .returning(EmailDraft.id)
+            .execution_options(synchronize_session=False)
+        )
+        return written.scalar_one_or_none() is not None
 
     # --- resolving an unknown send outcome --------------------------------------------
 

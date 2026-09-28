@@ -65,14 +65,12 @@ went to 206. Before a bulk filing, read `teams { issueCount }` and, when there i
 archive terminal issues of Completed projects. Never delete an issue to make room: an
 archived issue keeps its URL, its comments and its links, a deleted one does not.
 
-Every project always carries a lead and both members, Lorenzo and Ivan, no matter who
-leads it. A project created without a lead or without both members is incomplete. The MCP
-surface cannot repair that, since `save_project` takes a `lead` and has no member field
-(§ API details), but the GraphQL API can: `projectUpdate` with `memberIds` sets the full
-member list, and the 2026-09-22 backlog audit used it to put both members on every live
-project, which is what REB-137 had been waiting for a hand UI pass to do. At creation,
-either add the second member with that call in the same breath, or read the project back
-and fix it before its first issue lands.
+Every project always carries a lead, whoever it is. A project created without a
+lead is incomplete. Adding both of us as members used to be required too
+(2026-09-22 backlog audit, `projectUpdate` with `memberIds` through the GraphQL
+API since `save_project` has no member field), but Lorenzo dropped that on
+2026-09-28 (`docs/design/DECISIONS.md`): membership beyond the lead is optional
+and nothing checks for it.
 
 This replaces the old rule that gave every monorepo project (`projects/pigrocrm`,
 `projects/website`) its own permanent Linear project. Initiatives are the permanent
@@ -405,10 +403,13 @@ row for it is still to be written by whoever turned it on.
   an existing initiative with `addInitiatives`, but there is no `save_initiative`.
   Initiatives are created by hand in the Linear UI; automation only creates projects and
   issues underneath them.
-- Project members cannot be set from the MCP surface either. `save_project` takes `lead`
-  and has no member field, and `list_projects` with `includeMembers: true` only reads
-  them, so the rule that every project carries both members (§ Where things are) is kept
-  by hand in the Linear UI, and read back with that call.
+- Project members cannot be set from the MCP surface at all. `save_project` takes
+  `lead` and has no member field, and `list_projects` with `includeMembers: true`
+  only reads them. Adding one beyond the lead, when there is a reason to, is the
+  GraphQL `projectUpdate` mutation with `memberIds` when this session has GraphQL
+  access to `api.linear.app/graphql` (it replaces the full member list, so read the
+  existing one first and include it), or a hand pass in the Linear UI otherwise
+  (§ Where things are).
 - `save_project` **does** take a `state` field (a project status name, type or ID,
   resolved against the lead team's statuses), unlike the members it cannot set above:
   moving a project to `Completed` or `Canceled` once its issues say so (§ Rules) is one

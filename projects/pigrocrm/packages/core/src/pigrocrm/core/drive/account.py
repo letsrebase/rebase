@@ -72,6 +72,10 @@ CONSENT_WARNING_HOURS = 48
 _NOT_CONNECTED = "Google Drive non è collegato: collegalo da Impostazioni → Drive"
 _NOT_A_USER = "solo un utente può usare Google Drive"
 _ROOTS_ACTION = "impostare le cartelle Drive"
+# Admin-only, and only this field (REB-457): `DriveRepository.storage_account` sends every
+# document the space generates to the folder an admin's row names, so choosing it is a
+# decision about the whole space, not about one person's credential.
+_STORAGE_FOLDER_ACTION = "scegliere la cartella di scrittura Drive"
 
 _REVOKED_TEXT = (
     "Il consenso Google Drive per {email} è stato revocato: la lettura e la scrittura "
@@ -348,10 +352,22 @@ class GoogleDriveAccountService:
         together -- and record it, absent means none of that; and only naming a real id,
         never `null`, means it might be verified, on the terms `_needs_verification`
         settles.
+
+        **Naming the write folder is an admin's act (REB-457).** The read roots are this
+        person's own credential's configuration, and any writer sets them. The write
+        folder is the space's: `DriveRepository.storage_account` sends every generated
+        document to the folder an *admin's* row names. So a request that names
+        `storage_folder_id` at all, an id or `null`, needs `require_admin`, checked with
+        the role gate and before the row is looked up, so a refused request verifies
+        nothing, writes nothing, and learns nothing about the row. The rest of the
+        request is not saved without it: a refusal that kept half of a `PATCH` would
+        leave the person guessing which half.
         """
         actor.require_write(_ROOTS_ACTION)
-        account = self._present(actor)
         named = "storage_folder_id" in data.model_fields_set
+        if named:
+            actor.require_admin(_STORAGE_FOLDER_ACTION)
+        account = self._present(actor)
         chosen = data.storage_folder_id
         verified = account.storage_folder_verified
         if named and chosen is not None:

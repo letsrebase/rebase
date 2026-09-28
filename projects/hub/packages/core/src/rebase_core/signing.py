@@ -109,6 +109,7 @@ from rebase_core.mail import (
 )
 from rebase_core.matches import DOCUMENT_BY_KIND, ENTITY, LETTERA, QUADRO, MatchService, _full_name
 from rebase_core.models import CANCEL_REASON_MAX_LENGTH, ContractDocument, Freelancer, Match, User
+from rebase_core.referrals import ReferralService
 
 _log = logging.getLogger(__name__)
 
@@ -624,11 +625,17 @@ class SigningService:
         # The signer's own date; the moment the hub heard of it only if Documenso said
         # nothing, which a completed envelope never does.
         document.signed_at = outcome.signed_at or self.now()
-        if match is not None and match.stato == "in_firma":
-            match.stato = "attivo"
-            # Its link to Pigro is due from this commit on (REB-499): `finish` asks for
-            # it next, and the sweep keeps asking until it holds.
-            match.pigro_stato = DA_COLLEGARE
+        if match is not None:
+            if match.stato == "in_firma":
+                match.stato = "attivo"
+                # Its link to Pigro is due from this commit on (REB-499): `finish` asks
+                # for it next, and the sweep keeps asking until it holds.
+                match.pigro_stato = DA_COLLEGARE
+            # A letter is the only document with a match (`document.kind == LETTERA`,
+            # the same fact `document.match_id is not None` already established): the
+            # first signed letter of a referred freelancer's or a referred company's
+            # engagement earns a reward, once, ever (P-REB-44).
+            ReferralService(self.session).record_reward_if_signed(document, match)
         self.session.commit()
         return True
 

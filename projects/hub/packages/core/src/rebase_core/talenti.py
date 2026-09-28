@@ -103,6 +103,8 @@ def _card_read(row: Freelancer, user: User, ha_scheda_anonima: bool) -> TalentoR
         origine=_ORIGIN_BY_COMPILATA_DA.get(row.compilata_da, "wizard"),
         utm_source=row.utm_source,
         created_at=row.created_at,
+        tariffa_giornaliera=row.tariffa_giornaliera,
+        remoto=row.remoto,
         vetted_at=row.vetted_at,
         ha_scheda_anonima=ha_scheda_anonima,
     )

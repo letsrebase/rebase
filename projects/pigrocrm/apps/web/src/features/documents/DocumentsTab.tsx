@@ -11,6 +11,7 @@ import {
   DOCUMENT_TYPE_LABELS,
   OFFER_STATE_LABELS,
   OFFER_STATE_TONE,
+  documentDownloadErrorMessage,
   downloadDocument,
   useCreateDocument,
   useDeleteDocument,
@@ -26,7 +27,7 @@ import { UploadDropzone } from './UploadDropzone'
  *  packages/core/src/pigrocrm/core/documents/schemas.py. The backend is the authority
  *  and rejects anything else with its own message; this only stops the file picker
  *  from offering a type that would be refused a moment later. */
-export const ACCEPTED_UPLOAD_TYPES = [
+const ACCEPTED_UPLOAD_TYPES = [
   'application/pdf',
   'text/markdown',
   'text/plain',
@@ -166,7 +167,10 @@ export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
                     onSelect: () => {
                       setProblem(null)
                       void downloadDocument(document.id).catch((error: unknown) =>
-                        setProblem(toProblem(error)),
+                        setProblem({
+                          ...toProblem(error),
+                          detail: documentDownloadErrorMessage(error, document.titolo),
+                        }),
                       )
                     },
                   },

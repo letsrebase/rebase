@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { afterEach, beforeEach } from 'vitest'
-import { LOGIN_ATTRIBUTION_KEY, ORIGIN_STORAGE_KEY, UTM_STORAGE_KEY, loginAttribution, readOrigin, readUtm, recallUtm, rememberLoginAttribution, rememberUtm, resolveAttribution, resolveOrigin, resolveUtm } from './utm'
+import { LOGIN_ATTRIBUTION_KEY, ORIGIN_STORAGE_KEY, REFERRAL_STORAGE_KEY, UTM_STORAGE_KEY, loginAttribution, readOrigin, readReferral, readUtm, recallUtm, rememberLoginAttribution, rememberUtm, resolveAttribution, resolveOrigin, resolveReferral, resolveUtm } from './utm'
 
 describe('readUtm', () => {
   it('keeps the six UTM keys and nothing else', () => {
@@ -68,6 +68,30 @@ describe('the page the person started from (ORB-167)', () => {
     expect(resolveAttribution('?utm_source=linkedin&da=home')).toEqual({ utm_source: 'linkedin', origine: 'home' })
     window.sessionStorage.clear()
     expect(resolveAttribution('')).toEqual({})
+  })
+})
+
+describe('a member’s own link (P-REB-44)', () => {
+  beforeEach(() => window.sessionStorage.clear())
+  afterEach(() => window.sessionStorage.clear())
+
+  it('reads `rif=` when it looks like a code, and nothing else', () => {
+    expect(readReferral('?rif=ABC123&utm_source=linkedin')).toBe('ABC123')
+    expect(readReferral('?rif=%3Cscript%3E')).toBeNull()
+    expect(readReferral('?rif=')).toBeNull()
+    expect(readReferral('')).toBeNull()
+  })
+
+  it('prefers the URL, remembers it for the tab, and falls back to the tab', () => {
+    expect(resolveReferral('?rif=ABC123')).toBe('ABC123')
+    expect(window.sessionStorage.getItem(REFERRAL_STORAGE_KEY)).toBe('ABC123')
+    expect(resolveReferral('?perk=guida')).toBe('ABC123')
+    window.sessionStorage.setItem(REFERRAL_STORAGE_KEY, 'not a code!')
+    expect(resolveReferral('')).toBeNull()
+  })
+
+  it('never rides inside the UTM attribution an application sends', () => {
+    expect(resolveAttribution('?rif=ABC123&utm_source=linkedin')).toEqual({ utm_source: 'linkedin' })
   })
 })
 

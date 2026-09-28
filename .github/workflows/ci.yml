@@ -16,12 +16,15 @@
 #      deploy's own `scope` job already decides the same way from the same paths.
 #      When the base commit of a push is unreachable -- a force push, a new branch --
 #      the filters are not consulted and everything runs. A release tag
-#      (`<project>-v<semver>`) is a push too and always earns that full run: a
-#      production deploy is gated on the run of the tag itself, because the trunk's
-#      run for the same commit may have skipped every job of the project being
-#      released and still concluded success (ORB-28). A nightly `schedule` run on
-#      `main` earns the same full run, for a different reason: it buys back "the
-#      trunk proves the whole tree" without putting it on the critical path of a
+#      (`<project>-v<semver>`) is a push too, with no base to diff against; its
+#      prefix names the project, and the run is every job of that project plus the
+#      shared packages it uses, nothing else (REB-563). A production deploy is gated
+#      on the run of the tag itself, because the trunk's run for the same commit may
+#      have skipped every job of the project being released and still concluded
+#      success (ORB-28); the tag's run cannot, since it never skips that project. A
+#      nightly `schedule` run on `main` earns the full run, for a different reason:
+#      it buys back "the trunk proves the whole tree" without putting it on the
+#      critical path of a
 #      merge. It needs no new code to get there -- a `schedule` event carries no
 #      `before` at all, so it falls into the same "no usable base commit" branch a
 #      force push already takes below, rather than a fourth branch written for it.
@@ -101,21 +104,26 @@ jobs:
       pull-requests: read
     outputs:
       all: ${{ steps.base.outputs.all }}
-      pigrocrm_py: ${{ steps.filter.outputs.pigrocrm_py }}
-      pigrocrm_py_corpus: ${{ steps.filter.outputs.pigrocrm_py_corpus }}
-      pigrocrm_web: ${{ steps.filter.outputs.pigrocrm_web }}
-      pigrocrm_image: ${{ steps.filter.outputs.pigrocrm_image }}
-      website: ${{ steps.filter.outputs.website }}
-      website_image: ${{ steps.filter.outputs.website_image }}
-      hub_py: ${{ steps.filter.outputs.hub_py }}
-      hub_web: ${{ steps.filter.outputs.hub_web }}
-      shared_analytics: ${{ steps.filter.outputs.shared_analytics }}
-      shared_ui: ${{ steps.filter.outputs.shared_ui }}
-      hub_image: ${{ steps.filter.outputs.hub_image }}
-      pigrocrm_deploy: ${{ steps.filter.outputs.pigrocrm_deploy }}
-      website_deploy: ${{ steps.filter.outputs.website_deploy }}
-      hub_deploy: ${{ steps.filter.outputs.hub_deploy }}
-      tooling: ${{ steps.filter.outputs.tooling }}
+      pigrocrm_py: ${{ steps.tag.outputs.pigrocrm_py || steps.filter.outputs.pigrocrm_py }}
+      pigrocrm_py_corpus: ${{ steps.tag.outputs.pigrocrm_py_corpus || steps.filter.outputs.pigrocrm_py_corpus }}
+      pigrocrm_web: ${{ steps.tag.outputs.pigrocrm_web || steps.filter.outputs.pigrocrm_web }}
+      pigrocrm_image: ${{ steps.tag.outputs.pigrocrm_image || steps.filter.outputs.pigrocrm_image }}
+      website: ${{ steps.tag.outputs.website || steps.filter.outputs.website }}
+      website_image: ${{ steps.tag.outputs.website_image || steps.filter.outputs.website_image }}
+      hub_py: ${{ steps.tag.outputs.hub_py || steps.filter.outputs.hub_py }}
+      hub_web: ${{ steps.tag.outputs.hub_web || steps.filter.outputs.hub_web }}
+      shared_analytics: ${{ steps.tag.outputs.shared_analytics || steps.filter.outputs.shared_analytics }}
+      shared_ui: ${{ steps.tag.outputs.shared_ui || steps.filter.outputs.shared_ui }}
+      hub_image: ${{ steps.tag.outputs.hub_image || steps.filter.outputs.hub_image }}
+      pigrocrm_deploy: ${{ steps.tag.outputs.pigrocrm_deploy || steps.filter.outputs.pigrocrm_deploy }}
+      website_deploy: ${{ steps.tag.outputs.website_deploy || steps.filter.outputs.website_deploy }}
+      hub_deploy: ${{ steps.tag.outputs.hub_deploy || steps.filter.outputs.hub_deploy }}
+      tooling: ${{ steps.tag.outputs.tooling || steps.filter.outputs.tooling }}
+      # The `slow` files, for the corpus job's matrix below: read from the tree, so a
+      # third file carrying the marker gets its own job the day it is committed
+      # rather than running in preflight's lane alone (REB-565). A pull_request run
+      # has no checkout here and never runs the corpus, so it answers an empty list.
+      slow_files: ${{ steps.slow.outputs.files }}
     steps:
       - uses: actions/checkout@v7
         if: github.event_name != 'pull_request'
@@ -139,9 +147,23 @@ jobs:
           # three fall into the `elif` below rather than needing a branch of their own.
           before='${{ github.event.before }}'
           if [[ "$REF" == refs/tags/* ]]; then
-            # A new tag has no base anyway; saying so here also covers a moved one.
-            echo 'A release tag; running every job.'
-            echo 'all=true' >> "$GITHUB_OUTPUT"
+            # A new tag has no base anyway, so the filters have nothing to diff; the
+            # prefix says which project is released and the `tag` step below turns
+            # that into the same outputs the filters would have written.
+            case "${REF#refs/tags/}" in
+              website-v*)  project=website ;;
+              hub-v*)      project=hub ;;
+              pigrocrm-v*) project=pigrocrm ;;
+              *)           project='' ;;
+            esac
+            if [ -n "$project" ]; then
+              echo "A release tag of ${project}; running its jobs and the shared packages it uses."
+              echo 'all=false' >> "$GITHUB_OUTPUT"
+              echo "project=${project}" >> "$GITHUB_OUTPUT"
+            else
+              echo 'A tag that names no project; running every job.'
+              echo 'all=true' >> "$GITHUB_OUTPUT"
+            fi
           elif [ -z "$before" ] || [ "$before" = '0000000000000000000000000000000000000000' ] \
              || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
             echo 'No usable base commit; running every job.'
@@ -150,12 +172,42 @@ jobs:
             echo "all=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # A release tag names its project, and the run proves that project whole and
+      # nothing else (REB-563). Before this, a tag earned `all=true`: `website-v0.21.0`
+      # (run 36457557147) ran the CRM's suite for 355s in front of a website release
+      # whose own jobs took 32s and 21s, and its production deploy waited 6′36″ for
+      # that. The 2026-09-09 rule holds: `_deploy-compose.yml` still gates on the run
+      # of the tag itself, and that run still runs every job of the released project,
+      # plus the shared packages it depends on, whose own suites the project's gate
+      # never runs (REB-253, REB-299). A tag whose prefix names no project keeps the
+      # full run, fail-open like a missing base commit. Every key is written, `true`
+      # or `false`, so the outputs above never fall through to a filter that did not
+      # run; `'false'` is a non-empty string and wins the `||`.
+      - name: Select the released project's jobs
+        id: tag
+        if: steps.base.outputs.project != ''
+        env:
+          PROJECT: ${{ steps.base.outputs.project }}
+        run: |
+          set -euo pipefail
+          case "$PROJECT" in
+            website)  on='website website_image website_deploy shared_analytics' ;;
+            hub)      on='hub_py hub_web hub_image hub_deploy shared_ui shared_analytics' ;;
+            pigrocrm) on='pigrocrm_py pigrocrm_py_corpus pigrocrm_web pigrocrm_image pigrocrm_deploy shared_ui shared_analytics' ;;
+            *) echo "::error::no job list for project '${PROJECT}'"; exit 1 ;;
+          esac
+          for key in pigrocrm_py pigrocrm_py_corpus pigrocrm_web pigrocrm_image website website_image hub_py hub_web shared_analytics shared_ui hub_image pigrocrm_deploy website_deploy hub_deploy tooling; do
+            case " $on " in *" $key "*) value=true ;; *) value=false ;; esac
+            echo "${key}=${value}" >> "$GITHUB_OUTPUT"
+          done
+          echo "release of ${PROJECT}: ${on}"
+
       # Underscores, never dashes: `needs.changes.outputs.pigrocrm-web` is invalid
       # expression syntax and the run dies in seconds with no job started, which
       # reads as a broken workflow rather than as a typo.
       - uses: dorny/paths-filter@v4
         id: filter
-        if: steps.base.outputs.all != 'true'
+        if: steps.base.outputs.all != 'true' && steps.base.outputs.project == ''
         with:
           # Empty on a pull_request, where the action asks the API instead.
           base: ${{ github.event_name == 'pull_request' && '' || github.event.before }}
@@ -334,6 +386,27 @@ jobs:
       # a billed runner until this run finished. They are triggered by this run's
       # completion now, and they read the verdict from here. One computation, one
       # list, and a deploy that starts already knowing CI was green.
+      - name: List the files behind the `slow` marker
+        id: slow
+        run: |
+          set -euo pipefail
+          if [ '${{ github.event_name }}' = 'pull_request' ]; then
+            echo 'files=[]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Both of pytest's default module patterns, at any depth under the root, as
+          # paths relative to it; `|| true` because a tree with no `slow` file is an
+          # empty list for the corpus job to skip on, not a red `changes` that skips
+          # every job of every project.
+          files=$(find projects/pigrocrm/packages/core/tests -type f \
+              \( -name 'test_*.py' -o -name '*_test.py' \) \
+              -exec grep -lE 'pytest\.mark\.slow' {} + 2>/dev/null \
+            | sed 's#^projects/pigrocrm/packages/core/tests/##' | LC_ALL=C sort \
+            | jq -R . | jq -sc . || true)
+          files=${files:-[]}
+          echo "slow files: ${files}"
+          echo "files=${files}" >> "$GITHUB_OUTPUT"
+
       - name: Publish the verdict for the deploy workflows
         if: github.event_name == 'push'
         run: |
@@ -341,9 +414,9 @@ jobs:
           cat > changed-paths.json <<JSON
           {
             "all": "${{ steps.base.outputs.all }}",
-            "pigrocrm": "${{ steps.filter.outputs.pigrocrm_deploy }}",
-            "website": "${{ steps.filter.outputs.website_deploy }}",
-            "hub": "${{ steps.filter.outputs.hub_deploy }}"
+            "pigrocrm": "${{ steps.tag.outputs.pigrocrm_deploy || steps.filter.outputs.pigrocrm_deploy }}",
+            "website": "${{ steps.tag.outputs.website_deploy || steps.filter.outputs.website_deploy }}",
+            "hub": "${{ steps.tag.outputs.hub_deploy || steps.filter.outputs.hub_deploy }}"
           }
           JSON
           cat changed-paths.json
@@ -366,12 +439,35 @@ jobs:
   #
   # `outputs.all == 'true' ||`: the push had no base commit to diff against, so the
   # filters were never consulted and every job runs.
+  #
+  # Three shards, not one job (REB-561). Measured 2026-09-28 on run 36457557147: this
+  # job took 355s, 315s of them the tests, and it was the critical path of that run
+  # and of every run that selects it, a CRM pull request, a trunk push and every
+  # release tag alike (p90 of the last thirty PR runs 354s; every run over 300s was
+  # one with this job in it). The suite was already under `-n auto` on the runner's
+  # four cores, so the next unit of parallelism is another runner: hosted larger
+  # runners are billed even on a public repository and the self-hosted pool is closed
+  # to this repository (`docs/ci-runner-pool.md`), while two more free jobs cost
+  # nothing but their slots. Each shard is every third file of the sorted list
+  # (`_python-gate.yml`'s `shard` input) with its own `-n auto` inside; lint and mypy
+  # run once, on the first. `ci` below reads one aggregate result for the matrix, so
+  # the required check does not change, and `preflight.json`'s `pigrocrm-py-test`
+  # lane still runs the whole suite in one lane. `fail-fast: false`, so a red shard
+  # does not cancel its siblings and hide a second failure behind the first.
   pigrocrm-py:
-    name: pigrocrm · python
+    name: pigrocrm · python ${{ matrix.shard }}
     needs: changes
     if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.pigrocrm_py == 'true') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/3', '2/3', '3/3']
     uses: ./.github/workflows/_python-gate.yml
     with:
+      shard: ${{ matrix.shard }}
+      job-name: ${{ matrix.shard == '1/3' && 'lint · typecheck · test' || 'test' }}
+      lint: ${{ matrix.shard == '1/3' }}
+      typecheck: ${{ matrix.shard == '1/3' }}
       lint-path: projects/pigrocrm
       sources: >-
         projects/pigrocrm/packages/core/src
@@ -424,19 +520,35 @@ jobs:
   # with anything. Deliberately serial inside: every assertion in those files is about
   # which plan the planner picks, and two heavy corpora built at once on a two-core
   # runner is exactly the load that changes the answer.
+  #
+  # One job per file, on two runners (REB-565). Each file builds its own corpus from a
+  # module-scoped fixture and never shares it with the other, so running them in one
+  # job was two corpora in a row on one machine, 319s on run 36457557147, and the
+  # longest job on any trunk push under `packages/**` once the gate above was cut to
+  # three shards (REB-561). Two runners cost nothing on a public repository, and each
+  # job stays as serial inside as before: one corpus, one file, no neighbour's load
+  # under the planner. The matrix is the list of `slow` files as `changes` read it
+  # from the tree, so a third such file is a third job with nothing to edit here, and
+  # `preflight.json`'s `pigrocrm-py-corpus` lane still runs them all by marker. One
+  # corpus is fifty thousand rows (`test_search_plan.py`), the other twenty thousand
+  # per table (`test_sort_plan.py`).
   pigrocrm-py-corpus:
     name: pigrocrm · python corpus
     needs: changes
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.changes.outputs.all == 'true' || needs.changes.outputs.pigrocrm_py_corpus == 'true') }}
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.changes.outputs.slow_files != '[]' && (needs.changes.outputs.all == 'true' || needs.changes.outputs.pigrocrm_py_corpus == 'true') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJSON(needs.changes.outputs.slow_files) }}
     uses: ./.github/workflows/_python-gate.yml
     with:
-      job-name: the fifty-thousand-row corpus
+      job-name: ${{ matrix.file }}
       # Lint and mypy already ran in the job above, on the same tree.
       lint: false
       typecheck: false
       lint-path: projects/pigrocrm
       sources: ''
-      tests: projects/pigrocrm/packages/core/tests
+      tests: projects/pigrocrm/packages/core/tests/${{ matrix.file }}
       pytest-args: '-m "slow"'
       # These two files render nothing: no pandoc, no typst, no poppler.
       renderer: false
