@@ -34,6 +34,7 @@ from rebase_core.models import (
     TeamRequestTalent,
     User,
 )
+from rebase_core.team_caps import rome_midnight
 
 ADMIN_EMAIL = "ivan@rebase.it"
 MISSING = "00000000-0000-7000-8000-000000000000"
@@ -109,6 +110,7 @@ def _proposal_row(
     created_at: datetime | None = None,
     model: str = MODEL,
 ) -> UUID:
+    _now = datetime.now(UTC)
     row = TeamProposal(
         descrizione=DESCRIZIONE,
         riassunto=RIASSUNTO,
@@ -129,7 +131,12 @@ def _proposal_row(
         output_tokens=640 if model else 0,
         cache_read_tokens=0,
         origine=origine,
-        created_at=created_at or datetime.now(UTC) - timedelta(minutes=5),
+        # A few minutes old, so a proposal the test makes afterwards is the newer one, but
+        # not before midnight in Rome as of planting: the daily cap counts from there, and
+        # a row planted at 23:58 Rome for a test running at 00:03 is yesterday's (REB-582,
+        # run 36489673401, green at every other minute of the day). What remains is the
+        # gap between planting and the cap's own clock, under a second once a day.
+        created_at=created_at or max(_now - timedelta(minutes=5), rome_midnight(_now)),
     )
     session.add(row)
     session.commit()

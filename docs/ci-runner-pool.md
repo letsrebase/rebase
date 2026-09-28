@@ -43,7 +43,7 @@ The VPS that actually exists is **4 vCPU, 7.8GB RAM, 125GB disk**, below the 8
 vCPU / 16-32GB this document originally called for. Point's CI runs a Postgres
 service container plus Node and Python toolchains per job; `rebase`'s own CI (not
 on this pool, but the same shape if a future client repo needs it) adds Docker
-image builds and a Postgres-backed Python corpus job. None of it needs pre-baking
+image builds and Postgres-backed Python suites. None of it needs pre-baking
 onto the host: `actions/setup-node` downloads its toolchain at job time, so the
 real requirement is outbound internet, not a golden image. `actions/setup-python`
 is the one exception, below.

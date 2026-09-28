@@ -21,8 +21,10 @@ produces. An earlier version of this note claimed the tie-break direction was su
 its own; it is not, and for as long as `order_by` emitted `NULLS LAST` unconditionally
 eleven of these twelve indexes were dead for `dir=desc` -- a sequential scan and a sort,
 with the index sitting there unused. `db/sort.py::order_by` now emits `NULLS LAST` only for
-a nullable column, and `tests/test_sort_plan.py` asserts the plan rather than the order, so
-the claim cannot go stale again without a failure.
+a nullable column. `tests/test_sort_plan.py` asserted the plan rather than the order until
+REB-580 removed it with the planner corpus (a space's tables never reach the size where the
+planner wants these), so the rule now lives in `db/sort.py`'s docstring and nothing fails
+when it goes stale; a tenant that outgrows a space is the day to bring a plan test back.
 
 None of the thirteen is partial on `deleted_at IS NULL`, unlike the trigram indexes of
 0021. Those serve a predicate that always carries the clause; an ordering has to remain

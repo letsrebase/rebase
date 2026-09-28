@@ -1,15 +1,15 @@
-"""The §16 reference corpus, and the inflated variant criterion 3 needs.
+"""The §16 reference corpus: ten years of a five-person practice.
 
-Two scales, one generator. The reference scale is ten years of a five-person practice;
-the inflated one brings every searched table -- all five of them -- to 50 000 rows,
-because an assertion about
-a query plan means nothing on a table that fits in a handful of pages -- Postgres picks
-a sequential scan there because it *is* the cheapest plan, and a test asserting
-otherwise would go red without a defect.
+One scale, one generator. Until REB-580 there was a second, inflated scale of 50 000
+rows per searched table for the plan assertions of criterion 3, which went with them: a
+space's tables hold hundreds of rows, where Postgres picks a sequential scan because it
+*is* the cheapest plan, so a plan asserted at fifty thousand measured nothing a user of
+this product meets.
 
 Rows are inserted with `session.execute(insert(Model), [dicts])` rather than through the
-ORM: at 50 000 rows per table the unit-of-work overhead is the difference between a test
-that runs and a test nobody runs. `flush()` is called, never `commit()` -- the caller's
+ORM: at the 50 000 rows per table the inflated scale once had, the unit-of-work overhead
+was the difference between a test that runs and a test nobody runs, and the shape stays.
+`flush()` is called, never `commit()` -- the caller's
 transaction owns the lifetime, which is what lets `db_session` roll the whole corpus
 back.
 
@@ -17,9 +17,9 @@ Determinism is by seed, not by luck. `random.Random(seed)` is instantiated local
 never the module-level `random` functions, so a concurrent test that seeds the global
 generator cannot change what this one produces.
 
-A module rather than a fixture: three sub-plans and six test files need it, at two
-scales, and `INFLATED` takes long enough that a function callable once from a
-session-scoped fixture is the only affordable shape.
+A module rather than a fixture: three sub-plans and six test files need it, and a
+function they call inside their own session is the shape that lets each choose its
+scope.
 """
 
 from __future__ import annotations
@@ -130,9 +130,6 @@ class CorpusScale:
 
 
 REFERENCE = CorpusScale(customers=500, people=800, deals=2000, documents=1000, invoices=5000)
-INFLATED = CorpusScale(
-    customers=50_000, people=50_000, deals=50_000, documents=50_000, invoices=50_000
-)
 
 # Ten years of a register, whatever the scale. `(anno, numero)` is unique
 # (`uq_invoices_anno_numero`), so the two cannot be derived from the same modulus: the

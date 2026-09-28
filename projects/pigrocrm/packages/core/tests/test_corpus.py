@@ -1,8 +1,6 @@
 """The corpus is a test fixture, so it gets a test: a generator that silently produces
-400 rows instead of 50 000 turns Task A9's plan assertion into a measurement of nothing.
-
-Only REFERENCE is exercised here. INFLATED is asserted by Task A9, which is the only
-place that pays for it.
+400 rows instead of what its scale says turns every dashboard assertion on it into a
+measurement of nothing.
 """
 
 # Top-level, not `from .corpus import ...`: none of this repository's three test roots

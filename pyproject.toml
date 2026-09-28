@@ -102,12 +102,13 @@ pythonpath = [
   "projects/hub/tools",
 ]
 asyncio_mode = "auto"
-# Nothing skips on either marker by default: a plan assertion that CI skips is a plan
-# assertion that does not exist, so both run in `uv run pytest -q` and both run on the
-# trunk. What they buy is a change-scoped PR gate that can leave out the two kinds of
-# check whose result is not only about the code.
+# Both markers are deselected on every tier (`-m "not slow and not planner"` in ci.yml
+# and preflight.json) and, since REB-580, no test carries either: `slow` was the
+# planner corpus, gone because a space's tables never reach the size where the plan it
+# asserted matters. A test that earns one of them again also earns a place to run, a
+# job or a lane of its own, since the gate will not run it.
 markers = [
-  "slow: builds the 50 000-row inflated corpus; minutes, not seconds",
+  "slow: minutes of database around a test, not seconds; needs a job of its own",
   # A plan is not a behaviour: it is what one PostgreSQL, holding one table in one
   # physical state, decided was cheapest. Where the two candidates sit within a few
   # percent of each other the winner changes with the machine and with what the rest

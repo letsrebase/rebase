@@ -39,9 +39,12 @@ emitted, and that is the only thing it decides.
 This is why the whitelist is short: every admitted column costs an index, and a nullable one
 costs two.
 
-`test_sort_plan.py` asserts all of this on the executed plan. It exists because
+`test_sort_plan.py` asserted all of this on the executed plan over a twenty-thousand-row
+corpus until REB-580 removed it: a space's tables hold hundreds of rows, where the planner
+sorts in memory whatever the index says, so the assertion measured nothing a user meets.
 `test_migrations.py` asserts the indexes are *created* and `test_sort_cursor.py` asserts the
-rows come back in the declared *order*, and an in-memory sort satisfies both.
+rows come back in the declared *order*; the rule above is what keeps the indexes usable for
+a tenant that outgrows that.
 
 The whitelist is an exact string comparison and deliberately not a regular expression.
 `re.fullmatch` would be correct where `re.match(r"^...$")` is not -- Python's `$` matches
