@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 // The privacy page's section on the team builder (REB-515, REB-516): what it must say
 // about Anthropic, and what it must not claim. The seam asks the API for global
 // inference, so the page makes no claim about where the processing happens.
-const html = readFileSync(new URL('./privacy.html', import.meta.url), 'utf8')
+const html = readFileSync(resolve(__dirname, 'privacy.html'), 'utf8')
 
 function section(title: string): string {
   const start = html.indexOf(title)
