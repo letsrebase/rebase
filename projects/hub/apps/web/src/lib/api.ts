@@ -566,6 +566,10 @@ export interface Talento {
   origine: 'form' | 'wizard' | 'admin'
   utm_source: string | null
   created_at: string
+  /** A card's own day rate and work mode (REB-558); `null` for a bare lead, which has
+   *  neither. */
+  tariffa_giornaliera: string | null
+  remoto: Remoto | null
 }
 
 /** What an admin found about a signup on the public web (ORB-155): a name, maybe a
