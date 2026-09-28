@@ -298,15 +298,29 @@ def test_no_list_snapshot_or_check_reads_a_cvs_bytes(clean: Session) -> None:  #
     assert not [sql for sql in seen if "cv_bytes" in sql]
 
 
+@pytest.mark.parametrize(
+    "bad_value",
+    [
+        "not-a-date",
+        # `fromisoformat` parses a date-only string cleanly, as naive midnight; a
+        # naive value then raises `TypeError` where `done_at` compares it in plain
+        # Python against a timezone-aware database timestamp (Greptile, PR #444,
+        # round 4). Both a date-only and a datetime-only string are naive this way.
+        "2026-09-28",
+        "2026-09-28T10:00:00",
+    ],
+)
 def test_a_row_with_a_broken_richieste_snapshot_is_left_out_and_logged(
     clean: Session,  # noqa: F811  (fixture)
     caplog: pytest.LogCaptureFixture,
+    bad_value: str,
 ) -> None:
     """Part 2 (REB-550): a malformed `prima["richieste"]` timestamp makes `done_at`'s own
-    `datetime.fromisoformat` raise for that one row. Stamping already isolates a row like
-    it per savepoint (REB-533, `outcome.py`); `waiting_rows` does the same, leaving the
-    row out -- the safe side, since it never lets a mail reach someone who may already
-    have acted -- and logging it by id, rather than 500ing the whole «Riscrivi» list."""
+    `datetime.fromisoformat` raise, or a naive one raise at the comparison, for that one
+    row. Stamping already isolates a row like it per savepoint (REB-533, `outcome.py`);
+    `waiting_rows` does the same, leaving the row out -- the safe side, since it never
+    lets a mail reach someone who may already have acted -- and logging it by id, rather
+    than 500ing the whole «Riscrivi» list."""
     # `hub_engine`'s Alembic `env.py` calls `fileConfig`, which disables every logger
     # that already existed (the trap `test_campaign_outcome.py`'s
     # `test_a_row_whose_stamping_raises_is_skipped_the_rest_still_stamped` documents):
@@ -330,7 +344,7 @@ def test_a_row_with_a_broken_richieste_snapshot_is_left_out_and_logged(
         email="rotta@studio.it",
         tipo="azienda",
         codice="2",
-        prima={"richieste": {str(rotta.id): "not-a-date"}},
+        prima={"richieste": {str(rotta.id): bad_value}},
         disiscrizione_token="t-broken",
         stato="inviata",
         inviata_at=T0,
