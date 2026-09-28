@@ -227,7 +227,7 @@ describe('the signup wizard', () => {
   })
 
   it('lets the person submit anyway when the availability probe throws (REB-236)', async () => {
-    answers({ '/api/tenants/member': NOBODY })
+    answers({ '/api/tenants/member': NOBODY, '/api/tenants/': { slug: 'ada-lovelace' } })
     GET.mockRejectedValue(new Error('network down'))
     const user = userEvent.setup()
     render(<SignupPage />)
@@ -244,11 +244,20 @@ describe('the signup wizard', () => {
         ),
       PROBE_TIMEOUT,
     )
-    expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled()
+    const button = screen.getByRole('button', { name: 'Crea lo spazio' })
+    expect(button).toBeEnabled()
+    // "Submit anyway" is proven by the request actually going through, not merely by
+    // the button reading enabled: the probe's own failure never reaches the server.
+    await user.click(button)
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/tenants/', {
+        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'bob@studio.it', membro: false },
+      }),
+    )
   })
 
   it('lets the person submit anyway when the availability probe answers a server error (REB-236)', async () => {
-    answers({ '/api/tenants/member': NOBODY })
+    answers({ '/api/tenants/member': NOBODY, '/api/tenants/': { slug: 'ada-lovelace' } })
     GET.mockResolvedValue({
       error: { detail: 'Il servizio non risponde, riprova.' },
       response: { status: 503 },
@@ -267,7 +276,16 @@ describe('the signup wizard', () => {
         ),
       PROBE_TIMEOUT,
     )
-    expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled()
+    const button = screen.getByRole('button', { name: 'Crea lo spazio' })
+    expect(button).toBeEnabled()
+    // Same proof as the test above: "submit anyway" means the request actually goes
+    // through, not just that the button no longer reads disabled.
+    await user.click(button)
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/tenants/', {
+        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'bob@studio.it', membro: false },
+      }),
+    )
   })
 
   it('ignores an older probe answer that resolves after a newer one already landed (REB-265)', async () => {
