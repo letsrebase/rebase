@@ -476,12 +476,12 @@ def test_a_surname_inside_a_longer_word_is_not_the_person(clean: Session) -> Non
     assert read.error is None and read.card is not None and read.card.sintesi == sintesi
 
 
-GENDERED = "La scheda lascia intuire il genere."
+GENDER_WARNING = "written with a gender warning"
 # What the preview's cards wrote (REB-574): a feminine role and a feminine participle.
 SVILUPPATRICE: dict[str, Any] = {
     **CARD,
     "ruolo": "Sviluppatrice backend",
-    "sintesi": "Senior, specializzata in API Python e infrastruttura AWS per il fintech.",
+    "sintesi": "Specializzata in API Python e infrastruttura AWS per il fintech.",
 }
 
 
@@ -515,34 +515,64 @@ def test_the_prompt_keeps_the_gender_out() -> None:
     [
         ("ruolo", "Sviluppatrice backend", ["sviluppatrice"]),
         ("ruolo", "Co-fondatrice e CTO", ["co-fondatrice"]),
+        ("ruolo", "Avvocata e legal engineer", ["avvocata"]),
         ("sintesi", "Dottoressa in informatica, nove anni di backend.", ["dottoressa"]),
-        ("sintesi", "Backend: una senior esperta di AWS.", ["una senior", "esperta"]),
         ("sintesi", "Lei ha guidato la migrazione a Kubernetes.", ["lei"]),
-        ("sintesi", "La candidata ha nove anni di Python.", ["candidata"]),
-        ("sintesi", "Un’analista dei dati, laureata in statistica.", ["un’analista", "laureata"]),
-        ("competenze", ["Scrum Master CERTIFICATA", "Python"], ["certificata"]),
-        ("settori", ["fintech", "e-commerce da appassionata"], ["appassionata"]),
+        ("sintesi", "Nove anni di Python: la candidata ha guidato un team.", ["la candidata"]),
+        ("sintesi", "Backend: una senior con nove anni di AWS.", ["una senior"]),
+        ("sintesi", "Un’analista dei dati con nove anni di SQL.", ["un’analista"]),
+        # A participle only where nothing but the person can be its noun.
+        ("sintesi", "Esperta in Kubernetes e AWS.", ["esperta"]),
+        ("sintesi", "Nove anni di backend. Laureata in informatica.", ["laureata"]),
+        ("sintesi", "È specializzata in API Python.", ["specializzata"]),
+        ("sintesi", "Nove anni di backend ed è certificata AWS.", ["certificata"]),
+        ("sintesi", "Il profilo appassionata di UX, nove anni.", ["appassionata"]),
+        ("sintesi", "Un'esperta di dati, e una diplomata in ragioneria.", ["esperta", "diplomata"]),
+        ("competenze", ["Python", "Certificata AWS Solutions Architect"], ["certificata"]),
+        ("ruolo", "Sviluppatrice, esperta di cloud", ["sviluppatrice"]),
     ],
 )
-def test_the_guard_reads_a_feminine_role_participle_or_pronoun(
+def test_the_guard_reads_what_refers_to_the_person(
     field: str, value: str | list[str], words: list[str]
 ) -> None:
-    """Whole words, in any case, in the role, the summary, the skills and the sectors,
-    each named once in lower case: what the retry asks Claude to change."""
+    """A feminine role, «lei», «la candidata», a role given a gender by its article, and
+    a feminine participle where only the person can be its noun: whole words, in any
+    case, in the role, the summary, the skills and the sectors, each named once in lower
+    case, which is what the rewrite asks Claude to change."""
     assert _gendered(Card.model_validate({**CARD, field: value})) == words
 
 
-def test_words_that_only_end_like_a_role_are_not_the_gender(clean: Session) -> None:
-    """The roles are listed, not the endings: «matrice», «attrice» and «calcolatrice» in
-    a skill, «stessa» and «commessa» in the summary, «esperienza» and «ingegneria»,
-    which start like a listed word, are a card written at once."""
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        # A participle after another noun is that noun's.
+        ("sintesi", "Nove anni per un'agenzia specializzata in SEO e API Python."),
+        ("sintesi", "Ha migrato una piattaforma certificata PCI DSS su AWS."),
+        ("sintesi", "Backend per una startup fintech laureata in un acceleratore."),
+        ("competenze", ["Posta elettronica certificata", "Python"]),
+        # The endings of a role are not a role.
+        ("competenze", ["Matrice RACI", "Rigging per attrice virtuale", "Calcolatrice"]),
+        ("sintesi", "Il profilo ha seguito la stessa commessa per nove anni."),
+        # A word that starts like a listed one, and the masculine the prompt asks for.
+        ("sintesi", "Il profilo, specializzato in API: esperienza in ingegneria del software."),
+        ("settori", ["editoria", "consulenza"]),
+    ],
+)
+def test_the_guard_leaves_what_is_not_the_person(field: str, value: str | list[str]) -> None:
+    """A hit costs a second call, so nothing the person is not: «un'agenzia
+    specializzata» and «una piattaforma certificata» say nothing of who wrote the CV."""
+    assert _gendered(Card.model_validate({**CARD, field: value})) == []
+
+
+def test_a_card_that_is_not_the_person_is_written_at_once(clean: Session) -> None:
+    """The near misses through the writer: one call, the card as it came."""
     freelancer_id = _apply(clean)
     card = {
         **CARD,
         "competenze": ["Python", "Matrice RACI", "Rigging per attrice virtuale", "Calcolatrice"],
         "sintesi": (
-            "Il profilo, specializzato in API, ha seguito la stessa commessa per una "
-            "startup fintech: esperienza in ingegneria del software."
+            "Il profilo, specializzato in API, ha seguito la stessa commessa per "
+            "un'agenzia specializzata in SEO e migrato una piattaforma certificata PCI DSS."
         ),
     }
     llm = RecordingCall([card_response(card)])
@@ -571,7 +601,7 @@ def test_a_gendered_card_is_asked_again_once_and_the_neutral_one_is_written(
     stored = _stored(clean, freelancer_id)
     assert stored is not None
     assert (stored.input_tokens, stored.output_tokens) == (1200 + 1450, 180 + 170)
-    assert stored.error_cv_sha256 is None
+    assert (stored.error, stored.error_cv_sha256) == (None, None)
 
     first, retry = llm.requests
     assert (retry.system, retry.json_schema, retry.max_tokens) == (
@@ -596,18 +626,19 @@ def test_a_gendered_card_is_asked_again_once_and_the_neutral_one_is_written(
         "La scheda rivela il genere: riscrivila con «il profilo» come soggetto e ruoli in "
         "forma neutra."
     )
-    # The log says a retry happened and to whom, never the words.
+    # The log says a rewrite happened and to whom, never the words; no warning.
     assert str(freelancer_id) in logs.text and "asked again" in logs.text
-    for secret in ("Sviluppatrice", "sviluppatrice", "specializzata", "Lovelace"):
+    assert GENDER_WARNING not in logs.text
+    for secret in ("Sviluppatrice", "sviluppatrice", "Specializzata", "Lovelace"):
         assert secret not in logs.text
 
 
-def test_a_card_still_gendered_after_the_retry_is_recorded(
+def test_a_card_still_gendered_after_the_rewrite_is_written_with_a_warning(
     clean: Session, logs: pytest.LogCaptureFixture
 ) -> None:
-    """A second gendered answer is `gendered`, recorded as a card naming the person is:
-    our sentence, the CV's hash, no card, no tokens, and no third call until the CV
-    changes or an admin asks with «Rigenera scheda»."""
+    """Never a gate: the rewrite still gendered is written all the same, with no error
+    on the row, since a failure would take the person out of the catalogue for a hint.
+    One line in the log says so; the same CV is not asked again."""
     freelancer_id = _apply(clean)
     still = {**CARD, "sintesi": "Lei scrive API in Python e cura l'infrastruttura AWS."}
     llm = RecordingCall([card_response(SVILUPPATRICE), card_response(still), card_response()])
@@ -616,50 +647,65 @@ def test_a_card_still_gendered_after_the_retry_is_recorded(
     read = writer.write(freelancer_id)
 
     assert len(llm.requests) == 2
-    assert (read.card, read.cv_sha256, read.generated_at) == (None, None, None)
-    assert read.error == GENDERED
+    assert read.card == Card.model_validate(still)
+    assert (read.cv_sha256, read.generated_at, read.error) == (_sha(CV), NOW, None)
     stored = _stored(clean, freelancer_id)
-    assert stored is not None and stored.error_cv_sha256 == _sha(CV)
-    assert (stored.input_tokens, stored.output_tokens) == (None, None)
-    assert _card_is_sql_null(clean, freelancer_id)
-    assert str(freelancer_id) in logs.text and "gendered" in logs.text
-    for secret in ("Lei scrive", "Sviluppatrice", "specializzata"):
+    assert stored is not None and stored.error_cv_sha256 is None
+    assert (stored.input_tokens, stored.output_tokens) == (2400, 360)
+    assert f"card for freelancer {freelancer_id} {GENDER_WARNING}" in logs.text
+    for secret in ("Lei scrive", "Sviluppatrice", "Specializzata"):
         assert secret not in logs.text
 
-    assert writer.write(freelancer_id).error == GENDERED
+    assert writer.write(freelancer_id).card == Card.model_validate(still)
     assert len(llm.requests) == 2
-
-    forced = writer.write(freelancer_id, force=True)
-    assert len(llm.requests) == 3
-    assert forced.card == Card.model_validate(CARD) and forced.error is None
 
 
 @pytest.mark.parametrize(
-    ("retry", "error", "parked"),
+    ("retry", "tokens"),
     [
-        (card_response({**CARD, "sintesi": "Il profilo di Lovelace."}), IDENTIFYING, True),
-        (card_response(stop_reason="refusal"), None, True),
-        (_down(), None, False),
+        (card_response({**CARD, "sintesi": "Il profilo di Lovelace."}), (2400, 360)),
+        (card_response(stop_reason="refusal"), (2400, 360)),
+        (card_response(text="non una scheda"), (2400, 360)),
+        (_down(), (1200, 180)),
     ],
-    ids=["identifying", "refusal", "outage"],
+    ids=["identifying", "refusal", "shape", "outage"],
 )
-def test_the_retrys_own_failure_is_recorded_as_itself(
-    clean: Session, retry: LlmResponse | BaseException, error: str | None, parked: bool
+def test_a_rewrite_that_fails_writes_the_first_card_with_a_warning(
+    clean: Session,
+    logs: pytest.LogCaptureFixture,
+    retry: LlmResponse | BaseException,
+    tokens: tuple[int, int],
 ) -> None:
-    """The retry's answer is the answer: a card naming the person or a refusal is that
-    failure, parked on the CV; an outage keeps no hash, so the next run asks again."""
+    """The first card already names no one: when the rewrite is not a card, a refusal, a
+    bad shape, a card that names the person or an outage, the first one is written,
+    with the warning and every token paid for."""
     freelancer_id = _apply(clean)
     llm = _Scripted([card_response(SVILUPPATRICE), retry])
 
     read = CardWriter(clean, llm).write(freelancer_id)
 
     assert len(llm.requests) == 2
-    assert read.card is None and read.error is not None and read.error != GENDERED
-    if error is not None:
-        assert read.error == error
+    assert read.card == Card.model_validate(SVILUPPATRICE) and read.error is None
+    assert read.cv_sha256 == _sha(CV)
     stored = _stored(clean, freelancer_id)
-    assert stored is not None
-    assert stored.error_cv_sha256 == (_sha(CV) if parked else None)
+    assert stored is not None and stored.error_cv_sha256 is None
+    assert (stored.input_tokens, stored.output_tokens) == tokens
+    assert GENDER_WARNING in logs.text
+
+
+def test_refresh_stale_counts_the_gender_warnings(clean: Session) -> None:
+    """A card written with the warning is written, and counted apart as well, for the
+    CLI's «N con avviso di genere»."""
+    _apply(clean, "a@studio.it", text_pdf("Primo CV."))
+    _apply(clean, "b@studio.it", text_pdf("Secondo CV."))
+    llm = RecordingCall(
+        [card_response(), card_response(SVILUPPATRICE), card_response(SVILUPPATRICE)]
+    )
+
+    assert CardWriter(clean, llm).refresh_stale() == CardsRefreshed(
+        written=2, failed=0, gender_warnings=1
+    )
+    assert len(llm.requests) == 3
 
 
 def test_an_outage_on_a_new_cv_retires_the_old_card(clean: Session) -> None:

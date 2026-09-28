@@ -3,10 +3,10 @@ and writes what a company may know of the profile without a name, and the team
 builder's engine reads nothing else about a talent.
 
 One call per CV, never two, but for a card that gives the person's gender away, asked
-once more (REB-574): the card keeps the SHA-256 of the file it came from, and a failure
-that is the CV's own -- a refusal, an answer cut at `max_tokens`, a body that is not the
-card, a card that names the person or carries an address, a card still gendered after
-its retry, a scan with no text -- keeps the hash of the file that failed, so neither the
+once more and then written whatever the answer (REB-574): the card keeps the SHA-256 of
+the file it came from, and a failure that is the CV's own -- a refusal, an answer cut at
+`max_tokens`, a body that is not the card, a card that names the person or carries an
+address, a scan with no text -- keeps the hash of the file that failed, so neither the
 same CV nor the same broken one is sent and paid for again until the bytes change, or
 until an admin asks with «Rigenera scheda» (`force`). The provider down is not the CV's
 fault: the row says so, no hash is kept, and the next write, or the next `rebase
@@ -69,10 +69,11 @@ CARD_SCHEMA = {
     key: value for key, value in Card.model_json_schema().items() if key != "description"
 }
 
-Failure = Literal[
-    "no_text", "refusal", "max_tokens", "shape", "identifying", "gendered", "unavailable"
+Failure = Literal["no_text", "refusal", "max_tokens", "shape", "identifying", "unavailable"]
+# `warned`: written, with the gender still showing after the one rewrite (REB-574).
+Outcome = Literal[
+    "written", "warned", "failed", "unavailable", "unchanged", "deleted", "superseded"
 ]
-Outcome = Literal["written", "failed", "unavailable", "unchanged", "deleted", "superseded"]
 
 # The last successful generation, written together and retired together. `card` is
 # retired with SQL `NULL`, never `None`: the JSONB type binds `None` as the JSON value
@@ -93,7 +94,6 @@ _FAILURES: dict[Failure, str] = {
     "max_tokens": "La risposta di Claude si è interrotta prima della fine della scheda.",
     "shape": "La risposta di Claude non era una scheda valida.",
     "identifying": "La scheda cita la persona o un indirizzo.",
-    "gendered": "La scheda lascia intuire il genere.",
     # True of every outage, the backlog's (asked again by the next run) and a
     # «Rigenera scheda» on the card's own CV (whose card stays) alike; a new CV's
     # previous card is retired meanwhile, and comes back with the next answer.
@@ -159,43 +159,58 @@ def _identifies(card: Card, cognome: str, nome: str = "") -> bool:
 
 # What gives a card's person away as a woman (REB-574): Italian writes the gender into
 # the role, the participle and the pronoun, and in a catalogue of a few dozen people
-# that is one more hint of who they are. Whole words, in any case. The roles in -trice
-# and -essa are listed one by one, not matched by the ending, which is also «matrice»,
-# «motrice», «calcolatrice», «stessa», «commessa» and «promessa»; «attrice» is left out
-# with them, a role of the stage the cards here meet only inside a skill. The guard is
-# a net under the prompt's rule, not the rule: a feminine form not listed passes («è
-# stata», «brava», «coinvolta», «una backend developer», with a word between the
-# article and the role), and a listed participle agreeing with a feminine noun is a
-# false alarm («un'agenzia specializzata», «posta elettronica certificata»), which the
-# retry names word by word so Claude can rephrase it (`neutral_retry`).
-_GENDERED = re.compile(
+# that is one more hint of who they are. A hit costs a second call, so the guard reads
+# only what can refer to the person, whole words in any case. The feminine role nouns
+# a CV turns into, one by one rather than by the ending, which is also «matrice»,
+# «attrice», «calcolatrice», «stessa» and «commessa»; «lei»; «la candidata»; and a role
+# with no gender of its own given one by «una» or «un'» («una senior», «un'analista»).
+_HER = re.compile(
     r"\b(?:"
-    # Roles
     r"sviluppatrice|programmatrice|progettatrice|amministratrice|coordinatrice"
     r"|organizzatrice|collaboratrice|facilitatrice|formatrice|illustratrice"
-    r"|ricercatrice|direttrice|traduttrice|redattrice|istruttrice|autrice|curatrice"
+    r"|ricercatrice|direttrice|traduttrice|redattrice|istruttrice|autrice"
     r"|(?:co-?)?fondatrice|dottoressa|professoressa|studentessa|presidentessa"
-    r"|ingegnera|architetta"
-    # Participles and adjectives agreeing with her
-    r"|specializzata|esperta|laureata|certificata|appassionata|diplomata"
-    # The pronoun, the candidate, and a role with no gender given one by its article
-    r"|lei|candidata"
-    r"|una\s+(?:senior|junior|consulente|analista|professionista|designer|freelance)"
+    r"|ingegnera|architetta|avvocata"
+    r"|lei|(?:la|una)\s+candidata"
+    r"|una\s+(?:senior|junior|consulente|analista|professionista|progettista|designer|freelance)"
     r"|un['’](?:analista|assistente|economista)"
     r")\b",
+    re.IGNORECASE,
+)
+# A feminine participle or adjective is the person's only where no other noun can be
+# the one it agrees with: at the start of a field or of a sentence («Esperta in
+# cloud»), after «è» («È specializzata in API»), after «profilo», or made a noun by
+# «una» or «un'» («un'esperta»). After any other noun it is that noun's («un'agenzia
+# specializzata», «una piattaforma certificata») and says nothing of the person.
+_HER_PARTICIPLE = re.compile(
+    r"(?:^|[.!?]\s+|\b(?:è|profilo|una)\s+|\bun['’])"
+    r"(specializzata|esperta|laureata|certificata|appassionata|diplomata)\b",
     re.IGNORECASE,
 )
 
 
 def _gendered(card: Card) -> list[str]:
-    """The words of `_GENDERED` in the card's role, summary, skills and sectors, in lower
-    case, each once, in the order they are found; empty for a card that tells nothing of
-    the gender. `luogo` and `lingue` are a place and languages, never the person's."""
-    found: dict[str, None] = {}
+    """What `_HER` and `_HER_PARTICIPLE` find in the card's role, summary, skills and
+    sectors, in lower case, each once, in the order written; empty for a card that tells
+    nothing of the gender. `luogo` and `lingue` are a place and languages, never the
+    person's.
+
+    A net under the prompt's rule, not the rule, and not a gate: a hit asks for one
+    rewrite, and the card is written whatever it answers. So it misses what it is not
+    sure of, a feminine form not listed («è stata», «brava»), a participle after a comma
+    («Backend developer, specializzata in API», since «una startup, specializzata in
+    pagamenti» reads the same) or a word between the article and the role («una backend
+    developer»); and «è» after a feminine subject that is not the person («la
+    piattaforma è certificata») is a hit, one call for nothing."""
+    found: list[tuple[int, str]] = []
     for value in (card.ruolo, card.sintesi, *card.competenze, *card.settori):
-        for word in _GENDERED.finditer(value):
-            found.setdefault(re.sub(r"\s+", " ", word.group().lower()), None)
-    return list(found)
+        spots = [(hit.start(), hit.group()) for hit in _HER.finditer(value)]
+        spots += [(hit.start(1), hit.group(1)) for hit in _HER_PARTICIPLE.finditer(value)]
+        found += sorted(spots)
+    words: dict[str, None] = {}
+    for _, word in found:
+        words.setdefault(re.sub(r"\s+", " ", word.lower()), None)
+    return list(words)
 
 
 _SYSTEM = """\
@@ -267,9 +282,9 @@ NEUTRAL_AGAIN = (
 
 def neutral_retry(request: LlmRequest, answer: str) -> LlmRequest:
     """`request` once more, with the gendered card `answer` as Claude's turn and the
-    correction as the next user turn, naming the words `_gendered` found so the model
-    changes those and not the card; the same system, schema and `max_tokens`. It resends
-    the CV, so the retry costs about as much as the first call."""
+    correction as the next user turn, naming the words `_gendered` found; the same
+    system, schema and `max_tokens`. It resends the CV, so the retry costs about as much
+    as the first call."""
     found = _gendered(Card.model_validate(json.loads(answer)))
     words = ", ".join(f"«{word}»" for word in found)
     return request.model_copy(
@@ -291,8 +306,7 @@ def neutral_retry(request: LlmRequest, answer: str) -> LlmRequest:
 def _card_from(response: LlmResponse, cognome: str, nome: str = "") -> Card | Failure:
     """The card, or the kind of failure: `stop_reason` is read before the body, as the
     seam hands it over (`llm.py`), and a card that validates is still refused if it
-    names the person or carries an address, or, `gendered`, if it gives the person's
-    gender away (`_gendered`); a card that does both is `identifying`, never retried."""
+    names the person or carries an address."""
     if response.stop_reason == "refusal":
         return "refusal"
     if response.stop_reason == "max_tokens":
@@ -303,9 +317,7 @@ def _card_from(response: LlmResponse, cognome: str, nome: str = "") -> Card | Fa
         card = Card.model_validate(json.loads(response.text))
     except ValueError:  # `json.JSONDecodeError` and Pydantic's `ValidationError` alike
         return "shape"
-    if _identifies(card, cognome, nome):
-        return "identifying"
-    return "gendered" if _gendered(card) else card
+    return "identifying" if _identifies(card, cognome, nome) else card
 
 
 class CardWriter:
@@ -341,7 +353,8 @@ class CardWriter:
         The batch stops at the first outage (`LlmUnavailable`), counted as not done: a
         run of 429s would otherwise walk the whole batch for nothing, and the CVs after
         it are simply the next run's. A run with nothing written and nothing failed is
-        the backlog done."""
+        the backlog done. A card written with the gender still showing after its rewrite
+        counts as written, and among `gender_warnings` too (REB-574)."""
         if self.llm is None:
             return CardsRefreshed(written=0, failed=0)
         digest = func.encode(func.sha256(Freelancer.cv_bytes), "hex")
@@ -358,16 +371,18 @@ class CardWriter:
             .order_by(Freelancer.created_at, Freelancer.id)
             .limit(limit)
         ).all()
-        written = failed = 0
+        written = failed = warned = 0
         for freelancer_id in stale:
             outcome = self._write(freelancer_id, force=False)
-            if outcome == "written":
+            if outcome in ("written", "warned"):
                 written += 1
             elif outcome in ("failed", "unavailable"):
                 failed += 1
+            if outcome == "warned":
+                warned += 1
             if outcome == "unavailable":
                 break
-        return CardsRefreshed(written=written, failed=failed)
+        return CardsRefreshed(written=written, failed=failed, gender_warnings=warned)
 
     def delete(self, freelancer_id: UUID) -> None:
         """The card goes with the CV. Not committed here: `clear_cv` commits it with the
@@ -435,27 +450,36 @@ class CardWriter:
         except LlmUnavailable:
             return self._fail(freelancer_id, digest, "unavailable")
         card = _card_from(response, cognome, nome)
-        input_tokens, output_tokens = response.input_tokens, response.output_tokens
-        if card == "gendered" and response.text is not None:
-            # Once (REB-574): the retry's answer is the answer, a card, a failure of any
-            # kind or an outage, and the row counts the tokens of both calls.
-            logger.info("card for freelancer %s gave the gender away: asked again", freelancer_id)
-            try:
-                response = self.llm.complete(neutral_retry(request, response.text))
-            except LlmUnavailable:
-                return self._fail(freelancer_id, digest, "unavailable")
-            card = _card_from(response, cognome, nome)
-            input_tokens += response.input_tokens
-            output_tokens += response.output_tokens
         if not isinstance(card, Card):
             return self._fail(freelancer_id, digest, card)
+        model = response.model
+        input_tokens, output_tokens = response.input_tokens, response.output_tokens
+        warned = False
+        if _gendered(card) and response.text is not None:
+            # One rewrite, never a gate (REB-574): the card already names no one, no
+            # place and no id, and a failure would park the person out of the catalogue
+            # for a hint. The rewrite when it is a card; otherwise, a refusal, a bad
+            # shape, a card that names the person or an outage, the first card. The row
+            # counts the tokens of both calls.
+            logger.info("card for freelancer %s gave the gender away: asked again", freelancer_id)
+            try:
+                again: LlmResponse | None = self.llm.complete(neutral_retry(request, response.text))
+            except LlmUnavailable:
+                again = None
+            if again is not None:
+                input_tokens += again.input_tokens
+                output_tokens += again.output_tokens
+                rewritten = _card_from(again, cognome, nome)
+                if isinstance(rewritten, Card):
+                    card, model = rewritten, again.model
+            warned = bool(_gendered(card))
         saved = self._save(
             freelancer_id,
             digest,
             {
                 "cv_sha256": digest,
                 "card": card.model_dump(mode="json"),
-                "model": response.model,
+                "model": model,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "generated_at": self.now(),
@@ -463,7 +487,12 @@ class CardWriter:
                 "error_cv_sha256": None,
             },
         )
-        return "written" if saved else "superseded"
+        if not saved:
+            return "superseded"
+        if warned:
+            logger.warning("card for freelancer %s written with a gender warning", freelancer_id)
+            return "warned"
+        return "written"
 
     def _fail(self, freelancer_id: UUID, digest: str, kind: Failure) -> Outcome:
         """The sentence beside the card, and the failed CV's hash unless the failure was

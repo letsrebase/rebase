@@ -353,9 +353,10 @@ person) is not tried again until it changes, so the runs end; an outage stops th
 counts under «non riuscite» and is the next run's, so a run that keeps printing «0
 schede scritte, 1 non riuscite» is Claude not answering, not a CV. «Rigenera scheda» on
 the talent's page asks again for one. A card whose Italian gives the person's gender away
-(`_gendered` in `cards.py`, a short word list under the prompt's rule) is asked for once
-more, and a second gendered answer is parked like one that names the person, reason
-`gendered`, «La scheda lascia intuire il genere.» (REB-574).
+(`_gendered` in `cards.py`, a net under the prompt's rule, not a gate) is asked for once
+more and then written whatever the answer, never parked: one still gendered adds «N con
+avviso di genere» to the run's line and `written with a gender warning` to the log
+(REB-574).
 
 **Two caps.** `REBASE_TEAM_BUILDER_CONCURRENCY` (4) is how many proposals run at once
 in the API process: the next one answers 503 «Troppe richieste in questo momento:

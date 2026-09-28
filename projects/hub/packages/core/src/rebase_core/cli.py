@@ -215,8 +215,10 @@ def cards_refresh(limit: int) -> int:
     Run once after the deploy that brings the key, and again until it prints «0 schede
     scritte, 0 non riuscite». A CV that failed on its own account is not tried again
     until it changes, so the runs end; a batch that met an outage stops there, counts it
-    among «non riuscite» and leaves it and the rest to the next run. Without a key it
-    says so, rather than printing «0 schede scritte» for ever."""
+    among «non riuscite» and leaves it and the rest to the next run. A card written with
+    the gender still showing after its rewrite adds «N con avviso di genere», only when
+    there is one (REB-574). Without a key it says so, rather than printing «0 schede
+    scritte» for ever."""
     if limit < 1:
         print("--limit deve essere almeno 1.", file=sys.stderr)
         return 2
@@ -233,7 +235,10 @@ def cards_refresh(limit: int) -> int:
         result = CardWriter(session, llm).refresh_stale(limit)
     finally:
         session.close()
-    print(f"{result.written} schede scritte, {result.failed} non riuscite")
+    summary = f"{result.written} schede scritte, {result.failed} non riuscite"
+    if result.gender_warnings:
+        summary += f", {result.gender_warnings} con avviso di genere"
+    print(summary)
     return 0
 
 
