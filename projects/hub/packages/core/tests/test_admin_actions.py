@@ -243,6 +243,42 @@ def test_clear_cv_drops_the_bytes_and_never_puts_them_in_the_audit_entry(clean: 
     assert len(service.audit_timeline(row.id)) == 1
 
 
+# ---- «Verificato» (REB-518) -----------------------------------------------------------
+
+
+def test_set_vetted_records_the_admin(clean: Session) -> None:
+    service = FreelancerService(clean)
+    row, _ = service.apply(_application())
+    admin_id = _an_admin(clean)
+
+    vetted = service.set_vetted(row.id, True, admin_id)
+    assert vetted.vetted_at is not None
+    stored = clean.get(Freelancer, row.id)
+    assert stored is not None and stored.vetted_by == admin_id
+
+    # Marking it again is not a second verification: the date stays, no second entry.
+    again = service.set_vetted(row.id, True, admin_id)
+    assert again.vetted_at == vetted.vetted_at
+
+    unvetted = service.set_vetted(row.id, False, admin_id)
+    assert unvetted.vetted_at is None
+    clean.refresh(stored)
+    assert stored.vetted_by is None
+
+    trail = service.audit_timeline(row.id)
+    assert [(entry.kind, entry.payload) for entry in trail] == [
+        ("vetted", {"vetted": False}),
+        ("vetted", {"vetted": True}),
+    ]
+    assert {entry.admin_nome for entry in trail} == {"Ivan"}
+
+
+def test_set_vetted_on_a_card_that_is_not_there_is_not_found(clean: Session) -> None:
+    admin_id = _an_admin(clean)
+    with pytest.raises(NotFound):
+        FreelancerService(clean).set_vetted(uuid4(), True, admin_id)
+
+
 # ---- delete/restore, and the reversibility of both ------------------------------------
 
 

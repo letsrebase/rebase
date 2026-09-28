@@ -1,11 +1,13 @@
 """The team builder over HTTP (REB-512, spec § 3.2, § 3.5, § 5): the public proposal and
-request, their caps and their sentences, and the admin's «Richieste team»."""
+request, their caps and their sentences, the admin's «Richieste team», and the talents'
+availability (REB-517, spec § 3.6): «Contatta i talenti» and the answer page's post."""
 
 import json
 import logging
 import re
 import threading
 from collections.abc import Iterator
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -17,18 +19,19 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_llm, get_sender
+from rebase_api.deps import get_llm, get_sender, get_session_opener
 from rebase_api.ratelimit import SIGNUPS_PER_MINUTE, reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.errors import LlmUnavailable
 from rebase_core.llm import UNAVAILABLE_SENTENCE, LlmRequest, LlmResponse, RecordingCall
-from rebase_core.mail import RecordingSender
+from rebase_core.mail import Mail, RecordingSender
 from rebase_core.models import (
     AdminAction,
     Freelancer,
     FreelancerCard,
     TeamProposal,
     TeamRequest,
+    TeamRequestTalent,
     User,
 )
 
@@ -189,6 +192,7 @@ def test_public_proposal_answers_the_team_without_ids(client: TestClient, team: 
     [member] = body["team"]
     assert member["posizione"] == 1
     assert member["freelancer_id"] is None
+    assert member["nome"] is None and member["cognome"] is None
     assert member["scheda"]["luogo"] is None
     assert member["fascia"] == {"min": 500, "max": 650}
     assert str(freelancer_id) not in response.text
@@ -469,6 +473,8 @@ def _admin_routes() -> list[tuple[str, str, dict[str, Any] | None]]:
         ("POST", f"{base}/status", {"stato": "chiusa"}),
         ("PATCH", f"{base}/note", {"note": "x"}),
         ("PATCH", f"{base}/summary", {"riassunto": "Un riassunto."}),
+        ("POST", f"{base}/contact", None),
+        ("POST", f"{base}/contact?only_silent=true", None),
     ]
 
 
@@ -550,3 +556,199 @@ def test_an_admin_reads_and_works_a_request(
     assert client.get(f"/api/hub/team/requests/{MISSING}").status_code == 404
     malformed = client.get("/api/hub/team/requests", params={"cursor": "non-un-cursore"})
     assert malformed.status_code == 422
+
+
+# ---- the talents' availability (REB-517, spec § 3.2, § 3.6) --------------------------------
+
+NAMES = "Il riassunto nomina l'azienda: correggilo prima di scrivere ai talenti."
+CONTACTED = "I talenti sono già stati contattati: rimanda a chi non ha risposto."
+NOBODY = "Non c'è nessun talento da contattare."
+
+
+@pytest.fixture
+def mailbox(client: TestClient, team: Session, sender: RecordingSender) -> RecordingSender:
+    """The recording sender, and the background delivery's session the test's own, the
+    way the `llm` fixture hands the card writer's: the mails leave after the answer."""
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    overrides[get_session_opener] = lambda: lambda: nullcontext(team)
+    return sender
+
+
+def _admin_request(
+    client: TestClient, team: Session, sender: RecordingSender, members: int = 2
+) -> tuple[str, list[UUID]]:
+    """An admin signed in, and a public request for a team of `members` talents."""
+    team.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="Sala", role="admin"))
+    team.commit()
+    _login(client, sender)
+    talents = [_talent(team, n) for n in range(1, members + 1)]
+    created = client.post(
+        "/api/hub/team/requests",
+        json={"proposal_id": str(_proposal_row(team, talents)), **CONTACTS},
+    )
+    assert created.status_code == 201, created.text
+    reset_rate_limit()
+    return created.json()["id"], talents
+
+
+def _availability(sender: RecordingSender) -> list[Mail]:
+    return [mail for mail in sender.sent if mail.subject == "Un progetto per te: sei disponibile?"]
+
+
+def _token(mail: Mail) -> str:
+    found = re.search(r"/hub/team/risposta\?t=([A-Za-z0-9_-]+)&r=si", mail.text)
+    assert found, mail.text
+    return found.group(1)
+
+
+def test_an_admin_contacts_the_talents_and_each_answers_once(
+    client: TestClient, team: Session, mailbox: RecordingSender
+) -> None:
+    request_id, talents = _admin_request(client, team, mailbox)
+
+    contacted = client.post(f"/api/hub/team/requests/{request_id}/contact")
+
+    assert contacted.status_code == 200, contacted.text
+    body = contacted.json()
+    assert body["stato"] == "contattata" and body["contacted_at"] is not None
+    assert all(talento["mail_sent_at"] is not None for talento in body["talenti"])
+    assert all(talento["contattabile"] for talento in body["talenti"])
+    # Sent after the answer, by the background task, to each talent once.
+    first, second = _availability(mailbox)
+    assert (first.to, second.to) == ("talento1@studio.it", "talento2@studio.it")
+    assert "https://letsrebase.com/hub/team/risposta?t=" in first.text
+    assert "Acme" not in first.text
+
+    # A mail scanner's GET records nothing.
+    assert client.get("/api/hub/team/availability", params={"t": _token(first)}).status_code == 405
+    answered = client.post(
+        "/api/hub/team/availability", json={"t": _token(first), "risposta": "si"}
+    )
+    assert answered.status_code == 200, answered.text
+    assert answered.json() == {"esito": "si"}
+    again = client.post("/api/hub/team/availability", json={"t": _token(first), "risposta": "no"})
+    assert again.json() == {"esito": "invalid"}
+    unknown = client.post(
+        "/api/hub/team/availability", json={"t": "non-un-token", "risposta": "no"}
+    )
+    assert unknown.json() == {"esito": "invalid"}
+    assert (
+        client.post(
+            "/api/hub/team/availability", json={"t": _token(second), "risposta": "forse"}
+        ).status_code
+        == 422
+    )
+    team.expire_all()
+    row = team.scalar(
+        select(TeamRequestTalent).where(TeamRequestTalent.freelancer_id == talents[0])
+    )
+    assert row is not None and row.risposta == "si" and row.risposta_at is not None
+    reset_rate_limit()
+
+    # «Contatta i talenti» is a first time only; «Rimanda» writes to the silent one.
+    refused = client.post(f"/api/hub/team/requests/{request_id}/contact")
+    assert refused.status_code == 409
+    assert refused.json() == {"detail": CONTACTED}
+    resent = client.post(f"/api/hub/team/requests/{request_id}/contact?only_silent=true")
+    assert resent.status_code == 200, resent.text
+    [*_, last] = _availability(mailbox)
+    assert len(_availability(mailbox)) == 3 and last.to == "talento2@studio.it"
+    assert client.post(
+        "/api/hub/team/availability", json={"t": _token(last), "risposta": "no"}
+    ).json() == {"esito": "no"}
+    nobody = client.post(f"/api/hub/team/requests/{request_id}/contact?only_silent=true")
+    assert nobody.status_code == 409
+    assert nobody.json() == {"detail": NOBODY}
+
+    detail = client.get(f"/api/hub/team/requests/{request_id}").json()
+    assert [talento["risposta"] for talento in detail["talenti"]] == ["si", "no"]
+    item = client.get("/api/hub/team/requests").json()["items"][0]
+    assert (item["talenti_totale"], item["talenti_si"]) == (2, 1)
+
+
+def test_contact_refuses_a_summary_that_names_the_company(
+    client: TestClient, team: Session, mailbox: RecordingSender
+) -> None:
+    request_id, talents = _admin_request(client, team, mailbox, members=1)
+    row = team.get(TeamRequest, UUID(request_id))
+    assert row is not None and row.proposal_id is not None
+    proposal = team.get(TeamProposal, row.proposal_id)
+    assert proposal is not None
+    proposal.riassunto = "ACME rifà il gestionale degli ordini."
+    team.commit()
+
+    refused = client.post(f"/api/hub/team/requests/{request_id}/contact")
+
+    assert refused.status_code == 409
+    assert refused.json() == {"detail": NAMES}
+    assert _availability(mailbox) == []
+    assert client.get(f"/api/hub/team/requests/{request_id}").json()["stato"] == "nuova"
+
+
+def test_contact_without_a_mail_key_is_503(
+    client: TestClient, team: Session, sender: RecordingSender
+) -> None:
+    request_id, _ = _admin_request(client, team, sender, members=1)
+    client.app.dependency_overrides[get_sender] = lambda: None  # type: ignore[attr-defined]
+
+    refused = client.post(f"/api/hub/team/requests/{request_id}/contact")
+
+    assert refused.status_code == 503
+    assert refused.json() == {
+        "detail": (
+            "L'invio delle email non è attivo su questo ambiente: la mail non arriverebbe "
+            "ai talenti."
+        )
+    }
+    detail = client.get(f"/api/hub/team/requests/{request_id}").json()
+    assert detail["stato"] == "nuova"
+    assert [talento["mail_sent_at"] for talento in detail["talenti"]] == [None]
+
+
+def test_a_refused_availability_mail_is_logged_by_id_alone(
+    client: TestClient, team: Session, sender: RecordingSender, caplog: pytest.LogCaptureFixture
+) -> None:
+    request_id, _ = _admin_request(client, team, sender, members=1)
+
+    class Refusing(RecordingSender):
+        def send(self, mail: Mail) -> bool:
+            super().send(mail)
+            return False
+
+    refusing = Refusing()
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    overrides[get_sender] = lambda: refusing
+    overrides[get_session_opener] = lambda: lambda: nullcontext(team)
+    logging.getLogger("rebase_core.team_requests").disabled = False
+    caplog.set_level(logging.INFO, logger="rebase_core.team_requests")
+
+    contacted = client.post(f"/api/hub/team/requests/{request_id}/contact")
+
+    assert contacted.status_code == 200, contacted.text
+    # The answer came before the delivery: it shows the talent contacted.
+    assert contacted.json()["stato"] == "contattata"
+    assert len(refusing.sent) == 1
+    warnings = [
+        record.getMessage() for record in caplog.records if record.levelno == logging.WARNING
+    ]
+    assert len(warnings) == 2  # the refusal, and the request put back
+    for logged in warnings:
+        assert request_id in logged
+        for secret in ("talento1", "studio.it", "Ada1", "Lovelace", "Acme"):
+            assert secret not in logged
+    # The link reached nobody: the talent is not contacted, nor is the request, and
+    # «Contatta i talenti» is free again.
+    detail = client.get(f"/api/hub/team/requests/{request_id}").json()
+    assert [talento["mail_sent_at"] for talento in detail["talenti"]] == [None]
+    assert detail["stato"] == "nuova" and detail["contacted_at"] is None
+
+
+def test_the_answer_post_is_throttled(client: TestClient, team: Session) -> None:
+    for _ in range(SIGNUPS_PER_MINUTE):
+        answered = client.post("/api/hub/team/availability", json={"t": "x", "risposta": "si"})
+        assert answered.json() == {"esito": "invalid"}
+
+    refused = client.post("/api/hub/team/availability", json={"t": "x", "risposta": "si"})
+
+    assert refused.status_code == 429
+    assert refused.headers["Retry-After"] == "60"

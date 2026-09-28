@@ -12,6 +12,7 @@ from rebase_api.routers import (
     admin,
     admin_team,
     campaigns,
+    cloud,
     companies,
     documenso,
     freelancers,
@@ -115,6 +116,7 @@ def create_app() -> FastAPI:
     app.include_router(tokens.router)
     app.include_router(team.router)
     app.include_router(admin_team.router)
+    app.include_router(cloud.router)
 
     @app.get("/health")
     def health(session: SessionDep) -> dict[str, str]:

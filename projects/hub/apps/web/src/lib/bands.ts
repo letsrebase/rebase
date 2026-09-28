@@ -12,6 +12,18 @@ function euro(amount: number): string {
   return String(amount).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
 }
 
+/** The six bands of a person's client price per day (REB-519: the talent cloud's band
+ *  filter), `[min, max)` euro, the last with no top: core's `bands.BANDS`, held equal by
+ *  the core's `tests/test_web_labels.py`. */
+export const DAY_BANDS: Band[] = [
+  { min: 0, max: 300 },
+  { min: 300, max: 400 },
+  { min: 400, max: 500 },
+  { min: 500, max: 650 },
+  { min: 650, max: 800 },
+  { min: 800, max: null },
+]
+
 /** «400–500», «oltre 800», «fino a 300»: a band from nothing says only its top, since
  *  «0–300» reads as a price that could be nothing. */
 function bounds(band: Band): string {
