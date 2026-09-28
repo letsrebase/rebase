@@ -189,7 +189,9 @@ describe('DocumentsTab', () => {
     await openRowMenu('Offerta 2026-01')
     await userEvent.click(screen.getByRole('menuitem', { name: 'Scarica' }))
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('«Offerta 2026-01»')
+    expect(alert).toHaveTextContent(
+      'Il file «Offerta 2026-01» non è disponibile: il file archiviato non esiste più.',
+    )
     expect(alert).not.toHaveTextContent('document_blob')
   })
 

@@ -144,7 +144,9 @@ describe('VersionHistory', () => {
     await openRowMenu(2)
     await userEvent.click(screen.getByRole('menuitem', { name: 'Scarica' }))
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('«Contratto Rossi (v2)»')
+    expect(alert).toHaveTextContent(
+      'Il file «Contratto Rossi (v2)» non è disponibile: il file archiviato non esiste più.',
+    )
     expect(alert).not.toHaveTextContent('document_blob')
   })
 
