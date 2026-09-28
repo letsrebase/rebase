@@ -52,6 +52,13 @@ on:
         required: false
         default: true
         type: boolean
+      test:
+        description: >-
+          run pytest. Off for a call that only lints and type-checks, so those two can
+          be a job of their own beside test shards that do nothing else.
+        required: false
+        default: true
+        type: boolean
       shard:
         description: >-
           `k/n`: run only the k-th of n slices of the test files under `tests`, so a
@@ -96,7 +103,7 @@ jobs:
         run: uv run mypy ${{ inputs.sources }}
 
       - name: Install the document renderer
-        if: inputs.renderer
+        if: inputs.renderer && inputs.test
         # Pinned to the same pair projects/pigrocrm/Dockerfile.api installs and that
         # the renderer was verified against. Typst's diagnostic format and the
         # auto-typography workaround were both confirmed against 0.14.2 specifically,
@@ -130,7 +137,7 @@ jobs:
       # more, never the difference between three jobs and one.
       - name: Select this shard's files
         id: shard
-        if: inputs.shard != ''
+        if: inputs.shard != '' && inputs.test
         env:
           SHARD: ${{ inputs.shard }}
           ROOTS: ${{ inputs.tests }}
@@ -164,6 +171,7 @@ jobs:
           echo "files-path=$RUNNER_TEMP/pytest-shard-files" >> "$GITHUB_OUTPUT"
 
       - name: Test
+        if: inputs.test
         # testcontainers starts PostgreSQL itself; no service container needed, and
         # under `-n` each worker starts its own, which is what makes the workers
         # independent rather than fighting over one database. With a `shard`, the

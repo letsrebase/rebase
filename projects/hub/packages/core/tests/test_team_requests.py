@@ -1112,3 +1112,7 @@ def test_the_caps_have_their_defaults_and_reach_the_container() -> None:
     ):
         assert f"{name}: ${{{name}:-{default}}}" in compose, name
         assert f"{name}={default}" in example, name
+    # The `cards` loop's own gate, no Settings field: a host whose `.env` says
+    # nothing writes no card (Compose default `off`); the example turns it on.
+    assert "REBASE_CARDS_LOOP: ${REBASE_CARDS_LOOP:-off}" in compose
+    assert "REBASE_CARDS_LOOP=on" in example

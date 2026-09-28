@@ -295,8 +295,9 @@ Since milestone C of `docs/superpowers/specs/2026-09-25-team-builder-and-talent-
 card of it (`rebase_core.cards`), and `/hub/team` turns a project's description and
 those cards into a team (`rebase_core.team_builder`), which a company files with
 «Assumi team» and an admin works in «Richieste team». Both calls go through one seam,
-`rebase_core.llm`, with inference in the European Union; the tests hand a
-`RecordingCall` and never reach Anthropic.
+`rebase_core.llm`, with inference global (the API offers `global` or `us`; EU
+residency would take Vertex AI or Bedrock in an EU region, not decided); the tests
+hand a `RecordingCall` and never reach Anthropic.
 
 **The privacy page goes out before the hub.** From the first card on, CVs go to
 Anthropic, and it is letsrebase.com/privacy, in «La tua scheda e il team builder», that
@@ -332,16 +333,26 @@ the proposals off with the key still there: the same 503, while cards go on bein
 written and requests already filed stay in «Richieste team».
 
 **The backlog is `rebase cards-refresh`.** A card is written after the wizard or a CV
-upload, so the CVs already on file get theirs from `docker exec rebase-api-1 uv run
---no-sync rebase cards-refresh` (`rebase-preview-api-1` on the preview), run after the
-deploy that brings the key (on production, once the talents' mail of spec § 4.4 has
-gone out) and again until it prints «0 schede scritte, 0 non riuscite». Each run takes
-50 CVs, the oldest first (`--limit`), and never a turned-down person's. A CV that
-failed on its own account (a refusal, a scan with no text, a card that names the
-person) is not tried again until it changes, so the runs end; an outage stops the
-batch, counts under «non riuscite» and is the next run's, so a run that keeps printing
-«0 schede scritte, 1 non riuscite» is Claude not answering, not a CV. «Rigenera
-scheda» on the talent's page asks again for one.
+upload, so the CVs already on file need it too: since REB-552 the `cards` service runs
+it once an hour, up to 50 cards. The loop itself is gated by `REBASE_CARDS_LOOP`
+(`.env`, default `off`), no Python setting: production keeps it `off` until the talents'
+mail of spec § 4.4 has gone out, so a deploy that already carries the key never sends a
+CV to Anthropic before that mail, then sets it `on` and runs `docker compose up -d
+cards` to recreate the service. The first run after the key lands is still by hand,
+before the loop is switched on:
+`docker compose -p rebase --env-file /opt/hub/.env exec api uv run --no-sync rebase
+cards-refresh --limit 50` (`-p rebase-preview --env-file /opt/hub-preview/.env` on the
+preview) until it prints «0 schede scritte, 0 non riuscite», and a retired card comes
+back on the next run. Nothing in code stops two passes from paying for the same card
+twice, so a hand-run catch-up and the hourly loop must never overlap: keep
+`REBASE_CARDS_LOOP=off` for the whole catch-up, only set it `on` and `docker compose -p rebase --env-file /opt/hub/.env up -d cards`
+(`-p rebase-preview --env-file /opt/hub-preview/.env` on the preview) once it is done, and never run the command by hand while the loop is `on`.
+Each run takes 50 CVs, the oldest first (`--limit`), and never a turned-down person's. A
+CV that failed on its own account (a refusal, a scan with no text, a card that names the
+person) is not tried again until it changes, so the runs end; an outage stops the batch,
+counts under «non riuscite» and is the next run's, so a run that keeps printing «0
+schede scritte, 1 non riuscite» is Claude not answering, not a CV. «Rigenera scheda» on
+the talent's page asks again for one.
 
 **Two caps.** `REBASE_TEAM_BUILDER_CONCURRENCY` (4) is how many proposals run at once
 in the API process: the next one answers 503 «Troppe richieste in questo momento:

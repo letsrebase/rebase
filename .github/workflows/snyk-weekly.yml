@@ -154,8 +154,8 @@ jobs:
       # The images the way ci.yml's tier 3 builds them: the project's compose file from
       # its own directory, with the same throwaway values for the variables compose
       # interpolates before a build. Only `api` and `web`: the other services (mcp,
-      # campaigns, sweep) build the same Dockerfile.api into the same image. `--file`
-      # gives Snyk the Dockerfile, so it names the base image and its upgrade.
+      # campaigns, sweep, cards) build the same Dockerfile.api into the same image.
+      # `--file` gives Snyk the Dockerfile, so it names the base image and its upgrade.
       - name: Build and scan the pigrocrm images
         working-directory: projects/pigrocrm
         env:

@@ -108,8 +108,9 @@ admin knows who came from there and calls them.
 
 **Claude through the API, no quota in beta, a cap and a switch.** `claude-opus-5`
 through the official SDK behind a seam of the hub's own (§ 5), with adaptive thinking,
-structured output, the catalogue cached as a prompt prefix, inference kept in the
-European Union, and the server-side refusal fallback. No throttle and no quota on
+structured output, the catalogue cached as a prompt prefix, inference global (the API
+offers `global` or `us`; EU residency would take Vertex AI or Bedrock in an EU region,
+not decided), and the server-side refusal fallback. No throttle and no quota on
 proposals, by Ivan's word; what there is: a setting that turns the public page off, a
 cap on how many proposals run at once so the one API process keeps answering the
 member area and the webhooks, a timeout under nginx's, the usual speed bump on the
@@ -401,7 +402,7 @@ the MCP server; `AnthropicCall(api_key, model, *, client=None)` implements the p
 with the official `anthropic` SDK (a pinned dependency of `rebase_core`):
 `client.beta.messages.create(model, max_tokens, betas=["server-side-fallback-2026-07-01"],
 fallbacks="default", thinking={"type": "adaptive"}, output_config={"effort": "medium",
-"format": {"type": "json_schema", "schema": ...}}, inference_geo="eu", system=[...with
+"format": {"type": "json_schema", "schema": ...}}, inference_geo="global", system=[...with
 cache_control...], messages=[...])`, a request timeout of forty seconds per attempt with one retry, so the worst case stays under the vhost's ninety seconds, reading the first text block and passing `stop_reason` through;
 `RecordingCall(responses)` in the same module answers scripted responses and keeps the
 requests, the way `RecordingSender` does for mail. Two callers: the card writer
@@ -430,8 +431,9 @@ CV's SHA-256 and the tokens; an empty text (a scanned CV) makes no call and writ
 not the shape retires a previous card written from another CV (`card` set to null, so
 the catalogue never shows a card of a CV that is gone) and writes `error` with the
 failed CV's hash, so the same CV is not retried and paid for until it changes; a
-provider error leaves the previous card and writes `error` without the hash, so the
-next run retries. It runs
+refusal, a bad shape or a provider error on a replaced CV retires the card of the old
+CV; only a provider error leaves no hash, so the next run (the `cards` service, within
+the hour) retries it. It runs
 after the response, in a session of its own (`SessionOpenerDep`, as the Documenso
 webhook's follow-up does), where a CV arrives or changes: the public wizard
 (`FreelancerService.apply`) and the member's `replace_cv`; `FreelancerService.clear_cv`
@@ -449,17 +451,17 @@ The site's privacy page has no section about the hub's card; its «Il tuo spazio
 PigroCRM» section says «Non trasferiamo nulla a terzi» about the CRM and stays as it
 is. A new section, «La tua scheda e il team builder», between «L'iscrizione a rebase»
 and «Il tuo spazio PigroCRM», for Ivan's review: the text of the CV is sent to
-Anthropic's API, with inference in the European Union, to write an anonymous
-description of the profile (role, seniority, skills, sectors, languages), every time the
-CV changes or an admin asks for it again; the description a visitor types on the team
-builder is sent to the same API, with the anonymous descriptions of every profile, to
-propose a team; Anthropic processes the data on rebase's behalf and does not train on
-it (a link to Anthropic's privacy page, whose host is added to the site's allowlist of
-external links in the same commit); a visitor of the public page sees the description
-without the name; a company rebase admits to the talent cloud sees the profile by name
-with the CV, links included, and the CV carries what the freelancer wrote in it; how to
-ask for the description to be deleted, at the address the page already gives. The
-existing talents' mail is § 4.4.
+Anthropic's API to write an anonymous description of the profile (role, seniority,
+skills, sectors, languages), every time the CV changes or an admin asks for it again;
+the description a visitor types on the team builder is sent to the same API, with the
+anonymous descriptions of every profile, to propose a team; Anthropic processes the
+data on rebase's behalf under its data processing terms and does not train on it, with
+no promise about where the processing happens (a link to Anthropic's privacy page, whose
+host is added to the site's allowlist of external links in the same commit); a visitor
+of the public page sees the description without the name; a company rebase admits to
+the talent cloud sees the profile by name with the CV, links included, and the CV
+carries what the freelancer wrote in it; how to ask for the description to be deleted,
+at the address the page already gives. The existing talents' mail is § 4.4.
 
 Settings: `REBASE_ANTHROPIC_API_KEY`, `REBASE_TEAM_BUILDER_MODEL`,
 `REBASE_TEAM_BUILDER_ENABLED` (compose default `true`), `REBASE_TEAM_BUILDER_CONCURRENCY`,
