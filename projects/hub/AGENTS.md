@@ -363,9 +363,10 @@ and `preview.letsrebase.conf`, carry both locations beside `location ^~ /api/hub
 which an exact match outranks; the installed vhost in `/etc/nginx/sites-available/`
 gets them by hand, as the MCP location did. That MCP location,
 `location ^~ /api/hub/mcp`, waits on the same seam for `propose_team` and
-`regenerate_freelancer_card` (REB-520), so it carries `proxy_read_timeout 90s;` after
-its include too: in both copies here, and by hand in the installed vhosts (8088 on
-production, 8089 on the preview), with the same `nginx -t` and reload. Production's:
+`regenerate_freelancer_card` (REB-520); the `proxy_read_timeout 120s;` after its include,
+there since the hours report's Pigro link (REB-499), covers them too: in both copies here,
+and by hand in the installed vhosts (8088 on production, 8089 on the preview, which has
+it since #428), with the same `nginx -t` and reload. Production's:
 
 ```
 location = /api/hub/team/proposals {
