@@ -36,7 +36,15 @@ from typing import Any, NamedTuple
 from urllib.parse import urlencode, urlsplit
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, TypeAdapter, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    field_validator,
+)
 from sqlalchemy import ColumnElement, and_, or_, select
 from sqlalchemy.orm import Session
 
@@ -259,15 +267,23 @@ def _windows(da: date, a: date) -> list[tuple[date, date]]:
 
 class _Linked(BaseModel):
     """The door's answer to a `PUT`, as much of it as the hub keeps. `deal_url` becomes a
-    link on the admin's card, in the member area and in a mail: only a web address is
-    taken as one."""
+    link on the admin's card, in the member area and in a mail: only an HTTPS address is
+    taken as one (plain HTTP only to this machine, as for the bearer: `speaks_https`),
+    so no one follows it in clear."""
 
     model_config = ConfigDict(extra="ignore")
 
     slug: str = Field(min_length=1, max_length=32)
     deal_id: UUID
-    deal_url: str = Field(min_length=1, pattern=r"^https?://")
+    deal_url: str = Field(min_length=1)
     spazio_creato: bool = False
+
+    @field_validator("deal_url")
+    @classmethod
+    def _https(cls, value: str) -> str:
+        if not speaks_https(value):
+            raise ValueError("deal_url is not an https address")
+        return value
 
 
 class _CrmInvoice(BaseModel):
@@ -558,7 +574,8 @@ class EngagementService:
         (`CAUSE_*`, or the CRM's sentence on a `503`) on anything else, and with
         `HTTPS_ONLY` for a CRM not on HTTPS, which the sweep retries. A match already
         `collegato` keeps its state, except on a `409`: its deal was deleted in the
-        space (spec § 3.10), unless another caller linked it after this call began.
+        space (spec § 3.10), unless another caller linked it after this call began. A
+        match closed while the CRM answered is left as it stands and mailed nothing.
         Without a token nothing is asked: the match waits as `da_collegare`. With
         `admin_id`, the trail says who asked (`pigro_link`)."""
         try:
@@ -598,13 +615,19 @@ class EngagementService:
         try:
             self.matches.lock_freelancer(freelancer_id)
             match = self.matches.lock_match(match_id)
+            # A match closed while the CRM answered is left as it stands: no link
+            # written over it, no mail telling the freelancer it is active.
+            still_active = match.stato == "attivo"
             # A link made by another caller after this one began may be newer than this
             # call's 409, which then says nothing about the deal it found.
             linked_since = match.pigro_linked_at is not None and match.pigro_linked_at > started
-            if match.pigro_stato != COLLEGATO or (outcome.gone and not linked_since):
+            if still_active and (
+                match.pigro_stato != COLLEGATO or (outcome.gone and not linked_since)
+            ):
                 self._write(match, outcome)
             if (
-                match.pigro_stato == COLLEGATO
+                still_active
+                and match.pigro_stato == COLLEGATO
                 and match.pigro_mail_sent_at is None
                 and match.pigro_url is not None
                 and self.sender is not None
@@ -618,7 +641,9 @@ class EngagementService:
             self.session.rollback()
             raise
         stato, errore, deal_url = match.pigro_stato, match.pigro_errore, match.pigro_url
-        if stato != COLLEGATO:
+        if not still_active:
+            _log.warning("match %s was closed while Pigro answered: nothing written", match_id)
+        elif stato != COLLEGATO:
             _log.warning("match %s is not linked to Pigro: %s", match_id, stato)
         if claimed and deal_url is not None:
             spazio_creato = outcome.linked is not None and outcome.linked.spazio_creato
@@ -695,6 +720,7 @@ class EngagementService:
             raise InvalidState(sentence, pigro_stato=match.pigro_stato)
         pigro_url, giorni_previsti = match.pigro_url, match.giorni_previsti
         freelancer_id = match.freelancer_id
+        started = self.now()
         a = a if a is not None else self.today()
         start = da if da is not None else self._start(match)
         # Nothing the CRM is asked for keeps this transaction open while it answers.
@@ -710,7 +736,7 @@ class EngagementService:
                 self._window(match_id, first, last) for first, last in _windows(min(start, a), a)
             ]
         except _Gone as gone:
-            self._refused(match_id, freelancer_id, gone.cause)
+            self._refused(match_id, freelancer_id, gone.cause, started)
             raise InvalidState(
                 pigro_state_sentence(RIFIUTATO, gone.cause), pigro_stato=RIFIUTATO
             ) from None
@@ -774,14 +800,17 @@ class EngagementService:
         printed = _printed_date(letter.data, "data-inizio") if letter is not None else None
         return printed or match.created_at.astimezone(ROME).date()
 
-    def _refused(self, match_id: UUID, freelancer_id: UUID, cause: str) -> None:
+    def _refused(self, match_id: UUID, freelancer_id: UUID, cause: str, started: datetime) -> None:
         """The report's `409` written over the match, under the locks `link` takes in the
         same order: `rifiutato` with the CRM's sentence, if the match is still
-        `collegato` (another caller may have written something newer meanwhile)."""
+        `collegato` (another caller may have written something newer meanwhile) and was
+        not linked again after the report was asked (`started`), as `link` guards its
+        own `409`: that link found the deal this answer says is gone."""
         try:
             self.matches.lock_freelancer(freelancer_id)
             match = self.matches.lock_match(match_id)
-            if match.pigro_stato == COLLEGATO:
+            linked_since = match.pigro_linked_at is not None and match.pigro_linked_at > started
+            if match.pigro_stato == COLLEGATO and not linked_since:
                 self._write(match, _Outcome(RIFIUTATO, cause))
             self.session.commit()
         except Exception:

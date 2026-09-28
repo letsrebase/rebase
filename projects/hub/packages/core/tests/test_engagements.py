@@ -670,6 +670,43 @@ def test_link_keeps_a_link_made_after_its_409_was_asked(hub_engine: Engine, clea
     assert (read.pigro_stato, read.pigro_url, read.pigro_errore) == ("collegato", DEAL_URL, None)
 
 
+def test_link_writes_nothing_on_a_match_closed_while_pigro_answered(
+    hub_engine: Engine, clean: Session
+) -> None:
+    """An admin closes the match while its `PUT` is out: the CRM's `201` comes back to a
+    match that is `concluso`, which is left as the close left it, with no link written
+    and no mail telling the freelancer the engagement is active."""
+    _admin, match_id = _active(clean)
+    sender = RecordingSender()
+
+    def crm_while_the_match_closes(
+        method: str, url: str, headers: dict[str, str], body: bytes
+    ) -> tuple[int, bytes]:
+        other = session_factory(hub_engine)()
+        try:
+            other.execute(
+                text("UPDATE matches SET stato = 'concluso' WHERE id = :id"), {"id": match_id}
+            )
+            other.commit()
+        finally:
+            other.close()
+        return 201, linked_body()
+
+    service = EngagementService(
+        clean,
+        _settings(),
+        crm_while_the_match_closes,
+        sender=sender,
+        now=lambda: NOW,
+        today=lambda: TODAY,
+    )
+    read = service.link(match_id)
+
+    assert (read.stato, read.pigro_stato, read.pigro_url) == ("concluso", "da_collegare", None)
+    assert (read.pigro_linked_at, read.pigro_mail_sent_at) == (None, None)
+    assert sender.sent == []
+
+
 def test_link_on_422_is_rifiutato(clean: Session) -> None:
     """A body the CRM's door refuses names the field, never in English: FastAPI's own
     list of errors as `field: non valido` for each field, the value left out; a
@@ -790,6 +827,8 @@ def test_link_that_gets_no_answer_is_errore_with_its_cause(
         ((201, b"not json"), CAUSE_NOT_THE_SHAPE),
         ((201, b'{"slug": "ada-lovelace"}'), CAUSE_NOT_THE_SHAPE),
         ((201, linked_body().replace(b"https://", b"javascript://")), CAUSE_NOT_THE_SHAPE),
+        # A deal address in clear is not taken either: it is a link people follow.
+        ((201, linked_body().replace(b"https://", b"http://")), CAUSE_NOT_THE_SHAPE),
         ((201, b"x" * 1_048_577), CAUSE_TOO_LONG),
     ],
 )
@@ -1360,6 +1399,45 @@ def test_report_on_409_leaves_a_state_written_meanwhile(hub_engine: Engine, clea
 
     match = _match(clean, match_id)
     assert (match.pigro_stato, match.pigro_errore) == ("errore", "HTTP 503")
+
+
+def test_report_on_409_keeps_a_link_made_after_it_was_asked(
+    hub_engine: Engine, clean: Session
+) -> None:
+    """While the report's `GET` comes back `409`, another caller links the match again
+    (the deal restored, «Riprova» pressed): that link is newer than the report, whose
+    `409` then says nothing about the deal it found, and the match stays `collegato`."""
+    match_id = _linked_match(clean, date(2026, 10, 1))
+
+    def crm_after_a_newer_link(
+        method: str, url: str, headers: dict[str, str], body: bytes
+    ) -> tuple[int, bytes]:
+        other = session_factory(hub_engine)()
+        try:
+            other.execute(
+                text(
+                    "UPDATE matches SET pigro_stato = 'collegato', pigro_errore = NULL, "
+                    "pigro_linked_at = :at WHERE id = :id"
+                ),
+                {"at": NOW + timedelta(seconds=1), "id": match_id},
+            )
+            other.commit()
+        finally:
+            other.close()
+        return 409, _crm_conflict(match_id, DEAL_GONE)
+
+    service = EngagementService(
+        clean, _settings(), crm_after_a_newer_link, now=lambda: NOW, today=lambda: TODAY
+    )
+    with pytest.raises(InvalidState, match="Pigro ha rifiutato il collegamento"):
+        service.report(match_id)
+
+    match = _match(clean, match_id)
+    assert (match.pigro_stato, match.pigro_errore, match.pigro_url) == (
+        "collegato",
+        None,
+        DEAL_URL,
+    )
 
 
 def test_report_when_pigro_does_not_answer_or_is_not_configured(clean: Session) -> None:
