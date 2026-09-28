@@ -691,12 +691,19 @@ def test_a_sender_that_raises_does_not_say_the_list_is_unreadable(
     assert (still.stato, still.fermo_motivo) == ("in_invio", None)
 
 
-def test_a_mail_the_webhook_already_confirmed_clears_the_stall_too(
+@pytest.mark.parametrize(
+    ("delivered_after_the_stop", "stall_stays"), [(True, False), (False, True)]
+)
+def test_a_mail_the_webhook_confirms_clears_the_stall_only_if_it_left_after_the_stop(
     clean: Session,  # noqa: F811  (fixture)
+    delivered_after_the_stop: bool,
+    stall_stays: bool,
 ) -> None:
-    """CodeRabbit on #473, round 2: the webhook-recovery branch (REB-522) marks a queued
-    row sent without calling Resend. That is a mail that left, so it clears the stall
-    exactly as an accepted send does, even when the next row only gets a `riprova`."""
+    """CodeRabbit and Greptile on #473: the webhook-recovery branch (REB-522) marks a
+    queued row sent without calling Resend. A mail the webhook dates after the stop
+    means the send moves again, so it clears the stall as an accepted send does, even
+    when the next row only gets a `riprova`. One it dates before the stop left before
+    Resend started refusing, and says nothing about the refusal: the stall stays."""
     clock = Clock(NOW)
     campaign = scheduled(clean, clock, "a@studio.it", "b@studio.it")
     run_tick(
@@ -706,6 +713,7 @@ def test_a_mail_the_webhook_already_confirmed_clears_the_stall_too(
         clock=clock,
         pause=NO_PAUSE,
     )
+    stopped_at = clock.at
     first = (
         clean.query(CampaignRecipient)
         .filter_by(campaign_id=campaign.id)
@@ -713,13 +721,17 @@ def test_a_mail_the_webhook_already_confirmed_clears_the_stall_too(
         .first()
     )
     assert first is not None
-    first.consegnata_at = clock.at
+    offset = timedelta(seconds=30)
+    first.consegnata_at = stopped_at + offset if delivered_after_the_stop else stopped_at - offset
     clean.commit()
     clock.at += timedelta(minutes=1)
     flaky = RecordingCampaignSender([SendOutcome("riprova", dettaglio="Resend 503")])
     run_tick(clean, flaky, SETTINGS, clock=clock, pause=NO_PAUSE)
     assert len(flaky.sent) == 1  # only the second row reached Resend
     clean.expire_all()
-    moving = clean.get(Campaign, campaign.id)
-    assert moving is not None
-    assert (moving.stato, moving.fermo_at, moving.fermo_motivo) == ("in_invio", None, None)
+    after = clean.get(Campaign, campaign.id)
+    assert after is not None
+    recovered = clean.get(CampaignRecipient, first.id)
+    assert recovered is not None and recovered.stato == "inviata"
+    expected = (stopped_at, STALLED_KEY) if stall_stays else (None, None)
+    assert (after.stato, after.fermo_at, after.fermo_motivo) == ("in_invio", *expected)

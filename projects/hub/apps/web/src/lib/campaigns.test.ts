@@ -11,6 +11,7 @@ import {
   defaultSchedule,
   isStalled,
   listRefetchEvery,
+  oneLine,
   outcomeLine,
   peopleLabel,
   personalise,
@@ -20,6 +21,7 @@ import {
   scheduleLabel,
   share,
   stallLine,
+  subjectFor,
 } from './campaigns'
 
 describe('personalise', () => {
@@ -157,6 +159,21 @@ describe('a stopped send (REB-524)', () => {
     expect(stallLine(moving)).toBeNull()
     expect(isStalled({ ...stopped, stato: 'annullata' })).toBe(false)
     expect(campaignStateLabel({ ...stopped, stato: 'annullata' })).toBe('Annullata')
+  })
+})
+
+describe('the subject on one line, as render.py sends it (REB-524)', () => {
+  it('turns each run of control characters into one space and trims the ends', () => {
+    expect(oneLine('Ada\r\nBcc: x@y')).toBe('Ada Bcc: x@y')
+    expect(oneLine('\tCiao\u0085mondo\u2028!\n')).toBe('Ciao mondo !')
+    expect(oneLine('Già pulito')).toBe('Già pulito')
+  })
+
+  it('puts the name in on one line, and a name that is only a newline counts as missing', () => {
+    expect(subjectFor('{nome}, manca solo il CV', 'Ada\r\nBcc: x@y')).toBe('Ada Bcc: x@y, manca solo il CV')
+    expect(subjectFor('Ciao {nome}!', '\n')).toBe('Ciao!')
+    expect(subjectFor('Ciao {nome}!', null)).toBe('Ciao!')
+    expect(subjectFor('Manca solo il CV\t', 'Ada')).toBe('Manca solo il CV')
   })
 })
 

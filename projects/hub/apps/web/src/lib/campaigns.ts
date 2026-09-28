@@ -37,6 +37,20 @@ export function personalise(testo: string, nome: string | null): string {
   return testo.replaceAll(' {nome}', '').replaceAll('{nome}', '')
 }
 
+/** The server's `one_line` (`campaigns/render.py`): each run of control characters,
+ *  C0 and C1 alike, and the two Unicode line separators becomes one space, and the
+ *  ends are trimmed, so a subject can never carry a line break. */
+export function oneLine(text: string): string {
+  return text.replace(/[\p{Cc}\u2028\u2029]+/gu, ' ').trim()
+}
+
+/** The subject a person receives (`campaigns/render.py:render`): the name on one line,
+ *  a name that is nothing once trimmed counting as missing, then the whole subject on
+ *  one line too. */
+export function subjectFor(oggetto: string, nome: string | null): string {
+  return oneLine(personalise(oggetto, oneLine(nome ?? '') || null))
+}
+
 /** Today and the current time in Europe/Rome, as the «Programma» inputs want them. */
 export function romeToday(now = new Date()): { giorno: string; ora: string } {
   const parts = Object.fromEntries(

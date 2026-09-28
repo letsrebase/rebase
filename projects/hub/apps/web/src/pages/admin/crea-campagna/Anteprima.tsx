@@ -2,7 +2,7 @@ import { Button } from '@rebase/ui/button'
 import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import type { AudienceRow, Campaign } from '@/lib/api'
-import { personalise, romeTime } from '@/lib/campaigns'
+import { personalise, romeTime, subjectFor } from '@/lib/campaigns'
 
 /** The server's paragraphs (`campaigns/render.py:_paragraphs`): a blank line splits
  *  them, a single newline stays a line break inside one. */
@@ -33,8 +33,8 @@ export function Anteprima({
   onPersona: (email: string) => void
 }) {
   const body = paragraphs(personalise(testo, persona?.nome ?? null))
-  // The subject takes the name too (`render.py`, REB-524).
-  const subject = personalise(oggetto, persona?.nome ?? null)
+  // The subject takes the name too, on one line, exactly as `render.py` sends it (REB-524).
+  const subject = subjectFor(oggetto, persona?.nome ?? null)
   return (
     <section aria-labelledby="campagna-anteprima" className="space-y-3">
       <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-2">

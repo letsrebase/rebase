@@ -237,7 +237,15 @@ def _send(
             # reaches its shared `resend_id` write has just set one of them).
             row.stato, row.inviata_at = "inviata", webhook_moment or clock()
             result.inviate += 1
-            _moving(campaign)  # a mail left, as an accepted send says (REB-524)
+            # A mail the webhook dates after the stop says the send moves again, as an
+            # accepted send does; one it dates before left before Resend started
+            # refusing, and says nothing about the refusal (REB-524, review on #473).
+            if (
+                webhook_moment is not None
+                and campaign.fermo_at is not None
+                and webhook_moment > campaign.fermo_at
+            ):
+                _moving(campaign)
             session.commit()
             continue
         try:
