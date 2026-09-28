@@ -1,8 +1,8 @@
 """referrals, referral_rewards, referral_settings; users.referral_code; matches'
 own snapshot of the company's day rate
 
-Revision ID: 0022
-Revises: 0021
+Revision ID: 0024
+Revises: 0023
 
 P-REB-44: an existing member's link to who they brought in, the reward that matures
 once at the referred entity's first signed letter, and the two rates an admin edits
@@ -14,17 +14,18 @@ from what the database actually holds. `matches.company_budget_giornaliero` is a
 snapshot at match creation, the same reason `lettera_compenso` (migration 0021)
 already is one: a reward is computed at signing, which can be weeks later, and an
 edit to the company's own request afterward must never move a reward this match
-already promised. Conditional like every migration of this package: a retried
-deploy passes over what the previous attempt already added, never run outside a
-throwaway test database.
+already promised. Renumbered from 0022 to 0024 (P-REB-44 branched off 0021 the same
+moment REB-509's team builder did, migration 0023): a retried deploy passes over
+what the previous attempt already added, never run outside a throwaway test
+database.
 """
 
 from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0022"
-down_revision: str | Sequence[str] | None = "0021"
+revision: str = "0024"
+down_revision: str | Sequence[str] | None = "0023"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

@@ -249,7 +249,7 @@ class ReferralService:
     # ---- the admin's two rates ---------------------------------------------------------
 
     def get_settings(self) -> ReferralSettings:
-        """The one settings row, seeded by migration 0022; a second call in the same
+        """The one settings row, seeded by migration 0024; a second call in the same
         process never inserts again, `ReferralSettings.__doc__`'s own promise. Flushed,
         never committed: `record_reward_if_signed` calls this inside the row locks
         `SigningService._confirm_completion` already holds, and a commit here would
