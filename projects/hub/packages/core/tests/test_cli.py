@@ -148,6 +148,7 @@ class _FakeCardWriter:
     """Records what `cards_refresh` built it with and the limit it was asked for."""
 
     instances: list["_FakeCardWriter"] = []
+    result = CardsRefreshed(written=3, failed=1)
 
     def __init__(self, session: object, llm: object) -> None:
         self.session = session
@@ -157,7 +158,7 @@ class _FakeCardWriter:
 
     def refresh_stale(self, limit: int = 50) -> CardsRefreshed:
         self.limits.append(limit)
-        return CardsRefreshed(written=3, failed=1)
+        return self.result
 
 
 def test_cards_refresh_prints_the_counts(
@@ -179,6 +180,51 @@ def test_cards_refresh_prints_the_counts(
     assert isinstance(writer.llm, AnthropicCall)
     assert writer.limits == [10]
     assert capsys.readouterr().out.strip() == "3 schede scritte, 1 non riuscite"
+
+
+@pytest.mark.parametrize(
+    ("result", "line"),
+    [
+        (
+            CardsRefreshed(written=3, failed=1, gender_warnings=2),
+            "3 schede scritte, 1 non riuscite, 2 con avviso di genere",
+        ),
+        # An outage on a first call: counted among the failed, and the stop said.
+        (
+            CardsRefreshed(written=1, failed=1, stopped=True),
+            "1 schede scritte, 1 non riuscite, fermato: Claude non disponibile",
+        ),
+        # An outage on the rewrite: the first card written with its warning, then the stop.
+        (
+            CardsRefreshed(written=1, failed=0, gender_warnings=1, stopped=True),
+            "1 schede scritte, 0 non riuscite, 1 con avviso di genere, "
+            "fermato: Claude non disponibile",
+        ),
+    ],
+    ids=["warnings", "outage", "outage_on_the_rewrite"],
+)
+def test_cards_refresh_counts_the_gender_warnings_and_says_the_stop(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    result: CardsRefreshed,
+    line: str,
+) -> None:
+    """REB-574: cards written with the gender still showing after their rewrite are
+    among the written ones, and named apart; a batch stopped by an outage says so,
+    whether the outage met a first call or a rewrite. With neither, the line is the one
+    above, so «0 schede scritte, 0 non riuscite» still says the backlog is done."""
+    _FakeCardWriter.instances = []
+    monkeypatch.setattr(
+        cli,
+        "get_settings",
+        lambda: Settings(anthropic_api_key="sk-ant-test-not-a-real-key", _env_file=None),  # type: ignore[call-arg]
+    )
+    monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
+    monkeypatch.setattr(_FakeCardWriter, "result", result)
+
+    assert main(["cards-refresh"]) == 0
+
+    assert capsys.readouterr().out.strip() == line
 
 
 def test_cards_refresh_without_a_key_says_so_and_writes_nothing(
