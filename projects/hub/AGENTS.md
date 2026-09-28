@@ -301,7 +301,7 @@ written and requests already filed stay in «Richieste team».
 **The backlog is `rebase cards-refresh`.** A card is written after the wizard or a CV
 upload, so the CVs already on file need it too: since REB-552 the `cards` service runs
 it once an hour, up to 50 cards. The loop itself is gated by `REBASE_CARDS_LOOP`
-(`.env`, default `on`), no Python setting: production keeps it `off` until the talents'
+(`.env`, default `off`), no Python setting: production keeps it `off` until the talents'
 mail of spec § 4.4 has gone out, so a deploy that already carries the key never sends a
 CV to Anthropic before that mail, then sets it `on` and runs `docker compose up -d
 cards` to recreate the service. The first run after the key lands is still by hand,
