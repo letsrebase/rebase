@@ -10,10 +10,11 @@ one is sent and paid for again until the bytes change, or until an admin asks wi
 «Rigenera scheda» (`force`). The provider down is not the CV's fault: the row says so,
 no hash is kept, and the next write, or the next `rebase cards-refresh`, asks again.
 A failure writes one sentence of ours, never the model's words; it keeps the previous
-card when that card is the same CV's or the failure is an outage, and otherwise retires
-it, since a card must not outlive the CV it describes: the catalogue would go on showing
-a profile the person has replaced. Nothing here logs more than the freelancer's id and
-the kind of failure: not the CV's text, not the card, not the answer.
+card when that card is the same CV's, and otherwise retires it, an outage included,
+since a card must not outlive the CV it describes: the catalogue would go on showing a
+profile the person has replaced until Claude answered again. Nothing here logs more
+than the freelancer's id and the kind of failure: not the CV's text, not the card, not
+the answer.
 
 The Claude call holds no transaction: the session is committed before it and a new
 transaction stores the answer, after re-reading, under the freelancer's row lock, that
@@ -89,7 +90,8 @@ _FAILURES: dict[Failure, str] = {
     "shape": "La risposta di Claude non era una scheda valida.",
     "identifying": "La scheda cita la persona o un indirizzo.",
     # True of every outage, the backlog's (asked again by the next run) and a
-    # «Rigenera scheda» on the card's own CV (whose card stays) alike.
+    # «Rigenera scheda» on the card's own CV (whose card stays) alike; a new CV's
+    # previous card is retired meanwhile, and comes back with the next answer.
     "unavailable": "Claude non ha risposto: «Rigenera scheda» riprova.",
 }
 
@@ -98,29 +100,42 @@ _FAILURES: dict[Failure, str] = {
 _ADDRESS = re.compile(r"https?://|www\.|@", re.IGNORECASE)
 
 
-def _identifies(card: Card, cognome: str) -> bool:
+def _names(value: str, name: str) -> bool:
+    """Whether `name` is in `value` as a whole word written with a capital: in any case
+    but all lower case, so «Conti» and «CONTI» are the person and «conti» is not; of a
+    name of two words, one capital is enough («de Luca»)."""
+    person = re.compile(rf"\b{re.escape(name)}\b", re.IGNORECASE)
+    return any(not found.group().islower() for found in person.finditer(value))
+
+
+def _identifies(card: Card, cognome: str, nome: str = "") -> bool:
     """Whether the card names the person, by the surname as a whole word written with a
-    capital in the role, the summary, the skills or the sectors, or carries a link or an
-    email address anywhere.
+    capital in the role, the summary, the skills or the sectors, by the first name the
+    same way in the role or the summary, or carries a link or an email address anywhere.
 
     A capital, because a person's name has one in a sentence and many surnames are
     words too: Conti is in «la dashboard dei conti», Grande in «grande distribuzione»,
-    Porta in «porta avanti», and a card refused for them is parked until the CV changes.
-    So the surname counts in any case but all lower case: «Conti» and «CONTI» are the
-    person, «conti» is not; of a surname of two words, one capital is enough («de
-    Luca»). `luogo` and `lingue` are not read for the surname: Messina, Ferrara or
+    Porta in «porta avanti», and a card refused for them is parked until the CV changes
+    (`_names`). `luogo` and `lingue` are not read for the surname: Messina, Ferrara or
     Milano is a city the CV may name, Russo, Greco or Tedesco a language the person may
     speak, and a card refused for its own CV's place would be refused again on
-    «Rigenera». The prompt forbids both; this is what a card that ignored it runs into
-    before it reaches a page."""
+    «Rigenera». The first name, and each word of a first name of two («Maria Grazia»)
+    of three letters or more, is read in the role and the summary only, where a
+    sentence would name the person («Ada, backend developer»): the skills are names of
+    technologies, and Ada, Ruby, Julia or Pascal is a language as well as a person. The
+    prompt forbids all of it; this is what a card that ignored it runs into before it
+    reaches a page."""
     named = [card.ruolo, card.sintesi, *card.competenze, *card.settori]
+    prose = [card.ruolo, card.sintesi]
     every = [*named, *card.lingue, *([card.luogo] if card.luogo is not None else [])]
     surname = cognome.strip()
-    if surname:
-        person = re.compile(rf"\b{re.escape(surname)}\b", re.IGNORECASE)
-        for value in named:
-            if any(not found.group().islower() for found in person.finditer(value)):
-                return True
+    if surname and any(_names(value, surname) for value in named):
+        return True
+    first = nome.strip()
+    given = {first, *(word for word in re.split(r"[\s\-]+", first) if len(word) >= 3)}
+    given.discard("")
+    if any(_names(value, name) for name in given for value in prose):
+        return True
     return any(_ADDRESS.search(value) for value in every)
 
 
@@ -177,7 +192,7 @@ def card_prompt(cv: CvText, posizione: str | None) -> LlmRequest:
     )
 
 
-def _card_from(response: LlmResponse, cognome: str) -> Card | Failure:
+def _card_from(response: LlmResponse, cognome: str, nome: str = "") -> Card | Failure:
     """The card, or the kind of failure: `stop_reason` is read before the body, as the
     seam hands it over (`llm.py`), and a card that validates is still refused if it
     names the person or carries an address."""
@@ -191,7 +206,7 @@ def _card_from(response: LlmResponse, cognome: str) -> Card | Failure:
         card = Card.model_validate(json.loads(response.text))
     except ValueError:  # `json.JSONDecodeError` and Pydantic's `ValidationError` alike
         return "shape"
-    return "identifying" if _identifies(card, cognome) else card
+    return "identifying" if _identifies(card, cognome, nome) else card
 
 
 class CardWriter:
@@ -311,6 +326,7 @@ class CardWriter:
             return self._fail(freelancer_id, digest, "no_text")
         owner = self.session.get(User, row.user_id)
         cognome = owner.cognome if owner is not None else ""
+        nome = owner.nome if owner is not None else ""
         request = card_prompt(cv, row.posizione)
         # Claude takes seconds: the transaction ends here, so no pooled connection and
         # no lock waits on it. `_save` opens the next one.
@@ -319,7 +335,7 @@ class CardWriter:
             response = self.llm.complete(request)
         except LlmUnavailable:
             return self._fail(freelancer_id, digest, "unavailable")
-        card = _card_from(response, cognome)
+        card = _card_from(response, cognome, nome)
         if not isinstance(card, Card):
             return self._fail(freelancer_id, digest, card)
         saved = self._save(
@@ -340,12 +356,13 @@ class CardWriter:
 
     def _fail(self, freelancer_id: UUID, digest: str, kind: Failure) -> Outcome:
         """The sentence beside the card, and the failed CV's hash unless the failure was
-        the provider's: an outage keeps nothing that would stop the next attempt, and
-        keeps the previous card. Any other failure retires a card written from another
-        CV than the one that just failed (`_save`)."""
+        the provider's: an outage keeps nothing that would stop the next attempt. Every
+        failure, an outage too, retires a card written from another CV than the one
+        that just failed (`_save`): the person replaced that CV, and its card must not
+        stay in the catalogue until Claude answers again. A card of the same CV stays."""
         outage = kind == "unavailable"
         values = {"error": _FAILURES[kind], "error_cv_sha256": None if outage else digest}
-        if not self._save(freelancer_id, digest, values, retire_other=not outage):
+        if not self._save(freelancer_id, digest, values, retire_other=True):
             return "superseded"
         logger.warning("card for freelancer %s not written: %s", freelancer_id, kind)
         return "unavailable" if outage else "failed"
