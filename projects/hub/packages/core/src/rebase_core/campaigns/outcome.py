@@ -15,10 +15,16 @@ never wedges every other row's stamp for the rest of the pass -- or every pass a
 since a wedged row would otherwise stay in the 30-day window forever.
 
 The row scan first narrows to recent campaigns' ids (Greptile P2: `campaign_recipients`
-has no index on `stato`/`inviata_at` alone, and a migration is out of scope here). A
-mail is never sent before its campaign's `programmata_per`, so restricting to campaigns
-whose `programmata_per` falls in the same window cannot drop a row the unrestricted
-scan would have stamped."""
+has no index on `stato`/`inviata_at` alone, and a migration is out of scope here). The
+campaigns table is small, so this prefilter exists only to reach the recipients through
+their `(campaign_id, email)` index -- the real window is the row query's own
+`inviata_at >= now - STAMP_WINDOW`. A campaign qualifies when it is still `in_invio`, or
+when its `updated_at` falls in the window: `updated_at` moves on the tick's claim, on
+`_finish` and on `cancel`, all of which follow every row's send, so any row sent within
+the window belongs to a campaign that is still sending or was written within the window.
+Using the schedule (`programmata_per`) instead would miss a campaign stuck `in_invio`
+for longer than the window that then resumes sending: its old `programmata_per` would
+exclude it even though its rows are freshly sent."""
 
 import logging
 from datetime import datetime, timedelta
@@ -42,7 +48,10 @@ def stamp_outcomes(session: Session, *, now: datetime) -> int:
         session.scalars(
             select(Campaign.id).where(
                 Campaign.stato.in_(("in_invio", "inviata", "annullata")),
-                Campaign.programmata_per >= now - STAMP_WINDOW,
+                or_(
+                    Campaign.stato == "in_invio",
+                    Campaign.updated_at >= now - STAMP_WINDOW,
+                ),
             )
         )
     )

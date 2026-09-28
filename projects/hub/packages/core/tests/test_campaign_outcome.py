@@ -178,6 +178,65 @@ def test_a_mail_older_than_the_window_is_never_stamped(clean: Session) -> None: 
     assert only_row(clean, campaign).entrato_at is None
 
 
+def test_a_campaign_still_in_invio_past_its_window_is_still_read(clean: Session) -> None:  # noqa: F811  (fixture)
+    """Greptile P1, CodeRabbit Major on #440 (REB-533): a campaign stuck `in_invio` past
+    `STAMP_WINDOW` (a revoked Resend key, say) that then resumes sending must still be
+    read by its own state, not its schedule. `programmata_per` and `updated_at` are both
+    set outside the window here, so only `stato == "in_invio"` can be what keeps it in
+    scope -- every moment is the test's own, since a database default would use the
+    real clock and an explicit UPDATE overrides `updated_at`'s `onupdate`."""
+    clock = Clock(NOW)
+    card = person(clean, "ada@studio.it")
+    campaign = sent(clean, clock, stato_percorso="completo", azione="entrato")
+    old = clock.at - timedelta(days=40)
+    sent_at = clock.at - timedelta(days=1)
+    clean.execute(
+        update(Campaign)
+        .where(Campaign.id == campaign.id)
+        .values(stato="in_invio", programmata_per=old, updated_at=old)
+    )
+    clean.execute(
+        update(CampaignRecipient)
+        .where(CampaignRecipient.campaign_id == campaign.id)
+        .values(inviata_at=sent_at)
+    )
+    at = sent_at + timedelta(hours=2)
+    clean.add(Login(user_id=card.user_id, logged_at=at))
+    clean.commit()
+    assert stamp_outcomes(clean, now=clock.at) == 1
+    row = only_row(clean, campaign)
+    assert (row.entrato_at, row.azione_at) == (at, at)
+
+
+def test_a_campaign_written_within_the_window_is_read_regardless_of_its_schedule(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """Same shape, but `inviata`: `updated_at` moves on the tick's claim, on `_finish`
+    and on `cancel`, all of which follow every row's send, so a recent `updated_at`
+    alone -- not the old `programmata_per` -- must be what keeps the campaign in scope."""
+    clock = Clock(NOW)
+    card = person(clean, "ada@studio.it")
+    campaign = sent(clean, clock, stato_percorso="completo", azione="entrato")
+    old = clock.at - timedelta(days=40)
+    sent_at = clock.at - timedelta(days=1)
+    clean.execute(
+        update(Campaign)
+        .where(Campaign.id == campaign.id)
+        .values(stato="inviata", programmata_per=old, updated_at=sent_at)
+    )
+    clean.execute(
+        update(CampaignRecipient)
+        .where(CampaignRecipient.campaign_id == campaign.id)
+        .values(inviata_at=sent_at)
+    )
+    at = sent_at + timedelta(hours=2)
+    clean.add(Login(user_id=card.user_id, logged_at=at))
+    clean.commit()
+    assert stamp_outcomes(clean, now=clock.at) == 1
+    row = only_row(clean, campaign)
+    assert (row.entrato_at, row.azione_at) == (at, at)
+
+
 def test_a_skipped_row_is_never_stamped(clean: Session) -> None:  # noqa: F811  (fixture)
     clock = Clock(NOW)
     card = person(clean, "ada@studio.it")
