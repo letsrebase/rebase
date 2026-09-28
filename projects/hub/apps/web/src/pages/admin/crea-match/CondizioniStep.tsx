@@ -156,11 +156,49 @@ function Pagamento({
   )
 }
 
-/** Step 2: what changes from one engagement to the next, prefilled, in the open; every
- *  other field of the letter, none of them required, in a closed «Altre condizioni». */
+/** «Giorni previsti» (REB-497): the match's, not the letter's, so it sits after the fee
+ *  but outside `LetteraForm`. Optional. In the open, unlike «Altre condizioni», so the
+ *  browser can check the column's bounds, and its default step of one refuses a fraction,
+ *  before the request; the server's own sentence stays the backstop (REB-502). */
+function GiorniPrevisti({
+  value,
+  onChange,
+  invalid,
+}: {
+  value: string
+  onChange: (value: string) => void
+  invalid: Invalid
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor="match-giorni_previsti">Giorni previsti</Label>
+      <Input
+        id="match-giorni_previsti"
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={366}
+        className="w-24"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-invalid={invalid('giorni_previsti')}
+        aria-describedby="match-giorni_previsti-aiuto"
+      />
+      <p id="match-giorni_previsti-aiuto" className="text-sm text-muted-foreground">
+        Per il consuntivo: 8 ore al giorno. Il testo della lettera resta quello di «Impegno».
+      </p>
+    </div>
+  )
+}
+
+/** Step 2: what changes from one engagement to the next, prefilled, in the open, with the
+ *  expected days after the fee; every other field of the letter, none of them required,
+ *  in a closed «Altre condizioni». */
 export function CondizioniStep({
   form,
   onChange,
+  giorniPrevisti,
+  onGiorniPrevisti,
   dayRate,
   altreOpen,
   onAltreOpen,
@@ -171,6 +209,9 @@ export function CondizioniStep({
 }: {
   form: LetteraForm
   onChange: (form: LetteraForm) => void
+  /** «Giorni previsti» as typed: `MatchCreate`'s, beside the letter's form. */
+  giorniPrevisti: string
+  onGiorniPrevisti: (value: string) => void
   /** The freelancer's day rate as the prefill wrote it into the fee. */
   dayRate: string
   altreOpen: boolean
@@ -201,6 +242,7 @@ export function CondizioniStep({
       {input('impegno')}
       {input('luogo')}
       <Pagamento form={form} onChange={onChange} dayRate={dayRate} invalid={invalid} />
+      <GiorniPrevisti value={giorniPrevisti} onChange={onGiorniPrevisti} invalid={invalid} />
       <details
         open={altreOpen}
         onToggle={(event) => onAltreOpen(event.currentTarget.open)}

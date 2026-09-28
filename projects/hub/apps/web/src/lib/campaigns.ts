@@ -1,4 +1,4 @@
-import type { Campaign, CampaignAzione, CampaignMeta, CampaignStato, RecipientStato } from './api'
+import type { Campaign, CampaignAzione, CampaignCounts, CampaignMeta, CampaignStato, RecipientStato } from './api'
 
 export const CAMPAIGN_STATE_LABELS: Record<CampaignStato, string> = {
   bozza: 'Bozza',
@@ -88,6 +88,26 @@ export function campaignMoment(campagna: Pick<Campaign, 'stato' | 'programmata_p
   return null
 }
 
+/** A moment's time of day in Rome, «10:32»: when the draft was saved, when the test left. */
+export function romeTime(iso: string): string {
+  return romeClock.format(new Date(iso))
+}
+
+/** «1 persona», «83 persone»: the count on the send button. */
+export function peopleLabel(count: number): string {
+  return `${count} ${count === 1 ? 'persona' : 'persone'}`
+}
+
+const scheduleDay = new Intl.DateTimeFormat('it-IT', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' })
+
+/** The «Programma» inputs as the send button says them, «lun 28 set, 09:00». The
+ *  inputs already hold a Rome day and time, so the day is formatted as a calendar
+ *  date (at UTC) and never shifted through the browser's own zone. */
+export function scheduleLabel(giorno: string, ora: string): string {
+  const [year, month, day] = giorno.split('-').map(Number)
+  return `${scheduleDay.format(new Date(Date.UTC(year!, month! - 1, day!)))}, ${ora}`
+}
+
 const POLL_MS = 10_000
 /** Resend's delivery and bounce events land seconds to minutes after the last mail. */
 const AFTER_SEND_MS = 5 * 60 * 1000
@@ -100,4 +120,41 @@ export function refetchEvery(campagna: Pick<Campaign, 'stato' | 'inviata_at'>, n
     return POLL_MS
   }
   return false
+}
+
+/** The campaign page's figure for the action, once done. */
+export const AZIONE_FATTA_LABELS: Record<CampaignAzione, string> = {
+  entrato: 'Sono entrati',
+  cv: 'Hanno caricato il CV',
+  scheda_completa: 'Hanno completato la scheda',
+  profilo_creato: 'Hanno creato il profilo',
+  richiesta_aggiornata: 'Hanno aggiornato la richiesta',
+  pigro_cliente: 'Primo cliente in Pigro',
+}
+
+const AZIONE_BREVE: Record<CampaignAzione, string> = {
+  entrato: 'entrati',
+  cv: 'CV caricati',
+  scheda_completa: 'schede completate',
+  profilo_creato: 'profili creati',
+  richiesta_aggiornata: 'richieste aggiornate',
+  pigro_cliente: 'primi clienti',
+}
+
+/** A part of the mails sent, as the campaign page's figures say it: «38%», and nothing
+ *  while none has left. */
+export function share(part: number, whole: number): string | undefined {
+  if (whole <= 0) return undefined
+  return `${Math.round((part / whole) * 100)}%`
+}
+
+/** The list page's «Esito»: what left and what it led to, then what went wrong only when
+ *  something did. For `entrato`, entering is the action, so it is said once. */
+export function outcomeLine(c: CampaignCounts, azione: CampaignAzione): string {
+  const parts = [`${c.inviate} inviate`, `${c.consegnate} consegnate`, `${c.cliccate} clic`, `${c.entrate} entrati`]
+  if (azione !== 'entrato') parts.push(`${c.azioni} ${AZIONE_BREVE[azione]}`)
+  if (c.rimbalzate) parts.push(`${c.rimbalzate} rimbalzate`)
+  if (c.saltate) parts.push(`${c.saltate} saltate`)
+  if (c.fallite) parts.push(`${c.fallite} fallite`)
+  return parts.join(' · ')
 }

@@ -90,6 +90,14 @@ running the core service the admin area runs, with the calling admin as the acto
 
 `get_talento` and `list_talenti` carry `vetted_at` and whether an anonymous card exists.
 
+The campaigns are read-only over MCP (P-REB-41 phase 2), so an agent reports on a
+campaign without a terminal:
+
+- `list_campagne`: every campaign, newest first, with its `conteggi`, clicks, entries and
+  actions included.
+- `get_campagna`: one campaign, with each person's outcome, and `entrato_dalla_mail` /
+  `azione_dalla_mail` when the mail's own link was the door.
+
 ## The guide is a generated file, committed, and easy to leave stale
 
 `content/guida-primi-passi-freelance.md` is typeset by `tools/build_guide_pdf.py`, with
@@ -162,7 +170,11 @@ the preview alike, from the `sweep` service in `docker-compose.yml` (REB-393). R
 it did with `docker logs rebase-sweep-1` (production) or `docker logs
 rebase-preview-sweep-1` (preview): each run prints «N documenti ripresi», and, when
 Documenso itself refused a confirmation or could not be reached (an expired, revoked or
-wrong token among them, REB-431), «, M non confermati» on the same line.
+wrong token among them, REB-431), «, M non confermati» on the same line. Then it links
+every active match still waiting for its deal on Pigro, or failed last time (REB-499),
+and adds «, N match collegati a Pigro», and «, M non collegati» when any stayed unlinked
+(the reason is on each match, `pigro_errore`); without `REBASE_PIGRO_ENGAGEMENTS_TOKEN`
+it links nothing and says 0.
 
 ## Campaigns
 
@@ -175,8 +187,11 @@ through `campaign_sender_from_settings` (`rebase_core.campaigns.sender`), one ma
 time and one mail a second, leaving Resend's other request a second to the magic link.
 A loop, never a one-shot, for the same reason as `sweep`: `_deploy-compose.yml` fails a
 deploy on any container that is not `running`. Without `REBASE_RESEND_API_KEY` the
-command prints why and exits 0, so the loop keeps running and sends nothing -- the
-preview carries no key. Read what it did with `docker logs rebase-campaigns-1`
+command prints why and exits 0, so the loop keeps running and sends nothing. The
+preview's API has `REBASE_RESEND_API_KEY` set, production's key, on purpose, but no
+`REBASE_RESEND_WEBHOOK_SECRET`, so `_ready_to_send` refuses «Mandami una prova» and
+«Invia» there (`NO_WEBHOOK`): the preview's loop runs, it just never has a sent row to
+send. Read what it did with `docker logs rebase-campaigns-1`
 (production) or `docker logs rebase-preview-campaigns-1` (preview): each run prints one
 line, «N campagne, M inviate, S saltate, F fallite». `campagne` is how many due
 campaigns this pass touched, and `inviate` and `saltate` are recipients this pass
@@ -189,6 +204,22 @@ restricted key, a domain Resend no longer sends for) marks nothing: the pass sto
 campaign with its rows still `in_coda` and logs «campaign <id> stopped this tick:
 Resend 401», and the send resumes on the first pass after the key is fixed. No
 address and no key ever appears in these lines or anywhere else in the logs.
+
+**The same pass stamps what each mail led to** (P-REB-41 phase 2, `rebase_core.campaigns.outcome`).
+For every row sent in the last 30 days and still missing a stamp, it writes `entrato_at`
+(the first login after the mail) and `azione_at` (the campaign's action, from the table
+that records it: the CV comment, the card's `created_at`, the request's `updated_at`, or
+the tick itself for a card that became complete). A stamp is written once. The log line
+ends with `N esiti registrati`. The preview's `campaigns` loop runs, since it has a
+Resend key; it is the missing webhook secret that keeps «Mandami una prova» and «Invia»
+refused there, so the preview never has a sent row to stamp.
+
+**«Riscrivi a chi non ha fatto niente»** (`POST /api/hub/campaigns/{id}/follow-up`) makes a
+`bozza` with `fonte = lista` and `segue_id`. It keeps the earlier campaign's action and a
+copy of its mail, and only the mail can change (`LIST_IS_FIXED`). Its list is the earlier
+campaign's sent rows with no action, each checked live with `done_at`. The gap rule
+applies, so a follow-up drafted within `REBASE_CAMPAIGN_GAP_DAYS` of the send lists
+everyone as excluded, with the date.
 
 **Scripts written for one campaign wave never live under `/opt/hub`.** The deploy syncs
 the whole repository there with `rsync -az --delete` (`.github/workflows/
@@ -227,8 +258,8 @@ it as JSON, then turns `email.delivered`, `email.bounced`, `email.clicked` and
 
 1. In Resend, go to Webhooks, then «Add endpoint».
    - Production: `https://letsrebase.com/api/hub/webhooks/resend`.
-   - Preview: `https://preview.letsrebase.com/api/hub/webhooks/resend`, only once the
-     preview has a Resend key.
+   - Preview: none. The preview shares production's Resend key and must never get a
+     webhook endpoint or `REBASE_RESEND_WEBHOOK_SECRET` on that team; see below.
 2. Select the events `email.delivered`, `email.bounced`, `email.clicked` and
    `email.complained`.
 3. Copy the `whsec_…` value into that environment's `${DEPLOY_PATH}/.env` as
@@ -249,9 +280,13 @@ its deliveries, bounces or complaints.
 Resend's webhook covers every mail the team sends, magic links included. Those arrive
 untagged and are acknowledged without effect. A tagged event whose recipient row is not
 in this database answers 503, so that Resend retries it (for about a day) while the tick
-commits the row. **So the preview must never get a key on production's Resend team**:
-each environment would then 503 the other's tagged events, and Resend would retry every
-one of them for a day. Give the preview its own Resend team, or no key at all.
+commits the row. Two environments that both receive webhooks on one Resend team would
+503 each other's tagged events, and Resend would retry every one of them for a day, so
+only production has the endpoint and the secret. **The preview keeps production's key
+without the secret on purpose**: with no `REBASE_RESEND_WEBHOOK_SECRET`,
+`_ready_to_send` refuses «Mandami una prova» and «Invia» there, so the preview never
+sends a mail Resend would need to notify it about. The preview gets its own Resend team
+before it ever gets a webhook secret.
 
 ## The team builder
 

@@ -492,6 +492,8 @@ export interface AdminAction {
     | 'notice_recorded'
     /** «Segna come verificato» / «Togli la verifica» (REB-518): `payload.vetted` says which. */
     | 'vetted'
+    /** «Riprova su Pigro» (REB-498), recorded on entity `match`. */
+    | 'pigro_link'
   admin_id: string
   admin_nome: string
   payload: {
@@ -499,6 +501,9 @@ export interface AdminAction {
     before?: Record<string, unknown>
     after?: Record<string, unknown>
     vetted?: boolean
+    /** A `pigro_link` entry's: the state the link reached, and the CRM's sentence. */
+    esito?: PigroStato
+    errore?: string | null
   }
   created_at: string
 }
@@ -691,10 +696,20 @@ export interface CompanyList {
 /** REB-387: a match's state, and a contract document's. */
 export type MatchStato = 'bozza' | 'in_firma' | 'attivo' | 'concluso' | 'annullato'
 export type DocumentStato = 'generato' | 'in_attesa' | 'inviato' | 'firmato' | 'annullato' | 'disdetto'
+/** Where an active match's link to its deal on Pigro stands (REB-497): `null` until the
+ *  match turns `attivo`. */
+export type PigroStato = 'da_collegare' | 'collegato' | 'errore' | 'rifiutato'
 
 /** What an admin can do next on a document or a match (REB-477), as the core's
  *  `match_words` names it: the page maps each to its button and its API call. */
-export type Action = 'invia' | 'reinvia_email' | 'aggiorna_stato' | 'annulla' | 'chiudi' | 'registra_disdetta'
+export type Action =
+  | 'invia'
+  | 'reinvia_email'
+  | 'aggiorna_stato'
+  | 'annulla'
+  | 'chiudi'
+  | 'registra_disdetta'
+  | 'riprova_pigro'
 
 /** A freelancer's tax data, as the two contracts print them. */
 export interface FiscalData {
@@ -758,6 +773,23 @@ export interface Match {
   situazione: string
   prossima_azione: Action | null
   altre_azioni: Action[]
+  /** The admin's estimate of the billable days, for the hours report (REB-497). */
+  giorni_previsti: number | null
+  /** What the letter said when the match was written: ISO dates, the daily fee as the
+   *  API's decimal string. `null` for a match written before REB-497. */
+  lettera_data_inizio: string | null
+  lettera_data_fine: string | null
+  lettera_compenso: string | null
+  /** The link to the match's deal on Pigro (REB-497): `pigro_url` is the deal's page,
+   *  `pigro_errore` the CRM's sentence for the last failure or refusal. */
+  pigro_stato: PigroStato | null
+  pigro_slug: string | null
+  pigro_deal_id: string | null
+  pigro_url: string | null
+  pigro_linked_at: string | null
+  pigro_attempted_at: string | null
+  pigro_errore: string | null
+  pigro_mail_sent_at: string | null
 }
 
 /** One row of the admin's «Match» list (REB-413): never a tax field and never
@@ -781,6 +813,10 @@ export interface MatchListItem {
   created_by_email: string
   /** The match's sentence, the one `Match` carries (REB-477). */
   situazione: string
+  /** `Match`'s own (REB-497), the row's share of them. */
+  giorni_previsti: number | null
+  pigro_stato: PigroStato | null
+  pigro_url: string | null
 }
 
 /** `GET /api/hub/matches`'s shape (REB-413): newest first, `totale` counting every
@@ -818,6 +854,7 @@ export interface Campaign {
   fonte: 'stato' | 'filtri' | 'lista'
   stato_percorso: string | null
   filtri: Record<string, unknown> | null
+  segue_id: string | null
   oggetto: string
   testo: string
   bottone_testo: string
@@ -841,6 +878,9 @@ export interface CampaignCounts {
   fallite: number
   consegnate: number
   rimbalzate: number
+  cliccate: number
+  entrate: number
+  azioni: number
 }
 
 export interface CampaignListItem extends Campaign {
@@ -861,6 +901,12 @@ export interface CampaignRecipient {
   inviata_at: string | null
   consegnata_at: string | null
   rimbalzata_at: string | null
+  primo_clic_at: string | null
+  reclamo_at: string | null
+  entrato_at: string | null
+  azione_at: string | null
+  entrato_dalla_mail: boolean
+  azione_dalla_mail: boolean
 }
 
 export interface CampaignDetail {
@@ -929,6 +975,71 @@ export interface SendReport {
   mail_inviata: boolean | null
 }
 
+/** A day's hours on one invoice (REB-505), the invoice named by `numero` and `tipo` as
+ *  `ReportInvoice` names it. */
+export interface ReportDayInvoice {
+  numero: string
+  tipo: string
+  ore: string
+}
+
+/** One day of hours on the match's deal (REB-498): `fatture` names each invoice they
+ *  sit on once, empty while none does, and `ore_per_fattura` gives each of them its own
+ *  share of the day, the hours on none left out (REB-505). Hours are the API's decimal
+ *  strings, two places. */
+export interface ReportDay {
+  data: string
+  ore: string
+  descrizioni: string[]
+  fatture: string[]
+  ore_per_fattura: ReportDayInvoice[]
+}
+
+/** An ISO week, «2026-W40», from its Monday to its Sunday. */
+export interface ReportWeek {
+  settimana: string
+  da: string
+  a: string
+  ore: string
+}
+
+export interface ReportMonth {
+  mese: string
+  ore: string
+}
+
+/** An invoice the hours sit on, «senza numero» for one not numbered yet, with how many
+ *  of the hours. */
+export interface ReportInvoice {
+  numero: string
+  tipo: string
+  data: string | null
+  stato: string
+  stato_pagamento: string
+  ore: string
+}
+
+/** «Consuntivo» (REB-498): `GET /api/hub/matches/{id}/report`, read from the CRM on every
+ *  request and stored nowhere. Every `Decimal` of the server's `MatchReport` is a string
+ *  here, as the API sends it; `ore_previste` and `avanzamento` are `null` without
+ *  `giorni_previsti`. */
+export interface MatchReport {
+  match_id: string
+  pigro_url: string | null
+  pigro_stato: PigroStato | null
+  giorni_previsti: number | null
+  ore_previste: string | null
+  totale_ore: string
+  giorni_equivalenti: string
+  avanzamento: string | null
+  ore_fatturate: string
+  ore_non_fatturate: string
+  per_giorno: ReportDay[]
+  per_settimana: ReportWeek[]
+  per_mese: ReportMonth[]
+  fatture: ReportInvoice[]
+}
+
 /** A contract as its freelancer reads it in «Contratti» (REB-392): the signing link only
  *  while the document waits for the signature. */
 export interface MemberContract {
@@ -946,6 +1057,9 @@ export interface MemberContract {
   attivo: boolean
   rinnovo: string | null
   ultimo_giorno_disdetta: string | null
+  /** A letter's deal on Pigro, only once its match is linked there (REB-498): «Le tue
+   *  ore su Pigro» opens it. */
+  pigro_url: string | null
 }
 
 /** `quadri_precedenti` (REB-392): the freelancer's other framework agreements that were
@@ -1014,6 +1128,9 @@ export interface MatchCreate {
   company_id: string
   cliente: Cliente
   lettera: Lettera
+  /** «Giorni previsti» (REB-497): beside the letter, never inside it, since `LetteraFields`
+   *  refuses a key it does not know and the letter's text does not change with it. */
+  giorni_previsti: number | null
 }
 
 /** What saving a match would do, in sentences, with nothing written (REB-476):
@@ -1084,6 +1201,7 @@ export const admin = {
     request<Campaign>(`/api/hub/campaigns/${id}/schedule`, json(data)),
   campaignToDraft: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/draft`, { method: 'POST' }),
   cancelCampaign: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/cancel`, { method: 'POST' }),
+  followUpCampaign: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/follow-up`, { method: 'POST' }),
   neverWrite: (email: string) => request<{ ok: boolean }>('/api/hub/campaigns/never-write', json({ email })),
   freelancer: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}`),
   cvUrl: (id: string) => `/api/hub/freelancers/${id}/cv`,
@@ -1279,6 +1397,22 @@ export const admin = {
   /** A plain href, like `cvUrl`: the route answers an attachment behind the cookie. */
   contractPdfUrl: (documentId: string, firmato = false) =>
     `/api/hub/contract-documents/${documentId}/pdf${firmato ? '?firmato=true' : ''}`,
+}
+
+/** One match's link to its deal on Pigro and the hours read from there (REB-498), the
+ *  admin's: the browser never talks to the CRM, the hub's API does with its own token. */
+export const matches = {
+  /** One match as «Match e contratti» reads it: «Consuntivo» names it by its company,
+   *  its role and its letter's number (REB-503). */
+  get: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}`),
+  /** «Riprova su Pigro»: the link runs now and the match comes back as it stands,
+   *  `collegato` or with the CRM's sentence. The first link of a freelancer opens their
+   *  space and can take the CRM up to 90 seconds: no timeout here cuts it short. A 503
+   *  says this environment has no link to the CRM, a 502 that the CRM did not answer. */
+  linkPigro: (matchId: string) => request<Match>(`/api/hub/matches/${matchId}/pigro/link`, { method: 'POST' }),
+  /** «Consuntivo»: the hours on the match's deal over the whole engagement. A 409 says,
+   *  in the state's sentence, that the match is not linked yet. */
+  report: (matchId: string) => request<MatchReport>(`/api/hub/matches/${matchId}/report`),
 }
 
 // ---- whoever is signed in --------------------------------------------------------------

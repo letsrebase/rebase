@@ -13,6 +13,7 @@ const KIND_LABELS: Record<AdminAction['kind'], string> = {
   document_cancelled: 'Contratto quadro annullato',
   notice_recorded: 'Disdetta registrata',
   vetted: 'Verifica',
+  pigro_link: 'Collegamento a Pigro',
 }
 
 /** The entry's word: its kind's, except `vetted` (REB-518), one kind both ways, whose

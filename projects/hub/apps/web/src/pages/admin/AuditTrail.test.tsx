@@ -80,6 +80,18 @@ const VETTED: AdminAction = {
   created_at: '2026-09-25T09:00:00Z',
 }
 const UNVETTED: AdminAction = { ...VETTED, id: 'a6', payload: { vetted: false }, created_at: '2026-09-26T09:00:00Z' }
+// «Riprova su Pigro» (REB-498), recorded on entity `match`: its payload is the outcome and
+// the CRM's sentence, not a diff, so the kind alone names it.
+const PIGRO_LINK: AdminAction = {
+  id: 'a7',
+  entity_type: 'match',
+  entity_id: 'm1',
+  kind: 'pigro_link',
+  admin_id: 'u1',
+  admin_nome: 'Ivan Bianchi',
+  payload: { esito: 'errore', errore: 'timeout' },
+  created_at: '2026-10-01T09:05:00Z',
+}
 
 function mount({ canRevert = true, onReverted = () => {} }: { canRevert?: boolean; onReverted?: () => void } = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
@@ -134,6 +146,15 @@ describe('AuditTrail', () => {
     const entries = screen.getAllByRole('listitem')
     expect(entries[0]).toHaveTextContent('Verifica tolta')
     expect(entries[1]).toHaveTextContent('Segnato come verificato')
+    expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
+  })
+
+  it('names a retried link to Pigro, with no diff and no revert button (REB-502)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, [PIGRO_LINK]))
+    mount()
+    const entry = (await screen.findByText('Collegamento a Pigro')).closest('li')!
+    expect(entry).toHaveTextContent('Ivan Bianchi')
+    expect(entry.querySelector('dl')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Ripristina questa modifica' })).toBeNull()
   })
 

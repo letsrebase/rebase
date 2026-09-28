@@ -15,11 +15,18 @@ import pytest
 from contract_flow import ADMIN_EMAIL, SIGNER, TABLES, draft_match
 from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
+from fakes_pigro import DEAL_URL, PIGRO, TOKEN, RecordedPigro, linked_body
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_documenso, get_renderer, get_session_opener, get_signing_factory
+from rebase_api.deps import (
+    get_documenso,
+    get_http_call,
+    get_renderer,
+    get_session_opener,
+    get_signing_factory,
+)
 from rebase_core.config import Settings, get_settings
 from rebase_core.documenso import Outcome
 from rebase_core.errors import NotFound
@@ -152,6 +159,50 @@ def test_a_signed_framework_is_stored_mailed_and_releases_its_letter(
         == 200
     )
     assert client.get(f"/api/hub/matches/{match['id']}").json()["stato"] == "attivo"
+
+
+def test_a_signed_letter_links_its_match_to_pigro_through_the_apis_seam(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    documenso: FakeDocumenso,
+    api_session: Session,
+) -> None:
+    """REB-499: the webhook's background `finish` links the match its letter's signature
+    turned active, with the engagement service `SigningDep` hands over, reading through
+    the request's own `HttpCallDep`: the override here, `urllib_engagements_call` in
+    production. Nobody waits on it: the webhook has had its answer already."""
+    pigro = RecordedPigro([(201, linked_body())])
+    settings = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        signer_json=json.dumps(SIGNER),
+        contracts_mail=CONTRACTS_MAIL,
+        documenso_webhook_secret=SECRET,
+        pigro_api_url=PIGRO,
+        pigro_engagements_token=TOKEN,
+    )
+    overrides = client.app.dependency_overrides  # type: ignore[attr-defined]
+    overrides[get_http_call] = lambda: pigro
+    overrides[get_settings] = lambda: settings
+    match, envelope = _sent(client, sender, api_session)
+    documenso.sign(envelope, SIGNED_AT)
+    assert _deliver(client, documenso.webhook(envelope, "DOCUMENT_COMPLETED")).status_code == 200
+    letter = _document(api_session, "lettera").documenso_id
+    assert letter is not None
+    assert pigro.calls == []
+    documenso.sign(letter, SIGNED_AT)
+
+    answered = _deliver(client, documenso.webhook(letter, "DOCUMENT_COMPLETED"))
+
+    assert answered.status_code == 200
+    read = client.get(f"/api/hub/matches/{match['id']}").json()
+    assert (read["stato"], read["pigro_stato"], read["pigro_url"]) == (
+        "attivo",
+        "collegato",
+        DEAL_URL,
+    )
+    [(method, url, _headers, _body)] = pigro.calls
+    assert (method, url) == ("PUT", f"{PIGRO}/api/rebase/engagements/{match['id']}")
 
 
 def test_the_same_completion_twice_does_everything_once(

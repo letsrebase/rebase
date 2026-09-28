@@ -47,6 +47,16 @@ builder both the admin API and the admin MCP server use (REB-478).
 the preview alike, from the `sweep` service in `docker-compose.yml` (REB-393): `finish`
 again, for every document a webhook or an admin's «Aggiorna stato» never reached.
 
+A signature that turns a match `attivo` also marks its link to Pigro due (`pigro_stato`
+`da_collegare`, REB-499), and the webhook's `finish` then asks `EngagementService.link`
+for it, with no row lock held, after the signature's own steps: a CRM that takes its 90
+seconds to open a space delays no signed copy. Nothing a person waits on runs that
+provisioning: «Aggiorna stato» (`refresh`) applies the signature and leaves the link to
+the sweep, whose round after the documents (`link_pending`) retries every match still
+waiting or in error, or to the admin's «Riprova». A link that fails is left for the
+sweep too. A service built without the engagement service links nothing, as one without
+Documenso signs nothing.
+
 The recovery actions are the admin's: «Aggiorna stato» (`refresh`) for the event
 Documenso gave up on, «Reinvia email» (`resend_mail`), «Annulla» on a framework agreement
 (`cancel_document`) or on a match (`cancel_match`), both cancelling the envelope on
@@ -78,6 +88,7 @@ from rebase_core.documenso import (
     fields_from_blanks,
     outcome_from_envelope,
 )
+from rebase_core.engagements import DA_COLLEGARE, EngagementService
 from rebase_core.errors import DocumensoFailed, InvalidState, NotFound, SigningUnavailable
 from rebase_core.framework import (
     active_framework,
@@ -86,6 +97,7 @@ from rebase_core.framework import (
     pending_framework,
     rome_today,
 )
+from rebase_core.http import HttpCall, urllib_engagements_call
 from rebase_core.mail import (
     Attachment,
     EmailSender,
@@ -175,10 +187,16 @@ class SweepResult(NamedTuple):
     documents actually moved; `unconfirmed` is how many stayed `inviato` because
     Documenso itself could not be asked -- a refusal (an expired, revoked or wrong
     token, an envelope answering 404) or an unreachable instance, never a document
-    merely not completed yet, and never a routine no-Documenso environment."""
+    merely not completed yet, and never a routine no-Documenso environment. `linked` and
+    `link_failed` are the round after the documents (REB-499,
+    `EngagementService.link_pending`): how many active matches it took to `collegato`,
+    and how many it tried and left otherwise; both zero without the engagement service
+    or its token."""
 
     touched: int
     unconfirmed: int
+    linked: int = 0
+    link_failed: int = 0
 
 
 class _FinishOutcome(NamedTuple):
@@ -203,9 +221,12 @@ class SigningService:
         allow_draft: bool = False,
         today: Callable[[], date] = rome_today,
         now: Callable[[], datetime] = utcnow,
+        engagements: EngagementService | None = None,
     ) -> None:
         """Each collaborator is needed only by the steps that use it: a webhook that
-        cancels a document needs no renderer, a draft's cancellation no Documenso.
+        cancels a document needs no renderer, a draft's cancellation no Documenso, and
+        only a signature that turns a match active needs `engagements`, which links it
+        to its deal on Pigro (REB-499); without it nothing is linked.
 
         `signer` is the resolved mapping, for tests that already have one (including an
         explicit `{}`, which the caller means literally: no signer, and no
@@ -226,6 +247,7 @@ class SigningService:
         self._signer_json = signer_json
         self._signer_cache: Mapping[str, Value] | None = signer
         self.matches = MatchService(session, renderer, signer or {}, today)
+        self.engagements = engagements
 
     # ---- «Invia per la firma» ---------------------------------------------------------
 
@@ -460,7 +482,8 @@ class SigningService:
         to `annullato` for a rejection or a cancellation the webhook never delivered
         (REB-431); the sealed copy downloaded and stored; the signed-copy mails sent,
         once; for an active framework agreement, the letters that waited for it
-        released. A step that fails is logged and left for the next call (the next
+        released; for a match the signature turned active, its link to Pigro
+        (REB-499). A step that fails is logged and left for the next call (the next
         «Aggiorna stato», or `sweep`); the others still run. Returns whether this call
         actually moved anything -- the confirmation, a stored copy, an accepted mail, a
         released letter -- so `sweep` counts only documents it truly advanced (REB-433),
@@ -468,13 +491,18 @@ class SigningService:
         `_finish_outcome` for whether Documenso itself could not be asked at all."""
         return self._finish_outcome(document_id).moved
 
-    def _finish_outcome(self, document_id: UUID) -> _FinishOutcome:
+    def _finish_outcome(self, document_id: UUID, *, link: bool = True) -> _FinishOutcome:
         """As `finish`, but also says whether the confirmation step itself could not
         reach Documenso for an answer (REB-431): a refusal or an unreachable instance,
         not the routine "not completed yet" or "no Documenso configured here". `sweep`
         reads this so a real failure is visible instead of silently retried every ten
         minutes forever; `finish` itself still answers a plain bool, unchanged, for its
-        other callers (the webhook's background task, «Aggiorna stato»)."""
+        other callers (the webhook's background task, «Aggiorna stato»). `sweep` passes
+        `link=False`: its own round after the documents links every match waiting, the
+        ones this run turned active among them, so each is asked for once a run and
+        counted once. `refresh` passes it too: an admin waiting on «Aggiorna stato» never
+        waits on the CRM opening a space. A link is the match's step, not the
+        document's, and never counts as `moved`."""
         confirmed = self._confirm_completion(document_id)
         moved = confirmed is True
         try:
@@ -488,7 +516,44 @@ class SigningService:
         document = self.session.get(ContractDocument, document_id, populate_existing=True)
         if document is not None and is_active(document):
             moved = self._release_letters(document) or moved
+        if link:
+            self._link_to_pigro(document_id)
         return _FinishOutcome(moved=moved, unconfirmed=confirmed is None)
+
+    def _link_to_pigro(self, document_id: UUID) -> None:
+        """The document's match linked to its deal on Pigro, when a signature has just
+        turned it active (REB-499). The match is read again rather than trusted from the
+        confirmation, which answers `True` for a rejection as well: only a match
+        `attivo` and still `da_collegare` is handed to `link`, which takes its own locks
+        and holds none across the call. Last of `finish`'s steps, so a CRM slow to open
+        a space delays nothing of the signature's, and nothing after it depends on it: a
+        link that fails, for any reason, a database error among them, is logged and left
+        for the sweep, never raised past a signature that is already done."""
+        if self.engagements is None:
+            return
+        found = self.session.execute(
+            select(Match.id, Match.stato, Match.pigro_stato)
+            .join(ContractDocument, ContractDocument.match_id == Match.id)
+            .where(ContractDocument.id == document_id)
+        ).first()
+        self.session.rollback()
+        if found is None:
+            return
+        match_id, stato, pigro_stato = found
+        if stato != "attivo" or pigro_stato != DA_COLLEGARE:
+            return
+        try:
+            self.engagements.link(match_id)
+        except Exception as exc:
+            self.session.rollback()
+            _log.warning(
+                "the match %s of document %s is not linked to Pigro yet (%s): the sweep "
+                "tries again",
+                match_id,
+                document_id,
+                type(exc).__name__,
+                exc_info=True,
+            )
 
     def _confirm_completion(self, document_id: UUID) -> bool | None:
         """Before a document counts as signed: Documenso's own word on the envelope,
@@ -499,7 +564,8 @@ class SigningService:
         and the document itself are then locked in that order, the global rule, and the
         document re-read: only one still `inviato` moves. A `COMPLETED` envelope signs
         it, with the signer's own date (`outcome_from_envelope(envelope).signed_at`),
-        turning its match `attivo` as `apply` used to; a `REJECTED` or `CANCELLED` one
+        turning its match `attivo` as `apply` used to, with its link to Pigro marked
+        `da_collegare` in the same commit (REB-499); a `REJECTED` or `CANCELLED` one
         is applied the same way `refresh` already applies one, from the same envelope
         this call already read, so a rejection or a cancellation a webhook never
         delivered is recovered by the next `finish` or `sweep` too, not just a missed
@@ -560,6 +626,9 @@ class SigningService:
         document.signed_at = outcome.signed_at or self.now()
         if match is not None and match.stato == "in_firma":
             match.stato = "attivo"
+            # Its link to Pigro is due from this commit on (REB-499): `finish` asks for
+            # it next, and the sweep keeps asking until it holds.
+            match.pigro_stato = DA_COLLEGARE
         self.session.commit()
         return True
 
@@ -574,12 +643,15 @@ class SigningService:
         not count. `unconfirmed` is how many stayed `inviato` because Documenso itself
         refused the confirmation or could not be reached (REB-431): failed silently
         before, now visible so a stuck token or a wrong URL is not read as "nothing to
-        do" forever."""
+        do" forever. Then, with the engagement service, its own round (REB-499): every
+        active match whose link to Pigro is still due or failed last time, the ones this
+        run just turned active among them, is asked for once, `linked` and
+        `link_failed` counting what came of it."""
         touched = 0
         unconfirmed = 0
         for document_id in self._to_finish():
             try:
-                outcome = self._finish_outcome(document_id)
+                outcome = self._finish_outcome(document_id, link=False)
             except Exception:
                 self.session.rollback()
                 _log.warning(
@@ -590,7 +662,12 @@ class SigningService:
                 touched += 1
             if outcome.unconfirmed:
                 unconfirmed += 1
-        return SweepResult(touched=touched, unconfirmed=unconfirmed)
+        if self.engagements is None:
+            return SweepResult(touched=touched, unconfirmed=unconfirmed)
+        pigro = self.engagements.link_pending()
+        return SweepResult(
+            touched=touched, unconfirmed=unconfirmed, linked=pigro.linked, link_failed=pigro.failed
+        )
 
     def _to_finish(self) -> list[UUID]:
         """Every document a sweep must run `finish` on: a document `inviato` with an
@@ -818,7 +895,12 @@ class SigningService:
         inside `finish`'s own confirmation (REB-431), which a webhook's background task
         and `sweep` also go through and must not need an envelope handed in from
         somewhere else. An admin's own click, not a per-event webhook, pays that second
-        GET; simpler than giving `finish` a second signature for one caller."""
+        GET; simpler than giving `finish` a second signature for one caller.
+
+        A match the signature turns active is not linked to Pigro here (REB-499): the
+        admin is waiting on this click, and a new freelancer's first link opens a space,
+        which takes up to 90 seconds. It stays `da_collegare`, with its sentence, until
+        the sweep or «Riprova» links it."""
         document = self._document(document_id)
         if document.documenso_id is None:
             raise InvalidState(
@@ -830,7 +912,7 @@ class SigningService:
         outcome = outcome_from_envelope(envelope)
         if outcome is not None:
             self.apply(outcome)
-        self.finish(document_id)
+        self._finish_outcome(document_id, link=False)
         return self._read(document_id)
 
     def resend_mail(self, document_id: UUID, admin_id: UUID) -> ContractDocumentRead:
@@ -1078,6 +1160,7 @@ def signing_from_settings(
     *,
     documenso: DocumensoClient | None | _FromSettings = FROM_SETTINGS,
     sender: EmailSender | None | _FromSettings = FROM_SETTINGS,
+    http: HttpCall = urllib_engagements_call,
 ) -> SigningFactory:
     """`SigningService` as this environment configures it, for any session: the one
     builder the admin API's `get_signing_factory` and the admin MCP server both use
@@ -1086,10 +1169,14 @@ def signing_from_settings(
     handed in (the API hands its own dependencies, which a test overrides), and `None`
     handed in means off. `REBASE_SIGNER_JSON` goes over raw: `SigningService` parses it
     only where a document is about to be typeset, so a malformed value fails the send it
-    breaks and nothing else (REB-406)."""
+    breaks and nothing else (REB-406). The engagement service that links an active match
+    to Pigro (REB-499) is built beside it, on the same session and with the same mail
+    sender, reading through `http`: `urllib_engagements_call` unless handed in (the API
+    hands its own `HttpCallDep`, which a test overrides)."""
     typesetter = renderer if renderer is not None else ContractRenderer()
 
     def build(session: Session) -> SigningService:
+        mailer = sender_from_settings(settings) if isinstance(sender, _FromSettings) else sender
         return SigningService(
             session,
             renderer=typesetter,
@@ -1098,10 +1185,11 @@ def signing_from_settings(
                 if isinstance(documenso, _FromSettings)
                 else documenso
             ),
-            sender=sender_from_settings(settings) if isinstance(sender, _FromSettings) else sender,
+            sender=mailer,
             signer_json=settings.signer_json,
             contracts_mail=settings.contracts_mail,
             allow_draft=settings.contracts_allow_draft,
+            engagements=EngagementService(session, settings, http, sender=mailer),
         )
 
     return build

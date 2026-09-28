@@ -52,9 +52,10 @@ def _apply(
     email: str = "ada@studio.it",
     cv: bytes | None = CV,
     cognome: str = "Lovelace",
+    nome: str = "Ada",
 ) -> UUID:
     data = FreelancerCreate(
-        nome="Ada",
+        nome=nome,
         cognome=cognome,
         email=email,
         tariffa_giornaliera=Decimal("450.00"),
@@ -378,6 +379,86 @@ def test_a_surname_that_is_a_word_is_the_person_only_with_a_capital(
     assert named_card.error == IDENTIFYING
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("sintesi", "Ada, backend developer senior con nove anni di fintech."),
+        ("sintesi", "Il profilo di ADA: API in Python e AWS."),
+        ("ruolo", "Backend developer (Ada)"),
+    ],
+)
+def test_the_first_name_in_the_role_or_the_summary_is_the_person(
+    clean: Session, field: str, value: str
+) -> None:
+    """The CV Claude reads carries the whole name: a first name written in the role or
+    the summary is the person as much as the surname is."""
+    freelancer_id = _apply(clean)
+    llm = RecordingCall([card_response({**CARD, field: value})])
+
+    read = CardWriter(clean, llm).write(freelancer_id)
+
+    assert read.card is None and read.error == IDENTIFYING
+
+
+def test_a_first_name_that_is_a_skill_or_inside_a_word_is_not_the_person(
+    clean: Session,
+) -> None:
+    """Ada is a programming language as well as a name: the skills are not read for the
+    first name, and nor is a longer word that starts with it («Adapter»)."""
+    freelancer_id = _apply(clean)
+    card = {
+        **CARD,
+        "competenze": ["Ada", "SPARK", "Python"],
+        "sintesi": "Sistemi embedded, un Adapter per ogni sensore e i test in SPARK.",
+    }
+    llm = RecordingCall([card_response(card)])
+
+    read = CardWriter(clean, llm).write(freelancer_id)
+
+    assert read.error is None and read.card is not None
+    assert read.card.competenze == ["Ada", "SPARK", "Python"]
+
+
+RUBY_SKILLS = ["Ruby on Rails", "PostgreSQL"]
+
+
+def test_a_first_name_inside_the_persons_own_skill_is_the_skill(clean: Session) -> None:
+    """Ruby who writes Ruby on Rails: where the role or the summary writes one of the
+    card's own skills whole, the first name inside it is the technology."""
+    freelancer_id = _apply(clean, nome="Ruby")
+    card = {
+        **CARD,
+        "ruolo": "Ruby on Rails developer",
+        "competenze": RUBY_SKILLS,
+        "sintesi": "Nove anni di Ruby on Rails: API e back office per l'e-commerce.",
+    }
+    llm = RecordingCall([card_response(card)])
+
+    read = CardWriter(clean, llm).write(freelancer_id)
+
+    assert read.error is None and read.card is not None
+    assert read.card.ruolo == "Ruby on Rails developer"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("ruolo", "Ruby, backend developer"),
+        ("sintesi", "Ruby ha nove anni di Ruby on Rails e PostgreSQL."),
+    ],
+)
+def test_a_first_name_that_is_also_a_skill_still_names_the_person(
+    clean: Session, field: str, value: str
+) -> None:
+    """The same Ruby, written as herself rather than inside «Ruby on Rails», is named."""
+    freelancer_id = _apply(clean, nome="Ruby")
+    llm = RecordingCall([card_response({**CARD, "competenze": RUBY_SKILLS, field: value})])
+
+    read = CardWriter(clean, llm).write(freelancer_id)
+
+    assert read.card is None and read.error == IDENTIFYING
+
+
 def test_a_surname_inside_a_longer_word_is_not_the_person(clean: Session) -> None:
     """The guard reads whole words: «Neri» is the person, «ingegneria» is not."""
     freelancer_id = _apply(clean, cognome="Neri")
@@ -389,19 +470,36 @@ def test_a_surname_inside_a_longer_word_is_not_the_person(clean: Session) -> Non
     assert read.error is None and read.card is not None and read.card.sintesi == sintesi
 
 
-def test_an_outage_on_a_new_cv_keeps_the_old_card(clean: Session) -> None:
-    """Claude down says nothing about the new CV: the old card stays until an answer
-    comes, and no hash parks the new file."""
+def test_an_outage_on_a_new_cv_retires_the_old_card(clean: Session) -> None:
+    """Claude down says nothing about the new CV, so no hash parks it; but the old
+    card describes a CV the person replaced, so it leaves the catalogue until the next
+    answer, which writes the new CV's card."""
     freelancer_id = _apply(clean)
     CardWriter(clean, RecordingCall([card_response()])).write(freelancer_id)
     MemberService(clean).replace_cv(freelancer_id, CV_2026, "cv 2026.pdf", "application/pdf")
 
     down = CardWriter(clean, _Scripted([_down()])).write(freelancer_id)
 
-    assert down.card == Card.model_validate(CARD) and down.cv_sha256 == _sha(CV)
-    assert down.error
+    assert (down.card, down.cv_sha256) == (None, None) and down.error
     stored = _stored(clean, freelancer_id)
     assert stored is not None and stored.error_cv_sha256 is None
+    assert _card_is_sql_null(clean, freelancer_id)
+
+    again = CardWriter(clean, RecordingCall([card_response()])).write(freelancer_id)
+    assert again.card == Card.model_validate(CARD) and again.cv_sha256 == _sha(CV_2026)
+    assert again.error is None
+
+
+def test_an_outage_on_the_same_cv_keeps_its_card(clean: Session) -> None:
+    """«Rigenera scheda» while Claude is down: the card still describes the CV on
+    record, so it stays, with the outage beside it."""
+    freelancer_id = _apply(clean)
+    CardWriter(clean, RecordingCall([card_response()])).write(freelancer_id)
+
+    down = CardWriter(clean, _Scripted([_down()])).write(freelancer_id, force=True)
+
+    assert down.card == Card.model_validate(CARD) and down.cv_sha256 == _sha(CV)
+    assert down.error
 
 
 def test_a_scan_replacing_a_cv_retires_its_card(clean: Session) -> None:

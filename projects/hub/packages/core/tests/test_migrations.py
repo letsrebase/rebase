@@ -348,6 +348,73 @@ def test_migration_0020_can_run_again_and_roll_back() -> None:
         engine.dispose()
 
 
+def test_migration_0021_backfills_every_active_match_as_da_collegare() -> None:
+    """REB-497, § 3.1 of the design: a match already `attivo` when 0021 ships waits as
+    `da_collegare`, so the sweep links it; nothing else would ever look at it again. A
+    match in any other state keeps no link state until it turns active."""
+    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+        url = container.get_connection_url()
+        config = Config(str(INI_PATH))
+        config.set_main_option("sqlalchemy.url", url)
+        command.upgrade(config, "0020")
+        engine = create_engine(url, future=True)
+        with engine.begin() as connection:
+            user_id = connection.execute(
+                text(
+                    "INSERT INTO users (id, email, nome, cognome, role, attivo) VALUES "
+                    "(gen_random_uuid(), 'ada@studio.it', 'Ada', 'Lovelace', 'admin', true) "
+                    "RETURNING id"
+                )
+            ).scalar()
+            freelancer_id = connection.execute(
+                text(
+                    "INSERT INTO freelancers (id, user_id, links, stato, compilata_da) VALUES "
+                    "(gen_random_uuid(), :user_id, '[]', 'nuovo', 'persona') RETURNING id"
+                ),
+                {"user_id": user_id},
+            ).scalar()
+            company_id = connection.execute(
+                text(
+                    "INSERT INTO companies (id, user_id, nome_azienda, figura_richiesta, "
+                    "progetto, periodo_da, durata, budget_giornaliero, remoto, "
+                    "giorni_presenza, numero_risorse, stato) VALUES (gen_random_uuid(), "
+                    ":user_id, 'ACME', 'Dev', 'Un progetto', '2026-10-01', '3 mesi', 500, "
+                    "'remoto', NULL, 1, 'nuovo') RETURNING id"
+                ),
+                {"user_id": user_id},
+            ).scalar()
+            for stato in ("attivo", "bozza", "in_firma", "concluso"):
+                connection.execute(
+                    text(
+                        "INSERT INTO matches (id, freelancer_id, company_id, "
+                        "cliente_ragione_sociale, cliente_piva, cliente_sede, stato, "
+                        "created_by) VALUES (gen_random_uuid(), :freelancer_id, "
+                        ":company_id, 'ACME S.r.l.', '01234567890', 'Milano', :stato, "
+                        ":user_id)"
+                    ),
+                    {
+                        "freelancer_id": freelancer_id,
+                        "company_id": company_id,
+                        "stato": stato,
+                        "user_id": user_id,
+                    },
+                )
+
+        command.upgrade(config, "head")
+
+        with engine.connect() as connection:
+            states = dict(
+                connection.execute(text("SELECT stato, pigro_stato FROM matches")).tuples().all()
+            )
+        assert states == {
+            "attivo": "da_collegare",
+            "bozza": None,
+            "in_firma": None,
+            "concluso": None,
+        }
+        engine.dispose()
+
+
 def test_the_campaign_constraints_are_installed(hub_engine: Engine) -> None:
     """A campaign's source and its source's field go together, and every enum column of
     the three tables refuses a value outside its list: all ten `CHECK` constraints,

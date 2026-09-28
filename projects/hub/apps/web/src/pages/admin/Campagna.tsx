@@ -1,11 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from '@tanstack/react-router'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, ApiError, type CampaignRecipient } from '@/lib/api'
-import { CAMPAIGN_STATE_LABELS, RECIPIENT_STATE_LABELS, campaignMoment, refetchEvery } from '@/lib/campaigns'
+import {
+  AZIONE_FATTA_LABELS,
+  CAMPAIGN_STATE_LABELS,
+  RECIPIENT_STATE_LABELS,
+  campaignMoment,
+  refetchEvery,
+  share,
+} from '@/lib/campaigns'
 import { formatDateTime } from '@/lib/format'
 import { Empty, Figure, Header } from './lists'
 
@@ -84,6 +91,36 @@ function NeverWriteCell({ email }: { email: string }) {
   )
 }
 
+type Filtro = 'tutti' | 'azione' | 'niente'
+
+const FILTERS: [Filtro, string][] = [
+  ['tutti', 'Tutti'],
+  ['azione', 'Ha fatto l’azione'],
+  ['niente', 'Non ha fatto niente'],
+]
+
+/** Whom the mail reached with no action after it: the list «Riscrivi a chi non ha fatto
+ *  niente» starts from (spec § 4.3). */
+function didNothing(recipient: CampaignRecipient): boolean {
+  return recipient.stato === 'inviata' && recipient.azione_at === null
+}
+
+function matches(recipient: CampaignRecipient, filtro: Filtro): boolean {
+  if (filtro === 'azione') return recipient.azione_at !== null
+  if (filtro === 'niente') return didNothing(recipient)
+  return true
+}
+
+function Moment({ at, fromMail = false }: { at: string | null; fromMail?: boolean }) {
+  if (!at) return null
+  return (
+    <>
+      <p>{formatDateTime(at)}</p>
+      {fromMail && <p className="text-xs">dalla mail</p>}
+    </>
+  )
+}
+
 function RecipientRow({ recipient }: { recipient: CampaignRecipient }) {
   return (
     <TableRow>
@@ -93,16 +130,27 @@ function RecipientRow({ recipient }: { recipient: CampaignRecipient }) {
       </TableCell>
       <TableCell>
         <p>{RECIPIENT_STATE_LABELS[recipient.stato]}</p>
+        {recipient.inviata_at && <p className="text-xs text-muted-foreground">{formatDateTime(recipient.inviata_at)}</p>}
         {recipient.motivo && <p className="text-xs text-muted-foreground">{recipient.motivo}</p>}
       </TableCell>
       <TableCell className="text-muted-foreground">
-        {recipient.inviata_at ? formatDateTime(recipient.inviata_at) : ''}
+        {recipient.rimbalzata_at ? (
+          <>
+            <p className="text-destructive">Rimbalzata</p>
+            <p className="text-xs">{formatDateTime(recipient.rimbalzata_at)}</p>
+          </>
+        ) : (
+          <Moment at={recipient.consegnata_at} />
+        )}
       </TableCell>
       <TableCell className="text-muted-foreground">
-        {recipient.consegnata_at ? formatDateTime(recipient.consegnata_at) : ''}
+        <Moment at={recipient.primo_clic_at} />
       </TableCell>
       <TableCell className="text-muted-foreground">
-        {recipient.rimbalzata_at ? formatDateTime(recipient.rimbalzata_at) : ''}
+        <Moment at={recipient.entrato_at} fromMail={recipient.entrato_dalla_mail} />
+      </TableCell>
+      <TableCell className="text-muted-foreground">
+        <Moment at={recipient.azione_at} fromMail={recipient.azione_dalla_mail} />
       </TableCell>
       <TableCell>
         <NeverWriteCell email={recipient.email} />
@@ -137,12 +185,19 @@ export function AdminCampagna() {
     mutationFn: () => admin.cancelCampaign(id),
     onSuccess: invalidate,
   })
+  const navigate = useNavigate()
+  const [filtro, setFiltro] = useState<Filtro>('tutti')
+  const followUp = useMutation({
+    mutationFn: () => admin.followUpCampaign(id),
+    onSuccess: (draft) => void navigate({ to: '/admin/campaigns/$id/edit', params: { id: draft.id } }),
+  })
 
   if (detail.isError) return <Empty>Campagna non trovata.</Empty>
   if (detail.isPending) return <Empty>Caricamento…</Empty>
 
   const { campagna, conteggi, destinatari } = detail.data
   const moment = campaignMoment(campagna)
+  const waiting = destinatari.filter(didNothing).length
   const toDraftFailure =
     toDraft.error instanceof ApiError
       ? toDraft.error.message
@@ -155,12 +210,23 @@ export function AdminCampagna() {
       : cancel.error
         ? 'Non riesco ad annullare la campagna.'
         : null
+  const followUpFailure =
+    followUp.error instanceof ApiError
+      ? followUp.error.message
+      : followUp.error
+        ? 'Non riesco a preparare la bozza.'
+        : null
 
   return (
     <>
       <Header title={campagna.nome}>
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="pill">{CAMPAIGN_STATE_LABELS[campagna.stato]}</Badge>
+          {campagna.stato === 'inviata' && waiting > 0 && (
+            <Button type="button" size="sm" onClick={() => followUp.mutate()} disabled={followUp.isPending}>
+              {followUp.isPending ? 'Preparo la bozza…' : `Riscrivi a chi non ha fatto niente (${waiting})`}
+            </Button>
+          )}
           {campagna.stato === 'bozza' && (
             <Button asChild variant="outline" size="sm">
               <Link to="/admin/campaigns/$id/edit" params={{ id: campagna.id }}>
@@ -192,38 +258,64 @@ export function AdminCampagna() {
         </div>
       </Header>
       {moment && <p className="px-6 pt-4 text-sm text-muted-foreground">{moment}</p>}
-      {(toDraftFailure || cancelFailure) && (
-        <p role="alert" className="px-6 pt-4 text-sm text-destructive">
-          {toDraftFailure ?? cancelFailure}
+      {campagna.segue_id && (
+        <p className="px-6 pt-2 text-sm text-muted-foreground">
+          Riscrive a chi non aveva fatto niente dopo{' '}
+          <Link to="/admin/campaigns/$id" params={{ id: campagna.segue_id }} className="underline">
+            un'altra campagna
+          </Link>
+          .
         </p>
       )}
-      <dl className="grid grid-cols-2 gap-6 border-b px-6 py-6 sm:grid-cols-4 lg:grid-cols-7">
-        <Figure label="Destinatari" value={conteggi.destinatari} />
-        <Figure label="In coda" value={conteggi.in_coda} />
-        <Figure label="Inviate" value={conteggi.inviate} />
-        <Figure label="Consegnate" value={conteggi.consegnate} />
-        <Figure label="Rimbalzate" value={conteggi.rimbalzate} />
-        <Figure label="Saltate" value={conteggi.saltate} />
-        <Figure label="Fallite" value={conteggi.fallite} />
+      {(toDraftFailure || cancelFailure || followUpFailure) && (
+        <p role="alert" className="px-6 pt-4 text-sm text-destructive">
+          {toDraftFailure ?? cancelFailure ?? followUpFailure}
+        </p>
+      )}
+      <dl className="grid grid-cols-2 gap-6 border-b px-6 py-6 sm:grid-cols-3 lg:grid-cols-5">
+        <Figure label="Inviate" value={conteggi.inviate} note={`su ${conteggi.destinatari}`} />
+        <Figure label="Consegnate" value={conteggi.consegnate} note={share(conteggi.consegnate, conteggi.inviate)} />
+        <Figure label="Cliccate" value={conteggi.cliccate} note={share(conteggi.cliccate, conteggi.inviate)} />
+        <Figure label="Entrate nell’area" value={conteggi.entrate} note={share(conteggi.entrate, conteggi.inviate)} />
+        <Figure label={AZIONE_FATTA_LABELS[campagna.azione]} value={conteggi.azioni} note={share(conteggi.azioni, conteggi.inviate)} />
+        <Figure label="Rimbalzate" value={conteggi.rimbalzate} note={share(conteggi.rimbalzate, conteggi.inviate)} />
+        <Figure label="Saltate" value={conteggi.saltate} note={share(conteggi.saltate, conteggi.destinatari)} />
+        <Figure label="Fallite" value={conteggi.fallite} note={share(conteggi.fallite, conteggi.destinatari)} />
+        {conteggi.in_coda > 0 && <Figure label="In coda" value={conteggi.in_coda} />}
       </dl>
       {destinatari.length === 0 ? (
         <Empty>Nessun destinatario.</Empty>
       ) : (
         <div className="px-6 py-6">
+          <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Chi mostrare">
+            {FILTERS.map(([value, label]) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={filtro === value ? 'default' : 'outline'}
+                aria-pressed={filtro === value}
+                onClick={() => setFiltro(value)}
+              >
+                {label} ({destinatari.filter((r) => matches(r, value)).length})
+              </Button>
+            ))}
+          </div>
           <div className="overflow-x-auto overflow-y-hidden border border-border bg-card">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Persona</TableHead>
                   <TableHead>Stato</TableHead>
-                  <TableHead>Inviata</TableHead>
-                  <TableHead>Consegnata</TableHead>
-                  <TableHead>Rimbalzata</TableHead>
+                  <TableHead>Consegna</TableHead>
+                  <TableHead>Clic</TableHead>
+                  <TableHead>Entrata</TableHead>
+                  <TableHead>Azione</TableHead>
                   <TableHead className="w-40"><span className="sr-only">Azioni</span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {destinatari.map((recipient) => (
+                {destinatari.filter((r) => matches(r, filtro)).map((recipient) => (
                   <RecipientRow key={recipient.id} recipient={recipient} />
                 ))}
               </TableBody>

@@ -23,6 +23,7 @@ import {
   TEAM_REQUEST_STATE_LABELS,
   formatDate,
   formatDateTime,
+  formatDaysPerWeek,
   formatEuro,
 } from '@/lib/format'
 import { Empty, Header, Row } from './lists'
@@ -211,7 +212,7 @@ function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: Admi
         <p>{talent.ruolo}</p>
         {member && <p className="text-xs text-muted-foreground">{member.motivazione}</p>}
         {member?.giorni_settimana ? (
-          <p className="text-xs text-muted-foreground">{`${member.giorni_settimana} giorni a settimana`}</p>
+          <p className="text-xs text-muted-foreground">{formatDaysPerWeek(member.giorni_settimana)}</p>
         ) : null}
       </TableCell>
       <TableCell>{talent.tariffa_giornaliera === null ? '—' : formatEuro(talent.tariffa_giornaliera)}</TableCell>

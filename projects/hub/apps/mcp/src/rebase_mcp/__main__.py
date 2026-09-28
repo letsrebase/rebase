@@ -14,8 +14,9 @@ from rebase_core.admin_tokens import AdminTokenService
 from rebase_core.config import get_settings
 from rebase_core.contracts.render import ContractRenderer
 from rebase_core.db import create_engine_from_settings, session_factory
+from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError
-from rebase_core.http import urllib_call
+from rebase_core.http import urllib_call, urllib_engagements_call
 from rebase_core.llm import call_from_settings
 from rebase_core.mail import sender_from_settings
 from rebase_core.signing import signing_from_settings
@@ -40,6 +41,7 @@ def main() -> int:
     finally:
         session.close()
     renderer = ContractRenderer()
+    sender = sender_from_settings(settings)
     build_server(
         factory,
         lambda: admin,
@@ -48,7 +50,10 @@ def main() -> int:
         renderer=renderer,
         signing=signing_from_settings(settings, renderer),
         llm=call_from_settings(settings),
-        sender=sender_from_settings(settings),
+        sender=sender,
+        engagements=lambda session: EngagementService(
+            session, settings, urllib_engagements_call, sender=sender
+        ),
     ).run("stdio")
     return 0
 

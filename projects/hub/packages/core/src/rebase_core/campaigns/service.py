@@ -5,7 +5,7 @@ test."""
 import re
 import secrets
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.campaigns.actions import snapshot
-from rebase_core.campaigns.audience import REASON_CANCELLED, build_audience
+from rebase_core.campaigns.audience import REASON_CANCELLED, build_audience, waiting_rows
 from rebase_core.campaigns.render import RenderTarget, person_code, render
 from rebase_core.campaigns.schemas import (
     AudiencePreview,
@@ -36,13 +36,27 @@ from rebase_core.campaigns.states import ENTITY, JOURNEY_STATES, PIGRO_LATER
 from rebase_core.campaigns.templates import STATE_TEMPLATES
 from rebase_core.config import Settings
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
-from rebase_core.models import Campaign, CampaignRecipient
+from rebase_core.models import (
+    CAMPAIGN_NAME_MAX_LENGTH,
+    Campaign,
+    CampaignRecipient,
+    Freelancer,
+    Login,
+    User,
+)
 
 NOT_A_DRAFT = "Si modifica solo una bozza: riportala in bozza prima."
 ROME = ZoneInfo("Europe/Rome")
 NEED_TEST = "Manda una prova dopo l'ultima modifica, poi invia."
 EMPTY_MAIL = "Oggetto, testo e bottone servono prima della prova."
 PAST_SLACK = timedelta(minutes=1)
+FOLLOW_UP_SUFFIX = " · riscrivi"
+ONLY_SENT = "Si riscrive solo a chi ha ricevuto una campagna già inviata."
+NOTHING_TO_FOLLOW = "Hanno fatto tutti l'azione: non c'è nessuno a cui riscrivere."
+LIST_IS_FIXED = (
+    "Chi riceve una «Riscrivi» e cosa misura li decide la campagna da cui viene: "
+    "si cambia solo la mail."
+)
 # What the test mail showed: the list's source, the mail, and the slug, which is the
 # button link's `utm_campaign` and Resend's tag and follows a renamed draft.
 _CONTENT_FIELDS = (
@@ -115,6 +129,14 @@ class CampaignService:
         changes = data.model_dump(exclude_unset=True)
         if "filtri" in changes and data.filtri is not None:
             changes["filtri"] = data.filtri.model_dump(mode="json", exclude_none=True)
+        if campaign.fonte == "lista":
+            fixed = [
+                field
+                for field in ("fonte", "stato_percorso", "filtri", "azione")
+                if field in changes and changes[field] != getattr(campaign, field)
+            ]
+            if fixed:
+                raise ValidationFailed(ENTITY, fixed[0], LIST_IS_FIXED)
         if data.nome is not None:
             changes["nome"] = data.nome.strip()
             if changes["nome"] != campaign.nome:
@@ -183,11 +205,58 @@ class CampaignService:
             .where(CampaignRecipient.campaign_id == campaign_id)
             .order_by(CampaignRecipient.email)
         ).all()
+        entered, acted = self._from_mail(campaign, rows)
         return CampaignDetail(
             campagna=CampaignRead.model_validate(campaign),
             conteggi=self._counts([campaign_id]).get(campaign_id, CampaignCounts()),
-            destinatari=[RecipientRead.model_validate(r) for r in rows],
+            destinatari=[
+                RecipientRead.model_validate(r).model_copy(
+                    update={
+                        "entrato_dalla_mail": r.id in entered,
+                        "azione_dalla_mail": r.id in acted,
+                    }
+                )
+                for r in rows
+            ],
         )
+
+    def _from_mail(
+        self, campaign: Campaign, rows: Sequence[CampaignRecipient]
+    ) -> tuple[set[UUID], set[UUID]]:
+        """Which stamped rows came from this very mail (spec § 4.3, § 6.2). A login counts
+        when it carries the campaign's slug and the row's own code, and it is the very
+        login that stamped `entrato_at`: the slug alone is also on a forwarded mail, and
+        the same slug/code pair can recur from a later, unrelated login. A card created
+        for `profilo_creato` counts the same way, matched on the row's own code too
+        (Greptile P1): the wizard stores the button link's `utm_term` on the card
+        (`freelancers.py`'s `data.utm`), just as a login does. Two queries for the whole
+        list."""
+        pairs = set(
+            self.session.execute(
+                select(func.lower(User.email), Login.utm_term, Login.logged_at)
+                .join(User, User.id == Login.user_id)
+                .where(Login.utm_campaign == campaign.slug)
+            ).all()
+        )
+        entered = {
+            r.id
+            for r in rows
+            if r.entrato_at is not None and (r.email, r.codice, r.entrato_at) in pairs
+        }
+        if campaign.azione == "entrato":
+            return entered, entered
+        if campaign.azione != "profilo_creato":
+            return entered, set()
+        cards = set(
+            self.session.execute(
+                select(func.lower(User.email), Freelancer.utm_term)
+                .join(Freelancer, Freelancer.user_id == User.id)
+                .where(Freelancer.utm_campaign == campaign.slug, Freelancer.deleted_at.is_(None))
+            ).all()
+        )
+        return entered, {
+            r.id for r in rows if r.azione_at is not None and (r.email, r.codice) in cards
+        }
 
     def send_test(
         self, campaign_id: UUID, admin: AdminRead, sender: CampaignSender
@@ -285,6 +354,40 @@ class CampaignService:
         self.session.commit()
         return CampaignRead.model_validate(campaign)
 
+    def follow_up(self, campaign_id: UUID, admin_id: UUID) -> CampaignRead:
+        """«Riscrivi a chi non ha fatto niente» (spec § 4.3): a `bozza` with `fonte =
+        lista` that follows `campaign_id`, with the same action and a copy of its mail to
+        rewrite. Its list is the sent rows with no action, read when shown and frozen
+        when scheduled, like any other."""
+        parent = self._require(campaign_id)
+        if parent.stato != "inviata":
+            raise InvalidState(ONLY_SENT)
+        # Read live, the same way the list itself is shown (`waiting_rows`): a row's
+        # `azione_at` is only ever a stamp the tick wrote up to a minute ago, so a
+        # count of unstamped rows alone counts someone who already did the action live,
+        # just not yet stamped (Greptile P1, CodeRabbit Minor).
+        if not waiting_rows(self.session, parent):
+            raise InvalidState(NOTHING_TO_FOLLOW)
+        now = self.clock()
+        nome = f"{parent.nome}{FOLLOW_UP_SUFFIX}"[:CAMPAIGN_NAME_MAX_LENGTH]
+        campaign = Campaign(
+            created_by=admin_id,
+            nome=nome,
+            slug=self._unique_slug(f"c-{now:%Y-%m-%d}-{_slugify(nome)}"[:70]),
+            fonte="lista",
+            segue_id=parent.id,
+            oggetto=parent.oggetto,
+            testo=parent.testo,
+            bottone_testo=parent.bottone_testo,
+            bottone_meta=parent.bottone_meta,
+            azione=parent.azione,
+            stato="bozza",
+            contenuto_at=now,
+        )
+        self.session.add(campaign)
+        self.session.commit()
+        return CampaignRead.model_validate(campaign)
+
     def _when(self, data: ScheduleRequest, now: datetime) -> datetime:
         if data.giorno is None and data.ora is None:
             return now
@@ -313,7 +416,7 @@ class CampaignService:
                 raise ValidationFailed(ENTITY, "stato_percorso", "Scegli uno stato del percorso.")
             if stato_percorso == "pigro_vuoto":
                 raise ValidationFailed(ENTITY, "stato_percorso", PIGRO_LATER)
-        elif not has_filters:
+        elif fonte == "filtri" and not has_filters:
             raise ValidationFailed(ENTITY, "filtri", "Scegli i filtri della lista.")
         if meta == "pigro":
             raise ValidationFailed(ENTITY, "bottone_meta", PIGRO_LATER)
@@ -366,6 +469,9 @@ class CampaignService:
                 func.count(case((r.stato == "fallita", 1))),
                 func.count(r.consegnata_at),
                 func.count(r.rimbalzata_at),
+                func.count(r.primo_clic_at),
+                func.count(r.entrato_at),
+                func.count(r.azione_at),
             )
             .where(r.campaign_id.in_(ids))
             .group_by(r.campaign_id)
@@ -379,6 +485,9 @@ class CampaignService:
                 fallite=row[5],
                 consegnate=row[6],
                 rimbalzate=row[7],
+                cliccate=row[8],
+                entrate=row[9],
+                azioni=row[10],
             )
             for row in rows
         }

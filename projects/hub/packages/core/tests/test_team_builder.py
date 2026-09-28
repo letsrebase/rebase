@@ -30,6 +30,8 @@ from rebase_core.llm import UNAVAILABLE_SENTENCE, LlmRequest, LlmResponse, Recor
 from rebase_core.models import Freelancer, FreelancerCard, TeamProposal, User
 from rebase_core.team_builder import (
     NO_FIT_SENTENCE,
+    PLACE_WITHHELD_REASON,
+    PLACE_WITHHELD_SUMMARY,
     PROPOSAL_MAX_TOKENS,
     PROPOSAL_SCHEMA,
     TeamBuilder,
@@ -843,6 +845,89 @@ def test_the_cloud_read_names_each_member_and_the_public_read_never(clean: Sessi
     for anonymous in (public, builder.get(cloud.id, public=True)):
         assert [(m.nome, m.cognome) for m in anonymous.team] == [(None, None)] * 2
         assert "Lovelace" not in anonymous.model_dump_json()
+
+
+def test_a_public_reason_that_names_the_cards_place_is_withheld(clean: Session) -> None:
+    """The prompt forbids a place in a motivazione; one that names the place on the
+    member's card anyway would give back what the public read withholds, so that read
+    says the hub's sentence, in any case and for any word of the place but its kind;
+    the admin's read keeps the model's words, and a place the card does not hold stays."""
+    places = ["Provincia di Bergamo", "Torino", "Verona", "Roma", "Alto Adige"]
+    ids = {
+        _talent(clean, n, card={**CARD, "luogo": luogo}): luogo
+        for n, luogo in enumerate(places, start=1)
+    }
+    positions = _positions(clean)
+    reasons = [
+        "Lavora a BERGAMO, vicino al cliente, e conosce il dominio.",
+        "Nove anni di API in Python, quello che serve al gestionale.",
+        "Ha già lavorato in provincia con aziende come questa.",
+        "Vive a Milano e conosce la logistica.",
+        "Competenze di alto livello su Kafka, quello che serve alla pipeline.",
+    ]
+    llm = RecordingCall(
+        [
+            proposal_response(
+                [
+                    _member(positions[freelancer_id], motivazione=reason)
+                    for freelancer_id, reason in zip(ids, reasons, strict=True)
+                ]
+            )
+        ]
+    )
+    builder = _builder(clean, llm)
+
+    public = builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
+    )
+
+    # «di alto livello» is no place: a word of the place counts only with a capital.
+    assert [member.motivazione for member in public.team] == [
+        PLACE_WITHHELD_REASON,
+        reasons[1],
+        reasons[2],
+        reasons[3],
+        reasons[4],
+    ]
+    assert PLACE_WITHHELD_REASON == "Profilo adatto al ruolo."
+    assert "BERGAMO" not in public.model_dump_json()
+    admin = builder.get(public.id, public=False)
+    assert [member.motivazione for member in admin.team] == reasons
+
+
+def test_a_public_card_names_its_place_nowhere(clean: Session) -> None:
+    """The public read withholds `luogo`, so a card that names the place anywhere else
+    (one written against the prompt, or before its rule) gives none of it back: the
+    role reads as the role in this team, the summary as the hub's sentence, and a skill
+    or a sector that names it is left out. The admin's read keeps the card whole."""
+    card = {
+        **CARD,
+        "ruolo": "Backend developer a Bergamo",
+        "competenze": ["Python", "Rete Bergamo Smart City"],
+        "settori": ["fintech", "turismo bergamasco", "logistica di Bergamo"],
+        "luogo": "Bergamo",
+        "sintesi": "Backend developer senior di base a Bergamo, nove anni di fintech.",
+    }
+    freelancer_id = _talent(clean, 1, card=card)
+    ids = _positions(clean)
+    llm = RecordingCall([proposal_response([_member(ids[freelancer_id], ruolo="Backend lead")])])
+    builder = _builder(clean, llm)
+
+    public = builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
+    )
+
+    [scheda] = [member.scheda for member in public.team]
+    assert scheda.luogo is None
+    assert scheda.ruolo == "Backend lead"
+    assert scheda.sintesi == PLACE_WITHHELD_SUMMARY
+    assert PLACE_WITHHELD_SUMMARY == "La sintesi di questo profilo non è pubblica."
+    assert scheda.competenze == ["Python"]
+    # «bergamasco» is another word: the guard reads the place's own words.
+    assert scheda.settori == ["fintech", "turismo bergamasco"]
+    assert "Bergamo" not in public.model_dump_json()
+    [admin] = [member.scheda for member in builder.get(public.id, public=False).team]
+    assert admin == Card.model_validate(card)
 
 
 @pytest.mark.parametrize("change", ["deleted", "scartato"])

@@ -153,6 +153,12 @@ delivered, clicked, entered and action done. Newest first; a draft reads «bozza
 
 ### 4.2 A new campaign, in four steps (the «Crea match» pattern)
 
+> Since REB-526 (2026-09-26) the four steps are one page: the same content, with the
+> preview beside the text, a draft that saves itself and a send bar at the foot
+> (`docs/design/DECISIONS.md`, 2026-09-26). What each step says below still holds for
+> the block that took its place: Chi is «Destinatari», Cosa is «Messaggio», Prova sits
+> under the preview, Quando is the send bar.
+
 1. **Chi.** Pick a journey state, or switch to filters. The page shows the list name by
    name. Each row can be unticked, and ticked rows are the list. Rows the rules
    exclude stay visible, greyed out, with the reason: admin or «non scrivere mai»
@@ -412,6 +418,9 @@ did nothing.
    - The full campaign page and «Riscrivi a chi non ha fatto niente».
    - Two read-only hub MCP tools, `list_campagne` and `get_campagna`, so an agent
      reports without a terminal.
+
+   Phase 2 shipped as the milestone «Read the outcome» (REB-533 to REB-539), plan
+   `projects/hub/docs/superpowers/plans/2026-09-26-campaigns-phase-2-outcome.md`.
 3. **PigroCRM.**
    - `GET /api/tenants/usage` in the CRM, its own card with `area:api`.
    - The `pigro_vuoto` state, the `pigro` destination and action f.

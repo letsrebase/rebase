@@ -11,6 +11,7 @@ import {
   FISCAL_EMPTY,
   fiscalLine,
   fiscalToSave,
+  giorniPrevistiToSend,
   LETTERA_EMPTY,
   LETTERA_GROUPS,
   LETTERA_LABELS,
@@ -66,6 +67,17 @@ describe('the letter form (REB-387)', () => {
     expect(form.compenso).toBe('')
     expect(form.giorni_pagamento).toBe('')
     expect(form.fine_mese).toBe(false)
+  })
+
+  it('sends the expected days as a number beside the letter, and an empty box as null (REB-502)', () => {
+    expect(giorniPrevistiToSend('40')).toBe(40)
+    expect(giorniPrevistiToSend(' 40 ')).toBe(40)
+    expect(giorniPrevistiToSend('')).toBeNull()
+    expect(giorniPrevistiToSend('   ')).toBeNull()
+    // What JSON would send for it anyway, so «Controlla e invia» never prints «NaN».
+    expect(giorniPrevistiToSend('quaranta')).toBeNull()
+    // The letter's own form has no such field, so the letter the API takes has no such key.
+    expect(toLettera(LETTERA_EMPTY)).not.toHaveProperty('giorni_previsti')
   })
 
   it('trims the client data', () => {
