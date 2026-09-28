@@ -46,7 +46,7 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import Base, session_factory, today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
-from pigrocrm.core.errors import NotFound, ValidationFailed
+from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.storage import LocalFileStorage
@@ -55,7 +55,7 @@ from pigrocrm_mcp.context import ScopedSessionProvider
 from pigrocrm_mcp.errors import to_agent_message
 from pigrocrm_mcp.prompts import customer as customer_prompts
 from pigrocrm_mcp.prompts import dashboards as dashboard_prompts
-from pigrocrm_mcp.server import build_server
+from pigrocrm_mcp.server import DOMAIN_REFUSAL, build_server
 
 ADMIN = Actor(id=None, type="mcp", role="admin")
 _PREFIX = "MCPPROMPT"
@@ -570,6 +570,7 @@ async def test_chiusura_mese_refuses_month_thirteen_by_name(mcp_server: Any) -> 
     assert caught.value.message == to_agent_message(
         ValidationFailed("periodo", "mese", "mese fuori intervallo", expected="1-12")
     )
+    assert caught.value.code == DOMAIN_REFUSAL
 
 
 async def test_chiusura_mese_on_an_empty_database_renders_a_null_margin_as_a_dash(
@@ -717,6 +718,28 @@ async def test_stato_cliente_on_an_unknown_customer_reaches_the_assistant_as_the
 
 
 @pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_a_conflict_inside_a_prompt_carries_the_application_code(
+    mcp_server: Any, mode: Literal["auto", "legacy"], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A conflict is a refusal the domain meant, not a server failure, so it must not share
+    `-32603` with a crash: the client reads `DOMAIN_REFUSAL` and the domain's own sentence
+    (REB-451)."""
+    refusal = Conflict("customer", "briefing già in preparazione")
+
+    def _refuse(context: Any, customer_id: str) -> list[dict[str, Any]]:
+        raise refusal
+
+    monkeypatch.setattr(customer_prompts, "stato_cliente", _refuse)
+
+    async with Client(mcp_server, mode=mode) as client:
+        with pytest.raises(MCPError) as caught:
+            await client.get_prompt("stato-cliente", {"customer_id": str(uuid4())})
+
+    assert caught.value.code == DOMAIN_REFUSAL
+    assert caught.value.message == to_agent_message(refusal)
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
 async def test_a_crash_inside_a_prompt_keeps_its_text_on_the_server(
     mcp_server: Any, mode: Literal["auto", "legacy"], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -737,6 +760,7 @@ async def test_a_crash_inside_a_prompt_keeps_its_text_on_the_server(
     assert "boom" not in caught.value.message
     assert "Rivedi" not in caught.value.message
     assert caught.value.message in {"Internal server error", "Error rendering prompt stato-cliente"}
+    assert caught.value.code not in {DOMAIN_REFUSAL, INVALID_PARAMS}
 
 
 # == criterion 10 =================================================================

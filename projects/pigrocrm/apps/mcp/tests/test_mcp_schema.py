@@ -3,11 +3,17 @@ import json
 
 import pytest
 from mcp import Client
+from mcp.shared.exceptions import MCPError
+from mcp.types import INVALID_PARAMS
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fields.schemas import FieldDefinitionCreate
 from pigrocrm.core.fields.service import FieldDefinitionService
+from pigrocrm_mcp.errors import to_agent_message
+from pigrocrm_mcp.resources import entities
+from pigrocrm_mcp.server import DOMAIN_REFUSAL
 
 ADMIN = Actor(id=None, type="mcp", role="admin")
 
@@ -121,10 +127,45 @@ async def test_customer_resource_returns_readable_markdown(server, mcp_session: 
 async def test_an_unknown_resource_id_explains_itself(server) -> None:
     from uuid import uuid4
 
+    unknown = uuid4()
     async with Client(server) as client:
-        with pytest.raises(Exception) as exc:
+        with pytest.raises(MCPError) as exc:
+            await client.read_resource(f"customer://{unknown}")
+    assert exc.value.message == to_agent_message(NotFound("customer", unknown))
+    assert exc.value.code == INVALID_PARAMS
+
+
+async def test_a_malformed_resource_id_is_a_refusal_and_not_a_crash(server) -> None:
+    """`UUID("non-un-id")` is the caller's mistake, which the guard renders as a
+    `validation_failed` sentence. Its code is `DOMAIN_REFUSAL`: on mcp 2.2 the SDK would
+    have turned the guard's old `ResourceError` into `-32603`, the code it answers a crash
+    with, so a client could not tell this refusal from a server failure (REB-451)."""
+    async with Client(server) as client:
+        with pytest.raises(MCPError) as exc:
+            await client.read_resource("customer://non-un-id")
+    assert exc.value.code == DOMAIN_REFUSAL
+    assert "Correggi il valore indicato" in exc.value.message
+
+
+async def test_a_conflict_raised_by_a_resource_carries_the_application_code(
+    server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A conflict is an expected refusal, never a crash: the assistant reads the domain
+    sentence and the code says so, `DOMAIN_REFUSAL` and not `-32603`."""
+    from uuid import uuid4
+
+    refusal = Conflict("customer", "scheda bloccata da un'altra operazione")
+
+    def _refuse(context: object, customer_id: object) -> str:
+        raise refusal
+
+    monkeypatch.setattr(entities, "render_customer", _refuse)
+
+    async with Client(server) as client:
+        with pytest.raises(MCPError) as exc:
             await client.read_resource(f"customer://{uuid4()}")
-    assert "non trovato" in str(exc.value).lower() or "not found" in str(exc.value).lower()
+    assert exc.value.code == DOMAIN_REFUSAL
+    assert exc.value.message == to_agent_message(refusal)
 
 
 async def test_the_configuration_and_account_timelines_are_not_reachable_from_mcp(

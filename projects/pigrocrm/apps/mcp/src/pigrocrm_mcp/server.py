@@ -8,9 +8,9 @@ from uuid import UUID
 from mcp.server import MCPServer
 from mcp.server.context import ServerMiddleware
 from mcp.server.mcpserver import Context
-from mcp.server.mcpserver.exceptions import ResourceError, ResourceNotFoundError
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.exceptions import MCPError
-from mcp.types import INTERNAL_ERROR, INVALID_PARAMS
+from mcp.types import INVALID_PARAMS
 
 from pigrocrm.core.config import Settings, get_settings, gmail_configured
 from pigrocrm.core.errors import DomainError
@@ -34,45 +34,55 @@ modificabile e si puo' ancora scartare.
 """
 
 
-def _as_protocol_error(exc: DomainError) -> ResourceError:
-    """Carry `to_agent_message`'s diagnosis out of a tool or a resource, through the one
-    exception family the installed SDK (mcp==2.2.0) passes on with its text for both.
+# The JSON-RPC code a domain refusal (a conflict, a permission, a value the domain rejects)
+# carries on a protocol-error surface: implementation-defined, so a client never reads an
+# expected refusal as the `-32603` the SDK answers for a crash. The 2026-07-28 allocation
+# policy (`mcp_types/jsonrpc.py` lines 67-71) leaves -32000..-32019 to implementations; the
+# SDK takes -32000 and -32001 for itself and -32002 is retired, so this sits clear of all three.
+DOMAIN_REFUSAL = -32010
 
-    Verified against the installed package, not assumed from its changelog. A tool's error
-    path (`mcpserver/tools/base.py`, `Tool.run`, lines 205-207) re-raises a `ToolError` or
-    a `ResourceError` as «Error executing tool <name>: <message>», and anything else but an
-    `MCPError` as a bare «Error executing tool <name>» (lines 208-210): since 2.2 a crash
-    keeps its text on the server. A resource's error path (`MCPServer._handle_read_resource`,
-    `mcpserver/server.py` lines 460-466) turns a `ResourceError` into an `MCPError` carrying
-    the message, `-32602` for `ResourceNotFoundError` and `-32603` otherwise, and replaces
-    anything else with a generic sentence naming only the URI. `ResourceError` is therefore
-    the one type that keeps a diagnosis intact at both call sites, which is what lets one
-    guard serve them. A prompt passes neither on: see `_as_prompt_error`.
+
+def _as_tool_error(exc: DomainError) -> ToolError:
+    """Carry `to_agent_message`'s diagnosis out of a tool, as the failure a tool is meant
+    to report.
+
+    Verified against the installed package (mcp==2.2.0), not assumed from its changelog. A
+    tool's error path (`mcpserver/tools/base.py`, `Tool.run`, lines 205-207) re-raises a
+    `ToolError` as «Error executing tool <name>: <message>», an `is_error` result the model
+    reads, and anything else but an `MCPError` as a bare «Error executing tool <name>»
+    (lines 208-210): since 2.2 a crash keeps its text on the server. An `MCPError` would
+    leave the tool as a JSON-RPC error instead of a result, which is why a tool does not
+    share `_as_protocol_error`.
     """
-    message = to_agent_message(exc)
-    if exc.code == "not_found":
-        return ResourceNotFoundError(message)
-    return ResourceError(message)
+    return ToolError(to_agent_message(exc))
 
 
-def _as_prompt_error(exc: DomainError) -> MCPError:
-    """Carry `to_agent_message`'s diagnosis out of a prompt, as the protocol error a prompt
-    is allowed to raise.
+def _as_protocol_error(exc: DomainError) -> MCPError:
+    """Carry `to_agent_message`'s diagnosis out of a resource or a prompt, the two surfaces
+    whose refusal is a JSON-RPC error rather than a result.
 
-    A prompt has no error result the way a tool has `is_error`: a refusal is a JSON-RPC
-    error, and on mcp==2.2.0 only an `MCPError` reaches the client with its own text.
-    `Prompt.render` (`mcpserver/prompts/base.py` lines 210-213) re-raises an `MCPError` and
-    replaces anything else with «Error rendering prompt <name>», with nothing after it;
-    `MCPServer.get_prompt` (`mcpserver/server.py` lines 1358-1359) re-raises it again; and
-    both dispatchers write its `ErrorData` to the wire as it is
+    On mcp==2.2.0 an `MCPError` is the one type both pass on with its own text and its own
+    code. A resource: `ResourceTemplate.create_resource` (`mcpserver/resources/templates.py`
+    lines 245-246) and `MCPServer.read_resource` (`mcpserver/server.py` lines 604-605)
+    re-raise it, and `_handle_read_resource` (lines 458-466) converts only a `ResourceError`,
+    to `-32603` unless it is `ResourceNotFoundError`, so raising the `MCPError` here is what
+    lets this module choose the code. A prompt: `Prompt.render`
+    (`mcpserver/prompts/base.py` lines 210-213) re-raises an `MCPError` and replaces anything
+    else with «Error rendering prompt <name>», with nothing after it, and
+    `MCPServer.get_prompt` (`mcpserver/server.py` lines 1358-1359) re-raises it again. Both
+    dispatchers then write its `ErrorData` to the wire as it is
     (`shared/jsonrpc_dispatcher.py` lines 98-99, `handler_exception_to_error_data`, which
-    the modern entry in `server/runner.py` shares). Anything else, the modern protocol
+    the modern entry in `server/runner.py` shares); anything else, the modern protocol
     answers with «Internal server error».
 
-    The codes are the ones `_as_protocol_error`'s resource path ends up with, so a missing
-    customer reads the same whether an assistant opened `customer://` or `stato-cliente`.
+    The code: `-32602` for `not_found`, because the prompts section of the MCP spec
+    (2025-11-25 and 2026-07-28, «Error Handling») answers an invalid prompt name and a
+    missing argument with `-32602` (Invalid params), an argument naming a record that does
+    not exist is the same kind of mistake, and a missing resource has been `-32602` since
+    SEP-2164 (`ResourceNotFoundError`'s docstring). Every other refusal takes
+    `DOMAIN_REFUSAL`, and `-32603` is left to the SDK for a real crash.
     """
-    code = INVALID_PARAMS if exc.code == "not_found" else INTERNAL_ERROR
+    code = INVALID_PARAMS if exc.code == "not_found" else DOMAIN_REFUSAL
     return MCPError(code=code, message=to_agent_message(exc))
 
 
@@ -159,10 +169,10 @@ def build_server(
         always leaves `context.session` usable for the *next* call.
 
         One body, two translations, chosen by the surface and not by the tool:
-        `_guard` below hands tools and resources `_as_protocol_error`, and
-        `_prompt_guard` hands prompts `_as_prompt_error`, because mcp 2.2 passes a
-        different exception type on with its text on each surface (both docstrings
-        cite the lines). Everything else in here is the same for all three.
+        `_guard` below hands tools `_as_tool_error`, and `_protocol_guard` hands
+        resources and prompts `_as_protocol_error`, because on mcp 2.2 a tool reports a
+        refusal as a result and the other two as a JSON-RPC error (both docstrings cite
+        the lines). Everything else in here is the same for all three.
 
         A nested function, not a module-level one: it needs `context` in scope to
         roll back its session, and `context` only exists once `build_server` has
@@ -254,12 +264,12 @@ def build_server(
         return cast(T, wrapper)
 
     def _guard[T: Callable[..., Any]](fn: T) -> T:
-        """The guard for a tool or a resource: a domain error leaves as a `ResourceError`."""
-        return _guarded(fn, _as_protocol_error)
+        """The guard for a tool: a domain error leaves as a `ToolError`."""
+        return _guarded(fn, _as_tool_error)
 
-    def _prompt_guard[T: Callable[..., Any]](fn: T) -> T:
-        """The guard for a prompt: a domain error leaves as an `MCPError`."""
-        return _guarded(fn, _as_prompt_error)
+    def _protocol_guard[T: Callable[..., Any]](fn: T) -> T:
+        """The guard for a resource or a prompt: a domain error leaves as an `MCPError`."""
+        return _guarded(fn, _as_protocol_error)
 
     @mcp.tool()
     @_guard
@@ -308,19 +318,19 @@ def build_server(
         return counts
 
     @mcp.resource("customer://{customer_id}")
-    @_guard
+    @_protocol_guard
     def customer_resource(customer_id: str) -> str:
         """Scheda completa di un cliente: dati fiscali, contatti, deal e timeline."""
         return entities.render_customer(context, UUID(customer_id))
 
     @mcp.resource("person://{person_id}")
-    @_guard
+    @_protocol_guard
     def person_resource(person_id: str) -> str:
         """Scheda completa di una persona."""
         return entities.render_person(context, UUID(person_id))
 
     @mcp.resource("deal://{deal_id}")
-    @_guard
+    @_protocol_guard
     def deal_resource(deal_id: str) -> str:
         """Scheda completa di un deal, incluso stato di pipeline e timeline."""
         return entities.render_deal(context, UUID(deal_id))
@@ -330,7 +340,7 @@ def build_server(
 
     register_entity_tools(mcp, context, _guard)
     # §10's four prompts, guarded by the same body the tools get and only a different
-    # translation at the end (`_prompt_guard`: a prompt's refusal has to be an `MCPError`
+    # translation at the end (`_protocol_guard`: a prompt's refusal has to be an `MCPError`
     # to reach the client with its text on mcp 2.2). A prompt reads the
     # database exactly as a tool does, so it inherits `_session_scope()` and the rollback
     # with it -- there is no second session story for prompts, and there must not be: three
@@ -338,7 +348,7 @@ def build_server(
     # possible only on a session nothing has touched. `ScopedSessionProvider` gives them
     # one; a caller wiring `lambda: shared_session` gets the service's loud `RuntimeError`
     # rather than a briefing whose figures were true at no single instant.
-    register_prompts(mcp, context, _prompt_guard)
+    register_prompts(mcp, context, _protocol_guard)
 
     if gmail_configured(resolved_settings):
         # Conditional, and this is the whole of "absent, not broken": not registered

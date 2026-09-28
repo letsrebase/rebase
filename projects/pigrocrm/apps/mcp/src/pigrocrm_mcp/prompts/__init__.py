@@ -10,14 +10,15 @@ Two consequences of that shared machinery are load-bearing here:
 
   * `functools.wraps` inside the guard's one body (`_guarded` in `server.py`) is what makes
     the inferred schema the *guarded* function's, not the wrapper's bare
-    `(*args, **kwargs)`. It is already there for the tools and `_prompt_guard` shares that
+    `(*args, **kwargs)`. It is already there for the tools and `_protocol_guard` shares that
     body, so the prompts inherit it -- and `test_mcp_prompts.py` pins the inferred
     arguments so a future guard that lost `wraps` breaks here as loudly as it would there;
   * `Prompt.render` re-raises `MCPError` untouched and replaces everything else with
     `ValueError(f"Error rendering prompt {name}")`, with no text after the name since mcp
-    2.2 (REB-451). That is why the guard passed here is `_prompt_guard` and not the tools'
+    2.2 (REB-451). That is why the guard passed here is `_protocol_guard` and not the tools'
     `_guard`: it raises a domain error as an `MCPError` whose message is
-    `to_agent_message`'s diagnosis, so the assistant reads the domain's own sentence, and a
+    `to_agent_message`'s diagnosis and whose code is `-32602` for a missing record and
+    `DOMAIN_REFUSAL` otherwise, so the assistant reads the domain's own sentence, and a
     crash keeps its text on the server. It is also why these prompts raise domain errors and
     do not render an apology in Italian: the guard already turns one into guidance, and a
     second rendering would be a second vocabulary for the same failure.
