@@ -286,10 +286,11 @@ export function AppShell({
   useEffect(() => {
     refreshSpaces()
   }, [refreshSpaces])
-  // The grandfathered root installation (design §1, 2026-09-08 spec §6) is a real row
-  // in the registry, reachable both unprefixed and under its own `PIGROCRM_ROOT_SLUG`
-  // alias -- `tenantPrefix` alone only ever names the alias, so browsing it unprefixed
-  // would otherwise leave the space already open unmatched and listed as "another one".
+  // The grandfathered root installation (design §1, 2026-09-08 spec §6) is no registry
+  // row: the API lists it under its own `PIGROCRM_ROOT_SLUG` name (REB-583), and it is
+  // reachable both unprefixed and under that alias -- `tenantPrefix` alone only ever
+  // names the alias, so browsing it unprefixed would otherwise leave the space already
+  // open unmatched and listed as "another one".
   // Retried on menu open, same as `refreshSpaces`: a transient failure must not leave
   // `rootSlug` stuck at `null`, which hides the whole switcher, for the rest of the
   // session (Greptile, PR #419).
