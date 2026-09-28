@@ -371,6 +371,70 @@ def test_a_campaign_whose_candidates_raises_does_not_stop_a_second_due_campaign(
     assert healthy.stato == "inviata"
 
 
+def test_a_row_the_webhook_already_marked_delivered_is_not_sent_twice(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """REB-522: a tick that dies after Resend accepted a mail but before its own commit
+    leaves the row `in_coda` with none of the webhook's columns written yet. Once the
+    webhook lands (matched by the row's own `r` tag, independently of that dead tick),
+    the next tick must trust it rather than call Resend again."""
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it")
+    row = rows(clean, campaign)["a@studio.it"]
+    clean.execute(
+        update(CampaignRecipient)
+        .where(CampaignRecipient.id == row.id)
+        .values(stato="in_coda", resend_id="re_abc123", inviata_at=None)
+    )
+    clean.commit()
+    recording = RecordingCampaignSender()
+    result = run_tick(clean, recording, SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert recording.sent == []
+    sent = rows(clean, campaign)["a@studio.it"]
+    assert sent.stato == "inviata"
+    assert sent.inviata_at == clock.at
+    assert result.inviate == 1
+
+
+def test_a_row_the_webhook_already_marked_consegnata_is_not_sent_twice(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """Same gap, but only `consegnata_at` came back (`email.delivered`, no `resend_id`
+    fallback needed): `inviata_at` is stamped from that delivery moment, not from this
+    retry tick's own clock, so outcome stamping still measures "since" the real send."""
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it")
+    row = rows(clean, campaign)["a@studio.it"]
+    delivered_at = clock.at - timedelta(hours=26)
+    clean.execute(
+        update(CampaignRecipient)
+        .where(CampaignRecipient.id == row.id)
+        .values(stato="in_coda", consegnata_at=delivered_at, inviata_at=None)
+    )
+    clean.commit()
+    recording = RecordingCampaignSender()
+    result = run_tick(clean, recording, SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert recording.sent == []
+    sent = rows(clean, campaign)["a@studio.it"]
+    assert sent.stato == "inviata"
+    assert sent.inviata_at == delivered_at
+    assert result.inviate == 1
+
+
+def test_a_plain_queued_row_still_sends_once(clean: Session) -> None:  # noqa: F811  (fixture)
+    """The webhook check must not swallow the ordinary path: a row with neither
+    `resend_id` nor `consegnata_at` is sent exactly once, as before REB-522."""
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it")
+    recording = RecordingCampaignSender()
+    result = run_tick(clean, recording, SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert [m.mail.to for m in recording.sent] == ["a@studio.it"]
+    assert result.inviate == 1
+    sent = rows(clean, campaign)["a@studio.it"]
+    assert sent.stato == "inviata"
+    assert sent.resend_id is not None
+
+
 def test_a_stamping_error_is_logged_and_the_send_still_happens(
     clean: Session,  # noqa: F811  (fixture)
     monkeypatch: pytest.MonkeyPatch,

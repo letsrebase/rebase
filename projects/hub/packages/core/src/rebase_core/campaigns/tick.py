@@ -189,6 +189,25 @@ def _send(
         ).first()
         if row is None:
             break
+        if row.resend_id is not None or row.consegnata_at is not None:
+            # Resend's webhook already told us this row's own mail (matched by the `r`
+            # tag, `webhook.py`): an earlier tick sent it and died between Resend's
+            # answer and its own commit, leaving the row `in_coda` forever after. The
+            # retried `Idempotency-Key` would answer harmlessly for 24 hours, but past
+            # that Resend forgets the key and a bare retry would send a second mail
+            # (DECISIONS.md, the retry row). Trust what the webhook already knows
+            # instead of calling Resend again. `inviata_at` takes the webhook's own
+            # `consegnata_at` when we have it, since it is the closest record of when
+            # the mail actually went out: outcome stamping and the gap rule both read
+            # `inviata_at` as "since when", and stamping it with this tick's `now` --
+            # possibly long after the real send, if the loop was down for a while --
+            # would miss whatever the recipient already did in between. Only
+            # `resend_id` came back so far (no `email.delivered` webhook yet): fall
+            # back to `clock()`, the same value a normal send stamps below.
+            row.stato, row.inviata_at = "inviata", row.consegnata_at or clock()
+            result.inviate += 1
+            session.commit()
+            continue
         try:
             # Right before this mail, not once per pass (spec § 5.3): a pass sends one
             # mail a second, so an opt-out, a «Non scrivere mai» or a bounce recorded
