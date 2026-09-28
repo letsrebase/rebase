@@ -83,6 +83,26 @@ _POSITION = re.compile(r"t([0-9]{1,6})")
 # Who is not proposed for a need on site (spec § 1): the remote-only, and whoever never
 # said how they work.
 _NOT_ON_SITE: tuple[str | None, ...] = ("remoto", None)
+# What a public read says of a member in place of a motivazione that names the place on
+# their card, which the same read withholds (`_public_reason`).
+PLACE_WITHHELD_REASON = "Profilo adatto al ruolo."
+# Words of a card's `luogo` that say what kind of place it is rather than which one:
+# «provincia di Bergamo» is Bergamo, and a reason that says «in provincia» names nothing
+# (a word under four letters is never read: «sud», «est»).
+_PLACE_GENERIC = frozenset(
+    [
+        "area",
+        "centro",
+        "città",
+        "dintorni",
+        "italia",
+        "nord",
+        "ovest",
+        "provincia",
+        "regione",
+        "zona",
+    ]
+)
 
 # ---- what Claude answers ---------------------------------------------------------------
 #
@@ -536,7 +556,9 @@ class TeamBuilder:
         they are now (§ 2.1), and the team's bands summed from those. Only who is still
         `cloud_visible` is read: a member deleted, turned down or left without a card
         since the proposal is left out, and so is one whose stored card no longer
-        validates, logged by position; the row keeps them all."""
+        validates, logged by position; the row keeps them all. A public read withholds
+        the card's `luogo`, and with it a motivazione that names that place
+        (`_public_reason`)."""
         ids = [UUID(member["freelancer_id"]) for member in row.team]
         found: dict[UUID, tuple[str | None, Decimal | None, Any]] = {}
         if ids:
@@ -579,7 +601,11 @@ class TeamBuilder:
                     posizione=stored["posizione"],
                     freelancer_id=None if public else freelancer_id,
                     ruolo=stored["ruolo"],
-                    motivazione=stored["motivazione"],
+                    motivazione=(
+                        _public_reason(stored["motivazione"], scheda)
+                        if public
+                        else stored["motivazione"]
+                    ),
                     giorni_settimana=stored["giorni_settimana"],
                     scheda=scheda.model_copy(update={"luogo": None}) if public else scheda,
                     modalita=remoto,
@@ -597,6 +623,29 @@ class TeamBuilder:
             origine=row.origine,
             created_at=row.created_at,
         )
+
+
+def _names_place(text: str, luogo: str | None) -> bool:
+    """Whether `text` names the place of `luogo`: any word of four letters or more of it,
+    in any case, as a whole word, but the words for a kind of place (`_PLACE_GENERIC`)."""
+    if not luogo:
+        return False
+    words = {
+        word.casefold()
+        for word in re.findall(r"[^\W\d_]{4,}", luogo)
+        if word.casefold() not in _PLACE_GENERIC
+    }
+    return any(
+        re.search(rf"\b{re.escape(word)}\b", text, re.IGNORECASE) is not None for word in words
+    )
+
+
+def _public_reason(motivazione: str, scheda: Card) -> str:
+    """The motivazione a public page reads. The prompt forbids a place in it, and the
+    public read withholds the card's `luogo`; a reason that names that place anyway
+    would give it back, so it reads as the hub's own sentence instead, and the row, the
+    admin's and the cloud's reads keep the model's words."""
+    return PLACE_WITHHELD_REASON if _names_place(motivazione, scheda.luogo) else motivazione
 
 
 def _economia(day: Band | None, month: Band | None, *, dump: bool = False) -> dict[str, Any]:

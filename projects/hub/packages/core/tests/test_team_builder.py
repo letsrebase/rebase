@@ -30,6 +30,7 @@ from rebase_core.llm import UNAVAILABLE_SENTENCE, LlmRequest, LlmResponse, Recor
 from rebase_core.models import Freelancer, FreelancerCard, TeamProposal, User
 from rebase_core.team_builder import (
     NO_FIT_SENTENCE,
+    PLACE_WITHHELD_REASON,
     PROPOSAL_MAX_TOKENS,
     PROPOSAL_SCHEMA,
     TeamBuilder,
@@ -814,6 +815,51 @@ def test_public_read_hides_ids_and_luogo(clean: Session) -> None:
     assert builder.get(public.id, public=True) == public
     with pytest.raises(NotFound):
         builder.get(uuid7(), public=True)
+
+
+def test_a_public_reason_that_names_the_cards_place_is_withheld(clean: Session) -> None:
+    """The prompt forbids a place in a motivazione; one that names the place on the
+    member's card anyway would give back what the public read withholds, so that read
+    says the hub's sentence, in any case and for any word of the place but its kind;
+    the admin's read keeps the model's words, and a place the card does not hold stays."""
+    places = ["Provincia di Bergamo", "Torino", "Verona", "Roma"]
+    ids = {
+        _talent(clean, n, card={**CARD, "luogo": luogo}): luogo
+        for n, luogo in enumerate(places, start=1)
+    }
+    positions = _positions(clean)
+    reasons = [
+        "Lavora a BERGAMO, vicino al cliente, e conosce il dominio.",
+        "Nove anni di API in Python, quello che serve al gestionale.",
+        "Ha già lavorato in provincia con aziende come questa.",
+        "Vive a Milano e conosce la logistica.",
+    ]
+    llm = RecordingCall(
+        [
+            proposal_response(
+                [
+                    _member(positions[freelancer_id], motivazione=reason)
+                    for freelancer_id, reason in zip(ids, reasons, strict=True)
+                ]
+            )
+        ]
+    )
+    builder = _builder(clean, llm)
+
+    public = builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
+    )
+
+    assert [member.motivazione for member in public.team] == [
+        PLACE_WITHHELD_REASON,
+        reasons[1],
+        reasons[2],
+        reasons[3],
+    ]
+    assert PLACE_WITHHELD_REASON == "Profilo adatto al ruolo."
+    assert "BERGAMO" not in public.model_dump_json()
+    admin = builder.get(public.id, public=False)
+    assert [member.motivazione for member in admin.team] == reasons
 
 
 @pytest.mark.parametrize("change", ["deleted", "scartato"])
