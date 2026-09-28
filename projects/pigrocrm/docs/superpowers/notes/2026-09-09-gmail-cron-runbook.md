@@ -43,28 +43,30 @@ Quattro dettagli della riga non sono decorativi:
   mypy e ruff dentro un container in esecuzione. È già successo una volta, dal vero
   (vedi `Dockerfile.api` e il §5 del README).
 
-Verifica subito, senza aspettare il quarto d'ora, eseguendo la stessa riga a mano: deve
-stampare una riga sola e uscire con stato 0.
+Check it at once, without waiting for the quarter of an hour, by running the same line by
+hand: it prints one line per connected mailbox and exits 0.
 
 ```
 cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync; echo "uscita: $?"
 ```
 
-Se l'installazione ha più di una casella Google collegata, il comando **si rifiuta di
-indovinare** e le elenca: in quel caso serve una riga di cron per casella, ciascuna con
-`--email casella@dominio.it`. Scegliere per conto dell'operatore vorrebbe dire lasciare
-l'altra casella non sincronizzata, con un log identico nei due casi.
+Since REB-404 the one line synchronises **every** connected mailbox, of the root
+installation and of every space in the registry, one line of log each: see «Every space»
+below. Until then a second mailbox made the command refuse and ask for one cron line per
+mailbox with `--email casella@dominio.it`. Such a line still works and still synchronises
+only that mailbox, wherever it is connected; one line without `--email` replaces them all.
 
 ## 2. Leggere il log
 
-Ogni esecuzione scrive **una riga sola**, che comincia con l'ora UTC in ISO 8601 (cron
-non ne aggiunge nessuna, e un log di frasi senza orario non risponde alla prima domanda
-che gli si fa: da quando non funziona più).
+Every run writes **one line per mailbox**, starting with the UTC time in ISO 8601 (cron
+adds none, and a log of sentences with no time cannot answer the first question anyone
+asks it: since when has it stopped working), then the installation, `root` or a space's
+slug (see «Every space» below), then the mailbox.
 
 Ciclo eseguito, su `stdout`, uscita `0`:
 
 ```
-2026-09-09T03:15:02+00:00 gmail-sync io@example.it: 4 messaggi nuovi, 11 già presenti, 3 conversazioni lette, 6 collegamenti, 0 invii riconciliati (2 query)
+2026-09-09T03:15:02+00:00 gmail-sync root io@example.it: 4 messaggi nuovi, 11 già presenti, 3 conversazioni lette, 6 collegamenti, 0 invii riconciliati (2 query)
 ```
 
 - **messaggi nuovi / già presenti**: la finestra si sovrappone di proposito a quella del
@@ -82,7 +84,7 @@ Ciclo già in corso (un altro cron, o qualcuno che ha premuto Sincronizza), semp
 `stdout`, uscita **`0`**:
 
 ```
-2026-09-09T03:15:02+00:00 gmail-sync io@example.it: già in corso da 2026-09-09T03:14:58+00:00
+2026-09-09T03:15:02+00:00 gmail-sync root io@example.it: già in corso da 2026-09-09T03:14:58+00:00
 ```
 
 Non è un errore: è il lucchetto che fa il suo mestiere, il secondo chiamante non ha
@@ -92,7 +94,7 @@ il modo migliore per insegnare all'operatore a ignorare il log.
 Guasto, su `stderr`, uscita **`1`**:
 
 ```
-2026-09-09T03:15:02+00:00 gmail-sync: il consenso Google per io@example.it è stato revocato: ricollega la casella da Impostazioni → Gmail
+2026-09-09T03:15:02+00:00 gmail-sync root io@example.it: il consenso Google per io@example.it è stato revocato: ricollega la casella da Impostazioni → Gmail
 ```
 
 Le frasi che si possono leggere qui, e cosa fare:
@@ -102,7 +104,6 @@ Le frasi che si possono leggere qui, e cosa fare:
 | `nessuna casella Google collegata` | Il cron è installato su un'installazione dove nessuno ha mai collegato Gmail (o l'unica casella è stata scollegata: una casella scollegata non viene né scelta né elencata) | Collegarla da Impostazioni → Gmail, o togliere la riga di cron |
 | `la casella … appartiene a un utente disattivato` | Il titolare ha disattivato l'utente proprietario della casella | Riattivare l'utente, oppure scollegare la casella e togliere il cron. Il consenso di chi è stato disattivato non si spende |
 | `… ha il ruolo readonly e non può sincronizzare …` | Il proprietario della casella non ha un ruolo che può scrivere | Cambiare il ruolo dell'utente: il cron non agisce con più diritti del titolare della casella |
-| `più di una casella collegata, indica --email: …` | Più caselle, nessuna indicata | Una riga di cron per casella, con `--email` |
 | `… non è una casella collegata: …` | `--email` non corrisponde a nessuna riga | Correggere l'indirizzo (il messaggio elenca quelli collegati) |
 | `il consenso Google … è stato revocato` | Google ha risposto `invalid_grant`: terminale, non si risolve riprovando | Il titolare rifà il collegamento da Impostazioni → Gmail |
 | `il consenso Google … è scaduto` | I sette giorni della modalità Testing sono finiti | Come sopra, e vedi il §3 qui sotto |
@@ -110,8 +111,9 @@ Le frasi che si possono leggere qui, e cosa fare:
 | `Gmail non è configurato su questa installazione` | Mancano le variabili `PIGROCRM_GOOGLE_*` | `.env` + riavvio dell'API, oppure togliere il cron |
 | `elenco dei messaggi fallita (429/RESOURCE_EXHAUSTED)` | Quota Gmail esaurita per ora | Niente: il ciclo dopo riprende da dove era arrivato |
 
-Un errore *non previsto* stampa invece il suo traceback ed esce comunque con stato
-diverso da 0: è voluto, perché un guasto che nessuno ha previsto merita il suo stack.
+An *unforeseen* error no longer prints its traceback (REB-404): with the spaces in the same
+run, a stack would stop the walk at the first space that produced it. It is `saltato`
+with the exception's type on that mailbox's line instead, exit 1, and the run goes on.
 
 Il log non contiene mai un oggetto, un indirizzo di un corrispondente o un corpo di
 messaggio: quello che il comando stampa sono i contatori di `SyncReport`, dove non c'è
@@ -120,6 +122,42 @@ spazio per nient'altro. È questo che rende sicuro appenderlo a un file sull'hos
 **Rotazione**: `/var/log/pigrocrm-gmail-sync.log` cresce di circa 100 caratteri ogni
 quarto d'ora (~3,5 MB l'anno). Se sul server c'è `logrotate`, una regola settimanale con
 `rotate 8` basta e avanza; senza, va bene anche non farne nulla per un anno.
+
+Since REB-404 that is per connected mailbox: about 150 characters each per quarter of an
+hour, so ten mailboxes across the spaces are some 50 MB a year, and the weekly
+`logrotate` rule is worth adding once the spaces start connecting Gmail.
+
+### Every space (REB-404)
+
+The same cron line synchronises the root installation and every space in the registry:
+the root first, then the spaces in the order they were created, the way `pigrocrm digest`
+walks them (§4). **The crontab line does not change.** Each space synchronises with its
+own settings, the ones the API gives a request to that space
+(`SpaceRegistry.effective_settings`): the root's Google client lent to it (REB-394) or a
+client of its own, and the key derived for that space, which is the only one that opens
+the refresh tokens its consent sealed.
+
+Every line names the installation before the mailbox: `root` for the root installation,
+whatever `PIGROCRM_ROOT_SLUG` says, and the slug for a space.
+
+```
+2026-09-28T15:45:03+00:00 gmail-sync root io@example.it: 0 messaggi nuovi, 4 già presenti, 2 conversazioni lette, 0 collegamenti, 0 invii riconciliati (2 query)
+2026-09-28T15:45:04+00:00 gmail-sync studio-rossi titolare@studio-rossi.example: 3 messaggi nuovi, 0 già presenti, 3 conversazioni lette, 3 collegamenti, 0 invii riconciliati (1 query)
+```
+
+A space with no connected mailbox prints nothing: most never connect one, and a line for
+each of them every quarter of an hour would bury the lines about the mailboxes that exist.
+One line never stops the next. The exit status is `0` when every line went to `stdout` and
+`1` when at least one went to `stderr`; every line is printed either way.
+
+| Line, on `stderr` | What happened | What to do |
+| --- | --- | --- |
+| `studio-rossi titolare@…: <a sentence from the table above>` | That mailbox, in that space, could not be synchronised, for the reason the sentence gives. The mailboxes after it were | As in the table, in that space: its titolare reconnects from Impostazioni → Gmail |
+| `studio-rossi: saltato (ProgrammingError)` | That space's schema is behind the image. **This command migrates nothing**, like the digest: only `pigrocrm ensure-space-defaults`, in the API image's CMD, migrates a space (ORB-189) | Restart the API, which migrates it, then run the line by hand |
+| `studio-rossi titolare@…: saltato (ProgrammingError)` | The same, noticed inside that mailbox's cycle rather than before it | As above |
+| `studio-rossi: saltato (OperationalError)` | That space's database does not answer. The other spaces were synchronised | Check that database |
+| `studio-rossi titolare@…: saltato (…)` with another type | A failure nobody foresaw, named by its type and never its text (a psycopg error can carry the URL, password included) | Run the line by hand, then read the API's own logs for that space |
+| `registro degli spazi non raggiungibile (…)` | The registry does not answer: no space was visited, the root was | Check the database and the `PIGROCRM_*` of the `.env`, then run the line by hand |
 
 ## 3. Il banner smette di prevedere
 

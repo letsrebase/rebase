@@ -4,6 +4,7 @@ import sys
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from typing import cast
+from uuid import UUID
 
 from sqlalchemy import Engine
 from sqlalchemy.engine import URL
@@ -14,7 +15,7 @@ from pigrocrm.core.actor import Actor, Role
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
-from pigrocrm.core.config import get_settings
+from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.digest.run import DigestOutcome, DigestRun
 from pigrocrm.core.digest.service import previous_week, week_containing
@@ -35,9 +36,10 @@ from pigrocrm.core.mail import sender_from_settings
 # "tracker_from_settings", ...)`), which only works on a name this module owns.
 from pigrocrm.core.telemetry import tracker_from_settings
 
-# What `pigrocrm digest` prints in front of the root installation's line (REB-263). Not
-# the root slug: the log names the installation apart from its spaces, and the runbook,
-# which can never carry a real company's name, documents this line as it is.
+# What `pigrocrm digest` (REB-263) and `pigrocrm gmail-sync` (REB-404) print in front of
+# the root installation's lines. Not the root slug: the log names the installation apart
+# from its spaces, and the runbook, which can never carry a real company's name,
+# documents these lines as they are.
 ROOT_LABEL = "root"
 
 
@@ -462,12 +464,42 @@ def _stampa_esito(esito: DigestOutcome, *, dry_run: bool) -> None:
 
 
 def gmail_sync(email: str | None) -> int:
-    """`pigrocrm gmail-sync [--email casella@dove.it]`: one cycle, for cron.
+    """`pigrocrm gmail-sync [--email casella@dove.it]`: one cycle per connected mailbox of
+    the root installation and of every space in the registry, for cron.
 
     There is no daemon and no queue in this product (see `gmail/sync.py`), so the
-    fifteen minutes are cron's to keep. This is the whole contract with it: one line on
-    stdout, exit 0 when the cycle ran, exit 1 when it could not. The runbook is
+    fifteen minutes are cron's to keep. This is the whole contract with it: one line per
+    mailbox, stdout when its cycle ran, stderr with a sentence when it could not; exit 0
+    when every cycle ran, exit 1 when at least one line went to stderr. The runbook is
     `docs/superpowers/notes/2026-09-09-gmail-cron-runbook.md`.
+
+    **Every space, as the digest walks them** (REB-404). With the root's Google client
+    lent to the spaces (REB-394) a space can connect Gmail, and its mailbox synchronised
+    only when somebody pressed «Sincronizza». So this visits the root first, then each
+    registry row in the order the spaces were created, the way `digest` does: one engine
+    per space, disposed before the next, and a space that fails -- a database that does
+    not answer, a schema behind the image's -- is one `saltato` line naming the
+    exception's type and never its text, and the walk goes on. **This command migrates
+    nothing**, for the digest's reason: `ensure-space-defaults` at boot is the only
+    migrator (ORB-189), and the next deploy's boot picks a lagging space up.
+
+    Each space syncs with **its own effective settings**, `SpaceRegistry.effective_settings`,
+    the same answer the API gives a request to that space: the root's client borrowed or
+    the space's own, and the token key derived for that space, which is the only key that
+    opens the refresh tokens its callback sealed. And its own `GoogleTokenClient`, built
+    from those settings: the client caches access tokens by account id alone, so one
+    shared across spaces could hand a row copied from another space's database a live
+    token (the API keys its cache per space for the same reason, `routers/gmail.py`).
+
+    **Every connected mailbox, not one.** Until REB-404 a second mailbox made this refuse
+    and ask for `--email`, because picking one would have left the other silently
+    unsynchronised. Nothing is picked now, so there is nothing to refuse: each mailbox
+    gets its cycle, in a session of its own, and its own line. `--email` still narrows the
+    run to the mailboxes with that address, wherever they are, so a cron line written
+    with it goes on doing what it did. A space with no connected mailbox prints nothing:
+    most spaces never connect one, and a line for each of them every fifteen minutes
+    would bury the lines about the mailboxes that exist. A run that finds no mailbox at
+    all says so once, as it always has.
 
     **Which actor, and why it is not `Actor.system()`.** `createadmin` passes
     `Actor.system()`, which has no id -- and `GmailSyncService.sync` refuses an actor
@@ -485,34 +517,130 @@ def gmail_sync(email: str | None) -> int:
     to `type="mcp"` in `PatService.resolve`, whatever this process does.
 
     **Why the failures are caught here.** A traceback in a log nobody is watching is a
-    failure that gets read as noise. Every foreseeable one -- no mailbox, an ambiguous
-    one, a deactivated owner, a revoked or expired consent, Gmail refusing the call --
-    is a sentence and a 1. Anything else still raises, because an unforeseen failure
-    deserves its stack.
+    failure that gets read as noise. Every foreseeable one -- no mailbox, a deactivated
+    owner, a revoked or expired consent, Gmail refusing the call -- is a sentence. An
+    unforeseen one no longer raises: with the spaces in the same run, a stack would stop
+    the walk at the first space that produced it, so it is `saltato` with the exception's
+    type, as the digest prints it, and the mailbox after it still gets its cycle.
     """
+    from sqlalchemy import create_engine, select
+
+    from pigrocrm.core.tenants import SpaceRegistry, Tenant, ensure_tenants_database
+    from pigrocrm.core.tenants.database import tenant_database_url
+
     settings = get_settings()
-    engine = create_engine_from_settings(settings)
-    with session_factory(engine)() as session:
+    # (the line's label, the registry slug or `None` for the root, the database)
+    spaces: list[tuple[str, str | None, str | URL]] = [(ROOT_LABEL, None, settings.database_url)]
+    failed = False
+    try:
+        registry = ensure_tenants_database(settings)
         try:
-            account = _gmail_account(session, email)
-            actor = _cron_actor(session, account)
+            with session_factory(registry)() as session:
+                spaces.extend(
+                    (row.slug, row.slug, tenant_database_url(settings, row.db_name))
+                    for row in session.scalars(select(Tenant).order_by(Tenant.created_at)).all()
+                )
+        finally:
+            registry.dispose()
+    except Exception as exc:  # noqa: BLE001 - a cron line, never a traceback
+        # The type and never the text: a psycopg error can carry the URL, password
+        # included. Not a `return`: the root is not in the registry and is still synced.
+        print(
+            f"{_now()} gmail-sync: registro degli spazi non raggiungibile ({type(exc).__name__})",
+            file=sys.stderr,
+        )
+        failed = True
+
+    # Only `effective_settings` is asked of it, on each space's own session: the engines
+    # are this function's, one per space and disposed before the next, as in `digest`.
+    settings_of = SpaceRegistry(settings)
+    connected: list[str] = []
+    attempted = 0
+    for label, slug, database_url in spaces:
+        engine = create_engine(database_url, future=True)
+        try:
+            factory = session_factory(engine)
+            try:
+                with factory() as session:
+                    space_settings = settings_of.effective_settings(slug, session)
+                    # A mailbox somebody disconnected is not one: `usable` would refuse it
+                    # with «nessuna casella Google collegata» one line later.
+                    mailboxes = [
+                        (account.id, account.email_address)
+                        for account in GmailRepository(session).all_accounts()
+                        if account.status != "disconnected"
+                    ]
+            except Exception as exc:  # noqa: BLE001 - one space must not stop the others
+                print(
+                    f"{_now()} gmail-sync {label}: saltato ({type(exc).__name__})", file=sys.stderr
+                )
+                failed = True
+                continue
+            connected.extend(address for _, address in mailboxes)
+            if email is not None:
+                mailboxes = [
+                    (account_id, address)
+                    for account_id, address in mailboxes
+                    if address.casefold() == email.casefold()
+                ]
+            if not mailboxes:
+                continue
             transport = GmailTransport()
-            service = GmailSyncService(
-                session,
-                settings=settings,
+            tokens = GoogleTokenClient(
+                client_id=space_settings.google_client_id,
+                client_secret=space_settings.google_client_secret,
                 transport=transport,
-                tokens=GoogleTokenClient(
-                    client_id=settings.google_client_id,
-                    client_secret=settings.google_client_secret,
-                    transport=transport,
-                ),
             )
-            report = service.sync(actor)
-        except (DomainError, GoogleCallFailed) as exc:
-            print(f"{_now()} gmail-sync: {_reason(exc)}", file=sys.stderr)
-            return 1
-        print(f"{_now()} gmail-sync {account.email_address}: {_outcome(report)}")
-    return 0
+            for account_id, address in mailboxes:
+                attempted += 1
+                with factory() as session:
+                    if not _sync_mailbox(
+                        session, space_settings, transport, tokens, f"{label} {address}", account_id
+                    ):
+                        failed = True
+        finally:
+            engine.dispose()
+
+    if not attempted:
+        if email is not None and connected:
+            reason = f"{email} non è una casella collegata: {', '.join(connected)}"
+        else:
+            reason = "nessuna casella Google collegata"
+        print(f"{_now()} gmail-sync: {reason}", file=sys.stderr)
+        failed = True
+    return 1 if failed else 0
+
+
+def _sync_mailbox(
+    session: Session,
+    settings: Settings,
+    transport: GmailTransport,
+    tokens: GoogleTokenClient,
+    label: str,
+    account_id: UUID,
+) -> bool:
+    """One mailbox's cycle and its line, `True` when the cycle ran. Its own session, so
+    a cycle that fails halfway leaves nothing open for the next mailbox."""
+    try:
+        account = GmailRepository(session).account(account_id)
+        if account is None:
+            # Removed between the listing and now: the owner disconnected it.
+            raise Conflict("google_account", "nessuna casella Google collegata")
+        actor = _cron_actor(session, account)
+        report = GmailSyncService(
+            session, settings=settings, transport=transport, tokens=tokens
+        ).sync(actor)
+    except (DomainError, GoogleCallFailed) as exc:
+        print(f"{_now()} gmail-sync {label}: {_reason(exc)}", file=sys.stderr)
+        return False
+    except Exception as exc:  # noqa: BLE001 - one mailbox must not stop the others
+        print(f"{_now()} gmail-sync {label}: saltato ({type(exc).__name__})", file=sys.stderr)
+        return False
+    # `flush`: under `docker compose exec -T` stdout is a pipe, so Python buffers it by
+    # the block while stderr goes out at once, and `2>&1` in the cron line would put every
+    # failure of the run ahead of the root's line in the log.
+    print(f"{_now()} gmail-sync {label}: {_outcome(report)}", flush=True)
+    return True
 
 
 def _reason(exc: DomainError | GoogleCallFailed) -> str:
@@ -594,46 +722,6 @@ def _outcome(report: SyncReport) -> str:
     )
 
 
-def _gmail_account(session: Session, email: str | None) -> GoogleAccount:
-    """The mailbox to synchronise, or a `Conflict` naming the ones there are.
-
-    Never a guess. On the single-user install this is the only row and `--email` is
-    noise; on an install with two, picking one would leave the other quietly
-    unsynchronised and the log would look identical either way.
-
-    A mailbox somebody disconnected is not one of them, in the choice or in the list:
-    `usable` refuses it with «nessuna casella Google collegata», so listing it as
-    connected would name a mailbox that answers, one line later, that it does not
-    exist -- and would turn a single-mailbox install into an ambiguous one the day its
-    owner unhooked a second, older account.
-    """
-    accounts = [
-        account
-        for account in GmailRepository(session).all_accounts()
-        if account.status != "disconnected"
-    ]
-    if not accounts:
-        raise Conflict("google_account", "nessuna casella Google collegata")
-    if email is not None:
-        for account in accounts:
-            if account.email_address.casefold() == email.casefold():
-                return account
-        raise Conflict(
-            "google_account",
-            f"{email} non è una casella collegata: {_mailbox_list(accounts)}",
-        )
-    if len(accounts) > 1:
-        raise Conflict(
-            "google_account",
-            f"più di una casella collegata, indica --email: {_mailbox_list(accounts)}",
-        )
-    return accounts[0]
-
-
-def _mailbox_list(accounts: Sequence[GoogleAccount]) -> str:
-    return ", ".join(account.email_address for account in accounts)
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pigrocrm")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -651,8 +739,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "rebuild-identity-index",
         help="Indicizza in identities ogni indirizzo trovato negli users di ogni spazio",
     )
-    sync = sub.add_parser("gmail-sync", help="Sincronizza la casella Google collegata (per cron)")
-    sync.add_argument("--email", help="La casella da sincronizzare, se ne è collegata più di una")
+    sync = sub.add_parser(
+        "gmail-sync",
+        help="Sincronizza ogni casella Google collegata, della radice e di ogni spazio (per cron)",
+    )
+    sync.add_argument("--email", help="Solo la casella con questo indirizzo, ovunque sia collegata")
     settimanale = sub.add_parser(
         "digest", help="Manda a ogni spazio il resoconto della settimana (per cron)"
     )

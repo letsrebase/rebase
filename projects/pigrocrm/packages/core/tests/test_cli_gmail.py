@@ -1,8 +1,11 @@
-"""`pigrocrm gmail-sync`: the cron's way in.
+"""`pigrocrm gmail-sync`: the cron's way in, on the root installation alone.
 
 There is no daemon in this product and no queue (see `gmail/sync.py`), so "every
 fifteen minutes" is somebody else's job -- cron's. This command is the whole of the
-contract with it: one cycle, one line on stdout, and an exit status a shell can read.
+contract with it: one cycle per connected mailbox, one line each, and an exit status a
+shell can read. Since REB-404 the same run also walks every space of the registry; that
+walk is `test_cli_gmail_spaces.py`'s subject. Here the registry is one of this module's
+own and empty, so what is left is the root, as a single installation sees it.
 
 Two properties are asserted here rather than described:
 
@@ -12,7 +15,7 @@ Two properties are asserted here rather than described:
   actor carrying the mailbox owner's id, and the timeline says so: `actor_type` is
   `system`, because nobody pressed anything.
 * **A cron job must not need a human to read a traceback.** Every failure the command
-  can foresee -- no mailbox, an ambiguous one, a revoked credential -- ends as one
+  can foresee -- no mailbox, a revoked credential, a refusal from Gmail -- ends as one
   sentence on stderr and exit 1.
 
 The transport is a `FakeGmail` for the reason every test in this package uses one: what
@@ -20,7 +23,7 @@ runs is the real URL building, the real `q` and the real error handling, and onl
 socket is replaced.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -28,23 +31,61 @@ import pytest
 from fakes.fake_gmail import API_HOST, FakeGmail
 from fakes.gmail_fixtures import connected_account, gmail_settings
 from sqlalchemy import Engine, text
+from sqlalchemy.engine import make_url
 
 import pigrocrm.core.cli as cli
 from pigrocrm.core.auth.models import User
+from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
+from pigrocrm.core.db.sidecar import drop_database
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.transport import GmailTransport
 
+# A registry of this module's own, so the walk finds it empty whatever else has
+# provisioned a space on this container.
+REGISTRY_DB = "prova_cli_gmail_registro"
+
+
+@pytest.fixture(scope="module")
+def registry_url(db_engine: Engine) -> Iterator[str]:
+    """Created by the command itself, the first time it opens the registry, as in
+    production; dropped once the module is done."""
+    url = make_url(db_engine.url.render_as_string(hide_password=False)).set(database=REGISTRY_DB)
+    yield url.render_as_string(hide_password=False)
+    drop_database(
+        Settings(
+            database_url=db_engine.url.render_as_string(hide_password=False),
+            _env_file=None,  # type: ignore[call-arg]
+        ),
+        url,
+    )
+
 
 @pytest.fixture
-def cli_gmail(db_engine: Engine, monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeGmail]:
-    """The CLI builds its own settings, engine and transport, exactly as it does in the
-    container; here all three are the test's own, and the rows it commits for real are
-    removed afterwards."""
+def settings_for(db_engine: Engine, registry_url: str) -> Iterator[Callable[..., Settings]]:
+    """`gmail_settings` pointed at this container: the root is the shared database the
+    rows below are committed to, the registry is the empty one above."""
+
+    def build(**overrides: object) -> Settings:
+        return gmail_settings(
+            database_url=db_engine.url.render_as_string(hide_password=False),
+            tenants_database_url=registry_url,
+            **overrides,
+        )
+
+    yield build
+
+
+@pytest.fixture
+def cli_gmail(
+    db_engine: Engine, settings_for: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> Iterator[FakeGmail]:
+    """The CLI builds its own settings, engines and transport, exactly as it does in the
+    container; here the settings and the transport are the test's own, and the rows it
+    commits for real are removed afterwards."""
     fake = FakeGmail()
-    monkeypatch.setattr(cli, "get_settings", gmail_settings)
-    monkeypatch.setattr(cli, "create_engine_from_settings", lambda settings: db_engine)
+    monkeypatch.setattr(cli, "get_settings", settings_for)
     monkeypatch.setattr(
         cli, "GmailTransport", lambda: GmailTransport(http=fake, sleep=lambda _: None)
     )
@@ -99,7 +140,9 @@ def test_gmail_sync_runs_a_cycle_and_says_so_in_one_line(
 
     out = capsys.readouterr().out.strip()
     assert out.count("\n") == 0
-    assert "cron@example.it" in out
+    # The installation first, as `pigrocrm digest` names it, then the mailbox: with the
+    # spaces in the same log, an address alone no longer says whose database it is.
+    assert f"gmail-sync {cli.ROOT_LABEL} cron@example.it: " in out
     # The counters, which are the only thing a cron log has to say. No subject, no
     # address of a correspondent, no body: a `SyncReport` has no room for one.
     assert "0 messaggi" in out
@@ -156,19 +199,31 @@ def test_gmail_sync_picks_the_mailbox_named_on_the_command_line(
     assert "seconda@example.it" in capsys.readouterr().out
 
 
-def test_two_mailboxes_and_no_email_is_refused_rather_than_guessed(
+def test_two_mailboxes_and_no_email_are_both_synchronised_one_line_each(
     cli_gmail: FakeGmail, db_engine: Engine, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Picking one would mean the other silently stops being synchronised, and the log
-    would look identical either way."""
+    """Until REB-404 this was refused, because picking one would have left the other
+    silently unsynchronised. Nothing is picked now: every connected mailbox gets its
+    cycle and its own line, in the order they were connected, and both watermarks move."""
     _connect(db_engine, email_address="prima@example.it")
     _connect(db_engine, email_address="seconda@example.it")
 
-    assert _run() == 1
-    err = capsys.readouterr().err
-    assert "--email" in err
-    assert "prima@example.it" in err
-    assert "seconda@example.it" in err
+    assert _run() == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    lines = captured.out.strip().splitlines()
+    assert len(lines) == 2
+    assert f"gmail-sync {cli.ROOT_LABEL} prima@example.it: " in lines[0]
+    assert f"gmail-sync {cli.ROOT_LABEL} seconda@example.it: " in lines[1]
+    with db_engine.connect() as connection:
+        watermarks = connection.execute(
+            text(
+                "select sync_watermark from google_accounts "
+                "where email_address in ('prima@example.it', 'seconda@example.it')"
+            )
+        ).scalars()
+        assert [watermark is not None for watermark in watermarks] == [True, True]
 
 
 def test_an_email_that_is_not_connected_names_the_ones_that_are(
@@ -274,13 +329,14 @@ def test_the_error_line_carries_the_sentence_and_not_the_entity_prefix(
 def test_gmail_not_configured_is_one_sentence_and_not_a_traceback(
     cli_gmail: FakeGmail,
     db_engine: Engine,
+    settings_for: Callable[..., Settings],
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A cron line left behind on an installation whose Google client was removed from
     `.env`. It is a misconfiguration, so exit 1 -- but a readable one."""
     _connect(db_engine, email_address="cron@example.it")
-    monkeypatch.setattr(cli, "get_settings", lambda: gmail_settings(google_client_id=""))
+    monkeypatch.setattr(cli, "get_settings", lambda: settings_for(google_client_id=""))
 
     assert _run() == 1
     assert "Gmail non è configurato" in capsys.readouterr().err
