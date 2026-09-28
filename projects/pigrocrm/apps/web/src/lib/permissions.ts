@@ -178,8 +178,18 @@ export function isAdmin(role: Role): boolean {
  * The settings tabs, each with the minimum role that may *see* it in the tab strip and
  * in the sidebar; `null` where the tab is nobody's row because it is the person's own
  * preferences (spec 2026-09-16 §3.6), open to every role. `profile` is therefore the
- * one tab a collaboratore or a readonly keeps; every other tab's services gate their
- * writes on `require_admin`, which is why every other minimum here is `admin`.
+ * one tab a readonly keeps.
+ *
+ * `drive` is the one tab at `collaboratore` (REB-457). The Drive credential belongs to
+ * one CRM user (`google_drive_accounts.user_id` is unique), `GoogleDriveOAuthService`
+ * lets any writer connect, disconnect and configure their own, and every consent
+ * outcome lands on this tab. So a collaboratore sees it and manages their own Drive
+ * there; a readonly person, whose consent the service refuses, does not. The one
+ * installation-wide field on it, the space's write folder, stays an admin's inside the
+ * panel (`DrivePanel`'s own docstring says why).
+ *
+ * Every other tab's services gate their writes on `require_admin`, which is why every
+ * other minimum here is `admin`.
  *
  * Exhaustive over `SettingsTabValue` on purpose: adding a tab to `SETTINGS_TABS`
  * without deciding its visibility is a compile error.
@@ -207,7 +217,7 @@ export const SETTINGS_TAB_MIN_ROLE: Record<
   rates: 'admin',
   periods: 'admin',
   gmail: 'admin',
-  drive: 'admin',
+  drive: 'collaboratore',
   automations: 'admin',
 }
 

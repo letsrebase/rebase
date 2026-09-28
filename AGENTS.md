@@ -247,10 +247,14 @@ the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
   `@coderabbitai review`. Two things are invisible to that gate. The images are built on the
   trunk, not on the PR, so a bump to a Dockerfile, a compose file or a lock is proven
   by preflight's image checks or by the trunk run before the preview deploys. And a PR
-  that changes `pnpm-lock.yaml` leaves the pnpm store hash in `flake.nix` stale: the
-  new one (`nix build .#packages.x86_64-linux.pigrocrm-web` fails naming it) goes onto
-  the bot's branch as a commit of its own, last, since Dependabot stops rebasing a
-  branch once another commit is pushed to it. A bump that needs a code change is
+  that changes `pnpm-lock.yaml` leaves the pnpm store hash in `flake.nix` stale:
+  `fetchPnpmDeps` is a fixed-output derivation, so a stale hash whose output already
+  sits in the local store builds "successfully" instead of failing and naming the new
+  one, and there is no Linux builder for this repository any more (qasimodo.com is
+  gone). `scripts/nix-pnpm-hash.sh` computes the real value instead, against a fake
+  hash in a `nixos/nix` container, and that value goes onto the bot's branch as a
+  commit of its own, last, since Dependabot stops rebasing a branch once another
+  commit is pushed to it. A bump that needs a code change is
   closed, and the upgrade gets a card and its own branch; when it is one package of a
   group, `@dependabot ignore <name>` on the group PR drops it instead, and that card
   also lifts the ignore (`docs/design/DECISIONS.md`, 2026-09-24).
