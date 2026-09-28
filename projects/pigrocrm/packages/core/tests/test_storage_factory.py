@@ -46,7 +46,7 @@ from pigrocrm.core.gmail.crypto import seal
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.storage import lazy_drive
-from pigrocrm.core.storage.errors import StorageNotConfigured
+from pigrocrm.core.storage.errors import StorageNotConfigured, StorageUnreachable
 from pigrocrm.core.storage.factory import storage_from_settings
 from pigrocrm.core.storage.gdrive import GDriveStorage
 from pigrocrm.core.storage.lazy_drive import LazyUserDriveStorage
@@ -549,20 +549,35 @@ def test_disconnecting_drive_stops_the_writes_at_the_next_operation(
 # --- A revoked grant: recorded once, where the user can read it ----------------------
 
 
-def test_a_revoked_grant_is_recorded_on_the_row_and_re_raised(db_session: Session) -> None:
+def test_a_revoked_grant_is_recorded_on_the_row_and_answers_with_no_account_named(
+    db_session: Session,
+) -> None:
     """A refresh answering `invalid_grant` is something only this code path can learn,
     and the fact has to outlive the request that learned it: the upload is about to fail
     and its transaction to roll back, so `mark_revoked` commits on its own behalf (the
-    same contract `gmail/sync.py` relies on). The exception continues afterwards,
-    unflattened, so the caller stops rather than carrying on against a dead credential.
+    same contract `gmail/sync.py` relies on).
+
+    The caller sees `StorageUnreachable`, not `DriveCredentialRevoked` (REB-562 fix
+    round 3): this backend is shared by every actor with access to a document, not only
+    the admin whose credential just failed, and `DriveCredentialRevoked` names that
+    admin in its sentence and in `details`. `caught.value.__cause__` is the original
+    exception -- the translation keeps the traceback, it does not erase the fact -- so
+    the row still gets recorded exactly as it did before this round.
     """
     account_id = _account(db_session).id
     storage = _lazy(
         db_session, drive=FakeDrive(root_id=STORAGE_FOLDER), gmail=FakeGmail(revoked=True)
     )
 
-    with pytest.raises(DriveCredentialRevoked):
+    with pytest.raises(StorageUnreachable) as caught:
         storage.put(KEY, PDF, "application/pdf")
+
+    assert "non è raggiungibile" in caught.value.message
+    assert MAILBOX not in caught.value.message
+    assert "email_address" not in caught.value.details
+    assert "account_id" not in caught.value.details
+    assert isinstance(caught.value.__cause__, DriveCredentialRevoked)
+    assert caught.value.__cause__.details["email_address"] == MAILBOX
 
     db_session.expire_all()
     stored = db_session.get(GoogleDriveAccount, account_id)
@@ -585,7 +600,7 @@ def test_after_a_revocation_the_next_operation_asks_for_configuration_again(
     storage = _lazy(
         db_session, drive=FakeDrive(root_id=STORAGE_FOLDER), gmail=FakeGmail(revoked=True)
     )
-    with pytest.raises(DriveCredentialRevoked):
+    with pytest.raises(StorageUnreachable):
         storage.put(KEY, PDF, "application/pdf")
 
     with pytest.raises(StorageNotConfigured):
@@ -599,11 +614,11 @@ def test_a_failed_revocation_record_never_hides_the_revocation_itself(
 
     Recording the revocation needs a second session, and everything about that second
     session can fail on its own -- a pool that has no connection left, a row somebody
-    else is holding, a `commit` that loses a race. Left unguarded, any of those replaces
-    `DriveCredentialRevoked` with a SQLAlchemy error: the caller then sees an internal
-    failure instead of "il consenso è stato revocato", the API renders a 500 rather than
-    a 409, and the row it was trying to mark is still `active` anyway -- so the reader
-    loses both the sentence and the record.
+    else is holding, a `commit` that loses a race. Left unguarded, any of those would
+    replace the translated `StorageUnreachable` with a SQLAlchemy error: the caller then
+    sees an internal failure instead of "non è raggiungibile", the API renders a 500
+    rather than a 409, and the row it was trying to mark is still `active` anyway -- so
+    the reader loses both the sentence and the record.
 
     The accepted consequence is asserted too: the row *stays* `active`. That is honest
     about what a swallowed exception costs. The next refresh will meet the same
@@ -629,7 +644,7 @@ def test_a_failed_revocation_record_never_hides_the_revocation_itself(
         sessions=sessions,
     )
 
-    with pytest.raises(DriveCredentialRevoked):
+    with pytest.raises(StorageUnreachable):
         storage.put(KEY, PDF, "application/pdf")
 
     assert opened == 2  # the record really was attempted, and really did fail
@@ -817,11 +832,17 @@ def test_a_revocation_is_never_recorded_against_a_resolution_that_moved(
         ),
     )
 
-    with pytest.raises(DriveCredentialRevoked) as caught:
+    with pytest.raises(StorageUnreachable) as caught:
         storage.put(KEY, PDF, "application/pdf")
 
     assert swaps  # the resolution really was replaced before the record ran
-    assert caught.value.details["email_address"] == MAILBOX
+    # The caller sees no account (REB-562 fix round 3); the original revocation, with
+    # the email this test is really about, survives only as the translated error's
+    # cause -- proving `_run` still had the right resolution to *not* record against,
+    # even though the caller is no longer handed that resolution's own exception type.
+    assert "email_address" not in caught.value.details
+    assert isinstance(caught.value.__cause__, DriveCredentialRevoked)
+    assert caught.value.__cause__.details["email_address"] == MAILBOX
     db_session.expire_all()
     # The account that was swapped in is untouched: it was never asked for a token.
     swapped_in = db_session.get(GoogleDriveAccount, other.id)
