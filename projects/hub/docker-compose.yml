@@ -180,13 +180,15 @@ services:
     # quiet hour costs nothing. One run is at most 50 cards, so a bad hour (a key gone
     # bad, a provider outage) costs at most 50 calls. Read what it did with `docker
     # logs rebase-cards-1` (production) or `docker logs rebase-preview-cards-1`
-    # (preview): each run prints «N schede scritte, M non riuscite».
+    # (preview): each run prints «N schede scritte, M non riuscite». Sleeps first, like
+    # `sweep`, so the api's `alembic upgrade head` (Dockerfile.api) has already run
+    # before the first pass.
     build:
       context: ../..
       dockerfile: projects/hub/Dockerfile.api
     restart: unless-stopped
     init: true
-    command: ['sh', '-c', 'while :; do if [ "${REBASE_CARDS_LOOP:-on}" = "on" ]; then uv run --no-sync rebase cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; sleep 3600; done']
+    command: ['sh', '-c', 'while :; do sleep 3600; if [ "${REBASE_CARDS_LOOP:-on}" = "on" ]; then uv run --no-sync rebase cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; done']
     depends_on:
       db:
         condition: service_healthy
