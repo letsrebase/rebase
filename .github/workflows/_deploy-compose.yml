@@ -116,9 +116,9 @@ jobs:
         # commit. The trunk tier is path-scoped, so the trunk's run for a commit that
         # touched only another project skips every job of this one and still concludes
         # success; a tag on that commit used to find that run and ship code CI had
-        # never built (ORB-28). `ci.yml` runs on every `*-v*` tag with every job, and a
-        # tag deploy waits for that run. For a preview the ref is `main` and the run is
-        # the one that triggered it.
+        # never built (ORB-28). `ci.yml` runs on every `*-v*` tag with every job of
+        # the project the tag names (REB-563), and a tag deploy waits for that run.
+        # For a preview the ref is `main` and the run is the one that triggered it.
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}

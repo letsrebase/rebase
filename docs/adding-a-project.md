@@ -97,9 +97,15 @@ Two edits to `.github/workflows/ci.yml`, and no new workflow file:
 ```yaml
   # in the `changes` job
   outputs:
-    <name>_py: ${{ steps.filter.outputs.<name>_py }}
+    <name>_py: ${{ steps.tag.outputs.<name>_py || steps.filter.outputs.<name>_py }}
   # ... and the matching filter block. Underscores, never dashes: a dash in an output
-  # name is invalid expression syntax and the run dies with no job started.
+  # name is invalid expression syntax and the run dies with no job started. Both
+  # sources, in that order: the `tag` step answers on a release tag, the filter on a
+  # diff. An output that reads the filter alone is empty on your tag, so every job of
+  # yours is skipped there, `ci` concludes green, and the deploy ships code the tag's
+  # run never built. The `tag` step also needs your project: one line in the `case` of
+  # the `base` step (`<name>-v*) project=<name> ;;`) and one in the `case` of the
+  # `tag` step, listing your jobs and the shared packages you depend on.
 
   <name>-py:
     needs: changes
@@ -190,12 +196,14 @@ Two environments, two triggers, and no deploy logic of your own:
 A bare `v1.2.0` cannot work here: it does not say which project it releases. The tag
 is project-scoped for the same reason the directory is.
 
-The tag is also a push `ci.yml` listens to (`tags: ['*-v*']`), so it earns a full CI
-run of its own, every job, and `_deploy-compose.yml` gates the production deploy on
-that run rather than on the trunk's run for the same commit. The trunk tier is
-path-scoped: a docs-only commit after a red change to your project gets a trunk run
-where every one of your jobs is skipped and `ci` concludes success, and a tag on that
-commit would otherwise ship the red code. The price is one full run per release.
+The tag is also a push `ci.yml` listens to (`tags: ['*-v*']`), so it earns a CI run
+of its own, every job of your project and of the shared packages it uses and nothing
+else (REB-563), and `_deploy-compose.yml` gates the production deploy on that run
+rather than on the trunk's run for the same commit. The trunk tier is path-scoped: a
+docs-only commit after a red change to your project gets a trunk run where every one
+of your jobs is skipped and `ci` concludes success, and a tag on that commit would
+otherwise ship the red code. The tag's run never skips your project, which is what
+the two `case` lines above buy; a prefix `changes` does not know keeps the full run.
 
 The mechanism lives in `.github/workflows/_deploy-compose.yml` and is shared. What a
 project writes is a caller, `deploy-<name>.yml`, with one job per environment, each
