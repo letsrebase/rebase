@@ -538,3 +538,27 @@ test.describe('Accedi finds a session already there', () => {
     await expect(page.getByRole('link', { name: 'Accedi' })).toHaveAttribute('href', /^\/hub\/admin(\?|$)/)
   })
 })
+
+// REB-553: the two decks share one script, deck.js, and their stylesheet hides every
+// slide until that script marks one `active`. The generic checks above pass on a deck
+// that stays blank, so this drives both: the first slide is the one shown, and the
+// right arrow moves to the second, in the counter and in the hash alike.
+test.describe('the decks', () => {
+  for (const path of ['/pitch', '/company'] as const) {
+    test(`${path} shows its first slide, and the right arrow moves to the second`, async ({ page }) => {
+      await page.goto(path, { waitUntil: 'networkidle' })
+      const slides = page.locator('.slide')
+      const count = await slides.count()
+      expect(count).toBeGreaterThan(1)
+      await expect(slides.first()).toHaveClass(/\bactive\b/)
+      await expect(slides.first()).toBeVisible()
+      await expect(slides.nth(1)).toBeHidden()
+      await expect(page.locator('#counter')).toHaveText(`1 / ${count}`)
+      await page.keyboard.press('ArrowRight')
+      await expect(slides.nth(1)).toHaveClass(/\bactive\b/)
+      await expect(slides.first()).not.toHaveClass(/\bactive\b/)
+      await expect(page.locator('#counter')).toHaveText(`2 / ${count}`)
+      expect(new URL(page.url()).hash).toBe('#2')
+    })
+  }
+})

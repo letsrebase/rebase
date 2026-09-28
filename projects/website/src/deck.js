@@ -112,6 +112,12 @@ window.addEventListener('resize', fit); fit()
 document.getElementById('prev').addEventListener('click', function () { go(current - 1) })
 document.getElementById('next').addEventListener('click', function () { go(current + 1) })
 document.addEventListener('keydown', function (e) {
+  // A key with a modifier is the browser's (Alt+Left is Back, Cmd+F is Find), and a
+  // key on a focused link or button is that control's (Enter follows the link on the
+  // closing slide, Space presses the arrow buttons): neither moves the deck.
+  if (e.altKey || e.ctrlKey || e.metaKey || e.defaultPrevented) return
+  var target = e.target
+  if (target && (target.closest('a, button, input, textarea, select, [contenteditable]'))) return
   if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown' || e.key === 'Enter') { e.preventDefault(); go(current + 1) }
   else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'Backspace') { e.preventDefault(); go(current - 1) }
   else if (e.key === 'Home') go(0)
