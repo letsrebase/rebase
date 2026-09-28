@@ -11,8 +11,9 @@ from pydantic import (
     EmailStr,
     Field,
     StringConstraints,
+    ValidationInfo,
     computed_field,
-    model_validator,
+    field_validator,
 )
 
 from rebase_core.models import (
@@ -105,16 +106,22 @@ class CampaignPatch(BaseModel):
     bottone_meta: Meta | None = None
     azione: Azione | None = None
 
-    @model_validator(mode="after")
-    def _no_explicit_null_on_a_required_field(self) -> "CampaignPatch":
+    @field_validator(*_NOT_NULLABLE, mode="after")
+    @classmethod
+    def _no_explicit_null_on_a_required_field(cls, value: object, info: ValidationInfo) -> object:
         """The database's own `NOT NULL` columns, enforced here too, the same way
         `CompanyFields._giorni_presenza_matches_remoto` enforces a check constraint: a
         sentence naming the field rather than the `IntegrityError` a blanket `setattr`
-        would otherwise reach."""
-        for field in self.model_fields_set:
-            if field in _NOT_NULLABLE and getattr(self, field) is None:
-                raise ValueError(f"{field}: il campo non può essere svuotato")
-        return self
+        would otherwise reach. A `field_validator`, not a `model_validator`, so the
+        error's `loc` ends in the field's own name: the hub web reads `ApiError.fields`
+        from `detail[].loc[-1]` (`apps/web/src/lib/api.ts`), and a body-level `loc`
+        pointed at nothing a wizard could show. Pydantic skips a default value's own
+        validators (`validate_default` is off, the default here), so this never runs
+        for a field the request left out -- only for one it set, `null` included, which
+        is exactly the distinction "no change" needs."""
+        if value is None:
+            raise ValueError(f"{info.field_name}: il campo non può essere svuotato")
+        return value
 
 
 # An address as the list holds it, not as `EmailStr` would have it: the unticked are

@@ -77,21 +77,19 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
     by `done_at`.
 
     A row whose own snapshot is broken -- `prima` or `prima["richieste"]` of the wrong
-    shape (a list, a string), a `richieste` key that is not a UUID, or a value `done_at`
-    cannot parse as a timestamp (`richiesta_aggiornata`'s own `datetime.fromisoformat`)
-    -- must not break the whole list. The wrong shape is checked explicitly before any
-    parsing, never folded into a broadened `except`, which would also swallow a real
-    bug elsewhere (CodeRabbit Major, PR #444). Past the shape check, only the parse
-    errors a malformed value itself raises (`ValueError`, `TypeError`, `KeyError` if
-    `done_at` ever indexes the snapshot directly) are caught below, never a bare `except
-    Exception`: anything else -- a transient database error, an unrelated bug --
-    propagates rather than silently dropping an eligible person (Greptile P1, PR #444).
-    No savepoint either, unlike `outcome.stamp_outcomes`'s own per-row one (REB-533):
-    every parse error caught here is pure Python, always raised after any SQL `done_at`
-    issued for the row already succeeded, so the session's transaction is never left
-    aborted (Greptile P2, PR #444). A row whose snapshot fails a shape check or a parse
-    is left out, the safe side: it never lets a mail reach someone who may already have
-    acted, and it is logged by id."""
+    shape (a list, a string), a `richieste` key that is not a UUID, a `richieste` value
+    (or `prima["t"]`) that is not a timestamp `datetime.fromisoformat` parses -- must
+    not break the whole list. Every one of these is checked up front, before `done_at`
+    is ever called for the row, and every check mirrors exactly what `done_at` itself
+    would do with the same value (`actions.py`): the wrong shape explicitly, since
+    folding it into a broadened `except` would also swallow a real bug elsewhere
+    (CodeRabbit Major, PR #444, round 3), and the two `datetime.fromisoformat` calls by
+    running them here first, inside the one `try` the shape checks already need. `done_at`
+    is then called with no `try` around it at all, so anything it still raises --
+    a transient database error, an unrelated bug -- propagates rather than silently
+    dropping an eligible person (CodeRabbit's adversarial pass, PR #444, round 3). A row
+    that fails a shape or a value check is left out, the safe side: it never lets a mail
+    reach someone who may already have acted, and it is logged by id."""
     rows = session.scalars(
         select(CampaignRecipient)
         .where(
@@ -125,14 +123,29 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
         if prima is not None and not isinstance(prima, dict):
             _log.error("waiting row %s left out: prima is not a dict", row.id)
             continue
-        richieste = (prima or {}).get("richieste", {})
+        prima = prima or {}
+        richieste = prima.get("richieste", {})
         if not isinstance(richieste, dict) or not all(isinstance(key, str) for key in richieste):
             _log.error("waiting row %s left out: richieste is not a string-keyed dict", row.id)
             continue
         try:
-            richieste_by_row[row.id] = tuple(UUID(key) for key in richieste)
-        except (TypeError, ValueError) as exc:
+            parsed_keys = tuple(UUID(key) for key in richieste)
+            # `done_at` (`actions.py`) parses two snapshot values with
+            # `datetime.fromisoformat`: every `richieste` value, when `parent.azione`
+            # is `richiesta_aggiornata`, and `prima["t"]`, only when `since` -- always
+            # `row.inviata_at` below -- is `None`. Both are parsed here, up front,
+            # inside the one `try` the key parsing above already needs, so `done_at`
+            # itself can be called below with no `try` around it at all (CodeRabbit's
+            # adversarial pass, PR #444, round 3).
+            if parent.azione == "richiesta_aggiornata":
+                for was in richieste.values():
+                    datetime.fromisoformat(was)
+            if row.inviata_at is None:
+                datetime.fromisoformat(prima["t"])
+        except (TypeError, ValueError, KeyError) as exc:
             _log.error("waiting row %s left out: %s", row.id, type(exc).__name__)
+            continue
+        richieste_by_row[row.id] = parsed_keys
     company_ids = {cid for ids in richieste_by_row.values() for cid in ids}
     alive_companies = (
         set(
@@ -152,12 +165,7 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
         richieste = richieste_by_row[row.id]
         if richieste and not any(cid in alive_companies for cid in richieste):
             continue
-        try:
-            done = done_at(session, row, parent.azione, since=row.inviata_at)
-        except (ValueError, TypeError, KeyError) as exc:  # a malformed snapshot only
-            _log.error("waiting row %s left out: %s", row.id, type(exc).__name__)
-            continue
-        if done is not None:
+        if done_at(session, row, parent.azione, since=row.inviata_at) is not None:
             continue
         found.append(row)
     return found

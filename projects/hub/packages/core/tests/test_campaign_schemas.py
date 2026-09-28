@@ -99,9 +99,14 @@ def test_a_patch_refuses_an_explicit_null_on_a_not_nullable_field_naming_it(fiel
 
 def test_a_patch_leaving_a_field_out_is_not_the_same_as_sending_it_null() -> None:
     """Omitting a field is «no change», which every other field of an untouched patch
-    already relies on: only an explicit `null` is refused."""
+    already relies on: only an explicit `null` is refused. Pydantic skips a default
+    value's own validators (`validate_default` is off, the default), so
+    `_no_explicit_null_on_a_required_field` never runs for a field this patch leaves
+    out -- if it did, every one of the seven fields below would raise, since none of
+    them is set. That the patch validates at all pins it."""
     patch = CampaignPatch.model_validate({"oggetto": "Nuovo oggetto"})
-    assert patch.fonte is None and patch.azione is None and patch.bottone_meta is None
+    assert patch.nome is None and patch.fonte is None and patch.azione is None
+    assert patch.testo is None and patch.bottone_testo is None and patch.bottone_meta is None
 
 
 def test_a_patch_still_allows_an_explicit_null_on_a_field_the_row_may_hold_null() -> None:

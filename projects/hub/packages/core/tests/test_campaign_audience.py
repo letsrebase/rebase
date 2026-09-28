@@ -500,3 +500,36 @@ def test_a_row_whose_prima_is_not_a_dict_is_left_out_and_logged(
         rows = waiting_rows(clean, parent)
     assert [r.email for r in rows] == ["fine5@studio.it"]
     assert str(broken.id) in caplog.text
+
+
+def test_a_value_error_from_inside_done_at_propagates_too(
+    clean: Session,  # noqa: F811  (fixture)
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CodeRabbit's adversarial pass on PR #444, round 3: once every snapshot value
+    `done_at` would parse is validated up front, `done_at` itself is called with no
+    `try` around it at all -- a `ValueError` it still raises, for a reason that has
+    nothing to do with this row's own snapshot, must propagate rather than being
+    mistaken for one of the parse errors the pre-pass already ruled out."""
+    parent = campaign_row(clean, azione="richiesta_aggiornata")
+    fine = company(clean, "fine6@studio.it")
+    clean.add(
+        CampaignRecipient(
+            campaign_id=parent.id,
+            email="fine6@studio.it",
+            tipo="azienda",
+            codice="1",
+            prima={"richieste": {str(fine.id): fine.updated_at.isoformat()}},
+            disiscrizione_token="t-good6",
+            stato="inviata",
+            inviata_at=T0,
+        )
+    )
+    clean.commit()
+
+    def raising(*args: object, **kwargs: object) -> None:
+        raise ValueError("not this row's own snapshot")
+
+    monkeypatch.setattr(audience_module, "done_at", raising)
+    with pytest.raises(ValueError, match="not this row's own snapshot"):
+        waiting_rows(clean, parent)
