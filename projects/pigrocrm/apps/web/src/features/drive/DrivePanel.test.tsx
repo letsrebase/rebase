@@ -58,6 +58,7 @@ const CONNECTED: DriveHealth = {
   banner_text: null,
   missing_scopes: [],
   configured: true,
+  space_storage: null,
 }
 
 const NOT_CONFIGURED: DriveHealth = {
@@ -66,6 +67,7 @@ const NOT_CONFIGURED: DriveHealth = {
   banner_text: null,
   missing_scopes: [],
   configured: false,
+  space_storage: null,
 }
 
 const NOT_CONNECTED: DriveHealth = { ...NOT_CONFIGURED, configured: true }
@@ -263,6 +265,74 @@ describe('DrivePanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(await screen.findByText('ID cartella non valido')).toBeInTheDocument()
+  })
+})
+
+/**
+ * REB-562. `space_storage` is the space's *effective* write folder -- read from
+ * `DriveRepository.storage_holder` through the health response, never recomputed here
+ * -- as opposed to `account.storage_folder_id`, which is only the viewing admin's own
+ * row. Both states render for an admin; a collaboratore sees neither, regardless of
+ * what `space_storage` carries, since the server itself answers `null` for them
+ * (`GoogleDriveAccountService._space_storage`'s own admin gate).
+ */
+describe('DrivePanel space storage line (REB-562)', () => {
+  it('names the admin whose account holds the write folder', async () => {
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        ...CONNECTED,
+        space_storage: { holder_name: 'Bruno', holder_email: 'bruno@acme.it' },
+      }),
+    )
+    renderPanel()
+
+    expect(
+      await screen.findByText(/Bruno \(bruno@acme\.it\)/),
+    ).toBeInTheDocument()
+  })
+
+  it('says no write folder is in effect when none is', async () => {
+    vi.mocked(api.GET).mockResolvedValue(ok({ ...CONNECTED, space_storage: null }))
+    renderPanel()
+
+    expect(
+      await screen.findByText(/i documenti generati non possono essere salvati/),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the line on the not-connected screen too, not only once this admin has their own Drive', async () => {
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        ...NOT_CONFIGURED,
+        configured: true,
+        space_storage: { holder_name: 'Bruno', holder_email: 'bruno@acme.it' },
+      }),
+    )
+    renderPanel()
+
+    expect(
+      await screen.findByText(/Bruno \(bruno@acme\.it\)/),
+    ).toBeInTheDocument()
+    expect(
+      await screen.findByRole('link', { name: 'Collega Google Drive' }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows a collaboratore neither line, even while an admin holds the folder', async () => {
+    mockAuth.isAdmin = false
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        ...CONNECTED,
+        space_storage: { holder_name: 'Bruno', holder_email: 'bruno@acme.it' },
+      }),
+    )
+    renderPanel()
+
+    await screen.findByText('ada@acme.it')
+    expect(screen.queryByText(/Bruno/)).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/i documenti generati non possono essere salvati/),
+    ).not.toBeInTheDocument()
   })
 })
 

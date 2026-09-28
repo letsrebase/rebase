@@ -328,6 +328,29 @@ def test_storage_account_with_only_a_non_admin_s_folder_is_not_configured(
     assert DriveRepository(db_session).storage_account() is None
 
 
+def test_storage_holder_names_the_same_row_storage_account_answers_with(
+    db_session: Session,
+) -> None:
+    """REB-562. `storage_holder` is `storage_account`'s own query, so the two must
+    never disagree about which row qualifies -- only `storage_holder` also says
+    whose it is."""
+    admin = _account(db_session)
+
+    found = DriveRepository(db_session).storage_holder()
+
+    assert found is not None
+    account, holder_name = found
+    assert account is admin
+    assert holder_name == "Titolare"
+
+
+def test_storage_holder_is_none_when_only_a_non_admin_s_row_names_a_folder(
+    db_session: Session,
+) -> None:
+    _account(db_session, ruolo="collaboratore")
+    assert DriveRepository(db_session).storage_holder() is None
+
+
 def test_storage_account_stops_answering_with_an_admin_who_is_demoted(
     db_session: Session,
 ) -> None:

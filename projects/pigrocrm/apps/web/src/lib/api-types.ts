@@ -5091,6 +5091,13 @@ export interface components {
          *     `banner_text` is a distinct field because the action behind each reason differs, and
          *     `configured` is what tells an installation with no Google client apart from an owner
          *     who simply has not connected Drive yet, which `account is None` alone cannot.
+         *
+         *     `space_storage` is REB-562's addition: the space's *effective* write folder, as
+         *     opposed to `account.storage_folder_id`, which is only the viewer's own row and may
+         *     say nothing about what `DriveRepository.storage_account` actually resolves (an
+         *     admin who has not connected Drive at all, or whose own folder lost the race to a
+         *     more recently updated admin's). See `GoogleDriveSpaceStorage`'s own docstring for
+         *     what its `None` means.
          */
         DriveHealth: {
             account: components["schemas"]["GoogleDriveAccountRead"] | null;
@@ -5102,6 +5109,7 @@ export interface components {
             missing_scopes: string[];
             /** Configured */
             configured: boolean;
+            space_storage: components["schemas"]["GoogleDriveSpaceStorage"] | null;
         };
         /**
          * DriveRootsUpdate
@@ -6147,6 +6155,30 @@ export interface components {
             connected_at: string;
             /** Disconnected At */
             disconnected_at: string | null;
+        };
+        /**
+         * GoogleDriveSpaceStorage
+         * @description Whose account holds the space's one write folder in effect -- what
+         *     `DriveRepository.storage_holder` resolves for every document the space generates
+         *     (REB-562), named for the admin reading the Drive page rather than left for them to
+         *     ask a colleague or wait for a 409 `StorageNotConfigured` on the first generated
+         *     document.
+         *
+         *     `DriveHealth.space_storage` is this or `None`, and `None` there carries two
+         *     meanings on purpose, never told apart on the wire: no admin's row currently names a
+         *     write folder, or the viewer is not an admin. The write folder is chosen and read
+         *     from an admin's row only (`set_roots`'s `require_admin`, `storage_holder`'s own
+         *     join), so a non-admin has no decision to make about it and no name to learn from it
+         *     either -- `GoogleDriveAccountService.health` computes this field only for an admin
+         *     actor, the same gate `set_roots` already applies to *naming* this folder, and the
+         *     Drive page renders the line only behind the same admin check that already hides the
+         *     write-folder field itself (`DrivePanel`, REB-457).
+         */
+        GoogleDriveSpaceStorage: {
+            /** Holder Name */
+            holder_name: string;
+            /** Holder Email */
+            holder_email: string;
         };
         /**
          * IdentitySpace

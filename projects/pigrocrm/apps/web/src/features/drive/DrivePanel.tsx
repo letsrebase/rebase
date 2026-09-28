@@ -68,6 +68,17 @@ const STATUS_LABEL: Record<string, string> = {
  * `storage_folder_id`, which the `PATCH` reads as "leave it alone" (`DriveRootsUpdate`).
  * Their own row never supplies the space's storage, so their disconnect confirmation has
  * no write folder to warn about.
+ *
+ * **One more line, admin-only (REB-562).** `data.space_storage` is
+ * `DriveRepository.storage_account`'s own answer -- the folder the space actually
+ * writes generated documents into, which may be a *different* admin's, or nobody's,
+ * regardless of what this page's own `account`/roots editor shows about the viewer's
+ * own credential. The server computes it only for an admin actor
+ * (`GoogleDriveAccountService._space_storage`), so it is `null` for a collaboratore on
+ * the wire already; `choosesWriteFolder` gates rendering it too, the same flag that
+ * already hides the write-folder field itself, so the two can never drift apart. Shown
+ * above every other state -- disconnected, connected, whatever this admin's own Drive
+ * says -- because it answers a question about the space, not about this account.
  */
 export function DrivePanel() {
   const health = useDriveHealth()
@@ -82,79 +93,91 @@ export function DrivePanel() {
   const data: DriveHealth = health.data
   if (!data.configured) return <NotConfigured />
 
+  const spaceStorage = choosesWriteFolder ? (
+    <SpaceStorageLine storage={data.space_storage} />
+  ) : null
+
   const account = data.account
   if (account === null || account.status === 'disconnected') {
-    return <NotConnected account={account} choosesWriteFolder={choosesWriteFolder} />
+    return (
+      <>
+        {spaceStorage}
+        <NotConnected account={account} choosesWriteFolder={choosesWriteFolder} />
+      </>
+    )
   }
 
   return (
-    <section className="max-w-3xl space-y-6">
-      <header className="space-y-1">
-        <h2 className="text-lg font-medium">Google Drive collegato</h2>
-        <p className="font-medium">{account.email_address}</p>
-        <p className="text-sm text-muted-foreground">
-          Stato: {STATUS_LABEL[account.status] ?? account.status}
-          {account.consent_expires_at
-            ? ` · Consenso da rinnovare entro il ${formatInstant(account.consent_expires_at)}`
-            : ''}
-        </p>
-      </header>
+    <>
+      {spaceStorage}
+      <section className="max-w-3xl space-y-6">
+        <header className="space-y-1">
+          <h2 className="text-lg font-medium">Google Drive collegato</h2>
+          <p className="font-medium">{account.email_address}</p>
+          <p className="text-sm text-muted-foreground">
+            Stato: {STATUS_LABEL[account.status] ?? account.status}
+            {account.consent_expires_at
+              ? ` · Consenso da rinnovare entro il ${formatInstant(account.consent_expires_at)}`
+              : ''}
+          </p>
+        </header>
 
-      {data.banner_text ? (
-        <p
-          role="status"
-          className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          {data.banner_text}
-        </p>
-      ) : null}
+        {data.banner_text ? (
+          <p
+            role="status"
+            className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {data.banner_text}
+          </p>
+        ) : null}
 
-      {account.last_error ? (
-        <p className="text-sm text-muted-foreground">
-          Ultimo errore: {account.last_error} ({formatInstant(account.last_error_at)})
-        </p>
-      ) : null}
+        {account.last_error ? (
+          <p className="text-sm text-muted-foreground">
+            Ultimo errore: {account.last_error} ({formatInstant(account.last_error_at)})
+          </p>
+        ) : null}
 
-      {/* In every connected state, banner or not: see the component docstring. The
-          server accepts this PATCH from a revoked or expired credential, so the panel
-          must not be the thing that refuses it. */}
-      <RootsEditor account={account} choosesWriteFolder={choosesWriteFolder} />
+        {/* In every connected state, banner or not: see the component docstring. The
+            server accepts this PATCH from a revoked or expired credential, so the panel
+            must not be the thing that refuses it. */}
+        <RootsEditor account={account} choosesWriteFolder={choosesWriteFolder} />
 
-      <div className="space-y-2 border-t pt-4">
-        <Button variant="destructive" onClick={() => setConfirmOpen(true)}>
-          Scollega Drive
-        </Button>
-      </div>
+        <div className="space-y-2 border-t pt-4">
+          <Button variant="destructive" onClick={() => setConfirmOpen(true)}>
+            Scollega Drive
+          </Button>
+        </div>
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Scollegare Google Drive?</DialogTitle>
-            <DialogDescription>
-              {choosesWriteFolder
-                ? 'La CRM non potrà più leggere le cartelle configurate né scrivere nella ' +
-                  "cartella di archiviazione, finché non ricolleghi l'account."
-                : "La CRM non potrà più leggere le cartelle configurate, finché non ricolleghi l'account."}
-            </DialogDescription>
-          </DialogHeader>
-          <ActionError error={disconnect.error} />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
-              Annulla
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={disconnect.isPending}
-              onClick={() =>
-                disconnect.mutate(undefined, { onSuccess: () => setConfirmOpen(false) })
-              }
-            >
-              Scollega Drive
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </section>
+        <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Scollegare Google Drive?</DialogTitle>
+              <DialogDescription>
+                {choosesWriteFolder
+                  ? 'La CRM non potrà più leggere le cartelle configurate né scrivere nella ' +
+                    "cartella di archiviazione, finché non ricolleghi l'account."
+                  : "La CRM non potrà più leggere le cartelle configurate, finché non ricolleghi l'account."}
+              </DialogDescription>
+            </DialogHeader>
+            <ActionError error={disconnect.error} />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+                Annulla
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={disconnect.isPending}
+                onClick={() =>
+                  disconnect.mutate(undefined, { onSuccess: () => setConfirmOpen(false) })
+                }
+              >
+                Scollega Drive
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </section>
+    </>
   )
 }
 
@@ -163,6 +186,26 @@ export function DrivePanel() {
 function ActionError({ error }: { error: unknown }) {
   if (!error) return null
   return <p className="text-sm text-destructive">{toProblem(error).detail}</p>
+}
+
+/**
+ * REB-562. What `DriveHealth.space_storage` answers, read as it comes -- the id of
+ * which admin's row is not derived here, only the name and email the server already
+ * resolved (`GoogleDriveAccountService._space_storage`, from `DriveRepository.
+ * storage_holder`). Rendered only when `choosesWriteFolder` is true (see `DrivePanel`'s
+ * own docstring), so `storage` reaching `null` here always means "no write folder in
+ * effect", never "the viewer is not an admin".
+ */
+function SpaceStorageLine({ storage }: { storage: DriveHealth['space_storage'] }) {
+  return (
+    <p className="max-w-3xl text-sm text-muted-foreground">
+      {storage
+        ? `I documenti generati vengono salvati nell'account Google Drive di ` +
+          `${storage.holder_name} (${storage.holder_email}).`
+        : 'Nessun amministratore ha scelto la cartella di scrittura Drive: i documenti ' +
+          'generati non possono essere salvati finché uno non la sceglie.'}
+    </p>
+  )
 }
 
 function NotConfigured() {

@@ -44,7 +44,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
-from pigrocrm.core.actor import Actor
+from pigrocrm.core.actor import ADMIN_ROLES, Actor
 from pigrocrm.core.config import Settings, gmail_configured
 from pigrocrm.core.drive.errors import DriveConsentExpired, DriveCredentialRevoked
 from pigrocrm.core.drive.models import GoogleDriveAccount
@@ -57,6 +57,7 @@ from pigrocrm.core.drive.schemas import (
     DriveHealth,
     DriveRootsUpdate,
     GoogleDriveAccountRead,
+    GoogleDriveSpaceStorage,
 )
 from pigrocrm.core.drive.transport import DriveTransport, user_transport_for
 from pigrocrm.core.errors import Conflict, ValidationFailed
@@ -158,12 +159,18 @@ class GoogleDriveAccountService:
         No account at all is not a problem to report: an installation that never
         connected Drive has nothing to say about it, and a banner there would be an
         error message for a feature nobody switched on.
+
+        `space_storage` (REB-562) is computed once, here, and carried unchanged into
+        every branch below: it answers a question about the *space*, not about the
+        account this call is otherwise describing, so it does not belong inside
+        `answer`'s per-cause logic and must not vary with it.
         """
         # Read here, not taken from the caller, for the same reason
         # `GoogleAccountService.health` reads it itself: one Google OAuth client
         # serves both credentials, so whether *Google* is configured at all is a fact
         # about the installation, not about which grant an adapter remembered to ask.
         configured = gmail_configured(self.settings)
+        space_storage = self._space_storage(actor)
         account = self.repo.account_for_user(actor.id) if actor.id else None
         if account is None:
             return DriveHealth(
@@ -172,6 +179,7 @@ class GoogleDriveAccountService:
                 banner_text=None,
                 missing_scopes=[],
                 configured=configured,
+                space_storage=space_storage,
             )
 
         read = GoogleDriveAccountRead.model_validate(account)
@@ -192,6 +200,7 @@ class GoogleDriveAccountService:
                 banner_text=text,
                 missing_scopes=missing,
                 configured=configured,
+                space_storage=space_storage,
             )
 
         # Order matters, and it is an order of actionability -- the same order
@@ -499,6 +508,27 @@ class GoogleDriveAccountService:
             )
 
     # --- internals -------------------------------------------------------------------
+
+    def _space_storage(self, actor: Actor) -> GoogleDriveSpaceStorage | None:
+        """`DriveHealth.space_storage`: the space's write folder in effect, and the
+        admin whose account holds it -- REB-562's card asked for this read from
+        `DriveRepository.storage_holder` (the query behind `storage_account`, the one
+        `storage/lazy_drive.py` resolves against), never recomputed from an account
+        list in the web.
+
+        Admin-only, matching `set_roots`'s own gate on *naming* this folder
+        (`require_admin`): a collaboratore makes no decision about it, and what this
+        would otherwise answer is another user's name and email, which
+        `GoogleDriveSpaceStorage`'s docstring is the fuller argument for not handing
+        to a role that cannot act on it anyway.
+        """
+        if actor.role not in ADMIN_ROLES:
+            return None
+        found = self.repo.storage_holder()
+        if found is None:
+            return None
+        account, holder_name = found
+        return GoogleDriveSpaceStorage(holder_name=holder_name, holder_email=account.email_address)
 
     def _present(self, actor: Actor) -> GoogleDriveAccount:
         """This actor's Drive account, connected, or the one `Conflict` that answers

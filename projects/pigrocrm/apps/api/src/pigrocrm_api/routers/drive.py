@@ -67,7 +67,12 @@ def read_account(session: SessionDep, actor: ActorDep, settings: SettingsDep) ->
     """200 even when Drive is not configured -- see the module docstring."""
     if not gmail_configured(settings):
         return DriveHealth(
-            account=None, banner=None, banner_text=None, missing_scopes=[], configured=False
+            account=None,
+            banner=None,
+            banner_text=None,
+            missing_scopes=[],
+            configured=False,
+            space_storage=None,
         )
     return GoogleDriveAccountService(session, settings=settings).health(actor)
 

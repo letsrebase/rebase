@@ -132,6 +132,7 @@ def test_the_account_endpoint_is_readable_even_with_google_off(logged_in: TestCl
         "banner_text": None,
         "missing_scopes": [],
         "configured": False,
+        "space_storage": None,
     }
 
 
@@ -629,6 +630,40 @@ def test_a_collaboratore_still_sets_their_own_read_roots(
 
     assert response.status_code == 200, response.text
     assert response.json()["root_folder_ids"] == [ROOT_ID]
+
+
+# --- space_storage: whose account holds the space's write folder (REB-562) -----------
+
+
+def test_the_account_endpoint_names_the_admin_holding_the_spaces_storage(
+    logged_in: TestClient, drive_ready: TestClient, api_session: Session
+) -> None:
+    """The admin's own Drive page, over real HTTP: `space_storage` answers from
+    `DriveRepository.storage_holder`, not from the viewer's own `account` field."""
+    user_id = logged_in.get("/api/auth/me").json()["id"]
+    _connected_account(api_session, user_id, storage_folder_id=STORAGE_ID)
+
+    response = logged_in.get("/api/drive/account")
+
+    assert response.status_code == 200, response.text
+    space_storage = response.json()["space_storage"]
+    assert space_storage == {"holder_name": "Admin", "holder_email": "io@example.it"}
+
+
+def test_the_account_endpoint_names_no_space_storage_to_a_collaboratore(
+    logged_in: TestClient, drive_ready: TestClient, api_session: Session
+) -> None:
+    """A collaboratore chooses no write folder (`set_roots`'s own `require_admin`), so
+    their `GET /api/drive/account` must not learn who the admin is, even while an
+    admin's write folder is genuinely in effect."""
+    admin_id = logged_in.get("/api/auth/me").json()["id"]
+    _connected_account(api_session, admin_id, storage_folder_id=STORAGE_ID)
+    collab = _second_actor(logged_in, "collaboratore")
+
+    response = collab.get("/api/drive/account")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["space_storage"] is None
 
 
 # --- one token-client cache for both Google credentials --------------------------------
