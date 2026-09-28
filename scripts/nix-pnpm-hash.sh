@@ -29,7 +29,10 @@
 # no uncommitted changes and flake.nix itself carries nothing uncommitted
 # outside the pnpmDeps hash line (a previous --write's own edit is fine),
 # so the hash it writes is provably the hash of what is about to be
-# committed, not of something still sitting in the working tree.
+# committed, not of something still sitting in the working tree. The build
+# takes minutes, so it checks all of that again immediately before writing,
+# HEAD included: a commit, or an edit, landing mid-build refuses the write
+# and prints the hash instead of losing it.
 #
 # Docker's /nix is the named volume "rebase-nix-store", so a second run
 # reuses the store instead of paying the several-hundred-MB pull and build
@@ -69,7 +72,7 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     -h | --help)
-      sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -136,11 +139,65 @@ pnpm_input_status() {
 # edit is exactly that one line and is allowed to stand; anything else (the
 # fetchPnpmDeps `src` fileset, say) is not. Fails closed, like the check
 # above: if git cannot even read HEAD's flake.nix, that counts as a change.
+# Compares through temp files with `cmp`, not `$(...)`: command substitution
+# strips every trailing newline, so an otherwise-uncommitted trailing blank
+# line would compare equal and go unnoticed.
 flake_nix_has_extra_changes() {
-  local repo="$1" head_norm work_norm
-  head_norm=$(git -C "$repo" show HEAD:flake.nix 2>/dev/null | perl -pe 's/^[[:space:]]*hash = "sha256-[^"]*";/HASH_LINE/') || return 0
-  work_norm=$(perl -pe 's/^[[:space:]]*hash = "sha256-[^"]*";/HASH_LINE/' "$repo/flake.nix" 2>/dev/null) || return 0
-  [ "$head_norm" != "$work_norm" ]
+  local repo="$1" head_tmp work_tmp
+  head_tmp=$(mktemp -t nix-pnpm-hash-headflake.XXXXXX) || return 0
+  work_tmp=$(mktemp -t nix-pnpm-hash-workflake.XXXXXX) || {
+    rm -f "$head_tmp"
+    return 0
+  }
+  if ! git -C "$repo" show HEAD:flake.nix 2>/dev/null \
+    | perl -pe 's/^[[:space:]]*hash = "sha256-[^"]*";/HASH_LINE/' >"$head_tmp"; then
+    rm -f "$head_tmp" "$work_tmp"
+    return 0
+  fi
+  if ! perl -pe 's/^[[:space:]]*hash = "sha256-[^"]*";/HASH_LINE/' "$repo/flake.nix" >"$work_tmp" 2>/dev/null; then
+    rm -f "$head_tmp" "$work_tmp"
+    return 0
+  fi
+  if cmp -s "$head_tmp" "$work_tmp"; then
+    rm -f "$head_tmp" "$work_tmp"
+    return 1
+  fi
+  rm -f "$head_tmp" "$work_tmp"
+  return 0
+}
+
+# Everything --write's proof depends on: the checkout is still on the same
+# HEAD it started on, flake.nix carries nothing uncommitted outside the
+# pnpmDeps hash line, and no pnpm input is dirty. Run once before the build
+# starts and, since the build takes minutes, once more immediately before
+# the write itself -- the same function, not a second copy of the checks --
+# so a commit, or an edit, landing mid-build cannot make it in. Prints the
+# failure reason on stdout and returns 1; prints nothing and returns 0 when
+# every check passes.
+check_write_guards() {
+  local repo="$1" expect_head="$2" current_head dirty
+
+  if ! current_head=$(git -C "$repo" rev-parse HEAD 2>/dev/null); then
+    echo "git could not read HEAD"
+    return 1
+  fi
+  if [ -n "$expect_head" ] && [ "$current_head" != "$expect_head" ]; then
+    echo "HEAD moved from $expect_head to $current_head"
+    return 1
+  fi
+  if flake_nix_has_extra_changes "$repo"; then
+    echo "flake.nix has uncommitted changes outside the pnpmDeps hash line"
+    return 1
+  fi
+  if ! dirty=$(pnpm_input_status "$repo"); then
+    echo "git could not read the tree"
+    return 1
+  fi
+  if [ -n "$dirty" ]; then
+    printf 'pnpm-lock.yaml, pnpm-workspace.yaml or a package.json is uncommitted:\n%s' "$dirty"
+    return 1
+  fi
+  printf '%s' "$current_head"
 }
 
 if [ "$write" = 1 ]; then
@@ -148,17 +205,8 @@ if [ "$write" = 1 ]; then
     echo "nix-pnpm-hash: --write only ever writes a hash built from HEAD (got --ref $ref); drop --write to print that ref's hash instead" >&2
     exit 1
   fi
-  if flake_nix_has_extra_changes "$repo_root"; then
-    echo "nix-pnpm-hash: --write needs flake.nix unchanged outside the pnpmDeps hash line (a previous --write's own edit is fine); commit or revert the rest first" >&2
-    exit 1
-  fi
-  if ! dirty=$(pnpm_input_status "$repo_root"); then
-    echo "nix-pnpm-hash: --write needs to read the working tree with git, and git could not read it; refusing" >&2
-    exit 1
-  fi
-  if [ -n "$dirty" ]; then
-    echo "nix-pnpm-hash: --write needs pnpm-lock.yaml, pnpm-workspace.yaml and every package.json committed first, so the hash it writes matches what HEAD actually resolves. Uncommitted:" >&2
-    echo "$dirty" >&2
+  if ! write_head_sha=$(check_write_guards "$repo_root" ''); then
+    echo "nix-pnpm-hash: --write refuses: $write_head_sha" >&2
     exit 1
   fi
 fi
@@ -275,6 +323,10 @@ fi
 echo "$got_hash"
 
 if [ "$write" = 1 ]; then
+  if ! recheck=$(check_write_guards "$repo_root" "$write_head_sha"); then
+    echo "nix-pnpm-hash: --write refuses: the tree changed while the build ran ($recheck). The hash above was computed, but not written anywhere." >&2
+    exit 1
+  fi
   write_hash "$repo_root/flake.nix" "$got_hash"
   echo "nix-pnpm-hash: wrote $got_hash into $repo_root/flake.nix" >&2
 fi
