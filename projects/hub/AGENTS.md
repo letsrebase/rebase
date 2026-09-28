@@ -407,9 +407,11 @@ uv run pytest -q projects/hub/packages/core/tests projects/hub/apps/api/tests pr
 uv run --env-file projects/hub/.env uvicorn rebase_api.main:app --port 8010
 ```
 
-The tests bring a `testcontainers` Postgres to `head` with this package's migrations,
-never with `create_all`: a table the model declares and the migration forgets fails
-here rather than on the server.
+The tests bring a template database to `head` with this package's migrations, once per
+xdist worker on the worker's own PostgreSQL (`projects/hub/conftest.py` over the
+repository's root `conftest.py`, REB-579), and each test root clones it; never with
+`create_all`: a table the model declares and the migration forgets fails here rather
+than on the server. A migration test asks the same fixture for an empty database.
 
 **A migration that renames or drops a table is also a change outside this repository.**
 Six of these tables are read by PostHog's warehouse as `posthog_ro`, and a `GRANT`

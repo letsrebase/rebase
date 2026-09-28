@@ -115,8 +115,11 @@ did not get cheaper, it moved; a heavy check in neither tier is a hole.
 **Two things about the Python suite, measured on 2026-09-09 and 2026-09-28 and
 easy to undo by accident.** It runs
 under `-n auto --dist loadfile`, which works because each xdist worker starts its own
-container from the session-scoped fixture; `loadfile` is what keeps a file's tests
-on one worker, as the module-scoped fixtures require. A test that only passes in
+PostgreSQL from the session-scoped fixture in the repository's root `conftest.py`, one
+per worker for every test root of every project, each root cloning its schema from a
+template built once (REB-579: a new test root clones, it never starts a container, and
+a migration test asks that fixture for an empty database); `loadfile` is what keeps a
+file's tests on one worker, as the module-scoped fixtures require. A test that only passes in
 alphabetical order fails here, which is the point: four did, and they were fixed
 rather than pinned. And on CI the suite is three jobs, not one: `ci.yml` calls the
 gate in a three-way matrix and each job runs every third file of the sorted list

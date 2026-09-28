@@ -6,15 +6,14 @@ than a surprise on the server.
 """
 
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
-from testcontainers.community.postgres import PostgresContainer
 
 from rebase_core.config import Settings
 from rebase_core.db import create_engine_from_settings, session_factory
-from rebase_core.migrate import upgrade_to_head
 
 
 def settings_for(url: str) -> Settings:
@@ -22,13 +21,12 @@ def settings_for(url: str) -> Settings:
 
 
 @pytest.fixture(scope="session")
-def hub_engine() -> Iterator[Engine]:
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
-        url = container.get_connection_url()
-        upgrade_to_head(url)
-        engine = create_engine_from_settings(settings_for(url))
-        yield engine
-        engine.dispose()
+def hub_engine(hub_postgres: Any) -> Iterator[Engine]:
+    """A clone of the worker's template database (`projects/hub/conftest.py`, REB-579),
+    brought to head by the migrations once per worker."""
+    engine = create_engine_from_settings(settings_for(hub_postgres.clone("core")))
+    yield engine
+    engine.dispose()
 
 
 @pytest.fixture
