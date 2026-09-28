@@ -42,6 +42,7 @@ def person(
     deleted: bool = False,
     role: str = "member",
     logins: int = 0,
+    stato: str = "nuovo",
 ) -> Freelancer:
     user = User(email=email, nome=nome, cognome="Lovelace", role=role)
     session.add(user)
@@ -56,6 +57,7 @@ def person(
         posizione="Backend developer" if posizione else None,
         remoto="remoto" if remoto else None,
         links=[],
+        stato=stato,
     )
     if deleted:
         card.deleted_at = datetime.now(UTC)

@@ -313,3 +313,81 @@ def test_a_null_on_a_not_nullable_field_is_422_not_500(
         assert "il campo non può essere svuotato" in detail[0]["msg"]
     unchanged = client.get(f"/api/hub/campaigns/{campaign_id}").json()
     assert unchanged["campagna"]["fonte"] == "stato"
+
+
+def test_a_blank_name_is_a_422_sentence_on_create_and_on_update(
+    client: TestClient,
+    tidy: Session,  # noqa: F811  (fixture)
+    sender: RecordingSender,
+) -> None:
+    """REB-524: a name of spaces used to be stored empty. It is refused with a sentence
+    naming the field, `nome` last in `loc` as the page reads it."""
+    login_admin(client, sender, tidy)
+    campaign_id = a_draft(client)
+    answer = client.patch(f"/api/hub/campaigns/{campaign_id}", json={"nome": "   "})
+    assert answer.status_code == 422, answer.text
+    (item,) = answer.json()["detail"]
+    assert (item["loc"][-1], item["msg"]) == (
+        "nome",
+        "Il nome della campagna non può essere vuoto.",
+    )
+    assert client.get(f"/api/hub/campaigns/{campaign_id}").json()["campagna"]["nome"] == "X"
+    created = client.post(
+        "/api/hub/campaigns",
+        json={
+            "nome": " \t ",
+            "fonte": "stato",
+            "stato_percorso": "completo",
+            "bottone_meta": "area",
+            "azione": "entrato",
+        },
+    )
+    assert created.status_code == 422 and created.json()["detail"][0]["loc"][-1] == "nome"
+
+
+def test_a_draft_is_deleted_and_a_scheduled_campaign_is_not(
+    client: TestClient,
+    tidy: Session,  # noqa: F811  (fixture)
+    sender: RecordingSender,
+) -> None:
+    """REB-524: «Elimina» on an abandoned draft. A campaign past its draft answers 409
+    with the sentence and stays."""
+    login_admin(client, sender, tidy)
+    draft_id = a_draft(client)
+    kept_id = a_draft(client)
+    tidy.execute(update(Campaign).where(Campaign.id == UUID(kept_id)).values(stato="annullata"))
+    tidy.commit()
+    assert client.delete(f"/api/hub/campaigns/{draft_id}").status_code == 204
+    assert client.get(f"/api/hub/campaigns/{draft_id}").status_code == 404
+    assert client.delete(f"/api/hub/campaigns/{draft_id}").status_code == 404
+    refused = client.delete(f"/api/hub/campaigns/{kept_id}")
+    assert refused.status_code == 409 and "Si elimina solo una bozza" in refused.json()["detail"]
+    assert client.get(f"/api/hub/campaigns/{kept_id}").status_code == 200
+
+
+def test_deleting_a_campaign_wants_an_admin(
+    client: TestClient,
+    tidy: Session,  # noqa: F811  (fixture)
+) -> None:
+    assert client.delete(f"/api/hub/campaigns/{UUID(int=1)}").status_code == 401
+
+
+def test_a_stalled_send_reads_its_reason_on_the_list_and_the_page(
+    client: TestClient,
+    tidy: Session,  # noqa: F811  (fixture)
+    sender: RecordingSender,
+) -> None:
+    login_admin(client, sender, tidy)
+    campaign_id = a_draft(client)
+    stopped = datetime(2026, 9, 28, 9, 0, tzinfo=UTC)
+    tidy.execute(
+        update(Campaign)
+        .where(Campaign.id == UUID(campaign_id))
+        .values(stato="in_invio", fermo_at=stopped, fermo_motivo="Resend rifiuta la chiave")
+    )
+    tidy.commit()
+    page = client.get(f"/api/hub/campaigns/{campaign_id}").json()["campagna"]
+    (item,) = client.get("/api/hub/campaigns").json()["items"]
+    for read in (page, item):
+        assert read["fermo_motivo"] == "Resend rifiuta la chiave"
+        assert read["fermo_at"].startswith("2026-09-28T09:00:00")

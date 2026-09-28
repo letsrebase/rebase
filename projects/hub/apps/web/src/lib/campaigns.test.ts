@@ -7,7 +7,9 @@ import {
   META_LABELS,
   RECIPIENT_STATE_LABELS,
   campaignMoment,
+  campaignStateLabel,
   defaultSchedule,
+  isStalled,
   outcomeLine,
   peopleLabel,
   personalise,
@@ -16,6 +18,7 @@ import {
   romeToday,
   scheduleLabel,
   share,
+  stallLine,
 } from './campaigns'
 
 describe('personalise', () => {
@@ -132,6 +135,27 @@ describe('campaignMoment', () => {
   it('says nothing for a draft or a campaign cancelled before it left', () => {
     expect(campaignMoment({ stato: 'bozza', programmata_per: null, inviata_at: null })).toBeNull()
     expect(campaignMoment({ stato: 'annullata', programmata_per: '2026-09-26T07:30:00Z', inviata_at: null })).toBeNull()
+  })
+})
+
+describe('a stopped send (REB-524)', () => {
+  const stopped = { stato: 'in_invio' as const, fermo_at: '2026-09-28T09:32:00Z', fermo_motivo: 'Resend rifiuta la chiave' }
+
+  it('reads «Invio fermo» with its reason and since when, in Rome time, in place of «In invio»', () => {
+    expect(isStalled(stopped)).toBe(true)
+    expect(campaignStateLabel(stopped)).toBe('Invio fermo')
+    expect(stallLine(stopped)).toBe(
+      'Invio fermo: Resend rifiuta la chiave, dal 28 settembre 2026 alle 11:32 (ora di Roma). Si riprova ogni minuto e riparte da solo appena è risolto.',
+    )
+  })
+
+  it('is nothing once the send moves again, or on a campaign no longer sending', () => {
+    const moving = { ...stopped, fermo_at: null, fermo_motivo: null }
+    expect(isStalled(moving)).toBe(false)
+    expect(campaignStateLabel(moving)).toBe('In invio')
+    expect(stallLine(moving)).toBeNull()
+    expect(isStalled({ ...stopped, stato: 'annullata' })).toBe(false)
+    expect(campaignStateLabel({ ...stopped, stato: 'annullata' })).toBe('Annullata')
   })
 })
 

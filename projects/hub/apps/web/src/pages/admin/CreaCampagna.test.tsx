@@ -798,3 +798,22 @@ describe('a «Riscrivi» draft (phase 2)', () => {
     expect(await screen.findByText('Non riesco a leggere la campagna da cui viene.')).toHaveAttribute('role', 'alert')
   })
 })
+
+describe('the subject in the preview (REB-524)', () => {
+  it('puts the chosen person\'s name in the subject, as the mail does', async () => {
+    const greeting = { ...TEMPLATE, oggetto: '{nome}, manca solo il CV' }
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([greeting]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE_TWO),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, oggetto: greeting.oggetto }, 201),
+    })
+    mount()
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await screen.findByText('riceveranno la mail', { exact: false }, SAVED)
+    const subject = (text: string) => (_: string, node: Element | null) => node?.tagName === 'P' && node.textContent === text
+    expect(preview().getByText(subject('Oggetto: Ada, manca solo il CV'))).toBeInTheDocument()
+    await pick('Vedi come la riceve', 'Bruno')
+    expect(preview().getByText(subject('Oggetto: Bruno, manca solo il CV'))).toBeInTheDocument()
+  })
+})

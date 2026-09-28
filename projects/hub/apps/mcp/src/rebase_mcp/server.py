@@ -736,6 +736,8 @@ def build_server(
 
         - nome, oggetto e stato (bozza, programmata, in_invio, inviata, annullata);
         - quando parte o è partita (`programmata_per`, `inviata_at`);
+        - se l'invio è fermo, da quando e perché (`fermo_at`, `fermo_motivo`), finché
+          non parte la prossima mail;
         - l'azione che misura: entrato, cv, scheda_completa, profilo_creato o
           richiesta_aggiornata;
         - in `conteggi` quante sono state inviate, saltate, fallite, consegnate,

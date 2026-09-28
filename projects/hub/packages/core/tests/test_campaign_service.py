@@ -29,9 +29,9 @@ from rebase_core.campaigns.schemas import (
     TalentiFiltri,
 )
 from rebase_core.campaigns.sender import RecordingCampaignSender, SendOutcome
-from rebase_core.campaigns.service import NOT_A_DRAFT, CampaignService
+from rebase_core.campaigns.service import NOT_A_DRAFT, ONLY_A_DRAFT_IS_DELETED, CampaignService
 from rebase_core.db import session_factory
-from rebase_core.errors import InvalidState, ValidationFailed
+from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.models import Campaign, CampaignRecipient, Freelancer, Login, User
 
 
@@ -604,3 +604,64 @@ def test_a_card_with_the_slug_but_another_persons_code_is_not_dalla_mail(clean: 
     )
     rows = {r.email: r for r in CampaignService(clean, SETTINGS).detail(campaign.id).destinatari}
     assert rows["nina@studio.it"].azione_dalla_mail is False
+
+
+def test_the_test_mail_greets_the_admin_in_the_subject_too(clean: Session) -> None:  # noqa: F811  (fixture)
+    """REB-524: the test shows the subject as a person will read it, `{nome}` included."""
+    service = CampaignService(clean, SETTINGS, clock=Clock(NOW))
+    who = admin(clean)
+    created = service.create(who.id, draft(oggetto="{nome}, manca solo il CV"))
+    recording = RecordingCampaignSender()
+    service.send_test(created.id, as_admin(who), recording)
+    assert recording.sent[0].mail.subject == "[prova] Ivan, manca solo il CV"
+
+
+def test_a_draft_is_deleted_and_nothing_else_is(clean: Session) -> None:  # noqa: F811  (fixture)
+    """REB-524: an abandoned draft can go. It never froze a list (`back_to_draft` drops
+    the one it had), so the row is all there is to delete."""
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    kept = service.create(admin(clean).id, draft(nome="Resta"))
+    service.delete(campaign.id)
+    clean.expire_all()
+    assert clean.get(Campaign, campaign.id) is None
+    assert clean.get(Campaign, kept.id) is not None
+    with pytest.raises(NotFound):
+        service.delete(campaign.id)
+
+
+def test_a_draft_moved_back_from_scheduled_is_a_draft_again_and_can_go(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    service.schedule(campaign.id, ScheduleRequest(giorno=date(2026, 9, 30), ora=time(9, 30)))
+    service.back_to_draft(campaign.id)
+    service.delete(campaign.id)
+    clean.expire_all()
+    assert clean.get(Campaign, campaign.id) is None
+
+
+@pytest.mark.parametrize("stato", ["programmata", "in_invio", "inviata", "annullata"])
+def test_a_campaign_past_its_draft_is_never_deleted(
+    clean: Session,  # noqa: F811  (fixture)
+    stato: str,
+) -> None:
+    """A scheduled, sending, sent or cancelled campaign carries rows people received or
+    were meant to: it stays, with every one of them."""
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    service.schedule(campaign.id, ScheduleRequest())
+    row = clean.get(Campaign, campaign.id)
+    assert row is not None
+    row.stato = stato
+    clean.commit()
+    before = clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).count()
+    with pytest.raises(InvalidState, match=ONLY_A_DRAFT_IS_DELETED):
+        service.delete(campaign.id)
+    clean.expire_all()
+    assert clean.get(Campaign, campaign.id) is not None
+    assert clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).count() == before

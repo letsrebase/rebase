@@ -46,6 +46,9 @@ from rebase_core.models import (
 )
 
 NOT_A_DRAFT = "Si modifica solo una bozza: riportala in bozza prima."
+ONLY_A_DRAFT_IS_DELETED = (
+    "Si elimina solo una bozza: una campagna programmata, inviata o annullata resta."
+)
 ROME = ZoneInfo("Europe/Rome")
 NEED_TEST = "Manda una prova dopo l'ultima modifica, poi invia."
 EMPTY_MAIL = "Oggetto, testo e bottone servono prima della prova."
@@ -338,6 +341,17 @@ class CampaignService:
         campaign.stato, campaign.programmata_per = "bozza", None
         self.session.commit()
         return CampaignRead.model_validate(campaign)
+
+    def delete(self, campaign_id: UUID) -> None:
+        """An abandoned draft goes (REB-524). Only a `bozza`: it has never frozen a list,
+        or `back_to_draft` already dropped the one it had, so the row is all there is.
+        The lock is `_require_locked`'s, so a «Programma» racing this delete either
+        lands first and makes this refuse, or waits and finds the row gone."""
+        campaign = self._require_locked(campaign_id)
+        if campaign.stato != "bozza":
+            raise InvalidState(ONLY_A_DRAFT_IS_DELETED)
+        self.session.delete(campaign)
+        self.session.commit()
 
     def cancel(self, campaign_id: UUID) -> CampaignRead:
         campaign = self._require_locked(campaign_id)

@@ -185,10 +185,14 @@ Resend refused outright (a 422, say), a row whose third attempt failed too (a ti
 a 429 or a 5xx leaves the row `in_coda` for the next pass, with the same
 `Idempotency-Key`), and a row whose checks or render raised, marked rather than let it
 wedge every campaign after it (controller ruling R14). A 401 or 403 (a revoked or
-restricted key, a domain Resend no longer sends for) marks nothing: the pass stops that
+restricted key, a domain Resend no longer sends for) marks no row: the pass stops that
 campaign with its rows still `in_coda` and logs «campaign <id> stopped this tick:
-Resend 401», and the send resumes on the first pass after the key is fixed. No
-address and no key ever appears in these lines or anywhere else in the logs.
+Resend 401», and the send resumes on the first pass after the key is fixed. The pass
+also stores the stop on the campaign (`fermo_at`, `fermo_motivo`, REB-524), and so does
+a campaign whose own list raised, so «Campagne» and the campaign's page read «Invio
+fermo: Resend rifiuta la chiave» (or «la lista non si legge») instead of «Parte il…»
+until the first mail that leaves clears it. No address and no key ever appears in these
+lines or anywhere else in the logs.
 
 **The same pass stamps what each mail led to** (P-REB-41 phase 2, `rebase_core.campaigns.outcome`).
 For every row sent in the last 30 days and still missing a stamp, it writes `entrato_at`
@@ -202,7 +206,8 @@ refused there, so the preview never has a sent row to stamp.
 **«Riscrivi a chi non ha fatto niente»** (`POST /api/hub/campaigns/{id}/follow-up`) makes a
 `bozza` with `fonte = lista` and `segue_id`. It keeps the earlier campaign's action and a
 copy of its mail, and only the mail can change (`LIST_IS_FIXED`). Its list is the earlier
-campaign's sent rows with no action, each checked live with `done_at`. The gap rule
+campaign's sent rows with no action, each checked live with `done_at`, less the rows
+whose mail bounced or drew a complaint, which the page's «Riscrivi (N)» leaves out too. The gap rule
 applies, so a follow-up drafted within `REBASE_CAMPAIGN_GAP_DAYS` of the send lists
 everyone as excluded, with the date.
 
@@ -215,10 +220,11 @@ checkout, was wiped this way on 24/09. A wave's own scripts belong in the reposi
 they are worth keeping) or outside `/opt/hub` entirely, the same rule `REBASE_DATA_DIR`
 follows for Postgres's own files.
 
-**Four rules keep an address out of a campaign, and only one of them is an opt-out.**
+**Five rules keep an address out of a campaign, and only one of them is an opt-out.**
 `exclusions()` (`rebase_core.campaigns.audience`) runs when the list is shown, when it
 is frozen and again right before each mail, and leaves out, with the reason on screen:
-an admin, by `User.role == "admin"` (`REASON_ADMIN`, no row needed); an address with a
+an admin, by `User.role == "admin"` (`REASON_ADMIN`, no row needed); a person whose card
+an admin marked «scartato» (`REASON_DISCARDED`, DECISIONS.md 2026-09-28); an address with a
 row in `campaign_optouts` -- `fonte='link'` for the recipient's own unsubscribe,
 `'reclamo'` for a spam complaint Resend reports, `'admin'` for «Non scrivere mai»,
 which is how the team goes in rather than relying on the role check; an address that

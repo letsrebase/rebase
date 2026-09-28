@@ -14,8 +14,8 @@ function paragraphs(text: string): string[] {
 }
 
 /** The mail as a person gets it (`campaigns/render.py:render`), redrawn on every
- *  keystroke: the text with their name in it, the button, the signature and the
- *  unsubscribe line, word for word. */
+ *  keystroke: the subject and the text with their name in them, the button, the
+ *  signature and the unsubscribe line, word for word. */
 export function Anteprima({
   oggetto,
   testo,
@@ -33,6 +33,8 @@ export function Anteprima({
   onPersona: (email: string) => void
 }) {
   const body = paragraphs(personalise(testo, persona?.nome ?? null))
+  // The subject takes the name too (`render.py`, REB-524).
+  const subject = personalise(oggetto, persona?.nome ?? null)
   return (
     <section aria-labelledby="campagna-anteprima" className="space-y-3">
       <div className="flex min-h-9 flex-wrap items-center justify-between gap-x-3 gap-y-2">
@@ -62,7 +64,7 @@ export function Anteprima({
       <div className="bg-muted p-3 sm:p-4" data-testid="anteprima-mail">
         <p className="mb-3 text-sm">
           <span className="text-muted-foreground">Oggetto:</span>{' '}
-          {oggetto.trim() ? oggetto : <span className="text-muted-foreground">nessun oggetto</span>}
+          {subject.trim() ? subject : <span className="text-muted-foreground">nessun oggetto</span>}
         </p>
         <div className="space-y-4 border-2 border-foreground bg-card p-5 text-sm leading-relaxed">
           {body.length > 0 ? (

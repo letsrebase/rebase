@@ -7,19 +7,22 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { admin, ApiError, type CampaignRecipient } from '@/lib/api'
 import {
   AZIONE_FATTA_LABELS,
-  CAMPAIGN_STATE_LABELS,
   RECIPIENT_STATE_LABELS,
   campaignMoment,
+  campaignStateLabel,
+  isStalled,
   refetchEvery,
   share,
+  stallLine,
 } from '@/lib/campaigns'
 import { formatDateTime } from '@/lib/format'
 import { Empty, Figure, Header } from './lists'
 
 /** An action behind an inline second click, in place of a browser `confirm()`: the
- *  first click swaps the button for the question, the second one runs it. «Annulla»
- *  and «Non scrivere mai» both use it -- neither can be undone from this page. */
-function ConfirmAction({
+ *  first click swaps the button for the question, the second one runs it. «Annulla»,
+ *  «Non scrivere mai» and «Elimina» (here and in «Campagne») all use it -- none can be
+ *  undone. */
+export function ConfirmAction({
   label,
   question,
   pendingLabel,
@@ -100,9 +103,15 @@ const FILTERS: [Filtro, string][] = [
 ]
 
 /** Whom the mail reached with no action after it: the list «Riscrivi a chi non ha fatto
- *  niente» starts from (spec § 4.3). */
+ *  niente» starts from (spec § 4.3). A bounced mail reached nobody and a complaint is a
+ *  «never again», so neither counts, as the server's `waiting_rows` (REB-524). */
 function didNothing(recipient: CampaignRecipient): boolean {
-  return recipient.stato === 'inviata' && recipient.azione_at === null
+  return (
+    recipient.stato === 'inviata' &&
+    recipient.azione_at === null &&
+    recipient.rimbalzata_at === null &&
+    recipient.reclamo_at === null
+  )
 }
 
 function matches(recipient: CampaignRecipient, filtro: Filtro): boolean {
@@ -160,8 +169,9 @@ function RecipientRow({ recipient }: { recipient: CampaignRecipient }) {
 }
 
 /** «Campagna» (P-REB-41): when it leaves or left, the numbers, the recipients and
- *  what an admin can still undo from here -- «Modifica» on a draft, «Riporta in
- *  bozza»/«Annulla» on a scheduled campaign, «Annulla» alone once it is sending. The
+ *  what an admin can still undo from here -- «Modifica» and «Elimina» on a draft,
+ *  «Riporta in bozza»/«Annulla» on a scheduled campaign, «Annulla» alone once it is
+ *  sending, and «Invio fermo» with its reason when the send stopped (REB-524). The
  *  query refetches every 10s while the state is `programmata` or `in_invio` and for
  *  five minutes after it was sent (`refetchEvery`), so a send in progress and the
  *  deliveries after it fill in on their own without a manual reload. */
@@ -186,6 +196,13 @@ export function AdminCampagna() {
     onSuccess: invalidate,
   })
   const navigate = useNavigate()
+  const remove = useMutation({
+    mutationFn: () => admin.deleteCampaign(id),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['campaigns'] })
+      void navigate({ to: '/admin/campaigns' })
+    },
+  })
   const [filtro, setFiltro] = useState<Filtro>('tutti')
   const followUp = useMutation({
     mutationFn: () => admin.followUpCampaign(id),
@@ -196,7 +213,8 @@ export function AdminCampagna() {
   if (detail.isPending) return <Empty>Caricamento…</Empty>
 
   const { campagna, conteggi, destinatari } = detail.data
-  const moment = campaignMoment(campagna)
+  const stall = stallLine(campagna)
+  const moment = stall ? null : campaignMoment(campagna)
   const waiting = destinatari.filter(didNothing).length
   const toDraftFailure =
     toDraft.error instanceof ApiError
@@ -216,12 +234,16 @@ export function AdminCampagna() {
       : followUp.error
         ? 'Non riesco a preparare la bozza.'
         : null
+  const removeFailure =
+    remove.error instanceof ApiError ? remove.error.message : remove.error ? 'Non riesco a eliminare la bozza.' : null
 
   return (
     <>
       <Header title={campagna.nome}>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="pill">{CAMPAIGN_STATE_LABELS[campagna.stato]}</Badge>
+          <Badge variant="pill" dot={isStalled(campagna) ? 'danger' : undefined}>
+            {campaignStateLabel(campagna)}
+          </Badge>
           {campagna.stato === 'inviata' && waiting > 0 && (
             <Button type="button" size="sm" onClick={() => followUp.mutate()} disabled={followUp.isPending}>
               {followUp.isPending ? 'Preparo la bozza…' : `Riscrivi a chi non ha fatto niente (${waiting})`}
@@ -233,6 +255,16 @@ export function AdminCampagna() {
                 Modifica
               </Link>
             </Button>
+          )}
+          {campagna.stato === 'bozza' && (
+            <ConfirmAction
+              label="Elimina"
+              question="Eliminare la bozza?"
+              pendingLabel="Elimino…"
+              pending={remove.isPending}
+              onConfirm={() => remove.mutate()}
+              variant="destructive"
+            />
           )}
           {campagna.stato === 'programmata' && (
             <Button
@@ -258,6 +290,11 @@ export function AdminCampagna() {
         </div>
       </Header>
       {moment && <p className="px-6 pt-4 text-sm text-muted-foreground">{moment}</p>}
+      {stall && (
+        <p role="status" className="px-6 pt-4 text-sm text-destructive">
+          {stall}
+        </p>
+      )}
       {campagna.segue_id && (
         <p className="px-6 pt-2 text-sm text-muted-foreground">
           Riscrive a chi non aveva fatto niente dopo{' '}
@@ -267,9 +304,9 @@ export function AdminCampagna() {
           .
         </p>
       )}
-      {(toDraftFailure || cancelFailure || followUpFailure) && (
+      {(toDraftFailure || cancelFailure || followUpFailure || removeFailure) && (
         <p role="alert" className="px-6 pt-4 text-sm text-destructive">
-          {toDraftFailure ?? cancelFailure ?? followUpFailure}
+          {toDraftFailure ?? cancelFailure ?? followUpFailure ?? removeFailure}
         </p>
       )}
       <dl className="grid grid-cols-2 gap-6 border-b px-6 py-6 sm:grid-cols-3 lg:grid-cols-5">

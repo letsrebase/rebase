@@ -17,6 +17,7 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
 from sqlalchemy import Engine, select, update
 from sqlalchemy.orm import Session
 
+from rebase_core.campaigns.audience import REASON_DISCARDED
 from rebase_core.campaigns.optouts import OptoutService
 from rebase_core.campaigns.schemas import ScheduleRequest, TalentiFiltri
 from rebase_core.campaigns.sender import RecordingCampaignSender, SendOutcome
@@ -25,6 +26,8 @@ from rebase_core.campaigns.tick import (
     MAX_ATTEMPTS,
     ROW_PREPARE_ERROR,
     SEND_INTERVAL_SECONDS,
+    STALLED_KEY,
+    STALLED_LIST,
     _claim,
     run_tick,
 )
@@ -517,3 +520,86 @@ def test_a_stamping_error_is_logged_and_the_send_still_happens(
     assert rows(clean, campaign)["a@studio.it"].stato == "inviata"
     assert "outcome stamping failed this tick: KeyError" in caplog.text
     assert "a@studio.it" not in caplog.text
+
+
+def test_a_refused_key_is_stored_on_the_campaign_until_a_mail_leaves(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """REB-524: a 401/403 leaves the campaign `in_invio`, retried every pass, while the
+    page went on saying «Parte il…». The pass stores when and why it stopped, the page
+    shows «Invio fermo», and the first mail that leaves afterwards clears it."""
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it", "b@studio.it")
+    refused = RecordingCampaignSender([SendOutcome("fermati", dettaglio="Resend 403")])
+    run_tick(clean, refused, SETTINGS, clock=clock, pause=NO_PAUSE)
+    stalled = CampaignService(clean, SETTINGS, clock=clock).detail(campaign.id).campagna
+    assert (stalled.stato, stalled.fermo_motivo, stalled.fermo_at) == (
+        "in_invio",
+        STALLED_KEY,
+        clock.at,
+    )
+    assert STALLED_KEY == "Resend rifiuta la chiave"
+    clock.at += timedelta(minutes=1)
+    run_tick(clean, RecordingCampaignSender(), SETTINGS, clock=clock, pause=NO_PAUSE)
+    sent = CampaignService(clean, SETTINGS, clock=clock).detail(campaign.id).campagna
+    assert (sent.stato, sent.fermo_motivo, sent.fermo_at) == ("inviata", None, None)
+
+
+def test_a_stall_is_cleared_by_the_first_mail_that_leaves_even_mid_list(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """The key is fixed and the next pass sends one mail, then Resend times out on the
+    second: the send is moving again, so the campaign no longer reads «Invio fermo»."""
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it", "b@studio.it")
+    run_tick(
+        clean,
+        RecordingCampaignSender([SendOutcome("fermati", dettaglio="Resend 401")]),
+        SETTINGS,
+        clock=clock,
+        pause=NO_PAUSE,
+    )
+    flaky = RecordingCampaignSender(
+        [SendOutcome("accettata", "re-1"), SendOutcome("riprova", dettaglio="Resend 503")]
+    )
+    run_tick(clean, flaky, SETTINGS, clock=clock, pause=NO_PAUSE)
+    clean.refresh(campaign)
+    assert (campaign.stato, campaign.fermo_motivo, campaign.fermo_at) == ("in_invio", None, None)
+
+
+def test_a_campaign_whose_list_cannot_be_read_is_marked_stalled(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """The other stop that does not fix itself: corrupt stored `filtri` make every pass
+    roll the campaign back (R14). It says so on the campaign, and the healthy one due in
+    the same pass does not."""
+    clock = Clock(NOW)
+    broken = scheduled_filtri(clean, clock, "a@studio.it")
+    clean.execute(update(Campaign).where(Campaign.id == broken.id).values(filtri={"lista": "boom"}))
+    clean.commit()
+    healthy = scheduled(clean, clock, "b@studio.it")
+    run_tick(clean, RecordingCampaignSender(), SETTINGS, clock=clock, pause=NO_PAUSE)
+    clean.refresh(broken)
+    clean.refresh(healthy)
+    assert (broken.stato, broken.fermo_motivo, broken.fermo_at) == (
+        "in_invio",
+        STALLED_LIST,
+        clock.at,
+    )
+    assert (healthy.stato, healthy.fermo_motivo) == ("inviata", None)
+
+
+def test_a_card_turned_down_after_freezing_is_skipped_with_its_reason(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """REB-524: «scartato» is checked again right before the mail, like an opt-out."""
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it", "b@studio.it")
+    user = clean.query(User).filter(User.email == "a@studio.it").one()
+    clean.execute(update(Freelancer).where(Freelancer.user_id == user.id).values(stato="scartato"))
+    clean.commit()
+    recording = RecordingCampaignSender()
+    run_tick(clean, recording, SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert [m.mail.to for m in recording.sent] == ["b@studio.it"]
+    skipped = rows(clean, campaign)["a@studio.it"]
+    assert (skipped.stato, skipped.motivo) == ("saltata", REASON_DISCARDED)

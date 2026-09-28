@@ -87,6 +87,8 @@ def render(
     campaign: Campaign, target: RenderTarget, settings: Settings, *, test: bool = False
 ) -> RenderedMail:
     paragraphs = _paragraphs(personalise(campaign.testo, target.nome))
+    # The subject follows the body's rule (REB-524): «{nome}» was left literal there.
+    subject = personalise(campaign.oggetto, target.nome)
     url = _tracked(destination(campaign, settings), campaign, target.codice)
     page, api = unsubscribe_urls(target.token, settings)
     text = "\n\n".join(
@@ -110,9 +112,9 @@ def render(
     )
     mail = Mail(
         to=target.email,
-        subject=("[prova] " if test else "") + campaign.oggetto,
+        subject=("[prova] " if test else "") + subject,
         text=text + "\n",
-        html=_frame(campaign.oggetto, body),
+        html=_frame(subject, body),
     )
     headers = {
         "List-Unsubscribe": f"<{api}>",

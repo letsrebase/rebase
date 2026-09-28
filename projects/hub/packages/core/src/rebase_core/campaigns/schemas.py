@@ -6,7 +6,9 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     EmailStr,
     Field,
@@ -15,6 +17,7 @@ from pydantic import (
     computed_field,
     field_validator,
 )
+from pydantic_core import PydanticCustomError
 
 from rebase_core.models import (
     CAMPAIGN_BUTTON_MAX_LENGTH,
@@ -67,6 +70,31 @@ class AziendeFiltri(BaseModel):
 
 Filtri = Annotated[TalentiFiltri | AziendeFiltri, Field(discriminator="lista")]
 
+NAME_IS_BLANK = "Il nome della campagna non può essere vuoto."
+
+
+def _strip(value: object) -> object:
+    return value.strip() if isinstance(value, str) else value
+
+
+def _not_blank(value: str) -> str:
+    if not value:
+        # A custom error, not a `ValueError`: its message reaches the page as it
+        # stands, with no «Value error,» in front of the sentence.
+        raise PydanticCustomError("nome_vuoto", NAME_IS_BLANK)
+    return value
+
+
+# Stripped first, then checked (REB-524): `min_length=1` on the raw value let «   »
+# through, and the service's own strip stored it empty. `max_length` is checked on the
+# stripped name too.
+CampaignName = Annotated[
+    str,
+    BeforeValidator(_strip),
+    Field(max_length=CAMPAIGN_NAME_MAX_LENGTH),
+    AfterValidator(_not_blank),
+]
+
 Azione = Literal[
     "entrato", "cv", "scheda_completa", "profilo_creato", "richiesta_aggiornata", "pigro_cliente"
 ]
@@ -74,7 +102,7 @@ Meta = Literal["area", "wizard", "pigro", "richiesta"]
 
 
 class CampaignDraft(BaseModel):
-    nome: str = Field(min_length=1, max_length=CAMPAIGN_NAME_MAX_LENGTH)
+    nome: CampaignName
     fonte: Literal["stato", "filtri"]
     stato_percorso: str | None = Field(default=None, max_length=30)
     filtri: Filtri | None = None
@@ -96,7 +124,7 @@ _NOT_NULLABLE = ("nome", "fonte", "oggetto", "testo", "bottone_testo", "bottone_
 
 
 class CampaignPatch(BaseModel):
-    nome: str | None = Field(default=None, min_length=1, max_length=CAMPAIGN_NAME_MAX_LENGTH)
+    nome: CampaignName | None = None
     fonte: Literal["stato", "filtri"] | None = None
     stato_percorso: str | None = Field(default=None, max_length=30)
     filtri: Filtri | None = None
@@ -177,6 +205,10 @@ class CampaignRead(BaseModel):
     prova_inviata_at: datetime | None
     inviata_at: datetime | None
     created_at: datetime
+    # REB-524: set while a send is stopped on something that will not fix itself; the
+    # page reads «Invio fermo: <fermo_motivo>».
+    fermo_at: datetime | None
+    fermo_motivo: str | None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

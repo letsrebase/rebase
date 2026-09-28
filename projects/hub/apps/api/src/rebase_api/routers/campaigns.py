@@ -110,6 +110,12 @@ def update(
     return CampaignService(session, settings).update(campaign_id, data)
 
 
+@router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete(_: AdminDep, session: SessionDep, settings: SettingsDep, campaign_id: UUID) -> None:
+    """«Elimina» on a draft never sent or scheduled (REB-524); any other state is a 409."""
+    CampaignService(session, settings).delete(campaign_id)
+
+
 @router.get("/{campaign_id}/audience", response_model=AudiencePreview)
 def audience(
     _: AdminDep, session: SessionDep, settings: SettingsDep, campaign_id: UUID

@@ -47,7 +47,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select, text
+from sqlalchemy import and_, or_, select, text, update
 from sqlalchemy.orm import Session
 
 from rebase_core.campaigns.actions import done_at
@@ -64,6 +64,10 @@ MAX_ATTEMPTS = 3
 SEND_INTERVAL_SECONDS = 1.0
 TICK_LOCK_KEY = 0x72656261  # "reba"
 ROW_PREPARE_ERROR = "errore nel preparare la mail"
+# Why a send is stopped, as the campaign page says it after «Invio fermo:» (REB-524).
+# Both are stops a later pass cannot fix on its own: someone fixes the key, or the list.
+STALLED_KEY = "Resend rifiuta la chiave"
+STALLED_LIST = "la lista non si legge"
 
 _log = logging.getLogger(__name__)
 
@@ -113,6 +117,7 @@ def run_tick(
                 except Exception as exc:  # one bad campaign must not wedge the rest (R14)
                     session.rollback()
                     _log.error("campaign %s failed this tick: %s", campaign_id, type(exc).__name__)
+                    _stall(session, campaign_id, STALLED_LIST, clock())
             try:
                 result.stampate = stamp_outcomes(session, now=clock())
             except Exception as exc:  # the outcome must never stop a send (R14)
@@ -264,13 +269,18 @@ def _send(
             # Resend refused the key or the domain: every other row would get the same
             # answer. Stop this campaign's pass with the row still `in_coda` and no
             # attempt counted; the campaign stays `in_invio` and the next tick tries
-            # again, so fixing the key resumes the send. The status alone is logged.
+            # again, so fixing the key resumes the send. The status alone is logged,
+            # and the stop is stored on the campaign for its page (REB-524).
             session.commit()  # releases the row's lock; nothing was written
             _log.error("campaign %s stopped this tick: %s", campaign.id, outcome.dettaglio)
+            _stall(session, campaign.id, STALLED_KEY, clock())
             return
         if outcome.esito == "accettata":
             row.stato, row.resend_id, row.inviata_at = "inviata", outcome.resend_id, clock()
             result.inviate += 1
+            if campaign.fermo_at is not None:
+                # A mail left: whatever stopped the send is fixed (REB-524).
+                campaign.fermo_at, campaign.fermo_motivo = None, None
         elif outcome.esito == "riprova":
             row.tentativi += 1
             if row.tentativi >= MAX_ATTEMPTS:
@@ -303,4 +313,23 @@ def _finish(session: Session, campaign_id: UUID, clock: Callable[[], datetime]) 
     ).one()
     if campaign.stato == "in_invio":
         campaign.stato, campaign.inviata_at = "inviata", clock()
+        campaign.fermo_at, campaign.fermo_motivo = None, None
     session.commit()
+
+
+def _stall(session: Session, campaign_id: UUID, motivo: str, now: datetime) -> None:
+    """Stores why this campaign's send stopped (REB-524), only while it is still
+    `in_invio`: a `cancel()` that landed meanwhile stands, and says nothing of a stop.
+    A conditional `UPDATE` rather than a write through the ORM object, whose `stato`
+    this pass read at the claim and may be stale by now. A failure here is logged by
+    type and never stops the pass."""
+    try:
+        session.execute(
+            update(Campaign)
+            .where(Campaign.id == campaign_id, Campaign.stato == "in_invio")
+            .values(fermo_at=now, fermo_motivo=motivo)
+        )
+        session.commit()
+    except Exception as exc:  # the stop's note must never stop the pass (R14)
+        session.rollback()
+        _log.error("campaign %s stall not recorded: %s", campaign_id, type(exc).__name__)

@@ -110,3 +110,18 @@ def test_a_render_is_byte_identical_twice() -> None:
     """Resend's Idempotency-Key refuses a retry whose payload changed (409
     `invalid_idempotent_request`): the same row must render the same bytes."""
     assert render(campaign(), TARGET, SETTINGS) == render(campaign(), TARGET, SETTINGS)
+
+
+def test_the_name_goes_in_the_subject_too() -> None:
+    """REB-524: `{nome}` stayed literal in the subject. It follows the body's rule, the
+    test mail's included, and the HTML title is the subject the person reads."""
+    greeting = campaign(oggetto="{nome}, manca solo il CV")
+    mail = render(greeting, TARGET, SETTINGS).mail
+    assert mail.subject == "Ada, manca solo il CV"
+    assert "<title>Ada, manca solo il CV</title>" in (mail.html or "")
+    nameless = RenderTarget("bob@studio.it", None, "00", "tok")
+    assert render(campaign(oggetto="Ciao {nome}!"), nameless, SETTINGS).mail.subject == "Ciao!"
+    test = render(
+        greeting, RenderTarget("ivan@rebase.it", "Ivan", "00", "prova"), SETTINGS, test=True
+    )
+    assert test.mail.subject == "[prova] Ivan, manca solo il CV"

@@ -36,6 +36,8 @@ REASON_RECENT = "ha ricevuto un'altra campagna il {data}"
 REASON_DONE = "ha già fatto l'azione"
 REASON_NOT_LISTED = "non più in lista"
 REASON_CANCELLED = "campagna annullata"
+# REB-524, Ivan's decision (DECISIONS.md, 2026-09-28): a card an admin turned down.
+REASON_DISCARDED = "scheda scartata"
 
 _FILTRI: TypeAdapter[TalentiFiltri | AziendeFiltri] = TypeAdapter(Filtri)
 _log = logging.getLogger(__name__)
@@ -65,7 +67,8 @@ def candidates(session: Session, campaign: Campaign) -> list[Candidate]:
 
 def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
     """The parent's sent rows with no stamped action whose person is still in the hub
-    and whose action has not happened live (spec § 4.3). Read live, not from
+    and whose action has not happened live (spec § 4.3), less the rows whose mail
+    bounced or drew a complaint (REB-524). Read live, not from
     `azione_at` alone: the tick stamps once a minute and only for 30 days after a mail,
     and whoever acted since must not be written to again (Review Focus 2), nor counted
     as still waiting (`follow_up`'s own check, Greptile P1). Each person keeps the
@@ -100,6 +103,11 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
             CampaignRecipient.campaign_id == parent.id,
             CampaignRecipient.stato == "inviata",
             CampaignRecipient.azione_at.is_(None),
+            # A mail that bounced never reached anyone, and a complaint is a «never
+            # again» (REB-524): the follow-up's audience excludes both addresses anyway,
+            # so a row kept here only made «Riscrivi» draft a list of nobody.
+            CampaignRecipient.rimbalzata_at.is_(None),
+            CampaignRecipient.reclamo_at.is_(None),
         )
         .order_by(CampaignRecipient.email)
     ).all()
@@ -304,6 +312,16 @@ def exclusions(
             )
         )
     )
+    # A card an admin marked «scartato» (REB-524), deleted or not: a turned-down person
+    # stays turned down. By address, so the rule also holds on a company's list for the
+    # same person, and before each mail for a card turned down after the list froze.
+    discarded = set(
+        session.scalars(
+            select(func.lower(User.email))
+            .join(Freelancer, Freelancer.user_id == User.id)
+            .where(Freelancer.stato == "scartato", func.lower(User.email).in_(emails))
+        )
+    )
     optout_rows = session.execute(
         select(CampaignOptout.email, CampaignOptout.fonte).where(CampaignOptout.email.in_(emails))
     ).all()
@@ -333,6 +351,8 @@ def exclusions(
     for email in emails:
         if email in admins:
             reasons[email] = REASON_ADMIN
+        elif email in discarded:
+            reasons[email] = REASON_DISCARDED
         elif email in optouts:
             reasons[email] = REASON_NEVER if optouts[email] == "admin" else REASON_OPTOUT
         elif email in bounced:
