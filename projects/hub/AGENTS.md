@@ -280,8 +280,9 @@ Since milestone C of `docs/superpowers/specs/2026-09-25-team-builder-and-talent-
 card of it (`rebase_core.cards`), and `/hub/team` turns a project's description and
 those cards into a team (`rebase_core.team_builder`), which a company files with
 «Assumi team» and an admin works in «Richieste team». Both calls go through one seam,
-`rebase_core.llm`, with inference in the European Union; the tests hand a
-`RecordingCall` and never reach Anthropic.
+`rebase_core.llm`, with inference global (the API offers `global` or `us`; EU
+residency would take Vertex AI or Bedrock in an EU region, not decided); the tests
+hand a `RecordingCall` and never reach Anthropic.
 
 **The privacy page goes out before the hub.** From the first card on, CVs go to
 Anthropic, and it is letsrebase.com/privacy, in «La tua scheda e il team builder», that
