@@ -86,6 +86,8 @@ _NOT_ON_SITE: tuple[str | None, ...] = ("remoto", None)
 # What a public read says of a member in place of a motivazione that names the place on
 # their card, which the same read withholds (`_public_reason`).
 PLACE_WITHHELD_REASON = "Profilo adatto al ruolo."
+# And in place of a card's summary that names that place (`_public_card`).
+PLACE_WITHHELD_SUMMARY = "La sintesi di questo profilo non è pubblica."
 # Words of a card's `luogo` that say what kind of place it is rather than which one:
 # «provincia di Bergamo» is Bergamo, and a reason that says «in provincia» names nothing
 # (a word under four letters is never read: «sud», «est»).
@@ -557,8 +559,8 @@ class TeamBuilder:
         `cloud_visible` is read: a member deleted, turned down or left without a card
         since the proposal is left out, and so is one whose stored card no longer
         validates, logged by position; the row keeps them all. A public read withholds
-        the card's `luogo`, and with it a motivazione that names that place
-        (`_public_reason`)."""
+        the card's `luogo`, and with it any field of the card and a motivazione that
+        names that place (`_public_card`, `_public_reason`)."""
         ids = [UUID(member["freelancer_id"]) for member in row.team]
         found: dict[UUID, tuple[str | None, Decimal | None, Any]] = {}
         if ids:
@@ -607,7 +609,7 @@ class TeamBuilder:
                         else stored["motivazione"]
                     ),
                     giorni_settimana=stored["giorni_settimana"],
-                    scheda=scheda.model_copy(update={"luogo": None}) if public else scheda,
+                    scheda=_public_card(scheda, stored["ruolo"]) if public else scheda,
                     modalita=remoto,
                     fascia=band_for(tariffa),
                 )
@@ -627,7 +629,10 @@ class TeamBuilder:
 
 def _names_place(text: str, luogo: str | None) -> bool:
     """Whether `text` names the place of `luogo`: any word of four letters or more of it,
-    in any case, as a whole word, but the words for a kind of place (`_PLACE_GENERIC`)."""
+    but the words for a kind of place (`_PLACE_GENERIC`), as a whole word written with a
+    capital, in any case but all lower case, as the card writer reads a surname
+    (`cards._names`): «Alto Adige» and «BERGAMO» are the place, «di alto livello» is
+    not."""
     if not luogo:
         return False
     words = {
@@ -636,7 +641,9 @@ def _names_place(text: str, luogo: str | None) -> bool:
         if word.casefold() not in _PLACE_GENERIC
     }
     return any(
-        re.search(rf"\b{re.escape(word)}\b", text, re.IGNORECASE) is not None for word in words
+        not found.group().islower()
+        for word in words
+        for found in re.finditer(rf"\b{re.escape(word)}\b", text, re.IGNORECASE)
     )
 
 
@@ -646,6 +653,26 @@ def _public_reason(motivazione: str, scheda: Card) -> str:
     would give it back, so it reads as the hub's own sentence instead, and the row, the
     admin's and the cloud's reads keep the model's words."""
     return PLACE_WITHHELD_REASON if _names_place(motivazione, scheda.luogo) else motivazione
+
+
+def _public_card(scheda: Card, ruolo: str) -> Card:
+    """The card a public page reads: no `luogo`, and nothing else that names it. The
+    card's prompt keeps the place in `luogo` alone, and a card written before that rule,
+    or against it, still must not give the place back: a role that names it reads as
+    the role in this team, a summary as `PLACE_WITHHELD_SUMMARY`, and a skill or a
+    sector that names it is left out. The stored card is not touched."""
+    place = scheda.luogo
+    return scheda.model_copy(
+        update={
+            "luogo": None,
+            "ruolo": ruolo if _names_place(scheda.ruolo, place) else scheda.ruolo,
+            "sintesi": (
+                PLACE_WITHHELD_SUMMARY if _names_place(scheda.sintesi, place) else scheda.sintesi
+            ),
+            "competenze": [skill for skill in scheda.competenze if not _names_place(skill, place)],
+            "settori": [sector for sector in scheda.settori if not _names_place(sector, place)],
+        }
+    )
 
 
 def _economia(day: Band | None, month: Band | None, *, dump: bool = False) -> dict[str, Any]:
