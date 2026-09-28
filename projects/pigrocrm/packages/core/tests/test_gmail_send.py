@@ -12,8 +12,10 @@ import base64
 import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from email import message_from_string
+from email.policy import default as email_policy
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -26,7 +28,8 @@ from fakes.gmail_fixtures import (
     gmail_settings,
     send_service,
 )
-from sqlalchemy import Engine, delete, func, select
+from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy import Engine, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.models import Activity
@@ -37,12 +40,20 @@ from pigrocrm.core.db import session_factory
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.emitter.models import EmitterProfile
 from pigrocrm.core.errors import Conflict, PermissionDenied, ValidationFailed
+from pigrocrm.core.gmail.drafts import EmailDraftService
 from pigrocrm.core.gmail.errors import CredentialRevoked, ScopeMissing
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, GmailMessageLink, GoogleAccount
 from pigrocrm.core.gmail.parse import parse_message
 from pigrocrm.core.gmail.query import message_get_url
 from pigrocrm.core.gmail.repository import GmailRepository
-from pigrocrm.core.gmail.schemas import SCOPE_READONLY, EmailDraftCreate, EmailDraftRead
+from pigrocrm.core.gmail.schemas import (
+    SCOPE_READONLY,
+    EmailDraftCreate,
+    EmailDraftRead,
+    EmailDraftSend,
+    EmailDraftUpdate,
+)
+from pigrocrm.core.gmail.send import EmailSendService
 from pigrocrm.core.people.models import Person
 from pigrocrm.core.storage.local import LocalFileStorage
 
@@ -601,6 +612,234 @@ def test_two_concurrent_sends_produce_one_email_one_row_and_one_conflict(
             )
             row = check.get(EmailDraft, draft_id)
             assert row is not None and row.send_state == "inviato"
+    finally:
+        if customer_id is not None and user_id is not None and account_id is not None:
+            _cleanup(db_engine, customer_id=customer_id, user_id=user_id, account_id=account_id)
+
+
+# --- the revision the person read (REB-419) --------------------------------------------
+
+
+def _edited_by_someone_else(session: Session, account: GoogleAccount, draft_id: UUID) -> None:
+    """A `PATCH /api/email-drafts/{id}` from another collaborator or an admin, committed
+    after the person read the draft and before they pressed «Invia ora»."""
+    draft_service(session).update(
+        draft_id,
+        EmailDraftUpdate(body_markdown="Un testo che nessuno ha riletto."),
+        actor_for(account),
+    )
+
+
+def test_a_send_carrying_an_older_revision_is_refused_and_sends_nothing(
+    db_session: Session,
+) -> None:
+    """REB-419's acceptance test. The Email tab promises «parte esattamente quello che
+    vedi», so a send carries the `updated_at` of the draft as the person read it, and a
+    row that moved since is refused before anything is claimed or composed: no request
+    reaches Gmail, not even the token refresh, and the draft is left as it was."""
+    account = connected_account(db_session)
+    read = _draft(db_session, account)
+    db_session.commit()
+    _edited_by_someone_else(db_session, account, read.id)
+    fake = FakeGmail()
+
+    with pytest.raises(Conflict) as caught:
+        send_service(db_session, fake).send(
+            read.id, actor_for(account), expected_updated_at=read.updated_at
+        )
+
+    assert caught.value.details["draft_changed"] is True
+    # Not a state the card would patch onto the row: the draft did not move, its text did.
+    assert "send_state" not in caught.value.details
+    assert fake.requests == []
+    db_session.rollback()
+    row = db_session.get(EmailDraft, read.id)
+    assert row is not None
+    assert row.send_state == "bozza"
+    assert row.send_attempted_at is None
+    assert row.google_account_id is None
+    assert row.body_markdown == "Un testo che nessuno ha riletto."
+
+
+def test_the_claim_refuses_a_revision_that_moved_after_the_check(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The read before the claim answers the ordinary case, and the claim is what holds:
+    an edit committed between the two still finds the revision in the claim's own `WHERE`,
+    so the stale text is never claimed, let alone sent."""
+    account = connected_account(db_session)
+    read = _draft(db_session, account)
+    db_session.commit()
+    original = GmailRepository.claim_draft_for_send
+
+    def edited_just_before_the_claim(self: GmailRepository, *args: Any, **kwargs: Any) -> bool:
+        self.session.execute(
+            update(EmailDraft)
+            .where(EmailDraft.id == read.id)
+            .values(subject="Cambiato un attimo prima")
+            .execution_options(synchronize_session=False)
+        )
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(GmailRepository, "claim_draft_for_send", edited_just_before_the_claim)
+    fake = FakeGmail()
+
+    with pytest.raises(Conflict) as caught:
+        send_service(db_session, fake).send(
+            read.id, actor_for(account), expected_updated_at=read.updated_at
+        )
+
+    assert caught.value.details["draft_changed"] is True
+    assert fake.requests == []
+    row = db_session.get(EmailDraft, read.id)
+    assert row is not None
+    db_session.refresh(row)
+    assert row.send_state == "bozza"
+    assert row.send_attempted_at is None
+
+
+def test_the_revision_the_api_answered_is_the_one_a_send_may_carry(
+    db_session: Session,
+) -> None:
+    """The SPA echoes `updated_at` back exactly as the API serialised it, so the claim's
+    equality has to survive that round trip to the microsecond. Through the two schemas
+    the router uses, JSON in between, and after an edit so the revision is one the
+    service wrote rather than the database's default."""
+    account = connected_account(db_session)
+    created = _draft(db_session, account)
+    db_session.commit()
+    _edited_by_someone_else(db_session, account, created.id)
+    reread = draft_service(db_session).get(created.id, actor_for(account))
+    echoed = EmailDraftSend.model_validate(
+        {"updated_at": json.loads(reread.model_dump_json())["updated_at"]}
+    )
+    fake = FakeGmail()
+
+    sent = send_service(db_session, fake).send(
+        created.id, actor_for(account), expected_updated_at=echoed.updated_at
+    )
+
+    assert sent.send_state == "inviato"
+    left = message_from_string(_sent_raw(fake), policy=email_policy).get_body(("plain",))
+    assert left is not None
+    assert "Un testo che nessuno ha riletto." in str(left.get_content())
+
+
+def test_a_revision_without_a_timezone_is_not_a_revision() -> None:
+    """A naive timestamp names no instant, so it can match no row: refused where it is
+    parsed, rather than compared against an aware column and answered with a 500."""
+    with pytest.raises(PydanticValidationError):
+        EmailDraftSend.model_validate({"updated_at": "2026-09-28T10:00:00"})
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        pytest.param(
+            EmailDraftUpdate(body_markdown="Un testo che nessuno ha riletto."), id="an-edit"
+        ),
+        pytest.param(EmailDraftUpdate(), id="an-edit-asking-nothing"),
+    ],
+)
+def test_an_edit_that_read_the_draft_before_the_claim_is_refused_after_it(
+    db_engine: Engine, monkeypatch: pytest.MonkeyPatch, change: EmailDraftUpdate
+) -> None:
+    """The other half of the revision: the edit's own answer. Two real connections,
+    pinned in the one order the claim alone cannot see. The edit reads the draft while it
+    is still a `bozza` and passes the editability check on that copy, the claim commits,
+    and only then does the edit go on, before the send reloads the row to compose it.
+
+    An edit that writes would land on the claimed draft, and the mail would carry text
+    nobody reviewed while the revision the person named still matched. An edit that asks
+    for nothing writes nothing, but answering 200 from the copy it loaded would describe
+    a `bozza` that no longer exists. Both are refused like any edit of a draft in flight,
+    and what leaves is what the person read.
+    """
+    factory = session_factory(db_engine)
+    customer_id: UUID | None = None
+    user_id: UUID | None = None
+    account_id: UUID | None = None
+    try:
+        with factory() as setup:
+            account = connected_account(setup)
+            user_id, account_id = account.user_id, account.id
+            customer = _customer(setup)
+            customer_id = customer.id
+            read = _draft(setup, account, customer)
+            setup.commit()
+            actor = actor_for(account)
+
+        edit_read_the_row = Event()
+        claim_committed = Event()
+        edit_finished = Event()
+        require_editable = EmailDraftService._require_editable
+        claim = GmailRepository.claim_draft_for_send
+        compose = EmailSendService._compose
+        checks = 0
+
+        def check_once_the_claim_committed(self: EmailDraftService, draft: EmailDraft) -> None:
+            # The first check is the edit's cheap one, on the copy it loaded before the
+            # claim: it passes on that copy, and the edit goes on only once the claim is in.
+            nonlocal checks
+            checks += 1
+            if checks == 1:
+                edit_read_the_row.set()
+                assert claim_committed.wait(30), "the claim never committed"
+            require_editable(self, draft)
+
+        def claim_once_the_edit_read_the_row(
+            self: GmailRepository, *args: Any, **kwargs: Any
+        ) -> bool:
+            assert edit_read_the_row.wait(30), "the edit never read the row"
+            return claim(self, *args, **kwargs)
+
+        def compose_once_the_edit_is_done(self: EmailSendService, *args: Any) -> str:
+            # The claim is committed by now: let the edit go on, and compose only after it
+            # has, from the row as it then stands.
+            claim_committed.set()
+            assert edit_finished.wait(30), "the edit never finished"
+            return compose(self, *args)
+
+        monkeypatch.setattr(EmailDraftService, "_require_editable", check_once_the_claim_committed)
+        monkeypatch.setattr(
+            GmailRepository, "claim_draft_for_send", claim_once_the_edit_read_the_row
+        )
+        monkeypatch.setattr(EmailSendService, "_compose", compose_once_the_edit_is_done)
+        fake = FakeGmail()
+
+        def edit() -> str:
+            try:
+                with factory() as session:
+                    try:
+                        answered = draft_service(session).update(read.id, change, actor)
+                    except Conflict as refused:
+                        return f"refused:{refused.details.get('send_state')}"
+                    return f"answered:{answered.send_state}"
+            finally:
+                edit_finished.set()
+
+        def send() -> str:
+            with factory() as session:
+                sent = send_service(session, fake, settings=gmail_settings()).send(
+                    read.id, actor, expected_updated_at=read.updated_at
+                )
+                return sent.send_state
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            edited = pool.submit(edit)
+            sent = pool.submit(send)
+            assert edited.result(timeout=60) == "refused:in_invio"
+            assert sent.result(timeout=60) == "inviato"
+
+        left = message_from_string(_sent_raw(fake), policy=email_policy).get_body(("plain",))
+        assert left is not None
+        assert "è già pronta l’offerta" in str(left.get_content())
+        assert "nessuno ha riletto" not in str(left.get_content())
+        with factory() as check:
+            row = check.get(EmailDraft, read.id)
+            assert row is not None
+            assert row.send_state == "inviato"
+            assert row.body_markdown == BODY
     finally:
         if customer_id is not None and user_id is not None and account_id is not None:
             _cleanup(db_engine, customer_id=customer_id, user_id=user_id, account_id=account_id)
