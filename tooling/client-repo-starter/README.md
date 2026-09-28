@@ -103,9 +103,11 @@ For a genuinely new repository:
    `linear.app/letsrebase` settings, once per client, on the Free plan's second and
    last team slot (check no other client already holds it; a second client's team
    needs a Business-plan upgrade first); then the initiative (if the macroprogetto is
-   new) and the first project (the contract), with `save_project`, the same fields
-   `docs/tracker.md` uses for the product team: a lead, both members if more than one
-   of us is involved, an outcome name that is a verb and the work it does.
+   new) and the first project (the contract), with `save_project`, a lead and the
+   same fields `docs/tracker.md` uses for the product team: an outcome name that is
+   a verb and the work it does. Whoever else the spec names as a member (never
+   assumed to be a fixed pair) is added separately, since `save_project` has no
+   member field for them (`.claude/skills/client-repo-onboarding/SKILL.md` § Step 1).
 2. **Run the script**:
    ```bash
    node tooling/client-repo-starter/new-client-repo.mjs \
