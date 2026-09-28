@@ -74,11 +74,14 @@ const STATUS_LABEL: Record<string, string> = {
  * writes generated documents into, which may be a *different* admin's, or nobody's,
  * regardless of what this page's own `account`/roots editor shows about the viewer's
  * own credential. The server computes it only for an admin actor
- * (`GoogleDriveAccountService._space_storage`), so it is `null` for a collaboratore on
- * the wire already; `choosesWriteFolder` gates rendering it too, the same flag that
- * already hides the write-folder field itself, so the two can never drift apart. Shown
- * above every other state -- disconnected, connected, whatever this admin's own Drive
- * says -- because it answers a question about the space, not about this account.
+ * (`GoogleDriveAccountService.space_storage`) and, for anyone else, leaves the field
+ * genuinely **unset** rather than `null` (`response_model_exclude_unset=True`,
+ * `routers/drive.py`) -- fix round 1's answer to a stale client-side admin flag, read
+ * right after a demotion, showing a false "no folder chosen" instead of nothing: this
+ * page renders the line from `data.space_storage`'s presence, never from
+ * `choosesWriteFolder` alone. Shown above every other state -- disconnected,
+ * connected, whatever this admin's own Drive says -- because it answers a question
+ * about the space, not about this account.
  */
 export function DrivePanel() {
   const health = useDriveHealth()
@@ -93,7 +96,12 @@ export function DrivePanel() {
   const data: DriveHealth = health.data
   if (!data.configured) return <NotConfigured />
 
-  const spaceStorage = choosesWriteFolder ? (
+  // Presence, not `choosesWriteFolder`: the server leaves `space_storage` genuinely
+  // unset for a non-admin (REB-562 fix round 1, Greptile), so this is what a stale
+  // client-side admin flag -- read right after a demotion, before the next refetch --
+  // must not override. `choosesWriteFolder` still governs the write-folder *editor*
+  // below, a client permission decision the server does not need to answer for.
+  const spaceStorage = data.space_storage != null ? (
     <SpaceStorageLine storage={data.space_storage} />
   ) : null
 
@@ -190,20 +198,36 @@ function ActionError({ error }: { error: unknown }) {
 
 /**
  * REB-562. What `DriveHealth.space_storage` answers, read as it comes -- the id of
- * which admin's row is not derived here, only the name and email the server already
- * resolved (`GoogleDriveAccountService._space_storage`, from `DriveRepository.
- * storage_holder`). Rendered only when `choosesWriteFolder` is true (see `DrivePanel`'s
- * own docstring), so `storage` reaching `null` here always means "no write folder in
- * effect", never "the viewer is not an admin".
+ * which admin's row is not derived here, only what the server already resolved
+ * (`GoogleDriveAccountService.space_storage`, from `DriveRepository.storage_holder`).
+ * Rendered only when `DrivePanel` finds the field present at all (never `null` in
+ * practice for the admin actor this component is reached for; see that field's own
+ * docstring for why an admin's response always carries a concrete object).
+ *
+ * **Wording, fix round 1 (CodeRabbit).** `in_effect` never claims a document *will*
+ * land there: `storage_holder`'s own query proves the row is `active` and names a
+ * folder, not that the holder's credential still carries `drive.file` -- a re-consent
+ * that dropped the scope leaves a working, `active` credential that cannot actually
+ * write. So the sentence names the folder as configured ("cartella di scrittura dei
+ * documenti: quella di ...") and only *adds* "al momento non raggiungibile" when
+ * `holder.reachable` says the write itself would fail. And when nothing is in effect,
+ * the sentence does not claim no admin ever chose one -- the row could be sitting on a
+ * revoked or expired account, chosen once and then broken -- only that no write is
+ * available right now.
  */
-function SpaceStorageLine({ storage }: { storage: DriveHealth['space_storage'] }) {
+function SpaceStorageLine({
+  storage,
+}: {
+  storage: NonNullable<DriveHealth['space_storage']>
+}) {
   return (
     <p className="max-w-3xl text-sm text-muted-foreground">
-      {storage
-        ? `I documenti generati vengono salvati nell'account Google Drive di ` +
-          `${storage.holder_name} (${storage.holder_email}).`
-        : 'Nessun amministratore ha scelto la cartella di scrittura Drive: i documenti ' +
-          'generati non possono essere salvati finché uno non la sceglie.'}
+      {storage.in_effect && storage.holder
+        ? `Cartella di scrittura dei documenti: quella di ${storage.holder.name} ` +
+          `(${storage.holder.email})` +
+          (storage.holder.reachable ? '.' : ', al momento non raggiungibile.')
+        : 'Nessuna cartella di scrittura disponibile: i documenti generati non si ' +
+          'possono salvare finché un amministratore non ne collega una.'}
     </p>
   )
 }

@@ -52,13 +52,18 @@ const ACCOUNT = {
   disconnected_at: null,
 }
 
+// `space_storage` is omitted here on purpose, not set to `null`: the server leaves it
+// genuinely unset for a non-admin (REB-562 fix round 1), and `DrivePanel` now renders
+// the space-storage line from the field's *presence*, never from the admin flag alone.
+// Omitting it from these two base fixtures is what keeps every test below that does
+// not care about REB-562 from having to reason about it; the dedicated describe block
+// further down sets it explicitly for both admin states.
 const CONNECTED: DriveHealth = {
   account: ACCOUNT,
   banner: null,
   banner_text: null,
   missing_scopes: [],
   configured: true,
-  space_storage: null,
 }
 
 const NOT_CONFIGURED: DriveHealth = {
@@ -67,7 +72,6 @@ const NOT_CONFIGURED: DriveHealth = {
   banner_text: null,
   missing_scopes: [],
   configured: false,
-  space_storage: null,
 }
 
 const NOT_CONNECTED: DriveHealth = { ...NOT_CONFIGURED, configured: true }
@@ -277,26 +281,54 @@ describe('DrivePanel', () => {
  * (`GoogleDriveAccountService._space_storage`'s own admin gate).
  */
 describe('DrivePanel space storage line (REB-562)', () => {
-  it('names the admin whose account holds the write folder', async () => {
+  it('names the admin whose account holds the write folder, when reachable', async () => {
     vi.mocked(api.GET).mockResolvedValue(
       ok({
         ...CONNECTED,
-        space_storage: { holder_name: 'Bruno', holder_email: 'bruno@acme.it' },
+        space_storage: {
+          in_effect: true,
+          holder: { name: 'Bruno', email: 'bruno@acme.it', reachable: true },
+        },
+      }),
+    )
+    renderPanel()
+
+    // Neutral wording (CodeRabbit, fix round 1): never claims documents ARE saved
+    // there, only that this is the configured folder, and reachable carries no caveat.
+    const line = await screen.findByText(/Cartella di scrittura dei documenti/)
+    expect(line).toHaveTextContent('Cartella di scrittura dei documenti: quella di Bruno (bruno@acme.it).')
+    expect(line).not.toHaveTextContent(/non raggiungibile/)
+  })
+
+  it('adds "non raggiungibile" when the holder cannot actually write there', async () => {
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        ...CONNECTED,
+        space_storage: {
+          in_effect: true,
+          holder: { name: 'Bruno', email: 'bruno@acme.it', reachable: false },
+        },
       }),
     )
     renderPanel()
 
     expect(
-      await screen.findByText(/Bruno \(bruno@acme\.it\)/),
+      await screen.findByText(
+        'Cartella di scrittura dei documenti: quella di Bruno (bruno@acme.it), al momento non raggiungibile.',
+      ),
     ).toBeInTheDocument()
   })
 
-  it('says no write folder is in effect when none is', async () => {
-    vi.mocked(api.GET).mockResolvedValue(ok({ ...CONNECTED, space_storage: null }))
+  it('says no write folder is available when none is in effect, without claiming nobody ever chose one', async () => {
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({ ...CONNECTED, space_storage: { in_effect: false, holder: null } }),
+    )
     renderPanel()
 
     expect(
-      await screen.findByText(/i documenti generati non possono essere salvati/),
+      await screen.findByText(
+        'Nessuna cartella di scrittura disponibile: i documenti generati non si possono salvare finché un amministratore non ne collega una.',
+      ),
     ).toBeInTheDocument()
   })
 
@@ -305,34 +337,43 @@ describe('DrivePanel space storage line (REB-562)', () => {
       ok({
         ...NOT_CONFIGURED,
         configured: true,
-        space_storage: { holder_name: 'Bruno', holder_email: 'bruno@acme.it' },
+        space_storage: {
+          in_effect: true,
+          holder: { name: 'Bruno', email: 'bruno@acme.it', reachable: true },
+        },
       }),
     )
     renderPanel()
 
-    expect(
-      await screen.findByText(/Bruno \(bruno@acme\.it\)/),
-    ).toBeInTheDocument()
+    expect(await screen.findByText(/Bruno \(bruno@acme\.it\)/)).toBeInTheDocument()
     expect(
       await screen.findByRole('link', { name: 'Collega Google Drive' }),
     ).toBeInTheDocument()
   })
 
-  it('shows a collaboratore neither line, even while an admin holds the folder', async () => {
+  it('shows a collaboratore neither line: the field is absent from their response entirely', async () => {
     mockAuth.isAdmin = false
-    vi.mocked(api.GET).mockResolvedValue(
-      ok({
-        ...CONNECTED,
-        space_storage: { holder_name: 'Bruno', holder_email: 'bruno@acme.it' },
-      }),
-    )
+    // No `space_storage` key at all -- the server never sends one for a non-admin
+    // actor (REB-562 fix round 1); `CONNECTED` already omits it.
+    vi.mocked(api.GET).mockResolvedValue(ok(CONNECTED))
     renderPanel()
 
     await screen.findByText('ada@acme.it')
-    expect(screen.queryByText(/Bruno/)).not.toBeInTheDocument()
-    expect(
-      screen.queryByText(/i documenti generati non possono essere salvati/),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/Cartella di scrittura dei documenti/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Nessuna cartella di scrittura/)).not.toBeInTheDocument()
+  })
+
+  it('renders nothing from a stale admin flag when the server already left the field unset, rather than a false "nessuna cartella"', async () => {
+    // Greptile P2: a demotion the client has not refetched yet must not make this
+    // component invent a state the server never sent. `choosesWriteFolder` (from
+    // `useIsAdmin`) stays `true` here on purpose -- the response is what changed.
+    mockAuth.isAdmin = true
+    vi.mocked(api.GET).mockResolvedValue(ok(CONNECTED))
+    renderPanel()
+
+    await screen.findByText('ada@acme.it')
+    expect(screen.queryByText(/Cartella di scrittura dei documenti/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Nessuna cartella di scrittura/)).not.toBeInTheDocument()
   })
 })
 

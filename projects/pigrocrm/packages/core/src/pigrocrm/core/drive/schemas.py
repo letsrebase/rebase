@@ -84,25 +84,51 @@ class GoogleDriveAccountRead(BaseModel):
 DriveBannerReason = Literal["revoked", "expiring", "expired", "scope_missing"] | None
 
 
+class GoogleDriveSpaceStorageHolder(BaseModel):
+    """Which admin's account holds the space's write folder, named for the admin
+    reading the Drive page rather than left for them to ask a colleague or wait for a
+    409 `StorageNotConfigured` on the first generated document.
+
+    `reachable` is not `DriveRepository.storage_account`'s own `status == 'active'`
+    restated: that query proves the *row*, never the two Drive scopes
+    (`DRIVE_SCOPE_READONLY`, `DRIVE_SCOPE_FILE`). An active grant can still be missing
+    `drive.file` -- a re-consent that dropped it, still `active` because the credential
+    itself is fine -- which is a working credential that cannot actually write; `usable`
+    and `_verify_storage_folder` both refuse exactly that state. `reachable` is
+    `DRIVE_SCOPE_FILE in account.scopes_granted`, computed fresh on every call, so the
+    Drive page never claims a document generated right now would land in a folder the
+    holder's own credential can no longer reach (REB-562 fix round 1, CodeRabbit)."""
+
+    name: str
+    email: str
+    reachable: bool
+
+
 class GoogleDriveSpaceStorage(BaseModel):
-    """Whose account holds the space's one write folder in effect -- what
+    """The space's write folder as of this call, for an admin actor only -- what
     `DriveRepository.storage_holder` resolves for every document the space generates
-    (REB-562), named for the admin reading the Drive page rather than left for them to
-    ask a colleague or wait for a 409 `StorageNotConfigured` on the first generated
-    document.
+    (REB-562).
 
-    `DriveHealth.space_storage` is this or `None`, and `None` there carries two
-    meanings on purpose, never told apart on the wire: no admin's row currently names a
-    write folder, or the viewer is not an admin. The write folder is chosen and read
-    from an admin's row only (`set_roots`'s `require_admin`, `storage_holder`'s own
-    join), so a non-admin has no decision to make about it and no name to learn from it
-    either -- `GoogleDriveAccountService.health` computes this field only for an admin
-    actor, the same gate `set_roots` already applies to *naming* this folder, and the
-    Drive page renders the line only behind the same admin check that already hides the
-    write-folder field itself (`DrivePanel`, REB-457)."""
+    Always a concrete answer for an admin, never `None`: `in_effect` is whether
+    `DriveRepository.storage_account` currently finds a row (an admin's, active, naming
+    a folder), and `holder` is set if and only if `in_effect` is `True`. A collaboratore
+    gets neither -- `GoogleDriveAccountService.space_storage` returns `None` for them,
+    and `DriveHealth.space_storage`'s own docstring is where that `None` actually goes:
+    the field is left **unset** on the wire, not carried as `null`, which is what fix
+    round 1 replaced a genuinely ambiguous `None` with (Greptile: a collaboratore's
+    absence and "no admin has chosen a folder yet" must never be the same value).
 
-    holder_name: str
-    holder_email: str
+    `holder`'s own default exists only so `in_effect=True`'s branch can omit it in
+    principle; the `in_effect=False` branch (`GoogleDriveAccountService.space_storage`)
+    passes `holder=None` explicitly rather than relying on it. `response_model_
+    exclude_unset=True` (`routers/drive.py`) walks into nested models, not only the top
+    one, so a `holder` left at its default would be dropped from the JSON the same way
+    an unset `space_storage` is -- an admin's "nothing is in effect" must carry the key
+    as `null`, not omit it, or it would read on the wire exactly like a non-admin's
+    absent field."""
+
+    in_effect: bool
+    holder: GoogleDriveSpaceStorageHolder | None = None
 
 
 class DriveHealth(BaseModel):
@@ -116,15 +142,61 @@ class DriveHealth(BaseModel):
     opposed to `account.storage_folder_id`, which is only the viewer's own row and may
     say nothing about what `DriveRepository.storage_account` actually resolves (an
     admin who has not connected Drive at all, or whose own folder lost the race to a
-    more recently updated admin's). See `GoogleDriveSpaceStorage`'s own docstring for
-    what its `None` means."""
+    more recently updated admin's).
+
+    Its default (`None`) exists only so the field can be left **unset** for a
+    non-admin actor -- never so it can be sent as `null`. `drive_health`, this module's
+    own builder function, is the one place a `DriveHealth` is constructed, and it never
+    passes `space_storage=None` explicitly; every other caller goes through it rather
+    than the bare constructor. The route (`routers/drive.py`) then needs
+    `response_model_exclude_unset=True`, or FastAPI serializes the default as `null`
+    same as an explicit one -- confirmed empirically against this FastAPI/Pydantic pair,
+    since `model_fields_set` is what `exclude_unset` reads, not the value. The result:
+    "no folder is in effect" (`{"in_effect": false}`) and "you are not an admin" (the
+    key absent) are never the same JSON value, which is what a stale client-side admin
+    flag after a demotion depends on -- the Drive page renders the line only when the
+    key is present at all, never from that cached flag alone (`DrivePanel`)."""
 
     account: GoogleDriveAccountRead | None
     banner: DriveBannerReason
     banner_text: str | None
     missing_scopes: list[str]
     configured: bool
-    space_storage: GoogleDriveSpaceStorage | None
+    space_storage: GoogleDriveSpaceStorage | None = None
+
+
+def drive_health(
+    *,
+    account: GoogleDriveAccountRead | None,
+    banner: DriveBannerReason,
+    banner_text: str | None,
+    missing_scopes: list[str],
+    configured: bool,
+    space_storage: GoogleDriveSpaceStorage | None,
+) -> DriveHealth:
+    """Builds a `DriveHealth`, the one place that does -- `GoogleDriveAccountService.
+    health` and `routers/drive.py`'s own `not gmail_configured` branch both call this
+    rather than the bare constructor. `space_storage` is passed to `DriveHealth` only
+    when it is not `None`, which is what leaves the field genuinely unset (not `null`)
+    for a non-admin actor; see that class's own docstring for why the distinction is
+    load-bearing and why the route must also carry `response_model_exclude_unset=True`.
+    """
+    if space_storage is None:
+        return DriveHealth(
+            account=account,
+            banner=banner,
+            banner_text=banner_text,
+            missing_scopes=missing_scopes,
+            configured=configured,
+        )
+    return DriveHealth(
+        account=account,
+        banner=banner,
+        banner_text=banner_text,
+        missing_scopes=missing_scopes,
+        configured=configured,
+        space_storage=space_storage,
+    )
 
 
 class DriveRootsUpdate(BaseModel):
