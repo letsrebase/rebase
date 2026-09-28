@@ -10,7 +10,7 @@ TEAM_REQUEST_STATE_LABELS = {"nuova": "Nuova", "contattata": "Contattata", "chiu
 TEAM_ORIGIN_LABELS = {"pubblico": "Pubblico", "cloud": "Cloud", "admin": "Admin"}
 TALENT_ANSWER_LABELS = {"si": "Sì", "no": "No"}
 # A talent who has the availability mail and has not answered yet (REB-517); one who was
-# never mailed has no word at all, and the page shows «—».
+# never mailed has no word at all, and the page shows the empty cell's dash.
 TALENT_WAITING_LABEL = "In attesa"
 
 # The talent's «Verificato» pill in «Talenti» and on their page (REB-518): the vetted flag

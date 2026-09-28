@@ -415,7 +415,7 @@ describe('the talents’ availability on the request’s page (REB-517, spec § 
     expect(calls).toEqual(['POST /api/hub/team/requests/r1/contact?only_silent=true'])
   })
 
-  it('shows the answers with their time, «In attesa» for the silent and «—» for who was never mailed', async () => {
+  it('shows the answers with their time, «In attesa» for the silent and a dash for who was never mailed', async () => {
     serveRequest(
       {
         ...REQUEST,

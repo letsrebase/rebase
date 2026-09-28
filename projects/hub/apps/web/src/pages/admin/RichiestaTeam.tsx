@@ -54,7 +54,8 @@ function teamBands(economia: AdminTeamProposal['economia']): string {
 }
 
 /** The answer to the availability mail and when it came (D1); «In attesa» for a talent
- *  who has the mail and has not answered, «—» for one who was never mailed. */
+ *  who has the mail and has not answered, the empty cell's dash for one who was never
+ *  mailed. */
 function answer(talent: TeamRequestTalent): string {
   if (talent.risposta === null) return talent.mail_sent_at ? TALENT_WAITING_LABEL : '—'
   const label = TALENT_ANSWER_LABELS[talent.risposta] ?? talent.risposta
