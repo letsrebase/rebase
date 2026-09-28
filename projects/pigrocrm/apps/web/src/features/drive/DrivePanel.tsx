@@ -13,6 +13,7 @@ import {
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { toProblem } from '@/lib/api'
+import { useIsAdmin } from '@/lib/auth'
 import { formatInstant } from './instants'
 import {
   DRIVE_OAUTH_START,
@@ -55,11 +56,25 @@ const STATUS_LABEL: Record<string, string> = {
  *    from exactly that state, and the folder list is the setting they came to fix --
  *    and `expiring` is a working credential with a date attached, where hiding the
  *    editor would remove a control over a warning about next week.
+ *
+ * **Open to a collaboratore, one field short (REB-457).** The credential on this page
+ * is the viewer's own (`google_drive_accounts.user_id`), and connecting, disconnecting
+ * and the read roots all act on that row alone, under `require_write`: a collaboratore
+ * gets them as an admin does. The write folder is different. `DriveRepository.
+ * storage_account` picks the space's one place for generated documents from *every*
+ * user's row -- the most recently updated `active` one that names a folder -- so a
+ * folder a collaboratore chose would receive every document the space generates, an
+ * automation's included. That field is therefore an admin's: a collaboratore does not
+ * see it, is told who chooses it, and their «Salva» omits `storage_folder_id`, which the
+ * `PATCH` reads as "leave it alone" (`DriveRootsUpdate`). The service itself still
+ * accepts that field from any writer; REB-555 closes that there.
  */
 export function DrivePanel() {
   const health = useDriveHealth()
   const disconnect = useDisconnectDrive()
   const [confirmOpen, setConfirmOpen] = useState(false)
+  // Read before the early returns below: a hook is never conditional.
+  const choosesWriteFolder = useIsAdmin()
 
   if (health.isError) return <QueryErrorBanner error={health.error} />
   if (health.isPending || !health.data) return <p className="text-muted-foreground">Caricamento…</p>
@@ -69,7 +84,7 @@ export function DrivePanel() {
 
   const account = data.account
   if (account === null || account.status === 'disconnected') {
-    return <NotConnected account={account} />
+    return <NotConnected account={account} choosesWriteFolder={choosesWriteFolder} />
   }
 
   return (
@@ -103,7 +118,7 @@ export function DrivePanel() {
       {/* In every connected state, banner or not: see the component docstring. The
           server accepts this PATCH from a revoked or expired credential, so the panel
           must not be the thing that refuses it. */}
-      <RootsEditor account={account} />
+      <RootsEditor account={account} choosesWriteFolder={choosesWriteFolder} />
 
       <div className="space-y-2 border-t pt-4">
         <Button variant="destructive" onClick={() => setConfirmOpen(true)}>
@@ -116,8 +131,10 @@ export function DrivePanel() {
           <DialogHeader>
             <DialogTitle>Scollegare Google Drive?</DialogTitle>
             <DialogDescription>
-              La CRM non potrà più leggere le cartelle configurate né scrivere nella
-              cartella di archiviazione, finché non ricolleghi l&apos;account.
+              {choosesWriteFolder
+                ? 'La CRM non potrà più leggere le cartelle configurate né scrivere nella ' +
+                  "cartella di archiviazione, finché non ricolleghi l'account."
+                : "La CRM non potrà più leggere le cartelle configurate, finché non ricolleghi l'account."}
             </DialogDescription>
           </DialogHeader>
           <ActionError error={disconnect.error} />
@@ -162,7 +179,13 @@ function NotConfigured() {
   )
 }
 
-function NotConnected({ account }: { account: GoogleDriveAccountRead | null }) {
+function NotConnected({
+  account,
+  choosesWriteFolder,
+}: {
+  account: GoogleDriveAccountRead | null
+  choosesWriteFolder: boolean
+}) {
   return (
     <section className="max-w-3xl space-y-3">
       <h2 className="text-lg font-medium">Nessun account Google Drive collegato</h2>
@@ -173,8 +196,10 @@ function NotConnected({ account }: { account: GoogleDriveAccountRead | null }) {
         </p>
       ) : null}
       <p className="text-muted-foreground">
-        Collegando Google Drive potrai indicare quali cartelle la CRM può leggere e in
-        quale può scrivere i documenti generati.
+        {choosesWriteFolder
+          ? 'Collegando Google Drive potrai indicare quali cartelle la CRM può leggere e in ' +
+            'quale può scrivere i documenti generati.'
+          : 'Collegando Google Drive potrai indicare quali cartelle la CRM può leggere.'}
       </p>
       <Button asChild>
         <a href={DRIVE_OAUTH_START}>Collega Google Drive</a>
@@ -207,8 +232,17 @@ function newRow(id = ''): RootRow {
  * the one it may write generated documents into. Each folder id is validated against
  * the same pattern the server enforces (`DRIVE_ID_PATTERN`) before «Salva» is even
  * enabled, so a typo is caught here rather than round-tripping to a 422.
+ *
+ * `choosesWriteFolder` is false for a collaboratore: the write folder is the space's,
+ * not theirs (see `DrivePanel`), so its field is not drawn and «Salva» does not name it.
  */
-function RootsEditor({ account }: { account: GoogleDriveAccountRead }) {
+function RootsEditor({
+  account,
+  choosesWriteFolder,
+}: {
+  account: GoogleDriveAccountRead
+  choosesWriteFolder: boolean
+}) {
   const setRoots = useSetDriveRoots()
   const [rows, setRows] = useState<RootRow[]>(() =>
     account.root_folder_ids.length > 0 ? account.root_folder_ids.map((id) => newRow(id)) : [newRow()],
@@ -219,7 +253,8 @@ function RootsEditor({ account }: { account: GoogleDriveAccountRead }) {
   const nonEmptyIds = trimmedRows.filter((row) => row.id.length > 0)
   const invalidRootIds = nonEmptyIds.filter((row) => !DRIVE_ID_PATTERN.test(row.id))
   const trimmedStorageId = storageFolderId.trim()
-  const storageInvalid = trimmedStorageId.length > 0 && !DRIVE_ID_PATTERN.test(trimmedStorageId)
+  const storageInvalid =
+    choosesWriteFolder && trimmedStorageId.length > 0 && !DRIVE_ID_PATTERN.test(trimmedStorageId)
 
   const canSave =
     nonEmptyIds.length > 0 && invalidRootIds.length === 0 && !storageInvalid && !setRoots.isPending
@@ -237,11 +272,16 @@ function RootsEditor({ account }: { account: GoogleDriveAccountRead }) {
   }
 
   function save() {
+    const root_folder_ids = nonEmptyIds.map((row) => row.id)
     setRoots.mutate(
-      {
-        root_folder_ids: nonEmptyIds.map((row) => row.id),
-        storage_folder_id: trimmedStorageId.length > 0 ? trimmedStorageId : null,
-      },
+      // Omitted, not `null`, for a collaboratore: `null` would clear the folder, and
+      // absent is what leaves it as it is.
+      choosesWriteFolder
+        ? {
+            root_folder_ids,
+            storage_folder_id: trimmedStorageId.length > 0 ? trimmedStorageId : null,
+          }
+        : { root_folder_ids },
       { onSuccess: () => toast.success('Cartelle Drive salvate') },
     )
   }
@@ -300,27 +340,34 @@ function RootsEditor({ account }: { account: GoogleDriveAccountRead }) {
         </Button>
       </div>
 
-      <div className="space-y-1">
-        <Label htmlFor="drive-storage-folder">Cartella di scrittura</Label>
-        <Input
-          id="drive-storage-folder"
-          aria-invalid={storageInvalid}
-          placeholder="ID cartella Drive (facoltativo)"
-          value={storageFolderId}
-          onChange={(event) => setStorageFolderId(event.target.value)}
-          className="max-w-md"
-        />
-        <p className="text-sm text-muted-foreground">
-          La cartella in cui la CRM scrive i documenti che genera. Lasciala vuota per non
-          scrivere alcun documento.
-        </p>
-        {storageInvalid ? (
-          <p className="text-sm text-destructive">
-            L&apos;ID non è valido: deve contenere solo lettere, cifre, «-» e «_», tra 10
-            e 128 caratteri.
+      {choosesWriteFolder ? (
+        <div className="space-y-1">
+          <Label htmlFor="drive-storage-folder">Cartella di scrittura</Label>
+          <Input
+            id="drive-storage-folder"
+            aria-invalid={storageInvalid}
+            placeholder="ID cartella Drive (facoltativo)"
+            value={storageFolderId}
+            onChange={(event) => setStorageFolderId(event.target.value)}
+            className="max-w-md"
+          />
+          <p className="text-sm text-muted-foreground">
+            La cartella in cui la CRM scrive i documenti che genera. Lasciala vuota per non
+            scrivere alcun documento.
           </p>
-        ) : null}
-      </div>
+          {storageInvalid ? (
+            <p className="text-sm text-destructive">
+              L&apos;ID non è valido: deve contenere solo lettere, cifre, «-» e «_», tra 10
+              e 128 caratteri.
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          La cartella in cui la CRM scrive i documenti generati è una sola per tutto lo
+          spazio: la sceglie un amministratore.
+        </p>
+      )}
 
       <div className="space-y-2">
         <Button onClick={save} disabled={!canSave}>

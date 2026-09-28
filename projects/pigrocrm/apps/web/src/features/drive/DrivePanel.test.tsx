@@ -6,6 +6,14 @@ import { DrivePanel } from './DrivePanel'
 import type { DriveHealth } from './queries'
 import { api } from '@/lib/api'
 
+// REB-457: the panel is open to a collaboratore too, who manages their own Drive but not
+// the space's write folder. Every test below runs as an admin unless it says otherwise.
+const mockAuth = vi.hoisted(() => ({ isAdmin: true }))
+vi.mock('@/lib/auth', () => ({
+  useIsAdmin: () => mockAuth.isAdmin,
+  useCanWrite: () => true,
+}))
+
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
   return {
@@ -72,6 +80,7 @@ function renderPanel() {
 }
 
 beforeEach(() => {
+  mockAuth.isAdmin = true
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.POST).mockReset()
   vi.mocked(api.PATCH).mockReset()
@@ -108,6 +117,8 @@ describe('DrivePanel', () => {
       await screen.findByRole('link', { name: 'Collega Google Drive' }),
     ).toHaveAttribute('href', '/api/drive/oauth/start')
     expect(screen.queryByText(/non è configurato su questa installazione/)).not.toBeInTheDocument()
+    // An admin also chooses the space's write folder, and is told so up front.
+    expect(screen.getByText(/scrivere i documenti generati/)).toBeInTheDocument()
   })
 
   it('renders the error banner instead of an empty panel when the request failed', async () => {
@@ -169,6 +180,7 @@ describe('DrivePanel', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Scollega Drive' }))
     expect(screen.getByText('Scollegare Google Drive?')).toBeInTheDocument()
+    expect(screen.getByText(/cartella di archiviazione/)).toBeInTheDocument()
     expect(api.DELETE).not.toHaveBeenCalled()
 
     // Radix marks `document.body` `pointer-events: none` while the dialog is open (its
@@ -251,5 +263,76 @@ describe('DrivePanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(await screen.findByText('ID cartella non valido')).toBeInTheDocument()
+  })
+})
+
+/**
+ * REB-457. `DriveRepository.storage_account` picks the space's one write folder from
+ * every user's row (the most recently updated `active` row that names one), so a folder
+ * a collaboratore chose would receive every document the space generates. That field
+ * stays an admin's; the rest of the panel (connect, the read roots, disconnect) is the
+ * collaboratore's own credential and works for them as it does for an admin.
+ */
+describe('DrivePanel for a collaboratore', () => {
+  beforeEach(() => {
+    mockAuth.isAdmin = false
+  })
+
+  it('shows their own account and read roots, and no write folder field', async () => {
+    vi.mocked(api.GET).mockResolvedValue(ok(CONNECTED))
+    renderPanel()
+
+    expect(await screen.findByText('ada@acme.it')).toBeInTheDocument()
+    expect(screen.getByDisplayValue(ROOT_ID_1)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Aggiungi cartella' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Salva' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Scollega Drive' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Cartella di scrittura')).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue(STORAGE_ID)).not.toBeInTheDocument()
+    expect(screen.getByText(/la sceglie un amministratore/)).toBeInTheDocument()
+  })
+
+  it('saves the read roots without naming the write folder, so the server leaves it alone', async () => {
+    vi.mocked(api.GET).mockResolvedValue(ok(CONNECTED))
+    vi.mocked(api.PATCH).mockResolvedValue(
+      ok({ ...ACCOUNT, root_folder_ids: [ROOT_ID_1, ROOT_ID_2] }),
+    )
+    renderPanel()
+
+    await screen.findByDisplayValue(ROOT_ID_1)
+    await userEvent.click(screen.getByRole('button', { name: 'Aggiungi cartella' }))
+    const idInputs = screen.getAllByPlaceholderText('ID cartella Drive')
+    await userEvent.type(idInputs[1]!, ROOT_ID_2)
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+    await waitFor(() => expect(api.PATCH).toHaveBeenCalled())
+    const body = (vi.mocked(api.PATCH).mock.calls[0]?.[1] as unknown as { body: object }).body
+    expect(body).toEqual({ root_folder_ids: [ROOT_ID_1, ROOT_ID_2] })
+    expect(body).not.toHaveProperty('storage_folder_id')
+  })
+
+  it('offers the consent flow without promising a write folder', async () => {
+    vi.mocked(api.GET).mockResolvedValue(ok(NOT_CONNECTED))
+    renderPanel()
+
+    expect(
+      await screen.findByRole('link', { name: 'Collega Google Drive' }),
+    ).toHaveAttribute('href', '/api/drive/oauth/start')
+    expect(screen.getByText(/quali cartelle la CRM può leggere/)).toBeInTheDocument()
+    expect(screen.queryByText(/scrivere i documenti generati/)).not.toBeInTheDocument()
+  })
+
+  it('disconnects their own Drive, and the confirmation names no write folder', async () => {
+    vi.mocked(api.GET).mockResolvedValue(ok(CONNECTED))
+    vi.mocked(api.DELETE).mockResolvedValue(ok(undefined))
+    renderPanel()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Scollega Drive' }))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).queryByText(/cartella di archiviazione/)).not.toBeInTheDocument()
+
+    const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.Never })
+    await user.click(within(dialog).getByRole('button', { name: 'Scollega Drive' }))
+    await waitFor(() => expect(api.DELETE).toHaveBeenCalledWith('/api/drive/account'))
   })
 })

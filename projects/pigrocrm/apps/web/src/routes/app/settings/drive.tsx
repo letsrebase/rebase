@@ -10,6 +10,9 @@ import { messaggioEsito, riprovaEsito } from '@/features/drive/esito'
  * it up in a fixed table rather than rendering it, so a link somebody else crafted
  * cannot put a sentence of their choosing on this page.
  *
+ * An admin and a collaboratore both land here (REB-457): the Drive credential is per CRM
+ * user, so a collaboratore reads their own consent's outcome above their own panel.
+ *
  * Exports nothing but `Route`, on purpose: a route file that exports anything else opts
  * that route out of the router plugin's automatic code splitting, with a
  * `routeTree.gen.ts` warning as the only sign.

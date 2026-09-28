@@ -9,6 +9,7 @@ import {
   ChevronsUpDown,
   Clock,
   Handshake,
+  HardDrive,
   KeyRound,
   LayoutDashboard,
   LogOut,
@@ -134,10 +135,12 @@ const GROUPS = [
  * the tabs of one page would be a rail of settings and nothing else.
  *
  * Every service behind these tabs calls `actor.require_admin` on every write except
- * one: `profilo` (`ProfilePanel`) is a person's own preferences, and `SettingsLayout`
+ * two: `profilo` (`ProfilePanel`) is a person's own preferences, and `SettingsLayout`
  * exempts that one tab from the page's own admin gate so a non-admin who opens it
  * directly -- from the weekly digest's opt-out link, spec 2026-09-16 §3.6 -- can reach
- * it even though this sidebar link stays admin-only, same as the rest of the group.
+ * it even though this sidebar link stays admin-only, same as the rest of the group. And
+ * `drive` is a collaboratore's own Drive credential (REB-457); they reach it, like the
+ * profile, from the profile menu at the foot of the sidebar.
  */
 /**
  * One literal path per settings tab. `satisfies Record<SettingsTabValue, ...>` is what
@@ -619,6 +622,19 @@ export function AppShell({
                   Profilo
                 </Link>
               </DropdownMenuItem>
+              {/* «Google Drive», for a collaboratore (REB-457): their Drive is their own
+                  credential, as the profile is, and the Drive tab is where every consent
+                  outcome lands. Read from the tab table, so a readonly person, whose
+                  consent the service refuses, is not offered it. An admin keeps it where
+                  it was, in the sidebar's «Impostazioni» group. */}
+              {!isAdmin && user !== null && canSeeSettingsTab(user.ruolo, 'drive') && (
+                <DropdownMenuItem asChild>
+                  <Link to={SETTINGS_PATHS.drive}>
+                    <HardDrive className="size-4" />
+                    Google Drive
+                  </Link>
+                </DropdownMenuItem>
+              )}
               {isAdmin && (
                 <DropdownMenuItem asChild>
                   <Link to="/app/settings/space">
