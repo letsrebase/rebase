@@ -77,8 +77,10 @@ def propose_in_a_slot(
 ) -> TeamProposalRead:
     """A proposal behind the switch, a slot of the process and the day's room, in that
     order: the public page's and the cloud's (REB-519), which share the one semaphore
-    and the one daily cap (spec § 5). The day is the builder's clock's (`get_clock`), the
-    one the new row is stamped with, so the count and the stamp agree on midnight."""
+    and the one daily cap (spec § 5). The builder's clock (`get_clock`) is read once:
+    the cap counts the day of that instant and the new row is stamped with it, so a call
+    to Claude that ends past midnight in Rome is not counted on one day and written on
+    the next (REB-581)."""
     # Before the caps: an environment with the builder off says so, not «Troppe
     # richieste», whatever the day's count.
     if not settings.team_builder_enabled or builder.llm is None:
@@ -87,8 +89,9 @@ def propose_in_a_slot(
         _log.info("team builder: every proposal slot is taken")
         raise TeamBuilderBusy(BUSY_SENTENCE)
     try:
-        require_daily_room(session, settings, now=builder.now())
-        return builder.propose(data, origine=origine, user_id=user_id)
+        now = builder.now()
+        require_daily_room(session, settings, now=now)
+        return builder.propose(data, origine=origine, user_id=user_id, now=now)
     finally:
         slots.release()
 

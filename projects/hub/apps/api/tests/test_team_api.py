@@ -322,6 +322,36 @@ def test_public_proposal_is_503_when_the_daily_cap_is_reached(
     assert recording.requests == []
 
 
+class _CrossingMidnight:
+    """A clock at 23:59:59 in Rome on its first read and at 00:00:01 on every later one,
+    as the wall clock is across a call to Claude that ends past midnight."""
+
+    def __init__(self) -> None:
+        self.reads: list[datetime] = []
+
+    def __call__(self) -> datetime:
+        now = JUST_AFTER_MIDNIGHT if self.reads else JUST_AFTER_MIDNIGHT - timedelta(seconds=2)
+        self.reads.append(now)
+        return now
+
+
+def test_public_proposal_is_stamped_at_the_instant_the_daily_cap_counted(
+    client: TestClient, team: Session
+) -> None:
+    # Read twice, the cap would count 28 September and the row be written on the 29th
+    # (REB-581): the route reads the clock once, and both go by that instant.
+    clock = _CrossingMidnight()
+    client.app.dependency_overrides[get_clock] = lambda: clock  # type: ignore[attr-defined]
+    _talent(team)
+    _llm(client, RecordingCall([proposal_response()]))
+
+    assert _propose(client).status_code == 200
+
+    [row] = team.scalars(select(TeamProposal)).all()
+    assert clock.reads == [JUST_AFTER_MIDNIGHT - timedelta(seconds=2)]
+    assert row.created_at == clock.reads[0]
+
+
 def test_public_proposal_is_502_when_claude_is_down(client: TestClient, team: Session) -> None:
     _talent(team)
     _settings(client, team_builder_concurrency=1)
