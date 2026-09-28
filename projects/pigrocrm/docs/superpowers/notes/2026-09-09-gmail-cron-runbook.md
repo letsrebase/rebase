@@ -44,7 +44,11 @@ Quattro dettagli della riga non sono decorativi:
   (vedi `Dockerfile.api` e il §5 del README).
 
 Check it at once, without waiting for the quarter of an hour, by running the same line by
-hand: it prints one line per connected mailbox and exits 0.
+hand: it prints one line per connected mailbox. It exits `0` when every line went to
+`stdout`, which means every mailbox's cycle ran or found another one already running. It
+exits `1` when at least one line went to `stderr`: a mailbox that could not be
+synchronised, the registry or a space that could not be read, or no connected mailbox
+found. Every line is printed either way.
 
 ```
 cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync; echo "uscita: $?"
@@ -111,9 +115,17 @@ Le frasi che si possono leggere qui, e cosa fare:
 | `Gmail non è configurato su questa installazione` | Mancano le variabili `PIGROCRM_GOOGLE_*` | `.env` + riavvio dell'API, oppure togliere il cron |
 | `elenco dei messaggi fallita (429/RESOURCE_EXHAUSTED)` | Quota Gmail esaurita per ora | Niente: il ciclo dopo riprende da dove era arrivato |
 
-An *unforeseen* error no longer prints its traceback (REB-404): with the spaces in the same
-run, a stack would stop the walk at the first space that produced it. It is `saltato`
-with the exception's type on that mailbox's line instead, exit 1, and the run goes on.
+An *unforeseen* error in a mailbox's cycle no longer stops the run (REB-404): with the
+spaces in the same run, a stack would stop the walk at the first space that produced it.
+It is `saltato` with the exception's type on that mailbox's line, on `stderr`, and the
+**frames of its traceback** follow that line on `stderr` too, which makes it exit 1. Both
+land in the cron's own log, `/var/log/pigrocrm-gmail-sync.log`, not in the API's logs:
+the cycle runs in the `pigrocrm` process that `docker compose exec` starts, not in
+uvicorn. The frames say where it broke; the exception's message is left out, because a
+psycopg or SQLAlchemy message can carry the database URL or a statement's parameters (a
+correspondent's address), which this log promises never to hold. To read the message,
+run the line by hand in a shell inside the container with the failing space's database
+at hand.
 
 Il log non contiene mai un oggetto, un indirizzo di un corrispondente o un corpo di
 messaggio: quello che il comando stampa sono i contatori di `SyncReport`, dove non c'è
@@ -142,22 +154,30 @@ whatever `PIGROCRM_ROOT_SLUG` says, and the slug for a space.
 
 ```
 2026-09-28T15:45:03+00:00 gmail-sync root io@example.it: 0 messaggi nuovi, 4 già presenti, 2 conversazioni lette, 0 collegamenti, 0 invii riconciliati (2 query)
-2026-09-28T15:45:04+00:00 gmail-sync studio-rossi titolare@studio-rossi.example: 3 messaggi nuovi, 0 già presenti, 3 conversazioni lette, 3 collegamenti, 0 invii riconciliati (1 query)
+2026-09-28T15:45:04+00:00 gmail-sync studio-rossi owner@studio-rossi.example: 3 messaggi nuovi, 0 già presenti, 3 conversazioni lette, 3 collegamenti, 0 invii riconciliati (1 query)
 ```
 
 A space with no connected mailbox prints nothing: most never connect one, and a line for
 each of them every quarter of an hour would bury the lines about the mailboxes that exist.
-One line never stops the next. The exit status is `0` when every line went to `stdout` and
-`1` when at least one went to `stderr`; every line is printed either way.
+One line never stops the next. The exit status is the one given in §1: `0` when every line
+went to `stdout`, `1` when at least one went to `stderr`.
+
+«nessuna casella Google collegata» is printed only when the registry and every space
+were read and none had a connected mailbox. When the registry or a space could not be
+read, the mailbox may be in the part that was not, so its own line is all the run says.
+For the same reason an `--email` that matched nothing while a space was unread reads
+`… non è fra le caselle degli spazi letti (…): uno spazio non è stato letto, e potrebbe
+essere lì` rather than `… non è una casella collegata`.
 
 | Line, on `stderr` | What happened | What to do |
 | --- | --- | --- |
-| `studio-rossi titolare@…: <a sentence from the table above>` | That mailbox, in that space, could not be synchronised, for the reason the sentence gives. The mailboxes after it were | As in the table, in that space: its titolare reconnects from Impostazioni → Gmail |
+| `studio-rossi owner@…: <a sentence from the table above>` | That mailbox, in that space, could not be synchronised, for the reason the sentence gives. The mailboxes after it were | As in the table, in that space: the mailbox's owner reconnects it from «Impostazioni → Gmail» |
 | `studio-rossi: saltato (ProgrammingError)` | That space's schema is behind the image. **This command migrates nothing**, like the digest: only `pigrocrm ensure-space-defaults`, in the API image's CMD, migrates a space (ORB-189) | Restart the API, which migrates it, then run the line by hand |
-| `studio-rossi titolare@…: saltato (ProgrammingError)` | The same, noticed inside that mailbox's cycle rather than before it | As above |
+| `studio-rossi owner@…: saltato (ProgrammingError)`, then the frames of its traceback | The same, noticed inside that mailbox's cycle rather than before it | As above |
 | `studio-rossi: saltato (OperationalError)` | That space's database does not answer. The other spaces were synchronised | Check that database |
-| `studio-rossi titolare@…: saltato (…)` with another type | A failure nobody foresaw, named by its type and never its text (a psycopg error can carry the URL, password included) | Run the line by hand, then read the API's own logs for that space |
+| `studio-rossi owner@…: saltato (…)` with another type, then the frames of its traceback | A failure nobody foresaw, named by its type and never its text (a psycopg error can carry the URL, password included). The frames right below it, in this same log, say where it broke | Read the frames here; for the message, run the line by hand inside the container |
 | `registro degli spazi non raggiungibile (…)` | The registry does not answer: no space was visited, the root was | Check the database and the `PIGROCRM_*` of the `.env`, then run the line by hand |
+| `… non è fra le caselle degli spazi letti (…): uno spazio non è stato letto, e potrebbe essere lì` | `--email` matched no mailbox among the installations read, and at least one was not read | Fix what the `saltato` or `registro` line above says, then run the line again |
 
 ## 3. Il banner smette di prevedere
 

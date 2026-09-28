@@ -1,6 +1,7 @@
 import argparse
 import getpass
 import sys
+import traceback
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 from typing import cast
@@ -8,7 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import Engine
 from sqlalchemy.engine import URL
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core import telemetry
 from pigrocrm.core.actor import Actor, Role
@@ -469,9 +470,11 @@ def gmail_sync(email: str | None) -> int:
 
     There is no daemon and no queue in this product (see `gmail/sync.py`), so the
     fifteen minutes are cron's to keep. This is the whole contract with it: one line per
-    mailbox, stdout when its cycle ran, stderr with a sentence when it could not; exit 0
-    when every cycle ran, exit 1 when at least one line went to stderr. The runbook is
-    `docs/superpowers/notes/2026-09-09-gmail-cron-runbook.md`.
+    mailbox, stdout when its cycle ran, stderr with a sentence when it could not. Exit 0
+    when every line went to stdout, which is every cycle ran or found another already
+    running; exit 1 when at least one went to stderr, which is a mailbox that could not
+    be synchronised, the registry or a space that could not be read, or no mailbox found.
+    The runbook is `docs/superpowers/notes/2026-09-09-gmail-cron-runbook.md`.
 
     **Every space, as the digest walks them** (REB-404). With the root's Google client
     lent to the spaces (REB-394) a space can connect Gmail, and its mailbox synchronised
@@ -498,8 +501,10 @@ def gmail_sync(email: str | None) -> int:
     run to the mailboxes with that address, wherever they are, so a cron line written
     with it goes on doing what it did. A space with no connected mailbox prints nothing:
     most spaces never connect one, and a line for each of them every fifteen minutes
-    would bury the lines about the mailboxes that exist. A run that finds no mailbox at
-    all says so once, as it always has.
+    would bury the lines about the mailboxes that exist. A run that read every
+    installation and found no mailbox says so once, as it always has; a run that could
+    not read the registry or a space does not, since the mailbox may be in the part it
+    did not read, and an `--email` it did not match says that a space was not read.
 
     **Which actor, and why it is not `Actor.system()`.** `createadmin` passes
     `Actor.system()`, which has no id -- and `GmailSyncService.sync` refuses an actor
@@ -521,7 +526,10 @@ def gmail_sync(email: str | None) -> int:
     owner, a revoked or expired consent, Gmail refusing the call -- is a sentence. An
     unforeseen one no longer raises: with the spaces in the same run, a stack would stop
     the walk at the first space that produced it, so it is `saltato` with the exception's
-    type, as the digest prints it, and the mailbox after it still gets its cycle.
+    type, as the digest prints it, and the mailbox after it still gets its cycle. The
+    frames of its traceback follow that line on stderr, into the cron's own log (the
+    cycle runs in this process, not in the API's), so that where it broke can be found;
+    its message does not, for the reason the type stands in for it everywhere here.
     """
     from sqlalchemy import create_engine, select
 
@@ -549,7 +557,9 @@ def gmail_sync(email: str | None) -> int:
             f"{_now()} gmail-sync: registro degli spazi non raggiungibile ({type(exc).__name__})",
             file=sys.stderr,
         )
-        failed = True
+        failed = unread = True
+    else:
+        unread = False
 
     # Only `effective_settings` is asked of it, on each space's own session: the engines
     # are this function's, one per space and disposed before the next, as in `digest`.
@@ -574,7 +584,7 @@ def gmail_sync(email: str | None) -> int:
                 print(
                     f"{_now()} gmail-sync {label}: saltato ({type(exc).__name__})", file=sys.stderr
                 )
-                failed = True
+                failed = unread = True
                 continue
             connected.extend(address for _, address in mailboxes)
             if email is not None:
@@ -593,48 +603,76 @@ def gmail_sync(email: str | None) -> int:
             )
             for account_id, address in mailboxes:
                 attempted += 1
-                with factory() as session:
-                    if not _sync_mailbox(
-                        session, space_settings, transport, tokens, f"{label} {address}", account_id
-                    ):
-                        failed = True
+                if not _sync_mailbox(
+                    factory, space_settings, transport, tokens, f"{label} {address}", account_id
+                ):
+                    failed = True
         finally:
             engine.dispose()
 
     if not attempted:
-        if email is not None and connected:
-            reason = f"{email} non è una casella collegata: {', '.join(connected)}"
-        else:
-            reason = "nessuna casella Google collegata"
-        print(f"{_now()} gmail-sync: {reason}", file=sys.stderr)
+        reason = _nothing_to_sync(email, connected, unread=unread)
+        if reason is not None:
+            print(f"{_now()} gmail-sync: {reason}", file=sys.stderr)
         failed = True
     return 1 if failed else 0
 
 
+def _nothing_to_sync(email: str | None, connected: Sequence[str], *, unread: bool) -> str | None:
+    """What a run that synchronised nothing says about it, or `None` when it cannot say.
+
+    «nessuna casella Google collegata» is a claim about every installation, and with the
+    registry or a space unread the mailbox may be exactly in the part that was not read:
+    that line has already said what went wrong, and a second one guessing the rest
+    would send the operator to connect a mailbox that may well be connected. An
+    `--email` that matched nothing is the same claim narrowed to one address, so it names
+    what was read and says that a space was not."""
+    listed = ", ".join(connected)
+    if email is None:
+        return None if unread else "nessuna casella Google collegata"
+    if unread:
+        read = f" ({listed})" if listed else ""
+        return (
+            f"{email} non è fra le caselle degli spazi letti{read}: "
+            "uno spazio non è stato letto, e potrebbe essere lì"
+        )
+    if listed:
+        return f"{email} non è una casella collegata: {listed}"
+    return "nessuna casella Google collegata"
+
+
 def _sync_mailbox(
-    session: Session,
+    factory: sessionmaker[Session],
     settings: Settings,
     transport: GmailTransport,
     tokens: GoogleTokenClient,
     label: str,
     account_id: UUID,
 ) -> bool:
-    """One mailbox's cycle and its line, `True` when the cycle ran. Its own session, so
-    a cycle that fails halfway leaves nothing open for the next mailbox."""
+    """One mailbox's cycle and its line, `True` when the cycle ran. Its own session,
+    opened and closed inside the guard: a cycle that fails halfway leaves nothing open for
+    the next mailbox, and a session that cannot be opened, or closed, costs this mailbox
+    its line and not the rest of the run."""
     try:
-        account = GmailRepository(session).account(account_id)
-        if account is None:
-            # Removed between the listing and now: the owner disconnected it.
-            raise Conflict("google_account", "nessuna casella Google collegata")
-        actor = _cron_actor(session, account)
-        report = GmailSyncService(
-            session, settings=settings, transport=transport, tokens=tokens
-        ).sync(actor)
+        with factory() as session:
+            account = GmailRepository(session).account(account_id)
+            if account is None:
+                # Removed between the listing and now: the owner disconnected it.
+                raise Conflict("google_account", "nessuna casella Google collegata")
+            actor = _cron_actor(session, account)
+            report = GmailSyncService(
+                session, settings=settings, transport=transport, tokens=tokens
+            ).sync(actor)
     except (DomainError, GoogleCallFailed) as exc:
         print(f"{_now()} gmail-sync {label}: {_reason(exc)}", file=sys.stderr)
         return False
     except Exception as exc:  # noqa: BLE001 - one mailbox must not stop the others
         print(f"{_now()} gmail-sync {label}: saltato ({type(exc).__name__})", file=sys.stderr)
+        # The frames and never the message: where it broke is what an unforeseen failure
+        # needs to be found, and the message is what can carry the URL (a psycopg error)
+        # or a statement's parameters (a correspondent's address, in an insert), which
+        # this log promises never to hold.
+        traceback.print_tb(exc.__traceback__, file=sys.stderr)
         return False
     # `flush`: under `docker compose exec -T` stdout is a pipe, so Python buffers it by
     # the block while stderr goes out at once, and `2>&1` in the cron line would put every

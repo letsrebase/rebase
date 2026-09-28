@@ -24,6 +24,7 @@ socket is replaced.
 """
 
 from collections.abc import Callable, Iterator
+from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -32,6 +33,7 @@ from fakes.fake_gmail import API_HOST, FakeGmail
 from fakes.gmail_fixtures import connected_account, gmail_settings
 from sqlalchemy import Engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.orm import Session
 
 import pigrocrm.core.cli as cli
 from pigrocrm.core.auth.models import User
@@ -44,7 +46,7 @@ from pigrocrm.core.gmail.transport import GmailTransport
 
 # A registry of this module's own, so the walk finds it empty whatever else has
 # provisioned a space on this container.
-REGISTRY_DB = "prova_cli_gmail_registro"
+REGISTRY_DB = "cli_gmail_registry"
 
 
 @pytest.fixture(scope="module")
@@ -372,3 +374,47 @@ def test_a_refusal_from_gmail_is_one_line_too(
     err = capsys.readouterr().err
     assert "elenco dei messaggi fallita (429/RESOURCE_EXHAUSTED)" in err
     assert "Traceback" not in err
+
+
+def test_a_session_that_cannot_be_opened_costs_one_mailbox_and_not_the_run(
+    cli_gmail: FakeGmail,
+    db_engine: Engine,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Each mailbox's session is opened inside that mailbox's own guard: a pool that
+    refuses a connection, or a session that fails to close, is that mailbox's
+    `saltato` line, and the mailbox after it still gets its cycle. The factory below
+    refuses its second session, which is the first mailbox's: the first is the
+    listing's."""
+    _connect(db_engine, email_address="prima@example.it")
+    _connect(db_engine, email_address="seconda@example.it")
+    real = cli.session_factory
+    # A name and not a literal at the `raise`: the frames printed after the line quote
+    # the raising source line, and the assertion below is about the message.
+    refusal = "the pool refused a connection"
+
+    def refusing_the_second(engine: Engine) -> Callable[[], Session]:
+        factory = real(engine)
+        opened = 0
+
+        def open_session(**kwargs: Any) -> Session:
+            nonlocal opened
+            opened += 1
+            if opened == 2:
+                raise RuntimeError(refusal)
+            return factory(**kwargs)
+
+        return open_session
+
+    monkeypatch.setattr(cli, "session_factory", refusing_the_second)
+
+    assert _run() == 1
+
+    captured = capsys.readouterr()
+    assert f"gmail-sync {cli.ROOT_LABEL} prima@example.it: saltato (RuntimeError)" in captured.err
+    # The frames of the traceback follow the line, for whoever has to find where it
+    # broke; its message does not.
+    assert 'File "' in captured.err
+    assert refusal not in captured.err
+    assert f"gmail-sync {cli.ROOT_LABEL} seconda@example.it: " in captured.out

@@ -161,7 +161,9 @@ else (never a subject, a message body or a correspondent's address). A space wit
 mailbox prints nothing. It exits `0` when every loop went through, or found another one
 already running, which is not an error, and `1` when at least one line went to `stderr`
 with a sentence: no mailbox anywhere, a deactivated owner, a revoked consent, or a space
-whose database or schema could not be used (`saltato`). One line never stops the next.
+whose database or schema could not be used (`saltato`). An unforeseen failure is
+`saltato (Type)` followed by the frames of its traceback, in this same log. One line
+never stops the next.
 `--env-file ../../.env` and `--no-sync` are here for exactly the reasons of §1 and §5.
 
 Same shape for the weekly report, one line for `pigrocrm digest` at eight on Monday:

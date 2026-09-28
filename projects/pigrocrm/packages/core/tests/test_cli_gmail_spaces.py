@@ -46,19 +46,19 @@ from pigrocrm.core.tenants.database import tenant_database_name, tenant_database
 from pigrocrm.core.tenants.google import space_token_key
 from pigrocrm.core.tenants.service import migrate_to_head
 
-ROOT_DB = "prova_gmail_spazi_radice"
-REGISTRY_DB = "prova_gmail_spazi_registro"
-UNO = "prova-gmail-uno"
-DUE = "prova-gmail-due"
-SPAZI = (UNO, DUE)
+ROOT_DB = "cli_gmail_spaces_root"
+REGISTRY_DB = "cli_gmail_spaces_registry"
+ONE = "cli-gmail-one"
+TWO = "cli-gmail-two"
+SPACES = (ONE, TWO)
 # The address each installation's mailbox answers to, and the refresh token sealed in
 # it. Three different tokens, so the fake's token endpoint can say which ones it saw.
-CASELLE = {
-    None: ("radice@example.it", "1//refresh-radice"),
-    UNO: ("uno@example.it", "1//refresh-uno"),
-    DUE: ("due@example.it", "1//refresh-due"),
+MAILBOXES = {
+    None: ("root@example.it", "1//refresh-root"),
+    ONE: ("one@example.it", "1//refresh-one"),
+    TWO: ("two@example.it", "1//refresh-two"),
 }
-ROOT_OWNER = "titolare@radice.it"
+ROOT_OWNER = "owner@root.example"
 
 
 # --- the root, the registry, and two spaces in it ------------------------------------
@@ -87,21 +87,21 @@ def settings(db_engine: Engine) -> Iterator[Settings]:
 
 
 @pytest.fixture(scope="module")
-def spazi(settings: Settings) -> Iterator[None]:
+def spaces(settings: Settings) -> Iterator[None]:
     registry = ensure_tenants_database(settings)
     session: Session = session_factory(registry)()
     try:
         service = TenantService(session, settings)
-        for slug in SPAZI:
+        for slug in SPACES:
             service.provision(
-                TenantSignup(slug=slug, nome=f"Studio {slug}", email=f"titolare@{slug}.it")
+                TenantSignup(slug=slug, nome=f"Studio {slug}", email=f"owner@{slug}.example")
             )
         yield
     finally:
-        for slug in SPAZI:
+        for slug in SPACES:
             drop_database(settings, tenant_database_url(settings, tenant_database_name(slug)))
         session.execute(
-            text("delete from tenants where slug = any(:slugs)"), {"slugs": list(SPAZI)}
+            text("delete from tenants where slug = any(:slugs)"), {"slugs": list(SPACES)}
         )
         session.commit()
         session.close()
@@ -109,10 +109,10 @@ def spazi(settings: Settings) -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
-def _nessuna_casella(settings: Settings, spazi: None) -> Iterator[None]:
+def _no_mailbox_left(settings: Settings, spaces: None) -> Iterator[None]:
     """What a test connects and what a run writes, undone in all three databases."""
     yield
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         engine = _engine(settings, slug)
         try:
             with engine.begin() as connection:
@@ -155,11 +155,11 @@ def _key(settings: Settings, slug: str | None) -> bytes:
 
 
 def _connect(settings: Settings, slug: str | None, *, status: str = "active") -> None:
-    """A connected mailbox, owned by the installation's titolare, plus one customer with
+    """A connected mailbox, owned by the installation's owner, plus one customer with
     an address, so the cycle really refreshes the token and asks Gmail something. With an
     empty roster no request leaves at all, and a token sealed with the wrong key would
     never be opened."""
-    address, refresh_token = CASELLE[slug]
+    address, refresh_token = MAILBOXES[slug]
     engine = _engine(settings, slug)
     try:
         with session_factory(engine)() as session:
@@ -167,7 +167,7 @@ def _connect(settings: Settings, slug: str | None, *, status: str = "active") ->
                 select(User).where(User.ruolo == "admin").order_by(User.created_at)
             ).first()
             if owner is None:
-                owner = User(email=ROOT_OWNER, nome="Titolare", ruolo="admin", attivo=True)
+                owner = User(email=ROOT_OWNER, nome="Owner", ruolo="admin", attivo=True)
                 session.add(owner)
                 session.flush()
             ciphertext, nonce = seal(refresh_token, _key(settings, slug))
@@ -209,7 +209,7 @@ def _refresh_tokens(fake: FakeGmail) -> set[str]:
 
 
 def _line(label: str, slug: str | None) -> str:
-    return f"gmail-sync {label} {CASELLE[slug][0]}: "
+    return f"gmail-sync {label} {MAILBOXES[slug][0]}: "
 
 
 def _run(*args: str) -> int:
@@ -225,7 +225,7 @@ def test_one_run_synchronises_the_root_and_every_space_one_line_each(
     """The card's «Done when»: two spaces each holding a connected mailbox, one run, a
     line for each and both watermarks advanced. The root is in it too, first, as in the
     digest."""
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         _connect(settings, slug)
 
     assert _run() == 0
@@ -235,14 +235,14 @@ def test_one_run_synchronises_the_root_and_every_space_one_line_each(
     lines = captured.out.strip().splitlines()
     assert len(lines) == 3
     assert _line(cli.ROOT_LABEL, None) in lines[0]
-    assert _line(UNO, UNO) in lines[1]
-    assert _line(DUE, DUE) in lines[2]
+    assert _line(ONE, ONE) in lines[1]
+    assert _line(TWO, TWO) in lines[2]
     assert all("messaggi nuovi" in line for line in lines)
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         assert _watermark(settings, slug) is not None
     # Each installation's token was opened with its own key, which only its own
     # effective settings carry: the root's key opens nothing sealed for a space.
-    assert _refresh_tokens(cron) == {token for _, token in CASELLE.values()}
+    assert _refresh_tokens(cron) == {token for _, token in MAILBOXES.values()}
 
 
 def test_a_space_with_no_mailbox_says_nothing(
@@ -250,7 +250,7 @@ def test_a_space_with_no_mailbox_says_nothing(
 ) -> None:
     """Most spaces never connect Gmail, and the run is every fifteen minutes: a line for
     each of them would bury the lines about the mailboxes that exist."""
-    _connect(settings, DUE)
+    _connect(settings, TWO)
 
     assert _run() == 0
 
@@ -258,7 +258,7 @@ def test_a_space_with_no_mailbox_says_nothing(
     assert captured.err == ""
     lines = captured.out.strip().splitlines()
     assert len(lines) == 1
-    assert _line(DUE, DUE) in lines[0]
+    assert _line(TWO, TWO) in lines[0]
 
 
 def test_a_revoked_mailbox_is_its_own_line_and_the_next_space_still_runs(
@@ -268,17 +268,17 @@ def test_a_revoked_mailbox_is_its_own_line_and_the_next_space_still_runs(
     has always printed for the root, on stderr, now with the space in front of it; the
     space after it is synchronised in the same run, and the exit status says that one
     mailbox could not be."""
-    _connect(settings, UNO, status="revoked")
-    _connect(settings, DUE)
+    _connect(settings, ONE, status="revoked")
+    _connect(settings, TWO)
 
     assert _run() == 1
 
     captured = capsys.readouterr()
-    assert _line(UNO, UNO) in captured.err
+    assert _line(ONE, ONE) in captured.err
     assert "revocato" in captured.err
-    assert _line(DUE, DUE) in captured.out
-    assert _watermark(settings, UNO) is None
-    assert _watermark(settings, DUE) is not None
+    assert _line(TWO, TWO) in captured.out
+    assert _watermark(settings, ONE) is None
+    assert _watermark(settings, TWO) is not None
 
 
 @pytest.mark.parametrize(
@@ -300,31 +300,42 @@ def test_a_space_whose_schema_lags_is_skipped_on_its_own_line(
     """A space migrates only when the API boots (`ensure-space-defaults`), and this
     command migrates nothing, like the digest. A space whose schema is behind the image
     is one `saltato` line naming the exception's type and never its text (a psycopg
-    error can carry the URL), and the space after it is synchronised all the same."""
-    _connect(settings, UNO)
-    _connect(settings, DUE)
-    engine = _engine(settings, UNO)
+    error can carry the URL), and the space after it is synchronised all the same.
+
+    Inside a mailbox's cycle the failure is one nobody foresaw, so the frames of its
+    traceback follow the line, for whoever has to find where it broke. Only the frames:
+    the message is the text the line leaves out, for the same reason."""
+    _connect(settings, ONE)
+    _connect(settings, TWO)
+    engine = _engine(settings, ONE)
     try:
         with engine.begin() as connection:
-            connection.execute(text(f"alter table {table} rename to {table}_futura"))
+            connection.execute(text(f"alter table {table} rename to {table}_future"))
         try:
             assert _run() == 1
         finally:
             with engine.begin() as connection:
-                connection.execute(text(f"alter table {table}_futura rename to {table}"))
+                connection.execute(text(f"alter table {table}_future rename to {table}"))
     finally:
         engine.dispose()
 
     captured = capsys.readouterr()
     skipped = (
-        f"gmail-sync {UNO}: saltato (ProgrammingError)"
+        f"gmail-sync {ONE}: saltato (ProgrammingError)"
         if where == "space"
-        else f"{_line(UNO, UNO)}saltato (ProgrammingError)"
+        else f"{_line(ONE, ONE)}saltato (ProgrammingError)"
     )
     assert skipped in captured.err
-    assert "Traceback" not in captured.err
-    assert _line(DUE, DUE) in captured.out
-    assert _watermark(settings, DUE) is not None
+    if where == "mailbox":
+        assert 'File "' in captured.err
+        assert "in sync" in captured.err
+    else:
+        assert 'File "' not in captured.err
+    # `relation "gmail_known_addresses" does not exist`, or the same for the other table:
+    # the message, which is what can carry a URL or a statement's parameters.
+    assert "does not exist" not in captured.err
+    assert _line(TWO, TWO) in captured.out
+    assert _watermark(settings, TWO) is not None
 
 
 def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
@@ -338,24 +349,24 @@ def test_a_space_whose_database_is_gone_does_not_take_the_others_with_it(
     was never created, and this file's own `_engine` still reaches the real ones."""
     import pigrocrm.core.tenants.database as tenants_database
 
-    _connect(settings, UNO)
-    _connect(settings, DUE)
-    vero = tenants_database.tenant_database_url
+    _connect(settings, ONE)
+    _connect(settings, TWO)
+    real = tenants_database.tenant_database_url
     monkeypatch.setattr(
         tenants_database,
         "tenant_database_url",
-        lambda impostazioni, db_name: vero(
-            impostazioni,
-            "pigrocrm_spazio_mai_creato" if db_name == tenant_database_name(UNO) else db_name,
+        lambda settings_, db_name: real(
+            settings_,
+            "pigrocrm_space_never_created" if db_name == tenant_database_name(ONE) else db_name,
         ),
     )
 
     assert _run() == 1
 
     captured = capsys.readouterr()
-    assert captured.err.strip().endswith(f"gmail-sync {UNO}: saltato (OperationalError)")
-    assert _line(DUE, DUE) in captured.out
-    assert _watermark(settings, DUE) is not None
+    assert captured.err.strip().endswith(f"gmail-sync {ONE}: saltato (OperationalError)")
+    assert _line(TWO, TWO) in captured.out
+    assert _watermark(settings, TWO) is not None
 
 
 def test_an_unreachable_registry_still_synchronises_the_root(
@@ -369,7 +380,7 @@ def test_an_unreachable_registry_still_synchronises_the_root(
     import pigrocrm.core.tenants as tenants
 
     def unreachable(_settings: Settings) -> Engine:
-        raise RuntimeError("postgres://utente:segreto@altrove/pigrocrm_tenants")
+        raise RuntimeError("postgres://user:hunter2@elsewhere/pigrocrm_tenants")
 
     _connect(settings, None)
     monkeypatch.setattr(tenants, "ensure_tenants_database", unreachable)
@@ -380,7 +391,7 @@ def test_an_unreachable_registry_still_synchronises_the_root(
     assert captured.err.strip().endswith(
         "gmail-sync: registro degli spazi non raggiungibile (RuntimeError)"
     )
-    assert "segreto" not in captured.err
+    assert "hunter2" not in captured.err
     assert _line(cli.ROOT_LABEL, None) in captured.out
 
 
@@ -389,14 +400,85 @@ def test_email_names_one_mailbox_wherever_it_is(
 ) -> None:
     """`--email` keeps working for a cron line written before REB-404 with one mailbox
     in it, and it now finds that mailbox in whichever installation holds it."""
-    for slug in (None, *SPAZI):
+    for slug in (None, *SPACES):
         _connect(settings, slug)
 
-    assert _run("--email", CASELLE[DUE][0]) == 0
+    assert _run("--email", MAILBOXES[TWO][0]) == 0
 
     captured = capsys.readouterr()
     assert captured.err == ""
     assert len(captured.out.strip().splitlines()) == 1
-    assert _line(DUE, DUE) in captured.out
-    assert _watermark(settings, UNO) is None
-    assert _watermark(settings, DUE) is not None
+    assert _line(TWO, TWO) in captured.out
+    assert _watermark(settings, ONE) is None
+    assert _watermark(settings, TWO) is not None
+
+
+@pytest.mark.parametrize("unread", ["registry", "space"])
+def test_no_mailbox_is_not_claimed_while_a_space_could_not_be_read(
+    settings: Settings,
+    cron: FakeGmail,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    unread: str,
+) -> None:
+    """«nessuna casella Google collegata» is a claim about every installation, and a run
+    that could not read the registry, or one space, cannot make it: the mailbox may be
+    in the part it did not read. Its own line has said what went wrong already."""
+    import pigrocrm.core.tenants as tenants
+    import pigrocrm.core.tenants.database as tenants_database
+
+    if unread == "registry":
+
+        def unreachable(_settings: Settings) -> Engine:
+            raise RuntimeError("the registry does not answer")
+
+        monkeypatch.setattr(tenants, "ensure_tenants_database", unreachable)
+    else:
+        real = tenants_database.tenant_database_url
+        monkeypatch.setattr(
+            tenants_database,
+            "tenant_database_url",
+            lambda settings_, db_name: real(
+                settings_,
+                "pigrocrm_space_never_created" if db_name == tenant_database_name(ONE) else db_name,
+            ),
+        )
+
+    assert _run() == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert len(captured.err.strip().splitlines()) == 1
+    assert "nessuna casella" not in captured.err
+
+
+def test_an_unmatched_email_says_the_match_may_be_incomplete(
+    settings: Settings,
+    cron: FakeGmail,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The same claim, narrowed to one address: with a space unread, «non è una casella
+    collegata» would be a guess. The line names what was read and says a space was not."""
+    import pigrocrm.core.tenants.database as tenants_database
+
+    _connect(settings, TWO)
+    real = tenants_database.tenant_database_url
+    monkeypatch.setattr(
+        tenants_database,
+        "tenant_database_url",
+        lambda settings_, db_name: real(
+            settings_,
+            "pigrocrm_space_never_created" if db_name == tenant_database_name(ONE) else db_name,
+        ),
+    )
+
+    assert _run("--email", "nobody@example.it") == 1
+
+    captured = capsys.readouterr()
+    last = captured.err.strip().splitlines()[-1]
+    assert "nobody@example.it" in last
+    assert MAILBOXES[TWO][0] in last
+    assert "non è stato letto" in last
+    assert "non è una casella collegata" not in last
+    assert _watermark(settings, TWO) is None
