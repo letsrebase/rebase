@@ -99,9 +99,11 @@ def _account(
     storage_folder_id: str | None = STORAGE_FOLDER,
     updated_at: datetime | None = None,
     scopes: tuple[str, ...] = (DRIVE_SCOPE_READONLY, DRIVE_SCOPE_FILE),
+    ruolo: str = "admin",
 ) -> GoogleDriveAccount:
     """A connected Drive with a write folder chosen -- the state the lazy storage has
-    to find.
+    to find. Its owner is an admin unless `ruolo` says otherwise: only an admin's row
+    may supply the space's storage (REB-457).
 
     The refresh token is really sealed, with the same key `gmail_settings()` publishes,
     so the unsealing under test runs for real rather than reading a plaintext column
@@ -111,7 +113,7 @@ def _account(
         email=f"drive-{uuid4().hex[:8]}@example.it",
         nome="Titolare",
         password_hash="x",
-        ruolo="admin",
+        ruolo=ruolo,
         attivo=True,
     )
     session.add(user)
@@ -293,6 +295,72 @@ def test_storage_account_prefers_the_most_recently_updated_when_more_than_one_qu
     found = DriveRepository(db_session).storage_account()
 
     assert found is newer and found is not older
+
+
+@pytest.mark.parametrize("ruolo", ["collaboratore", "readonly"])
+def test_storage_account_never_answers_with_a_non_admin_s_row(
+    db_session: Session, ruolo: str
+) -> None:
+    """REB-457. The write folder is the space's, not a person's: every document the
+    space generates lands there, an automation's included. So a non-admin's row never
+    supplies it, however recently it was touched -- a roots-only save bumps
+    `updated_at`, and that must not be enough to redirect the space's documents into
+    a collaboratore's Drive. The folder on their row (set over REST before the service
+    refused it, or left from a time they were admin) is simply not a candidate.
+    """
+    admin = _account(db_session, updated_at=datetime(2026, 1, 1, tzinfo=UTC))
+    _account(
+        db_session,
+        ruolo=ruolo,
+        storage_folder_id=OTHER_FOLDER,
+        updated_at=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+
+    assert DriveRepository(db_session).storage_account() is admin
+
+
+def test_storage_account_with_only_a_non_admin_s_folder_is_not_configured(
+    db_session: Session,
+) -> None:
+    """The behaviour change REB-457 accepts: an installation whose only write folder
+    sits on a non-admin's row reads as not configured until an admin chooses one."""
+    _account(db_session, ruolo="collaboratore")
+    assert DriveRepository(db_session).storage_account() is None
+
+
+def test_storage_account_stops_answering_with_an_admin_who_is_demoted(
+    db_session: Session,
+) -> None:
+    """The role is read at each resolution, from `users.ruolo` as it is now, not
+    remembered from the moment the folder was chosen: a demoted admin stops supplying
+    the space's storage at the next operation."""
+    account = _account(db_session)
+    assert DriveRepository(db_session).storage_account() is account
+
+    owner = db_session.get(User, account.user_id)
+    assert owner is not None
+    owner.ruolo = "collaboratore"
+    db_session.flush()
+
+    assert DriveRepository(db_session).storage_account() is None
+
+
+def test_the_lazy_storage_stops_writing_into_a_demoted_admin_s_folder(
+    db_session: Session,
+) -> None:
+    """The same demotion, seen from the storage: the cached resolution is not a way
+    around it, because every operation re-reads the row it would write into."""
+    account = _account(db_session)
+    storage = _lazy(db_session, drive=FakeDrive(root_id=STORAGE_FOLDER), gmail=FakeGmail())
+    storage.put(KEY, PDF, "application/pdf")
+
+    owner = db_session.get(User, account.user_id)
+    assert owner is not None
+    owner.ruolo = "collaboratore"
+    db_session.flush()
+
+    with pytest.raises(StorageNotConfigured):
+        storage.put(OTHER_KEY, PDF, "application/pdf")
 
 
 # --- Not configured: the first operation says so, and says what to do ----------------
