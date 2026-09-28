@@ -35,9 +35,12 @@
     flake-parts.lib.mkFlake { inherit inputs; } {
       # The two renderer binaries below are the upstream Linux release tarballs, one
       # per architecture in `rendererReleases`, so these are the systems the shell,
-      # the packages and the modules exist for. A Mac is not among them: from one,
-      # name the system and let a Linux builder in nix.conf do the work
-      # (`nix build .#packages.x86_64-linux.pigrocrm-api`, as preflight.json does).
+      # the packages and the modules exist for. A Mac is not among them, and this
+      # repository has no Linux builder of its own any more (qasimodo.com is gone,
+      # 2026-09-25). `nix build .#packages.x86_64-linux.pigrocrm-api`, as
+      # preflight.json does, still needs one; `scripts/nix-pnpm-hash.sh` builds the
+      # one value that changes by hand, the pnpm store hash below, in a `nixos/nix`
+      # container instead.
       # Only x86_64-linux is exercised by the VM tests today.
       systems = [
         "x86_64-linux"
@@ -187,8 +190,12 @@
           # every Vite build below; its input is exactly what `pnpm install` reads
           # (the three workspace files and every package.json), so a source change
           # does not refetch it. `hash` is the one value in this file that has to be
-          # updated by hand: every change to pnpm-lock.yaml changes it, the build
-          # fails naming the hash it got, and that hash goes here.
+          # updated by hand: every change to pnpm-lock.yaml changes it. This is a
+          # fixed-output derivation, so a stale hash whose output already sits in the
+          # local store builds "successfully" instead of failing and naming the new
+          # one (REB-452); `scripts/nix-pnpm-hash.sh` computes it against a fake hash
+          # instead, in a `nixos/nix` container, since there is no Linux builder for
+          # this repository any more.
           pnpmDeps = pkgs.fetchPnpmDeps {
             pname = "rebase-pnpm-deps";
             version = "0";
