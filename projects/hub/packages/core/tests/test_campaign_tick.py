@@ -371,13 +371,16 @@ def test_a_campaign_whose_candidates_raises_does_not_stop_a_second_due_campaign(
     assert healthy.stato == "inviata"
 
 
-def test_a_row_the_webhook_already_marked_delivered_is_not_sent_twice(
+def test_a_row_with_only_a_bare_resend_id_falls_back_to_the_tick_clock(
     clean: Session,  # noqa: F811  (fixture)
 ) -> None:
     """REB-522: a tick that dies after Resend accepted a mail but before its own commit
     leaves the row `in_coda` with none of the webhook's columns written yet. Once the
     webhook lands (matched by the row's own `r` tag, independently of that dead tick),
-    the next tick must trust it rather than call Resend again."""
+    the next tick must trust it rather than call Resend again. `resend_id` set with no
+    webhook timestamp at all is not a shape `webhook.py` produces today (every branch
+    that writes `resend_id` also writes one of the four moments first): this row is
+    built straight in the table to pin the defensive fallback regardless."""
     clock = Clock(NOW)
     campaign = scheduled(clean, clock, "a@studio.it")
     row = rows(clean, campaign)["a@studio.it"]
@@ -393,6 +396,32 @@ def test_a_row_the_webhook_already_marked_delivered_is_not_sent_twice(
     sent = rows(clean, campaign)["a@studio.it"]
     assert sent.stato == "inviata"
     assert sent.inviata_at == clock.at
+    assert result.inviate == 1
+
+
+def test_a_row_with_only_a_first_click_is_stamped_with_the_click_time(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """A click, bounce or complaint webhook can beat `email.delivered` and fill
+    `resend_id` with no `consegnata_at` yet: `inviata_at` must still take that event's
+    own moment, not the retry tick's `now`, or outcome stamping and the gap rule would
+    both measure "since" the wrong time after a long outage."""
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it")
+    row = rows(clean, campaign)["a@studio.it"]
+    clicked_at = clock.at - timedelta(hours=26)
+    clean.execute(
+        update(CampaignRecipient)
+        .where(CampaignRecipient.id == row.id)
+        .values(stato="in_coda", resend_id="re_abc123", primo_clic_at=clicked_at, inviata_at=None)
+    )
+    clean.commit()
+    recording = RecordingCampaignSender()
+    result = run_tick(clean, recording, SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert recording.sent == []
+    sent = rows(clean, campaign)["a@studio.it"]
+    assert sent.stato == "inviata"
+    assert sent.inviata_at == clicked_at
     assert result.inviate == 1
 
 
