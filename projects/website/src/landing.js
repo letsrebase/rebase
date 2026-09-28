@@ -16,7 +16,18 @@
  * Carrying the campaign into the hub (ORB-166, ORB-167) moved to the shared `utm.js`
  * in REB-247: `start` below calls `window.__utm.carryUtm()`, guarded, the same way it
  * guards the shared field and the shared typewriter.
+ *
+ * REB-557: `start` also guards `window.__typewriter` because the page's own script tag
+ * order is not a build guarantee. index.html loads typewriter.js before this file so a
+ * browser running the source directly always has it, but Vite's production bundle can
+ * put the two in different chunks and evaluate the chunk holding this IIFE before the
+ * one that assigns `window.__typewriter`, since a plain script tag's load order is not
+ * a dependency Rollup's chunk graph has to respect. A side-effect import makes the
+ * dependency real: static imports of a module finish evaluating before the importing
+ * module's own top-level code runs, in a bundle and in a browser alike, so
+ * `window.__typewriter` is always set by the time the code below reads it.
  */
+import './typewriter.js'
 ;(function () {
   function reveal() {
     var blocks = document.querySelectorAll('[data-reveal]')
