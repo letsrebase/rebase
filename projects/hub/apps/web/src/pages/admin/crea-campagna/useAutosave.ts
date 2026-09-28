@@ -64,10 +64,15 @@ export function useAutosave(key: string | null, initial: Campaign | null): Autos
         setFailedKey(null)
         return current.campaign
       }
-      const body = JSON.parse(target) as CampaignDraft
+      // A `lista` draft (Task 6) saves a body without `fonte`, so this is no longer
+      // always a whole `CampaignDraft`.
+      const body = JSON.parse(target) as Partial<CampaignDraft>
       setSaving(true)
       try {
-        const saved = current.campaign ? await admin.updateCampaign(current.campaign.id, body) : await admin.createCampaign(body)
+        // A `lista` always starts on the edit route with a stored campaign (Task 3's
+        // `follow-up` creates it), so it is only ever patched here; `createCampaign`
+        // still wants the whole shape, which only a `stato`/`filtri` body ever is.
+        const saved = current.campaign ? await admin.updateCampaign(current.campaign.id, body) : await admin.createCampaign(body as CampaignDraft)
         keep(saved)
         current.key = target
         setSavedKey(target)

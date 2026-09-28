@@ -9,9 +9,11 @@ import pytest
 from campaign_fixtures import (  # noqa: F401  (fixture)
     NOW,
     SETTINGS,
+    T0,
     Clock,
     admin,
     as_admin,
+    campaign_row,
     clean,
     draft,
     person,
@@ -30,7 +32,7 @@ from rebase_core.campaigns.sender import RecordingCampaignSender, SendOutcome
 from rebase_core.campaigns.service import NOT_A_DRAFT, CampaignService
 from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, ValidationFailed
-from rebase_core.models import Campaign, CampaignRecipient, User
+from rebase_core.models import Campaign, CampaignRecipient, Freelancer, Login, User
 
 
 def test_a_draft_gets_a_dated_unique_slug(clean: Session) -> None:  # noqa: F811  (fixture)
@@ -458,3 +460,147 @@ def test_a_second_call_blocked_on_the_lock_then_sees_the_fresh_state_not_a_stale
     other.close()
 
     assert isinstance(outcome.get("raised"), InvalidState)
+
+
+def _recipient(
+    session: Session, campaign_id: object, email: str, **fields: object
+) -> CampaignRecipient:
+    values: dict[str, object] = {
+        "campaign_id": campaign_id,
+        "email": email,
+        "tipo": "freelancer",
+        "codice": "c0de0001",
+        "prima": {"t": T0.isoformat()},
+        "disiscrizione_token": f"tok-{email}",
+        "stato": "inviata",
+        "inviata_at": T0,
+    }
+    values.update(fields)
+    row = CampaignRecipient(**values)
+    session.add(row)
+    session.commit()
+    return row
+
+
+def test_the_counts_add_clicks_entries_and_actions(clean: Session) -> None:  # noqa: F811  (fixture)
+    campaign = campaign_row(clean, stato="inviata", inviata_at=T0)
+    later = T0 + timedelta(hours=1)
+    _recipient(
+        clean, campaign.id, "a@studio.it", primo_clic_at=later, entrato_at=later, azione_at=later
+    )
+    _recipient(clean, campaign.id, "b@studio.it", primo_clic_at=later, entrato_at=later)
+    _recipient(clean, campaign.id, "c@studio.it", primo_clic_at=later)
+    _recipient(clean, campaign.id, "d@studio.it", stato="saltata", inviata_at=None)
+    counts = CampaignService(clean, SETTINGS).detail(campaign.id).conteggi
+    assert (counts.inviate, counts.cliccate, counts.entrate, counts.azioni) == (3, 3, 2, 1)
+    listed = CampaignService(clean, SETTINGS).list_all().items[0].conteggi
+    assert listed == counts
+
+
+def test_dalla_mail_needs_this_campaigns_slug_and_this_persons_code(clean: Session) -> None:  # noqa: F811  (fixture)
+    """Review Focus 5: a forwarded mail carries the slug with somebody else's code."""
+    campaign = campaign_row(clean, stato="inviata", inviata_at=T0, azione="entrato")
+    later = T0 + timedelta(hours=1)
+    ada = User(email="ada@studio.it", nome="Ada", cognome="L")
+    bob = User(email="bob@studio.it", nome="Bob", cognome="L")
+    clean.add_all([ada, bob])
+    clean.flush()
+    clean.add(
+        Login(user_id=ada.id, logged_at=later, utm_campaign=campaign.slug, utm_term="c0de00aa")
+    )
+    clean.add(
+        Login(user_id=bob.id, logged_at=later, utm_campaign=campaign.slug, utm_term="c0de00aa")
+    )
+    clean.commit()
+    _recipient(
+        clean, campaign.id, "ada@studio.it", codice="c0de00aa", entrato_at=later, azione_at=later
+    )
+    _recipient(
+        clean, campaign.id, "bob@studio.it", codice="c0de00bb", entrato_at=later, azione_at=later
+    )
+    rows = {r.email: r for r in CampaignService(clean, SETTINGS).detail(campaign.id).destinatari}
+    assert (rows["ada@studio.it"].entrato_dalla_mail, rows["ada@studio.it"].azione_dalla_mail) == (
+        True,
+        True,
+    )
+    assert (rows["bob@studio.it"].entrato_dalla_mail, rows["bob@studio.it"].azione_dalla_mail) == (
+        False,
+        False,
+    )
+
+
+def test_dalla_mail_is_the_login_that_stamped_the_entry_not_any_matching_login(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """Review Focus 1: an earlier, unrelated login stamped `entrato_at`; a later login
+    happens to carry this campaign's slug and this row's code. The row did not enter
+    from the mail -- the stamped moment says so."""
+    campaign = campaign_row(clean, stato="inviata", inviata_at=T0, azione="entrato")
+    earlier = T0 + timedelta(hours=1)
+    later = T0 + timedelta(hours=2)
+    ada = User(email="ada@studio.it", nome="Ada", cognome="L")
+    clean.add(ada)
+    clean.flush()
+    clean.add(Login(user_id=ada.id, logged_at=earlier))
+    clean.add(
+        Login(user_id=ada.id, logged_at=later, utm_campaign=campaign.slug, utm_term="c0de00aa")
+    )
+    clean.commit()
+    _recipient(clean, campaign.id, "ada@studio.it", codice="c0de00aa", entrato_at=earlier)
+    rows = {r.email: r for r in CampaignService(clean, SETTINGS).detail(campaign.id).destinatari}
+    assert rows["ada@studio.it"].entrato_dalla_mail is False
+    assert rows["ada@studio.it"].azione_dalla_mail is False
+
+
+def test_a_card_that_carries_the_slug_was_created_from_the_mail(clean: Session) -> None:  # noqa: F811  (fixture)
+    campaign = campaign_row(
+        clean,
+        stato="inviata",
+        inviata_at=T0,
+        stato_percorso="lead",
+        azione="profilo_creato",
+        bottone_meta="wizard",
+    )
+    later = T0 + timedelta(hours=1)
+    giulia = User(email="giulia@studio.it", nome="Giulia", cognome="B")
+    clean.add(giulia)
+    clean.flush()
+    # The wizard stores the button link's `utm_term` on the card (item 2, Greptile P1):
+    # the row's own `codice` is `c0de0001` by `_recipient`'s default, matched here.
+    clean.add(
+        Freelancer(user_id=giulia.id, links=[], utm_campaign=campaign.slug, utm_term="c0de0001")
+    )
+    clean.commit()
+    _recipient(clean, campaign.id, "giulia@studio.it", tipo="lead", azione_at=later)
+    _recipient(clean, campaign.id, "nina@studio.it", tipo="lead", azione_at=later)
+    rows = {r.email: r for r in CampaignService(clean, SETTINGS).detail(campaign.id).destinatari}
+    assert rows["giulia@studio.it"].azione_dalla_mail is True
+    assert rows["nina@studio.it"].azione_dalla_mail is False
+    assert rows["giulia@studio.it"].entrato_dalla_mail is False
+
+
+def test_a_card_with_the_slug_but_another_persons_code_is_not_dalla_mail(clean: Session) -> None:  # noqa: F811  (fixture)
+    """Item 2 (Greptile P1): a forwarded mail carries the slug too, so the card's own
+    `utm_term` must match the row's `codice`, the same rule the login check already
+    applies (Review Focus 5)."""
+    campaign = campaign_row(
+        clean,
+        stato="inviata",
+        inviata_at=T0,
+        stato_percorso="lead",
+        azione="profilo_creato",
+        bottone_meta="wizard",
+    )
+    later = T0 + timedelta(hours=1)
+    nina = User(email="nina@studio.it", nome="Nina", cognome="B")
+    clean.add(nina)
+    clean.flush()
+    clean.add(
+        Freelancer(user_id=nina.id, links=[], utm_campaign=campaign.slug, utm_term="not-ninas-code")
+    )
+    clean.commit()
+    _recipient(
+        clean, campaign.id, "nina@studio.it", tipo="lead", codice="c0de0002", azione_at=later
+    )
+    rows = {r.email: r for r in CampaignService(clean, SETTINGS).detail(campaign.id).destinatari}
+    assert rows["nina@studio.it"].azione_dalla_mail is False

@@ -23,7 +23,7 @@ const ITEM = {
   inviata_at: '2026-09-25T07:32:00Z',
   created_at: '2026-09-25T07:00:00Z',
   pronta: true,
-  conteggi: { destinatari: 11, in_coda: 0, inviate: 8, saltate: 1, fallite: 2, consegnate: 8, rimbalzate: 0 },
+  conteggi: { destinatari: 11, in_coda: 0, inviate: 8, saltate: 1, fallite: 2, consegnate: 8, rimbalzate: 0, cliccate: 4, entrate: 3, azioni: 2 },
 }
 
 function mount() {
@@ -53,9 +53,7 @@ describe('«Campagne»', () => {
     mount()
     const row = (await screen.findByRole('link', { name: 'Manca il CV' })).closest('tr')!
     expect(within(row).getByText('Inviata')).toBeInTheDocument()
-    expect(row).toHaveTextContent('8 inviate')
-    expect(row).toHaveTextContent('1 saltate')
-    expect(row).toHaveTextContent('2 fallite')
+    expect(row).toHaveTextContent('8 inviate · 8 consegnate · 4 clic · 3 entrati · 2 CV caricati · 1 saltate · 2 fallite')
     expect(screen.getByRole('link', { name: 'Nuova campagna' })).toHaveAttribute('href', expect.stringMatching(/\/admin\/campaigns\/new$/))
   })
 

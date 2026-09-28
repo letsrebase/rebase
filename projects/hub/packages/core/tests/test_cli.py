@@ -122,10 +122,15 @@ def test_the_campaigns_tick_command_runs_one_pass_and_prints_what_it_did(
     )
     monkeypatch.setattr(cli, "create_engine_from_settings", lambda _settings: None)
     monkeypatch.setattr(
-        cli, "run_tick", lambda *_a, **_k: TickResult(campagne=1, inviate=2, saltate=1, fallite=0)
+        cli,
+        "run_tick",
+        lambda *_a, **_k: TickResult(campagne=1, inviate=2, saltate=1, fallite=0, stampate=3),
     )
     assert main(["campaigns-tick"]) == 0
-    assert capsys.readouterr().out.strip() == "1 campagne, 2 inviate, 1 saltate, 0 fallite"
+    assert (
+        capsys.readouterr().out.strip()
+        == "1 campagne, 2 inviate, 1 saltate, 0 fallite, 3 esiti registrati"
+    )
 
 
 def test_without_a_key_the_tick_sends_nothing_and_says_so(

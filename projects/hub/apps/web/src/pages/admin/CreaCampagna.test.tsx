@@ -749,3 +749,52 @@ describe('the edit route', () => {
     expect(screen.queryByLabelText('Oggetto')).not.toBeInTheDocument()
   })
 })
+
+describe('a «Riscrivi» draft (phase 2)', () => {
+  const PARENT = { ...TESTED, id: 'c0', nome: 'Manca il CV', stato: 'inviata' }
+  const LISTA = {
+    ...DRAFT,
+    id: 'c9',
+    nome: 'Manca il CV · riscrivi',
+    fonte: 'lista',
+    stato_percorso: null,
+    segue_id: 'c0',
+    azione: 'cv',
+  }
+
+  it('shows whom it follows, keeps the list, and saves only the mail', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c9/audience': () => json(AUDIENCE),
+      'GET /api/hub/campaigns/c9': () => json({ campagna: LISTA, conteggi: COUNTS_EMPTY, destinatari: [] }),
+      'GET /api/hub/campaigns/c0': () => json({ campagna: PARENT, conteggi: COUNTS_EMPTY, destinatari: [] }),
+      'PATCH /api/hub/campaigns/c9': () => json({ ...LISTA, oggetto: 'Manca solo il CV!' }),
+    })
+    mountEdit('c9')
+    expect(await screen.findByRole('heading', { name: 'Riscrivi a chi non ha fatto niente' })).toBeInTheDocument()
+    expect(await screen.findByText(/Chi ha ricevuto «Manca il CV» e non ha ancora fatto l’azione/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Filtri' })).not.toBeInTheDocument()
+    expect(screen.getByText('Ha caricato il CV')).toBeInTheDocument()
+    expect(await screen.findByText('riceverà la mail', { exact: false }, SAVED)).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Oggetto'), '!')
+    await vi.waitFor(() => expect(bodies(calls, 'PATCH', /\/campaigns\/c9$/)).toHaveLength(1), SAVED)
+    const body = lastSaved(calls)
+    expect(body.oggetto).toBe('Manca solo il CV!')
+    expect(Object.keys(body).sort()).toEqual(['bottone_meta', 'bottone_testo', 'nome', 'oggetto', 'testo'])
+  })
+
+  it('says it when the parent campaign cannot be read (item 4)', async () => {
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c9/audience': () => json(AUDIENCE),
+      'GET /api/hub/campaigns/c9': () => json({ campagna: LISTA, conteggi: COUNTS_EMPTY, destinatari: [] }),
+      'GET /api/hub/campaigns/c0': () => json({ detail: 'Non trovata.' }, 500),
+    })
+    mountEdit('c9')
+    expect(await screen.findByRole('heading', { name: 'Riscrivi a chi non ha fatto niente' })).toBeInTheDocument()
+    expect(await screen.findByText(/Chi ha ricevuto «…» e non ha ancora fatto l’azione/)).toBeInTheDocument()
+    expect(await screen.findByText('Non riesco a leggere la campagna da cui viene.')).toHaveAttribute('role', 'alert')
+  })
+})

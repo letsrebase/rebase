@@ -63,15 +63,7 @@ export function Messaggio({ form, onChange }: { form: CampaignForm; onChange: (p
           </Select>
         </div>
       </div>
-      {form.fonte === 'stato' ? (
-        // A state brings its own action (spec § 1): a sentence, not a menu that cannot
-        // be opened, and nothing before a state is picked.
-        form.statoPercorso !== null && (
-          <p className="text-sm">
-            <span className="text-muted-foreground">Cosa misuriamo:</span> {AZIONE_LABELS[form.azione]}
-          </p>
-        )
-      ) : (
+      {form.fonte === 'filtri' ? (
         <div className="max-w-sm space-y-1.5">
           <Label htmlFor="campagna-azione">Cosa misuriamo</Label>
           <Select value={form.azione} onValueChange={(value) => onChange({ azione: value as CampaignAzione })}>
@@ -90,6 +82,15 @@ export function Messaggio({ form, onChange }: { form: CampaignForm; onChange: (p
           </Select>
           <p className="text-xs text-muted-foreground">Chi l’ha già fatto quando la mail parte viene saltato.</p>
         </div>
+      ) : (
+        // A state brings its own action (spec § 1), and a `lista` keeps its parent's
+        // (Task 6): a sentence, not a menu that cannot be opened, and nothing before a
+        // state is picked.
+        (form.fonte === 'lista' || form.statoPercorso !== null) && (
+          <p className="text-sm">
+            <span className="text-muted-foreground">Cosa misuriamo:</span> {AZIONE_LABELS[form.azione]}
+          </p>
+        )
       )}
     </section>
   )

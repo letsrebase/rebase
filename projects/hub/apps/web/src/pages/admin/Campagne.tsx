@@ -4,7 +4,7 @@ import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, type CampaignListItem } from '@/lib/api'
-import { CAMPAIGN_STATE_LABELS } from '@/lib/campaigns'
+import { CAMPAIGN_STATE_LABELS, outcomeLine } from '@/lib/campaigns'
 import { formatDateTime } from '@/lib/format'
 import { Empty, Header } from './lists'
 
@@ -51,10 +51,7 @@ export function AdminCampagne() {
                       <Badge variant="pill">{CAMPAIGN_STATE_LABELS[item.stato]}</Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{when(item)}</TableCell>
-                    <TableCell className="text-sm">
-                      {item.conteggi.inviate} inviate · {item.conteggi.consegnate} consegnate · {item.conteggi.rimbalzate} rimbalzate ·{' '}
-                      {item.conteggi.saltate} saltate · {item.conteggi.fallite} fallite
-                    </TableCell>
+                    <TableCell className="text-sm">{outcomeLine(item.conteggi, item.azione)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

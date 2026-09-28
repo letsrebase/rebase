@@ -154,3 +154,13 @@ def cancel(
     _: AdminDep, session: SessionDep, settings: SettingsDep, campaign_id: UUID
 ) -> CampaignRead:
     return CampaignService(session, settings).cancel(campaign_id)
+
+
+@router.post(
+    "/{campaign_id}/follow-up", response_model=CampaignRead, status_code=status.HTTP_201_CREATED
+)
+def follow_up(
+    admin: AdminDep, session: SessionDep, settings: SettingsDep, campaign_id: UUID
+) -> CampaignRead:
+    """«Riscrivi a chi non ha fatto niente»: the draft the admin then edits and sends."""
+    return CampaignService(session, settings).follow_up(campaign_id, admin.id)

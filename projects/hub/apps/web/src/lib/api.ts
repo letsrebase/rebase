@@ -631,6 +631,7 @@ export interface Campaign {
   fonte: 'stato' | 'filtri' | 'lista'
   stato_percorso: string | null
   filtri: Record<string, unknown> | null
+  segue_id: string | null
   oggetto: string
   testo: string
   bottone_testo: string
@@ -654,6 +655,9 @@ export interface CampaignCounts {
   fallite: number
   consegnate: number
   rimbalzate: number
+  cliccate: number
+  entrate: number
+  azioni: number
 }
 
 export interface CampaignListItem extends Campaign {
@@ -674,6 +678,12 @@ export interface CampaignRecipient {
   inviata_at: string | null
   consegnata_at: string | null
   rimbalzata_at: string | null
+  primo_clic_at: string | null
+  reclamo_at: string | null
+  entrato_at: string | null
+  azione_at: string | null
+  entrato_dalla_mail: boolean
+  azione_dalla_mail: boolean
 }
 
 export interface CampaignDetail {
@@ -968,6 +978,7 @@ export const admin = {
     request<Campaign>(`/api/hub/campaigns/${id}/schedule`, json(data)),
   campaignToDraft: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/draft`, { method: 'POST' }),
   cancelCampaign: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/cancel`, { method: 'POST' }),
+  followUpCampaign: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/follow-up`, { method: 'POST' }),
   neverWrite: (email: string) => request<{ ok: boolean }>('/api/hub/campaigns/never-write', json({ email })),
   freelancer: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}`),
   cvUrl: (id: string) => `/api/hub/freelancers/${id}/cv`,

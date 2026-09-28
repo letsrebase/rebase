@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.amounts import NotAnAmount, italian_amount
+from rebase_core.campaigns.service import CampaignService
 from rebase_core.comments import CommentService
 from rebase_core.companies import CompanyService
 from rebase_core.config import Settings
@@ -88,9 +89,10 @@ INSTRUCTIONS = (
     "annotarla e lasciare un commento datato nel suo thread; da un'iscrizione possono "
     "creare la scheda freelance con quanto si trova in pubblico su quella persona, che poi "
     "lei completa dalla sua area. Da qui si gestiscono anche i match fra un freelance e "
-    "un'azienda, i loro contratti e la firma, come dall'area admin. Sono dati di altre "
-    "persone: da usare solo per decidere quando e cosa scrivere loro, mai da riportare "
-    "altrove."
+    "un'azienda, i loro contratti e la firma, come dall'area admin. Si leggono anche le "
+    "campagne di mail della sezione «Campagne» e, per ogni persona, cosa ha fatto dopo la "
+    "mail. Sono dati di altre persone: da usare solo per decidere quando e cosa scrivere "
+    "loro, mai da riportare altrove."
 )
 
 PIGRO_NOT_CONFIGURED = "Il registro di Pigro non è configurato: manca REBASE_PIGRO_REGISTRY_TOKEN."
@@ -725,6 +727,38 @@ def build_server(
         contatto li porta), `null` quando la pagina non ne aveva. Ogni scheda letta da
         `get_talento` e da `get_freelancer` porta anche `accessi` e `ultimo_accesso`."""
         return _run(lambda s: LoginService(s).stats())
+
+    campaign_settings = settings if settings is not None else Settings(_env_file=None)  # type: ignore[call-arg]
+
+    @mcp.tool()
+    def list_campagne() -> dict[str, Any]:
+        """Le campagne di mail della sezione «Campagne», dalla più recente. Per ognuna:
+
+        - nome, oggetto e stato (bozza, programmata, in_invio, inviata, annullata);
+        - quando parte o è partita (`programmata_per`, `inviata_at`);
+        - l'azione che misura: entrato, cv, scheda_completa, profilo_creato o
+          richiesta_aggiornata;
+        - in `conteggi` quante sono state inviate, saltate, fallite, consegnate,
+          rimbalzate e cliccate, quante persone sono entrate nella loro area dopo la mail
+          (`entrate`) e quante hanno fatto l'azione (`azioni`).
+
+        Solo lettura: una campagna si prepara e si invia dall'area admin."""
+        return _run(lambda s: CampaignService(s, campaign_settings).list_all())
+
+    @mcp.tool()
+    def get_campagna(campagna_id: str) -> dict[str, Any]:
+        """Una campagna, per id, con i suoi numeri e l'esito di ogni persona in
+        `destinatari`:
+
+        - lo stato (in_coda, inviata, saltata con il motivo, fallita);
+        - quando la mail è stata inviata, consegnata o è rimbalzata, e il primo clic;
+        - quando la persona è entrata nella sua area (`entrato_dalla_mail` vero se dal
+          link di questa mail);
+        - quando ha fatto l'azione (`azione_dalla_mail` per un profilo creato dal link).
+
+        `campagna.segue_id` è la campagna da cui viene una «Riscrivi a chi non ha fatto
+        niente». Solo lettura."""
+        return _run(lambda s: CampaignService(s, campaign_settings).detail(UUID(campagna_id)))
 
     hub = urlsplit(settings.hub_url) if settings is not None else None
     # The PDFs are links an admin opens with their own session, never bytes in an
