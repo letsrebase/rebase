@@ -121,6 +121,29 @@ def test_a_freelancer_application_with_rif_shows_up_on_the_referrers_own_page(
     assert mine["referred"][0]["kind"] == "freelancer"
 
 
+def test_a_malformed_rif_is_no_referral_not_a_422(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    """Regression: `rif` used to be a `Field(pattern=...)`, so punctuation or a code
+    over ten characters failed the whole application with a 422. A malformed code is
+    muted the same way an unknown one already is (`ReferralService.resolve_referrer`),
+    never a reason to refuse someone applying (CodeRabbit)."""
+    applied = client.post(
+        "/api/hub/freelancers",
+        data={
+            "nome": "Grace",
+            "cognome": "Hopper",
+            "email": "grace@studio.it",
+            "tariffa_giornaliera": "450",
+            "posizione": "Backend developer",
+            "remoto": "remoto",
+            "rif": "not-a-code!",
+        },
+        files={"cv": ("Grace CV.pdf", PDF, "application/pdf")},
+    )
+    assert applied.status_code == 201, applied.text
+
+
 def test_referral_routes_need_the_admin_cookie(client: TestClient, admin: None) -> None:
     for path in ("/api/hub/referrals", "/api/hub/referral-settings"):
         assert client.get(path).status_code == 401, path

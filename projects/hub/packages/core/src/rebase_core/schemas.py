@@ -328,6 +328,23 @@ def _https_url(value: str) -> str:
     return trimmed
 
 
+_RIF_SHAPE = re.compile(r"^[A-Za-z0-9]+$")
+
+
+def _clean_rif(value: object) -> str | None:
+    """`rif=` as the wizard's own funnel already treats it (`resolveReferral`,
+    `lib/utm.ts`): shaped like a code or it is not one, never a reason to fail the
+    whole signup. `ReferralService.resolve_referrer` mutes an unknown code the same
+    way, so a public client sending punctuation or a stray length here gets a
+    signup with no referral, not a 422 (CodeRabbit)."""
+    if not isinstance(value, str):
+        return None
+    trimmed = value.strip()
+    if not trimmed or len(trimmed) > REFERRAL_CODE_LENGTH or not _RIF_SHAPE.match(trimmed):
+        return None
+    return trimmed
+
+
 class FreelancerFields(BaseModel):
     """The seven answers the wizard asks for and the person may later change. One set of
     rules for the wizard (`FreelancerCreate`) and the member area (`MemberUpdate`), so
@@ -374,9 +391,12 @@ class FreelancerCreate(FreelancerFields):
     # `distinct_id` on `CompanyCreate`, not folded into `utm` -- `Freelancer(**utm_dict)`
     # spreads every key of `SignupUtm.model_dump()` straight onto real columns, and a
     # code is not one of them.
-    rif: SafeStr | None = Field(
-        default=None, max_length=REFERRAL_CODE_LENGTH, pattern=r"^[A-Za-z0-9]+$"
-    )
+    rif: SafeStr | None = None
+
+    @field_validator("rif", mode="before")
+    @classmethod
+    def _rif(cls, value: object) -> str | None:
+        return _clean_rif(value)
 
 
 class MemberUpdate(FreelancerFields):
@@ -485,9 +505,12 @@ class CompanyCreate(CompanyFields):
     utm: SignupUtm | None = None
     distinct_id: SafeStr | None = Field(default=None, max_length=DISTINCT_ID_MAX_LENGTH)
     # A member's own referral link, when the funnel carried one (P-REB-44).
-    rif: SafeStr | None = Field(
-        default=None, max_length=REFERRAL_CODE_LENGTH, pattern=r"^[A-Za-z0-9]+$"
-    )
+    rif: SafeStr | None = None
+
+    @field_validator("rif", mode="before")
+    @classmethod
+    def _rif(cls, value: object) -> str | None:
+        return _clean_rif(value)
 
     @field_validator(
         "nome_azienda", "referente_nome", "referente_cognome", "telefono", mode="after"
