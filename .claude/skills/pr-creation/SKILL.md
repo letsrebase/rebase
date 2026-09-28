@@ -472,8 +472,30 @@ gh pr create --body-file pr-body.md \
 5. **Clean up**: `git worktree remove ../<repo>-<name>`, `git worktree prune`.
 6. **Production is a separate step.** Preview deploys on the green trunk run;
    **production moves only on a tag** (`docs/design/DECISIONS.md`, 2026-09-09) and only
-   when asked, and when it does, the card gets its `**In production:**` comment with the
-   tag and what answered.
+   when asked. The tag is the project's own, `<project>-v<semver>`, one past the
+   project's last (`git tag -l '<project>-v*' --sort=-v:refname | head -1`; on
+   2026-09-28 those were `website-v0.21.0`, `hub-v0.43.0` and
+   `pigrocrm-v0.28.0`), pushed from the merge commit on `main`:
+
+   ```bash
+   git fetch origin && git tag <project>-v<semver> origin/main && git push origin <project>-v<semver>
+   ```
+
+   The tag gets a CI run of its own, and since 2026-09-28 (REB-563) that run is
+   **every job of the project the prefix names plus the shared packages it uses**
+   (`shared/ui`, `shared/analytics`), and nothing else: a website tag runs the
+   website's gate and image and `shared/analytics`, not the CRM's suite. A prefix
+   `changes` does not know keeps the full run. `deploy-<project>.yml` waits for that
+   run and refuses a red one, or one that has not completed within thirty minutes;
+   it never reads the trunk's run for the same commit, which may have skipped the
+   project. Read three things before you
+   write anything: the tag run's job list is the project's and nothing of another
+   project ran; `ci` is green on it; the deploy's own run answered its health check.
+   Then the card gets its `**In production:**` comment with the tag, the tag run's id,
+   the deploy run's id and what answered (the URL you opened and what you saw), in
+   the `linear-content` shape. The mechanism and the four secrets are
+   `docs/adding-a-project.md` § 7; a tag is immutable once pushed (ruleset, 2026-09-10),
+   so a wrong one is followed by the next version, never moved.
 
 ## What never goes in a PR
 
