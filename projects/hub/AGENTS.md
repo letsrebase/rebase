@@ -351,12 +351,13 @@ Each run takes 50 CVs, the oldest first (`--limit`), and never a turned-down per
 CV that failed on its own account (a refusal, a scan with no text, a card that names the
 person) is not tried again until it changes, so the runs end; an outage stops the batch,
 counts under «non riuscite» and is the next run's, so a run that keeps printing «0
-schede scritte, 1 non riuscite» is Claude not answering, not a CV. «Rigenera scheda» on
+schede scritte, 1 non riuscite, fermato: Claude non disponibile» is Claude not
+answering, not a CV. «Rigenera scheda» on
 the talent's page asks again for one. A card whose Italian gives the person's gender away
 (`_gendered` in `cards.py`, a net under the prompt's rule, not a gate) is asked for once
 more and then written whatever the answer, never parked: one still gendered adds «N con
-avviso di genere» to the run's line and `written with a gender warning` to the log
-(REB-574).
+avviso di genere» to the run's line and `written with a gender warning` to the log; an
+outage on the rewrite writes the first card and still stops the batch (REB-574).
 
 **Two caps.** `REBASE_TEAM_BUILDER_CONCURRENCY` (4) is how many proposals run at once
 in the API process: the next one answers 503 «Troppe richieste in questo momento:

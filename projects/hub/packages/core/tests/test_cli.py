@@ -182,12 +182,37 @@ def test_cards_refresh_prints_the_counts(
     assert capsys.readouterr().out.strip() == "3 schede scritte, 1 non riuscite"
 
 
-def test_cards_refresh_counts_the_gender_warnings(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize(
+    ("result", "line"),
+    [
+        (
+            CardsRefreshed(written=3, failed=1, gender_warnings=2),
+            "3 schede scritte, 1 non riuscite, 2 con avviso di genere",
+        ),
+        # An outage on a first call: counted among the failed, and the stop said.
+        (
+            CardsRefreshed(written=1, failed=1, stopped=True),
+            "1 schede scritte, 1 non riuscite, fermato: Claude non disponibile",
+        ),
+        # An outage on the rewrite: the first card written with its warning, then the stop.
+        (
+            CardsRefreshed(written=1, failed=0, gender_warnings=1, stopped=True),
+            "1 schede scritte, 0 non riuscite, 1 con avviso di genere, "
+            "fermato: Claude non disponibile",
+        ),
+    ],
+    ids=["warnings", "outage", "outage_on_the_rewrite"],
+)
+def test_cards_refresh_counts_the_gender_warnings_and_says_the_stop(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    result: CardsRefreshed,
+    line: str,
 ) -> None:
     """REB-574: cards written with the gender still showing after their rewrite are
-    among the written ones, and named apart; with none, the line is the one above, so
-    «0 schede scritte, 0 non riuscite» still says the backlog is done."""
+    among the written ones, and named apart; a batch stopped by an outage says so,
+    whether the outage met a first call or a rewrite. With neither, the line is the one
+    above, so «0 schede scritte, 0 non riuscite» still says the backlog is done."""
     _FakeCardWriter.instances = []
     monkeypatch.setattr(
         cli,
@@ -195,15 +220,11 @@ def test_cards_refresh_counts_the_gender_warnings(
         lambda: Settings(anthropic_api_key="sk-ant-test-not-a-real-key", _env_file=None),  # type: ignore[call-arg]
     )
     monkeypatch.setattr(cli, "CardWriter", _FakeCardWriter)
-    monkeypatch.setattr(
-        _FakeCardWriter, "result", CardsRefreshed(written=3, failed=1, gender_warnings=2)
-    )
+    monkeypatch.setattr(_FakeCardWriter, "result", result)
 
     assert main(["cards-refresh"]) == 0
 
-    assert capsys.readouterr().out.strip() == (
-        "3 schede scritte, 1 non riuscite, 2 con avviso di genere"
-    )
+    assert capsys.readouterr().out.strip() == line
 
 
 def test_cards_refresh_without_a_key_says_so_and_writes_nothing(

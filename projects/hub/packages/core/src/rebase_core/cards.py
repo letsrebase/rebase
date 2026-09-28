@@ -70,9 +70,18 @@ CARD_SCHEMA = {
 }
 
 Failure = Literal["no_text", "refusal", "max_tokens", "shape", "identifying", "unavailable"]
-# `warned`: written, with the gender still showing after the one rewrite (REB-574).
+# `warned`: written, with the gender still showing after the one rewrite (REB-574);
+# `warned_outage`: the same, the first card, because the rewrite met an outage, which
+# stops a batch as any outage does.
 Outcome = Literal[
-    "written", "warned", "failed", "unavailable", "unchanged", "deleted", "superseded"
+    "written",
+    "warned",
+    "warned_outage",
+    "failed",
+    "unavailable",
+    "unchanged",
+    "deleted",
+    "superseded",
 ]
 
 # The last successful generation, written together and retired together. `card` is
@@ -355,7 +364,9 @@ class CardWriter:
         run of 429s would otherwise walk the whole batch for nothing, and the CVs after
         it are simply the next run's. A run with nothing written and nothing failed is
         the backlog done. A card written with the gender still showing after its rewrite
-        counts as written, and among `gender_warnings` too (REB-574)."""
+        counts as written, and among `gender_warnings` too (REB-574); when that rewrite
+        met an outage, the card is written and the batch stops after it all the same.
+        `stopped` says the batch ended at an outage."""
         if self.llm is None:
             return CardsRefreshed(written=0, failed=0)
         digest = func.encode(func.sha256(Freelancer.cv_bytes), "hex")
@@ -373,17 +384,21 @@ class CardWriter:
             .limit(limit)
         ).all()
         written = failed = warned = 0
+        stopped = False
         for freelancer_id in stale:
             outcome = self._write(freelancer_id, force=False)
-            if outcome in ("written", "warned"):
+            if outcome in ("written", "warned", "warned_outage"):
                 written += 1
             elif outcome in ("failed", "unavailable"):
                 failed += 1
-            if outcome == "warned":
+            if outcome in ("warned", "warned_outage"):
                 warned += 1
-            if outcome == "unavailable":
+            if outcome in ("unavailable", "warned_outage"):
+                stopped = True
                 break
-        return CardsRefreshed(written=written, failed=failed, gender_warnings=warned)
+        return CardsRefreshed(
+            written=written, failed=failed, gender_warnings=warned, stopped=stopped
+        )
 
     def delete(self, freelancer_id: UUID) -> None:
         """The card goes with the CV. Not committed here: `clear_cv` commits it with the
@@ -455,18 +470,19 @@ class CardWriter:
             return self._fail(freelancer_id, digest, card)
         model = response.model
         input_tokens, output_tokens = response.input_tokens, response.output_tokens
-        warned = False
+        warned = outage = False
         if _gendered(card) and response.text is not None:
             # One rewrite, never a gate (REB-574): the card already names no one, no
             # place and no id, and a failure would park the person out of the catalogue
             # for a hint. The rewrite when it is a card; otherwise, a refusal, a bad
             # shape, a card that names the person or an outage, the first card. The row
-            # counts the tokens of both calls.
+            # counts the tokens of both calls. An outage is still an outage: the outcome
+            # says so, and a batch stops after this CV (`refresh_stale`).
             logger.info("card for freelancer %s gave the gender away: asked again", freelancer_id)
             try:
                 again: LlmResponse | None = self.llm.complete(neutral_retry(request, response.text))
             except LlmUnavailable:
-                again = None
+                again, outage = None, True
             if again is not None:
                 input_tokens += again.input_tokens
                 output_tokens += again.output_tokens
@@ -492,7 +508,7 @@ class CardWriter:
             return "superseded"
         if warned:
             logger.warning("card for freelancer %s written with a gender warning", freelancer_id)
-            return "warned"
+            return "warned_outage" if outage else "warned"
         return "written"
 
     def _fail(self, freelancer_id: UUID, digest: str, kind: Failure) -> Outcome:

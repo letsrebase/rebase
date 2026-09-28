@@ -711,6 +711,33 @@ def test_refresh_stale_counts_the_gender_warnings(clean: Session) -> None:
     assert len(llm.requests) == 3
 
 
+def test_an_outage_on_the_rewrite_writes_the_card_and_stops_the_batch(
+    clean: Session, logs: pytest.LogCaptureFixture
+) -> None:
+    """A 429 on the rewrite: the first card is written with its warning, so the talent
+    stays in the catalogue, and the outage still stops the batch there, as one on a
+    first call does, rather than paying a first call for every CV after it."""
+    first = _apply(clean, "a@studio.it", text_pdf("Primo CV."))
+    second = _apply(clean, "b@studio.it", text_pdf("Secondo CV."))
+    llm = _Scripted([card_response(SVILUPPATRICE), _down(), card_response()])
+
+    result = CardWriter(clean, llm).refresh_stale(limit=2)
+
+    assert result == CardsRefreshed(written=1, failed=0, gender_warnings=1, stopped=True)
+    assert len(llm.requests) == 2
+    assert "Primo CV" in _user_text(llm.requests[1])
+    stored = _stored(clean, first)
+    assert stored is not None and stored.card == SVILUPPATRICE and stored.error is None
+    assert stored.cv_sha256 == _sha(text_pdf("Primo CV."))
+    assert _stored(clean, second) is None
+    assert f"card for freelancer {first} {GENDER_WARNING}" in logs.text
+
+    # The next run starts from the CV the batch did not reach.
+    again = _Scripted([card_response()])
+    assert CardWriter(clean, again).refresh_stale(limit=2) == CardsRefreshed(written=1, failed=0)
+    assert "Secondo CV" in _user_text(again.requests[0])
+
+
 def test_an_outage_on_a_new_cv_retires_the_old_card(clean: Session) -> None:
     """Claude down says nothing about the new CV, so no hash parks it; but the old
     card describes a CV the person replaced, so it leaves the catalogue until the next
@@ -978,7 +1005,9 @@ def test_refresh_stale_stops_at_an_outage(clean: Session) -> None:
     third = _apply(clean, "c@studio.it", text_pdf("Terzo CV."))
     llm = _Scripted([card_response(), _down()])
 
-    assert CardWriter(clean, llm).refresh_stale(limit=3) == CardsRefreshed(written=1, failed=1)
+    assert CardWriter(clean, llm).refresh_stale(limit=3) == CardsRefreshed(
+        written=1, failed=1, stopped=True
+    )
 
     assert len(llm.requests) == 2
     assert (stored := _stored(clean, first)) is not None and stored.card == CARD
