@@ -108,9 +108,22 @@ beforeEach(() => {
  * §4), so every assertion about them opens that row's menu first. The trigger is
  * labelled per row -- «Azioni per Ada Admin» -- because a table of identical «Azioni»
  * buttons is ambiguous to a screen reader and to a test alike.
+ *
+ * `findByRole` already waits on the right thing -- the trigger only exists once the
+ * users/invites lists resolve and the row renders, so there is no earlier signal to
+ * wait on instead. What is not enough is the default one-second `asyncUtilTimeout`: on
+ * a loaded full `pnpm --filter web test` run this shape lost the race (REB-405), the
+ * same headroom `vite.config.ts`'s own `testTimeout: 20_000` comment already describes
+ * for the suite as a whole. Matching that headroom here.
  */
 async function openRowMenu(nome: string) {
-  await userEvent.click(await screen.findByRole('button', { name: `Azioni per ${nome}` }))
+  await userEvent.click(
+    await screen.findByRole('button', { name: `Azioni per ${nome}` }, { timeout: 10_000 }),
+  )
+  // Radix opens the menu content into a portal, so the trigger's click resolving does
+  // not itself guarantee the content has mounted: wait for the menu here so every
+  // caller's own `getByRole('menuitem', ...)` right after `openRowMenu` stays safe.
+  await screen.findByRole('menu')
 }
 
 describe('UsersPanel', () => {

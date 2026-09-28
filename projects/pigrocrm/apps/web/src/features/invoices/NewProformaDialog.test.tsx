@@ -91,6 +91,13 @@ type ButtonProps = Parameters<typeof NewProformaButton>[0]
 async function open(props: ButtonProps = {}) {
   renderWithClient(<NewProformaButton {...props} />)
   await userEvent.click(screen.getByRole('button', { name: 'Nuova fattura' }))
+  // Radix opens the dialog content into a portal, so the trigger's click resolving does
+  // not itself guarantee the content has mounted: wait for the dialog here so every
+  // caller's own synchronous `getByLabelText`/`getByRole` right after `open` stays safe
+  // (the same shape REB-405 fixed for a dropdown menu's own portal content, and the
+  // reason several files failed once each on a loaded full `pnpm --filter web test`
+  // run without it).
+  await screen.findByRole('dialog')
 }
 
 async function chooseCustomer(name: string) {
