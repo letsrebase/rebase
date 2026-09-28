@@ -22,6 +22,7 @@ from rebase_core.mail import (
     signed_copy_mail,
     signing_cancelled_mail,
     signing_request_mail,
+    talent_cloud_opened_mail,
     welcome_mail,
 )
 
@@ -358,3 +359,31 @@ def test_the_signed_copy_travels_as_an_attachment_to_both_parties() -> None:
         for_rebase=True,
     )
     assert hostile.html is not None and "<script>" not in hostile.html
+
+
+def test_the_talent_cloud_mail_names_the_company_and_links_to_the_cloud() -> None:
+    """REB-518, spec § 4.1: the referente learns the cloud is open for their company,
+    and the one link is the cloud's page in the member area, where the magic link they
+    already know lets them in."""
+    url = "https://letsrebase.com/hub/me/cloud"
+    mail = talent_cloud_opened_mail("wile@acme.it", nome="Wile", azienda="Acme S.r.l.", url=url)
+    assert mail.to == "wile@acme.it"
+    assert mail.subject == "Il talent cloud di rebase è aperto per Acme S.r.l."
+    assert mail.text.startswith("Ciao Wile,")
+    assert "il talent cloud di rebase è aperto per Acme S.r.l." in mail.text
+    assert url in mail.text
+    assert "senza password" in mail.text
+    assert mail.html is not None
+    # The button's href, and the bare URL as href and as text for blocked buttons.
+    assert mail.html.count(url) == 3
+    assert "Apri il talent cloud" in mail.html
+    assert mail.attachments == ()
+
+    nameless = talent_cloud_opened_mail("wile@acme.it", nome="", azienda="Acme", url=url)
+    assert nameless.text.startswith("Ciao,")
+    hostile = talent_cloud_opened_mail(
+        "wile@acme.it", nome="<b>Wile</b>", azienda="<i>Acme</i>", url='https://x.it/?t="><script>'
+    )
+    assert hostile.html is not None
+    for raw in ("<script>", "<b>Wile", "<i>Acme"):
+        assert raw not in hostile.html

@@ -89,7 +89,15 @@ def test_member_profile_carries_no_admin_field() -> None:
 def members(hub_engine: Engine, hub_session: Session) -> MemberService:
     yield MemberService(hub_session)
     hub_session.rollback()
-    for table in ("sessions", "magic_link_tokens", "comments", "companies", "freelancers", "users"):
+    for table in (
+        "sessions",
+        "magic_link_tokens",
+        "comments",
+        "talent_cloud_grants",
+        "companies",
+        "freelancers",
+        "users",
+    ):
         hub_session.execute(text(f"DELETE FROM {table}"))
     hub_session.commit()
 
@@ -236,6 +244,33 @@ def test_me_read_answers_the_identity_and_the_card_together(
     )
     assert bare_read.completa is False
     assert freelancer_id  # the fixture's card is untouched by the bare read
+
+
+def test_me_carries_talent_cloud(
+    members: MemberService, hub_session: Session, settings: Settings
+) -> None:
+    """REB-518: the member area's «Talent cloud» shows while any grant of the person is
+    live, whichever company it was opened for."""
+    from rebase_core.cloud import TalentCloudService
+
+    acme = _request_company(hub_session)
+    bianchi = _request_company(hub_session, nome_azienda="Bianchi Srl")
+    user = UserService(hub_session).by_email("wile@acme.it")
+    assert user is not None
+    assert members.me_read(user.id).talent_cloud is False
+
+    admin = UserService(hub_session).get_or_create("ivan@rebase.it", "Ivan", "Sala")
+    cloud = TalentCloudService(hub_session, settings)
+    cloud.grant(acme, admin.id)
+    cloud.grant(bianchi, admin.id)
+    assert members.me_read(user.id).talent_cloud is True
+
+    cloud.revoke(acme, admin.id)
+    assert members.me_read(user.id).talent_cloud is True
+    cloud.revoke(bianchi, admin.id)
+    assert members.me_read(user.id).talent_cloud is False
+    # The admin who opened it is not a referente: nothing opened for them.
+    assert members.me_read(admin.id).talent_cloud is False
 
 
 def test_a_person_can_carry_both_a_card_and_a_company_at_once(
