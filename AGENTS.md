@@ -113,9 +113,11 @@ nothing when you are not. Narrow to one project by passing its paths as argument
 did not get cheaper, it moved; a heavy check in neither tier is a hole.
 
 **Three things about the Python suite, measured on 2026-09-09 and 2026-09-28 and
-easy to undo by accident.** It is deselected by marker into two jobs that run side by
-side: the `slow` corpus is twelve minutes of PostgreSQL around two files, so merging
-it back into the main gate puts the sum back on the critical path. The rest runs
+easy to undo by accident.** It is deselected by marker into the gate and the corpus,
+which run side by side: the `slow` corpus is minutes of PostgreSQL around two files,
+one job per file since REB-565 because each builds its own corpus and the two in a row
+were the trunk's longest job, so merging it back into the main gate puts the sum back
+on the critical path. The rest runs
 under `-n auto --dist loadfile`, which works because each xdist worker starts its own
 container from the session-scoped fixture; `loadfile` is what keeps a file's tests
 on one worker, as the module-scoped fixtures require. A test that only passes in
@@ -124,8 +126,7 @@ rather than pinned. And on CI that rest is three jobs, not one: `ci.yml` calls t
 gate in a three-way matrix and each job runs every third file of the sorted list
 (`_python-gate.yml`'s `shard` input), because one job was 355s of a run whose next
 longest job was 174s (REB-561). The corpus job stays serial on purpose, since every
-assertion in it is about which plan the planner picks and load changes the answer,
-and it is now the longest job on a trunk push that touches `packages/**`.
+assertion in it is about which plan the planner picks and load changes the answer.
 
 `ci` is the aggregate job and the only status check this repository should ever be
 asked to require, and since 2026-09-10 it is required: the ruleset "main: pull

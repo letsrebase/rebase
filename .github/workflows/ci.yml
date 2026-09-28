@@ -119,6 +119,11 @@ jobs:
       website_deploy: ${{ steps.tag.outputs.website_deploy || steps.filter.outputs.website_deploy }}
       hub_deploy: ${{ steps.tag.outputs.hub_deploy || steps.filter.outputs.hub_deploy }}
       tooling: ${{ steps.tag.outputs.tooling || steps.filter.outputs.tooling }}
+      # The `slow` files, for the corpus job's matrix below: read from the tree, so a
+      # third file carrying the marker gets its own job the day it is committed
+      # rather than running in preflight's lane alone (REB-565). A pull_request run
+      # has no checkout here and never runs the corpus, so it answers an empty list.
+      slow_files: ${{ steps.slow.outputs.files }}
     steps:
       - uses: actions/checkout@v7
         if: github.event_name != 'pull_request'
@@ -381,6 +386,27 @@ jobs:
       # a billed runner until this run finished. They are triggered by this run's
       # completion now, and they read the verdict from here. One computation, one
       # list, and a deploy that starts already knowing CI was green.
+      - name: List the files behind the `slow` marker
+        id: slow
+        run: |
+          set -euo pipefail
+          if [ '${{ github.event_name }}' = 'pull_request' ]; then
+            echo 'files=[]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Both of pytest's default module patterns, at any depth under the root, as
+          # paths relative to it; `|| true` because a tree with no `slow` file is an
+          # empty list for the corpus job to skip on, not a red `changes` that skips
+          # every job of every project.
+          files=$(find projects/pigrocrm/packages/core/tests -type f \
+              \( -name 'test_*.py' -o -name '*_test.py' \) \
+              -exec grep -lE 'pytest\.mark\.slow' {} + 2>/dev/null \
+            | sed 's#^projects/pigrocrm/packages/core/tests/##' | LC_ALL=C sort \
+            | jq -R . | jq -sc . || true)
+          files=${files:-[]}
+          echo "slow files: ${files}"
+          echo "files=${files}" >> "$GITHUB_OUTPUT"
+
       - name: Publish the verdict for the deploy workflows
         if: github.event_name == 'push'
         run: |
@@ -494,19 +520,35 @@ jobs:
   # with anything. Deliberately serial inside: every assertion in those files is about
   # which plan the planner picks, and two heavy corpora built at once on a two-core
   # runner is exactly the load that changes the answer.
+  #
+  # One job per file, on two runners (REB-565). Each file builds its own corpus from a
+  # module-scoped fixture and never shares it with the other, so running them in one
+  # job was two corpora in a row on one machine, 319s on run 36457557147, and the
+  # longest job on any trunk push under `packages/**` once the gate above was cut to
+  # three shards (REB-561). Two runners cost nothing on a public repository, and each
+  # job stays as serial inside as before: one corpus, one file, no neighbour's load
+  # under the planner. The matrix is the list of `slow` files as `changes` read it
+  # from the tree, so a third such file is a third job with nothing to edit here, and
+  # `preflight.json`'s `pigrocrm-py-corpus` lane still runs them all by marker. One
+  # corpus is fifty thousand rows (`test_search_plan.py`), the other twenty thousand
+  # per table (`test_sort_plan.py`).
   pigrocrm-py-corpus:
     name: pigrocrm · python corpus
     needs: changes
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.changes.outputs.all == 'true' || needs.changes.outputs.pigrocrm_py_corpus == 'true') }}
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.changes.outputs.slow_files != '[]' && (needs.changes.outputs.all == 'true' || needs.changes.outputs.pigrocrm_py_corpus == 'true') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        file: ${{ fromJSON(needs.changes.outputs.slow_files) }}
     uses: ./.github/workflows/_python-gate.yml
     with:
-      job-name: the fifty-thousand-row corpus
+      job-name: ${{ matrix.file }}
       # Lint and mypy already ran in the job above, on the same tree.
       lint: false
       typecheck: false
       lint-path: projects/pigrocrm
       sources: ''
-      tests: projects/pigrocrm/packages/core/tests
+      tests: projects/pigrocrm/packages/core/tests/${{ matrix.file }}
       pytest-args: '-m "slow"'
       # These two files render nothing: no pandoc, no typst, no poppler.
       renderer: false
