@@ -419,15 +419,18 @@ def test_a_first_name_that_is_a_skill_or_inside_a_word_is_not_the_person(
     assert read.card.competenze == ["Ada", "SPARK", "Python"]
 
 
-def test_a_first_name_that_is_the_persons_own_skill_is_the_skill(clean: Session) -> None:
-    """Ruby who writes Ruby: a first name that is a word of the card's own skills is read
-    as the technology in the role and the summary too, so the card is written."""
+RUBY_SKILLS = ["Ruby on Rails", "PostgreSQL"]
+
+
+def test_a_first_name_inside_the_persons_own_skill_is_the_skill(clean: Session) -> None:
+    """Ruby who writes Ruby on Rails: where the role or the summary writes one of the
+    card's own skills whole, the first name inside it is the technology."""
     freelancer_id = _apply(clean, nome="Ruby")
     card = {
         **CARD,
         "ruolo": "Ruby on Rails developer",
-        "competenze": ["Ruby on Rails", "PostgreSQL"],
-        "sintesi": "Sviluppatrice Ruby da nove anni, API e back office per l'e-commerce.",
+        "competenze": RUBY_SKILLS,
+        "sintesi": "Nove anni di Ruby on Rails: API e back office per l'e-commerce.",
     }
     llm = RecordingCall([card_response(card)])
 
@@ -435,6 +438,25 @@ def test_a_first_name_that_is_the_persons_own_skill_is_the_skill(clean: Session)
 
     assert read.error is None and read.card is not None
     assert read.card.ruolo == "Ruby on Rails developer"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("ruolo", "Ruby, backend developer"),
+        ("sintesi", "Ruby ha nove anni di Ruby on Rails e PostgreSQL."),
+    ],
+)
+def test_a_first_name_that_is_also_a_skill_still_names_the_person(
+    clean: Session, field: str, value: str
+) -> None:
+    """The same Ruby, written as herself rather than inside «Ruby on Rails», is named."""
+    freelancer_id = _apply(clean, nome="Ruby")
+    llm = RecordingCall([card_response({**CARD, "competenze": RUBY_SKILLS, field: value})])
+
+    read = CardWriter(clean, llm).write(freelancer_id)
+
+    assert read.card is None and read.error == IDENTIFYING
 
 
 def test_a_surname_inside_a_longer_word_is_not_the_person(clean: Session) -> None:

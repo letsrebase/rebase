@@ -108,6 +108,15 @@ def _names(value: str, name: str) -> bool:
     return any(not found.group().islower() for found in person.finditer(value))
 
 
+def _without_skills(value: str, skills: list[str]) -> str:
+    """`value` with each of `skills` blanked where it is written whole, the longest
+    first, so a name read afterwards is not one inside a technology («Ruby on Rails»)."""
+    for skill in sorted((skill.strip() for skill in skills), key=len, reverse=True):
+        if skill:
+            value = re.sub(rf"(?<!\w){re.escape(skill)}(?!\w)", " ", value, flags=re.IGNORECASE)
+    return value
+
+
 def _identifies(card: Card, cognome: str, nome: str = "") -> bool:
     """Whether the card names the person, by the surname as a whole word written with a
     capital in the role, the summary, the skills or the sectors, by the first name the
@@ -122,10 +131,11 @@ def _identifies(card: Card, cognome: str, nome: str = "") -> bool:
     «Rigenera». The first name, and each word of a first name of two («Maria Grazia»)
     of three letters or more, is read in the role and the summary only, where a
     sentence would name the person («Ada, backend developer»). Not in the skills, which
-    are names of technologies, and not at all when the first name is a word of the
-    person's own skills: Ada, Ruby, Julia or Pascal is a language as well as a person,
-    and «Ruby on Rails developer» is the technology. The prompt forbids all of it; this
-    is what a card that ignored it runs into before it reaches a page."""
+    are names of technologies, and not inside one of the card's own skills where the
+    role or the summary writes it: Ada, Ruby, Julia or Pascal is a language as well as
+    a person, so «Ruby on Rails developer» is the technology for a Ruby who lists «Ruby
+    on Rails», while «Ruby, backend developer» is still her. The prompt forbids all of
+    it; this is what a card that ignored it runs into before it reaches a page."""
     named = [card.ruolo, card.sintesi, *card.competenze, *card.settori]
     prose = [card.ruolo, card.sintesi]
     every = [*named, *card.lingue, *([card.luogo] if card.luogo is not None else [])]
@@ -134,13 +144,10 @@ def _identifies(card: Card, cognome: str, nome: str = "") -> bool:
         return True
     first = nome.strip()
     given = {first, *(word for word in re.split(r"[\s\-]+", first) if len(word) >= 3)}
-    skills = " ".join(card.competenze)
-    given = {
-        name
-        for name in given
-        if name and not re.search(rf"\b{re.escape(name)}\b", skills, re.IGNORECASE)
-    }
-    if any(_names(value, name) for name in given for value in prose):
+    given.discard("")
+    if any(
+        _names(_without_skills(value, card.competenze), name) for name in given for value in prose
+    ):
         return True
     return any(_ADDRESS.search(value) for value in every)
 
