@@ -26,9 +26,10 @@
 # failed run leaves flake.nix untouched. `--write` only ever writes a hash
 # computed from HEAD, and only when HEAD's own pnpm inputs (pnpm-lock.yaml,
 # pnpm-workspace.yaml, package.json, everywhere fetchPnpmDeps reads one) have
-# no uncommitted changes, so the hash it writes is provably the hash of what
-# is about to be committed, not of something still sitting in the working
-# tree.
+# no uncommitted changes and flake.nix itself carries nothing uncommitted
+# outside the pnpmDeps hash line (a previous --write's own edit is fine),
+# so the hash it writes is provably the hash of what is about to be
+# committed, not of something still sitting in the working tree.
 #
 # Docker's /nix is the named volume "rebase-nix-store", so a second run
 # reuses the store instead of paying the several-hundred-MB pull and build
@@ -68,7 +69,7 @@ while [ $# -gt 0 ]; do
       shift 2
       ;;
     -h | --help)
-      sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -104,15 +105,42 @@ write_hash() {
 # files, and every package.json under projects/, shared/ and tooling/. Not
 # `git status --porcelain`: an untracked package.json inside an untracked
 # directory collapses into that directory's own "?? projects/x/" line there,
-# so a nested manifest goes unlisted. `diff` (tracked, against HEAD) plus
-# `ls-files --others` (untracked, always one path per file, never collapsed)
-# together name every changed or new manifest individually.
+# so a nested manifest goes unlisted, and git quotes a non-ASCII path (a
+# directory named `città`, say) into an escaped rendering that a plain
+# "ends with package.json" match misses. `-z` on both `diff` and `ls-files`
+# gives every path NUL-delimited and unquoted, verbatim bytes; `while IFS=
+# read -r -d ''` is the only correct way to read that back. Relies on
+# `pipefail` (set at the top of this script) to fail the whole function,
+# not silently return "nothing changed", when either git command itself
+# fails.
 pnpm_input_status() {
   local repo="$1"
-  {
-    git -C "$repo" diff --name-only HEAD -- package.json pnpm-workspace.yaml pnpm-lock.yaml projects shared tooling
-    git -C "$repo" ls-files --others --exclude-standard -- package.json pnpm-workspace.yaml pnpm-lock.yaml projects shared tooling
-  } | grep -E '^(package\.json|pnpm-workspace\.yaml|pnpm-lock\.yaml)$|/package\.json$' | sort -u || true
+  git -C "$repo" diff -z --name-only HEAD -- package.json pnpm-workspace.yaml pnpm-lock.yaml projects shared tooling \
+    | while IFS= read -r -d '' path; do
+        case "$path" in
+          package.json | pnpm-workspace.yaml | pnpm-lock.yaml | */package.json) printf '%s\n' "$path" ;;
+        esac
+      done || return 1
+
+  git -C "$repo" ls-files -z --others --exclude-standard -- package.json pnpm-workspace.yaml pnpm-lock.yaml projects shared tooling \
+    | while IFS= read -r -d '' path; do
+        case "$path" in
+          package.json | pnpm-workspace.yaml | pnpm-lock.yaml | */package.json) printf '%s\n' "$path" ;;
+        esac
+      done || return 1
+}
+
+# --write's proof that the hash matches HEAD is a proof about HEAD's
+# flake.nix, not the working tree's: refuse when flake.nix carries anything
+# uncommitted beyond the pnpmDeps hash line itself. A second --write's own
+# edit is exactly that one line and is allowed to stand; anything else (the
+# fetchPnpmDeps `src` fileset, say) is not. Fails closed, like the check
+# above: if git cannot even read HEAD's flake.nix, that counts as a change.
+flake_nix_has_extra_changes() {
+  local repo="$1" head_norm work_norm
+  head_norm=$(git -C "$repo" show HEAD:flake.nix 2>/dev/null | perl -pe 's/^[[:space:]]*hash = "sha256-[^"]*";/HASH_LINE/') || return 0
+  work_norm=$(perl -pe 's/^[[:space:]]*hash = "sha256-[^"]*";/HASH_LINE/' "$repo/flake.nix" 2>/dev/null) || return 0
+  [ "$head_norm" != "$work_norm" ]
 }
 
 if [ "$write" = 1 ]; then
@@ -120,7 +148,14 @@ if [ "$write" = 1 ]; then
     echo "nix-pnpm-hash: --write only ever writes a hash built from HEAD (got --ref $ref); drop --write to print that ref's hash instead" >&2
     exit 1
   fi
-  dirty=$(pnpm_input_status "$repo_root")
+  if flake_nix_has_extra_changes "$repo_root"; then
+    echo "nix-pnpm-hash: --write needs flake.nix unchanged outside the pnpmDeps hash line (a previous --write's own edit is fine); commit or revert the rest first" >&2
+    exit 1
+  fi
+  if ! dirty=$(pnpm_input_status "$repo_root"); then
+    echo "nix-pnpm-hash: --write needs to read the working tree with git, and git could not read it; refusing" >&2
+    exit 1
+  fi
   if [ -n "$dirty" ]; then
     echo "nix-pnpm-hash: --write needs pnpm-lock.yaml, pnpm-workspace.yaml and every package.json committed first, so the hash it writes matches what HEAD actually resolves. Uncommitted:" >&2
     echo "$dirty" >&2
