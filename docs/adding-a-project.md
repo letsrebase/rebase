@@ -171,8 +171,12 @@ configuration, one systemd unit per compose service (the API, its MCP server), t
 `checks.<name>` VM test that boots it and probes what the host's nginx would: the
 health path, the SPA on a deep link, the API behind its prefix, the MCP server refusing
 a call with no token. A `pnpm-lock.yaml` change moves the pnpm store hash in
-`flake.nix`; the `nix-packages` preflight check fails naming the new one, and that is
-where it goes.
+`flake.nix`. `fetchPnpmDeps` is a fixed-output derivation, so a stale hash whose
+output already sits in the local Nix store builds "successfully" instead of the
+`nix-packages` preflight check failing and naming the new one; there is also no
+Linux builder for this repository any more, so `scripts/nix-pnpm-hash.sh` computes
+it against a fake hash in a `nixos/nix` container instead, and that is where it
+goes.
 
 A project that ships nothing (a library, a shared asset) adds nothing here.
 
