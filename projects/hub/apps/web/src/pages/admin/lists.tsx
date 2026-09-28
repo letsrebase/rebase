@@ -1459,10 +1459,13 @@ export function AdminCompanyDetail() {
     void client.invalidateQueries({ queryKey: auditKey })
   }
   const [overrideOpen, setOverrideOpen] = useState(false)
+  // The grant's read names the referente (REB-518), whom an override may rename: the
+  // request is read again, grant included, rather than showing the old name beside it.
   const override = useMutation({
     mutationFn: (data: CompanyOverride) => admin.overrideCompany(id, data),
     onSuccess: (updated) => {
       mergeAndRefresh(updated)
+      void client.invalidateQueries({ queryKey: ['company', id] })
       setOverrideOpen(false)
     },
   })

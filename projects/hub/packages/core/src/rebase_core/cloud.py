@@ -27,10 +27,11 @@ disponibile.», answers any id outside it, so the answer never says why.
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import ColumnElement, and_, false, func, select
+from sqlalchemy import ColumnElement, and_, case, false, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -214,6 +215,9 @@ TALENT_ENTITY = "talento"
 # encodes one key, and this order is two (vetted, then name); a later card paginates it
 # when the count asks for it, and until then the list says when it was cut.
 CLOUD_LIST_CAP = 200
+# Rows read past the cap, so a stored card that no longer validates (left out, and
+# logged) does not take a valid talent's place on the page or make it say it was cut.
+CLOUD_LIST_SLACK = 20
 
 
 class NotInTheCloud(NotFound):
@@ -231,13 +235,16 @@ class NotInTheCloud(NotFound):
 class CloudCaller:
     """Who is asking in the cloud: the signed-in person, their address and phone (none
     when they gave none), and the company of their newest live grant, which is who a
-    proposal and a request from the cloud are for (spec § 1)."""
+    proposal and a request from the cloud are for (spec § 1). `granted_at` is that
+    grant's: a proposal older than it was made while another company was the caller's,
+    and «Assumi team» refuses it (`TeamRequestService.create_in_cloud`)."""
 
     user_id: UUID
     email: str
     telefono: str | None
     company_id: UUID
     azienda: str
+    granted_at: datetime
 
 
 def cloud_card(session: Session, freelancer_id: UUID) -> Card:
@@ -294,9 +301,12 @@ def _filter_clauses(query: CloudTalentQuery) -> list[ColumnElement[bool]]:
             )
         clauses.append(Freelancer.remoto == query.modalita)
     if query.competenza:
-        skills = func.jsonb_array_elements_text(FreelancerCard.card["competenze"]).table_valued(
-            "value"
-        )
+        # Only an array is expanded: `jsonb_array_elements_text` raises on a string or an
+        # object, which a card written by hand may hold. The guard is inside the call,
+        # not beside it in an `AND`, since SQL does not promise the order it runs in.
+        competenze = FreelancerCard.card["competenze"]
+        only_an_array = case((func.jsonb_typeof(competenze) == "array", competenze))
+        skills = func.jsonb_array_elements_text(only_an_array).table_valued("value")
         pattern = f"%{escape_like(query.competenza)}%"
         clauses.append(
             select(skills.c.value).where(skills.c.value.ilike(pattern, escape="\\")).exists()
@@ -337,14 +347,16 @@ class CloudTalentService:
             telefono=user.telefono,
             company_id=company.id,
             azienda=company.nome_azienda,
+            granted_at=grant.granted_at,
         )
 
     def list(self, query: CloudTalentQuery) -> CloudTalentList:
         """Every `cloud_visible` talent the filters leave, vetted first, then by surname
         and name, at most `CLOUD_LIST_CAP`, with the roles of the whole cloud. A stored
         card that no longer validates is left out and logged by id, as the catalogue
-        leaves it out. The CV's bytes are never read here: `ha_cv` is asked of the
-        database."""
+        leaves it out; the cap counts the valid ones, out of `CLOUD_LIST_SLACK` rows
+        more than it, and `capped` says there were more valid ones than it shows. The
+        CV's bytes are never read here: `ha_cv` is asked of the database."""
         stmt = cloud_visible(
             select(
                 Freelancer.id,
@@ -369,10 +381,12 @@ class CloudTalentService:
                 func.lower(User.cognome),
                 func.lower(User.nome),
                 Freelancer.id,
-            ).limit(CLOUD_LIST_CAP + 1)
+            ).limit(CLOUD_LIST_CAP + CLOUD_LIST_SLACK)
         ).all()
         items: list[CloudTalentRead] = []
-        for row in rows[:CLOUD_LIST_CAP]:
+        for row in rows:
+            if len(items) > CLOUD_LIST_CAP:
+                break
             try:
                 card = Card.model_validate(row.card)
             except ValidationError:
@@ -393,7 +407,9 @@ class CloudTalentService:
                 )
             )
         return CloudTalentList(
-            items=items, ruoli=_cloud_roles(self.session), capped=len(rows) > CLOUD_LIST_CAP
+            items=items[:CLOUD_LIST_CAP],
+            ruoli=_cloud_roles(self.session),
+            capped=len(items) > CLOUD_LIST_CAP,
         )
 
     def cv(self, freelancer_id: UUID) -> CvFile:

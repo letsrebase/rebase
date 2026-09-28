@@ -102,8 +102,10 @@ def request_in_the_cloud(
     background: BackgroundTasks,
 ) -> TeamRequestCreated:
     """«Assumi team» on the caller's own cloud proposal (`proposal_id`: 409 once
-    requested, 422 when it is not theirs, older than a day or has nobody) or «Richiedi»
-    on one card (`freelancer_id`: 404 «Profilo non disponibile.» outside the cloud)."""
+    requested, 422 when it is not theirs, older than a day or has nobody, and 422 «La
+    proposta è di un altro contesto: rigenerala.» when it is older than the caller's
+    newest live grant, so made for another company) or «Richiedi» on one card
+    (`freelancer_id`: 404 «Profilo non disponibile.» outside the cloud)."""
     service = TeamRequestService(session, settings=settings, tracker=tracker)
     if data.proposal_id is not None:
         read, mail = service.create_in_cloud(
@@ -113,6 +115,7 @@ def request_in_the_cloud(
             telefono=caller.telefono,
             user_id=caller.user_id,
             company_id=caller.company_id,
+            granted_at=caller.granted_at,
         )
     else:
         assert data.freelancer_id is not None  # `CloudRequestCreate` holds one of the two

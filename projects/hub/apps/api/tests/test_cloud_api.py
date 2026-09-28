@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 import pytest
 from fakes_cards import CARD, MODEL
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_llm
@@ -28,6 +28,7 @@ from rebase_core.mail import RecordingSender
 from rebase_core.models import (
     Freelancer,
     FreelancerCard,
+    TalentCloudGrant,
     TeamProposal,
     TeamRequest,
     TeamRequestTalent,
@@ -39,6 +40,7 @@ PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 REFERENTE = "wile@acme.it"
 CLOSED = "Il talent cloud non è aperto per questo account."
 NOT_AVAILABLE = "Profilo non disponibile."
+OTHER_CONTEXT = "La proposta è di un altro contesto: rigenerala."
 BUSY = "Troppe richieste in questo momento: riprova tra un minuto."
 OFF = "Il team builder è spento."
 DESCRIZIONE = (
@@ -109,13 +111,25 @@ def _company(session: Session, azienda: str = "Acme S.r.l.") -> UUID:
     return read.id
 
 
-def _open(session: Session) -> tuple[UUID, UUID]:
-    """A live grant for Acme's referente: their user id and the company."""
-    admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
-    session.add(admin)
+def _open(
+    session: Session, azienda: str = "Acme S.r.l.", *, ago: timedelta = timedelta(hours=1)
+) -> tuple[UUID, UUID]:
+    """A live grant for the referente of `azienda`'s request, opened `ago`: their user
+    id and the company. An hour by default, so the proposals the tests write (five
+    minutes old) come after it, as a proposal made in the cloud does."""
+    admin = session.scalar(select(User).where(User.email == "ivan@rebase.it"))
+    if admin is None:
+        admin = User(email="ivan@rebase.it", nome="Ivan", cognome="Sala", role="admin")
+        session.add(admin)
+        session.commit()
+    company_id = _company(session, azienda)
+    grant, _ = TalentCloudService(session, Settings(_env_file=None)).grant(company_id, admin.id)  # type: ignore[call-arg]
+    session.execute(
+        update(TalentCloudGrant)
+        .where(TalentCloudGrant.id == grant.id)
+        .values(granted_at=datetime.now(UTC) - ago)
+    )
     session.commit()
-    company_id = _company(session)
-    TalentCloudService(session, Settings(_env_file=None)).grant(company_id, admin.id)  # type: ignore[call-arg]
     user_id = session.scalar(select(User.id).where(User.email == REFERENTE))
     assert user_id is not None
     return user_id, company_id
@@ -171,6 +185,7 @@ def _proposal_row(
     origine: str = "cloud",
     user_id: UUID | None = None,
     model: str = MODEL,
+    age: timedelta = timedelta(minutes=5),
 ) -> UUID:
     row = TeamProposal(
         descrizione=DESCRIZIONE,
@@ -193,7 +208,7 @@ def _proposal_row(
         cache_read_tokens=0,
         origine=origine,
         user_id=user_id,
-        created_at=datetime.now(UTC) - timedelta(minutes=5),
+        created_at=datetime.now(UTC) - age,
     )
     session.add(row)
     session.commit()
@@ -544,4 +559,33 @@ def test_assumi_team_files_the_callers_cloud_proposal_at_once(
     both = {"proposal_id": str(own), "freelancer_id": str(ada)}
     assert client.post("/api/hub/me/cloud/requests", json=both).status_code == 422
     assert client.post("/api/hub/me/cloud/requests", json={}).status_code == 422
+    assert len(sender.sent) == 1
+
+
+def test_assumi_team_refuses_a_proposal_made_under_an_older_grant(
+    client: TestClient, cloud: Session, sender: RecordingSender
+) -> None:
+    """The referente behind two companies proposes while Acme's grant is their newest,
+    and Beta's opens before «Assumi team»: the request would be filed for Beta. 422
+    with a sentence of its own, nothing filed, nobody mailed; a proposal made since
+    Beta's grant is Beta's."""
+    ada = _talent(cloud, "Lovelace")
+    user_id, _ = _open(cloud)
+    under_acme = _proposal_row(cloud, [ada], user_id=user_id, age=timedelta(minutes=30))
+    _, beta = _open(cloud, "Beta S.r.l.", ago=timedelta(minutes=10))
+    under_beta = _proposal_row(cloud, [ada], user_id=user_id)
+    _login(client, sender)
+
+    refused = client.post("/api/hub/me/cloud/requests", json={"proposal_id": str(under_acme)})
+
+    assert refused.status_code == 422
+    assert [item["msg"] for item in refused.json()["detail"]] == [OTHER_CONTEXT]
+    assert cloud.scalars(select(TeamRequest)).all() == []
+    assert sender.sent == []
+
+    created = client.post("/api/hub/me/cloud/requests", json={"proposal_id": str(under_beta)})
+    assert created.status_code == 201, created.text
+    row = cloud.get(TeamRequest, UUID(created.json()["id"]))
+    assert row is not None
+    assert (row.proposal_id, row.company_id, row.azienda) == (under_beta, beta, "Beta S.r.l.")
     assert len(sender.sent) == 1

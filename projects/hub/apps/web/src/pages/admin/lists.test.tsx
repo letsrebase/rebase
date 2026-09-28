@@ -772,15 +772,18 @@ describe('the company detail', () => {
   })
 
   it('overrides a field through "Modifica richiesta" and shows the new value', async () => {
+    // The server keeps what the override wrote: the page reads the request again after it.
+    let stored = COMPANY_A
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
       if (url === '/api/hub/companies/c1/audit') return answer(200, [])
       if (url === '/api/hub/companies/c1/override' && init?.method === 'PATCH') {
         const body = JSON.parse(init.body as string)
         expect(body.durata).toBe('6 mesi')
-        return answer(200, { ...COMPANY_A, durata: '6 mesi' })
+        stored = { ...COMPANY_A, durata: '6 mesi' }
+        return answer(200, stored)
       }
-      return answer(200, COMPANY_A)
+      return answer(200, stored)
     })
     mount('/admin/companies/c1')
     await screen.findByRole('heading', { name: 'Rossi Studio' })
@@ -1290,17 +1293,21 @@ describe('«da team builder» and the talent cloud on Aziende (REB-518)', () => 
   })
 
   it('keeps a live grant open after «Salva» and «Modifica richiesta», whose answers carry none', async () => {
+    const invalidate = vi.spyOn(QueryClient.prototype, 'invalidateQueries')
+    let stored = COMPANY_TEAM_BUILDER
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input)
       if (url === '/api/hub/companies/c1/audit') return answer(200, [])
       // Both answers come from `_to_read`, which leaves the grant `null`: only `get` reads it.
       if (url === '/api/hub/companies/c1' && init?.method === 'PATCH') {
-        return answer(200, { ...COMPANY_TEAM_BUILDER, stato: 'contattato' })
+        stored = { ...COMPANY_TEAM_BUILDER, stato: 'contattato' }
+        return answer(200, stored)
       }
       if (url === '/api/hub/companies/c1/override' && init?.method === 'PATCH') {
-        return answer(200, { ...COMPANY_TEAM_BUILDER, stato: 'contattato', durata: '6 mesi' })
+        stored = { ...COMPANY_TEAM_BUILDER, stato: 'contattato', durata: '6 mesi' }
+        return answer(200, stored)
       }
-      return answer(200, { ...COMPANY_TEAM_BUILDER, talent_cloud_grant: GRANT })
+      return answer(200, { ...stored, talent_cloud_grant: GRANT })
     })
     mount('/admin/companies/c1')
     const section = await screen.findByRole('region', { name: 'Talent cloud' })
@@ -1323,6 +1330,8 @@ describe('«da team builder» and the talent cloud on Aziende (REB-518)', () => 
         name: 'Revoca il talent cloud',
       }),
     ).toBeInTheDocument()
+    // The override may have renamed the referente the grant names: the request is read again.
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['company', 'c1'] })
   })
 
   it('reads the request again after a restore, since the grant comes back to life with it', async () => {

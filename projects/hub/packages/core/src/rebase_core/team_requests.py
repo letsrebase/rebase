@@ -11,7 +11,10 @@ No read before the insert pretends to decide it.
 **Only what the caller may request.** A public request takes a public proposal younger
 than a day; the cloud's (D3), a cloud proposal of its own user. One sentence for every
 refusal, so the answer does not say which proposals exist. A proposal with nobody in it
-(nobody fit, or the catalogue was empty) has nobody to hire, and says so.
+(nobody fit, or the catalogue was empty) has nobody to hire, and says so. A cloud
+proposal older than the caller's newest live grant was made while another company was
+theirs, and the request would be filed for the wrong one: it is refused with a sentence
+of its own, «La proposta è di un altro contesto: rigenerala.», since it is the caller's.
 
 **The cloud files with no form** (REB-519, spec § 4.2): «Assumi team» on its own
 proposal (`create_in_cloud`) and «Richiedi» on one card (`create_for_talent`, a request
@@ -34,7 +37,8 @@ answer says nothing about which. The mails leave after the admin's answer
 (`prepare_contact`, then `deliver` in the route's background task): `mail_sent_at` is
 written with the token, so the page shows the talent as contacted at once, and taken
 back with the token if the provider refuses the mail, since that link reaches nobody; a
-batch refused whole also gives the request back the state it had before the send.
+batch refused whole also gives the request back the state it had before the send, unless
+a talent of the request has a mail by then (a «Rimanda» prepared meanwhile).
 
 Nothing here logs a name, an address, a phone or a text: the log lines carry ids.
 """
@@ -93,6 +97,7 @@ REQUEST_MAX_AGE = timedelta(days=1)
 ALREADY_REQUESTED = "Questa proposta è già stata richiesta."
 PROPOSAL_REFUSED = "Questa proposta non esiste o è scaduta: chiedi di nuovo il team."
 NOBODY_TO_HIRE = "Questa proposta non ha nessuno da assumere."
+OTHER_CONTEXT = "La proposta è di un altro contesto: rigenerala."
 NO_SUMMARY = "Questa richiesta è per un talento solo: non ha un riassunto da modificare."
 NAMES_THE_COMPANY = "Il riassunto nomina l'azienda: correggilo prima di scrivere ai talenti."
 ALREADY_CONTACTED = "I talenti sono già stati contattati: rimanda a chi non ha risposto."
@@ -314,10 +319,13 @@ class TeamRequestService:
         telefono: str | None,
         user_id: UUID,
         company_id: UUID,
+        granted_at: datetime,
     ) -> tuple[TeamRequestRead, Mail]:
         """«Assumi team» in the talent cloud (spec § 4.2): `create` with no form, on a
         cloud proposal of `user_id`'s own younger than a day, filed for the grant's
-        company with the caller's address and their phone, `None` when they have none."""
+        company with the caller's address and their phone, `None` when they have none.
+        `granted_at` is that grant's: a proposal older than it was made for another
+        company, and is refused with `OTHER_CONTEXT`."""
         return self._create_for_proposal(
             proposal_id,
             origine="cloud",
@@ -326,6 +334,7 @@ class TeamRequestService:
             telefono=telefono,
             user_id=user_id,
             company_id=company_id,
+            granted_at=granted_at,
         )
 
     def create_for_talent(
@@ -374,10 +383,13 @@ class TeamRequestService:
         telefono: str | None,
         user_id: UUID | None,
         company_id: UUID | None,
+        granted_at: datetime | None = None,
     ) -> tuple[TeamRequestRead, Mail]:
         if origine not in TEAM_REQUEST_ORIGINS:
             raise ValueError(f"unknown origin {origine!r}")
-        proposal = self._requestable(proposal_id, origine=origine, user_id=user_id)
+        proposal = self._requestable(
+            proposal_id, origine=origine, user_id=user_id, granted_at=granted_at
+        )
         members = self._members(proposal)
         row = TeamRequest(
             proposal_id=proposal.id,
@@ -674,7 +686,8 @@ class TeamRequestService:
         it left; a refused one takes both back, since that link reaches nobody, and is
         logged by id, so «Rimanda» writes to that talent again. A batch refused whole
         contacted nobody: the request goes back to the state it had and loses the
-        `contacted_at` this batch wrote, so the page offers «Contatta i talenti» again."""
+        `contacted_at` this batch wrote, so the page offers «Contatta i talenti» again,
+        unless a talent of the request has another send's mail by then (`_undo_contact`)."""
         if self.sender is None:
             raise InvalidState(NO_SENDER)
         request_id = batch.request_id
@@ -735,10 +748,17 @@ class TeamRequestService:
     # ---- helpers -----------------------------------------------------------------------
 
     def _requestable(
-        self, proposal_id: UUID, *, origine: str, user_id: UUID | None
+        self,
+        proposal_id: UUID,
+        *,
+        origine: str,
+        user_id: UUID | None,
+        granted_at: datetime | None = None,
     ) -> TeamProposal:
         """The proposal a request may be for: of the caller's origin, on the cloud the
-        caller's own, and younger than a day."""
+        caller's own, and younger than a day; and on the cloud no older than the grant
+        the request is filed under (`granted_at`), which is checked last, so its own
+        sentence is only ever said of the caller's own proposal."""
         proposal = self.session.get(TeamProposal, proposal_id)
         if (
             proposal is None
@@ -747,6 +767,8 @@ class TeamRequestService:
             or proposal.created_at <= self.now() - REQUEST_MAX_AGE
         ):
             raise ValidationFailed(ENTITY, "proposal_id", PROPOSAL_REFUSED)
+        if granted_at is not None and granted_at > proposal.created_at:
+            raise ValidationFailed(ENTITY, "proposal_id", OTHER_CONTEXT)
         return proposal
 
     def _members(self, proposal: TeamProposal) -> list[tuple[UUID, str]]:
@@ -781,7 +803,28 @@ class TeamRequestService:
     def _undo_contact(self, batch: AvailabilityBatch) -> None:
         """What a batch refused whole wrote on the request, taken back where it still
         stands: the state, if the send moved it and nobody moved it since, and the
-        `contacted_at` it wrote."""
+        `contacted_at` it wrote. Nothing is taken back while any talent of the request,
+        of this batch or not, has a mail (`mail_sent_at`): a send prepared after this one
+        (a «Rimanda») wrote to them, and the request was contacted after all. The row is
+        locked first, as `prepare_contact` locks it, so a send prepared meanwhile is
+        either seen here or waits for this to finish."""
+        self._lock(batch.request_id)
+        mailed = self.session.scalar(
+            select(TeamRequestTalent.id)
+            .where(
+                TeamRequestTalent.request_id == batch.request_id,
+                TeamRequestTalent.mail_sent_at.is_not(None),
+            )
+            .limit(1)
+        )
+        if mailed is not None:
+            self.session.commit()
+            logger.warning(
+                "team request %s: no mail of this batch left, but a talent has another "
+                "send's; the request stays as it is",
+                batch.request_id,
+            )
+            return
         if batch.stato_before != "contattata":
             self.session.execute(
                 update(TeamRequest)

@@ -7,7 +7,7 @@ talents with their filters, their order and the cap, the CV behind the one filte
 the requests a company files from a card and from the builder."""
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -580,9 +580,17 @@ def test_the_roles_are_every_card_role_once_sorted(talents: Session) -> None:
     assert listed.ruoli == ["analista dati", "Backend developer", "Designer"]
 
 
-def test_the_cloud_shows_at_most_200_and_says_so(talents: Session) -> None:
-    assert CLOUD_LIST_CAP == 200
-    count = CLOUD_LIST_CAP + 1
+def _insert_talents(
+    session: Session,
+    count: int,
+    *,
+    start: int = 0,
+    vetted: int | None = None,
+    card: Callable[[int], dict[str, Any]] = lambda n: CARD,
+) -> list[UUID]:
+    """`count` talents in three inserts, `Cognome{start:03}` on, each with the card
+    `card(n)`; the `vetted`-th is vetted, so the order puts it first."""
+    numbers = range(start, start + count)
     users = [
         {
             "id": uuid4(),
@@ -590,9 +598,9 @@ def test_the_cloud_shows_at_most_200_and_says_so(talents: Session) -> None:
             "nome": "Ada",
             "cognome": f"Cognome{n:03}",
         }
-        for n in range(count)
+        for n in numbers
     ]
-    talents.execute(insert(User), users)
+    session.execute(insert(User), users)
     freelancers = [
         {
             "id": uuid4(),
@@ -602,26 +610,38 @@ def test_the_cloud_shows_at_most_200_and_says_so(talents: Session) -> None:
             "compilata_da": "persona",
             "remoto": "remoto",
             "tariffa_giornaliera": Decimal("450.00"),
-            # The last by name is vetted, so the cap keeps it first.
-            "vetted_at": NOW if n == count - 1 else None,
+            "vetted_at": NOW if n == vetted else None,
         }
-        for n, user in enumerate(users)
+        for n, user in zip(numbers, users, strict=True)
     ]
-    talents.execute(insert(Freelancer), freelancers)
-    talents.execute(
+    session.execute(insert(Freelancer), freelancers)
+    session.execute(
         insert(FreelancerCard),
         [
             {
                 "freelancer_id": row["id"],
                 "cv_sha256": "0" * 64,
-                "card": {**CARD, "seniority": "lead" if n < 3 else "senior"},
+                "card": card(n),
                 "model": MODEL,
                 "generated_at": NOW,
             }
-            for n, row in enumerate(freelancers)
+            for n, row in zip(numbers, freelancers, strict=True)
         ],
     )
-    talents.commit()
+    session.commit()
+    return [row["id"] for row in freelancers]
+
+
+def test_the_cloud_shows_at_most_200_and_says_so(talents: Session) -> None:
+    assert CLOUD_LIST_CAP == 200
+    count = CLOUD_LIST_CAP + 1
+    # The last by name is vetted, so the cap keeps it first.
+    _insert_talents(
+        talents,
+        count,
+        vetted=count - 1,
+        card=lambda n: {**CARD, "seniority": "lead" if n < 3 else "senior"},
+    )
     service = CloudTalentService(talents)
 
     listed = service.list(CloudTalentQuery())
@@ -631,6 +651,48 @@ def test_the_cloud_shows_at_most_200_and_says_so(talents: Session) -> None:
     assert [talent.cognome for talent in listed.items[1:3]] == ["Cognome000", "Cognome001"]
     narrowed = service.list(CloudTalentQuery(seniority="lead"))
     assert len(narrowed.items) == 3 and narrowed.capped is False
+
+
+def test_a_card_that_is_not_a_card_takes_no_place_under_the_cap(talents: Session) -> None:
+    """The cap counts the talents the cloud shows: a stored card that no longer
+    validates, first in the order, is left out and the 200 valid talents after it are
+    all there; the list says it was cut only once a valid talent is left over."""
+    ids = _insert_talents(talents, CLOUD_LIST_CAP + 1, vetted=0)
+    talents.get_one(FreelancerCard, ids[0]).card = {"ruolo": "Backend developer"}
+    talents.commit()
+    service = CloudTalentService(talents)
+
+    listed = service.list(CloudTalentQuery())
+
+    assert [talent.freelancer_id for talent in listed.items] == ids[1:]
+    assert listed.capped is False
+    _insert_talents(talents, 1, start=CLOUD_LIST_CAP + 1)
+    again = service.list(CloudTalentQuery())
+    assert [talent.freelancer_id for talent in again.items] == ids[1:]
+    assert again.capped is True
+
+
+def test_a_card_whose_skills_are_not_a_list_leaves_the_skill_filter_working(
+    talents: Session,
+) -> None:
+    """A card written by hand with `competenze` a string or an object: the skill filter
+    expands only an array, so it finds the others and leaves these out, and the list
+    leaves them out too, since they are not cards."""
+    python = _talent(talents, "Rossi", card={"competenze": ["Python", "FastAPI"]})
+    for cognome, competenze in (("Rotta", "Python"), ("Storta", {"linguaggio": "Python"})):
+        broken = _talent(talents, cognome)
+        talents.execute(
+            text(
+                "UPDATE freelancer_cards SET card = jsonb_set(card, '{competenze}', "
+                "CAST(:competenze AS JSONB)) WHERE freelancer_id = :id"
+            ),
+            {"competenze": json.dumps(competenze), "id": broken},
+        )
+    talents.commit()
+    service = CloudTalentService(talents)
+
+    assert _ids(service, competenza="pyth") == {python}
+    assert _ids(service) == {python}
 
 
 def test_the_cv_is_open_only_inside_the_cloud(talents: Session) -> None:
@@ -665,7 +727,7 @@ def test_the_caller_is_the_newest_grants_company_and_the_users_phone(
 
     TalentCloudService(talents, settings).grant(acme, admin_id)
     bianchi = _request(talents, azienda="Bianchi Srl")
-    TalentCloudService(talents, settings).grant(bianchi, admin_id)
+    newest, _ = TalentCloudService(talents, settings).grant(bianchi, admin_id)
     caller = service.caller(user_id)
 
     assert caller is not None
@@ -675,16 +737,20 @@ def test_the_caller_is_the_newest_grants_company_and_the_users_phone(
         "+39 345 1234567",
     )
     assert (caller.company_id, caller.azienda) == (bianchi, "Bianchi Srl")
+    assert caller.granted_at == newest.granted_at
     TalentCloudService(talents, settings).revoke(bianchi, admin_id)
     again = service.caller(user_id)
     assert again is not None and (again.company_id, again.azienda) == (acme, "Acme S.r.l.")
 
 
 def _open_cloud(session: Session, settings: Settings) -> tuple[UUID, UUID, UUID]:
-    """The admin, the referente and the company of a live grant."""
+    """The admin, the referente and the company of a live grant, opened an hour ago so
+    the proposals the tests write (five minutes old) come after it."""
     admin_id = _admin(session)
     acme = _request(session)
-    TalentCloudService(session, settings).grant(acme, admin_id)
+    grant, _ = TalentCloudService(session, settings).grant(acme, admin_id)
+    session.get_one(TalentCloudGrant, grant.id).granted_at = NOW - timedelta(hours=1)
+    session.commit()
     user_id = session.scalar(select(User.id).where(User.email == "wile@acme.it"))
     assert user_id is not None
     return admin_id, user_id, acme
@@ -763,6 +829,8 @@ def test_the_builder_files_its_own_cloud_proposal_at_once(
         talents, [ada], user_id=user_id, created_at=datetime.now(UTC) - timedelta(days=1, minutes=1)
     )
     service = TeamRequestService(talents, settings=settings)
+    caller = CloudTalentService(talents).caller(user_id)
+    assert caller is not None
 
     def hire(proposal_id: UUID) -> Any:
         return service.create_in_cloud(
@@ -772,6 +840,7 @@ def test_the_builder_files_its_own_cloud_proposal_at_once(
             telefono=None,
             user_id=user_id,
             company_id=acme,
+            granted_at=caller.granted_at,
         )
 
     read, mail = hire(own)

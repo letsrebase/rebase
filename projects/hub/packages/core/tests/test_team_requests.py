@@ -913,6 +913,33 @@ def test_a_first_send_refused_whole_leaves_the_request_as_it_was(
     assert read.stato == "nuova" and read.contacted_at == NOW
 
 
+def test_a_first_send_refused_whole_after_a_rimanda_left_keeps_the_request_contacted(
+    clean: Session, logs: pytest.LogCaptureFixture
+) -> None:
+    """«Contatta i talenti», then «Rimanda» before the first batch's mails leave: the
+    second batch is delivered, the first is refused whole. The talents have the second
+    batch's mail, so the request was contacted: it stays `contattata` with its
+    `contacted_at`, and the second batch's links still answer."""
+    talents = [_talent(clean, 1), _talent(clean, 2)]
+    request = _public(_service(clean), _proposal(clean, talents))
+    admin = _user(clean, "ivan@rebase.it", role="admin")
+    later = NOW + timedelta(hours=1)
+    _, first = _mailer(clean).prepare_contact(request.id, admin, only_silent=False)
+    _, again = _mailer(clean, now=later).prepare_contact(request.id, admin, only_silent=True)
+
+    delivered = RecordingSender()
+    assert _mailer(clean, delivered, now=later).deliver(again) == 2
+    refusing = Refusing("talento1@studio.it", "talento2@studio.it")
+    assert _mailer(clean, refusing).deliver(first) == 0
+
+    clean.expire_all()
+    read = _service(clean).get(request.id)
+    assert read.stato == "contattata" and read.contacted_at == NOW
+    assert [talent.mail_sent_at for talent in read.talenti] == [later, later]
+    assert "again" not in " ".join(record.getMessage() for record in logs.records)
+    assert _mailer(clean, now=later).answer(_token(delivered.sent[0]), "si") == "si"
+
+
 def test_availability_records_yes_and_no(clean: Session) -> None:
     first, second = _talent(clean, 1), _talent(clean, 2)
     request = _public(_service(clean), _proposal(clean, [first, second]))

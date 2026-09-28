@@ -124,6 +124,7 @@ def _deliver(
         with open_session() as session:
             TeamRequestService(session, settings=settings, sender=sender).deliver(batch)
     except Exception:
+        # A database error mid-batch leaves talents marked as mailed: «Rimanda» mails them too.
         _log.exception("team request %s: sending the availability mails failed", batch.request_id)
 
 
