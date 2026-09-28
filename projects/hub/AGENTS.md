@@ -299,16 +299,17 @@ the proposals off with the key still there: the same 503, while cards go on bein
 written and requests already filed stay in «Richieste team».
 
 **The backlog is `rebase cards-refresh`.** A card is written after the wizard or a CV
-upload, so the CVs already on file get theirs from `docker exec rebase-api-1 uv run
---no-sync rebase cards-refresh` (`rebase-preview-api-1` on the preview), run after the
-deploy that brings the key (on production, once the talents' mail of spec § 4.4 has
-gone out) and again until it prints «0 schede scritte, 0 non riuscite». Each run takes
-50 CVs, the oldest first (`--limit`), and never a turned-down person's. A CV that
-failed on its own account (a refusal, a scan with no text, a card that names the
-person) is not tried again until it changes, so the runs end; an outage stops the
-batch, counts under «non riuscite» and is the next run's, so a run that keeps printing
-«0 schede scritte, 1 non riuscite» is Claude not answering, not a CV. «Rigenera
-scheda» on the talent's page asks again for one.
+upload, so the CVs already on file need it too: since REB-552 the `cards` service runs
+it once an hour (up to 50 cards); the first run after the key lands is still by hand — on
+production, once the talents' mail of spec § 4.4 has gone out —
+`docker compose exec api uv run --no-sync rebase cards-refresh --limit 50` until it
+prints «0 schede scritte, 0 non riuscite», and a retired card comes back on the next
+run. Each run takes 50 CVs, the oldest first (`--limit`), and never a turned-down
+person's. A CV that failed on its own account (a refusal, a scan with no text, a card
+that names the person) is not tried again until it changes, so the runs end; an outage
+stops the batch, counts under «non riuscite» and is the next run's, so a run that keeps
+printing «0 schede scritte, 1 non riuscite» is Claude not answering, not a CV.
+«Rigenera scheda» on the talent's page asks again for one.
 
 **Two caps.** `REBASE_TEAM_BUILDER_CONCURRENCY` (4) is how many proposals run at once
 in the API process: the next one answers 503 «Troppe richieste in questo momento:
