@@ -67,8 +67,13 @@ const IVAN = {
  *  suite as a whole. Matching that headroom here. */
 async function openRowMenu(mese: string) {
   await userEvent.click(
+    // The button renders from `locks.data`, so waiting on it here is waiting on the data.
     await screen.findByRole('button', { name: `Azioni per ${mese}` }, { timeout: 10_000 }),
   )
+  // Radix opens the menu content into a portal, so the trigger's click resolving does
+  // not itself guarantee the content has mounted: wait for the menu here so every
+  // caller's own `getByRole('menuitem', ...)` right after `openRowMenu` stays safe.
+  await screen.findByRole('menu')
 }
 
 function renderPanel() {
@@ -121,6 +126,11 @@ describe('PeriodsPanel', () => {
     renderPanel()
     await openRowMenu('marzo 2026')
     await userEvent.click(screen.getByRole('menuitem', { name: /riapri/i }))
+    // Not just that some confirmation ran: the caller's own sentence, so a menu item that
+    // skipped the guard (or asked something else) still fails here.
+    expect(mockConfirm).toHaveBeenCalledWith(
+      'Riaprire marzo 2026? Le ore e i costi di quel mese tornano modificabili, e la riapertura viene registrata.',
+    )
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/requires one of/i))
   })
 
