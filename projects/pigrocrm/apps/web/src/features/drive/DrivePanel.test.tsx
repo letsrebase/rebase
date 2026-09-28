@@ -8,10 +8,15 @@ import { api } from '@/lib/api'
 
 // REB-457: the panel is open to a collaboratore too, who manages their own Drive but not
 // the space's write folder. Every test below runs as an admin unless it says otherwise.
+// `useAuth` is mocked too (REB-562 fix round 2): `useDriveHealth` (`queries.ts`) now
+// reads `user.ruolo` itself, to key the health query by role, so a demotion mid-session
+// changes `mockAuth.isAdmin` and the mocked `ruolo` together, the same way the real
+// `AuthProvider`'s `user` would after its own poll notices one.
 const mockAuth = vi.hoisted(() => ({ isAdmin: true }))
 vi.mock('@/lib/auth', () => ({
   useIsAdmin: () => mockAuth.isAdmin,
   useCanWrite: () => true,
+  useAuth: () => ({ user: { ruolo: mockAuth.isAdmin ? 'admin' : 'collaboratore' } }),
 }))
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -83,6 +88,32 @@ function renderPanel() {
       <DrivePanel />
     </QueryClientProvider>,
   )
+}
+
+/**
+ * Like `renderPanel`, but with a `rerenderPanel` that re-renders onto the exact same
+ * `QueryClient` (REB-562 fix round 2). A role change mid-session is not a new mount --
+ * the same query client is still there, `useDriveHealth` just reads a different
+ * `user.ruolo` on the next render, which is what the demotion test below needs to
+ * actually exercise `driveKeys.healthForRole` picking a different cache entry rather
+ * than starting from an empty client that would refetch either way.
+ *
+ * `ui()` builds a *fresh* element on every call rather than one captured up front and
+ * replayed: passing the very same element reference back into `rerender` measurably
+ * skipped `DrivePanel`'s own re-render here (confirmed against the failing assertion
+ * before this fix), the way a `key`-less list item or a memoised child can bail out on
+ * an unchanged element -- a new element every call is what keeps this the ordinary
+ * "parent re-rendered" path rather than that one.
+ */
+function renderPanelForRerender() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const ui = () => (
+    <QueryClientProvider client={client}>
+      <DrivePanel />
+    </QueryClientProvider>
+  )
+  const result = render(ui())
+  return { ...result, rerenderPanel: () => result.rerender(ui()) }
 }
 
 beforeEach(() => {
@@ -374,6 +405,59 @@ describe('DrivePanel space storage line (REB-562)', () => {
     await screen.findByText('ada@acme.it')
     expect(screen.queryByText(/Cartella di scrittura dei documenti/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Nessuna cartella di scrittura/)).not.toBeInTheDocument()
+  })
+
+  it('shows the line even when Google itself is only partially configured', async () => {
+    // CodeRabbit, fix round 2: `configured: false` used to return `<NotConfigured />`
+    // before `spaceStorage` was even computed, dropping an admin-only fact the server
+    // answers independently of `configured` (fix round 1).
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        ...NOT_CONFIGURED,
+        space_storage: {
+          in_effect: true,
+          holder: { name: 'Bruno', email: 'bruno@acme.it', reachable: true },
+        },
+      }),
+    )
+    renderPanel()
+
+    expect(await screen.findByText(/Bruno \(bruno@acme\.it\)/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/non è configurato su questa installazione/),
+    ).toBeInTheDocument()
+  })
+
+  it('refetches on a role change and hides the line at once, rather than going on with the cached admin response', async () => {
+    // Greptile P1: `useDriveHealth` keys its query by role (`driveKeys.healthForRole`),
+    // so a demotion mid-session -- `mockAuth.isAdmin` flips, the mocked `useAuth`
+    // follows it -- is a different query with nothing cached, and React Query issues a
+    // second `GET` rather than continuing to serve the first response's holder.
+    mockAuth.isAdmin = true
+    vi.mocked(api.GET).mockResolvedValueOnce(
+      ok({
+        ...CONNECTED,
+        space_storage: {
+          in_effect: true,
+          holder: { name: 'Bruno', email: 'bruno@acme.it', reachable: true },
+        },
+      }),
+    )
+    const { rerenderPanel } = renderPanelForRerender()
+
+    expect(await screen.findByText(/Bruno \(bruno@acme\.it\)/)).toBeInTheDocument()
+
+    // The demotion: the next fetch answers the way the server does for a
+    // collaboratore, the field absent entirely.
+    mockAuth.isAdmin = false
+    vi.mocked(api.GET).mockResolvedValueOnce(ok(CONNECTED))
+    rerenderPanel()
+
+    await waitFor(() => expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(2))
+    await waitFor(() =>
+      expect(screen.queryByText(/Cartella di scrittura dei documenti/)).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/Bruno/)).not.toBeInTheDocument()
   })
 })
 

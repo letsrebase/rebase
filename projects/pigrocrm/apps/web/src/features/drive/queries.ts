@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
+import { useAuth } from '@/lib/auth'
 import { tenantPrefix } from '@/lib/tenant'
 
 export type DriveHealth = components['schemas']['DriveHealth']
@@ -21,10 +22,25 @@ export const DRIVE_OAUTH_START = `${tenantPrefix}/api/drive/oauth/start`
 /**
  * Keyed the same way `gmailKeys` is, and for the same reason: one root under which a
  * mutation can invalidate everything Drive-related without knowing in advance what else
- * reads it.
+ * reads it. `health` is the bare prefix a mutation invalidates by (React Query's
+ * default `exact: false` match), not what the query itself reads -- see
+ * `healthForRole`.
  */
 export const driveKeys = {
   health: ['drive', 'health'] as const,
+  /**
+   * What `useDriveHealth` actually reads, keyed by the viewer's own role (REB-562 fix
+   * round 2, Greptile). `space_storage` names another admin and is computed only for
+   * an admin actor, so a bare `health` key would keep answering from whichever role
+   * first fetched it: a demotion made from another tab or session reaches `useIsAdmin`
+   * within thirty seconds (`AuthProvider`'s own `me` poll, `lib/auth.tsx`), but nothing
+   * would have told *this* query to forget what it already cached. Rolling the role
+   * into the key makes a role change a genuinely different query -- nothing cached
+   * under the new key -- so React Query refetches the moment `useAuth`'s `user.ruolo`
+   * changes, rather than going on serving the pre-demotion response until some other
+   * mutation happened to invalidate the bare key.
+   */
+  healthForRole: (ruolo: string | undefined) => [...driveKeys.health, ruolo] as const,
 }
 
 /**
@@ -34,8 +50,9 @@ export const driveKeys = {
  * `configured: false` -- and is a screen, not an error.
  */
 export function useDriveHealth() {
+  const { user } = useAuth()
   return useQuery({
-    queryKey: driveKeys.health,
+    queryKey: driveKeys.healthForRole(user?.ruolo),
     queryFn: () => unwrap(api.GET('/api/drive/account')),
   })
 }
@@ -50,6 +67,8 @@ export function useDisconnectDrive() {
     mutationFn: async () => {
       await unwrap(api.DELETE('/api/drive/account'))
     },
+    // The bare prefix, not `healthForRole`: a disconnect does not know, and must not
+    // need to know, which role's query is currently live.
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: driveKeys.health }),
   })
 }
