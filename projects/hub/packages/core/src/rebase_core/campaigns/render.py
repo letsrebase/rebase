@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urlencode, urlsplit
 
+from rebase_core.campaigns.links import LINK, LINK_URL_MISSING, is_ours, with_query
 from rebase_core.campaigns.states import ENTITY, PIGRO_LATER
 from rebase_core.config import Settings
 from rebase_core.errors import ValidationFailed
@@ -55,6 +56,11 @@ def _paragraphs(text: str) -> list[str]:
 
 
 def destination(campaign: Campaign, settings: Settings) -> str:
+    if campaign.bottone_meta == LINK:
+        # «Un link» (REB-530): the address as the admin wrote it.
+        if not campaign.bottone_url:
+            raise ValidationFailed(ENTITY, "bottone_url", LINK_URL_MISSING)
+        return campaign.bottone_url
     base = settings.hub_url.rstrip("/")
     if campaign.bottone_meta in ("area", "richiesta"):
         return f"{base}/login"
@@ -64,6 +70,11 @@ def destination(campaign: Campaign, settings: Settings) -> str:
 
 
 def _tracked(url: str, campaign: Campaign, codice: str) -> str:
+    """The button's address with our utm parameters: always for the hub's own pages,
+    and for «Un link» only on letsrebase.com, since a page somebody else owns (Luma, a
+    WhatsApp group) neither reads them nor asked for them (REB-530)."""
+    if campaign.bottone_meta == LINK and not is_ours(url):
+        return url
     query = urlencode(
         {
             "utm_source": "email",
@@ -73,7 +84,7 @@ def _tracked(url: str, campaign: Campaign, codice: str) -> str:
             "utm_term": codice,
         }
     )
-    return f"{url}?{query}"
+    return with_query(url, query)
 
 
 def unsubscribe_urls(token: str, settings: Settings) -> tuple[str, str]:

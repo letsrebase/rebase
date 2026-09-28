@@ -193,8 +193,9 @@ address and no key ever appears in these lines or anywhere else in the logs.
 **The same pass stamps what each mail led to** (P-REB-41 phase 2, `rebase_core.campaigns.outcome`).
 For every row sent in the last 30 days and still missing a stamp, it writes `entrato_at`
 (the first login after the mail) and `azione_at` (the campaign's action, from the table
-that records it: the CV comment, the card's `created_at`, the request's `updated_at`, or
-the tick itself for a card that became complete). A stamp is written once. The log line
+that records it: the CV comment, the card's `created_at`, the request's `updated_at`,
+the tick itself for a card that became complete, or the first click for «Un link»,
+whose page the hub never sees, REB-530). A stamp is written once. The log line
 ends with `N esiti registrati`. The preview's `campaigns` loop runs, since it has a
 Resend key; it is the missing webhook secret that keeps «Mandami una prova» and «Invia»
 refused there, so the preview never has a sent row to stamp.

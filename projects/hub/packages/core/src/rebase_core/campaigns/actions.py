@@ -112,4 +112,8 @@ def done_at(
             if updated is not None and updated > max(datetime.fromisoformat(was), moment):
                 moments.append(updated)
         return min(moments) if moments else None
+    if azione == "clic":
+        # «Un link» (REB-530): of a page outside the hub, the first click Resend reports
+        # on this very mail is all the hub sees. None before the mail has left.
+        return recipient.primo_clic_at
     return None  # `pigro_cliente`: phase 3 (spec § 6.3)

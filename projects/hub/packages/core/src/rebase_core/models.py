@@ -810,8 +810,9 @@ CAMPAIGN_ACTIONS = (
     "profilo_creato",
     "richiesta_aggiornata",
     "pigro_cliente",
+    "clic",
 )
-CAMPAIGN_DESTINATIONS = ("area", "wizard", "pigro", "richiesta")
+CAMPAIGN_DESTINATIONS = ("area", "wizard", "pigro", "richiesta", "link")
 RECIPIENT_STATES = ("in_coda", "inviata", "saltata", "fallita")
 RECIPIENT_KINDS = ("freelancer", "lead", "azienda", "proprietario")
 OPTOUT_SOURCES = ("link", "reclamo", "admin")
@@ -819,6 +820,7 @@ CAMPAIGN_NAME_MAX_LENGTH = 120
 CAMPAIGN_SLUG_MAX_LENGTH = 80
 CAMPAIGN_SUBJECT_MAX_LENGTH = 200
 CAMPAIGN_BUTTON_MAX_LENGTH = 60
+CAMPAIGN_BUTTON_URL_MAX_LENGTH = 500
 CAMPAIGN_TEXT_MAX_LENGTH = 5000
 RECIPIENT_REASON_MAX_LENGTH = 200
 
@@ -849,6 +851,10 @@ class Campaign(Base, PrimaryKeyMixin, TimestampMixin):
     testo: Mapped[str] = mapped_column(Text, nullable=False)
     bottone_testo: Mapped[str] = mapped_column(String(CAMPAIGN_BUTTON_MAX_LENGTH), nullable=False)
     bottone_meta: Mapped[str] = mapped_column(String(10), nullable=False)
+    # «Un link» (REB-530): where the button leads when it leaves the hub, and only then.
+    bottone_url: Mapped[str | None] = mapped_column(
+        String(CAMPAIGN_BUTTON_URL_MAX_LENGTH), default=None
+    )
     azione: Mapped[str] = mapped_column(String(25), nullable=False)
     stato: Mapped[str] = mapped_column(String(12), nullable=False, default="bozza")
     contenuto_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -869,11 +875,11 @@ class Campaign(Base, PrimaryKeyMixin, TimestampMixin):
         ),
         CheckConstraint(
             "azione IN ('entrato', 'cv', 'scheda_completa', 'profilo_creato', "
-            "'richiesta_aggiornata', 'pigro_cliente')",
+            "'richiesta_aggiornata', 'pigro_cliente', 'clic')",
             name="ck_campaigns_azione",
         ),
         CheckConstraint(
-            "bottone_meta IN ('area', 'wizard', 'pigro', 'richiesta')",
+            "bottone_meta IN ('area', 'wizard', 'pigro', 'richiesta', 'link')",
             name="ck_campaigns_bottone_meta",
         ),
         CheckConstraint(
@@ -881,6 +887,12 @@ class Campaign(Base, PrimaryKeyMixin, TimestampMixin):
         ),
         CheckConstraint("(fonte = 'filtri') = (filtri IS NOT NULL)", name="ck_campaigns_filtri"),
         CheckConstraint("(fonte = 'lista') = (segue_id IS NOT NULL)", name="ck_campaigns_segue"),
+        CheckConstraint(
+            "(bottone_meta = 'link') = (bottone_url IS NOT NULL)", name="ck_campaigns_bottone_url"
+        ),
+        CheckConstraint(
+            "(bottone_meta = 'link') = (azione = 'clic')", name="ck_campaigns_link_clic"
+        ),
     )
 
 

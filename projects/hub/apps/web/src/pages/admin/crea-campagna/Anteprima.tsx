@@ -20,6 +20,7 @@ export function Anteprima({
   oggetto,
   testo,
   bottoneTesto,
+  link = null,
   righe,
   persona,
   onPersona,
@@ -27,6 +28,9 @@ export function Anteprima({
   oggetto: string
   testo: string
   bottoneTesto: string
+  /** Where «Un link» leads (REB-530), once it is a valid address: the mail prints it
+   *  under the button as it stands, so the preview can too, and it opens. */
+  link?: string | null
   /** The rows that will get the mail, to choose whose name the preview uses. */
   righe: AudienceRow[]
   persona: AudienceRow | null
@@ -78,6 +82,16 @@ export function Anteprima({
             <span aria-hidden="true" className="inline-block bg-primary px-5 py-2.5 font-medium text-primary-foreground">
               {bottoneTesto}
             </span>
+          )}
+          {link && (
+            // The mail's own fallback line (`campaigns/render.py`'s `FALLBACK`), word for word.
+            <p className="text-xs break-all text-muted-foreground">
+              Se il bottone non si apre, copia questo indirizzo nel browser:
+              <br />
+              <a href={link} target="_blank" rel="noopener noreferrer" className="underline">
+                {link}
+              </a>
+            </p>
           )}
           <p className="whitespace-pre-line">{'Ivan\nrebase'}</p>
           {/* The mail's own footer, word for word (`campaigns/render.py`'s `UNSUBSCRIBE_LINE`). */}

@@ -809,7 +809,8 @@ export type CampaignAzione =
   | 'profilo_creato'
   | 'richiesta_aggiornata'
   | 'pigro_cliente'
-export type CampaignMeta = 'area' | 'wizard' | 'pigro' | 'richiesta'
+  | 'clic'
+export type CampaignMeta = 'area' | 'wizard' | 'pigro' | 'richiesta' | 'link'
 export type RecipientStato = 'in_coda' | 'inviata' | 'saltata' | 'fallita'
 
 export interface Campaign {
@@ -824,6 +825,8 @@ export interface Campaign {
   testo: string
   bottone_testo: string
   bottone_meta: CampaignMeta
+  /** Where «Un link» leads (REB-530); `null` for every other destination. */
+  bottone_url: string | null
   azione: CampaignAzione
   stato: CampaignStato
   contenuto_at: string
@@ -912,6 +915,8 @@ export interface CampaignDraft {
   testo: string
   bottone_testo: string
   bottone_meta: CampaignMeta
+  /** Sent with «Un link» only: left out, the server drops the address with the link. */
+  bottone_url?: string | null
   azione: CampaignAzione
 }
 

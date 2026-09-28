@@ -15,13 +15,16 @@ export const AZIONE_LABELS: Record<CampaignAzione, string> = {
   profilo_creato: 'Ha creato il profilo',
   richiesta_aggiornata: 'Ha aggiornato la richiesta',
   pigro_cliente: 'Primo cliente in Pigro',
+  clic: 'Ha cliccato il link',
 }
 
-/** Phase 1 offers three: the Pigro button arrives with phase 3. */
+/** Phase 1 offers three: the Pigro button arrives with phase 3. «Un link» leads out of
+ *  the hub, to an address the admin writes (REB-530). */
 export const META_LABELS: Partial<Record<CampaignMeta, string>> = {
   area: 'La sua area',
   wizard: 'Il wizard del profilo',
   richiesta: 'La richiesta dell’azienda',
+  link: 'Un link',
 }
 
 export const RECIPIENT_STATE_LABELS: Record<RecipientStato, string> = {
@@ -67,7 +70,7 @@ export function defaultSchedule(now = new Date()): { giorno: string; ora: string
 
 /** The server's column limits (`rebase_core/models.py`, `CAMPAIGN_*_MAX_LENGTH`), so
  *  a field stops where the API would refuse it instead of failing the save. */
-export const CAMPAIGN_MAX_LENGTH = { nome: 120, oggetto: 200, testo: 5000, bottone_testo: 60 } as const
+export const CAMPAIGN_MAX_LENGTH = { nome: 120, oggetto: 200, testo: 5000, bottone_testo: 60, bottone_url: 500 } as const
 
 const romeDay = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', day: 'numeric', month: 'long', year: 'numeric' })
 const romeClock = new Intl.DateTimeFormat('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
@@ -130,6 +133,7 @@ export const AZIONE_FATTA_LABELS: Record<CampaignAzione, string> = {
   profilo_creato: 'Hanno creato il profilo',
   richiesta_aggiornata: 'Hanno aggiornato la richiesta',
   pigro_cliente: 'Primo cliente in Pigro',
+  clic: 'Hanno cliccato il link',
 }
 
 const AZIONE_BREVE: Record<CampaignAzione, string> = {
@@ -139,6 +143,7 @@ const AZIONE_BREVE: Record<CampaignAzione, string> = {
   profilo_creato: 'profili creati',
   richiesta_aggiornata: 'richieste aggiornate',
   pigro_cliente: 'primi clienti',
+  clic: 'clic sul link',
 }
 
 /** A part of the mails sent, as the campaign page's figures say it: «38%», and nothing
@@ -149,10 +154,11 @@ export function share(part: number, whole: number): string | undefined {
 }
 
 /** The list page's «Esito»: what left and what it led to, then what went wrong only when
- *  something did. For `entrato`, entering is the action, so it is said once. */
+ *  something did. For `entrato`, entering is the action, and for `clic` the click is
+ *  (REB-530), so each is said once. */
 export function outcomeLine(c: CampaignCounts, azione: CampaignAzione): string {
   const parts = [`${c.inviate} inviate`, `${c.consegnate} consegnate`, `${c.cliccate} clic`, `${c.entrate} entrati`]
-  if (azione !== 'entrato') parts.push(`${c.azioni} ${AZIONE_BREVE[azione]}`)
+  if (azione !== 'entrato' && azione !== 'clic') parts.push(`${c.azioni} ${AZIONE_BREVE[azione]}`)
   if (c.rimbalzate) parts.push(`${c.rimbalzate} rimbalzate`)
   if (c.saltate) parts.push(`${c.saltate} saltate`)
   if (c.fallite) parts.push(`${c.fallite} fallite`)

@@ -189,3 +189,16 @@ describe('the outcome in words', () => {
     expect(outcomeLine({ ...counts, saltate: 0 }, 'entrato')).toBe('8 inviate · 8 consegnate · 4 clic · 3 entrati')
   })
 })
+
+describe('«Un link» (REB-530)', () => {
+  it('offers the link as a destination and names the click as its action', () => {
+    expect(META_LABELS.link).toBe('Un link')
+    expect(AZIONE_LABELS.clic).toBe('Ha cliccato il link')
+    expect(AZIONE_FATTA_LABELS.clic).toBe('Hanno cliccato il link')
+  })
+
+  it('says the click once, since for a link it is the action', () => {
+    const counts = { destinatari: 10, in_coda: 0, inviate: 8, saltate: 0, fallite: 0, consegnate: 8, rimbalzate: 0, cliccate: 4, entrate: 1, azioni: 4 }
+    expect(outcomeLine(counts, 'clic')).toBe('8 inviate · 8 consegnate · 4 clic · 1 entrati')
+  })
+})

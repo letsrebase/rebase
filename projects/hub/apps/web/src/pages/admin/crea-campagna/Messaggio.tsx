@@ -3,12 +3,25 @@ import { Label } from '@rebase/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
 import type { CampaignAzione, CampaignMeta } from '@/lib/api'
-import { AZIONE_LABELS, CAMPAIGN_MAX_LENGTH, META_LABELS } from '@/lib/campaigns'
-import type { CampaignForm } from './form'
+import { AZIONE_LABELS, CAMPAIGN_MAX_LENGTH } from '@/lib/campaigns'
+import { linkProblem, metaOptions, type CampaignForm } from './form'
 
 /** Messaggio (REB-526): what the mail says and where its button leads. The preview
- *  beside it follows every keystroke. */
-export function Messaggio({ form, onChange }: { form: CampaignForm; onChange: (patch: Partial<CampaignForm>) => void }) {
+ *  beside it follows every keystroke. «Dove porta» goes through `onMeta`, since «Un
+ *  link» brings its own address field and its own action (REB-530). */
+export function Messaggio({
+  form,
+  onChange,
+  onMeta,
+}: {
+  form: CampaignForm
+  onChange: (patch: Partial<CampaignForm>) => void
+  onMeta: (meta: CampaignMeta) => void
+}) {
+  const link = form.bottoneMeta === 'link'
+  // Said while typing, but not before anything is typed: an empty field shows what to
+  // write in it, and the header says the draft waits for it.
+  const problem = link && form.bottoneUrl.trim() !== '' ? linkProblem(form) : null
   return (
     <section aria-labelledby="campagna-messaggio" className="space-y-4">
       <h2 id="campagna-messaggio" className="text-lg font-semibold">
@@ -49,12 +62,12 @@ export function Messaggio({ form, onChange }: { form: CampaignForm; onChange: (p
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="campagna-bottone-meta">Dove porta</Label>
-          <Select value={form.bottoneMeta} onValueChange={(value) => onChange({ bottoneMeta: value as CampaignMeta })}>
+          <Select value={form.bottoneMeta} onValueChange={(value) => onMeta(value as CampaignMeta)}>
             <SelectTrigger id="campagna-bottone-meta" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {Object.entries(META_LABELS).map(([value, label]) => (
+              {metaOptions(form).map(([value, label]) => (
                 <SelectItem key={value} value={value}>
                   {label}
                 </SelectItem>
@@ -63,7 +76,33 @@ export function Messaggio({ form, onChange }: { form: CampaignForm; onChange: (p
           </Select>
         </div>
       </div>
-      {form.fonte === 'filtri' ? (
+      {link && (
+        <div className="space-y-1.5">
+          <Label htmlFor="campagna-bottone-url">Indirizzo del link</Label>
+          <Input
+            id="campagna-bottone-url"
+            type="url"
+            placeholder="https://lu.ma/…"
+            maxLength={CAMPAIGN_MAX_LENGTH.bottone_url}
+            aria-invalid={problem !== null}
+            aria-describedby="campagna-bottone-url-aiuto"
+            value={form.bottoneUrl}
+            onChange={(event) => onChange({ bottoneUrl: event.target.value })}
+          />
+          <p id="campagna-bottone-url-aiuto" className={problem ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
+            {problem ?? 'Una pagina fuori dal hub: un evento su Luma, un gruppo WhatsApp, un modulo. Deve iniziare con https://.'}
+          </p>
+        </div>
+      )}
+      {link ? (
+        // Of a page the hub does not own, the click is all it sees (REB-530).
+        <div className="space-y-1">
+          <p className="text-sm">
+            <span className="text-muted-foreground">Cosa misuriamo:</span> {AZIONE_LABELS.clic}
+          </p>
+          <p className="text-xs text-muted-foreground">Di una pagina fuori dal hub vediamo solo il clic sul bottone.</p>
+        </div>
+      ) : form.fonte === 'filtri' ? (
         <div className="max-w-sm space-y-1.5">
           <Label htmlFor="campagna-azione">Cosa misuriamo</Label>
           <Select value={form.azione} onValueChange={(value) => onChange({ azione: value as CampaignAzione })}>
@@ -72,7 +111,7 @@ export function Messaggio({ form, onChange }: { form: CampaignForm; onChange: (p
             </SelectTrigger>
             <SelectContent>
               {Object.entries(AZIONE_LABELS)
-                .filter(([value]) => value !== 'pigro_cliente')
+                .filter(([value]) => value !== 'pigro_cliente' && value !== 'clic')
                 .map(([value, label]) => (
                   <SelectItem key={value} value={value}>
                     {label}

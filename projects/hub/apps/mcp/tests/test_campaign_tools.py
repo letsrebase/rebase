@@ -122,3 +122,50 @@ async def test_an_unknown_campaign_is_a_sentence(factory: sessionmaker[Session])
             "get_campagna", {"campagna_id": "01a00000-0000-7000-8000-00000000dead"}
         )
     assert result.is_error
+
+
+async def test_a_link_campaign_shows_where_its_button_leads(
+    factory: sessionmaker[Session],
+) -> None:
+    """REB-530: «Un link» reads back as the destination and its address, in the list and
+    in the detail alike, with the click as its action."""
+    session = factory()
+    try:
+        owner = User(email="campagne-link-mcp@rebase.it", nome="Ivan", cognome="S", role="admin")
+        session.add(owner)
+        session.flush()
+        campaign = Campaign(
+            created_by=owner.id,
+            nome="Casa",
+            slug="c-mcp-casa",
+            fonte="stato",
+            stato_percorso="completo",
+            oggetto="o",
+            testo="t",
+            bottone_testo="Iscriviti",
+            bottone_meta="link",
+            bottone_url="https://lu.ma/rebase-house",
+            azione="clic",
+            stato="bozza",
+            contenuto_at=SENT,
+        )
+        session.add(campaign)
+        session.commit()
+        campaign_id, owner_id = campaign.id, owner.id
+    finally:
+        session.close()
+    try:
+        async with Client(build_server(factory, lambda: IVAN)) as client:
+            listed = _payload(await client.call_tool("list_campagne", {}))
+            one = _payload(
+                await client.call_tool("get_campagna", {"campagna_id": str(campaign_id)})
+            )
+    finally:
+        _drop(factory, campaign_id, owner_id)
+    item = next(i for i in listed["items"] if i["id"] == str(campaign_id))
+    for shown in (item, one["campagna"]):
+        assert (shown["bottone_meta"], shown["bottone_url"], shown["azione"]) == (
+            "link",
+            "https://lu.ma/rebase-house",
+            "clic",
+        )
