@@ -11,6 +11,7 @@ import {
   DOCUMENT_TYPE_LABELS,
   OFFER_STATE_LABELS,
   OFFER_STATE_TONE,
+  documentDownloadErrorMessage,
   downloadDocument,
   useCreateDocument,
   useDeleteDocument,
@@ -166,7 +167,10 @@ export function DocumentsTab({ owner }: { owner: DocumentOwner }) {
                     onSelect: () => {
                       setProblem(null)
                       void downloadDocument(document.id).catch((error: unknown) =>
-                        setProblem(toProblem(error)),
+                        setProblem({
+                          ...toProblem(error),
+                          detail: documentDownloadErrorMessage(error, document.titolo),
+                        }),
                       )
                     },
                   },

@@ -1,7 +1,7 @@
 import { FileText } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { toProblem } from '@/lib/api'
+import { isMissingFile, toProblem } from '@/lib/api'
 import { useCan } from '@/lib/auth'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { useInvoicePdf, type Invoice } from './queries'
@@ -48,7 +48,7 @@ export function InvoicePdfPreview({ invoice }: { invoice: Invoice }) {
       {empty ? (
         <Empty invoice={invoice} />
       ) : pdf.isError ? (
-        toProblem(pdf.error).status === 404 ? (
+        isMissingFile(toProblem(pdf.error)) ? (
           <Missing invoice={invoice} />
         ) : (
           <div className="p-4">
