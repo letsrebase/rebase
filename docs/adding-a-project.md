@@ -431,9 +431,10 @@ because a copy drifts, which is exactly what an earlier version of this section 
 (REB-45). What a new monorepo project needs is an initiative of its own, named as the
 directory reads to people (`PigroCRM`, not `pigrocrm`) and created by hand in the Linear
 UI since the MCP surface cannot create one, and a first project under it with a scope
-that can actually close, a lead and both members (the members in the UI too, since
-`save_project` has no field for them): the initiative is the permanent container, the
-project is the release, and neither gets a row anywhere in this repository anymore
+that can actually close and a lead (`docs/tracker.md` § Where things are:
+membership beyond the lead is optional, so nothing else about who is on it is
+fixed): the initiative is the permanent container, the project is the release, and
+neither gets a row anywhere in this repository anymore
 (`docs/tracker.md` § Where things are, which dropped its own project snapshot for
 the same drift, REB-460). Repository-wide work that belongs to no product
 (CI cost, the licence, this documentation) goes under the `Monorepo` initiative; it went

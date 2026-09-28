@@ -274,8 +274,10 @@ the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
   (`docs/tracker.md` § The loop). The rest
   of the convention, from what a title says to which labels are legal, is in
   `docs/tracker.md`.
-- **Every project always carries a lead and both members.** A project created
-  without a lead or without both members is incomplete.
+- **Every project always carries a lead.** A project created without a lead is
+  incomplete. Membership beyond the lead is optional and not enforced
+  (`docs/design/DECISIONS.md`, 2026-09-28: this used to require both of us as
+  members too).
 - **The assignee is a claim, and a card that is not yours stays untouched.** Both of
   us run agents against the same board, so the only thing keeping two of them off
   the same work is that field: you may work a card assigned to the account your
