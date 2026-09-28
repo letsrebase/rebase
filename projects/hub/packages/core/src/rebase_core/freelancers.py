@@ -35,6 +35,7 @@ from rebase_core.models import (
 )
 from rebase_core.perks import PerkService
 from rebase_core.pigro import PigroRegistry, PigroUnavailable
+from rebase_core.referrals import ReferralService
 from rebase_core.schemas import (
     CvFile,
     FreelancerCreate,
@@ -263,6 +264,9 @@ class FreelancerService:
             # loser discovers on retry that the winner's row now answers to `_find`.
             self.session.rollback()
             return self.apply(data, cv, cv_filename, cv_mime)
+        ReferralService(self.session).link_signup(
+            "freelancer", row.id, data.rif, new_user_id=user.id
+        )
         return freelancer_read(row, user), True
 
     def draft_from_signup(

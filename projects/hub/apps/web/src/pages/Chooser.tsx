@@ -1,9 +1,20 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useLocation } from '@tanstack/react-router'
 import { ArrowRight, Briefcase, UserRound } from 'lucide-react'
+import { useEffect } from 'react'
+import { resolveReferral } from '@/lib/utm'
 
 /** The front door of the hub: two doors, a word for each, and a line to the team
- *  builder (P-REB-43). */
+ *  builder (P-REB-43). Reads `?rif=` once, on mount, and remembers it for the tab
+ *  (`resolveReferral`) before either door's own `<Link>` drops the query string on
+ *  navigation -- a visitor who opens `/hub/?rif=CODE` and picks a door would
+ *  otherwise lose the code between here and the wizard that reads it (CodeRabbit,
+ *  P-REB-44). */
 export function Chooser() {
+  const searchStr = useLocation({ select: (location) => location.searchStr })
+  useEffect(() => {
+    resolveReferral(searchStr)
+  }, [searchStr])
+
   return (
     <div className="mx-auto max-w-2xl space-y-10">
       <div>

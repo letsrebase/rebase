@@ -88,6 +88,7 @@ dell'Allegato A del Contratto quadro.
 - **Esclusiva verso il Cliente:** {{esclusiva}}.
 - **Citazione nel portfolio:** {{portfolio}}.
 - **Assicurazione di responsabilità civile professionale:** {{assicurazione}}.
+- **Segnalato da:** {{azienda-segnalata-da}}.
 - **Altro:** {{altre-condizioni}}.
 
 ## 9. Rapporti precedenti con il Cliente
