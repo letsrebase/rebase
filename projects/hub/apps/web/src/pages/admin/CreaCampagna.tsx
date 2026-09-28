@@ -80,6 +80,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
     enabled: form.fonte === 'lista' && form.segueId !== null,
   })
   const segue = parent.data ? { id: parent.data.campagna.id, nome: parent.data.campagna.nome } : null
+  const segueError = parent.isError ? failureMessage(parent.error) : null
 
   const payload = payloadOf(form)
   const key = keyOf(payload)
@@ -201,6 +202,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
             esclusi={esclusi}
             onToggle={toggle}
             segue={segue}
+            segueError={segueError}
           />
           <Messaggio form={form} onChange={changeMail} />
         </div>

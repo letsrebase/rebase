@@ -61,19 +61,18 @@ def candidates(session: Session, campaign: Campaign) -> list[Candidate]:
     return unique
 
 
-def _not_done(session: Session, campaign: Campaign) -> list[Candidate]:
-    """A `lista` (spec § 4.3): whom the earlier campaign reached and who has not done its
-    action. Read live, not from `azione_at` alone: the tick stamps once a minute and
-    only for 30 days after a mail, and whoever acted since must not be written to
-    again (Review Focus 2). Each person keeps the snapshot links the earlier row
-    froze: their user, card, lead and open requests. A row is also dropped, not shown
-    with a reason, when the person it named is gone from the hub -- a soft-deleted card,
-    or a referente whose every open request's company is soft-deleted -- the same way
-    `candidates_for_state` never lists them for a `stato` or `filtri` campaign; a lead
-    row stays, since a lead who made a card since is caught by `done_at`."""
-    parent = session.get(Campaign, campaign.segue_id) if campaign.segue_id else None
-    if parent is None:
-        return []
+def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
+    """The parent's sent rows with no stamped action whose person is still in the hub
+    and whose action has not happened live (spec § 4.3). Read live, not from
+    `azione_at` alone: the tick stamps once a minute and only for 30 days after a mail,
+    and whoever acted since must not be written to again (Review Focus 2), nor counted
+    as still waiting (`follow_up`'s own check, Greptile P1). Each person keeps the
+    snapshot links the earlier row froze: their user, card, lead and open requests. A
+    row is also dropped, not shown with a reason, when the person it named is gone from
+    the hub -- a soft-deleted card, or a referente whose every open request's company is
+    soft-deleted -- the same way `candidates_for_state` never lists them for a `stato`
+    or `filtri` campaign; a lead row stays, since a lead who made a card since is caught
+    by `done_at`."""
     rows = session.scalars(
         select(CampaignRecipient)
         .where(
@@ -105,7 +104,7 @@ def _not_done(session: Session, campaign: Campaign) -> list[Candidate]:
         if company_ids
         else set()
     )
-    found: list[Candidate] = []
+    found: list[CampaignRecipient] = []
     for row in rows:
         if row.freelancer_id is not None and row.freelancer_id not in alive_freelancers:
             continue
@@ -114,19 +113,29 @@ def _not_done(session: Session, campaign: Campaign) -> list[Candidate]:
             continue
         if done_at(session, row, parent.azione, since=row.inviata_at) is not None:
             continue
-        found.append(
-            Candidate(
-                email=row.email,
-                nome=row.nome,
-                tipo=row.tipo,
-                user_id=row.user_id,
-                freelancer_id=row.freelancer_id,
-                signup_id=row.signup_id,
-                company_ids=richieste,
-                pigro_slugs=tuple(row.pigro_slugs),
-            )
-        )
+        found.append(row)
     return found
+
+
+def _not_done(session: Session, campaign: Campaign) -> list[Candidate]:
+    """A `lista` (spec § 4.3): whom the earlier campaign reached and who has not done its
+    action, mapped from `waiting_rows`, each row's own snapshot links carried over."""
+    parent = session.get(Campaign, campaign.segue_id) if campaign.segue_id else None
+    if parent is None:
+        return []
+    return [
+        Candidate(
+            email=row.email,
+            nome=row.nome,
+            tipo=row.tipo,
+            user_id=row.user_id,
+            freelancer_id=row.freelancer_id,
+            signup_id=row.signup_id,
+            company_ids=tuple(UUID(key) for key in (row.prima or {}).get("richieste", {})),
+            pigro_slugs=tuple(row.pigro_slugs),
+        )
+        for row in waiting_rows(session, parent)
+    ]
 
 
 def _filtered(session: Session, raw: dict[str, Any]) -> list[Candidate]:

@@ -783,4 +783,18 @@ describe('a «Riscrivi» draft (phase 2)', () => {
     expect(body.oggetto).toBe('Manca solo il CV!')
     expect(Object.keys(body).sort()).toEqual(['bottone_meta', 'bottone_testo', 'nome', 'oggetto', 'testo'])
   })
+
+  it('says it when the parent campaign cannot be read (item 4)', async () => {
+    api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c9/audience': () => json(AUDIENCE),
+      'GET /api/hub/campaigns/c9': () => json({ campagna: LISTA, conteggi: COUNTS_EMPTY, destinatari: [] }),
+      'GET /api/hub/campaigns/c0': () => json({ detail: 'Non trovata.' }, 500),
+    })
+    mountEdit('c9')
+    expect(await screen.findByRole('heading', { name: 'Riscrivi a chi non ha fatto niente' })).toBeInTheDocument()
+    expect(await screen.findByText(/Chi ha ricevuto «…» e non ha ancora fatto l’azione/)).toBeInTheDocument()
+    expect(await screen.findByText('Non riesco a leggere la campagna da cui viene.')).toHaveAttribute('role', 'alert')
+  })
 })

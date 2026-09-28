@@ -250,6 +250,42 @@ def test_the_entry_stamp_survives_a_broken_action_stamp(
     assert "ada@studio.it" not in caplog.text
 
 
+def test_a_stamp_lost_after_being_set_is_not_counted(
+    clean: Session,  # noqa: F811  (fixture)
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """CodeRabbit's adversarial pass, item 6: the row's flag must turn true only once
+    its `with session.begin_nested():` block has exited without raising, not the
+    instant the attribute is set inside it -- a failure in the block's own commit or
+    release (a DB error mid-write) must not be counted as a stamp, the same as a
+    failure the check itself raises. Monkeypatching `session.flush` directly could not
+    target only this row's own savepoint without also catching the unrelated autoflush
+    `entered_at`'s own select triggers, so this stands in with a check that assigns the
+    attribute and then raises, the same shape: the value is written before the failure,
+    and the row must still not be counted."""
+    logging.getLogger("rebase_core.campaigns.outcome").disabled = False
+    clock = Clock(NOW)
+    person(clean, "ada@studio.it")
+    campaign = sent(clean, clock, stato_percorso="completo", azione="entrato")
+    at = clock.at + timedelta(hours=2)
+
+    def raising(
+        session: Session, recipient: CampaignRecipient, *, since: datetime
+    ) -> datetime | None:
+        recipient.entrato_at = at  # the value the savepoint would have written...
+        raise KeyError("t")  # ...but the savepoint's own commit then fails
+
+    monkeypatch.setattr(outcome_module, "entered_at", raising)
+    with caplog.at_level(logging.ERROR):
+        assert stamp_outcomes(clean, now=at + timedelta(minutes=1)) == 0
+
+    row = only_row(clean, campaign)
+    assert row.entrato_at is None
+    assert row.azione_at is None
+    assert "KeyError" in caplog.text
+
+
 def test_a_row_whose_stamping_raises_is_skipped_the_rest_still_stamped(
     clean: Session,  # noqa: F811  (fixture)
     monkeypatch: pytest.MonkeyPatch,

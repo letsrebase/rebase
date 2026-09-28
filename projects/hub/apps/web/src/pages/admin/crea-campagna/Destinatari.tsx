@@ -363,6 +363,7 @@ export function Destinatari({
   esclusi,
   onToggle,
   segue,
+  segueError,
 }: {
   form: CampaignForm
   templates: CampaignTemplate[]
@@ -378,6 +379,10 @@ export function Destinatari({
    *  link to it; `null` for a `stato`/`filtri` form, and while its own name has not
    *  loaded yet. */
   segue: { id: string; nome: string } | null
+  /** Set when the parent's own GET failed (item 4): the editor cannot say whose list
+   *  this is or whether the follow-up is still possible, so it says that plainly
+   *  instead of leaving «…» in the sentence with no explanation. */
+  segueError: string | null
 }) {
   // Open by itself when a stored filter lives in there (the edit route), so no filter
   // that shapes the list is ever out of sight.
@@ -388,14 +393,21 @@ export function Destinatari({
         Destinatari
       </h2>
       {form.fonte === 'lista' ? (
-        <p className="text-sm">
-          Chi ha ricevuto «{segue?.nome ?? '…'}» e non ha ancora fatto l’azione.{' '}
-          {segue && (
-            <Link to="/admin/campaigns/$id" params={{ id: segue.id }} className="underline">
-              Vedi la campagna
-            </Link>
+        <>
+          <p className="text-sm">
+            Chi ha ricevuto «{segue?.nome ?? '…'}» e non ha ancora fatto l’azione.{' '}
+            {segue && (
+              <Link to="/admin/campaigns/$id" params={{ id: segue.id }} className="underline">
+                Vedi la campagna
+              </Link>
+            )}
+          </p>
+          {segueError && (
+            <p role="alert" className="text-sm text-destructive">
+              Non riesco a leggere la campagna da cui viene.
+            </p>
           )}
-        </p>
+        </>
       ) : (
         <>
           <div className="flex flex-wrap gap-2" role="group" aria-label="Da chi parte la campagna">

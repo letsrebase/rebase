@@ -565,7 +565,11 @@ def test_a_card_that_carries_the_slug_was_created_from_the_mail(clean: Session) 
     giulia = User(email="giulia@studio.it", nome="Giulia", cognome="B")
     clean.add(giulia)
     clean.flush()
-    clean.add(Freelancer(user_id=giulia.id, links=[], utm_campaign=campaign.slug))
+    # The wizard stores the button link's `utm_term` on the card (item 2, Greptile P1):
+    # the row's own `codice` is `c0de0001` by `_recipient`'s default, matched here.
+    clean.add(
+        Freelancer(user_id=giulia.id, links=[], utm_campaign=campaign.slug, utm_term="c0de0001")
+    )
     clean.commit()
     _recipient(clean, campaign.id, "giulia@studio.it", tipo="lead", azione_at=later)
     _recipient(clean, campaign.id, "nina@studio.it", tipo="lead", azione_at=later)
@@ -573,3 +577,30 @@ def test_a_card_that_carries_the_slug_was_created_from_the_mail(clean: Session) 
     assert rows["giulia@studio.it"].azione_dalla_mail is True
     assert rows["nina@studio.it"].azione_dalla_mail is False
     assert rows["giulia@studio.it"].entrato_dalla_mail is False
+
+
+def test_a_card_with_the_slug_but_another_persons_code_is_not_dalla_mail(clean: Session) -> None:  # noqa: F811  (fixture)
+    """Item 2 (Greptile P1): a forwarded mail carries the slug too, so the card's own
+    `utm_term` must match the row's `codice`, the same rule the login check already
+    applies (Review Focus 5)."""
+    campaign = campaign_row(
+        clean,
+        stato="inviata",
+        inviata_at=T0,
+        stato_percorso="lead",
+        azione="profilo_creato",
+        bottone_meta="wizard",
+    )
+    later = T0 + timedelta(hours=1)
+    nina = User(email="nina@studio.it", nome="Nina", cognome="B")
+    clean.add(nina)
+    clean.flush()
+    clean.add(
+        Freelancer(user_id=nina.id, links=[], utm_campaign=campaign.slug, utm_term="not-ninas-code")
+    )
+    clean.commit()
+    _recipient(
+        clean, campaign.id, "nina@studio.it", tipo="lead", codice="c0de0002", azione_at=later
+    )
+    rows = {r.email: r for r in CampaignService(clean, SETTINGS).detail(campaign.id).destinatari}
+    assert rows["nina@studio.it"].azione_dalla_mail is False

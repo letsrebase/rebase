@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.campaigns.actions import snapshot
-from rebase_core.campaigns.audience import REASON_CANCELLED, build_audience
+from rebase_core.campaigns.audience import REASON_CANCELLED, build_audience, waiting_rows
 from rebase_core.campaigns.render import RenderTarget, person_code, render
 from rebase_core.campaigns.schemas import (
     AudiencePreview,
@@ -227,7 +227,9 @@ class CampaignService:
         when it carries the campaign's slug and the row's own code, and it is the very
         login that stamped `entrato_at`: the slug alone is also on a forwarded mail, and
         the same slug/code pair can recur from a later, unrelated login. A card created
-        for `profilo_creato` counts when it stored the slug. Two queries for the whole
+        for `profilo_creato` counts the same way, matched on the row's own code too
+        (Greptile P1): the wizard stores the button link's `utm_term` on the card
+        (`freelancers.py`'s `data.utm`), just as a login does. Two queries for the whole
         list."""
         pairs = set(
             self.session.execute(
@@ -246,13 +248,15 @@ class CampaignService:
         if campaign.azione != "profilo_creato":
             return entered, set()
         cards = set(
-            self.session.scalars(
-                select(func.lower(User.email))
+            self.session.execute(
+                select(func.lower(User.email), Freelancer.utm_term)
                 .join(Freelancer, Freelancer.user_id == User.id)
                 .where(Freelancer.utm_campaign == campaign.slug, Freelancer.deleted_at.is_(None))
-            )
+            ).all()
         )
-        return entered, {r.id for r in rows if r.azione_at is not None and r.email in cards}
+        return entered, {
+            r.id for r in rows if r.azione_at is not None and (r.email, r.codice) in cards
+        }
 
     def send_test(
         self, campaign_id: UUID, admin: AdminRead, sender: CampaignSender
@@ -358,16 +362,11 @@ class CampaignService:
         parent = self._require(campaign_id)
         if parent.stato != "inviata":
             raise InvalidState(ONLY_SENT)
-        waiting = self.session.scalar(
-            select(func.count())
-            .select_from(CampaignRecipient)
-            .where(
-                CampaignRecipient.campaign_id == parent.id,
-                CampaignRecipient.stato == "inviata",
-                CampaignRecipient.azione_at.is_(None),
-            )
-        )
-        if not waiting:
+        # Read live, the same way the list itself is shown (`waiting_rows`): a row's
+        # `azione_at` is only ever a stamp the tick wrote up to a minute ago, so a
+        # count of unstamped rows alone counts someone who already did the action live,
+        # just not yet stamped (Greptile P1, CodeRabbit Minor).
+        if not waiting_rows(self.session, parent):
             raise InvalidState(NOTHING_TO_FOLLOW)
         now = self.clock()
         nome = f"{parent.nome}{FOLLOW_UP_SUFFIX}"[:CAMPAIGN_NAME_MAX_LENGTH]

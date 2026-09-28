@@ -79,6 +79,25 @@ def test_only_a_sent_campaign_with_someone_waiting_is_followed_up(clean: Session
         service.follow_up(parent.id, admin(clean).id)
 
 
+def test_a_row_that_has_acted_live_but_is_not_yet_stamped_leaves_nothing_to_follow(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """Item 1 (Greptile P1, CodeRabbit Minor): `azione_at IS NULL` alone still counts a
+    row whose person has done the action since the mail but whom the tick has not
+    stamped yet. `follow_up` must read the live list (`waiting_rows`), the same as the
+    list it hands over, and find nobody waiting."""
+    clock = Clock(NOW)
+    parent = sent_to(clean, clock, "ada@studio.it", azione="entrato")
+    row = clean.query(CampaignRecipient).filter_by(campaign_id=parent.id).one()
+    assert row.azione_at is None and row.inviata_at is not None
+    ada = clean.query(User).filter(User.email == "ada@studio.it").one()
+    clean.add(Login(user_id=ada.id, logged_at=row.inviata_at + timedelta(hours=1)))
+    clean.commit()
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    with pytest.raises(InvalidState, match=NOTHING_TO_FOLLOW):
+        service.follow_up(parent.id, admin(clean).id)
+
+
 def test_the_list_is_who_did_nothing_read_live_and_the_gap_shows_as_a_reason(
     clean: Session,  # noqa: F811  (fixture)
 ) -> None:

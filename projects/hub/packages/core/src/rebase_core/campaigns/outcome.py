@@ -12,7 +12,13 @@ isolation principle as the send loop's R14): a row whose own data makes `done_at
 `entrato_at` already found and committed a moment earlier in the row's own entry
 savepoint. Either failure is logged by id and exception type only and skipped, so it
 never wedges every other row's stamp for the rest of the pass -- or every pass after it,
-since a wedged row would otherwise stay in the 30-day window forever."""
+since a wedged row would otherwise stay in the 30-day window forever.
+
+The row scan first narrows to recent campaigns' ids (Greptile P2: `campaign_recipients`
+has no index on `stato`/`inviata_at` alone, and a migration is out of scope here). A
+mail is never sent before its campaign's `programmata_per`, so restricting to campaigns
+whose `programmata_per` falls in the same window cannot drop a row the unrestricted
+scan would have stamped."""
 
 import logging
 from datetime import datetime, timedelta
@@ -32,10 +38,21 @@ def stamp_outcomes(session: Session, *, now: datetime) -> int:
     """Stamps every open sent row once, commits, and answers how many rows got a new
     stamp. `now` is the moment a card seen complete is stamped with. A row whose own
     stamping raises is rolled back and skipped, and does not count in the return."""
+    campaign_ids = list(
+        session.scalars(
+            select(Campaign.id).where(
+                Campaign.stato.in_(("in_invio", "inviata", "annullata")),
+                Campaign.programmata_per >= now - STAMP_WINDOW,
+            )
+        )
+    )
+    if not campaign_ids:
+        return 0
     pending = session.execute(
         select(CampaignRecipient, Campaign.azione)
         .join(Campaign, Campaign.id == CampaignRecipient.campaign_id)
         .where(
+            CampaignRecipient.campaign_id.in_(campaign_ids),
             CampaignRecipient.stato == "inviata",
             CampaignRecipient.inviata_at >= now - STAMP_WINDOW,
             or_(CampaignRecipient.entrato_at.is_(None), CampaignRecipient.azione_at.is_(None)),
@@ -47,13 +64,20 @@ def stamp_outcomes(session: Session, *, now: datetime) -> int:
         t0 = row.inviata_at
         if t0 is None:  # excluded by the query; here for the type checker
             continue
-        changed = False
+        # Each flag is set only once its own `with` block has exited without raising:
+        # setting it from inside the block, on the same line as the attribute, counted
+        # a row whose savepoint itself then failed to commit or release -- a DB error
+        # writing the stamp, not `entered_at`/`done_at`'s own check -- since the
+        # attribute assignment had already run (CodeRabbit's adversarial pass, item 6).
+        kept_entry = False
+        kept_action = False
         if row.entrato_at is None:
             try:
                 with session.begin_nested():
                     entered = entered_at(session, row, since=t0)
                     if entered is not None:
-                        row.entrato_at, changed = entered, True
+                        row.entrato_at = entered
+                kept_entry = entered is not None
             except Exception as exc:  # one bad row must not wedge the rest (R14)
                 _log.error(
                     "outcome of recipient %s skipped this tick: %s", row.id, type(exc).__name__
@@ -67,12 +91,13 @@ def stamp_outcomes(session: Session, *, now: datetime) -> int:
                         else done_at(session, row, azione, since=t0, now=now)
                     )
                     if done is not None:
-                        row.azione_at, changed = done, True
+                        row.azione_at = done
+                kept_action = done is not None
             except Exception as exc:  # one bad row must not wedge the rest (R14)
                 _log.error(
                     "outcome of recipient %s skipped this tick: %s", row.id, type(exc).__name__
                 )
-        if changed:
+        if kept_entry or kept_action:
             stamped += 1
     session.commit()
     return stamped

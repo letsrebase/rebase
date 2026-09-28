@@ -239,8 +239,8 @@ it as JSON, then turns `email.delivered`, `email.bounced`, `email.clicked` and
 
 1. In Resend, go to Webhooks, then «Add endpoint».
    - Production: `https://letsrebase.com/api/hub/webhooks/resend`.
-   - Preview: `https://preview.letsrebase.com/api/hub/webhooks/resend`, only once the
-     preview has a Resend key.
+   - Preview: none. The preview shares production's Resend key and must never get a
+     webhook endpoint or `REBASE_RESEND_WEBHOOK_SECRET` on that team; see below.
 2. Select the events `email.delivered`, `email.bounced`, `email.clicked` and
    `email.complained`.
 3. Copy the `whsec_…` value into that environment's `${DEPLOY_PATH}/.env` as
@@ -261,9 +261,13 @@ its deliveries, bounces or complaints.
 Resend's webhook covers every mail the team sends, magic links included. Those arrive
 untagged and are acknowledged without effect. A tagged event whose recipient row is not
 in this database answers 503, so that Resend retries it (for about a day) while the tick
-commits the row. **So the preview must never get a key on production's Resend team**:
-each environment would then 503 the other's tagged events, and Resend would retry every
-one of them for a day. Give the preview its own Resend team, or no key at all.
+commits the row. Two environments that both receive webhooks on one Resend team would
+503 each other's tagged events, and Resend would retry every one of them for a day, so
+only production has the endpoint and the secret. **The preview keeps production's key
+without the secret on purpose**: with no `REBASE_RESEND_WEBHOOK_SECRET`,
+`_ready_to_send` refuses «Mandami una prova» and «Invia» there, so the preview never
+sends a mail Resend would need to notify it about. The preview gets its own Resend team
+before it ever gets a webhook secret.
 
 ## Running it
 
