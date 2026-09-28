@@ -143,6 +143,18 @@ re-evaluates the environment against the default group selection — which inclu
 `dev` — decides the image's venv is out of date, and downloads mypy and ruff into a
 running production container on every start. That happened once, live.
 
+**An MCP error reaches the assistant only in the type its surface passes on.** On
+`mcp` 2.2 a tool keeps the text of a `ToolError` or a `ResourceError`, a resource the
+text of a `ResourceError`, and a prompt only that of an `MCPError`; anything else becomes
+a generic «Error executing tool <name>», «Error rendering prompt <name>» or «Internal
+server error», and the domain sentence is lost. `apps/mcp`'s `server.py` translates a
+`DomainError` in one place, the guard (`_guard` for tools and resources, `_prompt_guard`
+for prompts); a new tool or prompt goes through it, never through its own `try`. A test
+of an MCP error asserts what a `Client` receives, not what the server raised in process:
+the prompt tests did the latter and missed that the modern protocol already answered
+«Internal server error» on 2.0 (REB-451). Re-read those paths in `.venv` at every `mcp`
+upgrade.
+
 ## Deploying
 
 Through CI only, as every project here (`docs/adding-a-project.md` §7): preview on a

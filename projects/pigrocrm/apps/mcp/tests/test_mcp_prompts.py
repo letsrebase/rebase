@@ -29,10 +29,13 @@ from collections.abc import Callable, Iterator
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, NamedTuple
-from uuid import UUID
+from typing import Any, Literal, NamedTuple
+from uuid import UUID, uuid4
 
 import pytest
+from mcp import Client
+from mcp.shared.exceptions import MCPError
+from mcp.types import INVALID_PARAMS
 from sqlalchemy import Engine, create_engine, delete, text
 from sqlalchemy.orm import sessionmaker
 
@@ -43,11 +46,13 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import Base, session_factory, today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
+from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.timetracking.models import Cost, CostCategory, TimeEntry
 from pigrocrm_mcp.context import ScopedSessionProvider
+from pigrocrm_mcp.errors import to_agent_message
 from pigrocrm_mcp.prompts import customer as customer_prompts
 from pigrocrm_mcp.prompts import dashboards as dashboard_prompts
 from pigrocrm_mcp.server import build_server
@@ -553,10 +558,18 @@ async def test_chiusura_mese_takes_a_year_and_a_month(mcp_server: Any) -> None:
 async def test_chiusura_mese_refuses_month_thirteen_by_name(mcp_server: Any) -> None:
     """`month_bounds` owns the rule and names the field; the prompt adds no second copy of
     it. The guard carries the diagnosis through, so the message the caller sees still says
-    which argument to change."""
-    with pytest.raises(Exception) as caught:  # noqa: PT011 -- the SDK wraps it in ValueError
-        await mcp_server.get_prompt("chiusura-mese", {"anno": _ANNO, "mese": 13})
-    assert "mese" in str(caught.value)
+    which argument to change.
+
+    Asserted on the whole sentence a client receives: «mese» alone is also in the prompt's
+    name, so mcp 2.2's bare «Error rendering prompt chiusura-mese» passed the old check while
+    the diagnosis was lost (REB-451)."""
+    async with Client(mcp_server) as client:
+        with pytest.raises(MCPError) as caught:
+            await client.get_prompt("chiusura-mese", {"anno": str(_ANNO), "mese": "13"})
+
+    assert caught.value.message == to_agent_message(
+        ValidationFailed("periodo", "mese", "mese fuori intervallo", expected="1-12")
+    )
 
 
 async def test_chiusura_mese_on_an_empty_database_renders_a_null_margin_as_a_dash(
@@ -679,14 +692,51 @@ async def test_stato_cliente_lists_the_unpaid_invoices_with_their_deadline(
     assert f"- {_ANNO}/9002 — 750,00 € (totale con IVA), scadenza senza scadenza" in text_block
 
 
-async def test_stato_cliente_on_an_unknown_customer_is_a_domain_error(mcp_server: Any) -> None:
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_stato_cliente_on_an_unknown_customer_reaches_the_assistant_as_the_domain_error(
+    mcp_server: Any, mode: Literal["auto", "legacy"]
+) -> None:
     """An empty briefing about nobody would read as "this customer has nothing open", which
-    is the more dangerous of the two possible answers."""
-    from uuid import uuid4
+    is the more dangerous of the two possible answers. So the prompt refuses, and the refusal
+    is only worth something if the assistant can read it.
 
-    with pytest.raises(Exception) as caught:  # noqa: PT011 -- the SDK wraps it in ValueError
-        await mcp_server.get_prompt("stato-cliente", {"customer_id": str(uuid4())})
-    assert "customer" in str(caught.value).lower()
+    The assertion is on what a client receives, in both protocol eras, and not on the
+    exception the server raises in process. mcp 2.2's `Prompt.render` passes an `MCPError`
+    through and replaces anything else with «Error rendering prompt stato-cliente», with no
+    text after it; the modern protocol then answers «Internal server error» for that, and
+    the legacy one did already on mcp 2.0 (REB-451). The guard's `MCPError` is what reaches
+    the assistant as the domain's own sentence, whole."""
+    unknown = uuid4()
+
+    async with Client(mcp_server, mode=mode) as client:
+        with pytest.raises(MCPError) as caught:
+            await client.get_prompt("stato-cliente", {"customer_id": str(unknown)})
+
+    assert caught.value.message == to_agent_message(NotFound("customer", unknown))
+    assert caught.value.code == INVALID_PARAMS
+
+
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
+async def test_a_crash_inside_a_prompt_keeps_its_text_on_the_server(
+    mcp_server: Any, mode: Literal["auto", "legacy"], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the guard's contract on a prompt: only a domain error becomes an
+    `MCPError`. A programming error is re-raised untouched, so mcp 2.2 treats it as the crash
+    it is and the assistant reads the SDK's generic sentence, never the exception's text nor
+    a domain rendering that would send it to correct an argument it got right."""
+
+    def _crash(context: Any, customer_id: str) -> list[dict[str, Any]]:
+        raise KeyError("boom")
+
+    monkeypatch.setattr(customer_prompts, "stato_cliente", _crash)
+
+    async with Client(mcp_server, mode=mode) as client:
+        with pytest.raises(MCPError) as caught:
+            await client.get_prompt("stato-cliente", {"customer_id": str(uuid4())})
+
+    assert "boom" not in caught.value.message
+    assert "Rivedi" not in caught.value.message
+    assert caught.value.message in {"Internal server error", "Error rendering prompt stato-cliente"}
 
 
 # == criterion 10 =================================================================

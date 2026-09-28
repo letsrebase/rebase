@@ -9,6 +9,8 @@ from mcp.server import MCPServer
 from mcp.server.context import ServerMiddleware
 from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ResourceError, ResourceNotFoundError
+from mcp.shared.exceptions import MCPError
+from mcp.types import INTERNAL_ERROR, INVALID_PARAMS
 
 from pigrocrm.core.config import Settings, get_settings, gmail_configured
 from pigrocrm.core.errors import DomainError
@@ -33,24 +35,45 @@ modificabile e si puo' ancora scartare.
 
 
 def _as_protocol_error(exc: DomainError) -> ResourceError:
-    """Carry `to_agent_message`'s diagnosis through the one exception family the
-    installed SDK (mcp==2.0.0) will not silently replace with boilerplate.
+    """Carry `to_agent_message`'s diagnosis out of a tool or a resource, through the one
+    exception family the installed SDK (mcp==2.2.0) passes on with its text for both.
 
-    Verified against the installed package, not assumed from the plan: a resource
-    template's error path (`ResourceTemplate.create_resource`, then
-    `MCPServer._handle_read_resource`) rewrites any exception that is not already
-    `ResourceError`/`ResourceNotFoundError`/`MCPError` into a generic "Error
-    creating/reading resource ..." string, discarding whatever message it carried
-    — confirmed by calling a live server in-process and inspecting the exception
-    a client actually receives. A tool's error path (`Tool.run`) has no such
-    rewrite; it interpolates the original message regardless of exception type,
-    so `ValueError` would have worked there. Raising this exempted type from a
-    single shared guard is what lets both call sites keep a diagnosis intact.
+    Verified against the installed package, not assumed from its changelog. A tool's error
+    path (`mcpserver/tools/base.py`, `Tool.run`, lines 205-207) re-raises a `ToolError` or
+    a `ResourceError` as «Error executing tool <name>: <message>», and anything else but an
+    `MCPError` as a bare «Error executing tool <name>» (lines 208-210): since 2.2 a crash
+    keeps its text on the server. A resource's error path (`MCPServer._handle_read_resource`,
+    `mcpserver/server.py` lines 460-466) turns a `ResourceError` into an `MCPError` carrying
+    the message, `-32602` for `ResourceNotFoundError` and `-32603` otherwise, and replaces
+    anything else with a generic sentence naming only the URI. `ResourceError` is therefore
+    the one type that keeps a diagnosis intact at both call sites, which is what lets one
+    guard serve them. A prompt passes neither on: see `_as_prompt_error`.
     """
     message = to_agent_message(exc)
     if exc.code == "not_found":
         return ResourceNotFoundError(message)
     return ResourceError(message)
+
+
+def _as_prompt_error(exc: DomainError) -> MCPError:
+    """Carry `to_agent_message`'s diagnosis out of a prompt, as the protocol error a prompt
+    is allowed to raise.
+
+    A prompt has no error result the way a tool has `is_error`: a refusal is a JSON-RPC
+    error, and on mcp==2.2.0 only an `MCPError` reaches the client with its own text.
+    `Prompt.render` (`mcpserver/prompts/base.py` lines 210-213) re-raises an `MCPError` and
+    replaces anything else with «Error rendering prompt <name>», with nothing after it;
+    `MCPServer.get_prompt` (`mcpserver/server.py` lines 1358-1359) re-raises it again; and
+    both dispatchers write its `ErrorData` to the wire as it is
+    (`shared/jsonrpc_dispatcher.py` lines 98-99, `handler_exception_to_error_data`, which
+    the modern entry in `server/runner.py` shares). Anything else, the modern protocol
+    answers with «Internal server error».
+
+    The codes are the ones `_as_protocol_error`'s resource path ends up with, so a missing
+    customer reads the same whether an assistant opened `customer://` or `stato-cliente`.
+    """
+    code = INVALID_PARAMS if exc.code == "not_found" else INTERNAL_ERROR
+    return MCPError(code=code, message=to_agent_message(exc))
 
 
 def build_server(
@@ -130,10 +153,16 @@ def build_server(
     def _session_scope() -> AbstractContextManager[Any]:
         return _scope() if _scope is not None else nullcontext()
 
-    def _guard[T: Callable[..., Any]](fn: T) -> T:
-        """Every tool and resource renders a domain error as guidance instead of
-        leaking a stack trace or a bare status code -- and, whatever else it does,
+    def _guarded[T: Callable[..., Any]](fn: T, translate: Callable[[DomainError], Exception]) -> T:
+        """Every tool, resource and prompt renders a domain error as guidance instead
+        of leaking a stack trace or a bare status code -- and, whatever else it does,
         always leaves `context.session` usable for the *next* call.
+
+        One body, two translations, chosen by the surface and not by the tool:
+        `_guard` below hands tools and resources `_as_protocol_error`, and
+        `_prompt_guard` hands prompts `_as_prompt_error`, because mcp 2.2 passes a
+        different exception type on with its text on each surface (both docstrings
+        cite the lines). Everything else in here is the same for all three.
 
         A nested function, not a module-level one: it needs `context` in scope to
         roll back its session, and `context` only exists once `build_server` has
@@ -180,11 +209,13 @@ def build_server(
         discards any open transaction — so one guard body serves both providers
         without branching on which kind it received. The trailing
         `except Exception: ...; raise` re-raises the original exception completely
-        unchanged — it must not also translate a `KeyError`/`AttributeError` into
-        `_as_protocol_error`, the same "guard must not be too wide" property Task 17
+        unchanged — it must not also translate a `KeyError`/`AttributeError` through
+        `translate`, the same "guard must not be too wide" property Task 17
         verified about the two narrower `except` clauses above it — it exists only
         to guarantee the rollback runs for literally anything that can come out of
-        `fn`, not to add another translated error shape.
+        `fn`, not to add another translated error shape. What the assistant then reads
+        is the SDK's own crash sentence, «Error executing tool <name>» or «Error
+        rendering prompt <name>», and since mcp 2.2 never the exception's text (REB-451).
         """
         if inspect.iscoroutinefunction(fn):
 
@@ -195,10 +226,10 @@ def build_server(
                         return await fn(*args, **kwargs)
                     except DomainError as exc:
                         context.session.rollback()
-                        raise _as_protocol_error(exc) from exc
+                        raise translate(exc) from exc
                     except ValueError as exc:
                         context.session.rollback()
-                        raise _as_protocol_error(to_domain_error(exc)) from exc
+                        raise translate(to_domain_error(exc)) from exc
                     except Exception:
                         context.session.rollback()
                         raise
@@ -212,15 +243,23 @@ def build_server(
                     return fn(*args, **kwargs)
                 except DomainError as exc:
                     context.session.rollback()
-                    raise _as_protocol_error(exc) from exc
+                    raise translate(exc) from exc
                 except ValueError as exc:
                     context.session.rollback()
-                    raise _as_protocol_error(to_domain_error(exc)) from exc
+                    raise translate(to_domain_error(exc)) from exc
                 except Exception:
                     context.session.rollback()
                     raise
 
         return cast(T, wrapper)
+
+    def _guard[T: Callable[..., Any]](fn: T) -> T:
+        """The guard for a tool or a resource: a domain error leaves as a `ResourceError`."""
+        return _guarded(fn, _as_protocol_error)
+
+    def _prompt_guard[T: Callable[..., Any]](fn: T) -> T:
+        """The guard for a prompt: a domain error leaves as an `MCPError`."""
+        return _guarded(fn, _as_prompt_error)
 
     @mcp.tool()
     @_guard
@@ -259,9 +298,11 @@ def build_server(
         # negotiates 2025-11-25) delivered a `ToolListChangedNotification`
         # immediately, despite that connection advertising `listChanged=False`.
         # See `test_refresh_schema_notification_is_a_documented_sdk_limitation`
-        # for the reproduction this comment is based on. Re-verify both
-        # directions the next time `mcp` is upgraded — either the modern
-        # protocol's listen-stream requirement, or this SDK's capability
+        # for the reproduction this comment is based on. Re-verified on mcp==2.2.0
+        # (REB-451): that test still passes, and the capabilities are still
+        # `listChanged=True` on the modern connection and `False` on the legacy one.
+        # Re-verify both directions the next time `mcp` is upgraded — either the
+        # modern protocol's listen-stream requirement, or this SDK's capability
         # advertisement for it, may have changed.
         await ctx.session.send_tool_list_changed()
         return counts
@@ -288,14 +329,16 @@ def build_server(
     from pigrocrm_mcp.tools import register_entity_tools
 
     register_entity_tools(mcp, context, _guard)
-    # §10's four prompts, guarded by the same closure the tools get. A prompt reads the
+    # §10's four prompts, guarded by the same body the tools get and only a different
+    # translation at the end (`_prompt_guard`: a prompt's refusal has to be an `MCPError`
+    # to reach the client with its text on mcp 2.2). A prompt reads the
     # database exactly as a tool does, so it inherits `_session_scope()` and the rollback
     # with it -- there is no second session story for prompts, and there must not be: three
     # of the four open a `REPEATABLE READ` snapshot through `DashboardService`, which is
     # possible only on a session nothing has touched. `ScopedSessionProvider` gives them
     # one; a caller wiring `lambda: shared_session` gets the service's loud `RuntimeError`
     # rather than a briefing whose figures were true at no single instant.
-    register_prompts(mcp, context, _guard)
+    register_prompts(mcp, context, _prompt_guard)
 
     if gmail_configured(resolved_settings):
         # Conditional, and this is the whole of "absent, not broken": not registered

@@ -1,24 +1,26 @@
 """Registration for §10's four prompts.
 
 `MCPServer.prompt()` infers the arguments from the signature exactly as `tool()` does --
-verified against the installed `mcp==2.0.0` (`prompts/base.py::Prompt.from_function` runs
+verified against the installed `mcp==2.2.0` (`prompts/base.py::Prompt.from_function` runs
 the same `func_metadata` the tool manager runs), not assumed from the documentation -- and
 the function may receive the `Context`, so a prompt can read the database like a tool. None
 of these four needs one.
 
 Two consequences of that shared machinery are load-bearing here:
 
-  * `functools.wraps` inside `_guard` is what makes the inferred schema the *guarded*
-    function's, not the wrapper's bare `(*args, **kwargs)`. It is already there for the
-    tools and the same closure is passed on, so the prompts inherit it -- and
-    `test_mcp_prompts.py` pins the inferred arguments so a future guard that lost `wraps`
-    breaks here as loudly as it would there;
-  * `Prompt.render` re-raises `MCPError` untouched and wraps everything else in
-    `ValueError(f"Error rendering prompt {name}: {e}")`. The guard's `ResourceError` is not
-    an `MCPError`, so the wrapping happens -- but it interpolates the message, so
-    `to_agent_message`'s diagnosis reaches the client intact. That is why these prompts
-    raise domain errors and do not render an apology in Italian: the guard already turns one
-    into guidance, and a second rendering would be a second vocabulary for the same failure.
+  * `functools.wraps` inside the guard's one body (`_guarded` in `server.py`) is what makes
+    the inferred schema the *guarded* function's, not the wrapper's bare
+    `(*args, **kwargs)`. It is already there for the tools and `_prompt_guard` shares that
+    body, so the prompts inherit it -- and `test_mcp_prompts.py` pins the inferred
+    arguments so a future guard that lost `wraps` breaks here as loudly as it would there;
+  * `Prompt.render` re-raises `MCPError` untouched and replaces everything else with
+    `ValueError(f"Error rendering prompt {name}")`, with no text after the name since mcp
+    2.2 (REB-451). That is why the guard passed here is `_prompt_guard` and not the tools'
+    `_guard`: it raises a domain error as an `MCPError` whose message is
+    `to_agent_message`'s diagnosis, so the assistant reads the domain's own sentence, and a
+    crash keeps its text on the server. It is also why these prompts raise domain errors and
+    do not render an apology in Italian: the guard already turns one into guidance, and a
+    second rendering would be a second vocabulary for the same failure.
 """
 
 from collections.abc import Callable
