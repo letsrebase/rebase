@@ -844,7 +844,14 @@ async def test_the_broadened_rollback_guard_still_does_not_disguise_a_programmin
     bug (a `KeyError`/`AttributeError` this codebase never intends to raise on
     purpose) would be misreported to the agent as if it had sent a bad value,
     exactly the property Task 17's review already verified about the two narrower
-    `except` clauses above it in `_guard`."""
+    `except` clauses above it in `_guard`.
+
+    Re-raised untouched, the crash is then the SDK's to report, and since mcp 2.2 it
+    keeps the exception's text on the server: `Tool.run` answers only «Error
+    executing tool <name>» for anything that is not a `ToolError`, a `ResourceError`
+    or an `MCPError`. That is the intended behaviour (REB-451): the assistant learns
+    that the call failed and nothing about the code, where on mcp 2.0 it read the
+    `KeyError`'s own text."""
 
     def _raise_a_programming_error(self: PipelineService) -> list[Any]:
         raise KeyError("boom")
@@ -856,5 +863,5 @@ async def test_the_broadened_rollback_guard_still_does_not_disguise_a_programmin
 
     assert result.is_error
     message = result.content[0].text
-    assert "Valore atteso" not in message
-    assert "boom" in message
+    assert message == "Error executing tool list_pipeline_stages"
+    assert "boom" not in message
