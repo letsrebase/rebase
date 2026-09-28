@@ -40,6 +40,7 @@ from pigrocrm.core.db import session_factory
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.emitter.models import EmitterProfile
 from pigrocrm.core.errors import Conflict, PermissionDenied, ValidationFailed
+from pigrocrm.core.gmail.drafts import EmailDraftService
 from pigrocrm.core.gmail.errors import CredentialRevoked, ScopeMissing
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, GmailMessageLink, GoogleAccount
 from pigrocrm.core.gmail.parse import parse_message
@@ -620,7 +621,7 @@ def test_two_concurrent_sends_produce_one_email_one_row_and_one_conflict(
 
 
 def _edited_by_someone_else(session: Session, account: GoogleAccount, draft_id: UUID) -> None:
-    """A `PATCH /api/email-drafts/{id}` from another collaboratore or an admin, committed
+    """A `PATCH /api/email-drafts/{id}` from another collaborator or an admin, committed
     after the person read the draft and before they pressed «Invia ora»."""
     draft_service(session).update(
         draft_id,
@@ -731,16 +732,28 @@ def test_a_revision_without_a_timezone_is_not_a_revision() -> None:
         EmailDraftSend.model_validate({"updated_at": "2026-09-28T10:00:00"})
 
 
-def test_an_edit_that_read_the_draft_before_the_claim_cannot_land_after_it(
-    db_engine: Engine, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "change",
+    [
+        pytest.param(
+            EmailDraftUpdate(body_markdown="Un testo che nessuno ha riletto."), id="an-edit"
+        ),
+        pytest.param(EmailDraftUpdate(), id="an-edit-asking-nothing"),
+    ],
+)
+def test_an_edit_that_read_the_draft_before_the_claim_is_refused_after_it(
+    db_engine: Engine, monkeypatch: pytest.MonkeyPatch, change: EmailDraftUpdate
 ) -> None:
-    """The other half of the revision: the edit's own write. Two real connections, pinned
-    in the one order the claim alone cannot see. The edit reads the draft while it is
-    still a `bozza`, the claim commits, and only then does the edit try to write, before
-    the send reloads the row to compose it. An unconditional write would land on the
-    claimed draft and the mail would carry text nobody reviewed, with the revision the
-    person named still matching when it was checked. The edit is refused instead, and
-    what leaves is what the person read.
+    """The other half of the revision: the edit's own answer. Two real connections,
+    pinned in the one order the claim alone cannot see. The edit reads the draft while it
+    is still a `bozza` and passes the editability check on that copy, the claim commits,
+    and only then does the edit go on, before the send reloads the row to compose it.
+
+    An edit that writes would land on the claimed draft, and the mail would carry text
+    nobody reviewed while the revision the person named still matched. An edit that asks
+    for nothing writes nothing, but answering 200 from the copy it loaded would describe
+    a `bozza` that no longer exists. Both are refused like any edit of a draft in flight,
+    and what leaves is what the person read.
     """
     factory = session_factory(db_engine)
     customer_id: UUID | None = None
@@ -759,16 +772,20 @@ def test_an_edit_that_read_the_draft_before_the_claim_cannot_land_after_it(
         edit_read_the_row = Event()
         claim_committed = Event()
         edit_finished = Event()
-        write_edit = GmailRepository.update_editable_draft
+        require_editable = EmailDraftService._require_editable
         claim = GmailRepository.claim_draft_for_send
         compose = EmailSendService._compose
+        checks = 0
 
-        def write_once_the_claim_committed(
-            self: GmailRepository, *args: Any, **kwargs: Any
-        ) -> bool:
-            edit_read_the_row.set()
-            assert claim_committed.wait(30), "the claim never committed"
-            return write_edit(self, *args, **kwargs)
+        def check_once_the_claim_committed(self: EmailDraftService, draft: EmailDraft) -> None:
+            # The first check is the edit's cheap one, on the copy it loaded before the
+            # claim: it passes on that copy, and the edit goes on only once the claim is in.
+            nonlocal checks
+            checks += 1
+            if checks == 1:
+                edit_read_the_row.set()
+                assert claim_committed.wait(30), "the claim never committed"
+            require_editable(self, draft)
 
         def claim_once_the_edit_read_the_row(
             self: GmailRepository, *args: Any, **kwargs: Any
@@ -777,15 +794,13 @@ def test_an_edit_that_read_the_draft_before_the_claim_cannot_land_after_it(
             return claim(self, *args, **kwargs)
 
         def compose_once_the_edit_is_done(self: EmailSendService, *args: Any) -> str:
-            # The claim is committed by now: let the edit try its write, and compose only
-            # after it has, from the row as it then stands.
+            # The claim is committed by now: let the edit go on, and compose only after it
+            # has, from the row as it then stands.
             claim_committed.set()
             assert edit_finished.wait(30), "the edit never finished"
             return compose(self, *args)
 
-        monkeypatch.setattr(
-            GmailRepository, "update_editable_draft", write_once_the_claim_committed
-        )
+        monkeypatch.setattr(EmailDraftService, "_require_editable", check_once_the_claim_committed)
         monkeypatch.setattr(
             GmailRepository, "claim_draft_for_send", claim_once_the_edit_read_the_row
         )
@@ -796,14 +811,10 @@ def test_an_edit_that_read_the_draft_before_the_claim_cannot_land_after_it(
             try:
                 with factory() as session:
                     try:
-                        draft_service(session).update(
-                            read.id,
-                            EmailDraftUpdate(body_markdown="Un testo che nessuno ha riletto."),
-                            actor,
-                        )
+                        answered = draft_service(session).update(read.id, change, actor)
                     except Conflict as refused:
                         return f"refused:{refused.details.get('send_state')}"
-                    return "written"
+                    return f"answered:{answered.send_state}"
             finally:
                 edit_finished.set()
 

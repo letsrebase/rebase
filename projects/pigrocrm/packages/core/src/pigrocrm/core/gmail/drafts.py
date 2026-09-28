@@ -235,8 +235,19 @@ class EmailDraftService:
             )
         if not values and draft.send_state == "bozza":
             # Nothing asked of a draft that is already a draft: no write, so the revision
-            # somebody is reading stays the true one.
-            return read_draft(self.session, draft)
+            # somebody is reading stays the true one. Still read again past the copy loaded
+            # above and held to the rule the write follows: a send may have claimed the
+            # draft since, and a 200 carrying `bozza` and the old text would then describe
+            # a row that no longer exists.
+            current = self.session.execute(
+                select(EmailDraft)
+                .where(EmailDraft.id == draft_id)
+                .execution_options(populate_existing=True)
+            ).scalar_one_or_none()
+            if current is None:
+                raise NotFound(ENTITY, draft_id)
+            self._require_editable(current)
+            return read_draft(self.session, current)
 
         # `message_id_header` is deliberately untouched: minting a new one on every edit
         # would make the reconciliation of spec 6.3 look for a message that was never
