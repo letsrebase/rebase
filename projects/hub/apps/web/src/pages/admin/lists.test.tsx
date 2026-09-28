@@ -333,6 +333,22 @@ describe('the Talenti list (REB-282/283)', () => {
     expect(within(ada).queryByRole('link', { name: /LinkedIn/ })).not.toBeInTheDocument()
   })
 
+  it('reads the Modalità cell as «—» for a stored value outside the three known ones (REB-558)', async () => {
+    // `TalentoRead.remoto` is `str | None` on the API, not narrowed to `Remoto`: a
+    // stray value must not render blank.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      answer(200, {
+        totale: 1,
+        items: [{ ...CARD_TALENTO, remoto: 'boh' }],
+        per_stato: { nuovo: 1 },
+      }),
+    )
+    mount('/admin/talent')
+
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    expect(cellUnder(ada, 'Modalità')).toHaveTextContent('—')
+  })
+
   it('filters by state through the same pills as before, «Lead» included', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 0, items: [], per_stato: {} }))
     mount('/admin/talent')

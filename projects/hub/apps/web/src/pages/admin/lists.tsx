@@ -480,7 +480,7 @@ function TalentoRow({ item }: { item: Talento }) {
       <TableCell className="text-right text-muted-foreground">
         {item.tariffa_giornaliera === null ? '—' : formatEuro(item.tariffa_giornaliera)}
       </TableCell>
-      <TableCell className="text-muted-foreground">{item.remoto ? REMOTO_LABELS[item.remoto] : '—'}</TableCell>
+      <TableCell className="text-muted-foreground">{remotoLabel(item.remoto)}</TableCell>
       <TableCell>
         {item.linkedin_url && isHttpUrl(item.linkedin_url) ? (
           <a
@@ -503,6 +503,14 @@ function TalentoRow({ item }: { item: Talento }) {
       </TableCell>
     </TableRow>
   )
+}
+
+/** `TalentoRead.remoto` is `str | None`, not narrowed to `Remoto` (REB-558 review): the
+ *  database column allows any string, so a value outside `REMOTO_LABELS`' three keys
+ *  reads «—» rather than rendering blank. */
+function remotoLabel(value: string | null): string {
+  if (value === null) return '—'
+  return (REMOTO_LABELS as Record<string, string>)[value] ?? '—'
 }
 
 /** Only an address that can actually open in a new tab becomes a link (REB-558): the
