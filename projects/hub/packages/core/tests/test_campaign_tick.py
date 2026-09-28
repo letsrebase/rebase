@@ -689,3 +689,37 @@ def test_a_sender_that_raises_does_not_say_the_list_is_unreadable(
     still = clean.get(Campaign, campaign.id)
     assert still is not None
     assert (still.stato, still.fermo_motivo) == ("in_invio", None)
+
+
+def test_a_mail_the_webhook_already_confirmed_clears_the_stall_too(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """CodeRabbit on #473, round 2: the webhook-recovery branch (REB-522) marks a queued
+    row sent without calling Resend. That is a mail that left, so it clears the stall
+    exactly as an accepted send does, even when the next row only gets a `riprova`."""
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it", "b@studio.it")
+    run_tick(
+        clean,
+        RecordingCampaignSender([SendOutcome("fermati", dettaglio="Resend 401")]),
+        SETTINGS,
+        clock=clock,
+        pause=NO_PAUSE,
+    )
+    first = (
+        clean.query(CampaignRecipient)
+        .filter_by(campaign_id=campaign.id)
+        .order_by(CampaignRecipient.id)
+        .first()
+    )
+    assert first is not None
+    first.consegnata_at = clock.at
+    clean.commit()
+    clock.at += timedelta(minutes=1)
+    flaky = RecordingCampaignSender([SendOutcome("riprova", dettaglio="Resend 503")])
+    run_tick(clean, flaky, SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert len(flaky.sent) == 1  # only the second row reached Resend
+    clean.expire_all()
+    moving = clean.get(Campaign, campaign.id)
+    assert moving is not None
+    assert (moving.stato, moving.fermo_at, moving.fermo_motivo) == ("in_invio", None, None)

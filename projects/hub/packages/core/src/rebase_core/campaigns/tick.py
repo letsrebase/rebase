@@ -234,6 +234,7 @@ def _send(
             # reaches its shared `resend_id` write has just set one of them).
             row.stato, row.inviata_at = "inviata", webhook_moment or clock()
             result.inviate += 1
+            _moving(campaign)  # a mail left, as an accepted send says (REB-524)
             session.commit()
             continue
         try:
@@ -285,9 +286,7 @@ def _send(
         if outcome.esito == "accettata":
             row.stato, row.resend_id, row.inviata_at = "inviata", outcome.resend_id, clock()
             result.inviate += 1
-            if campaign.fermo_at is not None:
-                # A mail left: whatever stopped the send is fixed (REB-524).
-                campaign.fermo_at, campaign.fermo_motivo = None, None
+            _moving(campaign)
         elif outcome.esito == "riprova":
             row.tentativi += 1
             if row.tentativi >= MAX_ATTEMPTS:
@@ -322,6 +321,14 @@ def _finish(session: Session, campaign_id: UUID, clock: Callable[[], datetime]) 
         campaign.stato, campaign.inviata_at = "inviata", clock()
         campaign.fermo_at, campaign.fermo_motivo = None, None
     session.commit()
+
+
+def _moving(campaign: Campaign) -> None:
+    """A mail of this campaign left, sent now or confirmed by the webhook: whatever
+    stopped the send is fixed, so its stall goes (REB-524). Written with the row's own
+    commit, through the object `_claim` loaded with `populate_existing`."""
+    if campaign.fermo_at is not None or campaign.fermo_motivo is not None:
+        campaign.fermo_at, campaign.fermo_motivo = None, None
 
 
 def _stall(session: Session, campaign_id: UUID, motivo: str, now: datetime) -> None:

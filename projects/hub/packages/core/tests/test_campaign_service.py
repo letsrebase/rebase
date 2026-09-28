@@ -29,7 +29,12 @@ from rebase_core.campaigns.schemas import (
     TalentiFiltri,
 )
 from rebase_core.campaigns.sender import RecordingCampaignSender, SendOutcome
-from rebase_core.campaigns.service import NOT_A_DRAFT, ONLY_A_DRAFT_IS_DELETED, CampaignService
+from rebase_core.campaigns.service import (
+    DRAFT_HAS_HISTORY,
+    NOT_A_DRAFT,
+    ONLY_A_DRAFT_IS_DELETED,
+    CampaignService,
+)
 from rebase_core.db import session_factory
 from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.models import Campaign, CampaignRecipient, Freelancer, Login, User
@@ -696,3 +701,33 @@ def test_a_delete_from_a_session_holding_a_stale_draft_is_refused(
     clean.expire_all()
     assert clean.get(Campaign, campaign.id).stato == "programmata"  # type: ignore[union-attr]
     assert clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).count() == 2
+
+
+@pytest.mark.parametrize(
+    "stamp",
+    [
+        "inviata_at",
+        "consegnata_at",
+        "rimbalzata_at",
+        "primo_clic_at",
+        "reclamo_at",
+        "entrato_at",
+        "azione_at",
+    ],
+)
+def test_a_draft_whose_rows_carry_a_send_or_an_outcome_is_not_deleted(
+    clean: Session,  # noqa: F811  (fixture)
+    stamp: str,
+) -> None:
+    """CodeRabbit on #473, round 2: a `bozza` never has such a row, but if one ever did,
+    the cascade would erase the history silently. The delete refuses with a sentence."""
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    created = service.create(admin(clean).id, draft())
+    fields: dict[str, object] = {"stato": "in_coda", "inviata_at": None, stamp: T0}
+    _recipient(clean, created.id, "ada@studio.it", **fields)
+    with pytest.raises(InvalidState, match=DRAFT_HAS_HISTORY):
+        service.delete(created.id)
+    clean.expire_all()
+    assert clean.get(Campaign, created.id) is not None
+    assert clean.query(CampaignRecipient).filter_by(campaign_id=created.id).count() == 1

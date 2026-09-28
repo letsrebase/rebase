@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import AdminRead
@@ -48,6 +48,9 @@ from rebase_core.models import (
 NOT_A_DRAFT = "Si modifica solo una bozza: riportala in bozza prima."
 ONLY_A_DRAFT_IS_DELETED = (
     "Si elimina solo una bozza: una campagna programmata, inviata o annullata resta."
+)
+DRAFT_HAS_HISTORY = (
+    "Questa bozza ha destinatari con un invio o un esito registrato: non si elimina."
 )
 ROME = ZoneInfo("Europe/Rome")
 NEED_TEST = "Manda una prova dopo l'ultima modifica, poi invia."
@@ -350,6 +353,27 @@ class CampaignService:
         campaign = self._require_locked(campaign_id)
         if campaign.stato != "bozza":
             raise InvalidState(ONLY_A_DRAFT_IS_DELETED)
+        # A draft never carries a row that left or came back, but the cascade would
+        # erase one silently if it ever did (CodeRabbit on #473): refuse instead.
+        r = CampaignRecipient
+        history = self.session.scalar(
+            select(r.id)
+            .where(
+                r.campaign_id == campaign.id,
+                or_(
+                    r.inviata_at.is_not(None),
+                    r.consegnata_at.is_not(None),
+                    r.rimbalzata_at.is_not(None),
+                    r.primo_clic_at.is_not(None),
+                    r.reclamo_at.is_not(None),
+                    r.entrato_at.is_not(None),
+                    r.azione_at.is_not(None),
+                ),
+            )
+            .limit(1)
+        )
+        if history is not None:
+            raise InvalidState(DRAFT_HAS_HISTORY)
         self.session.delete(campaign)
         self.session.commit()
 

@@ -125,3 +125,17 @@ def test_the_name_goes_in_the_subject_too() -> None:
         greeting, RenderTarget("ivan@rebase.it", "Ivan", "00", "prova"), SETTINGS, test=True
     )
     assert test.mail.subject == "[prova] Ivan, manca solo il CV"
+
+
+def test_a_name_cannot_break_the_subject_onto_another_header() -> None:
+    """CodeRabbit on #473, round 2: `{nome}` is a person's own input, and a CR/LF in it
+    would reach `Mail.subject` as a line break. Every control character in the subject
+    becomes a space; the body is left as it is, escaped already."""
+    sneaky = RenderTarget("ada@studio.it", "Ada\r\nBcc: x@y", "ab12cd34", "tok")
+    greeting = campaign(oggetto="{nome}, manca solo il CV\t")
+    mail = render(greeting, sneaky, SETTINGS).mail
+    assert mail.subject == "Ada Bcc: x@y, manca solo il CV"
+    assert not any(ord(ch) < 32 or ord(ch) == 127 for ch in mail.subject)
+    assert "<title>Ada Bcc: x@y, manca solo il CV</title>" in (mail.html or "")
+    test = render(greeting, sneaky, SETTINGS, test=True).mail
+    assert test.subject == "[prova] Ada Bcc: x@y, manca solo il CV"
