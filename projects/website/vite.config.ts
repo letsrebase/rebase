@@ -38,6 +38,7 @@ export default defineConfig({
         privacy: path.resolve(__dirname, 'src/privacy.html'),
         terms: path.resolve(__dirname, 'src/terms.html'),
         pitch: path.resolve(__dirname, 'src/pitch.html'),
+        company: path.resolve(__dirname, 'src/company.html'),
       },
     },
   },
