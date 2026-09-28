@@ -209,9 +209,9 @@ def build_server(
         discards any open transaction — so one guard body serves both providers
         without branching on which kind it received. The trailing
         `except Exception: ...; raise` re-raises the original exception completely
-        unchanged — it must not also translate a `KeyError`/`AttributeError` through
+        unchanged. It must not also translate a `KeyError`/`AttributeError` through
         `translate`, the same "guard must not be too wide" property Task 17
-        verified about the two narrower `except` clauses above it — it exists only
+        verified about the two narrower `except` clauses above it; it exists only
         to guarantee the rollback runs for literally anything that can come out of
         `fn`, not to add another translated error shape. What the assistant then reads
         is the SDK's own crash sentence, «Error executing tool <name>» or «Error
@@ -301,7 +301,7 @@ def build_server(
         # for the reproduction this comment is based on. Re-verified on mcp==2.2.0
         # (REB-451): that test still passes, and the capabilities are still
         # `listChanged=True` on the modern connection and `False` on the legacy one.
-        # Re-verify both directions the next time `mcp` is upgraded — either the
+        # Re-verify both directions the next time `mcp` is upgraded. Either the
         # modern protocol's listen-stream requirement, or this SDK's capability
         # advertisement for it, may have changed.
         await ctx.session.send_tool_list_changed()
