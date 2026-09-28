@@ -35,7 +35,7 @@ from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.engagements import EngagementService
 from rebase_core.errors import DomainError
 from rebase_core.http import HttpCall, urllib_call, urllib_engagements_call
-from rebase_core.mail import sender_from_settings
+from rebase_core.mail import EmailSender, sender_from_settings
 from rebase_core.signing import signing_from_settings
 from rebase_mcp.actor import ADMIN_STATE_KEY, AdminFromRequest, request_admin
 from rebase_mcp.server import build_server
@@ -65,13 +65,22 @@ class McpHttpApp:
         self._factory = factory
         self._settings = settings
         self._http = http
+        self._sender: EmailSender | None = None
         self._app: ASGIApp | None = None
+
+    def engagements(self, session: Session) -> EngagementService:
+        """The service behind `link_match_to_pigro` and `get_match_report` (REB-501): the
+        injected client, so a test's fake reaches them too, except that production's
+        ten-second `urllib_call` becomes `urllib_engagements_call`, whose 90 seconds
+        leave room for a link that opens a new space (the API's `_engagements_call`)."""
+        http = urllib_engagements_call if self._http is urllib_call else self._http
+        return EngagementService(session, self._settings, http, sender=self._sender)
 
     def _server(self) -> ASGIApp:
         if self._app is None:
             renderer = ContractRenderer()
             settings = self._settings
-            sender = sender_from_settings(settings)
+            self._sender = sender_from_settings(settings)
             server = build_server(
                 self._factory(),
                 request_admin,
@@ -80,9 +89,7 @@ class McpHttpApp:
                 middleware=[AdminFromRequest()],
                 renderer=renderer,
                 signing=signing_from_settings(settings, renderer),
-                engagements=lambda session: EngagementService(
-                    session, settings, urllib_engagements_call, sender=sender
-                ),
+                engagements=self.engagements,
             )
             self._starlette = server.streamable_http_app(
                 streamable_http_path=MCP_PATH,
