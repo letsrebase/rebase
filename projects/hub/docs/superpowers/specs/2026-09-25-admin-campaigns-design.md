@@ -419,7 +419,7 @@ did nothing.
    - Two read-only hub MCP tools, `list_campagne` and `get_campagna`, so an agent
      reports without a terminal.
 
-   Phase 2 shipped as the milestone «Read the outcome» (milestone PR), plan
+   Phase 2 shipped as the milestone «Read the outcome» (REB-533 to REB-539), plan
    `projects/hub/docs/superpowers/plans/2026-09-26-campaigns-phase-2-outcome.md`.
 3. **PigroCRM.**
    - `GET /api/tenants/usage` in the CRM, its own card with `area:api`.

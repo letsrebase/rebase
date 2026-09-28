@@ -6,12 +6,13 @@ columns and run no action query of their own.
 Only rows sent in the last `STAMP_WINDOW` are read, and only the ones still missing a
 stamp, so a pass costs a few queries per open row, not per row ever sent. A stamp is
 written once and never moved: a second login does not turn «entrato il 26/09» into the
-28th. Each row is stamped in its own savepoint (the same isolation principle as the send
-loop's R14): a row whose own data makes `done_at` raise (a broken `prima["richieste"]`
-timestamp, say) is rolled back to the savepoint, logged by id and exception type only,
-and skipped, so it never wedges every other row's stamp for the rest of the pass -- or
-every pass after it, since a wedged row would otherwise stay in the 30-day window
-forever."""
+28th. The entry stamp and the action stamp each get their own savepoint (the same
+isolation principle as the send loop's R14): a row whose own data makes `done_at` raise
+(a broken `prima["richieste"]` timestamp, say) loses only the action savepoint, not an
+`entrato_at` already found and committed a moment earlier in the row's own entry
+savepoint. Either failure is logged by id and exception type only and skipped, so it
+never wedges every other row's stamp for the rest of the pass -- or every pass after it,
+since a wedged row would otherwise stay in the 30-day window forever."""
 
 import logging
 from datetime import datetime, timedelta
@@ -46,14 +47,20 @@ def stamp_outcomes(session: Session, *, now: datetime) -> int:
         t0 = row.inviata_at
         if t0 is None:  # excluded by the query; here for the type checker
             continue
-        try:
-            with session.begin_nested():
-                changed = False
-                if row.entrato_at is None:
+        changed = False
+        if row.entrato_at is None:
+            try:
+                with session.begin_nested():
                     entered = entered_at(session, row, since=t0)
                     if entered is not None:
                         row.entrato_at, changed = entered, True
-                if row.azione_at is None:
+            except Exception as exc:  # one bad row must not wedge the rest (R14)
+                _log.error(
+                    "outcome of recipient %s skipped this tick: %s", row.id, type(exc).__name__
+                )
+        if row.azione_at is None:
+            try:
+                with session.begin_nested():
                     done = (
                         row.entrato_at
                         if azione == "entrato"
@@ -61,9 +68,11 @@ def stamp_outcomes(session: Session, *, now: datetime) -> int:
                     )
                     if done is not None:
                         row.azione_at, changed = done, True
-                if changed:
-                    stamped += 1
-        except Exception as exc:  # one bad row must not wedge the rest (R14)
-            _log.error("outcome of recipient %s skipped this tick: %s", row.id, type(exc).__name__)
+            except Exception as exc:  # one bad row must not wedge the rest (R14)
+                _log.error(
+                    "outcome of recipient %s skipped this tick: %s", row.id, type(exc).__name__
+                )
+        if changed:
+            stamped += 1
     session.commit()
     return stamped

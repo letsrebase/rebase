@@ -168,8 +168,11 @@ through `campaign_sender_from_settings` (`rebase_core.campaigns.sender`), one ma
 time and one mail a second, leaving Resend's other request a second to the magic link.
 A loop, never a one-shot, for the same reason as `sweep`: `_deploy-compose.yml` fails a
 deploy on any container that is not `running`. Without `REBASE_RESEND_API_KEY` the
-command prints why and exits 0, so the loop keeps running and sends nothing -- the
-preview carries no key. Read what it did with `docker logs rebase-campaigns-1`
+command prints why and exits 0, so the loop keeps running and sends nothing. The
+preview's API has `REBASE_RESEND_API_KEY` set, production's key, on purpose, but no
+`REBASE_RESEND_WEBHOOK_SECRET`, so `_ready_to_send` refuses «Mandami una prova» and
+«Invia» there (`NO_WEBHOOK`): the preview's loop runs, it just never has a sent row to
+send. Read what it did with `docker logs rebase-campaigns-1`
 (production) or `docker logs rebase-preview-campaigns-1` (preview): each run prints one
 line, «N campagne, M inviate, S saltate, F fallite». `campagne` is how many due
 campaigns this pass touched, and `inviate` and `saltate` are recipients this pass
@@ -188,8 +191,9 @@ For every row sent in the last 30 days and still missing a stamp, it writes `ent
 (the first login after the mail) and `azione_at` (the campaign's action, from the table
 that records it: the CV comment, the card's `created_at`, the request's `updated_at`, or
 the tick itself for a card that became complete). A stamp is written once. The log line
-ends with `N esiti registrati`. Without a Resend key the tick does not run, so the preview
-stamps nothing.
+ends with `N esiti registrati`. The preview's `campaigns` loop runs, since it has a
+Resend key; it is the missing webhook secret that keeps «Mandami una prova» and «Invia»
+refused there, so the preview never has a sent row to stamp.
 
 **«Riscrivi a chi non ha fatto niente»** (`POST /api/hub/campaigns/{id}/follow-up`) makes a
 `bozza` with `fonte = lista` and `segue_id`. It keeps the earlier campaign's action and a

@@ -529,6 +529,29 @@ def test_dalla_mail_needs_this_campaigns_slug_and_this_persons_code(clean: Sessi
     )
 
 
+def test_dalla_mail_is_the_login_that_stamped_the_entry_not_any_matching_login(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """Review Focus 1: an earlier, unrelated login stamped `entrato_at`; a later login
+    happens to carry this campaign's slug and this row's code. The row did not enter
+    from the mail -- the stamped moment says so."""
+    campaign = campaign_row(clean, stato="inviata", inviata_at=T0, azione="entrato")
+    earlier = T0 + timedelta(hours=1)
+    later = T0 + timedelta(hours=2)
+    ada = User(email="ada@studio.it", nome="Ada", cognome="L")
+    clean.add(ada)
+    clean.flush()
+    clean.add(Login(user_id=ada.id, logged_at=earlier))
+    clean.add(
+        Login(user_id=ada.id, logged_at=later, utm_campaign=campaign.slug, utm_term="c0de00aa")
+    )
+    clean.commit()
+    _recipient(clean, campaign.id, "ada@studio.it", codice="c0de00aa", entrato_at=earlier)
+    rows = {r.email: r for r in CampaignService(clean, SETTINGS).detail(campaign.id).destinatari}
+    assert rows["ada@studio.it"].entrato_dalla_mail is False
+    assert rows["ada@studio.it"].azione_dalla_mail is False
+
+
 def test_a_card_that_carries_the_slug_was_created_from_the_mail(clean: Session) -> None:  # noqa: F811  (fixture)
     campaign = campaign_row(
         clean,

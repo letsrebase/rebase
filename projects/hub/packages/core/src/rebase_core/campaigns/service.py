@@ -224,17 +224,23 @@ class CampaignService:
         self, campaign: Campaign, rows: Sequence[CampaignRecipient]
     ) -> tuple[set[UUID], set[UUID]]:
         """Which stamped rows came from this very mail (spec § 4.3, § 6.2). A login counts
-        when it carries the campaign's slug and the row's own code: the slug alone is also
-        on a forwarded mail. A card created for `profilo_creato` counts when it stored the
-        slug. Two queries for the whole list."""
+        when it carries the campaign's slug and the row's own code, and it is the very
+        login that stamped `entrato_at`: the slug alone is also on a forwarded mail, and
+        the same slug/code pair can recur from a later, unrelated login. A card created
+        for `profilo_creato` counts when it stored the slug. Two queries for the whole
+        list."""
         pairs = set(
             self.session.execute(
-                select(func.lower(User.email), Login.utm_term)
+                select(func.lower(User.email), Login.utm_term, Login.logged_at)
                 .join(User, User.id == Login.user_id)
                 .where(Login.utm_campaign == campaign.slug)
             ).all()
         )
-        entered = {r.id for r in rows if r.entrato_at is not None and (r.email, r.codice) in pairs}
+        entered = {
+            r.id
+            for r in rows
+            if r.entrato_at is not None and (r.email, r.codice, r.entrato_at) in pairs
+        }
         if campaign.azione == "entrato":
             return entered, entered
         if campaign.azione != "profilo_creato":

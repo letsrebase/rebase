@@ -212,6 +212,44 @@ def test_the_pigro_action_is_left_to_phase_3(clean: Session) -> None:  # noqa: F
     assert done_at(clean, row, "pigro_cliente", since=NOW) is None
 
 
+def test_the_entry_stamp_survives_a_broken_action_stamp(
+    clean: Session,  # noqa: F811  (fixture)
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Review Focus 2: the entry and the action are stamped in their own savepoints. A
+    row whose action check raises must not lose the `entrato_at` its own login already
+    earned a moment earlier -- and every pass after this one, since a row stuck without
+    `entrato_at` never leaves the window."""
+    logging.getLogger("rebase_core.campaigns.outcome").disabled = False
+    clock = Clock(NOW)
+    card = person(clean, "ada@studio.it", cv=False)
+    campaign = sent(clean, clock)  # `manca_cv`, action `cv`
+    at = clock.at + timedelta(hours=2)
+    clean.add(Login(user_id=card.user_id, logged_at=at))
+    clean.commit()
+
+    def raising(
+        session: Session,
+        recipient: CampaignRecipient,
+        azione: str,
+        *,
+        since: datetime | None = None,
+        now: datetime | None = None,
+    ) -> datetime | None:
+        raise KeyError("t")
+
+    monkeypatch.setattr(outcome_module, "done_at", raising)
+    with caplog.at_level(logging.ERROR):
+        assert stamp_outcomes(clean, now=at + timedelta(minutes=1)) == 1
+
+    row = only_row(clean, campaign)
+    assert row.entrato_at == at
+    assert row.azione_at is None
+    assert "KeyError" in caplog.text
+    assert "ada@studio.it" not in caplog.text
+
+
 def test_a_row_whose_stamping_raises_is_skipped_the_rest_still_stamped(
     clean: Session,  # noqa: F811  (fixture)
     monkeypatch: pytest.MonkeyPatch,
