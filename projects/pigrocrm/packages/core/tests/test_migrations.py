@@ -1,5 +1,6 @@
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pytest
 from alembic.autogenerate import compare_metadata
@@ -8,7 +9,6 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import Engine, create_engine, text
-from testcontainers.community.postgres import PostgresContainer
 
 import pigrocrm.core.models_registry  # noqa: F401
 from pigrocrm.core.config import get_settings
@@ -104,10 +104,10 @@ def _alembic_config(url: str) -> Config:
     return config
 
 
-def test_migrations_produce_exactly_the_models_schema() -> None:
+def test_migrations_produce_exactly_the_models_schema(pigrocrm_postgres: Any) -> None:
     """A drift between migrations and models is invisible until deploy day, when the
     application meets a table the code does not expect."""
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         upgrade(_alembic_config(url), "head")
 
@@ -151,12 +151,12 @@ def test_every_table_the_slice_needs_exists() -> None:
     assert expected <= set(Base.metadata.tables)
 
 
-def test_hand_maintained_indexes_survive_the_migration() -> None:
+def test_hand_maintained_indexes_survive_the_migration(pigrocrm_postgres: Any) -> None:
     """`compare_metadata` (above) already proves migrations and models agree overall, but
     a diff report names a mismatch, not a silent gap -- this test names the exact indexes
     that autogenerate is known to drop, so a future regression fails as a missing name
     instead of a generic diff someone has to go decode."""
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         upgrade(_alembic_config(url), "head")
 
@@ -224,13 +224,15 @@ def test_hand_maintained_indexes_survive_the_migration() -> None:
     )
 
 
-def test_every_trigram_index_is_a_partial_gin_index_over_gin_trgm_ops() -> None:
+def test_every_trigram_index_is_a_partial_gin_index_over_gin_trgm_ops(
+    pigrocrm_postgres: Any,
+) -> None:
     """A trigram index created without `gin_trgm_ops` is an ordinary GIN index that
     cannot serve `ILIKE '%x%'` at all, and one created without the `WHERE` clause is
     bigger than it needs to be and leaves residuo R7 open for that table. Both mistakes
     produce a green `compare_metadata`, so they are asserted on the definition text.
     """
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         upgrade(_alembic_config(url), "head")
 
@@ -282,7 +284,9 @@ SORT_INDEX_BODIES: dict[str, str] = {
 }
 
 
-def test_every_sort_index_is_a_btree_over_the_column_and_the_identifier() -> None:
+def test_every_sort_index_is_a_btree_over_the_column_and_the_identifier(
+    pigrocrm_postgres: Any,
+) -> None:
     """Residuo R9's other half, asserted on the definition text rather than on the name.
 
     `compare_metadata` does not compare index expressions at all, so the one index that
@@ -292,7 +296,7 @@ def test_every_sort_index_is_a_btree_over_the_column_and_the_identifier() -> Non
     `db/sort.py::order_by` declares -- and Postgres sorts the whole table in memory
     instead.
     """
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         upgrade(_alembic_config(url), "head")
 
@@ -325,7 +329,9 @@ def _applied_revision(url: str) -> str:
         engine.dispose()
 
 
-def test_env_prefers_an_explicit_config_url_over_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_env_prefers_an_explicit_config_url_over_settings(
+    pigrocrm_postgres: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Regression for a real finding: `env.py` must not unconditionally prefer
     `get_settings()` over whatever URL the `Config` object already carries -- that is
     exactly what made a hand-edited `alembic.ini` (Alembic's own documented mechanism)
@@ -340,7 +346,7 @@ def test_env_prefers_an_explicit_config_url_over_settings(monkeypatch: pytest.Mo
     )
     get_settings.cache_clear()
     try:
-        with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+        with pigrocrm_postgres.fresh_container() as container:
             url = container.get_connection_url()
             upgrade(_alembic_config(url), "head")
             revision = _applied_revision(url)
@@ -354,13 +360,15 @@ def test_env_prefers_an_explicit_config_url_over_settings(monkeypatch: pytest.Mo
     assert revision == expected_head
 
 
-def test_env_falls_back_to_settings_when_config_has_no_url(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_env_falls_back_to_settings_when_config_has_no_url(
+    pigrocrm_postgres: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The brief's own default path, which must keep working exactly as before: a
     `Config` that nobody pointed anywhere (still carrying `alembic.ini`'s placeholder
     `sqlalchemy.url`) falls back to `get_settings()`, the same application-wide
     configuration source the rest of the codebase uses.
     """
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         monkeypatch.setenv("PIGROCRM_DATABASE_URL", url)
         get_settings.cache_clear()
@@ -380,7 +388,7 @@ def test_env_falls_back_to_settings_when_config_has_no_url(monkeypatch: pytest.M
     assert revision == expected_head
 
 
-def test_a_migration_leaves_the_host_process_loggers_emitting() -> None:
+def test_a_migration_leaves_the_host_process_loggers_emitting(pigrocrm_postgres: Any) -> None:
     """REB-190: `env.py` calls Alembic's `fileConfig`, whose default
     `disable_existing_loggers=True` is right for `alembic upgrade` from a shell and
     wrong inside the API process, where `migrate_to_head` runs on every signup and at
@@ -404,7 +412,7 @@ def test_a_migration_leaves_the_host_process_loggers_emitting() -> None:
     witness.addHandler(handler)
     witness.setLevel(logging.WARNING)
     try:
-        with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+        with pigrocrm_postgres.fresh_container() as container:
             upgrade(_alembic_config(container.get_connection_url()), "head")
             witness.warning("ancora viva")
     finally:
@@ -457,7 +465,9 @@ def test_the_backfill_reaches_only_offers_and_reads_the_emitters_day() -> None:
     assert 'Europe/Rome"' in source or "Europe/Rome'" in source
 
 
-def test_the_backfill_actually_fills_the_right_day_on_the_right_rows() -> None:
+def test_the_backfill_actually_fills_the_right_day_on_the_right_rows(
+    pigrocrm_postgres: Any,
+) -> None:
     """The backfill run against real rows, not read as text.
 
     Every other assertion about migration 0023 is a substring check, and a substring check
@@ -473,7 +483,7 @@ def test_the_backfill_actually_fills_the_right_day_on_the_right_rows() -> None:
       * projecting through UTC instead of the emitter's zone -> 30 June;
       * dropping `d.stato IS NOT NULL` -> the contract gets a `stato_dal` too.
     """
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
         upgrade(config, "0022")
@@ -556,7 +566,7 @@ def test_the_backfill_actually_fills_the_right_day_on_the_right_rows() -> None:
     )
 
 
-def test_the_migration_seeds_exactly_one_automation_config_row() -> None:
+def test_the_migration_seeds_exactly_one_automation_config_row(pigrocrm_postgres: Any) -> None:
     """Two paths build this schema and both must produce one row.
 
     `Base.metadata.create_all` (the test suite) leaves the table empty and
@@ -570,7 +580,7 @@ def test_the_migration_seeds_exactly_one_automation_config_row() -> None:
     `get_or_create`'s `LIMIT 1` return whichever the planner preferred, so an operator's
     change to the configuration could stop taking effect between one request and the next.
     """
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         upgrade(_alembic_config(url), "head")
 
@@ -590,7 +600,7 @@ def test_the_migration_seeds_exactly_one_automation_config_row() -> None:
     assert rows[0] == (True, True)
 
 
-def test_the_activity_feed_index_is_descending_on_both_columns() -> None:
+def test_the_activity_feed_index_is_descending_on_both_columns(pigrocrm_postgres: Any) -> None:
     """An ascending index would still be used -- backwards -- but a backward scan of
     `(occurred_at, id)` yields the tie-break ascending within each instant, which is not
     the order `ActivityRepository.recent` declares. Asserting the declared shape is what
@@ -601,7 +611,7 @@ def test_the_activity_feed_index_is_descending_on_both_columns() -> None:
     expressions: a descending expression index is exactly the shape a schema diff lets
     through in silence.
     """
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         upgrade(_alembic_config(url), "head")
         engine: Engine = create_engine(url)
@@ -620,7 +630,9 @@ def test_the_activity_feed_index_is_descending_on_both_columns() -> None:
     assert "USING btree (occurred_at DESC, id DESC)" in definition, definition
 
 
-def test_a_write_folder_configured_before_0027_is_not_assumed_verified() -> None:
+def test_a_write_folder_configured_before_0027_is_not_assumed_verified(
+    pigrocrm_postgres: Any,
+) -> None:
     """The one thing migration 0027 has to get right about the rows that already exist.
 
     `storage_folder_verified` answers "did anybody ever prove this folder is reachable
@@ -633,7 +645,7 @@ def test_a_write_folder_configured_before_0027_is_not_assumed_verified() -> None
     Asserted against a real row planted at 0026: a schema comparison sees the same
     column whichever default it carries.
     """
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
         upgrade(config, "0026")
@@ -677,7 +689,7 @@ def test_a_write_folder_configured_before_0027_is_not_assumed_verified() -> None
     )
 
 
-def test_0029_moves_any_legacy_import_provenance_to_esterno() -> None:
+def test_0029_moves_any_legacy_import_provenance_to_esterno(pigrocrm_postgres: Any) -> None:
     """The two things migration 0029 has to get right about the rows that already exist.
 
     `invoices.importata_da` is read back by the API and by MCP, and its value used to be
@@ -707,7 +719,7 @@ def test_0029_moves_any_legacy_import_provenance_to_esterno() -> None:
     is a `String(20)` on both sides of the migration, so a schema comparison sees no
     difference at all and only the stored value tells the two apart.
     """
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
         upgrade(config, "0028")
@@ -828,7 +840,9 @@ def _proforma_dates(url: str) -> dict[str, date | None]:
         engine.dispose()
 
 
-def test_0033_dates_every_undated_proforma_in_rome_and_touches_no_fattura() -> None:
+def test_0033_dates_every_undated_proforma_in_rome_and_touches_no_fattura(
+    pigrocrm_postgres: Any,
+) -> None:
     """The backfill of migration 0033 (ORB-63), asserted on rows planted at 0032.
 
     A proforma used to keep `data_emissione` `NULL` until a fattura was issued from it,
@@ -846,7 +860,7 @@ def test_0033_dates_every_undated_proforma_in_rome_and_touches_no_fattura() -> N
     must find them already set and move nothing: the `WHERE data_emissione IS NULL` is
     what makes the UPDATE idempotent, and this is where that is proven rather than read.
     """
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
         upgrade(config, "0032")
@@ -929,13 +943,15 @@ def test_0033_dates_every_undated_proforma_in_rome_and_touches_no_fattura() -> N
     assert checks_after_second_upgrade == checks_after_upgrade
 
 
-def test_0041_backfills_pack_id_and_pack_version_on_the_existing_row() -> None:
+def test_0041_backfills_pack_id_and_pack_version_on_the_existing_row(
+    pigrocrm_postgres: Any,
+) -> None:
     """REB-361. The `server_default` alone already makes a row inserted at
     `ADD COLUMN` time satisfy the `NOT NULL` constraint; this asserts the belt-and-
     suspenders `UPDATE` the migration also runs, against a row planted before the
     column existed at all -- exactly the one row `fiscal_profile` has ever held in
     production."""
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with pigrocrm_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = _alembic_config(url)
         upgrade(config, "0039")

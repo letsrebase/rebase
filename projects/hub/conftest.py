@@ -103,3 +103,18 @@ def pytest_unconfigure(config: pytest.Config) -> None:
     socket.socket.connect = _original_connect  # type: ignore[method-assign]
     socket.socket.connect_ex = _original_connect_ex  # type: ignore[method-assign]
     socket.getaddrinfo = _original_getaddrinfo  # type: ignore[assignment]
+
+
+# --- this project's databases on the worker's PostgreSQL (`conftest.py` at the repository
+# root, REB-579): the schema the migrations produce, once per worker, into a template that
+# each test root clones. Not `create_all`: a table the model declares and the migration
+# forgets is a failing test here rather than a surprise on the server.
+
+_TEMPLATE = "hub_template"
+
+
+@pytest.fixture(scope="session")
+def hub_postgres(postgres_per_worker: Any) -> Any:
+    from rebase_core.migrate import upgrade_to_head
+
+    return postgres_per_worker.project(_TEMPLATE, upgrade_to_head)
