@@ -450,7 +450,8 @@ jobs:
   # to this repository (`docs/ci-runner-pool.md`), while two more free jobs cost
   # nothing but their slots. Each shard is every third file of the sorted list
   # (`_python-gate.yml`'s `shard` input) with its own `-n auto` inside; lint and mypy
-  # run once, on the first. `ci` below reads one aggregate result for the matrix, so
+  # run once, in `pigrocrm-py-lint` below (REB-572). `ci` reads one aggregate result
+  # for the matrix, so
   # the required check does not change, and `preflight.json`'s `pigrocrm-py-test`
   # lane still runs the whole suite in one lane. `fail-fast: false`, so a red shard
   # does not cancel its siblings and hide a second failure behind the first.
@@ -465,9 +466,11 @@ jobs:
     uses: ./.github/workflows/_python-gate.yml
     with:
       shard: ${{ matrix.shard }}
-      job-name: ${{ matrix.shard == '1/3' && 'lint · typecheck · test' || 'test' }}
-      lint: ${{ matrix.shard == '1/3' }}
-      typecheck: ${{ matrix.shard == '1/3' }}
+      # Tests only: ruff and mypy are `pigrocrm-py-lint` below (REB-572). With them on
+      # the first shard it finished 25 to 45s after its siblings on every run.
+      job-name: test
+      lint: false
+      typecheck: false
       lint-path: projects/pigrocrm
       sources: >-
         projects/pigrocrm/packages/core/src
@@ -507,12 +510,32 @@ jobs:
       # container from the session fixture, so they share no database. `loadfile`
       # keeps a file's tests on one worker, which is what the module-scoped fixtures
       # in this suite assume.
-      pytest-args: '-n auto --dist loadfile -m "not slow and not planner"'
+      # `--durations=25`: every Test log ends with the slowest tests of that shard, so
+      # the next question about this suite starts from a number rather than a total.
+      pytest-args: '-n auto --dist loadfile --durations=25 -m "not slow and not planner"'
       # Without Pandoc and Typst the document renderer shells out to nothing and
       # about thirty tests fail on "strumento di composizione non installato". They
       # had been failing on every run of the previous workflow, which is also why
       # `e2e` and `deploy` had never once executed: both sat behind this job.
       renderer: true
+
+  # ruff and mypy, once, in a job of their own (REB-572): about 30s including the
+  # setup, beside the three shards rather than in front of the first one's tests.
+  pigrocrm-py-lint:
+    name: pigrocrm · python lint
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.pigrocrm_py == 'true') }}
+    uses: ./.github/workflows/_python-gate.yml
+    with:
+      job-name: ruff · mypy
+      test: false
+      renderer: false
+      lint-path: projects/pigrocrm
+      sources: >-
+        projects/pigrocrm/packages/core/src
+        projects/pigrocrm/apps/api/src
+        projects/pigrocrm/apps/mcp/src
+      tests: ''
 
   # Tier 3, and the reason the job above got faster. The two files behind the `slow`
   # marker spend almost all of their time inside PostgreSQL building and vacuuming a
@@ -787,7 +810,7 @@ jobs:
     # arrives. This is the only status check the repository should ever be asked to
     # require: every job name above can change forever without touching a ruleset.
     if: always()
-    needs: [changes, pigrocrm-py, pigrocrm-py-corpus, pigrocrm-web, pigrocrm-api-types, website, hub-py, hub-web, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter]
+    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-py-corpus, pigrocrm-web, pigrocrm-api-types, website, hub-py, hub-web, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
