@@ -12,7 +12,8 @@ function section(title: string): string {
   expect(start, `the section «${title}» exists`).toBeGreaterThan(-1)
   const rest = html.slice(start + title.length)
   const next = rest.search(/<h2\b/)
-  return next === -1 ? rest : rest.slice(0, next)
+  // The page wraps its lines: read the section as one run of words.
+  return (next === -1 ? rest : rest.slice(0, next)).replace(/\s+/g, ' ')
 }
 
 describe('the privacy page on the team builder', () => {
