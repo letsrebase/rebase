@@ -343,23 +343,30 @@ def test_request_refuses_a_proposal_with_nobody(clean: Session) -> None:
 def test_request_asks_only_whom_the_proposal_still_shows(
     clean: Session, logs: pytest.LogCaptureFixture
 ) -> None:
-    """A talent turned down, deleted or left without a card after the proposal is out
-    of its read (`TeamBuilder._read`), so the request does not ask them either; with
-    nobody left, there is nobody to hire."""
+    """A talent turned down, deleted, left without a card or with a card that no longer
+    validates after the proposal is out of its read (`TeamBuilder._read`), so the
+    request does not ask them either; with nobody left, there is nobody to hire."""
     kept = _talent(clean, 1)
     turned_down = _talent(clean, 2)
     deleted = _talent(clean, 3)
     no_card = _talent(clean, 4)
-    proposal_id = _proposal(clean, [kept, turned_down, deleted, no_card])
+    bad_card = _talent(clean, 5)
+    proposal_id = _proposal(clean, [kept, turned_down, deleted, no_card, bad_card])
     clean.execute(update(Freelancer).where(Freelancer.id == turned_down).values(stato="scartato"))
     clean.execute(update(Freelancer).where(Freelancer.id == deleted).values(deleted_at=NOW))
     clean.execute(text("DELETE FROM freelancer_cards WHERE freelancer_id = :id"), {"id": no_card})
+    # An object, so `cloud_visible` keeps it, but not a card: the read leaves it out.
+    clean.execute(
+        update(FreelancerCard)
+        .where(FreelancerCard.freelancer_id == bad_card)
+        .values(card={**CARD, "seniority": "guru"})
+    )
     clean.commit()
 
     read = _public(_service(clean), proposal_id)
 
     assert [talent.freelancer_id for talent in read.talenti] == [kept]
-    for position in (2, 3, 4):
+    for position in (2, 3, 4, 5):
         assert f"member {position} is no longer in the catalogue" in logs.text
 
     clean.execute(update(Freelancer).where(Freelancer.id == kept).values(stato="scartato"))
