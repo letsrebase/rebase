@@ -288,7 +288,7 @@ describe('EconomicTab', () => {
     expect(screen.queryByRole('link', { name: /stima fiscale/i })).toBeNull()
   })
 
-  it('carries the whole «Stima fiscale» card, directly under the figures it explains', async () => {
+  it('carries the whole «Stima fiscale» card, after the figures it explains', async () => {
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
     const { container } = renderTab()
 
@@ -328,22 +328,21 @@ describe('EconomicTab', () => {
     expect(screen.getByText('691,06 €')).toBeInTheDocument()
     expect(screen.getByText('16.514,54 €')).toBeInTheDocument()
     // The server's own caveat, above the figures it qualifies, as on the screen this card
-    // came from.
-    expect(screen.getByRole('note')).toBeInTheDocument()
+    // came from -- its own sentence, not just that some note rendered.
+    expect(screen.getByRole('note')).toHaveTextContent(FISCALE.avvertenza)
 
-    // Position asserted by document order: charts, then the cards, then this card --
-    // immediately under the figures it explains, with nothing in between. The order of
-    // the first two is upstream's (2026-09-09: the shape of the year is read before its
-    // exact numbers); what this test owns is the last step. A card that answers "at
-    // which rates" only after the reader has scrolled past something else is in the
-    // wrong place, and nothing but order can catch that.
+    // Position asserted by document order: charts, then the cards, then this card, after
+    // the figures it explains. The order of the first two is upstream's (2026-09-09: the
+    // shape of the year is read before its exact numbers); what this test owns is the
+    // last step: the card answering "at which rates" never comes before the figures it
+    // explains. This does not assert adjacency -- `EconomicTab.tsx` puts «Concentrazione
+    // clienti» between the last figure and this card -- only that it is not pushed above
+    // them, which is the one thing document order can prove.
     const grafico = screen.getByRole('figure', { name: 'Andamento economico 2026' })
     const cards = screen.getByRole('group', { name: 'Ricavi incassati' })
     const scheda = screen.getByText('Stima fiscale 2026')
     expect(grafico.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(cards.compareDocumentPosition(scheda) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // Nothing between the last figure and the card: the estimate is the next thing the
-    // eye meets after the grid, not a section further down the page.
     const ultima = screen.getByRole('group', { name: 'Totale netto ricavi con proiezione' })
     expect(ultima.compareDocumentPosition(scheda) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(container.textContent).not.toMatch(/Apri la stima fiscale/)
