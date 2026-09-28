@@ -5,7 +5,15 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, StringConstraints, computed_field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    StringConstraints,
+    computed_field,
+    model_validator,
+)
 
 from rebase_core.models import (
     CAMPAIGN_BUTTON_MAX_LENGTH,
@@ -76,6 +84,16 @@ class CampaignDraft(BaseModel):
     azione: Azione
 
 
+# The `CampaignPatch` fields whose column is `NOT NULL` in `models.py`'s `Campaign`:
+# `None` on one of them is how a field is typed here (so leaving it out of the request
+# means "no change"), never a value the row can hold. Left unchecked, an explicit
+# `null` on one reaches `CampaignService.update`'s blanket `setattr` and raises an
+# `IntegrityError`, a 500, instead of a sentence naming the field. `stato_percorso` and
+# `filtri` are not here: the row legitimately holds `NULL` in one of them, depending on
+# `fonte`.
+_NOT_NULLABLE = ("nome", "fonte", "oggetto", "testo", "bottone_testo", "bottone_meta", "azione")
+
+
 class CampaignPatch(BaseModel):
     nome: str | None = Field(default=None, min_length=1, max_length=CAMPAIGN_NAME_MAX_LENGTH)
     fonte: Literal["stato", "filtri"] | None = None
@@ -86,6 +104,17 @@ class CampaignPatch(BaseModel):
     bottone_testo: str | None = Field(default=None, max_length=CAMPAIGN_BUTTON_MAX_LENGTH)
     bottone_meta: Meta | None = None
     azione: Azione | None = None
+
+    @model_validator(mode="after")
+    def _no_explicit_null_on_a_required_field(self) -> "CampaignPatch":
+        """The database's own `NOT NULL` columns, enforced here too, the same way
+        `CompanyFields._giorni_presenza_matches_remoto` enforces a check constraint: a
+        sentence naming the field rather than the `IntegrityError` a blanket `setattr`
+        would otherwise reach."""
+        for field in self.model_fields_set:
+            if field in _NOT_NULLABLE and getattr(self, field) is None:
+                raise ValueError(f"{field}: il campo non può essere svuotato")
+        return self
 
 
 # An address as the list holds it, not as `EmailStr` would have it: the unticked are

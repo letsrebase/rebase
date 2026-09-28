@@ -1,12 +1,18 @@
 """A campaign's list: templates, candidates, exclusions, the action already done."""
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import pytest
 from campaign_fixtures import (  # noqa: F401  (fixture)
+    SETTINGS,
     T0,
+    Clock,
+    admin,
+    as_admin,
     campaign_row,
     clean,
     company,
@@ -24,7 +30,11 @@ from rebase_core.campaigns.audience import (
     build_audience,
     candidates,
     exclusions,
+    waiting_rows,
 )
+from rebase_core.campaigns.schemas import ScheduleRequest
+from rebase_core.campaigns.sender import RecordingCampaignSender
+from rebase_core.campaigns.service import CampaignService
 from rebase_core.campaigns.states import JOURNEY_STATES, PHASE_ONE_STATES, candidates_for_state
 from rebase_core.campaigns.templates import STATE_TEMPLATES
 from rebase_core.comments import CommentService
@@ -285,3 +295,98 @@ def test_no_list_snapshot_or_check_reads_a_cvs_bytes(clean: Session) -> None:  #
         assert [c.email for c in candidates(clean, filtered)] == ["done@studio.it"]
     assert seen
     assert not [sql for sql in seen if "cv_bytes" in sql]
+
+
+def test_a_row_with_a_broken_richieste_snapshot_is_left_out_and_logged(
+    clean: Session,  # noqa: F811  (fixture)
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Part 2 (REB-550): a malformed `prima["richieste"]` timestamp makes `done_at`'s own
+    `datetime.fromisoformat` raise for that one row. Stamping already isolates a row like
+    it per savepoint (REB-533, `outcome.py`); `waiting_rows` does the same, leaving the
+    row out -- the safe side, since it never lets a mail reach someone who may already
+    have acted -- and logging it by id, rather than 500ing the whole «Riscrivi» list."""
+    # `hub_engine`'s Alembic `env.py` calls `fileConfig`, which disables every logger
+    # that already existed (the trap `test_campaign_outcome.py`'s
+    # `test_a_row_whose_stamping_raises_is_skipped_the_rest_still_stamped` documents):
+    # undo it so `caplog` sees this module's line.
+    logging.getLogger("rebase_core.campaigns.audience").disabled = False
+    parent = campaign_row(clean, azione="richiesta_aggiornata")
+    fine = company(clean, "fine@studio.it")
+    good = CampaignRecipient(
+        campaign_id=parent.id,
+        email="fine@studio.it",
+        tipo="azienda",
+        codice="1",
+        prima={"richieste": {str(fine.id): fine.updated_at.isoformat()}},
+        disiscrizione_token="t-good",
+        stato="inviata",
+        inviata_at=T0,
+    )
+    rotta = company(clean, "rotta@studio.it")
+    broken = CampaignRecipient(
+        campaign_id=parent.id,
+        email="rotta@studio.it",
+        tipo="azienda",
+        codice="2",
+        prima={"richieste": {str(rotta.id): "non-una-data"}},
+        disiscrizione_token="t-broken",
+        stato="inviata",
+        inviata_at=T0,
+    )
+    clean.add_all([good, broken])
+    clean.commit()
+    with caplog.at_level(logging.ERROR, logger="rebase_core.campaigns.audience"):
+        rows = waiting_rows(clean, parent)
+    assert [r.email for r in rows] == ["fine@studio.it"]
+    assert str(broken.id) in caplog.text
+    # The session survives the broken row: a second call still reads live.
+    assert [r.email for r in waiting_rows(clean, parent)] == ["fine@studio.it"]
+
+
+def test_the_follow_ups_preview_and_schedule_survive_a_broken_parent_row(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """The same broken row, reached through the two doors that answered 500 before the
+    fix: the follow-up's audience preview and its schedule."""
+    clock = Clock(T0)
+    parent = campaign_row(clean, azione="richiesta_aggiornata", stato="inviata")
+    fine = company(clean, "fine2@studio.it")
+    clean.add(
+        CampaignRecipient(
+            campaign_id=parent.id,
+            email="fine2@studio.it",
+            tipo="azienda",
+            codice="1",
+            prima={"richieste": {str(fine.id): fine.updated_at.isoformat()}},
+            disiscrizione_token="t-good2",
+            stato="inviata",
+            inviata_at=T0,
+        )
+    )
+    rotta = company(clean, "rotta2@studio.it")
+    clean.add(
+        CampaignRecipient(
+            campaign_id=parent.id,
+            email="rotta2@studio.it",
+            tipo="azienda",
+            codice="2",
+            prima={"richieste": {str(rotta.id): "non-una-data"}},
+            disiscrizione_token="t-broken2",
+            stato="inviata",
+            inviata_at=T0,
+        )
+    )
+    clean.commit()
+    # Past the gap-day window a fresh send within it would otherwise be excluded for,
+    # the same advance `test_campaign_follow_up.py`'s own scheduled-follow-up test makes.
+    clock.at = T0 + timedelta(days=SETTINGS.campaign_gap_days, hours=1)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    who = admin(clean)
+    follow = service.follow_up(parent.id, who.id)
+    preview = service.audience(follow.id)
+    assert [r.email for r in preview.righe] == ["fine2@studio.it"]
+    clock.at += timedelta(minutes=1)
+    service.send_test(follow.id, as_admin(who), RecordingCampaignSender())
+    scheduled = service.schedule(follow.id, ScheduleRequest())
+    assert scheduled.stato == "programmata"

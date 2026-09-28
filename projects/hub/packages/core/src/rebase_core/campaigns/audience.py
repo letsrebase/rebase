@@ -1,6 +1,7 @@
 """Who a campaign reaches (spec § 2, § 5.3): the candidates of a state or of filters, one
 row per lowercase address, and the reasons someone is left out."""
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -37,6 +38,7 @@ REASON_NOT_LISTED = "non più in lista"
 REASON_CANCELLED = "campagna annullata"
 
 _FILTRI: TypeAdapter[TalentiFiltri | AziendeFiltri] = TypeAdapter(Filtri)
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -72,7 +74,14 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
     the hub -- a soft-deleted card, or a referente whose every open request's company is
     soft-deleted -- the same way `candidates_for_state` never lists them for a `stato`
     or `filtri` campaign; a lead row stays, since a lead who made a card since is caught
-    by `done_at`."""
+    by `done_at`.
+
+    A row whose own snapshot is broken -- a `prima["richieste"]` key that is not a UUID,
+    or a value `done_at` cannot parse as a timestamp (`richiesta_aggiornata`'s own
+    `datetime.fromisoformat`) -- must not break the whole list, the same isolation
+    `outcome.stamp_outcomes` already gives each row its own savepoint for. Such a row is
+    left out, the safe side: it never lets a mail reach someone who may already have
+    acted, and it is logged by id."""
     rows = session.scalars(
         select(CampaignRecipient)
         .where(
@@ -94,7 +103,15 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
         if freelancer_ids
         else set()
     )
-    company_ids = {UUID(key) for row in rows for key in (row.prima or {}).get("richieste", {})}
+    richieste_by_row: dict[UUID, tuple[UUID, ...]] = {}
+    for row in rows:
+        try:
+            richieste_by_row[row.id] = tuple(
+                UUID(key) for key in (row.prima or {}).get("richieste", {})
+            )
+        except (TypeError, ValueError) as exc:
+            _log.error("waiting row %s left out: %s", row.id, type(exc).__name__)
+    company_ids = {cid for ids in richieste_by_row.values() for cid in ids}
     alive_companies = (
         set(
             session.scalars(
@@ -106,12 +123,20 @@ def waiting_rows(session: Session, parent: Campaign) -> list[CampaignRecipient]:
     )
     found: list[CampaignRecipient] = []
     for row in rows:
+        if row.id not in richieste_by_row:
+            continue  # its own snapshot was already unreadable, and logged above
         if row.freelancer_id is not None and row.freelancer_id not in alive_freelancers:
             continue
-        richieste = tuple(UUID(key) for key in (row.prima or {}).get("richieste", {}))
+        richieste = richieste_by_row[row.id]
         if richieste and not any(cid in alive_companies for cid in richieste):
             continue
-        if done_at(session, row, parent.azione, since=row.inviata_at) is not None:
+        try:
+            with session.begin_nested():
+                done = done_at(session, row, parent.azione, since=row.inviata_at)
+        except Exception as exc:  # one broken row must not wedge the whole list (R14)
+            _log.error("waiting row %s left out: %s", row.id, type(exc).__name__)
+            continue
+        if done is not None:
             continue
         found.append(row)
     return found
