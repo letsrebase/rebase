@@ -101,11 +101,18 @@ write_hash() {
 }
 
 # The files fetchPnpmDeps's fileset in flake.nix reads: the three workspace
-# files, and every package.json under projects/, shared/ and tooling/.
+# files, and every package.json under projects/, shared/ and tooling/. Not
+# `git status --porcelain`: an untracked package.json inside an untracked
+# directory collapses into that directory's own "?? projects/x/" line there,
+# so a nested manifest goes unlisted. `diff` (tracked, against HEAD) plus
+# `ls-files --others` (untracked, always one path per file, never collapsed)
+# together name every changed or new manifest individually.
 pnpm_input_status() {
   local repo="$1"
-  git -C "$repo" status --porcelain -- package.json pnpm-workspace.yaml pnpm-lock.yaml
-  git -C "$repo" status --porcelain -- projects shared tooling 2>/dev/null | grep -E 'package\.json$' || true
+  {
+    git -C "$repo" diff --name-only HEAD -- package.json pnpm-workspace.yaml pnpm-lock.yaml projects shared tooling
+    git -C "$repo" ls-files --others --exclude-standard -- package.json pnpm-workspace.yaml pnpm-lock.yaml projects shared tooling
+  } | grep -E '^(package\.json|pnpm-workspace\.yaml|pnpm-lock\.yaml)$|/package\.json$' | sort -u || true
 }
 
 if [ "$write" = 1 ]; then
@@ -121,15 +128,38 @@ if [ "$write" = 1 ]; then
   fi
 fi
 
-# Free space on the filesystem holding the repo (the Data volume on a Mac);
-# this machine runs low.
-avail_kb=$(df -Pk "$repo_root" | awk 'NR==2 {print $4}')
-avail_gb=$((avail_kb / 1024 / 1024))
-if [ "$avail_gb" -lt "$MIN_FREE_GB" ]; then
-  mount_point=$(df -Pk "$repo_root" | awk 'NR==2 {print $NF}')
-  echo "nix-pnpm-hash: only ${avail_gb} GB free on ${mount_point}, refusing (need at least ${MIN_FREE_GB} GB)" >&2
-  exit 1
+# This machine runs low on space, and the build spends it in three places
+# that are not necessarily the same filesystem: the checkout, the temp
+# directory the throwaway copy goes in, and Docker's own storage (Docker
+# Desktop's disk image on a Mac, its DockerRootDir on Linux). Refuse when
+# any of them is short, naming which.
+check_free_space() {
+  local label="$1" path="$2" avail_kb avail_gb mount_point
+  avail_kb=$(df -Pk "$path" | awk 'NR==2 {print $4}')
+  avail_gb=$((avail_kb / 1024 / 1024))
+  mount_point=$(df -Pk "$path" | awk 'NR==2 {print $NF}')
+  if [ "$avail_gb" -lt "$MIN_FREE_GB" ]; then
+    echo "nix-pnpm-hash: only ${avail_gb} GB free on ${mount_point} (${label}), refusing (need at least ${MIN_FREE_GB} GB)" >&2
+    return 1
+  fi
+}
+
+tmp_root="${TMPDIR:-/tmp}"
+docker_storage_dir="$HOME/Library/Containers/com.docker.docker"
+if [ ! -d "$docker_storage_dir" ]; then
+  docker_storage_dir=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
+  [ -n "$docker_storage_dir" ] && [ -d "$docker_storage_dir" ] || docker_storage_dir=''
 fi
+
+space_ok=1
+check_free_space 'the checkout' "$repo_root" || space_ok=0
+check_free_space 'the temp directory' "$tmp_root" || space_ok=0
+if [ -n "$docker_storage_dir" ]; then
+  check_free_space "Docker's storage, $docker_storage_dir" "$docker_storage_dir" || space_ok=0
+else
+  echo "nix-pnpm-hash: could not find Docker's storage location, skipping its free-space check" >&2
+fi
+[ "$space_ok" = 1 ] || exit 1
 
 if [ -z "$system" ]; then
   case "$(uname -m)" in
