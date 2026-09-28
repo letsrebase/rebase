@@ -538,7 +538,7 @@ def test_a_refused_key_is_stored_on_the_campaign_until_a_mail_leaves(
         STALLED_KEY,
         clock.at,
     )
-    assert STALLED_KEY == "Resend rifiuta la chiave"
+    assert STALLED_KEY == "Resend rifiuta l'invio: controlla la chiave e il dominio del mittente"
     clock.at += timedelta(minutes=1)
     run_tick(clean, RecordingCampaignSender(), SETTINGS, clock=clock, pause=NO_PAUSE)
     sent = CampaignService(clean, SETTINGS, clock=clock).detail(campaign.id).campagna

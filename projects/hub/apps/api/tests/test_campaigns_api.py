@@ -383,11 +383,18 @@ def test_a_stalled_send_reads_its_reason_on_the_list_and_the_page(
     tidy.execute(
         update(Campaign)
         .where(Campaign.id == UUID(campaign_id))
-        .values(stato="in_invio", fermo_at=stopped, fermo_motivo="Resend rifiuta la chiave")
+        .values(
+            stato="in_invio",
+            fermo_at=stopped,
+            fermo_motivo="Resend rifiuta l'invio: controlla la chiave e il dominio del mittente",
+        )
     )
     tidy.commit()
     page = client.get(f"/api/hub/campaigns/{campaign_id}").json()["campagna"]
     (item,) = client.get("/api/hub/campaigns").json()["items"]
     for read in (page, item):
-        assert read["fermo_motivo"] == "Resend rifiuta la chiave"
+        assert (
+            read["fermo_motivo"]
+            == "Resend rifiuta l'invio: controlla la chiave e il dominio del mittente"
+        )
         assert read["fermo_at"].startswith("2026-09-28T09:00:00")

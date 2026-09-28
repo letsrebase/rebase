@@ -65,8 +65,11 @@ SEND_INTERVAL_SECONDS = 1.0
 TICK_LOCK_KEY = 0x72656261  # "reba"
 ROW_PREPARE_ERROR = "errore nel preparare la mail"
 # Why a send is stopped, as the campaign page says it after «Invio fermo:» (REB-524).
-# Both are stops a later pass cannot fix on its own: someone fixes the key, or the list.
-STALLED_KEY = "Resend rifiuta la chiave"
+# Both are stops a later pass cannot fix on its own: someone fixes the key or the
+# sending domain, or the list. A 401/403 is either a refused key or a domain Resend no
+# longer sends for, and `sender.py` keeps the status alone (the body may name the
+# domain or the key's id), so the sentence names both rather than guess.
+STALLED_KEY = "Resend rifiuta l'invio: controlla la chiave e il dominio del mittente"
 STALLED_LIST = "la lista non si legge"
 
 _log = logging.getLogger(__name__)

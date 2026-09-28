@@ -205,9 +205,10 @@ campaign with its rows still `in_coda` and logs «campaign <id> stopped this tic
 Resend 401», and the send resumes on the first pass after the key is fixed. The pass
 also stores the stop on the campaign (`fermo_at`, `fermo_motivo`, REB-524), and so does
 a campaign whose own list raised, so «Campagne» and the campaign's page read «Invio
-fermo: Resend rifiuta la chiave» (or «la lista non si legge») instead of «Parte il…»
-until the first mail that leaves clears it. No address and no key ever appears in these
-lines or anywhere else in the logs.
+fermo: Resend rifiuta l'invio: controlla la chiave e il dominio del mittente» (or «la
+lista non si legge») instead of «Parte il…» until the first mail that leaves clears it.
+The one sentence covers both causes of a 401/403, since only the status is kept. No
+address and no key ever appears in these lines or anywhere else in the logs.
 
 **The same pass stamps what each mail led to** (P-REB-41 phase 2, `rebase_core.campaigns.outcome`).
 For every row sent in the last 30 days and still missing a stamp, it writes `entrato_at`

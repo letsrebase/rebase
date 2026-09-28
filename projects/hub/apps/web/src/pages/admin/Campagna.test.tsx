@@ -160,12 +160,12 @@ describe('a stopped send (REB-524)', () => {
   it('says «Invio fermo» with the reason in place of «Parte il…»', async () => {
     const stopped = {
       ...DETAIL,
-      campagna: { ...DETAIL.campagna, stato: 'in_invio', fermo_at: '2026-09-26T07:31:00Z', fermo_motivo: 'Resend rifiuta la chiave' },
+      campagna: { ...DETAIL.campagna, stato: 'in_invio', fermo_at: '2026-09-26T07:31:00Z', fermo_motivo: 'Resend rifiuta l’invio: controlla la chiave e il dominio del mittente' },
     }
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(stopped))
     mount()
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Invio fermo: Resend rifiuta la chiave, dal 26 settembre 2026 alle 09:31 (ora di Roma). Si riprova ogni minuto e riparte da solo appena è risolto.',
+      'Invio fermo: Resend rifiuta l’invio: controlla la chiave e il dominio del mittente, dal 26 settembre 2026 alle 09:31 (ora di Roma). Si riprova ogni minuto e riparte da solo appena è risolto.',
     )
     expect(screen.getByText('Invio fermo')).toBeInTheDocument()
     expect(screen.queryByText('In invio')).not.toBeInTheDocument()

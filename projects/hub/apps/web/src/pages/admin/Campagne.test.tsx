@@ -74,14 +74,14 @@ describe('«Campagne»', () => {
 
 describe('«Campagne» since REB-524', () => {
   it('reads «Invio fermo» and the reason on a stopped send', async () => {
-    const stopped = { ...ITEM, stato: 'in_invio', inviata_at: null, fermo_at: '2026-09-25T07:31:00Z', fermo_motivo: 'Resend rifiuta la chiave' }
+    const stopped = { ...ITEM, stato: 'in_invio', inviata_at: null, fermo_at: '2026-09-25T07:31:00Z', fermo_motivo: 'Resend rifiuta l’invio: controlla la chiave e il dominio del mittente' }
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ items: [stopped] }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     )
     mount()
     const row = (await screen.findByRole('link', { name: 'Manca il CV' })).closest('tr')!
     expect(within(row).getByText('Invio fermo')).toBeInTheDocument()
-    expect(within(row).getByText('Resend rifiuta la chiave')).toBeInTheDocument()
+    expect(within(row).getByText('Resend rifiuta l’invio: controlla la chiave e il dominio del mittente')).toBeInTheDocument()
     expect(within(row).queryByText('In invio')).not.toBeInTheDocument()
   })
 
@@ -116,7 +116,7 @@ describe('«Campagne» rereads itself while a send is under way (REB-524)', () =
   it('shows a send that stops while the admin is on the page, without a reload', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const sending = { ...ITEM, stato: 'in_invio', inviata_at: null }
-    const stopped = { ...sending, fermo_at: '2026-09-25T07:31:00Z', fermo_motivo: 'Resend rifiuta la chiave' }
+    const stopped = { ...sending, fermo_at: '2026-09-25T07:31:00Z', fermo_motivo: 'Resend rifiuta l’invio: controlla la chiave e il dominio del mittente' }
     const fetch = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(list([sending]))
@@ -126,7 +126,7 @@ describe('«Campagne» rereads itself while a send is under way (REB-524)', () =
     expect(within(row).getByText('In invio')).toBeInTheDocument()
     await vi.advanceTimersByTimeAsync(30_000)
     expect(await screen.findByText('Invio fermo')).toBeInTheDocument()
-    expect(screen.getByText('Resend rifiuta la chiave')).toBeInTheDocument()
+    expect(screen.getByText('Resend rifiuta l’invio: controlla la chiave e il dominio del mittente')).toBeInTheDocument()
     expect(fetch.mock.calls.length).toBeGreaterThanOrEqual(2)
   })
 
