@@ -29,6 +29,7 @@ export const PAGES: Readonly<Record<string, string>> = {
   '/': '/index.html',
   '/pigrocrm': '/pigrocrm.html',
   '/pitch': '/pitch.html',
+  '/company': '/company.html',
   '/privacy': '/privacy.html',
   '/terms': '/terms.html',
 }
@@ -50,17 +51,19 @@ export const GENERATED_PATHS = ['/robots.txt', '/sitemap.xml'] as const
 type GeneratedPath = (typeof GENERATED_PATHS)[number]
 
 /** Pages excluded from the sitemap, in the same list shape as `GENERATED_PATHS` since
- *  neither is a `PAGES`-style map from a path to a file: today just `/pitch`, which
- *  carries `<meta name="robots" content="noindex">` (`src/pitch.html:8`) and would
- *  otherwise be the one page in `PAGES` a sitemap tells a crawler to index anyway.
+ *  neither is a `PAGES`-style map from a path to a file: the two decks, `/pitch` and
+ *  `/company` (REB-553), each of which carries `<meta name="robots" content="noindex">`
+ *  in its own head and would otherwise be a page in `PAGES` a sitemap tells a crawler
+ *  to index anyway.
  *  `path-map-plugin.test.ts` reads every page's own head and fails if this list ever
  *  disagrees with it. */
-export const NOINDEX = ['/pitch'] as const
+export const NOINDEX = ['/pitch', '/company'] as const
 
-/** No `Disallow` line: `/pitch` is the one page a visitor reaches that this site
- *  would rather a crawler skipped, and it already says so with its own
- *  `<meta name="robots" content="noindex">` (`src/pitch.html:8`). Blocking the crawl
- *  in robots.txt too would stop a crawler from ever reaching that tag, and Google's
+/** No `Disallow` line: the two decks are the pages a visitor reaches that this site
+ *  would rather a crawler skipped, and each already says so with its own
+ *  `<meta name="robots" content="noindex">` (`src/pitch.html:8`, `src/company.html:8`).
+ *  Blocking the crawl in robots.txt too would stop a crawler from ever reaching that
+ *  tag, and Google's
  *  own guidance is that a page blocked from crawling can still be indexed by an
  *  inbound link with no snippet, worse than the noindex outcome it has today
  *  (developers.google.com/search/docs/crawling-indexing/block-indexing). So robots.txt
