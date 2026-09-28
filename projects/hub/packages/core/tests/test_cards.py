@@ -52,9 +52,10 @@ def _apply(
     email: str = "ada@studio.it",
     cv: bytes | None = CV,
     cognome: str = "Lovelace",
+    nome: str = "Ada",
 ) -> UUID:
     data = FreelancerCreate(
-        nome="Ada",
+        nome=nome,
         cognome=cognome,
         email=email,
         tariffa_giornaliera=Decimal("450.00"),
@@ -416,6 +417,24 @@ def test_a_first_name_that_is_a_skill_or_inside_a_word_is_not_the_person(
 
     assert read.error is None and read.card is not None
     assert read.card.competenze == ["Ada", "SPARK", "Python"]
+
+
+def test_a_first_name_that_is_the_persons_own_skill_is_the_skill(clean: Session) -> None:
+    """Ruby who writes Ruby: a first name that is a word of the card's own skills is read
+    as the technology in the role and the summary too, so the card is written."""
+    freelancer_id = _apply(clean, nome="Ruby")
+    card = {
+        **CARD,
+        "ruolo": "Ruby on Rails developer",
+        "competenze": ["Ruby on Rails", "PostgreSQL"],
+        "sintesi": "Sviluppatrice Ruby da nove anni, API e back office per l'e-commerce.",
+    }
+    llm = RecordingCall([card_response(card)])
+
+    read = CardWriter(clean, llm).write(freelancer_id)
+
+    assert read.error is None and read.card is not None
+    assert read.card.ruolo == "Ruby on Rails developer"
 
 
 def test_a_surname_inside_a_longer_word_is_not_the_person(clean: Session) -> None:
