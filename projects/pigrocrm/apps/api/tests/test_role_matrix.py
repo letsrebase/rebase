@@ -294,7 +294,14 @@ ROWS: list[Row] = [
     Row("DELETE", "/api/email-drafts/{draft_id}"),
     Row("PATCH", "/api/email-drafts/{draft_id}", body={}),
     Row("POST", "/api/email-drafts/{draft_id}/reconcile", google=True),
-    Row("POST", "/api/email-drafts/{draft_id}/send", google=True),
+    # The send names the revision it read (REB-419); without it FastAPI answers 422
+    # before the gate and the row would prove nothing.
+    Row(
+        "POST",
+        "/api/email-drafts/{draft_id}/send",
+        google=True,
+        body={"updated_at": "2026-01-01T00:00:00+00:00"},
+    ),
     # --- the two fiscal profiles and the emitter: admin (fiscal/, emitter/) ----------
     Row("PUT", "/api/emitter", admin_only=True, body={"ragione_sociale": "Matrice Srl"}),
     Row("PUT", "/api/fiscal-profile", admin_only=True, body={"codice_regime": "RF19"}),

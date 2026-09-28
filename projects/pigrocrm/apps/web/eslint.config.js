@@ -118,22 +118,30 @@ export default defineConfig([
     },
   },
   {
-    // The three top-level detail routes now export their component directly
-    // (`CustomerDetail`/`PersonDetail`/`DealDetail`), not only wrapped inside the
-    // `{ component: ... }` object `createFileRoute` already received, so their
-    // own isError/404 handling is directly testable without rendering a full
-    // router (see each file's own `*.test.tsx`). Same shape as the
-    // `customerToFormValues`/`personToFormValues`/`dealToFormValues` overrides
-    // above, just naming the *non*-component half of the pair: `Route` --
-    // `createFileRoute`'s own descriptor object, not a component -- is what this
-    // rule would otherwise flag, mixed in the same file as a real component export.
-    files: [
-      'src/routes/app/customers/$customerId.tsx',
-      'src/routes/app/people/$personId.tsx',
-      'src/routes/app/deal/$dealId.tsx',
-    ],
+    // Every file under `src/routes/` exports `Route`, the object `createFileRoute`
+    // returns: a route descriptor, not a component. Up to 0.4 this plugin counted any
+    // PascalCase export built by a call as a possible HOC, so a route file passed the
+    // rule whether it kept its page component local (`app.tsx`, `calendar.tsx`: the
+    // shape that keeps a route code-split) or exported it beside `Route` so a test can
+    // render it without a router (`customers/$customerId.tsx`, `login.tsx`). 0.5 only
+    // counts `memo`, `forwardRef`, `lazy` and what `extraHOCs` names, so both shapes
+    // failed, eighteen errors in seventeen files.
+    //
+    // `createFileRoute` is not a React HOC, and this is the plugin author's own answer
+    // for TanStack Router (eslint-plugin-react-refresh#102): it restores 0.4's verdict
+    // on route files and nothing else. HMR for these files is the router plugin's
+    // anyway: with `autoCodeSplitting` (vite.config.ts) it moves the route's
+    // `component` into a split module and appends an `import.meta.hot.accept` that
+    // swaps the new `Route`'s options into the running router. The three detail routes
+    // had their own `allowExportNames: ['Route']` block here for the same reason; this
+    // one covers them. `allowConstantExport` and `allowCompoundComponents` are the
+    // `vite` preset's own, restated because a rule's options here replace the preset's.
+    files: ['src/routes/**/*.tsx'],
     rules: {
-      'react-refresh/only-export-components': ['error', { allowExportNames: ['Route'] }],
+      'react-refresh/only-export-components': [
+        'error',
+        { allowConstantExport: true, allowCompoundComponents: true, extraHOCs: ['createFileRoute'] },
+      ],
     },
   },
   {

@@ -288,13 +288,28 @@ describe('EconomicTab', () => {
     expect(screen.queryByRole('link', { name: /stima fiscale/i })).toBeNull()
   })
 
-  it('carries the whole «Stima fiscale» card, directly under the figures it explains', async () => {
+  it('carries the whole «Stima fiscale» card, after the figures it explains', async () => {
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE) as never)
     const { container } = renderTab()
 
     // Every row of it, which is what «la scheda completa» means: the figures above answer
     // "how much do I owe", the card answers "out of what, at which rates".
-    expect(await screen.findByText('Stima fiscale 2026')).toBeInTheDocument()
+    //
+    // Two dependent round trips, not one: `EconomicTab`'s own `useEconomicOverview` gates
+    // everything below it (`EconomicTab.tsx`), and `FiscalPanel` only mounts -- starting
+    // its own `useFiscalEstimate` fetch -- once that resolves, so this text needs both
+    // queries' fetch-then-render cycles to finish in sequence, twice the chain most of
+    // this file's other `findBy*` calls wait on. That also means the whole card (this
+    // title, every row below, the note) and everything above it (the charts, the cards)
+    // are already committed by the time this resolves, which is why the synchronous
+    // `getByText`/`getByRole` calls that follow stay safe without their own `findBy*`.
+    // What is not enough is the default one-second `asyncUtilTimeout`: on a loaded full
+    // `pnpm --filter web test` run the doubled chain lost that race (REB-416), the same
+    // shape `vite.config.ts`'s own `testTimeout: 20_000` comment already describes for
+    // the suite as a whole. Matching that headroom here.
+    expect(
+      await screen.findByText('Stima fiscale 2026', {}, { timeout: 10_000 }),
+    ).toBeInTheDocument()
     for (const label of [
       'Coefficiente di redditività',
       'Imponibile',
@@ -313,22 +328,21 @@ describe('EconomicTab', () => {
     expect(screen.getByText('691,06 €')).toBeInTheDocument()
     expect(screen.getByText('16.514,54 €')).toBeInTheDocument()
     // The server's own caveat, above the figures it qualifies, as on the screen this card
-    // came from.
-    expect(screen.getByRole('note')).toBeInTheDocument()
+    // came from -- its own sentence, not just that some note rendered.
+    expect(screen.getByRole('note')).toHaveTextContent(FISCALE.avvertenza)
 
-    // Position asserted by document order: charts, then the cards, then this card --
-    // immediately under the figures it explains, with nothing in between. The order of
-    // the first two is upstream's (2026-09-09: the shape of the year is read before its
-    // exact numbers); what this test owns is the last step. A card that answers "at
-    // which rates" only after the reader has scrolled past something else is in the
-    // wrong place, and nothing but order can catch that.
+    // Position asserted by document order: charts, then the cards, then this card, after
+    // the figures it explains. The order of the first two is upstream's (2026-09-09: the
+    // shape of the year is read before its exact numbers); what this test owns is the
+    // last step: the card answering "at which rates" never comes before the figures it
+    // explains. This does not assert adjacency -- `EconomicTab.tsx` puts «Concentrazione
+    // clienti» between the last figure and this card -- only that it is not pushed above
+    // them, which is the one thing document order can prove.
     const grafico = screen.getByRole('figure', { name: 'Andamento economico 2026' })
     const cards = screen.getByRole('group', { name: 'Ricavi incassati' })
     const scheda = screen.getByText('Stima fiscale 2026')
     expect(grafico.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(cards.compareDocumentPosition(scheda) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    // Nothing between the last figure and the card: the estimate is the next thing the
-    // eye meets after the grid, not a section further down the page.
     const ultima = screen.getByRole('group', { name: 'Totale netto ricavi con proiezione' })
     expect(ultima.compareDocumentPosition(scheda) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(container.textContent).not.toMatch(/Apri la stima fiscale/)
@@ -338,7 +352,9 @@ describe('EconomicTab', () => {
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE, { ...FISCALE, anno: 2025 }) as never)
     renderTab({ da: '2025-03-01', a: '2025-03-31' })
 
-    await screen.findByText('Stima fiscale 2025')
+    // Same doubled chain as the card test above (REB-416): the default one-second
+    // asyncUtilTimeout is not enough here either, observed failing on a loaded full run.
+    await screen.findByText('Stima fiscale 2025', {}, { timeout: 10_000 })
     expect(api.GET).toHaveBeenCalledWith('/api/analytics/fiscal', {
       params: { query: { anno: 2025 } },
     })

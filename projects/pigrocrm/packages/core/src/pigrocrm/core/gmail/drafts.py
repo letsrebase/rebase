@@ -22,6 +22,7 @@ sensitive than the mail that has already gone.
 """
 
 from collections.abc import Sequence
+from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -37,6 +38,7 @@ from pigrocrm.core.emitter.models import EmitterProfile
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.attach import describe_attachments
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage
+from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.rfc822 import new_message_id
 from pigrocrm.core.gmail.schemas import (
     EDITABLE_SEND_STATES,
@@ -112,6 +114,7 @@ class EmailDraftService:
     def __init__(self, session: Session, *, settings: Settings) -> None:
         self.session = session
         self.settings = settings
+        self.repo = GmailRepository(session)
 
     # ---- the pieces the write paths share ------------------------------------------
 
@@ -211,31 +214,57 @@ class EmailDraftService:
     def update(self, draft_id: UUID, data: EmailDraftUpdate, actor: Actor) -> EmailDraftRead:
         actor.require_write("update_email_draft")
         draft = self._get(draft_id)
+        # A cheap read that answers the ordinary case. Not the guarantee: a send can claim
+        # the draft between this read and the write below, which is why the write itself
+        # is conditional (`GmailRepository.update_editable_draft`, REB-419).
         self._require_editable(draft)
 
+        values: dict[str, Any] = {}
         if data.to_addresses is not None:
             self._check_recipients(list(data.to_addresses))
-            draft.to_addresses = list(data.to_addresses)
+            values["to_addresses"] = list(data.to_addresses)
         if data.cc_addresses is not None:
-            draft.cc_addresses = list(data.cc_addresses)
+            values["cc_addresses"] = list(data.cc_addresses)
         if data.subject is not None:
-            draft.subject = data.subject
+            values["subject"] = data.subject
         if data.body_markdown is not None:
-            draft.body_markdown = data.body_markdown
+            values["body_markdown"] = data.body_markdown
         if data.attachment_version_ids is not None:
-            draft.attachment_version_ids = self._check_attachments(
+            values["attachment_version_ids"] = self._check_attachments(
                 list(data.attachment_version_ids)
             )
+        if not values and draft.send_state == "bozza":
+            # Nothing asked of a draft that is already a draft: no write, so the revision
+            # somebody is reading stays the true one. Still read again past the copy loaded
+            # above and held to the rule the write follows: a send may have claimed the
+            # draft since, and a 200 carrying `bozza` and the old text would then describe
+            # a row that no longer exists.
+            current = self.session.execute(
+                select(EmailDraft)
+                .where(EmailDraft.id == draft_id)
+                .execution_options(populate_existing=True)
+            ).scalar_one_or_none()
+            if current is None:
+                raise NotFound(ENTITY, draft_id)
+            self._require_editable(current)
+            return read_draft(self.session, current)
 
         # `message_id_header` is deliberately untouched: minting a new one on every edit
         # would make the reconciliation of spec 6.3 look for a message that was never
         # sent under that name. A failed draft that is edited becomes a draft again --
         # keeping `fallito` would leave an error sentence next to text it no longer
-        # describes, which reads as a failure that has just happened.
-        if draft.send_state == "fallito":
-            draft.send_state = "bozza"
-            draft.last_error = None
+        # describes, which reads as a failure that has just happened. The write does both.
+        if not self.repo.update_editable_draft(draft_id, values):
+            state = self.session.execute(
+                select(EmailDraft.send_state).where(EmailDraft.id == draft_id)
+            ).scalar_one_or_none()
+            if state is None:
+                raise NotFound(ENTITY, draft_id)
+            raise Conflict(ENTITY, _ALREADY_GONE, send_state=state)
         self.session.commit()
+        # The write was a Core UPDATE, so the copy loaded above is stale. Expired rather
+        # than trusted, and read back as committed.
+        self.session.expire(draft)
         return read_draft(self.session, draft)
 
     def get(self, draft_id: UUID, actor: Actor) -> EmailDraftRead:

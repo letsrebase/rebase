@@ -26,7 +26,7 @@ the paragraph typed instead) has to answer, before the first Linear call:
 | The contract itself | `--linear-project`, named with a verb (`MVP delivery`, `Booking flow rebuild`) | Ask what this specific contract covers, distinct from the macroprogetto it lives under. |
 | New repository or an existing checkout | `--create-repo` vs `--target-dir` | When the macroprogetto is new, `--create-repo`. When it already exists, find the repository already tied to it before choosing either flag (`get_project` on one of its existing projects, `links`, or ask): README § The model is one GitHub repository per macroprogetto, never a second one for a second contract, so an existing macroprogetto always gets `--target-dir` on that same checkout, not `--create-repo` with a new slug. |
 | Worktree / Greptile / CodeRabbit | `--worktree`/`--greptile`/`--coderabbit` | Default on / off / off (README § Configurable per contract); ask only when the spec signals otherwise (more than one person committing, or the client already runs Greptile or CodeRabbit). Both reviewer flags on renders the adversarial pass between them. |
-| Who is on it | the Linear project's members | Lorenzo and whoever else the spec names; both members always, even a contract with one worker (`docs/tracker.md` § Where things are). |
+| Who is on it | the Linear project's members | The lead is the only one required (`docs/tracker.md` § Where things are); add whoever else the spec names, never assume it is always the same people or the same count. |
 
 Never guess a field the spec does not answer and nobody has given: a wrong
 `--linear-prefix` or team name is expensive to unwind once issues already exist under
@@ -51,14 +51,15 @@ message when either is missing, never one after the other:
 
 Once both exist (already, or handed back after asking): `save_project`, named a verb
 and the work it does, `summary` one sentence, `lead` set, `addInitiatives` with the
-initiative id, `addTeams` with the team id. Then both members, with the GraphQL
-`projectUpdate` mutation and `memberIds` (`docs/tracker.md` § API details:
-`save_project` has no member field): use whatever GraphQL access this session has to
-`api.linear.app/graphql`, or ask the person to add the second member in the Linear UI
-when none is available, and say so rather than leaving the project with one member
-silently. Read the project back with `includeMembers: true` before moving on:
-`docs/tracker.md` § Where things are says a project without both members is
-incomplete.
+initiative id, `addTeams` with the team id. The lead is the only membership this
+requires (`docs/tracker.md` § Where things are). When the spec names anyone else who
+should see the project, add them the same way `save_project` cannot: read the
+project back first with `includeMembers: true`, then the GraphQL `projectUpdate`
+mutation with `memberIds` (`docs/tracker.md` § API details: `save_project` has no
+member field), listing every id who should stay on the project and not only the new
+one, since `memberIds` replaces the full list rather than appending to it. Use
+whatever GraphQL access this session has to `api.linear.app/graphql`, or ask the
+person to add them in the Linear UI when no GraphQL access is available.
 
 ## Step 2: the repository
 

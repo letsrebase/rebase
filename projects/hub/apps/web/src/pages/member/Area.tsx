@@ -9,6 +9,7 @@ import { GUIDE } from '@/lib/perks'
 import { COMPANY_FIELDS } from '@/pages/CompanyWizard'
 import { FREELANCER_FIELDS } from '@/pages/FreelancerWizard'
 import { MemberContratti } from '@/pages/member/Contratti'
+import { MemberReferral } from '@/pages/member/Referral'
 
 // `/app/login`, not `/app/register`: PigroCRM's own login already knows what to do with
 // whoever is behind it (REB-377's identity-cookie chooser, its own effect that sends an
@@ -224,6 +225,7 @@ export function Area() {
           </div>
         </section>
       )}
+      <MemberReferral />
     </div>
   )
 }

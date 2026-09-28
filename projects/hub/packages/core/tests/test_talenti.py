@@ -81,6 +81,24 @@ def test_a_bare_signup_is_a_lead_and_a_card_is_its_own_state(clean: Session) -> 
     assert listed.totale == 2
 
 
+def test_a_card_carries_its_own_rate_and_mode_a_lead_carries_neither(clean: Session) -> None:
+    """REB-558: `tariffa_giornaliera` and `remoto` are a card's own two columns, so a
+    bare sign-up, which has neither, reads `None` for both."""
+    FreelancerService(clean).apply(
+        _application("ada@studio.it", tariffa_giornaliera=Decimal("450.00"), remoto="remoto"),
+        PDF,
+        "cv.pdf",
+        "application/pdf",
+    )
+    _signup(clean, "lead@studio.it")
+    listed = TalentiService(clean).list_recent()
+    by_email = {item.email: item for item in listed.items}
+    assert by_email["ada@studio.it"].tariffa_giornaliera == Decimal("450.00")
+    assert by_email["ada@studio.it"].remoto == "remoto"
+    assert by_email["lead@studio.it"].tariffa_giornaliera is None
+    assert by_email["lead@studio.it"].remoto is None
+
+
 def test_a_signup_whose_address_already_has_a_card_is_not_also_a_lead(clean: Session) -> None:
     FreelancerService(clean).apply(_application("ada@studio.it"), PDF, "cv.pdf", "application/pdf")
     _signup(clean, "ADA@studio.it")  # same address, different case: has a card already

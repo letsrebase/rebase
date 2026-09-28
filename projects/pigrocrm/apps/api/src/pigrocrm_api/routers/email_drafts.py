@@ -37,6 +37,7 @@ from pigrocrm.core.gmail.schemas import (
     EmailDraftListQuery,
     EmailDraftPage,
     EmailDraftRead,
+    EmailDraftSend,
     EmailDraftUpdate,
     SendState,
 )
@@ -134,6 +135,7 @@ def delete_draft(
 @router.post("/{draft_id}/send", response_model=EmailDraftRead)
 def send_draft(
     draft_id: UUID,
+    payload: EmailDraftSend,
     session: SessionDep,
     actor: ActorDep,
     settings: SettingsDep,
@@ -142,10 +144,14 @@ def send_draft(
     """The only endpoint in the product that sends an email, and deliberately **not** an
     MCP tool -- see the module docstring for why that gap is the design.
 
-    It takes no body. Everything that will be sent is already on the row, which is what
-    lets the person read exactly what will leave before they press Invia.
+    Everything that will be sent is already on the row, which is what lets the person
+    read exactly what will leave before they press Invia. The body only names which
+    reading that was: the draft's `updated_at` as the read answered it. A draft edited
+    since answers 409 with `draft_changed` and nothing leaves (REB-419).
     """
-    return _sender(session, settings, storage).send(draft_id, actor)
+    return _sender(session, settings, storage).send(
+        draft_id, actor, expected_updated_at=payload.updated_at
+    )
 
 
 @router.post("/{draft_id}/reconcile", response_model=EmailDraftRead)

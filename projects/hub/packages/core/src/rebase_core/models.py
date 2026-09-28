@@ -32,6 +32,10 @@ LINKEDIN_URL_MAX_LENGTH = 300
 # validation -- the same split `Freelancer`'s signup-born columns already keep between
 # what the database allows and what a wizard demands.
 TELEFONO_MAX_LENGTH = 40
+# Base32-ish, upper-case, unambiguous alphabet (no 0/O/1/I): short enough to sit in a
+# URL's path, long enough that guessing another member's code is not a real attack
+# (P-REB-44, `rebase_core.referrals`).
+REFERRAL_CODE_LENGTH = 10
 
 # Every column added after the production table already existed, with the width each
 # one needs. Migration 0001 adopts that table as it stands and adds these with
@@ -119,7 +123,9 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     handful of rows do not buy a `user_roles` table. `attivo`, carried over from
     `admin_users.attivo` by REB-278's migration, still means only "this admin's tokens
     and sessions keep failing the same way": nothing deactivates a member yet, matching
-    today."""
+    today. `referral_code` (P-REB-44) is issued lazily, the first time `ReferralService`
+    needs one, never at signup: most rows never refer anyone, and a code nobody reads
+    is a column with nothing behind it."""
 
     __tablename__ = "users"
 
@@ -128,6 +134,7 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     cognome: Mapped[str] = mapped_column(String(NAME_MAX_LENGTH), nullable=False)
     linkedin_url: Mapped[str | None] = mapped_column(String(LINKEDIN_URL_MAX_LENGTH), default=None)
     telefono: Mapped[str | None] = mapped_column(String(TELEFONO_MAX_LENGTH), default=None)
+    referral_code: Mapped[str | None] = mapped_column(String(REFERRAL_CODE_LENGTH), default=None)
     role: Mapped[str] = mapped_column(String(10), nullable=False, default="member")
     attivo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
@@ -154,6 +161,7 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
             postgresql_using="gin",
             postgresql_ops={"email": "gin_trgm_ops"},
         ),
+        Index("uq_users_referral_code", "referral_code", unique=True),
     )
 
 
@@ -422,6 +430,11 @@ class Match(Base, PrimaryKeyMixin, TimestampMixin):
     lettera_data_inizio: Mapped[date | None] = mapped_column(Date, default=None)
     lettera_data_fine: Mapped[date | None] = mapped_column(Date, default=None)
     lettera_compenso: Mapped[Decimal | None] = mapped_column(Numeric(7, 2), default=None)
+    # The company's own day rate, copied the same way and for the same reason as
+    # `lettera_compenso` (P-REB-44): a referral reward is computed at signing, which
+    # can be weeks after this match's own request, so an edit to the company's
+    # request afterward never moves a reward this match already promised.
+    company_budget_giornaliero: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), default=None)
     # The Pigro link this match carries once it turns active: `NULL` until then, one of
     # `PIGRO_STATES` after. `pigro_linked_at` is set only the once, when `collegato` is
     # first reached; `pigro_attempted_at` on every attempt, successful or not, for the
@@ -1134,3 +1147,105 @@ class TalentCloudGrant(Base, PrimaryKeyMixin):
             postgresql_where=text("revoked_at IS NULL"),
         ),
     )
+
+
+# ---- referrals: an existing member's link to who they brought in (P-REB-44) -----------
+
+REFERRAL_KINDS = ("freelancer", "company")
+REWARD_STATES = ("da_confermare", "confermato", "pagato")
+# The base and the reward round to the cent, like every other amount this schema
+# stores; a rate is a fraction, `0.10`/`0.30`, four places so a future rate like
+# `12.5%` still fits exactly.
+REWARD_AMOUNT_DIGITS, REWARD_AMOUNT_PLACES = 10, 2
+RATE_DIGITS, RATE_PLACES = 5, 4
+
+
+class Referral(Base, PrimaryKeyMixin, TimestampMixin):
+    """One member's link to whichever freelancer card or company request their code
+    brought in: `kind` says which, `entity_id` points at the `Freelancer` or `Company`
+    row it names (no foreign key to either -- one column would have to point at two
+    different tables). One referral per referred entity
+    (`uq_referrals_kind_entity`): the second signup that ever arrives under the same
+    code is that member's link working twice, not a second referral, and a company's
+    later, additional request (`rebase_core.members.create_additional_request`) is not
+    a fresh referral either -- rebase already knew that company. `referrer_user_id` is
+    the code's owner read at signup time and kept even though a member's own code
+    never changes, so a referral and its referrer can never drift apart under it."""
+
+    __tablename__ = "referrals"
+
+    referrer_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    entity_id: Mapped[UUID] = mapped_column(nullable=False)
+    code: Mapped[str] = mapped_column(String(REFERRAL_CODE_LENGTH), nullable=False)
+
+    __table_args__ = (
+        Index("uq_referrals_kind_entity", "kind", "entity_id", unique=True),
+        Index("ix_referrals_referrer", "referrer_user_id", "created_at"),
+        CheckConstraint("kind IN ('freelancer', 'company')", name="ck_referrals_kind"),
+    )
+
+
+class ReferralReward(Base, PrimaryKeyMixin, TimestampMixin):
+    """One reward, once per referral (`uq_referral_rewards_referral_id`): written the
+    moment the referred entity's first `lettera` is signed
+    (`rebase_core.signing.SigningService._confirm_completion`), with the rate and the
+    base that letter's numbers printed at that moment, so a rate an admin edits later
+    (`ReferralSettings`) never re-prices a reward already recorded -- the one-time
+    maturity design record 2026-09-26 asks for. `base_amount` is rebase's own margin on
+    that letter (`Company.budget_giornaliero` against the letter's `compenso`, never
+    the freelancer's fee alone, which the contract flow never lets a freelancer's own
+    document see either), projected over `Match.giorni_previsti` when the admin
+    estimated one; `None` when there is no reliable figure to project (an `a corpo`
+    letter with no estimate), left for an admin to price by hand on the ledger.
+    `reward_amount` is `None` exactly when `base_amount` is. `stato` moves by hand
+    only, `da_confermare` to `confermato` to `pagato`: nothing here pays anyone."""
+
+    __tablename__ = "referral_rewards"
+
+    referral_id: Mapped[UUID] = mapped_column(ForeignKey("referrals.id"), nullable=False)
+    document_id: Mapped[UUID] = mapped_column(ForeignKey("contract_documents.id"), nullable=False)
+    rate: Mapped[Decimal] = mapped_column(Numeric(RATE_DIGITS, RATE_PLACES), nullable=False)
+    base_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(REWARD_AMOUNT_DIGITS, REWARD_AMOUNT_PLACES), default=None
+    )
+    reward_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(REWARD_AMOUNT_DIGITS, REWARD_AMOUNT_PLACES), default=None
+    )
+    stato: Mapped[str] = mapped_column(String(20), nullable=False, default="da_confermare")
+    confirmed_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    note: Mapped[str | None] = mapped_column(Text, default=None)
+
+    __table_args__ = (
+        Index("uq_referral_rewards_referral_id", "referral_id", unique=True),
+        CheckConstraint(
+            "stato IN ('da_confermare', 'confermato', 'pagato')",
+            name="ck_referral_rewards_stato",
+        ),
+        CheckConstraint(
+            "(base_amount IS NULL) = (reward_amount IS NULL)",
+            name="ck_referral_rewards_amount_together",
+        ),
+    )
+
+
+class ReferralSettings(Base, PrimaryKeyMixin, TimestampMixin):
+    """The two referral rates, one row (design record 2026-09-26: a database row an
+    admin edits from the hub admin area, never an environment variable and a deploy).
+    `id` is not constrained to a single value at the database, which has no clean way
+    to say "exactly one row" short of a trigger; `ReferralService` always reads the
+    oldest row and never inserts a second one, the same way this package leaves a
+    handful of other "there is only ever one" facts to the service layer rather than
+    to the schema."""
+
+    __tablename__ = "referral_settings"
+
+    rate_freelancer: Mapped[Decimal] = mapped_column(
+        Numeric(RATE_DIGITS, RATE_PLACES), nullable=False, default=Decimal("0.10")
+    )
+    rate_company: Mapped[Decimal] = mapped_column(
+        Numeric(RATE_DIGITS, RATE_PLACES), nullable=False, default=Decimal("0.30")
+    )
+    updated_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)

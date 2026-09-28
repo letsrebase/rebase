@@ -5,7 +5,7 @@ import { AMOUNT_PROBLEM, euroAmount, sentAmount } from '@/lib/amount'
 import { readPerkParam, useWizardAnalytics } from '@/lib/analytics'
 import { ApiError, applyAsFreelancer, type FreelancerApplication } from '@/lib/api'
 import { isLinkedinName, LINKEDIN_OWN_PROFILE, linkedinFieldValue, linkedinProfile } from '@/lib/linkedin'
-import { resolveAttribution } from '@/lib/utm'
+import { resolveAttribution, resolveReferral } from '@/lib/utm'
 import { clearDraft, loadDraft, saveDraft } from '@/wizard/draft'
 import { ChoiceField, FileField, LinksField, TextField } from '@/wizard/fields'
 import { screensFromFields, Wizard, type Field } from '@/wizard/Wizard'
@@ -352,6 +352,7 @@ export function FreelancerWizard() {
         { ...value, tariffa_giornaliera: sentAmount(value.tariffa_giornaliera) },
         resolveAttribution(searchStr),
         distinctId(),
+        resolveReferral(searchStr),
       )
       sent.current = true
       clearDraft(FREELANCER_DRAFT_KEY)

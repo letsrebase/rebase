@@ -391,8 +391,10 @@ describe('EmailTab', () => {
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith('Email inviata: la trovi nella corrispondenza.'),
     )
+    // With the revision the person read (REB-419): the server sends only that one.
     expect(api.POST).toHaveBeenCalledWith('/api/email-drafts/{draft_id}/send', {
       params: { path: { draft_id: DRAFT_ID } },
+      body: { updated_at: '2026-08-20T09:00:00Z' },
     })
     await waitFor(() =>
       expect(screen.queryByRole('article', { name: 'Offerta rivista' })).not.toBeInTheDocument(),
@@ -602,6 +604,107 @@ describe('EmailTab', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/^Nessuna casella Google collegata$/)
     expect(screen.getByText('Bozza')).toBeInTheDocument()
+  })
+
+  // --- a draft edited after the person read it (REB-419) ------------------------------
+
+  /** The refusal `EmailSendService.send` answers when the revision on screen is not the
+   *  row's any more: no `send_state`, because the draft did not move, its text did. */
+  function changedSinceRead() {
+    const reason = "questa bozza è cambiata dopo che l'hai letta: rileggila prima di inviarla"
+    return failed(
+      { code: 'conflict', detail: `email_draft: ${reason}`, reason, draft_changed: true },
+      409,
+    )
+  }
+
+  const EDITED_AT = '2026-08-20T09:05:00.123456Z'
+
+  /**
+   * Somebody edited the draft after the person read it, so the send was refused and
+   * nothing left. The card reads the draft again, says so in Italian, and asks once more:
+   * the next «Invia ora» names the revision it has just read, never the refused one.
+   */
+  it('reads an edited draft again and asks once more, with the new revision', async () => {
+    const edited = draft({
+      body_markdown: 'Gentile Ada,\n\necco la proposta aggiornata.',
+      updated_at: EDITED_AT,
+    })
+    let onServer: EmailDraftRead[] = [draft()]
+    respond({ drafts: () => drafts(...onServer) })
+    vi.mocked(api.POST)
+      .mockImplementationOnce((() => {
+        onServer = [edited]
+        return Promise.resolve(changedSinceRead())
+      }) as never)
+      .mockImplementationOnce((() => {
+        onServer = []
+        return Promise.resolve(ok({ ...edited, send_state: 'inviato' }))
+      }) as never)
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+
+    expect(api.POST).toHaveBeenNthCalledWith(1, '/api/email-drafts/{draft_id}/send', {
+      params: { path: { draft_id: DRAFT_ID } },
+      body: { updated_at: '2026-08-20T09:00:00Z' },
+    })
+    // Read again: the text on the card is now the server's.
+    await waitFor(() =>
+      expect(screen.getByLabelText('Testo')).toHaveTextContent('ecco la proposta aggiornata.'),
+    )
+    const reread = 'Qui sopra ora c’è il testo aggiornato'
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(reread))
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /^Non è partita: la bozza è stata modificata dopo che l’hai letta\./,
+    )
+    expect(screen.getByRole('alert')).not.toHaveTextContent('email_draft')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('Bozza')).toBeInTheDocument()
+    expect(toast.success).not.toHaveBeenCalled()
+
+    // Asks once more.
+    await userEvent.click(screen.getByRole('button', { name: 'Invia' }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: 'Inviare questa email?' })
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Invia ora' }))
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('Email inviata: la trovi nella corrispondenza.'),
+    )
+    expect(api.POST).toHaveBeenCalledTimes(2)
+    expect(api.POST).toHaveBeenLastCalledWith('/api/email-drafts/{draft_id}/send', {
+      params: { path: { draft_id: DRAFT_ID } },
+      body: { updated_at: EDITED_AT },
+    })
+  })
+
+  it('keeps «Invia» off until the edited draft has been read again', async () => {
+    let answer: (value: unknown) => void = () => {}
+    let reads = 0
+    respond({
+      drafts: () => {
+        reads += 1
+        // The tab opening, then a read after the refusal that hangs: the card is caught
+        // holding only the text that was just refused.
+        return reads === 1 ? drafts(draft()) : new Promise((resolve) => (answer = resolve))
+      },
+    })
+    vi.mocked(api.POST).mockResolvedValue(changedSinceRead())
+    renderTab()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Invia' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Invia ora' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sto rileggendo il testo aggiornato')
+    expect(screen.getByRole('button', { name: 'Invia' })).toBeDisabled()
+
+    answer(drafts(draft({ body_markdown: 'Gentile Ada,\n\naggiornata.', updated_at: EDITED_AT })))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Invia' })).toBeEnabled())
+    expect(screen.getByLabelText('Testo')).toHaveTextContent('aggiornata.')
+    expect(screen.getByRole('alert')).toHaveTextContent('Qui sopra ora c’è il testo aggiornato')
+    expect(api.POST).toHaveBeenCalledTimes(1)
   })
 
   /**

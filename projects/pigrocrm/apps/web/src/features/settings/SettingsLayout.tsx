@@ -43,34 +43,42 @@ import { canSeeSettingsTab } from '@/lib/permissions'
  * automatic code-splitting, which a `routeTree.gen.ts` warning caught
  * directly while wiring this test up.
  *
- * One tab is the exception to the admin gate above: `profilo` (`ProfilePanel`) is a
- * person's own preferences, not an admin-only write, and the weekly digest's own
- * opt-out link (spec 2026-09-16 §3.6) sends whoever received the mail straight to
- * `/app/settings/profile` -- a collaboratore or readonly account included. Without
- * this exemption that link would be dead for anyone but an admin, which REB-221's
- * first round shipped and its second round exists to fix. A non-admin on that one path
- * sees a `tabs` list of exactly one entry, never the other admin-only tabs.
+ * Two tabs are the exception to the admin gate above, and the gate reads which from
+ * the same table as the tab strip (`canSeeSettingsTab`), so the two cannot disagree:
  *
- * And one outcome is read out to a non-admin as well: the Google Drive consent's
- * (`?esito=` on the Drive tab, REB-446). The app offers that consent only under this
- * gate, but the service lets any writer connect their own Drive, and the callback sends
- * every outcome here, `sessione` included, where it cannot know the role. So a
- * collaboratore who started it reads what happened, and «Riprova» when it applies,
- * above the explanation. Whether they should have a Drive tab at all is REB-457.
+ * - `profilo` (`ProfilePanel`) is a person's own preferences, not an admin-only write,
+ *   and the weekly digest's own opt-out link (spec 2026-09-16 §3.6) sends whoever
+ *   received the mail straight to `/app/settings/profile` -- a collaboratore or readonly
+ *   account included. Without this exemption that link would be dead for anyone but an
+ *   admin, which REB-221's first round shipped and its second round exists to fix.
+ * - `drive` (`DrivePanel`) is open to a collaboratore (REB-457). The Drive credential is
+ *   per CRM user and the service lets any writer connect their own, and the consent's
+ *   callback lands every outcome (`?esito=`) on this tab. A collaboratore reads the
+ *   outcome there, from the route itself, and manages their own Drive under it.
+ *
+ * A non-admin past the gate sees only the tabs their role may see, never the admin-only
+ * ones.
+ *
+ * One outcome is still read out in front of the gate: the Drive consent's, to a readonly
+ * person (REB-446). They cannot start that consent, but the callback cannot know the
+ * role, so an outcome that lands here anyway (`sessione` after logging back in as
+ * somebody else, a link somebody sent) is read above the explanation, without «Riprova»,
+ * which `ConsentOutcome` offers only to a writer.
  */
 export function SettingsLayout() {
   const { user } = useAuth()
   const isAdmin = useIsAdmin()
   const { location } = useRouterState()
-  const onProfileTab = location.pathname.endsWith('profile')
+  const path = location.pathname.replace(/\/+$/, '')
+  const current = SETTINGS_TABS.find((tab) => path.endsWith(`/settings/${tab.value}`))
+  const mayOpen =
+    isAdmin ||
+    (user !== null && current !== undefined && canSeeSettingsTab(user.ruolo, current.value))
 
-  if (!isAdmin && !onProfileTab) {
+  if (!mayOpen) {
     const search = (location as { search?: Record<string, unknown> }).search
     const driveEsito =
-      location.pathname.replace(/\/+$/, '').endsWith('/settings/drive') &&
-      typeof search?.esito === 'string'
-        ? search.esito
-        : undefined
+      current?.value === 'drive' && typeof search?.esito === 'string' ? search.esito : undefined
     return (
       <div className="p-8">
         <div className="mx-auto flex max-w-md flex-col items-center gap-3 pt-16 text-center">
@@ -104,16 +112,15 @@ export function SettingsLayout() {
   }
 
   // REB-294: the tab strip is the table, not a private list. A non-admin who got past
-  // the gate above is on `profilo` and nothing else, because `profilo` is the only tab
-  // whose minimum is `null` -- every other one's services gate their writes on
-  // `require_admin`, which is what `canSeeSettingsTab` encodes. The same function
-  // filters the sidebar's «Impostazioni» sub-items, so the two cannot drift.
+  // the gate above sees `profilo` and, as a collaboratore, `drive` (REB-457), and
+  // nothing else: every other tab's services gate their writes on `require_admin`,
+  // which is what `canSeeSettingsTab` encodes. The same function filters the sidebar's
+  // «Impostazioni» sub-items and the profile menu's own entries, so none can drift.
   const tabs = SETTINGS_TABS.filter(
     (tab) => user !== null && canSeeSettingsTab(user.ruolo, tab.value),
   )
   const active =
-    tabs.find((tab) => location.pathname.endsWith(tab.value))?.value ??
-    (isAdmin ? 'fields' : 'profile')
+    tabs.find((tab) => tab.value === current?.value)?.value ?? (isAdmin ? 'fields' : 'profile')
 
   // `Tabs` wraps the header rather than sitting under it: the underline tabs of §4 are
   // *part* of the page's intestazione (`PageHeader`'s own `tabs` slot draws them and

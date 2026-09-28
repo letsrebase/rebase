@@ -8,6 +8,7 @@ import { Checkbox } from '@rebase/ui/checkbox'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { api, toProblem, unwrap } from '@/lib/api'
+import { queryKeys } from '@/lib/query'
 import {
   changesBetween,
   draftFrom,
@@ -15,8 +16,6 @@ import {
   type Draft,
   type SpaceSettingsUpdate,
 } from './spaceChanges'
-
-export const SPACE_SETTINGS_KEY = ['settings', 'space'] as const
 
 function Origin({ name, overridden }: { name: string; overridden: string[] }) {
   return (
@@ -29,7 +28,7 @@ function Origin({ name, overridden }: { name: string; overridden: string[] }) {
 export function SpacePanel() {
   const queryClient = useQueryClient()
   const query = useQuery({
-    queryKey: SPACE_SETTINGS_KEY,
+    queryKey: queryKeys.spaceSettings,
     queryFn: () => unwrap(api.GET('/api/settings/space')),
   })
   // The form is the server's payload with the person's edits laid over it: no copy to
@@ -39,7 +38,7 @@ export function SpacePanel() {
   const save = useMutation({
     mutationFn: (body: SpaceSettingsUpdate) => unwrap(api.PUT('/api/settings/space', { body })),
     onSuccess: (saved) => {
-      queryClient.setQueryData(SPACE_SETTINGS_KEY, saved)
+      queryClient.setQueryData(queryKeys.spaceSettings, saved)
       setEdits({})
       toast.success('Impostazioni salvate')
     },

@@ -144,11 +144,20 @@ describe('the settings tab visibility', () => {
     }
   })
 
-  it('shows a non-admin exactly the profile tab', () => {
+  it('shows a collaboratore the profile and their own Drive, and nothing else', () => {
+    // REB-457: the Drive credential is per CRM user and the service lets any writer
+    // connect it, so a collaboratore gets the tab where the consent lands.
     for (const tab of SETTINGS_TABS) {
-      const visible = canSeeSettingsTab('collaboratore', tab.value)
-      expect(visible).toBe(tab.value === 'profile')
-      // The card's rule, both roles: no Impostazioni beyond one's own profile.
+      expect(canSeeSettingsTab('collaboratore', tab.value)).toBe(
+        tab.value === 'profile' || tab.value === 'drive',
+      )
+    }
+  })
+
+  it('shows a readonly person exactly the profile tab', () => {
+    // A readonly person cannot start a Drive consent (`require_write`), so the Drive
+    // tab would only offer controls the server refuses.
+    for (const tab of SETTINGS_TABS) {
       expect(canSeeSettingsTab('readonly', tab.value)).toBe(tab.value === 'profile')
     }
   })

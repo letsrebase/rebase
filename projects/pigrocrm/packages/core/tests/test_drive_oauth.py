@@ -920,6 +920,116 @@ def test_set_roots_is_refused_for_a_readonly_actor(db_session: Session, admin_us
         )
 
 
+# --- the write folder is an admin's, a collaboratore's roots are their own (REB-457) --
+
+
+def _collaboratore(session: Session) -> User:
+    user = User(
+        email=f"collab-{uuid4().hex[:8]}@example.it",
+        nome="Collaboratore",
+        password_hash="x",
+        ruolo="collaboratore",
+        attivo=True,
+    )
+    session.add(user)
+    session.flush()
+    return user
+
+
+def _as(user: User) -> Actor:
+    return Actor(id=user.id, type="user", role=user.ruolo)  # type: ignore[arg-type]
+
+
+def _refuse_any_drive_call(_account: GoogleDriveAccount) -> DriveTransport:
+    raise AssertionError("a refused write folder must not be verified against Drive")
+
+
+@pytest.mark.parametrize("storage_folder_id", ["9CartellaDelCollab01", None])
+def test_set_roots_refuses_a_write_folder_from_a_collaboratore_and_writes_nothing(
+    db_session: Session, storage_folder_id: str | None
+) -> None:
+    """The write folder is the space's: `DriveRepository.storage_account` sends every
+    generated document there. So naming it at all, a new id or `null`, is an admin's
+    act, and the refusal comes before the folder is verified or anything is written,
+    the roots in the same request included."""
+    from pigrocrm.core.errors import PermissionDenied  # noqa: PLC0415
+
+    collab = _collaboratore(db_session)
+    account = _connected_drive_account(db_session, collab)
+    account.root_folder_ids = ["1RadiceOriginale0001"]
+    account.storage_folder_id = "8CartellaPrecedente01"
+    db_session.flush()
+    service = _drive_service_account(db_session, transport_factory=_refuse_any_drive_call)
+
+    with pytest.raises(PermissionDenied) as caught:
+        service.set_roots(
+            DriveRootsUpdate(
+                root_folder_ids=["1AbCdEfGhIjKlMnOpQ"], storage_folder_id=storage_folder_id
+            ),
+            _as(collab),
+        )
+
+    assert caught.value.details["action"] == "scegliere la cartella di scrittura Drive"
+    assert caught.value.details["required_roles"] == ["admin"]
+    db_session.refresh(account)
+    assert account.root_folder_ids == ["1RadiceOriginale0001"]
+    assert account.storage_folder_id == "8CartellaPrecedente01"
+    kinds = (
+        db_session.execute(select(Activity.kind).where(Activity.entity_id == account.id))
+        .scalars()
+        .all()
+    )
+    assert "drive.radici_impostate" not in kinds
+
+
+def test_a_collaboratore_still_sets_their_own_read_roots(db_session: Session) -> None:
+    """Only the write folder is an admin's. The read roots are the collaboratore's
+    own credential's configuration, and a save that does not name the write folder
+    goes through under `require_write`, as before."""
+    collab = _collaboratore(db_session)
+    account = _connected_drive_account(db_session, collab)
+    service = _drive_service_account(db_session, transport_factory=_refuse_any_drive_call)
+
+    read = service.set_roots(DriveRootsUpdate(root_folder_ids=["1AbCdEfGhIjKlMnOpQ"]), _as(collab))
+
+    assert read.root_folder_ids == ["1AbCdEfGhIjKlMnOpQ"]
+    assert read.storage_folder_id is None
+    db_session.refresh(account)
+    assert account.root_folder_ids == ["1AbCdEfGhIjKlMnOpQ"]
+
+
+def test_a_collaboratore_s_save_and_disconnect_leave_the_admin_s_storage_in_place(
+    db_session: Session, admin_user: User
+) -> None:
+    """The two moves Greptile and CodeRabbit named on PR #449. A collaboratore whose
+    row still holds a write folder (set before the service refused it, or left from a
+    time they were admin) saves their read roots, which bumps their `updated_at`, and
+    then disconnects. Neither moves nor breaks the space's storage: their row was never
+    a candidate."""
+    from pigrocrm.core.drive.repository import DriveRepository  # noqa: PLC0415
+
+    admin_account = _connected_drive_account(db_session, admin_user)
+    admin_account.storage_folder_id = "9CartellaAdmin000001"
+    admin_account.updated_at = datetime.now(UTC) - timedelta(days=30)
+    collab = _collaboratore(db_session)
+    collab_account = _connected_drive_account(db_session, collab, email_address="c@example.it")
+    collab_account.storage_folder_id = "8CartellaDelCollab01"
+    db_session.flush()
+    repo = DriveRepository(db_session)
+    assert repo.storage_account() is admin_account
+
+    _drive_service_account(db_session, transport_factory=_refuse_any_drive_call).set_roots(
+        DriveRootsUpdate(root_folder_ids=["1AbCdEfGhIjKlMnOpQ"]), _as(collab)
+    )
+    assert collab_account.updated_at > admin_account.updated_at
+    assert repo.storage_account() is admin_account
+
+    _drive_service(db_session, FakeGmail()).disconnect(_as(collab))
+    db_session.refresh(collab_account)
+    assert collab_account.status == "disconnected"
+    assert repo.storage_account() is admin_account
+
+
 # --- set_roots verifies the write folder before saving it (slice 9D, task 3) --------
 
 

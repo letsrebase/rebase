@@ -476,6 +476,37 @@ describe('AppShell', () => {
     },
   )
 
+  /**
+   * REB-457: a collaboratore's Drive is their own credential, and the Drive tab is where
+   * every consent outcome lands, so the menu that holds the account's own things offers
+   * it to them. Read from the same tab table as the sidebar: a readonly person, who
+   * cannot start a consent, is not offered it, and an admin keeps it where it was, in
+   * the sidebar's «Impostazioni».
+   */
+  it('offers «Google Drive» to a collaboratore in the profile menu', async () => {
+    mockAuth.ruolo = 'collaboratore'
+    renderShell()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+
+    const menu = within(await screen.findByRole('menu'))
+    expect(menu.getByRole('link', { name: 'Google Drive' })).toHaveAttribute(
+      'href',
+      '/app/settings/drive',
+    )
+  })
+
+  it.each(['admin', 'readonly'])('offers no «Google Drive» in the profile menu to a %s', async (ruolo) => {
+    mockAuth.ruolo = ruolo
+    renderShell()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Menu del profilo' }))
+
+    const menu = within(await screen.findByRole('menu'))
+    expect(menu.getByRole('link', { name: 'Profilo' })).toBeInTheDocument()
+    expect(menu.queryByRole('link', { name: 'Google Drive' })).not.toBeInTheDocument()
+  })
+
   it('leaves «Impostazioni dello spazio» to an admin', async () => {
     mockAuth.ruolo = 'collaboratore'
     renderShell()
