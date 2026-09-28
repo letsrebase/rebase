@@ -54,6 +54,12 @@ x-api-environment: &api-environment
   # Not empty defaults: an int field fails at start-up on an empty value.
   REBASE_TEAM_BUILDER_CONCURRENCY: ${REBASE_TEAM_BUILDER_CONCURRENCY:-4}
   REBASE_TEAM_BUILDER_DAILY_CAP: ${REBASE_TEAM_BUILDER_DAILY_CAP:-300}
+  # The `cards` service's hourly loop (REB-552), no Python setting: whether it actually
+  # calls `cards-refresh`, so a deploy that already carries REBASE_ANTHROPIC_API_KEY
+  # does not send CVs to Anthropic before the talents' mail (AGENTS.md, "The team
+  # builder") has gone out. Set `off` in production until then, `on` once it has, and
+  # `docker compose up -d cards` to recreate the service.
+  REBASE_CARDS_LOOP: ${REBASE_CARDS_LOOP:-off}
 
 services:
   db:
@@ -149,6 +155,40 @@ services:
     restart: unless-stopped
     init: true
     command: ['sh', '-c', 'while :; do sleep 600; uv run --no-sync rebase contracts-sweep; done']
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    environment: *api-environment
+
+  cards:
+    # `rebase cards-refresh --limit 50` (REB-552): the team builder's backlog, once an
+    # hour on both stacks, so a card an outage retired (spec § 5.1) comes back without
+    # someone running the command by hand, and follows its CV within the hour rather
+    # than a day. A loop, never a one-shot, for the same reason as `campaigns`:
+    # `_deploy-compose.yml` fails a deploy on any container not `running`. Gated by
+    # `REBASE_CARDS_LOOP` (`.env`, default `off`: a deploy on a host whose `.env` says nothing writes no card), no Python setting: a deploy that
+    # already carries REBASE_ANTHROPIC_API_KEY must not start sending CVs to Anthropic
+    # before the talents' mail (AGENTS.md, "The team builder") has gone out, so
+    # production sets `REBASE_CARDS_LOOP=off` first and only turns it `on`
+    # (`docker compose up -d cards` to recreate the service) once the mail has. Off,
+    # the loop logs that it skipped and sleeps. Harmless too without
+    # REBASE_ANTHROPIC_API_KEY: the command prints why and exits 1, and the loop just
+    # sleeps an hour before trying again. Harmless too with nothing stale to write: no
+    # call is made and the command prints «0 schede scritte, 0 non riuscite», so a
+    # quiet hour costs nothing. One run is at most 50 cards, so a bad hour (a key gone
+    # bad, a provider outage) costs at most 50 calls. Read what it did with `docker
+    # logs rebase-cards-1` (production) or `docker logs rebase-preview-cards-1`
+    # (preview): each run prints «N schede scritte, M non riuscite». Sleeps first, like
+    # `sweep`, so the api's `alembic upgrade head` (Dockerfile.api) has already run
+    # before the first pass.
+    build:
+      context: ../..
+      dockerfile: projects/hub/Dockerfile.api
+    restart: unless-stopped
+    init: true
+    command: ['sh', '-c', 'while :; do sleep 3600; if [ "${REBASE_CARDS_LOOP:-off}" = "on" ]; then uv run --no-sync rebase cards-refresh --limit 50; else echo "cards: loop off (REBASE_CARDS_LOOP)"; fi; done']
     depends_on:
       db:
         condition: service_healthy
