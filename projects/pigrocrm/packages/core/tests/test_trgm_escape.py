@@ -39,7 +39,8 @@ documents.titolo 294.10.
 *First:* `SET LOCAL enable_seqscan = off` **is** used, which the brief forbade as turning
 a measurement into a tautology. It is not one here, and the brief's instrument could not
 answer its own question. With the planner entirely free, at the brief's own REFERENCE
-scale and again at the INFLATED 50 000 customers, Postgres chooses a sequential scan for a
+scale and again at the former INFLATED scale of 50 000 customers, Postgres chooses a
+sequential scan for a
 trigram predicate either way:
 
       500 customers:  Seq Scan  cost=0.00..17.25    (trigram bitmap scan:   20.01)
@@ -371,9 +372,10 @@ def customers_at_reference_scale(db_engine: Engine) -> Iterator[Engine]:
     works fine on an uncommitted table. It is wrong for the test below, which asks what the
     free planner does when nothing forces its hand, because `relpages` reflects the table's
     real physical size and a savepoint's rollback never shrinks a heap file back down.
-    `test_search_plan.py`'s `inflated` fixture already names the consequence on its own way
-    out: "`test_trgm_escape.py`'s 500-row seq scan is costed on a heap of dead pages" left
-    behind by however many of this file's own earlier tests happened to insert and roll
+    `test_search_plan.py`'s `inflated` fixture (gone with REB-580) named the consequence
+    on its own way out: "`test_trgm_escape.py`'s 500-row seq scan is costed on a heap of
+    dead pages" left behind by however many of this file's own earlier tests happened to
+    insert and roll
     back the same 500 rows into `customers` first. Measured 2026-09-10, running this file's
     tests in file order left `customers` at 52 pages instead of a fresh build's 11, and
     priced the free planner's own `Seq Scan` at 58.25 instead of 17.25 -- margin enough that
