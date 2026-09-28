@@ -25,13 +25,18 @@ function answer(status: number, body: unknown) {
 }
 
 const NO_CONTRACTS = { quadro: null, quadri_precedenti: [], lettere: [] }
+const NO_REFERRAL = { code: 'ABCDEFGH', referred: [] }
 
-/** `/me` answers `profile`; a card's page also reads its contracts (REB-392). A fresh
- *  Response per call, since a body can be read once. */
-function meFetch(profile: unknown, contracts: unknown = NO_CONTRACTS) {
-  return vi
-    .spyOn(globalThis, 'fetch')
-    .mockImplementation(async (input) => answer(200, String(input) === '/api/hub/me/contracts' ? contracts : profile))
+/** `/me` answers `profile`; a card's page also reads its contracts (REB-392), and
+ *  every page reads its own referral link (P-REB-44). A fresh Response per call,
+ *  since a body can be read once. */
+function meFetch(profile: unknown, contracts: unknown = NO_CONTRACTS, referral: unknown = NO_REFERRAL) {
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const path = String(input)
+    if (path === '/api/hub/me/contracts') return answer(200, contracts)
+    if (path === '/api/hub/me/referral') return answer(200, referral)
+    return answer(200, profile)
+  })
 }
 
 const PROFILE = {

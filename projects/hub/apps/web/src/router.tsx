@@ -27,6 +27,7 @@ import { AdminCampagne } from '@/pages/admin/Campagne'
 import { AdminCreaCampagna } from '@/pages/admin/CreaCampagna'
 import { AdminCreaMatch } from '@/pages/admin/CreaMatch'
 import { AdminMatches } from '@/pages/admin/Matches'
+import { AdminReferrals } from '@/pages/admin/Referrals'
 import { AdminRichiestaTeam } from '@/pages/admin/RichiestaTeam'
 import { AdminRichiesteTeam } from '@/pages/admin/RichiesteTeam'
 import { Disiscrizione } from '@/pages/Disiscrizione'
@@ -413,6 +414,11 @@ const adminCompaniesDetailRedirect = createRoute({
     throw redirect({ to: '/admin/companies/$id', params })
   },
 })
+const adminReferrals = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/referrals',
+  component: AdminReferrals,
+})
 const adminPigro = createRoute({ getParentRoute: () => adminArea, path: '/pigro', component: AdminPigro })
 const adminGuide = createRoute({ getParentRoute: () => adminArea, path: '/guide', component: AdminGuida })
 const adminGuideRedirect = createRoute({
@@ -494,6 +500,7 @@ export const routeTree = root.addChildren([
       adminCompaniesRedirect,
       adminCompaniesDetail,
       adminCompaniesDetailRedirect,
+      adminReferrals,
       adminPigro,
       adminGuide,
       adminGuideRedirect,

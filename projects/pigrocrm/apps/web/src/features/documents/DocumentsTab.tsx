@@ -27,7 +27,7 @@ import { UploadDropzone } from './UploadDropzone'
  *  packages/core/src/pigrocrm/core/documents/schemas.py. The backend is the authority
  *  and rejects anything else with its own message; this only stops the file picker
  *  from offering a type that would be refused a moment later. */
-export const ACCEPTED_UPLOAD_TYPES = [
+const ACCEPTED_UPLOAD_TYPES = [
   'application/pdf',
   'text/markdown',
   'text/plain',

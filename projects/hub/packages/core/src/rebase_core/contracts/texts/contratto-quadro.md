@@ -17,6 +17,8 @@ email {{professionista-email}}, PEC {{professionista-pec}} (il «**Professionist
 
 insieme le «**Parti**».
 
+**Segnalato da:** {{segnalato-da}}.
+
 ## Premesse
 
 A. rebase gestisce la community di freelance raccolta su letsrebase.com: developer, AI

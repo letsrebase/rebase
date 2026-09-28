@@ -9,6 +9,7 @@ import {
   LogOut,
   Plug,
   Send,
+  Share2,
   ShieldCheck,
   UserRound,
   Users,
@@ -26,13 +27,16 @@ import { useLogout } from '@/lib/me'
  *  the two lists it draws its rows from. «Campagne» (P-REB-41) lists the mails an
  *  admin sends the community, one state and one outcome at a time. «Richieste team»
  *  (REB-514) sits right after «Match», before «Aziende» as the spec places it: the
- *  requests the team builder files, the step before a match. */
+ *  requests the team builder files, the step before a match. «Referral» (P-REB-44)
+ *  is the ledger every signed-letter reward lands on, and the two rates that decide
+ *  how much. */
 const ADMIN_NAV = [
   { to: '/admin/talent', label: 'Talenti', icon: UserRound },
   { to: '/admin/matches', label: 'Match', icon: Handshake },
   { to: '/admin/team', label: 'Richieste team', icon: Users },
   { to: '/admin/campaigns', label: 'Campagne', icon: Send },
   { to: '/admin/companies', label: 'Aziende', icon: Briefcase },
+  { to: '/admin/referrals', label: 'Referral', icon: Share2 },
   { to: '/admin/pigro', label: 'Istanze Pigro', icon: Boxes },
   { to: '/admin/guide', label: 'La guida', icon: BookOpen },
   { to: '/admin/access', label: 'Accessi', icon: LogIn },

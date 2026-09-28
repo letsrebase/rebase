@@ -569,8 +569,12 @@ Next, by hand or with an agent holding the linear-rebase MCP server:
    holds the Free plan's second and last team slot before creating a new one -- a
    second client's team needs a Business-plan upgrade first.
 2. Create (or confirm) the "${args.initiative}" initiative and the "${args.linearProject}"
-   project inside team "${args.linearTeam}", with a lead and every member involved
-   (save_project). Add the first milestone(s) if the contract's phases are known.
+   project inside team "${args.linearTeam}", with a lead (save_project). When the
+   spec names anyone else as a member, add them separately: the GraphQL
+   projectUpdate mutation with memberIds (save_project has no member field for
+   this), listing everyone who should stay on the project since memberIds replaces
+   the full list rather than appending, or the Linear UI when no GraphQL access is
+   available. Add the first milestone(s) if the contract's phases are known.
 3. Invite the freelancer: GitHub collaborator on ${args.org}/${args.repo}, Linear
    member on linear.app/letsrebase. Tell them, in the same message, that this
    workspace is on the Free plan (AGENTS.md § Tracker: Linear § Known limitation):

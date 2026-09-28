@@ -153,6 +153,29 @@ export const SEND_OUTCOME_UNKNOWN_REREAD =
   'riletto dopo il tentativo: se dice ancora «Bozza» non è partita, altrimenti usa «Verifica».'
 
 /**
+ * Whether a send was refused because the draft was edited after the person read it
+ * (REB-419). The press names the revision on screen (`EmailDraftSend`), and a row that
+ * moved since answers a `Conflict` with `draft_changed` and sends nothing: what the person
+ * confirmed is not what would have left.
+ */
+export function draftChangedSinceRead(error: unknown): boolean {
+  return toProblem(error).draft_changed === true
+}
+
+/**
+ * What the card says then, in the same two steps as an unanswered send and for the same
+ * reason: until the draft has been read again, the text on screen is the one that was
+ * refused, so «Invia» stays off and the banner says the card is still reading. Once it
+ * has, the new text is on the card and «Invia» asks once more.
+ */
+export const DRAFT_CHANGED_REREADING =
+  'Non è partita: la bozza è stata modificata dopo che l’hai letta. Sto rileggendo il ' +
+  'testo aggiornato: aspetta prima di decidere.'
+export const DRAFT_CHANGED_REREAD =
+  'Non è partita: la bozza è stata modificata dopo che l’hai letta. Qui sopra ora c’è il ' +
+  'testo aggiornato: rileggilo e, se va bene, premi di nuovo «Invia».'
+
+/**
  * Whether a failed send already changed the draft on the server. A refused or unanswered
  * send answers a `Conflict` carrying the draft's new `send_state` (`fallito`, `incerto`),
  * and so does a press on a draft that already left: in all of those the row's own state

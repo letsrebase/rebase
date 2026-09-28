@@ -110,6 +110,9 @@ _NOT_SENT = (
     "Controlla «Posta inviata» su Gmail prima di rinviarlo."
 )
 
+# The sentence a send raises when the draft was edited after the person read it.
+_CHANGED_SINCE_READ = "questa bozza è cambiata dopo che l'hai letta: rileggila prima di inviarla"
+
 # The sentences a refused send raises with. They name the state, never the correspondence.
 _ALREADY: dict[str, str] = {
     "inviato": "questa email è già stata inviata",
@@ -138,7 +141,21 @@ class EmailSendService:
         self.activities = ActivityService(session)
         self.accounts = GoogleAccountService(session, settings=settings)
 
-    def send(self, draft_id: UUID, actor: Actor) -> EmailDraftRead:
+    def send(
+        self,
+        draft_id: UUID,
+        actor: Actor,
+        *,
+        expected_updated_at: datetime | None = None,
+    ) -> EmailDraftRead:
+        """Sends the draft as the row holds it, once.
+
+        `expected_updated_at` is the revision the person read (REB-419,
+        `EmailDraftSend`): a draft edited after that read is refused with a `Conflict`
+        carrying `draft_changed`, before anything is claimed, composed or asked of Google.
+        The REST route always passes it. `None` sends whatever the row holds, as before,
+        for an in-process caller that has no read to name.
+        """
         require_gmail_configured(self.settings)
         actor.require_write(_SEND_ACTION)
 
@@ -156,10 +173,30 @@ class EmailSendService:
             # row. It is *not* the guarantee -- two concurrent requests both pass it,
             # which is why the claim below is the thing that arbitrates.
             raise Conflict(ENTITY, _already(draft.send_state), send_state=draft.send_state)
+        if expected_updated_at is not None and draft.updated_at != expected_updated_at:
+            # Somebody edited the draft after the person read it. The same kind of cheap
+            # read as the one above, and for the same reason not the guarantee: an edit
+            # committed after it is caught by the claim's own `WHERE`.
+            raise _changed_since_read()
 
-        # (2) Claim it, and commit the claim so a concurrent request can see it.
-        if not self.repo.claim_draft_for_send(draft_id, datetime.now(UTC), account.id):
+        # (2) Claim it, and commit the claim so a concurrent request can see it. The
+        # revision goes into the claim only when there is one, so a caller without a read
+        # makes exactly the call it made before REB-419 (the two-connection test at the
+        # bottom of `test_gmail_send.py` wraps that call as it is).
+        now = datetime.now(UTC)
+        claimed = (
+            self.repo.claim_draft_for_send(draft_id, now, account.id)
+            if expected_updated_at is None
+            else self.repo.claim_draft_for_send(
+                draft_id, now, account.id, expected_updated_at=expected_updated_at
+            )
+        )
+        if not claimed:
             state = self._state_now(draft_id)
+            if expected_updated_at is not None and state in EDITABLE_SEND_STATES:
+                # Still sendable, so what the claim refused is the revision: an edit
+                # landed between the read above and the claim.
+                raise _changed_since_read()
             raise Conflict(ENTITY, _already(state), send_state=state)
         self.session.commit()
         # The claim was a Core UPDATE, so the ORM copy loaded above still carries the
@@ -651,6 +688,16 @@ class EmailSendService:
 
 def _already(state: str) -> str:
     return _ALREADY.get(state, f"questa email non è inviabile nello stato {state}")
+
+
+def _changed_since_read() -> Conflict:
+    """The refusal of a send whose draft was edited after the person read it (REB-419).
+
+    `draft_changed` and no `send_state`: the draft did not move, its text did. A card that
+    finds `send_state` on a refusal writes it onto the row it shows; this one has to read
+    the row again, text included, and ask once more.
+    """
+    return Conflict(ENTITY, _CHANGED_SINCE_READ, draft_changed=True)
 
 
 class _NoDocuments:

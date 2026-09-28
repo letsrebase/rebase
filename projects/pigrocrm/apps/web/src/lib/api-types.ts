@@ -2457,8 +2457,10 @@ export interface paths {
          * @description The only endpoint in the product that sends an email, and deliberately **not** an
          *     MCP tool -- see the module docstring for why that gap is the design.
          *
-         *     It takes no body. Everything that will be sent is already on the row, which is what
-         *     lets the person read exactly what will leave before they press Invia.
+         *     Everything that will be sent is already on the row, which is what lets the person
+         *     read exactly what will leave before they press Invia. The body only names which
+         *     reading that was: the draft's `updated_at` as the read answered it. A draft edited
+         *     since answers 409 with `draft_changed` and nothing leaves (REB-419).
          */
         post: operations["send_draft_api_email_drafts__draft_id__send_post"];
         delete?: never;
@@ -5349,6 +5351,29 @@ export interface components {
             updated_at: string;
             /** Attachments */
             attachments: components["schemas"]["EmailDraftAttachment"][];
+        };
+        /**
+         * EmailDraftSend
+         * @description What «Invia» carries: the revision of the draft the person read (REB-419).
+         *
+         *     The Email tab tells the person «parte esattamente quello che vedi», and the text is on
+         *     the row, not in this request. So the request names *which* text it means: the
+         *     `updated_at` its read answered, echoed back unchanged. The claim puts it in its own
+         *     `WHERE` (`GmailRepository.claim_draft_for_send`), and a draft edited since answers a
+         *     `Conflict` instead of leaving with words nobody reviewed.
+         *
+         *     A field in the body rather than an `If-Match` header because nothing in this API
+         *     speaks ETags and every other write takes JSON. Required rather than optional: a send
+         *     that may leave it out is a send that may skip the check, and the only client is the
+         *     SPA shipped in the same release. `AwareDatetime`, because a naive timestamp names no
+         *     instant and could only ever be compared by guessing a timezone.
+         */
+        EmailDraftSend: {
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** EmailDraftUpdate */
         EmailDraftUpdate: {
@@ -28955,7 +28980,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmailDraftSend"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

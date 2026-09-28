@@ -93,12 +93,14 @@ nothing when you are not. Narrow to one project by passing its paths as argument
    but the scoping stays: a fifteen-minute trunk run on a docs commit is still a cost,
    just in waiting rather than in money (`docs/design/DECISIONS.md`, 2026-09-10). A
    push that cannot reach a project does not pay for that project's suite. When a push
-   has no reachable base commit the filters are skipped and everything runs, and so
-   does a release tag (`<project>-v<semver>`, which `ci.yml` also listens to): a
-   production deploy is gated on the run of the tag itself, since the trunk's run for
-   the same commit may have skipped every job of that project and still concluded
-   green. A nightly `schedule` run on `main` (`17 3 * * *` UTC) earns the same full
-   run for a different reason, buying back "the trunk proves the whole tree" without
+   has no reachable base commit the filters are skipped and everything runs. A
+   release tag (`<project>-v<semver>`, which `ci.yml` also listens to) runs every job
+   of the project its prefix names and of the shared packages that project uses, and
+   nothing else (REB-563): a production deploy is gated on the run of the tag itself,
+   since the trunk's run for the same commit may have skipped every job of that
+   project and still concluded green, and the tag's run never skips it. A nightly
+   `schedule` run on `main` (`17 3 * * *` UTC) earns the full run for a different
+   reason, buying back "the trunk proves the whole tree" without
    putting it on the critical path of a merge; it costs no separate mechanism, since a
    `schedule` event carries no `before` either and falls into the same fallback. The
    `changes` job also publishes its verdict as the `changed-paths` artifact, which is
@@ -110,16 +112,21 @@ nothing when you are not. Narrow to one project by passing its paths as argument
 **A check that stops running on a PR must appear in `preflight.json`.** Verification
 did not get cheaper, it moved; a heavy check in neither tier is a hole.
 
-**Two things about the Python suite, measured on 2026-09-09 and easy to undo by
-accident.** It is deselected by marker into two jobs that run side by side: the
-`slow` corpus is twelve minutes of PostgreSQL around two files, so merging it back
-into the main gate puts the sum back on the critical path. And the rest runs under
-`-n auto --dist loadfile`, which works because each xdist worker starts its own
+**Three things about the Python suite, measured on 2026-09-09 and 2026-09-28 and
+easy to undo by accident.** It is deselected by marker into the gate and the corpus,
+which run side by side: the `slow` corpus is minutes of PostgreSQL around two files,
+one job per file since REB-565 because each builds its own corpus and the two in a row
+were the trunk's longest job, so merging it back into the main gate puts the sum back
+on the critical path. The rest runs
+under `-n auto --dist loadfile`, which works because each xdist worker starts its own
 container from the session-scoped fixture; `loadfile` is what keeps a file's tests
 on one worker, as the module-scoped fixtures require. A test that only passes in
 alphabetical order fails here, which is the point: four did, and they were fixed
-rather than pinned. The corpus job stays serial on purpose, since every assertion
-in it is about which plan the planner picks and load changes the answer.
+rather than pinned. And on CI that rest is three jobs, not one: `ci.yml` calls the
+gate in a three-way matrix and each job runs every third file of the sorted list
+(`_python-gate.yml`'s `shard` input), because one job was 355s of a run whose next
+longest job was 174s (REB-561). The corpus job stays serial on purpose, since every
+assertion in it is about which plan the planner picks and load changes the answer.
 
 `ci` is the aggregate job and the only status check this repository should ever be
 asked to require, and since 2026-09-10 it is required: the ruleset "main: pull
@@ -267,8 +274,10 @@ the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
   (`docs/tracker.md` § The loop). The rest
   of the convention, from what a title says to which labels are legal, is in
   `docs/tracker.md`.
-- **Every project always carries a lead and both members.** A project created
-  without a lead or without both members is incomplete.
+- **Every project always carries a lead.** A project created without a lead is
+  incomplete. Membership beyond the lead is optional and not enforced
+  (`docs/design/DECISIONS.md`, 2026-09-28: this used to require both of us as
+  members too).
 - **The assignee is a claim, and a card that is not yours stays untouched.** Both of
   us run agents against the same board, so the only thing keeping two of them off
   the same work is that field: you may work a card assigned to the account your

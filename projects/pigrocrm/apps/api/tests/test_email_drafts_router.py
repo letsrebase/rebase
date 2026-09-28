@@ -124,6 +124,12 @@ def _set_state(session: Session, draft_id: str, state: str, **columns: Any) -> E
     return row
 
 
+def _as_read(row: EmailDraft) -> dict[str, str]:
+    """The body «Invia ora» posts for a row as it now stands (REB-419): the revision a
+    read of it would answer, so what these tests refuse is the state, never the revision."""
+    return {"updated_at": row.updated_at.isoformat()}
+
+
 def _connect(session: Session, user_id: Any) -> GoogleAccount:
     """A mailbox in the state a user reaches after consenting. The token bytes are opaque:
     nothing here decrypts them, and no test below gets far enough to try."""
@@ -220,7 +226,9 @@ def test_send_exists_as_an_endpoint(
     request is made -- `GoogleAccountService` holds no transport to make one with.
     """
     draft = _create(logged_in, customer_id)
-    response = logged_in.post(f"{DRAFTS}/{draft['id']}/send")
+    response = logged_in.post(
+        f"{DRAFTS}/{draft['id']}/send", json={"updated_at": draft["updated_at"]}
+    )
 
     assert response.status_code == 409, response.text
     assert "nessuna casella Google collegata" in response.json()["detail"]
@@ -240,7 +248,7 @@ def test_a_readonly_actor_cannot_send(
     """
     draft = _row_draft(api_session, customer_id)
 
-    response = readonly_client.post(f"{DRAFTS}/{draft.id}/send")
+    response = readonly_client.post(f"{DRAFTS}/{draft.id}/send", json=_as_read(draft))
 
     assert response.status_code == 403
     assert response.json()["code"] == "permission_denied"
@@ -263,9 +271,9 @@ def test_an_uncertain_draft_answers_409_and_the_body_says_verify_not_sent(
     a refusal claiming the mail is already gone would stop somebody verifying it."""
     _connect(api_session, admin_user.id)
     draft = _create(logged_in, customer_id)
-    _set_state(api_session, draft["id"], "incerto")
+    row = _set_state(api_session, draft["id"], "incerto")
 
-    response = logged_in.post(f"{DRAFTS}/{draft['id']}/send")
+    response = logged_in.post(f"{DRAFTS}/{draft['id']}/send", json=_as_read(row))
 
     assert response.status_code == 409, response.text
     detail = response.json()["detail"]
@@ -285,9 +293,9 @@ def test_a_sent_draft_is_refused_rather_than_sent_again(
     the caller. A second press answers 409 and reaches neither Gmail nor the claim."""
     _connect(api_session, admin_user.id)
     draft = _create(logged_in, customer_id)
-    _set_state(api_session, draft["id"], "inviato", sent_gmail_message_id="m-1")
+    row = _set_state(api_session, draft["id"], "inviato", sent_gmail_message_id="m-1")
 
-    response = logged_in.post(f"{DRAFTS}/{draft['id']}/send")
+    response = logged_in.post(f"{DRAFTS}/{draft['id']}/send", json=_as_read(row))
 
     assert response.status_code == 409
     assert "questa email è già stata inviata" in response.json()["detail"]
@@ -297,7 +305,76 @@ def test_sending_a_draft_that_does_not_exist_is_a_404(
     gmail_ready: TestClient, logged_in: TestClient, api_session: Session, admin_user: Any
 ) -> None:
     _connect(api_session, admin_user.id)
-    assert logged_in.post(f"{DRAFTS}/{uuid4()}/send").status_code == 404
+    response = logged_in.post(
+        f"{DRAFTS}/{uuid4()}/send", json={"updated_at": "2026-09-28T10:00:00+00:00"}
+    )
+    assert response.status_code == 404
+
+
+# --- the revision the person read (REB-419) ----------------------------------------------
+
+
+def test_a_send_carrying_an_older_revision_answers_409_and_sends_nothing(
+    gmail_ready: TestClient,
+    logged_in: TestClient,
+    customer_id: str,
+    api_session: Session,
+    admin_user: Any,
+) -> None:
+    """REB-419's acceptance test over HTTP. The person read the draft, somebody else's
+    `PATCH` committed, and «Invia ora» posts the revision that was on screen: the answer
+    is a 409 that says the draft changed, and nothing left. Nothing *can* have left
+    without opening a socket, which the repository-root guard refuses; the row says the
+    rest -- still `bozza`, never claimed, with the edit that nobody reviewed."""
+    _connect(api_session, admin_user.id)
+    read = _create(logged_in, customer_id)
+    edited = logged_in.patch(
+        f"{DRAFTS}/{read['id']}", json={"body_markdown": "Gentile Ada,\n\naltro testo."}
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["updated_at"] != read["updated_at"]
+
+    response = logged_in.post(
+        f"{DRAFTS}/{read['id']}/send", json={"updated_at": read["updated_at"]}
+    )
+
+    assert response.status_code == 409, response.text
+    problem = response.json()
+    assert problem["code"] == "conflict"
+    assert problem["draft_changed"] is True
+    assert "cambiata" in problem["reason"]
+    # No state to patch onto the card: the draft did not move, its text did.
+    assert "send_state" not in problem
+    row = api_session.get(EmailDraft, read["id"])
+    assert row is not None
+    api_session.refresh(row)
+    assert row.send_state == "bozza"
+    assert row.send_attempted_at is None
+    assert row.google_account_id is None
+
+
+def test_a_send_that_names_no_revision_is_refused(
+    gmail_ready: TestClient,
+    logged_in: TestClient,
+    customer_id: str,
+    api_session: Session,
+    admin_user: Any,
+) -> None:
+    """Required, not optional: a send allowed to leave the revision out is a send allowed
+    to skip the check. Refused where FastAPI parses the body, so the service never runs."""
+    _connect(api_session, admin_user.id)
+    draft = _create(logged_in, customer_id)
+
+    assert logged_in.post(f"{DRAFTS}/{draft['id']}/send").status_code == 422
+    naive = logged_in.post(
+        f"{DRAFTS}/{draft['id']}/send", json={"updated_at": "2026-09-28T10:00:00"}
+    )
+    assert naive.status_code == 422
+    row = api_session.get(EmailDraft, draft["id"])
+    assert row is not None
+    api_session.refresh(row)
+    assert row.send_state == "bozza"
+    assert row.send_attempted_at is None
 
 
 # --- resolving an outcome nobody knows -------------------------------------------------
