@@ -47,7 +47,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select, text, update
+from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.orm import Session
 
 from rebase_core.campaigns.actions import done_at
@@ -117,7 +117,6 @@ def run_tick(
                 except Exception as exc:  # one bad campaign must not wedge the rest (R14)
                     session.rollback()
                     _log.error("campaign %s failed this tick: %s", campaign_id, type(exc).__name__)
-                    _stall(session, campaign_id, STALLED_LIST, clock())
             try:
                 result.stampate = stamp_outcomes(session, now=clock())
             except Exception as exc:  # the outcome must never stop a send (R14)
@@ -190,11 +189,19 @@ def _send(
 ) -> None:
     # Read once per pass: rebuilding a state's list is a scan of every card. Who opted
     # out, bounced or was reached by another campaign is read again per row, below.
-    members = (
-        {c.email for c in candidates(session, campaign)}
-        if campaign.fonte in ("stato", "filtri")
-        else None
-    )
+    try:
+        members = (
+            {c.email for c in candidates(session, campaign)}
+            if campaign.fonte in ("stato", "filtri")
+            else None
+        )
+    except Exception:
+        # The list itself cannot be read (corrupt stored `filtri`, say): no later pass
+        # reads it either, so the campaign says so (REB-524). Only this read records
+        # it; anything else that escapes a campaign is the caller's to log (R14).
+        session.rollback()
+        _stall(session, campaign.id, STALLED_LIST, clock())
+        raise
     while True:
         row = session.scalars(
             select(CampaignRecipient)
@@ -320,14 +327,17 @@ def _finish(session: Session, campaign_id: UUID, clock: Callable[[], datetime]) 
 def _stall(session: Session, campaign_id: UUID, motivo: str, now: datetime) -> None:
     """Stores why this campaign's send stopped (REB-524), only while it is still
     `in_invio`: a `cancel()` that landed meanwhile stands, and says nothing of a stop.
-    A conditional `UPDATE` rather than a write through the ORM object, whose `stato`
+    `fermo_at` keeps the FIRST stop, since every pass retries and a send stopped for
+    hours must not read as stopped a minute ago; the reason is the latest pass's. A
+    conditional `UPDATE` rather than a write through the ORM object, whose `stato`
     this pass read at the claim and may be stale by now. A failure here is logged by
     type and never stops the pass."""
     try:
         session.execute(
             update(Campaign)
             .where(Campaign.id == campaign_id, Campaign.stato == "in_invio")
-            .values(fermo_at=now, fermo_motivo=motivo)
+            .values(fermo_at=func.coalesce(Campaign.fermo_at, now), fermo_motivo=motivo)
+            .execution_options(synchronize_session="fetch")
         )
         session.commit()
     except Exception as exc:  # the stop's note must never stop the pass (R14)

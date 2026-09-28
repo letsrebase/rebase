@@ -665,3 +665,34 @@ def test_a_campaign_past_its_draft_is_never_deleted(
     clean.expire_all()
     assert clean.get(Campaign, campaign.id) is not None
     assert clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).count() == before
+
+
+def test_a_delete_from_a_session_holding_a_stale_draft_is_refused(
+    clean: Session,  # noqa: F811  (fixture)
+    hub_engine: Engine,
+) -> None:
+    """CodeRabbit on #473: session A still holds the campaign as a `bozza` in its identity
+    map while session B schedules it and commits. `SELECT ... FOR UPDATE` alone does not
+    overwrite an object already loaded, so A's delete used to act on the stale `bozza`
+    and `ON DELETE CASCADE` took B's frozen list with it. The locked read repopulates the
+    row: the delete is refused and the recipients stay."""
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    held = clean.get(Campaign, campaign.id)
+    assert held is not None and held.stato == "bozza"
+
+    other = session_factory(hub_engine)()
+    try:
+        CampaignService(other, SETTINGS, clock=Clock(clock.at)).schedule(
+            campaign.id, ScheduleRequest()
+        )
+    finally:
+        other.close()
+    assert held.stato == "bozza"  # A's copy is stale on purpose
+
+    with pytest.raises(InvalidState, match=ONLY_A_DRAFT_IS_DELETED):
+        service.delete(campaign.id)
+    clean.expire_all()
+    assert clean.get(Campaign, campaign.id).stato == "programmata"  # type: ignore[union-attr]
+    assert clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).count() == 2

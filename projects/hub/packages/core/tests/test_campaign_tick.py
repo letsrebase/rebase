@@ -603,3 +603,89 @@ def test_a_card_turned_down_after_freezing_is_skipped_with_its_reason(
     assert [m.mail.to for m in recording.sent] == ["b@studio.it"]
     skipped = rows(clean, campaign)["a@studio.it"]
     assert (skipped.stato, skipped.motivo) == ("saltata", REASON_DISCARDED)
+
+
+def test_a_send_stalled_for_many_passes_keeps_the_first_stop(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """Greptile on #473: every minute's retry rewrote `fermo_at`, so a send stopped for
+    hours read as stopped a minute ago. The first stop stands; the reason follows the
+    latest pass."""
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it")
+    refused = RecordingCampaignSender([SendOutcome("fermati", dettaglio="Resend 401")] * 2)
+    run_tick(clean, refused, SETTINGS, clock=clock, pause=NO_PAUSE)
+    first = clock.at
+    clock.at += timedelta(minutes=1)
+    run_tick(clean, refused, SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert len(refused.sent) == 2
+    clean.expire_all()
+    stopped = clean.get(Campaign, campaign.id)
+    assert stopped is not None
+    assert (stopped.fermo_at, stopped.fermo_motivo) == (first, STALLED_KEY)
+
+
+def test_a_new_reason_replaces_the_old_one_but_not_the_first_stop(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    clock = Clock(NOW)
+    campaign = scheduled_filtri(clean, clock, "a@studio.it")
+    run_tick(
+        clean,
+        RecordingCampaignSender([SendOutcome("fermati", dettaglio="Resend 403")]),
+        SETTINGS,
+        clock=clock,
+        pause=NO_PAUSE,
+    )
+    first = clock.at
+    clean.execute(
+        update(Campaign).where(Campaign.id == campaign.id).values(filtri={"lista": "boom"})
+    )
+    clean.commit()
+    clock.at += timedelta(minutes=1)
+    run_tick(clean, RecordingCampaignSender(), SETTINGS, clock=clock, pause=NO_PAUSE)
+    clean.expire_all()
+    stopped = clean.get(Campaign, campaign.id)
+    assert stopped is not None
+    assert (stopped.fermo_at, stopped.fermo_motivo) == (first, STALLED_LIST)
+
+
+def test_a_failure_after_the_list_is_read_does_not_say_the_list_is_unreadable(
+    clean: Session,  # noqa: F811  (fixture)
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Greptile and CodeRabbit on #473: «la lista non si legge» was written for any
+    exception out of the campaign's send, `_finish` and the sender included. Only the
+    list's own read records it; anything else is logged and rolled back, as before."""
+    clock = Clock(NOW)
+    finishing = scheduled(clean, clock, "a@studio.it")
+
+    def broken_finish(*_args: object) -> None:
+        raise RuntimeError("commit lost")
+
+    monkeypatch.setattr("rebase_core.campaigns.tick._finish", broken_finish)
+    run_tick(clean, RecordingCampaignSender(), SETTINGS, clock=clock, pause=NO_PAUSE)
+    clean.expire_all()
+    after_finish = clean.get(Campaign, finishing.id)
+    assert after_finish is not None
+    assert (after_finish.stato, after_finish.fermo_at, after_finish.fermo_motivo) == (
+        "in_invio",
+        None,
+        None,
+    )
+
+
+def test_a_sender_that_raises_does_not_say_the_list_is_unreadable(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    class Exploding(RecordingCampaignSender):
+        def send(self, rendered: object, idempotency_key: str) -> SendOutcome:  # type: ignore[override]
+            raise RuntimeError("socket closed")
+
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it")
+    run_tick(clean, Exploding(), SETTINGS, clock=clock, pause=NO_PAUSE)
+    clean.expire_all()
+    still = clean.get(Campaign, campaign.id)
+    assert still is not None
+    assert (still.stato, still.fermo_motivo) == ("in_invio", None)

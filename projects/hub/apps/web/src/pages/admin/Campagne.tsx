@@ -4,7 +4,7 @@ import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, ApiError, type CampaignListItem } from '@/lib/api'
-import { campaignStateLabel, isStalled, outcomeLine } from '@/lib/campaigns'
+import { campaignStateLabel, isStalled, listRefetchEvery, outcomeLine } from '@/lib/campaigns'
 import { formatDateTime } from '@/lib/format'
 import { ConfirmAction } from './Campagna'
 import { Empty, Header } from './lists'
@@ -43,9 +43,14 @@ function DeleteDraft({ id }: { id: string }) {
 }
 
 /** «Campagne» (P-REB-41): every campaign, newest first, with what left and what came
- *  back, «Invio fermo» and its reason on a stopped send, «Elimina» on a draft. */
+ *  back, «Invio fermo» and its reason on a stopped send, «Elimina» on a draft. It
+ *  rereads itself every 30 s while a campaign is scheduled or sending. */
 export function AdminCampagne() {
-  const list = useQuery({ queryKey: ['campaigns'], queryFn: admin.campaigns })
+  const list = useQuery({
+    queryKey: ['campaigns'],
+    queryFn: admin.campaigns,
+    refetchInterval: (query) => listRefetchEvery(query.state.data?.items ?? []),
+  })
   const items = list.data?.items ?? []
   return (
     <div>

@@ -10,6 +10,7 @@ import {
   campaignStateLabel,
   defaultSchedule,
   isStalled,
+  listRefetchEvery,
   outcomeLine,
   peopleLabel,
   personalise,
@@ -156,6 +157,15 @@ describe('a stopped send (REB-524)', () => {
     expect(stallLine(moving)).toBeNull()
     expect(isStalled({ ...stopped, stato: 'annullata' })).toBe(false)
     expect(campaignStateLabel({ ...stopped, stato: 'annullata' })).toBe('Annullata')
+  })
+})
+
+describe('listRefetchEvery', () => {
+  it('polls «Campagne» every 30 s while a campaign is scheduled or sending, and never otherwise', () => {
+    expect(listRefetchEvery([{ stato: 'inviata' }, { stato: 'in_invio' }])).toBe(30_000)
+    expect(listRefetchEvery([{ stato: 'programmata' }])).toBe(30_000)
+    expect(listRefetchEvery([{ stato: 'bozza' }, { stato: 'inviata' }, { stato: 'annullata' }])).toBe(false)
+    expect(listRefetchEvery([])).toBe(false)
   })
 })
 

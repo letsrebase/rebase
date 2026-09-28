@@ -463,8 +463,14 @@ class CampaignService:
         R12), so a second concurrent call blocks until the first commits, then sees the
         state the first left behind and raises the ordinary `InvalidState` sentence
         instead of racing into a write (`ck_campaign_recipients_...`'s unique index, or
-        two mails to the same person)."""
-        campaign = self.session.get(Campaign, campaign_id, with_for_update=True)
+        two mails to the same person). `populate_existing`: a `FOR UPDATE` read does not
+        overwrite an object this session already holds, so without it the check below
+        would run on the stale state the lock was meant to refresh (CodeRabbit on #473:
+        a `delete` of a `bozza` another session had just scheduled, whose cascade then
+        took the frozen list with it)."""
+        campaign = self.session.get(
+            Campaign, campaign_id, with_for_update=True, populate_existing=True
+        )
         if campaign is None:
             raise NotFound(ENTITY, campaign_id)
         return campaign

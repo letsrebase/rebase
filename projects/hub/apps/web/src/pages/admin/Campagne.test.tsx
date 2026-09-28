@@ -46,7 +46,10 @@ function mount() {
   )
 }
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 describe('«Campagne»', () => {
   it('lists each campaign with its state and numbers, and links to it', async () => {
@@ -103,5 +106,36 @@ describe('«Campagne» since REB-524', () => {
     expect(screen.getByRole('link', { name: 'Manca il CV' })).toBeInTheDocument()
     const call = fetch.mock.calls.find(([, init]) => init?.method === 'DELETE')!
     expect(String(call[0])).toMatch(/\/api\/hub\/campaigns\/c2$/)
+  })
+})
+
+describe('«Campagne» rereads itself while a send is under way (REB-524)', () => {
+  const list = (items: unknown[]) =>
+    new Response(JSON.stringify({ items }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+
+  it('shows a send that stops while the admin is on the page, without a reload', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const sending = { ...ITEM, stato: 'in_invio', inviata_at: null }
+    const stopped = { ...sending, fermo_at: '2026-09-25T07:31:00Z', fermo_motivo: 'Resend rifiuta la chiave' }
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(list([sending]))
+      .mockResolvedValue(list([stopped]))
+    mount()
+    const row = (await screen.findByRole('link', { name: 'Manca il CV' })).closest('tr')!
+    expect(within(row).getByText('In invio')).toBeInTheDocument()
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(await screen.findByText('Invio fermo')).toBeInTheDocument()
+    expect(screen.getByText('Resend rifiuta la chiave')).toBeInTheDocument()
+    expect(fetch.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('stays still when nothing is scheduled or sending', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => list([ITEM]))
+    mount()
+    await screen.findByRole('link', { name: 'Manca il CV' })
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })

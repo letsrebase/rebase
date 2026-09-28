@@ -144,6 +144,15 @@ export function refetchEvery(campagna: Pick<Campaign, 'stato' | 'inviata_at'>, n
   return false
 }
 
+const LIST_POLL_MS = 30_000
+
+/** How often «Campagne» rereads itself (REB-524): while any campaign is scheduled or
+ *  sending, so a send that stops, or ends, shows without a reload; otherwise never.
+ *  Slower than the campaign page's `refetchEvery`, since it reads every campaign. */
+export function listRefetchEvery(items: readonly Pick<Campaign, 'stato'>[]): number | false {
+  return items.some((item) => item.stato === 'programmata' || item.stato === 'in_invio') ? LIST_POLL_MS : false
+}
+
 /** The campaign page's figure for the action, once done. */
 export const AZIONE_FATTA_LABELS: Record<CampaignAzione, string> = {
   entrato: 'Sono entrati',
