@@ -195,6 +195,35 @@ describe('DocumentsTab', () => {
     expect(alert).not.toHaveTextContent('document_blob')
   })
 
+  /** A 404 is not always a lost `document_blob`: the row's own document can be gone
+   *  too -- archived or deleted by someone else after this list loaded (REB-388 fix
+   *  round 2, CodeRabbit). «il file archiviato non esiste più» would be a lie there --
+   *  the file was never the problem -- so this case reads differently and points at a
+   *  refresh instead of naming a file that is still on disk. */
+  it('turns a 404 on a gone document into a sentence that says to refresh, not that the file is unavailable', async () => {
+    mockGet.mockReturnValue(ok({ items: [DOCUMENT], next_cursor: null }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: 'about:blank',
+          title: 'Not Found',
+          status: 404,
+          code: 'not_found',
+          detail: 'document doc-1 not found',
+          entity: 'document',
+          identifier: 'doc-1',
+        }),
+        { status: 404, headers: { 'content-type': 'application/problem+json' } },
+      ),
+    )
+    render(<DocumentsTab owner={{ customerId: 'c-1' }} />, { wrapper })
+    await openRowMenu('Offerta 2026-01')
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Scarica' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Il file «Offerta 2026-01» non esiste più: aggiorna la pagina.')
+    expect(alert).not.toHaveTextContent('document doc-1')
+  })
+
   it('archives a document through the delete endpoint', async () => {
     mockGet.mockReturnValue(ok({ items: [DOCUMENT], next_cursor: null }))
     mockDelete.mockReturnValue(ok(undefined))

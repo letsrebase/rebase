@@ -150,6 +150,36 @@ describe('VersionHistory', () => {
     expect(alert).not.toHaveTextContent('document_blob')
   })
 
+  /** A 404 is not always a lost `document_blob`: the version row itself asked for can
+   *  be gone (`_resolve_version`, entity `document_version` -- REB-388 fix round 2,
+   *  CodeRabbit). «il file archiviato non esiste più» would be a lie there -- no file
+   *  was ever found to lose -- so this reads differently and points at a refresh. */
+  it('turns a 404 on a gone version into a sentence that says to refresh, not that the file is unavailable', async () => {
+    mockGet.mockReturnValue(ok(VERSIONS))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: 'about:blank',
+          title: 'Not Found',
+          status: 404,
+          code: 'not_found',
+          detail: 'document_version doc-1#2 not found',
+          entity: 'document_version',
+          identifier: 'doc-1#2',
+        }),
+        { status: 404, headers: { 'content-type': 'application/problem+json' } },
+      ),
+    )
+    render(<VersionHistory documentId="doc-1" documentTitle="Contratto Rossi" />, { wrapper })
+    await openRowMenu(2)
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Scarica' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(
+      'Il file «Contratto Rossi (v2)» non esiste più: aggiorna la pagina.',
+    )
+    expect(alert).not.toHaveTextContent('document_version')
+  })
+
   it('posts a regeneration for the version it was asked about', async () => {
     mockGet.mockReturnValue(ok(VERSIONS))
     mockPost.mockReturnValue(ok({ ...VERSIONS[0], numero: 3 }))

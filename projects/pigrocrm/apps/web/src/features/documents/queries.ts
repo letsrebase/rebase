@@ -330,18 +330,33 @@ export async function downloadDocument(documentId: string, numero?: number): Pro
 
 /**
  * What `DocumentsTab` and `VersionHistory` show for a failed `downloadDocument`. A 404
- * means the document, the version asked for, or its stored file is gone -- the server's
- * own `detail` for any of them is a log line (`document_blob <key> not found`) that must
- * never reach the screen, the same fact `InvoiceActions` and `InvoicePdfPreview` act on
- * for the invoice pages (REB-168), recognised here through the same `isMissingFile`
- * rather than a second 404 check. `fileName` is the name shown in the row the person
- * clicked -- the document's `titolo`, or that title with its version number -- so the
- * banner names what they were after instead of the identifier the server logged. Any
+ * means one of three different things gone, each `NotFound` on the server
+ * (`DocumentService`): the document itself (`_require`, entity `document` -- someone
+ * else archived or deleted it after the list loaded), the version asked for
+ * (`_resolve_version`, entity `document_version`), or the bytes stored under its key
+ * (`storage.get`, entity `document_blob`). The server's own `detail` for any of them is
+ * a log line (`document_blob <key> not found`) that must never reach the screen, the
+ * same fact `InvoiceActions` and `InvoicePdfPreview` act on for the invoice pages
+ * (REB-168), recognised here through the same `isMissingFile` rather than a second 404
+ * check.
+ *
+ * The two halves of the sentence differ because the two facts differ: a lost
+ * `document_blob` is a file this exact row still names correctly, gone from storage --
+ * "not available" -- while a missing `document`/`document_version` means the row itself
+ * is stale, describing something that no longer exists at all, so refreshing is the
+ * honest next step rather than a retry. `problem.entity` is what `toProblem` carries
+ * through unchanged from the server's problem document (`domain_error_handler` spreads
+ * `NotFound`'s `entity`/`identifier` at the top level), so this reads it rather than
+ * guessing from `fileName`. `fileName` is the name shown in the row the person clicked
+ * -- the document's `titolo`, or that title with its version number -- so either
+ * sentence names what they were after instead of the identifier the server logged. Any
  * other failure keeps the server's own `detail`, as every other action on these two
  * tabs does.
  */
 export function documentDownloadErrorMessage(error: unknown, fileName: string): string {
   const problem = toProblem(error)
   if (!isMissingFile(problem)) return problem.detail
-  return `Il file «${fileName}» non è disponibile: il file archiviato non esiste più.`
+  return problem.entity === 'document_blob'
+    ? `Il file «${fileName}» non è disponibile: il file archiviato non esiste più.`
+    : `Il file «${fileName}» non esiste più: aggiorna la pagina.`
 }
