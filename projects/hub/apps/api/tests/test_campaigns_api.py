@@ -290,3 +290,26 @@ def test_riscrivi_opens_a_lista_draft_and_refuses_a_draft(
     detail = client.get(f"/api/hub/campaigns/{draft_id}").json()
     assert detail["conteggi"]["azioni"] == 0
     assert detail["destinatari"][0]["entrato_dalla_mail"] is False
+
+
+def test_a_null_on_a_not_nullable_field_is_422_not_500(
+    client: TestClient,
+    tidy: Session,  # noqa: F811  (fixture)
+    sender: RecordingSender,
+) -> None:
+    """Part 1 (REB-550): `fonte`, `azione` and `bottone_meta` are `NOT NULL` in
+    `models.py`'s `Campaign`. An explicit `null` for one of them used to reach
+    `CampaignService.update`'s blanket `setattr` and raise an `IntegrityError`, a 500;
+    `CampaignPatch` now refuses it before the body ever reaches the service, and its
+    `field_validator` (round 3) puts the field's own name last in `loc`, the way the
+    web's `ApiError.fields` reads it (`detail[].loc[-1]`, `apps/web/src/lib/api.ts`)."""
+    login_admin(client, sender, tidy)
+    campaign_id = a_draft(client)
+    for field in ("fonte", "azione", "bottone_meta"):
+        answer = client.patch(f"/api/hub/campaigns/{campaign_id}", json={field: None})
+        assert answer.status_code == 422, answer.text
+        detail = answer.json()["detail"]
+        assert detail[0]["loc"][-1] == field
+        assert "il campo non può essere svuotato" in detail[0]["msg"]
+    unchanged = client.get(f"/api/hub/campaigns/{campaign_id}").json()
+    assert unchanged["campagna"]["fonte"] == "stato"
