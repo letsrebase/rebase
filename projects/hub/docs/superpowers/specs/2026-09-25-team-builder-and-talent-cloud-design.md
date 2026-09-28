@@ -433,7 +433,11 @@ the catalogue never shows a card of a CV that is gone) and writes `error` with t
 failed CV's hash, so the same CV is not retried and paid for until it changes; a
 refusal, a bad shape or a provider error on a replaced CV retires the card of the old
 CV; only a provider error leaves no hash, so the next run (the `cards` service, within
-the hour) retries it. It runs
+the hour) retries it. A valid card whose Italian gives the person's gender away (a
+feminine role, participle or pronoun, from a short list) is asked for once more in the
+same conversation with a correction, the tokens of both calls added up, and a second
+gendered answer fails as `gendered`, «La scheda lascia intuire il genere.», recorded like
+a card that names the person (REB-574). It runs
 after the response, in a session of its own (`SessionOpenerDep`, as the Documenso
 webhook's follow-up does), where a CV arrives or changes: the public wizard
 (`FreelancerService.apply`) and the member's `replace_cv`; `FreelancerService.clear_cv`
