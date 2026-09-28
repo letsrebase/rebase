@@ -61,13 +61,13 @@ const STATUS_LABEL: Record<string, string> = {
  * is the viewer's own (`google_drive_accounts.user_id`), and connecting, disconnecting
  * and the read roots all act on that row alone, under `require_write`: a collaboratore
  * gets them as an admin does. The write folder is different. `DriveRepository.
- * storage_account` picks the space's one place for generated documents from *every*
- * user's row -- the most recently updated `active` one that names a folder -- so a
- * folder a collaboratore chose would receive every document the space generates, an
- * automation's included. That field is therefore an admin's: a collaboratore does not
- * see it, is told who chooses it, and their «Salva» omits `storage_folder_id`, which the
- * `PATCH` reads as "leave it alone" (`DriveRootsUpdate`). The service itself still
- * accepts that field from any writer; REB-555 closes that there.
+ * storage_account` picks the space's one place for generated documents from the rows of
+ * the users who are admins now, so it is the space's setting, and `set_roots` refuses
+ * `storage_folder_id` from anyone else (`require_admin`). A collaboratore therefore does
+ * not see that field, is told who chooses it, and their «Salva» omits
+ * `storage_folder_id`, which the `PATCH` reads as "leave it alone" (`DriveRootsUpdate`).
+ * Their own row never supplies the space's storage, so their disconnect confirmation has
+ * no write folder to warn about.
  */
 export function DrivePanel() {
   const health = useDriveHealth()

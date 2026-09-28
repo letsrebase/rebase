@@ -587,6 +587,50 @@ def test_an_explicit_null_storage_folder_id_clears_it(
     assert response.json()["storage_folder_id"] is None
 
 
+@pytest.mark.parametrize("storage_folder_id", [STORAGE_ID, None])
+def test_a_collaboratore_cannot_name_the_write_folder(
+    logged_in: TestClient,
+    drive_ready: TestClient,
+    api_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    storage_folder_id: str | None,
+) -> None:
+    """REB-457: the write folder is the space's, so naming it is an admin's act. A
+    collaboratore's `PATCH` that names it answers 403 before anything is verified or
+    written, the read roots it carried included."""
+    collab = _second_actor(logged_in, "collaboratore")
+    user_id = collab.get("/api/auth/me").json()["id"]
+    account = _connected_account(api_session, user_id, storage_folder_id=OTHER_ROOT_ID)
+    account.root_folder_ids = [ROOT_ID]
+    api_session.flush()
+    _fail_if_drive_is_called(monkeypatch)
+
+    response = collab.patch(
+        "/api/drive/account/roots",
+        json={"root_folder_ids": [OTHER_ROOT_ID], "storage_folder_id": storage_folder_id},
+    )
+
+    assert response.status_code == 403, response.text
+    assert response.json()["code"] == "permission_denied"
+    api_session.refresh(account)
+    assert account.root_folder_ids == [ROOT_ID]
+    assert account.storage_folder_id == OTHER_ROOT_ID
+
+
+def test_a_collaboratore_still_sets_their_own_read_roots(
+    logged_in: TestClient, drive_ready: TestClient, api_session: Session
+) -> None:
+    """What their Drive page sends: the read roots and no write folder."""
+    collab = _second_actor(logged_in, "collaboratore")
+    user_id = collab.get("/api/auth/me").json()["id"]
+    _connected_account(api_session, user_id)
+
+    response = collab.patch("/api/drive/account/roots", json={"root_folder_ids": [ROOT_ID]})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["root_folder_ids"] == [ROOT_ID]
+
+
 # --- one token-client cache for both Google credentials --------------------------------
 
 
