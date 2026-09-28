@@ -43,8 +43,11 @@ _BETAS = ["server-side-fallback-2026-07-01"]
 _TIMEOUT_SECONDS = 40.0
 _MAX_RETRIES = 1
 
-# Inference stays in the European Union, which the privacy page states (spec § 6).
-_INFERENCE_GEO = "eu"
+# The API accepts only "global" or "us" for `inference_geo`; "eu" answers a 400
+# ("must be one of ['global', 'us']", proven on the preview 2026-09-28). Keeping
+# inference inside the European Union would need Vertex AI or Bedrock in an EU
+# region instead of this SDK, which is a separate decision, not made here.
+_INFERENCE_GEO = "global"
 
 
 class LlmRequest(BaseModel):

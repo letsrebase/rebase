@@ -181,7 +181,7 @@ def test_complete_sends_the_documented_request() -> None:
             },
             "system": REQUEST.system,
             "messages": REQUEST.messages,
-            "inference_geo": "eu",
+            "inference_geo": "global",
         }
     ]
 
@@ -291,10 +291,10 @@ def test_recording_call_keeps_requests() -> None:
     assert call.requests == [REQUEST, REQUEST]
 
 
-def test_request_carries_eu_geo_and_leaves_the_timeout_to_the_client() -> None:
-    """Inference stays in the EU (spec § 6). The timeout is not the request's: the
-    client's holds for each attempt, the retry's included
-    (`test_the_sdk_client_is_built_on_first_use`)."""
+def test_request_carries_global_geo_and_leaves_the_timeout_to_the_client() -> None:
+    """The API only accepts "global" or "us" for `inference_geo` ("eu" answers a 400).
+    The timeout is not the request's: the client's holds for each attempt, the
+    retry's included (`test_the_sdk_client_is_built_on_first_use`)."""
     message = _Message(
         content=[_Block("text", "Ecco la scheda.")],
         stop_reason="end_turn",
@@ -309,7 +309,7 @@ def test_request_carries_eu_geo_and_leaves_the_timeout_to_the_client() -> None:
 
     [kwargs] = stub.beta.messages.calls
     assert "timeout" not in kwargs
-    assert kwargs["inference_geo"] == "eu"
+    assert kwargs["inference_geo"] == "global"
 
 
 def test_input_tokens_count_the_cache_writes() -> None:
