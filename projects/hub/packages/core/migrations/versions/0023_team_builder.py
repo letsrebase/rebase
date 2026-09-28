@@ -18,10 +18,6 @@ Written as `0022` revising `0019`, then re-pointed at `0020` when the campaigns 
 merged into `main`, then renamed `0023` and re-pointed at `0021` when the hours-report
 branch (`0021_match_pigro_link`, on `0020`) merged first (C9): two migrations on one
 parent would make two heads, and `alembic upgrade head` refuse at the API's boot.
-The talent cloud's branch then moved the grants' partial unique index from `(user_id)`
-to `(user_id, company_id)` (REB-518) in this file, since 0023 had reached no production
-database yet (hub-v0.42.0 predates it); the preview, stamped 0023 with the first index,
-was given the second by hand when that branch merged.
 
 Every statement is conditional (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT
 EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`), the discipline migration 0001's
@@ -29,7 +25,7 @@ docstring states for this package and 0017's repeats for a set of brand new tabl
 retried deploy must not error on a table or a column the previous attempt already
 added. The check constraints are declared inside each `CREATE TABLE`, so they arrive
 with their table and need no `pg_constraint` guard of their own; the two partial unique
-indexes (`uq_team_requests_proposal_id`, `uq_talent_cloud_grants_user_company_live`) are
+indexes (`uq_team_requests_proposal_id`, `uq_talent_cloud_grants_user_id_live`) are
 `CREATE UNIQUE INDEX IF NOT EXISTS ... WHERE ...`, which Postgres accepts the same way
 as any other index.
 """
@@ -126,10 +122,8 @@ _INDEXES = (
     "ON team_request_talents (request_id, freelancer_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_team_request_talents_token_hash "
     "ON team_request_talents (token_hash)",
-    # One live grant per person and company (REB-518, spec § 2): a person behind two
-    # companies holds two, and a second «Apri» on the same request finds the first.
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_talent_cloud_grants_user_company_live "
-    "ON talent_cloud_grants (user_id, company_id) WHERE revoked_at IS NULL",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_talent_cloud_grants_user_id_live "
+    "ON talent_cloud_grants (user_id) WHERE revoked_at IS NULL",
 )
 
 _FREELANCER_COLUMNS = (
