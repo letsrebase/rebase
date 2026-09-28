@@ -418,6 +418,9 @@ did nothing.
    - The full campaign page and «Riscrivi a chi non ha fatto niente».
    - Two read-only hub MCP tools, `list_campagne` and `get_campagna`, so an agent
      reports without a terminal.
+
+   Phase 2 shipped as the milestone «Read the outcome» (milestone PR), plan
+   `projects/hub/docs/superpowers/plans/2026-09-26-campaigns-phase-2-outcome.md`.
 3. **PigroCRM.**
    - `GET /api/tenants/usage` in the CRM, its own card with `area:api`.
    - The `pigro_vuoto` state, the `pigro` destination and action f.
