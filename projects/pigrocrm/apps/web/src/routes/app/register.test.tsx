@@ -49,6 +49,19 @@ async function throughStepOne(user: ReturnType<typeof userEvent.setup>, email = 
   await user.click(screen.getByRole('button', { name: 'Avanti' }))
 }
 
+/** The address probe (`GET /api/tenants/{slug}/disponibile`, `register.tsx`'s own
+ *  effect) debounces 350ms before it even fires, and this suite runs on real timers --
+ *  nothing here fakes the clock -- so every assertion below is already waiting out that
+ *  debounce before the fetch that answers it has even started. `findByRole`/`waitFor`
+ *  already wait on the right thing (the status text or the button state the probe's
+ *  answer produces): there is no earlier signal to wait on instead. What is not enough
+ *  is the default one-second `asyncUtilTimeout` stacked on top of a real 350ms timer:
+ *  on a loaded full `pnpm --filter web test` run this shape lost the race, the same
+ *  headroom `vite.config.ts`'s own `testTimeout: 20_000` comment already describes for
+ *  the suite as a whole. Matching that headroom here, for every wait that depends on
+ *  this probe settling. */
+const PROBE_TIMEOUT = { timeout: 10_000 }
+
 beforeEach(() => {
   GET.mockReset()
   POST.mockReset()
@@ -67,8 +80,9 @@ describe('the signup wizard', () => {
     expect(POST).toHaveBeenCalledWith('/api/tenants/member', { body: { email: 'ada@studio.it' } })
     expect(await screen.findByText(/Sei dei nostri: ciao Ada/)).toBeInTheDocument()
     expect(screen.getByLabelText('Come si chiama il tuo spazio?')).toHaveValue('Ada Lovelace')
-    await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(/\/ada-lovelace è libero/),
+    await waitFor(
+      () => expect(screen.getByRole('status')).toHaveTextContent(/\/ada-lovelace è libero/),
+      PROBE_TIMEOUT,
     )
     expect(GET).toHaveBeenCalledWith('/api/tenants/{slug}/disponibile', {
       params: { path: { slug: 'ada-lovelace' } },
@@ -127,8 +141,9 @@ describe('the signup wizard', () => {
     render(<SignupPage go={go} />)
     await throughStepOne(user)
     await screen.findByLabelText('Come si chiama il tuo spazio?')
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
+    await waitFor(
+      () => expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
+      PROBE_TIMEOUT,
     )
     await user.click(screen.getByRole('button', { name: 'Crea lo spazio' }))
     await waitFor(() =>
@@ -153,8 +168,9 @@ describe('the signup wizard', () => {
     render(<SignupPage />)
     await throughStepOne(user, 'bob@studio.it')
     await user.type(await screen.findByLabelText('Come si chiama il tuo spazio?'), 'Ada Lovelace')
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
+    await waitFor(
+      () => expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
+      PROBE_TIMEOUT,
     )
     await user.click(screen.getByRole('button', { name: 'Crea lo spazio' }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/già in uso/))
@@ -196,19 +212,22 @@ describe('the signup wizard', () => {
     render(<SignupPage />)
     await throughStepOne(user, 'bob@studio.it')
     await user.type(await screen.findByLabelText('Come si chiama il tuo spazio?'), 'Ada Lovelace')
-    expect(await screen.findByRole('alert')).toHaveTextContent(/Troppe richieste/)
+    expect(await screen.findByRole('alert', {}, PROBE_TIMEOUT)).toHaveTextContent(
+      /Troppe richieste/,
+    )
     // Honestly disabled -- no fresh "free" answer yet -- but never stuck forever: the
     // "checking" state was dropped back to idle, so a further edit asks again on its
     // own, later budget rather than the wizard being dead-ended by one throttled probe.
     expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeDisabled()
     await user.type(screen.getByLabelText('Come si chiama il tuo spazio?'), '2')
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
+    await waitFor(
+      () => expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
+      PROBE_TIMEOUT,
     )
   })
 
   it('lets the person submit anyway when the availability probe throws (REB-236)', async () => {
-    answers({ '/api/tenants/member': NOBODY })
+    answers({ '/api/tenants/member': NOBODY, '/api/tenants/': { slug: 'ada-lovelace' } })
     GET.mockRejectedValue(new Error('network down'))
     const user = userEvent.setup()
     render(<SignupPage />)
@@ -218,16 +237,27 @@ describe('the signup wizard', () => {
     // hang forever, alongside the address it is about, and the button is not held
     // hostage by an answer that never came: POST /api/tenants/ validates the slug
     // again on the server.
-    await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(
-        /\/ada-lovelace: Si è verificato un errore imprevisto/,
-      ),
+    await waitFor(
+      () =>
+        expect(screen.getByRole('status')).toHaveTextContent(
+          /\/ada-lovelace: Si è verificato un errore imprevisto/,
+        ),
+      PROBE_TIMEOUT,
     )
-    expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled()
+    const button = screen.getByRole('button', { name: 'Crea lo spazio' })
+    expect(button).toBeEnabled()
+    // "Submit anyway" is proven by the request actually going through, not merely by
+    // the button reading enabled: the probe's own failure never reaches the server.
+    await user.click(button)
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/tenants/', {
+        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'bob@studio.it', membro: false },
+      }),
+    )
   })
 
   it('lets the person submit anyway when the availability probe answers a server error (REB-236)', async () => {
-    answers({ '/api/tenants/member': NOBODY })
+    answers({ '/api/tenants/member': NOBODY, '/api/tenants/': { slug: 'ada-lovelace' } })
     GET.mockResolvedValue({
       error: { detail: 'Il servizio non risponde, riprova.' },
       response: { status: 503 },
@@ -239,12 +269,23 @@ describe('the signup wizard', () => {
     // The API's own sentence, not a generic one, alongside the address, and the
     // field is not marked invalid: a failed probe is not proof the slug itself is a
     // problem.
-    await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent(
-        /\/ada-lovelace: Il servizio non risponde/,
-      ),
+    await waitFor(
+      () =>
+        expect(screen.getByRole('status')).toHaveTextContent(
+          /\/ada-lovelace: Il servizio non risponde/,
+        ),
+      PROBE_TIMEOUT,
     )
-    expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled()
+    const button = screen.getByRole('button', { name: 'Crea lo spazio' })
+    expect(button).toBeEnabled()
+    // Same proof as the test above: "submit anyway" means the request actually goes
+    // through, not just that the button no longer reads disabled.
+    await user.click(button)
+    await waitFor(() =>
+      expect(POST).toHaveBeenCalledWith('/api/tenants/', {
+        body: { slug: 'ada-lovelace', nome: 'Ada Lovelace', email: 'bob@studio.it', membro: false },
+      }),
+    )
   })
 
   it('ignores an older probe answer that resolves after a newer one already landed (REB-265)', async () => {
@@ -259,17 +300,21 @@ describe('the signup wizard', () => {
     await user.type(await screen.findByLabelText('Come si chiama il tuo spazio?'), 'Alpha')
     await user.click(screen.getByRole('button', { name: 'cambia' }))
     const slug = screen.getByLabelText('Indirizzo dello spazio')
-    await waitFor(() =>
-      expect(GET).toHaveBeenCalledWith('/api/tenants/{slug}/disponibile', {
-        params: { path: { slug: 'alpha' } },
-      }),
+    await waitFor(
+      () =>
+        expect(GET).toHaveBeenCalledWith('/api/tenants/{slug}/disponibile', {
+          params: { path: { slug: 'alpha' } },
+        }),
+      PROBE_TIMEOUT,
     )
     await user.clear(slug)
     await user.type(slug, 'beta')
-    await waitFor(() =>
-      expect(GET).toHaveBeenCalledWith('/api/tenants/{slug}/disponibile', {
-        params: { path: { slug: 'beta' } },
-      }),
+    await waitFor(
+      () =>
+        expect(GET).toHaveBeenCalledWith('/api/tenants/{slug}/disponibile', {
+          params: { path: { slug: 'beta' } },
+        }),
+      PROBE_TIMEOUT,
     )
     // The newer probe (beta) answers first.
     resolveBeta({ data: { slug: 'beta', disponibile: true }, response: { status: 200 } })
@@ -328,8 +373,9 @@ describe('the fast path (REB-488)', () => {
     answers({ '/api/tenants/member': OWNER, '/api/tenants/': { slug: 'ada-lovelace' } })
     const go = vi.fn()
     render(<SignupPage go={go} />)
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
+    await waitFor(
+      () => expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeEnabled(),
+      PROBE_TIMEOUT,
     )
     await userEvent.click(screen.getByRole('button', { name: 'Crea lo spazio' }))
     await waitFor(() =>
@@ -403,7 +449,10 @@ describe('the fast path (REB-488)', () => {
     const user = userEvent.setup()
     render(<SignupPage />)
     await user.type(screen.getByLabelText('Come si chiama il tuo spazio?'), 'Studio Bob')
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/è libero/))
+    await waitFor(
+      () => expect(screen.getByRole('status')).toHaveTextContent(/è libero/),
+      PROBE_TIMEOUT,
+    )
     expect(screen.getByRole('button', { name: 'Crea lo spazio' })).toBeDisabled()
     resolveMember({ data: MEMBER, response: { status: 200 } })
     await waitFor(() =>

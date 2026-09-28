@@ -29,6 +29,7 @@ const FREELANCER: Freelancer = {
   provenienza: 'landing',
   ultimo_accesso: null,
   deleted_at: null,
+  vetted_at: null,
 }
 
 const COMPANY: Company = {
@@ -52,6 +53,7 @@ const COMPANY: Company = {
   created_at: '2026-09-10T10:00:00Z',
   commenti: [],
   deleted_at: null,
+  talent_cloud_grant: null,
 }
 
 function mountFreelancer({

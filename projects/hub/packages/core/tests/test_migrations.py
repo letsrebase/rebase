@@ -67,6 +67,22 @@ def test_the_company_check_constraints_are_installed(hub_engine: Engine) -> None
         outer.rollback()
 
 
+def test_a_live_grant_is_one_per_person_and_company(hub_engine: Engine) -> None:
+    """REB-518: 0023 shipped the grants' partial unique index on `(user_id)`, and 0025
+    swaps it for the one on `(user_id, company_id)`; after `upgrade head` only the
+    second is there."""
+    with hub_engine.connect() as connection:
+        indexes = set(
+            connection.execute(
+                text("SELECT indexname FROM pg_indexes WHERE tablename = 'talent_cloud_grants'")
+            ).scalars()
+        )
+    assert {
+        "uq_talent_cloud_grants_user_company_live",
+        "uq_talent_cloud_grants_user_id_live",
+    } & indexes == {"uq_talent_cloud_grants_user_company_live"}
+
+
 def test_the_production_table_is_adopted_with_its_rows() -> None:
     """The shape `create_all` gave the table on 2026-09-07 plus the columns two
     `ADD COLUMN IF NOT EXISTS` rounds added later, with a row in it: after `upgrade`

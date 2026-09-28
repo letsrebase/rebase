@@ -122,10 +122,20 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+/** `ChooseCustomer`'s own `useSettled` (`InvoiceDoor.tsx`) debounces the typed name
+ *  250ms, on a real timer, before the search it gates even fires -- so every wait below
+ *  for that search's suggestions, its failure, or the button it un-disables is already
+ *  waiting out that debounce before the fetch that answers it has even started. The
+ *  default one-second `asyncUtilTimeout` stacked on top of a real 250ms timer is tight
+ *  on a loaded full `pnpm --filter web test` run, the same headroom `vite.config.ts`'s
+ *  own `testTimeout: 20_000` comment already describes for the suite as a whole.
+ *  Matching that headroom here, for every wait that depends on the search settling. */
+const SETTLE_TIMEOUT = { timeout: 10_000 }
+
 describe('the invoice door, first the customer', () => {
   async function create() {
     const button = screen.getByRole('button', { name: 'Crea il cliente e vai avanti' })
-    await waitFor(() => expect(button).toBeEnabled())
+    await waitFor(() => expect(button).toBeEnabled(), SETTLE_TIMEOUT)
     await userEvent.click(button)
   }
 
@@ -149,7 +159,13 @@ describe('the invoice door, first the customer', () => {
     })
     renderDoor()
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'acm')
-    await userEvent.click(await screen.findByRole('button', { name: 'ACME Srl · P.IVA 01234567890' }))
+    await userEvent.click(
+      await screen.findByRole(
+        'button',
+        { name: 'ACME Srl · P.IVA 01234567890' },
+        SETTLE_TIMEOUT,
+      ),
+    )
     expect(await screen.findByText('ACME Srl')).toBeInTheDocument()
     expect(api.GET).toHaveBeenCalledWith('/api/customers', { params: { query: { search: 'acm', limit: 8 } } })
     expect(api.POST).not.toHaveBeenCalledWith('/api/customers', expect.anything())
@@ -159,8 +175,8 @@ describe('the invoice door, first the customer', () => {
     gets({ '/api/customers': { data: { items: [{ id: 'c-old', ragione_sociale: 'ACME Srl' }], next_cursor: null } } })
     renderDoor()
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'acme srl')
-    const use = await screen.findByRole('button', { name: 'Usa ACME Srl' })
-    await waitFor(() => expect(use).toBeEnabled())
+    const use = await screen.findByRole('button', { name: 'Usa ACME Srl' }, SETTLE_TIMEOUT)
+    await waitFor(() => expect(use).toBeEnabled(), SETTLE_TIMEOUT)
     await userEvent.click(use)
     expect(await screen.findByTestId('upload-dropzone')).toBeInTheDocument()
     expect(api.POST).not.toHaveBeenCalledWith('/api/customers', expect.anything())
@@ -210,7 +226,9 @@ describe('the invoice door, first the customer', () => {
     gets({ '/api/customers': { status: 500 } })
     renderDoor()
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'Officina')
-    expect(await screen.findByText(/Non riesco a cercare tra i clienti/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/Non riesco a cercare tra i clienti/, {}, SETTLE_TIMEOUT),
+    ).toBeInTheDocument()
     await create()
     expect(api.POST).toHaveBeenCalledWith('/api/customers', { body: { ragione_sociale: 'Officina' } })
   })
@@ -230,7 +248,7 @@ describe('the invoice door, then the PDF', () => {
     renderDoor({ assistantConnected: false })
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'Officina Verdi S.r.l.')
     const button = screen.getByRole('button', { name: 'Crea il cliente e vai avanti' })
-    await waitFor(() => expect(button).toBeEnabled())
+    await waitFor(() => expect(button).toBeEnabled(), SETTLE_TIMEOUT)
     await userEvent.click(button)
     await screen.findByTestId('upload-dropzone')
   }
@@ -411,7 +429,7 @@ describe('the invoice door, the handoff', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Carica un’altra fattura' }))
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'Officina Verdi S.r.l.')
     const button = screen.getByRole('button', { name: 'Crea il cliente e vai avanti' })
-    await waitFor(() => expect(button).toBeEnabled())
+    await waitFor(() => expect(button).toBeEnabled(), SETTLE_TIMEOUT)
     await userEvent.click(button)
     await screen.findByTestId('upload-dropzone')
     drop(pdf())
