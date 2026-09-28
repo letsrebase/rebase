@@ -33,10 +33,10 @@ class ActivityRepository:
         entity's own `timeline`, which already exists; a paginated global feed would be a
         second way to browse the same rows, with its own cursor to get wrong.
 
-        Served by `ix_activities_recent`, and `test_search_plan.py` asserts on the plan --
-        this query is fast either way on a small table and slow in production, which is the
-        combination a latency test cannot catch. `ix_activities_entity` cannot serve it:
-        its ordering column is third.
+        Served by `ix_activities_recent` once a space's feed is large enough for the
+        planner to want it; nothing asserts the plan since REB-580, because a space's
+        tables stay small and the index is there for the tenant that outgrows that.
+        `ix_activities_entity` cannot serve it: its ordering column is third.
 
         The `id` tie-break is the same one `timeline` and `by_kind` carry, for the same
         reason: `occurred_at` has microsecond resolution and rows written in one

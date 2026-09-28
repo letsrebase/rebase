@@ -41,18 +41,6 @@
       "why": "The whole Python suite except the two kinds of check that are not only about the code. `-n auto` because it waits on PostgreSQL far more than it computes: 10m00 -> 3m36 locally, each worker getting its own container from the session fixture."
     },
     {
-      "id": "pigrocrm-py-corpus",
-      "run": "uv run pytest -q -m \"slow\" projects/pigrocrm/packages/core/tests",
-      "when": [
-        "projects/pigrocrm/packages/**",
-        "projects/pigrocrm/conftest.py",
-        "pyproject.toml",
-        "uv.lock"
-      ],
-      "serial": true,
-      "why": "The fifty-thousand-row corpus: twelve minutes, almost all of it inside PostgreSQL. Serial and never under -n, because every assertion in those two files is about which plan the planner picks and load changes the answer. It selects on core alone: the two files import `pigrocrm.core` and the local `corpus` helper beside them and nothing else, so an edit under apps/api or apps/mcp cannot change which plan PostgreSQL picks over core's schema, and it used to buy twelve minutes of waiting for that (ORB-141)."
-    },
-    {
       "id": "pigrocrm-web-lint",
       "run": "pnpm --filter web lint",
       "when": [

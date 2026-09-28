@@ -4,7 +4,7 @@
 #      the full Python suite, the Playwright run, the images. Free and parallel, and
 #      the answer arrives before the push rather than minutes after it.
 #   2. `pull_request`: one cheap gate per project, scoped to what the diff can break.
-#   3. `push` to main: the heavy tier -- the corpus, the images -- but scoped to the
+#   3. `push` to main: the heavy tier -- the images -- but scoped to the
 #      same filters. Scoping started 2026-09-09 because the repository was private and
 #      every minute here was billed (1,564 of a 2,000/month allowance in eight days,
 #      and a job that hits that limit dies in two seconds with no log, which reads as
@@ -105,7 +105,6 @@ jobs:
     outputs:
       all: ${{ steps.base.outputs.all }}
       pigrocrm_py: ${{ steps.tag.outputs.pigrocrm_py || steps.filter.outputs.pigrocrm_py }}
-      pigrocrm_py_corpus: ${{ steps.tag.outputs.pigrocrm_py_corpus || steps.filter.outputs.pigrocrm_py_corpus }}
       pigrocrm_web: ${{ steps.tag.outputs.pigrocrm_web || steps.filter.outputs.pigrocrm_web }}
       pigrocrm_image: ${{ steps.tag.outputs.pigrocrm_image || steps.filter.outputs.pigrocrm_image }}
       website: ${{ steps.tag.outputs.website || steps.filter.outputs.website }}
@@ -119,11 +118,6 @@ jobs:
       website_deploy: ${{ steps.tag.outputs.website_deploy || steps.filter.outputs.website_deploy }}
       hub_deploy: ${{ steps.tag.outputs.hub_deploy || steps.filter.outputs.hub_deploy }}
       tooling: ${{ steps.tag.outputs.tooling || steps.filter.outputs.tooling }}
-      # The `slow` files, for the corpus job's matrix below: read from the tree, so a
-      # third file carrying the marker gets its own job the day it is committed
-      # rather than running in preflight's lane alone (REB-565). A pull_request run
-      # has no checkout here and never runs the corpus, so it answers an empty list.
-      slow_files: ${{ steps.slow.outputs.files }}
     steps:
       - uses: actions/checkout@v7
         if: github.event_name != 'pull_request'
@@ -193,10 +187,10 @@ jobs:
           case "$PROJECT" in
             website)  on='website website_image website_deploy shared_analytics' ;;
             hub)      on='hub_py hub_web hub_image hub_deploy shared_ui shared_analytics' ;;
-            pigrocrm) on='pigrocrm_py pigrocrm_py_corpus pigrocrm_web pigrocrm_image pigrocrm_deploy shared_ui shared_analytics' ;;
+            pigrocrm) on='pigrocrm_py pigrocrm_web pigrocrm_image pigrocrm_deploy shared_ui shared_analytics' ;;
             *) echo "::error::no job list for project '${PROJECT}'"; exit 1 ;;
           esac
-          for key in pigrocrm_py pigrocrm_py_corpus pigrocrm_web pigrocrm_image website website_image hub_py hub_web shared_analytics shared_ui hub_image pigrocrm_deploy website_deploy hub_deploy tooling; do
+          for key in pigrocrm_py pigrocrm_web pigrocrm_image website website_image hub_py hub_web shared_analytics shared_ui hub_image pigrocrm_deploy website_deploy hub_deploy tooling; do
             case " $on " in *" $key "*) value=true ;; *) value=false ;; esac
             echo "${key}=${value}" >> "$GITHUB_OUTPUT"
           done
@@ -221,20 +215,6 @@ jobs:
               - 'pyproject.toml'
               - 'uv.lock'
               - 'ruff.toml'
-              - '.python-version'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/_python-gate.yml'
-            # The `slow` files import `pigrocrm.core` and the local `corpus` helper
-            # beside them and nothing else, so the corpus job below asks a narrower
-            # question than the gate above it: an edit under apps/api or apps/mcp
-            # cannot change which plan PostgreSQL picks over core's schema, and it
-            # used to buy twelve minutes on the trunk, in front of every preview
-            # deploy (ORB-141).
-            pigrocrm_py_corpus:
-              - 'projects/pigrocrm/packages/**'
-              - 'projects/pigrocrm/conftest.py'
-              - 'pyproject.toml'
-              - 'uv.lock'
               - '.python-version'
               - '.github/workflows/ci.yml'
               - '.github/workflows/_python-gate.yml'
@@ -386,27 +366,6 @@ jobs:
       # a billed runner until this run finished. They are triggered by this run's
       # completion now, and they read the verdict from here. One computation, one
       # list, and a deploy that starts already knowing CI was green.
-      - name: List the files behind the `slow` marker
-        id: slow
-        run: |
-          set -euo pipefail
-          if [ '${{ github.event_name }}' = 'pull_request' ]; then
-            echo 'files=[]' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Both of pytest's default module patterns, at any depth under the root, as
-          # paths relative to it; `|| true` because a tree with no `slow` file is an
-          # empty list for the corpus job to skip on, not a red `changes` that skips
-          # every job of every project.
-          files=$(find projects/pigrocrm/packages/core/tests -type f \
-              \( -name 'test_*.py' -o -name '*_test.py' \) \
-              -exec grep -lE 'pytest\.mark\.slow' {} + 2>/dev/null \
-            | sed 's#^projects/pigrocrm/packages/core/tests/##' | LC_ALL=C sort \
-            | jq -R . | jq -sc . || true)
-          files=${files:-[]}
-          echo "slow files: ${files}"
-          echo "files=${files}" >> "$GITHUB_OUTPUT"
-
       - name: Publish the verdict for the deploy workflows
         if: github.event_name == 'push'
         run: |
@@ -480,29 +439,14 @@ jobs:
         projects/pigrocrm/packages/core/tests
         projects/pigrocrm/apps/api/tests
         projects/pigrocrm/apps/mcp/tests
-      # `slow` builds a fifty-thousand-row corpus, so a PR does not pay for it and the
-      # trunk does. `planner` is a different thing, deselected on this job's own filter
-      # below: it asserts which plan Postgres picks, the winning plan sits within a few
-      # percent of the loser at this row count, and a hosted runner picks the other one.
-      # `test_trgm_escape.py`'s case (ORB-9) failed on the trunk run of the merge commit
-      # for exactly that reason, on code that had passed the same assertion on the devbox
-      # minutes earlier; its fix stopped costing the plan on whatever bloat the rest of
-      # the suite happened to leave behind, so it no longer carries the marker.
-      # `test_sort_plan.py` (REB-90) no longer carries the marker either, and no test in
-      # the repository currently does; `planner` stays registered and deselected here for
-      # whichever assertion needs it next. Worth being exact about what changed: the job
-      # below (`pigrocrm-py-corpus`) selects on `slow` alone, with no `and not planner`,
-      # so `test_sort_plan.py` -- `slow` and, until REB-90, also `planner` -- ran there on
-      # the hosted runner throughout, which is how 34294151175 was able to fail on one at
-      # all. Dropping the marker changed no CI selection; it retired the preflight lane
-      # (`pigrocrm-py-planner`) that duplicated the corpus job's own coverage of this file
-      # on a single known machine, once nothing was left for that lane to select.
-      #
-      # `slow` is not skipped on the trunk, it moved: the job below runs it in
-      # parallel with this one. Measured 2026-09-09, the two are 10m and 12m of a
-      # 17m serial suite locally, because the fifty-thousand-row corpus is built,
-      # vacuumed, deleted and vacuumed again around two files. Running them side by
-      # side makes the critical path the longer of the two instead of the sum.
+      # `not slow and not planner`: both markers stay registered in pyproject.toml and
+      # deselected here, and since REB-580 no test carries either. `slow` was the
+      # planner corpus (fifty thousand rows per table, minutes of PostgreSQL around two
+      # files, its own job on the trunk from 2026-09-09 to 2026-09-28), gone because a
+      # space's tables never reach the size where the plan it asserted matters.
+      # `planner` was for an assertion whose answer depends on the machine (ORB-9), and
+      # is kept for whichever assertion needs it next. A test that earns either marker
+      # again also earns a place to run: preflight, the nightly or a job of its own.
       #
       # `-n auto --dist loadfile`: this suite waits on PostgreSQL far more than it
       # computes (measured locally: 10m00 wall for 7m57 of CPU), so workers overlap
@@ -536,45 +480,6 @@ jobs:
         projects/pigrocrm/apps/api/src
         projects/pigrocrm/apps/mcp/src
       tests: ''
-
-  # Tier 3, and the reason the job above got faster. The two files behind the `slow`
-  # marker spend almost all of their time inside PostgreSQL building and vacuuming a
-  # fifty-thousand-row corpus, so this job is nearly free in CPU and pointless to merge
-  # with anything. Deliberately serial inside: every assertion in those files is about
-  # which plan the planner picks, and two heavy corpora built at once on a two-core
-  # runner is exactly the load that changes the answer.
-  #
-  # One job per file, on two runners (REB-565). Each file builds its own corpus from a
-  # module-scoped fixture and never shares it with the other, so running them in one
-  # job was two corpora in a row on one machine, 319s on run 36457557147, and the
-  # longest job on any trunk push under `packages/**` once the gate above was cut to
-  # three shards (REB-561). Two runners cost nothing on a public repository, and each
-  # job stays as serial inside as before: one corpus, one file, no neighbour's load
-  # under the planner. The matrix is the list of `slow` files as `changes` read it
-  # from the tree, so a third such file is a third job with nothing to edit here, and
-  # `preflight.json`'s `pigrocrm-py-corpus` lane still runs them all by marker. One
-  # corpus is fifty thousand rows (`test_search_plan.py`), the other twenty thousand
-  # per table (`test_sort_plan.py`).
-  pigrocrm-py-corpus:
-    name: pigrocrm · python corpus
-    needs: changes
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.changes.outputs.slow_files != '[]' && (needs.changes.outputs.all == 'true' || needs.changes.outputs.pigrocrm_py_corpus == 'true') }}
-    strategy:
-      fail-fast: false
-      matrix:
-        file: ${{ fromJSON(needs.changes.outputs.slow_files) }}
-    uses: ./.github/workflows/_python-gate.yml
-    with:
-      job-name: ${{ matrix.file }}
-      # Lint and mypy already ran in the job above, on the same tree.
-      lint: false
-      typecheck: false
-      lint-path: projects/pigrocrm
-      sources: ''
-      tests: projects/pigrocrm/packages/core/tests/${{ matrix.file }}
-      pytest-args: '-m "slow"'
-      # These two files render nothing: no pandoc, no typst, no poppler.
-      renderer: false
 
   # Two shards, not one job (REB-571): with the Python gate cut to three shards this
   # was the longest job of a CRM pull request, 186s on run 36471954567, 121s of them
@@ -833,7 +738,7 @@ jobs:
     # arrives. This is the only status check the repository should ever be asked to
     # require: every job name above can change forever without touching a ruleset.
     if: always()
-    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-py-corpus, pigrocrm-web, pigrocrm-api-types, website, hub-py, hub-web, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter]
+    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-api-types, website, hub-py, hub-web, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
