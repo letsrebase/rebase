@@ -127,6 +127,13 @@ export const SENIORITY_LABELS: Record<string, string> = {
   lead: 'Lead',
 }
 
+/** A team member's `giorni_settimana` as the team reads it: «1 giorno a settimana»,
+ *  «3 giorni a settimana», or «Giorni da definire» when the proposal left it open. */
+export function formatDaysPerWeek(giorni: number | null): string {
+  if (giorni === null) return 'Giorni da definire'
+  return giorni === 1 ? '1 giorno a settimana' : `${giorni} giorni a settimana`
+}
+
 /** A card's `anni`, as a phrase: «meno di un anno», «1 anno», «9 anni di esperienza». */
 export function formatExperience(anni: number): string {
   if (anni === 0) return 'meno di un anno di esperienza'

@@ -22,6 +22,7 @@ import {
   TEAM_REQUEST_STATE_LABELS,
   formatDate,
   formatDateTime,
+  formatDaysPerWeek,
   formatEuro,
 } from '@/lib/format'
 import { Empty, Header, Row } from './lists'
@@ -51,7 +52,8 @@ function teamBands(economia: AdminTeamProposal['economia']): string {
   return `${bandLabel(economia.giorno)} · ${bandLabel(economia.mese, 'mese')}`
 }
 
-/** The answer to the availability mail and when it came; «—» until one does (D1). */
+/** The answer to the availability mail and when it came; an empty mark until one does
+ *  (D1). */
 function answer(talent: TeamRequestTalent): string {
   if (talent.risposta === null) return '—'
   const label = TALENT_ANSWER_LABELS[talent.risposta] ?? talent.risposta
@@ -207,7 +209,7 @@ function TalentRow({ talent, member }: { talent: TeamRequestTalent; member: Admi
         <p>{talent.ruolo}</p>
         {member && <p className="text-xs text-muted-foreground">{member.motivazione}</p>}
         {member?.giorni_settimana ? (
-          <p className="text-xs text-muted-foreground">{`${member.giorni_settimana} giorni a settimana`}</p>
+          <p className="text-xs text-muted-foreground">{formatDaysPerWeek(member.giorni_settimana)}</p>
         ) : null}
       </TableCell>
       <TableCell>{talent.tariffa_giornaliera === null ? '—' : formatEuro(talent.tariffa_giornaliera)}</TableCell>

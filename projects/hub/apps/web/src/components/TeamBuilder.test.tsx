@@ -177,18 +177,19 @@ describe('TeamBuilder, the result', () => {
     for (const skill of ['Python', 'FastAPI', 'PostgreSQL']) {
       expect(within(backend).getByText(skill)).toHaveAttribute('data-slot', 'badge')
     }
-    expect(backend).toHaveTextContent('Da remoto')
+    expect(backend).toHaveTextContent('5 giorni a settimana · Da remoto')
     expect(backend.textContent).toContain(`400${DASH}500${NBSP}€ al giorno`)
 
     const frontend = people[1]!
     expect(frontend).toHaveTextContent('Sviluppatrice frontend, Mid, 1 anno di esperienza')
-    expect(frontend).toHaveTextContent('Ibrido')
+    expect(frontend).toHaveTextContent('3 giorni a settimana · Ibrido')
     expect(frontend.textContent).toContain(`500${DASH}650${NBSP}€ al giorno`)
 
     const cost = screen.getByRole('region', { name: 'Quanto costa il team' })
     expect(cost.textContent).toContain(`900${DASH}1.150${NBSP}€ al giorno`)
     expect(cost.textContent).toContain(`19.800${DASH}25.300${NBSP}€ al mese`)
-    expect(cost).toHaveTextContent('22 giorni al mese')
+    // A month is 22 days for each person, whatever the days a week above say.
+    expect(cost).toHaveTextContent('(a tempo pieno, 22 giorni al mese)')
 
     const page = document.body.textContent ?? ''
     for (const secret of [
@@ -203,14 +204,20 @@ describe('TeamBuilder, the result', () => {
     }
   })
 
-  it('says «tariffa da definire» for a person with no band, and for the team', async () => {
+  it('says «tariffa da definire» and «giorni da definire» for a person the proposal left open', async () => {
     await proposed(vi.spyOn(globalThis, 'fetch'), {
       ...PROPOSAL,
-      team: [PROPOSAL.team[0], { ...PROPOSAL.team[1], fascia: null, modalita: null }],
+      team: [
+        PROPOSAL.team[0],
+        { ...PROPOSAL.team[1], fascia: null, modalita: null, giorni_settimana: null },
+      ],
       economia: { giorno: null, mese: null, giorni_mese: 22 },
     })
     const people = within(screen.getByRole('list', { name: 'Il team' })).getAllByRole('listitem')
     expect(people[1]).toHaveTextContent('Tariffa da definire')
+    // The days a week the proposal left open, and no work mode to put beside them.
+    expect(people[1]).toHaveTextContent('Giorni da definire')
+    expect(people[1]).not.toHaveTextContent('·')
     const cost = screen.getByRole('region', { name: 'Quanto costa il team' })
     expect(cost).toHaveTextContent('Tariffa da definire')
     expect(cost).not.toHaveTextContent('al giorno')

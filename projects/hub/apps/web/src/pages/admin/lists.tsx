@@ -1052,7 +1052,12 @@ export function AdminFreelancerDetail() {
         kind="freelancers"
         id={f.id}
         canRevert={f.deleted_at === null}
-        onReverted={() => void client.invalidateQueries({ queryKey: ['freelancer', id] })}
+        onReverted={() => {
+          void client.invalidateQueries({ queryKey: ['freelancer', id] })
+          // A reverted override can put back the work mode or the rate, which the
+          // «Scheda anonima» section reads beside the card, as `mergeAndRefresh` says.
+          void client.invalidateQueries({ queryKey: ['freelancer-card', id] })
+        }}
       />
       <Comments kind="freelancers" id={f.id} comments={f.commenti} onAdded={onCommentAdded} />
       <p className="px-6 pb-6">

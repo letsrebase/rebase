@@ -15,7 +15,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-/** A list the card keeps as words, or «—» when it has none. */
+/** A list the card keeps as words, or an empty mark when it has none. */
 function words(items: string[]): string {
   return items.length ? items.join(', ') : '—'
 }

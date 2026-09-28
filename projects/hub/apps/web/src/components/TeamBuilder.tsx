@@ -14,7 +14,7 @@ import {
   type TeamProposalCreate,
 } from '@/lib/api'
 import { bandLabel } from '@/lib/bands'
-import { REMOTO_LABELS, SENIORITY_LABELS, formatExperience } from '@/lib/format'
+import { REMOTO_LABELS, SENIORITY_LABELS, formatDaysPerWeek, formatExperience } from '@/lib/format'
 
 /** The lengths core's `TeamProposalCreate` takes (`team_schemas.py`), measured as it
  *  measures them, stripped: the page says so before the API has to. */
@@ -254,7 +254,8 @@ export function TeamBuilder(props: TeamBuilderProps) {
 }
 
 /** One person, by what their card says: the role in this team, why them, the
- *  anonymous description, seniority and years, the skills, the work mode, the band. */
+ *  anonymous description, seniority and years, the skills, the days a week this team
+ *  asks of them, the work mode, the band. */
 function MemberCard({ member }: { member: TeamMember }) {
   const { scheda } = member
   return (
@@ -278,9 +279,11 @@ function MemberCard({ member }: { member: TeamMember }) {
           </div>
         )}
         <p className="mt-auto flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          {member.modalita && (
-            <span className="text-muted-foreground">{REMOTO_LABELS[member.modalita]}</span>
-          )}
+          <span className="text-muted-foreground">
+            {[formatDaysPerWeek(member.giorni_settimana), member.modalita && REMOTO_LABELS[member.modalita]]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
           <span className="font-medium">
             {member.fascia ? bandLabel(member.fascia) : 'Tariffa da definire'}
           </span>
@@ -292,7 +295,8 @@ function MemberCard({ member }: { member: TeamMember }) {
 
 /** The team's bands per day and per month (spec § 3.3): the hub's sums, never the
  *  model's; «Tariffa da definire» when somebody has no band, since a sum that leaves a
- *  person out is a price nobody quoted. */
+ *  person out is a price nobody quoted. The month is 22 days for everyone, as the spec
+ *  fixes it, so it says «a tempo pieno» beside each person's own days a week. */
 function TeamCost({ economia }: { economia: TeamEconomia }) {
   const id = useId()
   return (
@@ -309,7 +313,7 @@ function TeamCost({ economia }: { economia: TeamEconomia }) {
           {economia.mese && (
             <p>
               {bandLabel(economia.mese, 'mese')}{' '}
-              <span className="text-muted-foreground">({economia.giorni_mese} giorni al mese)</span>
+              <span className="text-muted-foreground">(a tempo pieno, {economia.giorni_mese} giorni al mese)</span>
             </p>
           )}
         </>
