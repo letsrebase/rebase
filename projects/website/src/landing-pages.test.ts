@@ -80,8 +80,8 @@ describe.each(PAGES)('%s', (name) => {
       // never will be: `pixel.test.ts` keeps it out of every page.
       // `www.anthropic.com` since REB-515: the new team builder section on privacy.html
       // links Anthropic's own privacy page, the same way the cookie section links
-      // PostHog's and OpenAI's. Nothing on this site calls Anthropic's API directly —
-      // that call is the hub's, over `rebase_core/llm.py` — this host only ever appears
+      // PostHog's and OpenAI's. Nothing on this site calls Anthropic's API directly
+      // (that call is the hub's, over `rebase_core/llm.py`): this host only ever appears
       // as an `<a href>` a reader clicks.
       expect(url, 'external subresource').toMatch(
         /^https:\/\/(?:github\.com|pigro\.letsrebase\.com|openai\.com|posthog\.com|humancraft\.tech|www\.linkedin\.com|www\.anthropic\.com)\//,
