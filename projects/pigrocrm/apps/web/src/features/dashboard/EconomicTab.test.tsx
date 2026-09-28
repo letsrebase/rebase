@@ -353,7 +353,9 @@ describe('EconomicTab', () => {
     vi.mocked(api.GET).mockImplementation(byPath(RESPONSE, { ...FISCALE, anno: 2025 }) as never)
     renderTab({ da: '2025-03-01', a: '2025-03-31' })
 
-    await screen.findByText('Stima fiscale 2025')
+    // Same doubled chain as the card test above (REB-416): the default one-second
+    // asyncUtilTimeout is not enough here either, observed failing on a loaded full run.
+    await screen.findByText('Stima fiscale 2025', {}, { timeout: 10_000 })
     expect(api.GET).toHaveBeenCalledWith('/api/analytics/fiscal', {
       params: { query: { anno: 2025 } },
     })
