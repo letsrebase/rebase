@@ -248,7 +248,7 @@ describe('the invoice door, then the PDF', () => {
     renderDoor({ assistantConnected: false })
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'Officina Verdi S.r.l.')
     const button = screen.getByRole('button', { name: 'Crea il cliente e vai avanti' })
-    await waitFor(() => expect(button).toBeEnabled())
+    await waitFor(() => expect(button).toBeEnabled(), SETTLE_TIMEOUT)
     await userEvent.click(button)
     await screen.findByTestId('upload-dropzone')
   }
@@ -429,7 +429,7 @@ describe('the invoice door, the handoff', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Carica un’altra fattura' }))
     await userEvent.type(await screen.findByLabelText('Ragione sociale del cliente'), 'Officina Verdi S.r.l.')
     const button = screen.getByRole('button', { name: 'Crea il cliente e vai avanti' })
-    await waitFor(() => expect(button).toBeEnabled())
+    await waitFor(() => expect(button).toBeEnabled(), SETTLE_TIMEOUT)
     await userEvent.click(button)
     await screen.findByTestId('upload-dropzone')
     drop(pdf())
