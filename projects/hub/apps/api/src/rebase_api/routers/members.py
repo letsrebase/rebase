@@ -62,6 +62,8 @@ from rebase_core.member_contracts import MemberContractService
 from rebase_core.members import MemberService
 from rebase_core.models import CV_MAX_BYTES
 from rebase_core.perks import GUIDE_FILENAME, PerkService, guide_bytes
+from rebase_core.referral_schemas import MemberReferral
+from rebase_core.referrals import ReferralService
 from rebase_core.schemas import (
     Ack,
     CompanyFields,
@@ -219,6 +221,15 @@ def my_signed_contract(me: MeDep, session: SessionDep, document_id: UUID) -> Res
     say it exists."""
     pdf = MemberContractService(session).signed_pdf(me.id, document_id)
     return pdf_response(pdf.filename, pdf.content)
+
+
+@router.get("/me/referral", response_model=MemberReferral)
+def my_referral(me: MeDep, session: SessionDep) -> MemberReferral:
+    """The member's own link, issued the first time this route is asked for one
+    (P-REB-44): the code and who has signed up under it so far. Never the euro
+    figures -- those are rebase's own margin, an admin-only number the member area
+    never shows, the same isolation `budget_giornaliero` already keeps."""
+    return ReferralService(session).for_user(me.id)
 
 
 @router.post("/members/lookup", response_model=MemberLookup)

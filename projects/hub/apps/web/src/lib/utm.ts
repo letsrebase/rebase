@@ -92,6 +92,36 @@ export function resolveOrigin(search: string): string | null {
   return ORIGIN_SHAPE.test(remembered) ? remembered : null
 }
 
+/** Where a member's own link leaves the code it carried, the same tab-lasting
+ *  attribution `ORIGIN_STORAGE_KEY` already keeps for `da=` (P-REB-44). */
+export const REFERRAL_STORAGE_KEY = 'orbiters.rif'
+const REFERRAL_SHAPE = /^[A-Za-z0-9]{1,10}$/
+
+/** `rif=` off a search string, when it looks like a code; anything else is unknown. */
+export function readReferral(search: string): string | null {
+  const value = new URLSearchParams(search).get('rif')?.trim() ?? ''
+  return REFERRAL_SHAPE.test(value) ? value : null
+}
+
+/** The referral code to send with an application: the URL's own `rif=` when it has
+ *  one, remembered for the tab; otherwise what the tab remembers from an earlier page
+ *  of this app (a detour through the chooser, say). Kept apart from `Utm`/
+ *  `resolveAttribution`: a code is not ad attribution, and `Freelancer(**utm_dict)`
+ *  spreads every key of that object straight onto real columns a code is not one of. */
+export function resolveReferral(search: string): string | null {
+  const own = readReferral(search)
+  if (own) {
+    try {
+      storage()?.setItem(REFERRAL_STORAGE_KEY, own)
+    } catch {
+      /* refused: the URL still has it */
+    }
+    return own
+  }
+  const remembered = storage()?.getItem(REFERRAL_STORAGE_KEY) ?? ''
+  return REFERRAL_SHAPE.test(remembered) ? remembered : null
+}
+
 /** Everything an application says about where it came from: the campaign and the page. */
 export function resolveAttribution(search: string): Utm {
   const origin = resolveOrigin(search)

@@ -90,11 +90,13 @@ export function applyAsFreelancer(
   data: FreelancerApplication,
   utm: Utm,
   distinctId: string | null = null,
+  rif: string | null = null,
 ): Promise<{ ok: true }> {
   const form = new FormData()
   // The browser's PostHog id, when the page is measured: the API sends the completion
   // event itself (REB-215), and this is what puts it on the same person as the steps.
   if (distinctId) form.set('distinct_id', distinctId)
+  if (rif) form.set('rif', rif)
   form.set('nome', data.nome)
   form.set('cognome', data.cognome)
   form.set('email', data.email)
@@ -129,6 +131,7 @@ export function requestPeople(
   data: CompanyRequest,
   utm: Utm,
   distinctId: string | null = null,
+  rif: string | null = null,
 ): Promise<{ ok: true }> {
   return request(
     '/api/hub/companies',
@@ -139,6 +142,7 @@ export function requestPeople(
       giorni_presenza: data.giorni_presenza ? Number(data.giorni_presenza) : null,
       utm: Object.keys(utm).length ? utm : null,
       ...(distinctId ? { distinct_id: distinctId } : {}),
+      ...(rif ? { rif } : {}),
     }),
   )
 }
@@ -1334,6 +1338,27 @@ export const admin = {
   /** A plain href, like `cvUrl`: the route answers an attachment behind the cookie. */
   contractPdfUrl: (documentId: string, firmato = false) =>
     `/api/hub/contract-documents/${documentId}/pdf${firmato ? '?firmato=true' : ''}`,
+  /** The referral ledger (P-REB-44): every reward, newest first. */
+  referrals: (params: ReferralLedgerParams = {}) => {
+    const qs = filterQuery(params)
+    return request<ReferralLedgerList>(`/api/hub/referrals${qs ? `?${qs}` : ''}`)
+  },
+  /** `da_confermare` to `confermato` to `pagato`, one step at a time. */
+  setReferralState: (id: string, stato: RewardStato) =>
+    request<ReferralLedgerItem>(`/api/hub/referrals/${id}/state`, json({ stato })),
+  /** What an admin prices by hand for a reward left with no figure (an `a corpo`
+   *  letter with no estimated days). */
+  setReferralPrice: (id: string, baseAmount: string, rewardAmount: string) =>
+    request<ReferralLedgerItem>(
+      `/api/hub/referrals/${id}/price`,
+      json({ base_amount: baseAmount, reward_amount: rewardAmount }),
+    ),
+  referralSettings: () => request<ReferralSettings>('/api/hub/referral-settings'),
+  saveReferralSettings: (rateFreelancer: string, rateCompany: string) =>
+    request<ReferralSettings>('/api/hub/referral-settings', {
+      ...json({ rate_freelancer: rateFreelancer, rate_company: rateCompany }),
+      method: 'PUT',
+    }),
 }
 
 /** One match's link to its deal on Pigro and the hours read from there (REB-498), the
@@ -1420,6 +1445,62 @@ export interface CompanyUpdate {
   figura_richiesta: string
 }
 
+// ---- referrals (P-REB-44) --------------------------------------------------------------
+
+/** `GET /api/hub/me/referral`'s own list: who a member's code brought in. Never the
+ *  euro figures -- those are rebase's own margin, an admin-only number the member
+ *  area never shows. */
+export interface MemberReferralItem {
+  kind: 'freelancer' | 'company'
+  nome: string
+  created_at: string
+  stato: string | null
+}
+
+export interface MemberReferral {
+  code: string
+  referred: MemberReferralItem[]
+}
+
+export type RewardStato = 'da_confermare' | 'confermato' | 'pagato'
+
+/** One row of the admin's referral ledger (`GET /api/hub/referrals`): the referrer,
+ *  who was referred, and the reward as it was computed or as an admin priced it. */
+export interface ReferralLedgerItem {
+  id: string
+  kind: 'freelancer' | 'company'
+  referrer_nome: string
+  referrer_email: string
+  referred_nome: string
+  match_id: string | null
+  rate: string
+  base_amount: string | null
+  reward_amount: string | null
+  stato: RewardStato
+  note: string | null
+  created_at: string
+  confirmed_at: string | null
+  paid_at: string | null
+}
+
+export interface ReferralLedgerList {
+  items: ReferralLedgerItem[]
+  next_cursor: string | null
+}
+
+export interface ReferralLedgerParams {
+  stato?: RewardStato
+  cursor?: string
+  limit?: number
+}
+
+export interface ReferralSettings {
+  rate_freelancer: string
+  rate_company: string
+  updated_at: string
+  updated_by_nome: string | null
+}
+
 export const member = {
   /** 202 whether the address is known or not; the page says one thing in both cases.
    *  `utm` is the campaign the login page was opened from (REB-426), left out when empty. */
@@ -1459,6 +1540,8 @@ export const member = {
   contracts: () => request<MemberContracts>('/api/hub/me/contracts'),
   /** A signed copy, a plain href like `cvUrl`: the route answers an attachment. */
   contractPdfUrl: (documentId: string) => `/api/hub/me/contracts/${documentId}/pdf`,
+  /** The member's own link, issued the first time it is asked for (P-REB-44). */
+  referral: () => request<MemberReferral>('/api/hub/me/referral'),
   logout: () => request<void>('/api/hub/me/logout', { method: 'POST' }),
 }
 

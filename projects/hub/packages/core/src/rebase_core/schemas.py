@@ -25,6 +25,7 @@ from rebase_core.models import (
     NAME_MAX_LENGTH,
     ORIGINE_MAX_LENGTH,
     POSIZIONE_MAX_LENGTH,
+    REFERRAL_CODE_LENGTH,
     TELEFONO_MAX_LENGTH,
     UTM_MAX_LENGTH,
 )
@@ -369,6 +370,13 @@ class FreelancerCreate(FreelancerFields):
 
     email: EmailStr
     utm: SignupUtm | None = None
+    # A member's own referral link, when the funnel carried one (P-REB-44): a sibling of
+    # `distinct_id` on `CompanyCreate`, not folded into `utm` -- `Freelancer(**utm_dict)`
+    # spreads every key of `SignupUtm.model_dump()` straight onto real columns, and a
+    # code is not one of them.
+    rif: SafeStr | None = Field(
+        default=None, max_length=REFERRAL_CODE_LENGTH, pattern=r"^[A-Za-z0-9]+$"
+    )
 
 
 class MemberUpdate(FreelancerFields):
@@ -476,6 +484,10 @@ class CompanyCreate(CompanyFields):
     email: EmailStr
     utm: SignupUtm | None = None
     distinct_id: SafeStr | None = Field(default=None, max_length=DISTINCT_ID_MAX_LENGTH)
+    # A member's own referral link, when the funnel carried one (P-REB-44).
+    rif: SafeStr | None = Field(
+        default=None, max_length=REFERRAL_CODE_LENGTH, pattern=r"^[A-Za-z0-9]+$"
+    )
 
     @field_validator(
         "nome_azienda", "referente_nome", "referente_cognome", "telefono", mode="after"

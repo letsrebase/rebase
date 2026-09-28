@@ -87,6 +87,7 @@ from rebase_core.models import (
     Match,
     User,
 )
+from rebase_core.referrals import ReferralService
 from rebase_core.search import matches_any
 
 ENTITY = "match"
@@ -95,6 +96,10 @@ QUADRO, LETTERA = "quadro", "lettera"
 DOCUMENT_BY_KIND = {QUADRO: "contratto-quadro", LETTERA: "lettera-di-incarico"}
 SIGNED_ELECTRONICALLY = "firmato elettronicamente"
 PEC_MISSING = "non indicata"
+# The common case: a party nobody referred prints this instead of a blank, hand-fillable
+# line -- `PEC_MISSING`'s own convention for a fact that is usually absent, not a
+# signature waiting to happen.
+SEGNALATO_NONE = "nessuno"
 DAY_RATE = "a giornata"
 LIST_LIMIT_DEFAULT = 100
 LIST_LIMIT_MAX = 500
@@ -793,6 +798,10 @@ class MatchService:
             "professionista-domicilio": fiscal.domicilio,
             "professionista-email": user.email,
             "professionista-pec": fiscal.pec or PEC_MISSING,
+            "segnalato-da": ReferralService(self.session).referrer_name(
+                "freelancer", fiscal.freelancer_id
+            )
+            or SEGNALATO_NONE,
             **self._signing_fields(today),
         }
 
@@ -827,6 +836,10 @@ class MatchService:
             "cliente-ragione-sociale": data.cliente.cliente_ragione_sociale,
             "cliente-piva": data.cliente.cliente_piva,
             "cliente-sede": data.cliente.cliente_sede,
+            "azienda-segnalata-da": ReferralService(self.session).referrer_name(
+                "company", data.company_id
+            )
+            or SEGNALATO_NONE,
             **self._signing_fields(today),
         }
 
