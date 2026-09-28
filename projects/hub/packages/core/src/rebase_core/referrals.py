@@ -250,7 +250,12 @@ class ReferralService:
 
     def get_settings(self) -> ReferralSettings:
         """The one settings row, seeded by migration 0022; a second call in the same
-        process never inserts again, `ReferralSettings.__doc__`'s own promise."""
+        process never inserts again, `ReferralSettings.__doc__`'s own promise. Flushed,
+        never committed: `record_reward_if_signed` calls this inside the row locks
+        `SigningService._confirm_completion` already holds, and a commit here would
+        release them and close that transaction early, ahead of the reward and the
+        signature it belongs to (CodeRabbit) -- the same reason `write_framework`
+        never commits either."""
         row = self.session.scalar(
             select(ReferralSettings).order_by(ReferralSettings.created_at).limit(1)
         )
@@ -258,7 +263,7 @@ class ReferralService:
             return row
         row = ReferralSettings()
         self.session.add(row)
-        self.session.commit()
+        self.session.flush()
         return row
 
     def save_settings(

@@ -54,8 +54,8 @@ export function MemberReferral() {
       ) : (
         <div className="space-y-3 border bg-card p-4">
           <p className="text-sm text-muted-foreground">
-            Segnala rebase a un freelance o a un&apos;azienda con questo link: se firmano un incarico, lo
-            vedi qui sotto.
+            Segnala rebase a un freelance o a un&apos;azienda con questo link: lo vedi qui sotto appena
+            si iscrive.
           </p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Input readOnly value={referralLink(data.code)} aria-label="Link di segnalazione da copiare" />
