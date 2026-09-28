@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from pigrocrm.core.validation import SafeStr
 
@@ -275,6 +275,27 @@ class EmailDraftUpdate(BaseModel):
     subject: SafeStr | None = Field(default=None, max_length=SUBJECT_MAX_LENGTH)
     body_markdown: SafeStr | None = Field(default=None, max_length=BODY_MAX_LENGTH)
     attachment_version_ids: list[UUID] | None = None
+
+
+class EmailDraftSend(BaseModel):
+    """What «Invia» carries: the revision of the draft the person read (REB-419).
+
+    The Email tab tells the person «parte esattamente quello che vedi», and the text is on
+    the row, not in this request. So the request names *which* text it means: the
+    `updated_at` its read answered, echoed back unchanged. The claim puts it in its own
+    `WHERE` (`GmailRepository.claim_draft_for_send`), and a draft edited since answers a
+    `Conflict` instead of leaving with words nobody reviewed.
+
+    A field in the body rather than an `If-Match` header because nothing in this API
+    speaks ETags and every other write takes JSON. Required rather than optional: a send
+    that may leave it out is a send that may skip the check, and the only client is the
+    SPA shipped in the same release. `AwareDatetime`, because a naive timestamp names no
+    instant and could only ever be compared by guessing a timezone.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    updated_at: AwareDatetime
 
 
 class EmailDraftAttachment(BaseModel):

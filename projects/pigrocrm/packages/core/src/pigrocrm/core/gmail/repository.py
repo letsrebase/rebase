@@ -409,7 +409,14 @@ class GmailRepository:
 
     # --- the send claim ---------------------------------------------------------------
 
-    def claim_draft_for_send(self, draft_id: UUID, now: datetime, account_id: UUID) -> bool:
+    def claim_draft_for_send(
+        self,
+        draft_id: UUID,
+        now: datetime,
+        account_id: UUID,
+        *,
+        expected_updated_at: datetime | None = None,
+    ) -> bool:
         """Moves a draft out of an editable state into `in_invio` in one statement, and
         answers whether *this* caller is the one that moved it.
 
@@ -446,13 +453,23 @@ class GmailRepository:
         `delete_messages_for` both give: the DBAPI's row count is typed only on
         `CursorResult`, and this answer decides whether an email is sent -- it has to come
         from somewhere the type system agrees exists.
+
+        `expected_updated_at` is the revision the person read (REB-419), and it joins the
+        guard for the same reason `send_state` is in it: a check made before this
+        statement is a check an edit committed a moment later walks past. Equality, not
+        "not newer than": the one revision that may leave is the one on screen. `None`
+        leaves the guard as it was before, for an in-process caller of
+        `EmailSendService.send` with no read to name; the REST route always passes one.
         """
+        guard = [
+            EmailDraft.id == draft_id,
+            EmailDraft.send_state.in_(sorted(EDITABLE_SEND_STATES)),
+        ]
+        if expected_updated_at is not None:
+            guard.append(EmailDraft.updated_at == expected_updated_at)
         claimed = self.session.execute(
             update(EmailDraft)
-            .where(
-                EmailDraft.id == draft_id,
-                EmailDraft.send_state.in_(sorted(EDITABLE_SEND_STATES)),
-            )
+            .where(*guard)
             .values(
                 send_state="in_invio",
                 send_attempted_at=now,

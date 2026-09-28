@@ -29,11 +29,14 @@ import {
   type SendState,
 } from './draftQueries'
 import {
+  DRAFT_CHANGED_REREAD,
+  DRAFT_CHANGED_REREADING,
   SEND_OUTCOME_UNKNOWN_REREAD,
   SEND_OUTCOME_UNKNOWN_REREADING,
   STATE_HEADING,
   STATE_HELP,
   draftCannotLeave,
+  draftChangedSinceRead,
   failureMovedTheDraft,
   mailboxCannotSend,
   outcomeSentence,
@@ -130,23 +133,31 @@ function DraftCard({
   const send = useSendDraft()
   const reconcile = useReconcileDraft()
   const remove = useDeleteDraft()
-  const [confirming, setConfirming] = useState(false)
-  // The last list read that had started when a send came back with no answer at all.
-  // Until a read numbered above it lands, the row on screen may be the one from before the
-  // press and says nothing about what happened, so «Invia» stays off and the banner says
-  // it is still finding out.
-  const [unknownAfter, setUnknownAfter] = useState<number | null>(null)
-  const rereading = unknownAfter !== null && readSeq <= unknownAfter
+  // The revision on screen when the person pressed «Invia», held while the confirmation
+  // is open, and what «Invia ora» names (REB-419). Taken at that press rather than at the
+  // confirmation: a list read that lands while the dialog is open can change the text
+  // behind it, and the person confirmed the text they had read, not that one. The server
+  // then refuses, and the card reads the draft again and asks once more.
+  const [confirmingRevision, setConfirmingRevision] = useState<string | null>(null)
+  // The last list read that had started when a send came back with no answer at all, or
+  // refused because the draft was edited since it was read. Until a read numbered above it
+  // lands, the row on screen may be the one from before the press, so «Invia» stays off
+  // and the banner says the card is still reading.
+  const [rereadAfter, setRereadAfter] = useState<number | null>(null)
+  const rereading = rereadAfter !== null && readSeq <= rereadAfter
   const attachmentsId = useId()
   // Synchronous, unlike `isPending`: two clicks dispatched before React re-renders both
   // read a `disabled` that is still false, and a flag read from the closure would be too.
   // This is the guard that holds; `disabled` is the one the person sees. Cleared when the
   // send stops being pending rather than from a per-call callback, which a `reset()` or
-  // an unmount would drop and leave «Invia ora» dead for good.
+  // an unmount would drop and leave «Invia ora» dead for good. On `status` too: an answer
+  // that arrives before React renders the pending state goes from idle straight to
+  // settled, `isPending` reads false on both sides and never changes, and the guard stayed
+  // up. A refused send that asks once more (REB-419) is exactly that fast answer.
   const sendingOnce = useRef(false)
   useEffect(() => {
     if (!send.isPending) sendingOnce.current = false
-  }, [send.isPending])
+  }, [send.isPending, send.status])
 
   const state = draft.send_state
   const sendable = isSendable(state)
@@ -164,14 +175,14 @@ function DraftCard({
   const subject = subjectOf(draft)
 
   function onSend() {
-    if (sendingOnce.current) return
+    if (sendingOnce.current || confirmingRevision === null) return
     sendingOnce.current = true
     reconcile.reset()
     remove.reset()
-    setUnknownAfter(null)
-    send.mutate(draft.id, {
+    setRereadAfter(null)
+    send.mutate({ id: draft.id, updated_at: confirmingRevision }, {
       onSuccess: (sent) => {
-        setConfirming(false)
+        setConfirmingRevision(null)
         if (sent.send_state === 'inviato')
           toast.success('Email inviata: la trovi nella corrispondenza.')
         patchCachedDraft(queryClient, draft, sent)
@@ -180,11 +191,11 @@ function DraftCard({
       // banner), and a dialog still asking «Inviare questa email?» over a refusal would
       // read as though nothing had happened.
       onError: (error) => {
-        setConfirming(false)
-        if (sendOutcomeUnknown(error)) {
+        setConfirmingRevision(null)
+        if (sendOutcomeUnknown(error) || draftChangedSinceRead(error)) {
           // The read count first, then a read that starts after it: the refetch the hook
           // already began is at or below the count and does not settle the question.
-          setUnknownAfter(lastReadStarted())
+          setRereadAfter(lastReadStarted())
           void queryClient.invalidateQueries({
             queryKey: draftKeys.forEntity(draft.entity_type, draft.entity_id),
           })
@@ -283,11 +294,7 @@ function DraftCard({
 
       {send.isError && !failureMovedTheDraft(send.error) ? (
         <p role="alert" className={ALERT}>
-          {!sendOutcomeUnknown(send.error)
-            ? outcomeSentence(send.error)
-            : rereading
-              ? SEND_OUTCOME_UNKNOWN_REREADING
-              : SEND_OUTCOME_UNKNOWN_REREAD}
+          {sendRefusal(send.error, rereading)}
         </p>
       ) : null}
       {reconcile.isError ? (
@@ -315,7 +322,7 @@ function DraftCard({
             disabled={blocked !== null || busy}
             onClick={() => {
               send.reset()
-              setConfirming(true)
+              setConfirmingRevision(draft.updated_at)
             }}
           >
             <Send data-icon="inline-start" />
@@ -339,9 +346,9 @@ function DraftCard({
       {/* Held open while the send is in flight: closing it then would put «Elimina» and
           «Invia» back under the person's hand before the outcome is known. */}
       <Dialog
-        open={confirming}
+        open={confirmingRevision !== null}
         onOpenChange={(open) => {
-          if (!send.isPending) setConfirming(open)
+          if (!open && !send.isPending) setConfirmingRevision(null)
         }}
       >
         <DialogContent className="sm:max-w-lg">
@@ -376,7 +383,7 @@ function DraftCard({
               type="button"
               variant="outline"
               disabled={send.isPending}
-              onClick={() => setConfirming(false)}
+              onClick={() => setConfirmingRevision(null)}
             >
               Annulla
             </Button>
@@ -389,6 +396,19 @@ function DraftCard({
       </Dialog>
     </article>
   )
+}
+
+/**
+ * The sentence a send that did not leave is shown with, when the row itself does not
+ * already say it (`failureMovedTheDraft`). The two that depend on a read after the press,
+ * an unanswered send and a draft edited since it was read, say which step they are at.
+ */
+function sendRefusal(error: unknown, rereading: boolean): string {
+  if (draftChangedSinceRead(error))
+    return rereading ? DRAFT_CHANGED_REREADING : DRAFT_CHANGED_REREAD
+  if (sendOutcomeUnknown(error))
+    return rereading ? SEND_OUTCOME_UNKNOWN_REREADING : SEND_OUTCOME_UNKNOWN_REREAD
+  return outcomeSentence(error)
 }
 
 /** From, to, cc and subject, as the recipient's client will show them. */
