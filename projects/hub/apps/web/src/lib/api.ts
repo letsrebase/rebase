@@ -566,6 +566,12 @@ export interface Talento {
   origine: 'form' | 'wizard' | 'admin'
   utm_source: string | null
   created_at: string
+  /** A card's own day rate and work mode (REB-558); `null` for a bare lead, which has
+   *  neither. `remoto` is `str | None` on `TalentoRead`, not narrowed to `Remoto`:
+   *  the database column allows any string, so the web reads it as one too and falls
+   *  back rather than assuming every stored value is one of the three known ones. */
+  tariffa_giornaliera: string | null
+  remoto: string | null
 }
 
 /** What an admin found about a signup on the public web (ORB-155): a name, maybe a
