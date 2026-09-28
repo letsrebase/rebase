@@ -300,7 +300,7 @@ function UploadPdf({
       // drop files a fresh one. Kept for a retry only if even the removal fails.
       const orphan = filed.current
       if (orphan !== null) {
-        let removed = false
+        let removed: boolean
         try {
           const result = await api.DELETE('/api/documents/{document_id}', {
             params: { path: { document_id: orphan } },
