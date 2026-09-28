@@ -553,13 +553,30 @@ jobs:
       # These two files render nothing: no pandoc, no typst, no poppler.
       renderer: false
 
+  # Two shards, not one job (REB-571): with the Python gate cut to three shards this
+  # was the longest job of a CRM pull request, 186s on run 36471954567, 121s of them
+  # 120 vitest files under jsdom on four cores, and the load of that full run is what
+  # REB-405, REB-416 and REB-559 keep chasing as timeouts. Each shard is vitest's own
+  # `--shard=k/2` over the files ordered by a hash of their path; lint, build and tsc run once, on the
+  # first, since the second has nothing new to lint. `fail-fast: false` so a red
+  # shard does not cancel its sibling and hide a second failure. `preflight.json`'s
+  # `pigrocrm-web-unit` lane still runs the whole suite in one lane.
   pigrocrm-web:
-    name: pigrocrm · web
+    name: pigrocrm · web ${{ matrix.shard }}
     needs: changes
     if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.pigrocrm_web == 'true') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/2', '2/2']
     uses: ./.github/workflows/_node-gate.yml
     with:
       filter: web
+      shard: ${{ matrix.shard }}
+      job-name: ${{ matrix.shard == '1/2' && 'lint · unit · build · typecheck' || 'unit' }}
+      lint: ${{ matrix.shard == '1/2' }}
+      build: ${{ matrix.shard == '1/2' }}
+      typecheck: ${{ matrix.shard == '1/2' }}
 
   # The committed `apps/web/src/lib/api-types.ts` is generated from the running API's
   # own OpenAPI document, never written by hand (apps/web/package.json's

@@ -18,10 +18,38 @@ on:
         required: false
         default: true
         type: boolean
+      lint:
+        description: run the package's lint script. Off for a shard that only adds tests.
+        required: false
+        default: true
+        type: boolean
+      typecheck:
+        description: run tsc. Off for a shard that only adds tests.
+        required: false
+        default: true
+        type: boolean
+      shard:
+        description: >-
+          `k/n`: run only the k-th of n slices of the package's test files, vitest's own
+          `--shard`, so a caller can spread one suite over n jobs that run side by side.
+          vitest orders the files by a sha1 of their path and slices that order, so the
+          slices are deterministic, disjoint and together the whole suite, but a new
+          file reshuffles them and nothing is balanced by duration. Empty runs every
+          file in this one job.
+        required: false
+        default: ''
+        type: string
+      job-name:
+        description: >-
+          Name of the inner job, half of the check name GitHub shows. A caller that runs
+          this gate in a matrix names each shard by what it does.
+        required: false
+        default: lint · unit · build · typecheck
+        type: string
 
 jobs:
   gate:
-    name: lint · unit · build · typecheck
+    name: ${{ inputs.job-name }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -40,6 +68,7 @@ jobs:
       - run: pnpm install --frozen-lockfile --filter ${{ inputs.filter }}...
 
       - name: Lint
+        if: inputs.lint
         run: pnpm --filter ${{ inputs.filter }} lint
 
       # Order is load-bearing, and was learned the hard way in this repository's
@@ -49,12 +78,18 @@ jobs:
       # effect of both `vitest run` and `vite build`. On a clean checkout, which is
       # exactly what a runner has and a developer's machine never is, running the
       # standalone typecheck first fails every route file with TS2307.
+      # pnpm forwards what follows the script name to the script, so `--shard=k/n`
+      # reaches `vitest run` as is; nothing is appended when the caller did not shard.
+      # Through `env`, so the value is data to the shell rather than text pasted into it.
       - name: Unit tests
-        run: pnpm --filter ${{ inputs.filter }} test
+        env:
+          SHARD: ${{ inputs.shard }}
+        run: pnpm --filter ${{ inputs.filter }} test ${SHARD:+--shard=$SHARD}
 
       - name: Build
         if: inputs.build
         run: pnpm --filter ${{ inputs.filter }} build
 
       - name: Type check
+        if: inputs.typecheck
         run: pnpm --filter ${{ inputs.filter }} exec tsc --noEmit
