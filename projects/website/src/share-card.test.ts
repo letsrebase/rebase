@@ -18,6 +18,7 @@ const PAGES = [
   'index.html',
   'pigrocrm.html',
   'pitch.html',
+  'company.html',
   'privacy.html',
   'terms.html',
 ] as const

@@ -567,6 +567,7 @@
                 machine.succeed("curl -fsS http://localhost/terms >/dev/null")
                 machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' http://localhost/termini | grep -Fx '301 http://localhost/terms'")
                 machine.succeed("curl -fsS http://localhost/pitch >/dev/null")
+                machine.succeed("curl -fsS http://localhost/company >/dev/null")
                 # The community page's old name, with its query string kept.
                 machine.succeed("curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' 'http://localhost/orbiters?x=1' | grep -Fx '301 http://localhost/community?x=1'")
                 # The two files the build generates from the same map.
@@ -1289,7 +1290,7 @@
               imports = [ self.nixosModules.nginx-headers ];
 
               options.services.rebase-website = {
-                enable = lib.mkEnableOption "the rebase website: the landing, the product and community pages, the policies and the pitch";
+                enable = lib.mkEnableOption "the rebase website: the landing, the product and community pages, the policies, the pitch and the deck for companies";
                 package = lib.mkOption {
                   type = lib.types.package;
                   default = own.website;
@@ -1321,8 +1322,10 @@
                         return = "301 /community$is_args$args";
                         extraConfig = "absolute_redirect off;";
                       };
-                      # The pitch deck, a page shared by link (ORB-153).
+                      # The pitch deck, a page shared by link (ORB-153), and the deck for
+                      # companies (REB-553), the same kind of page.
                       "= /pitch" = page "pitch.html";
+                      "= /company" = page "company.html";
                       "= /privacy" = page "privacy.html";
                       "= /terms" = page "terms.html";
                       "= /termini" = {

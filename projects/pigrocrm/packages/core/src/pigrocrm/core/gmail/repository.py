@@ -99,12 +99,11 @@ class GmailRepository:
         it is disconnected" indistinguishable from "there is none". `cli.py` drops them
         for its own question.
 
-        For `pigrocrm gmail-sync`, which has to tell "there is one, use it" from "there
-        are two, say which" -- a question `any_account` answers by picking, which is
-        right for the reply signal and wrong for a cron that would otherwise leave one
-        mailbox silently unsynchronised. Same ordering, for the same reason: an
-        arbitrary row order would make the CLI's own error message list the mailboxes
-        differently between two identical calls.
+        For `pigrocrm gmail-sync`, which synchronises every one of them (REB-404) --
+        not the one `any_account` would pick, which is right for the reply signal and
+        wrong for a cron that would otherwise leave the others silently unsynchronised.
+        Ordered, so that two identical runs print their lines, and the CLI's list of the
+        mailboxes an `--email` did not match, in the same order.
         """
         return list(
             self.session.execute(

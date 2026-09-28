@@ -154,11 +154,16 @@ root of this repository's checkout on the server):
 */15 * * * * cd $DEPLOY_PATH/projects/pigrocrm && docker compose --env-file ../../.env exec -T api uv run --no-sync pigrocrm gmail-sync >> /var/log/pigrocrm-gmail-sync.log 2>&1
 ```
 
-Every run writes a single line, with the time in front, the mailbox's address and the
-loop's counters and nothing else (never a subject, a message body or a correspondent's
-address): it exits `0` when the loop went through — or when another one was already
-running, which is not an error — and `1`, with a sentence on `stderr`, when the mailbox is
-missing, is ambiguous, belongs to a deactivated user or the consent has been revoked.
+Every run synchronises every connected mailbox of the root installation and of every
+space in the registry (REB-404), and writes one line for each: the time, the installation
+(`root` or the space's slug), the mailbox's address and the loop's counters, and nothing
+else (never a subject, a message body or a correspondent's address). A space with no
+mailbox prints nothing. It exits `0` when every loop went through, or found another one
+already running, which is not an error, and `1` when at least one line went to `stderr`
+with a sentence: no mailbox anywhere, a deactivated owner, a revoked consent, or a space
+whose database or schema could not be used (`saltato`). An unforeseen failure is
+`saltato (Type)` followed by the frames of its traceback, in this same log. One line
+never stops the next.
 `--env-file ../../.env` and `--no-sync` are here for exactly the reasons of §1 and §5.
 
 Same shape for the weekly report, one line for `pigrocrm digest` at eight on Monday:

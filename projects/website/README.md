@@ -4,7 +4,7 @@ letsrebase.com: the public site. Today that is the rebase landing at `/` and the
 two policy pages (`/privacy`, `/terms`); it is called `website` rather than `landing`
 because it is expected to grow past those.
 
-Five HTML pages, five scripts, four stylesheets. No React, no Tailwind, no router.
+Six HTML pages, seven scripts, four stylesheets. No React, no Tailwind, no router.
 That absence is the requirement rather than an omission: this is the first page a
 visitor loads, and it does not drag an application bundle behind it. The build takes
 about 300 milliseconds. Anything added here should keep that true.
@@ -29,7 +29,8 @@ pnpm --filter website lint
 | `src/pigrocrm.html` | `/pigrocrm` | PigroCRM's own page (ORB-159): one door into rebase beside a drawn Claude conversation, the four things inside, the guide, the closing box. Its own `pigrocrm.css` on top of `landing.css` |
 | `src/privacy.html` | `/privacy` | Privacy notice |
 | `src/terms.html` | `/terms` | Terms |
-| `src/pitch.html` | `/pitch` | The pitch deck, nineteen slides with keyboard, swipe and wheel navigation; shared by link, `noindex`. Its own stylesheet, `pitch.css`; its pictures under `src/pitch/` |
+| `src/pitch.html` | `/pitch` | The pitch deck, nineteen slides with keyboard, swipe and wheel navigation; shared by link, `noindex`. Its own stylesheet, `pitch.css`; its pictures under `src/pitch/`; its script, `deck.js`, shared with the page below |
+| `src/company.html` | `/company` | The deck for companies hiring a freelancer (REB-553): fourteen slides on the same stage, `pitch.css` and `deck.js`, the numbers, the selection, the day rates, the team builder, the talent cloud; shared by link, `noindex`. Its own picture under `src/company/` |
 
 The community page (its own signup form, at `/community`, `/orbiters` before
 REB-212) is gone (REB-72): both names 301 to `/` now, a week after the landing had
