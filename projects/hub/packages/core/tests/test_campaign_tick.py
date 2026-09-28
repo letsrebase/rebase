@@ -425,6 +425,39 @@ def test_a_row_with_only_a_first_click_is_stamped_with_the_click_time(
     assert result.inviate == 1
 
 
+def test_a_row_with_two_webhook_moments_is_stamped_with_the_earliest(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """`consegnata_at` is written before `primo_clic_at` in the model, but nothing
+    guarantees the events arrive in that order: a click event can carry an earlier
+    timestamp than a delivery one still in flight. `_earliest_webhook_moment` takes
+    the minimum across all four columns, not the first one written."""
+    clock = Clock(NOW)
+    campaign = scheduled(clean, clock, "a@studio.it")
+    row = rows(clean, campaign)["a@studio.it"]
+    clicked_at = clock.at - timedelta(hours=27)
+    delivered_at = clock.at - timedelta(hours=26)
+    clean.execute(
+        update(CampaignRecipient)
+        .where(CampaignRecipient.id == row.id)
+        .values(
+            stato="in_coda",
+            resend_id="re_abc123",
+            primo_clic_at=clicked_at,
+            consegnata_at=delivered_at,
+            inviata_at=None,
+        )
+    )
+    clean.commit()
+    recording = RecordingCampaignSender()
+    result = run_tick(clean, recording, SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert recording.sent == []
+    sent = rows(clean, campaign)["a@studio.it"]
+    assert sent.stato == "inviata"
+    assert sent.inviata_at == clicked_at
+    assert result.inviate == 1
+
+
 def test_a_row_the_webhook_already_marked_consegnata_is_not_sent_twice(
     clean: Session,  # noqa: F811  (fixture)
 ) -> None:
