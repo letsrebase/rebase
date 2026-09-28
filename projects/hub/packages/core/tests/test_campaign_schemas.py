@@ -85,12 +85,14 @@ def test_a_filter_amount_with_cents_is_kept_as_it_is_however_large() -> None:
     assert huge.budget_max == Decimal("123456789012.00")
 
 
-@pytest.mark.parametrize("field", ["fonte", "azione", "bottone_meta"])
+@pytest.mark.parametrize(
+    "field",
+    ["nome", "fonte", "oggetto", "testo", "bottone_testo", "bottone_meta", "azione"],
+)
 def test_a_patch_refuses_an_explicit_null_on_a_not_nullable_field_naming_it(field: str) -> None:
-    """`fonte`, `azione` and `bottone_meta` are `NOT NULL` in `models.py`'s `Campaign`
-    (REB-550, Part 1): an explicit `null` reaching `CampaignService.update`'s blanket
-    `setattr` used to raise an `IntegrityError`, a 500, instead of a sentence naming the
-    field."""
+    """Every field of `_NOT_NULLABLE` is `NOT NULL` in `models.py`'s `Campaign` (REB-550,
+    Part 1): an explicit `null` reaching `CampaignService.update`'s blanket `setattr`
+    used to raise an `IntegrityError`, a 500, instead of a sentence naming the field."""
     with pytest.raises(ValidationError, match=field):
         CampaignPatch.model_validate({field: None})
 
