@@ -1,8 +1,8 @@
 ---
 title: Lettera di incarico
 subtitle: "n. {{numero}}, secondo il Contratto quadro firmato il {{data-contratto-quadro}}"
-version: "1.0"
-date: 24 settembre 2026
+version: "1.1"
+date: 26 settembre 2026
 status: final
 ---
 
@@ -58,6 +58,12 @@ quadro). Il coordinamento qui sopra è stabilito di comune accordo ed è il solo
 Il Compenso è concordato a partire dalla tariffa giornaliera che il Professionista ha
 chiesto (articolo 5 del Contratto quadro). Il Professionista invia il Rendiconto e
 fattura a rebase come dice l'articolo 6 del Contratto quadro.
+
+**Consuntivazione.** Il Professionista registra le ore lavorate per l'incarico in
+PigroCRM, nel progetto che rebase predispone nel suo spazio all'avvio dell'incarico, con
+cadenza almeno settimanale e comunque prima di ogni fattura. rebase legge le ore di quel
+progetto per rendicontare l'incarico al Cliente e per riscontrare le fatture del
+Professionista, e non accede ad altro dello spazio.
 
 ## 6. Preavviso
 

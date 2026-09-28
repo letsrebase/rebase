@@ -141,7 +141,7 @@ def _setup(session: Session) -> tuple[UUID, UUID, UUID]:
     return admin_id, freelancer_id, company_id
 
 
-def _body(company_id: UUID) -> MatchCreate:
+def _body(company_id: UUID, *, giorni_previsti: int | None = None) -> MatchCreate:
     return MatchCreate(
         company_id=company_id,
         cliente=ClienteData(
@@ -155,6 +155,7 @@ def _body(company_id: UUID) -> MatchCreate:
             giorni_pagamento=30,
             fine_mese=True,
         ),
+        giorni_previsti=giorni_previsti,
     )
 
 
@@ -517,6 +518,54 @@ def test_create_with_no_id_still_writes_a_fresh_match_each_time(clean: Session) 
     assert first.id != second.id
 
 
+def test_create_stores_the_expected_days(clean: Session) -> None:
+    """`giorni_previsti` is an admin's estimate, optional (REB-497): given, it reads
+    back on the match `create` returns; left out, it stays `None`. Outside 1-366 is a
+    `MatchCreate` the wizard never manages to send at all."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+
+    with_days = service.create(freelancer_id, _body(company_id, giorni_previsti=40), admin_id)
+    assert with_days.giorni_previsti == 40
+
+    without_days = service.create(freelancer_id, _body(company_id), admin_id)
+    assert without_days.giorni_previsti is None
+
+    for invalid in (0, 367):
+        with pytest.raises(PydanticValidationError):
+            _body(company_id, giorni_previsti=invalid)
+
+
+def test_create_stores_the_letters_dates_and_fee(clean: Session) -> None:
+    """The three `lettera_*` columns on `Match` are `create`'s own copy of what the
+    letter was told (REB-497): a stable place for the report to read them from even if
+    the letter itself is later regenerated. Read straight back on the `MatchRead`
+    `create` returns."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    body = MatchCreate(
+        company_id=company_id,
+        cliente=ClienteData(
+            cliente_ragione_sociale="ACME S.r.l.", cliente_piva="01234567890", cliente_sede="Milano"
+        ),
+        lettera=LetteraFields(
+            ruolo="Backend developer",
+            attivita="Le API del prodotto.",
+            data_inizio=date(2026, 10, 1),
+            data_fine=date(2027, 3, 31),
+            compenso=Decimal("450"),
+            giorni_pagamento=30,
+            fine_mese=True,
+        ),
+    )
+
+    match = service.create(freelancer_id, body, admin_id)
+
+    assert match.lettera_data_inizio == body.lettera.data_inizio
+    assert match.lettera_data_fine == body.lettera.data_fine
+    assert match.lettera_compenso == body.lettera.compenso
+
+
 def test_a_stale_draft_framework_that_never_left_stays_hidden_from_the_page(
     clean: Session,
 ) -> None:
@@ -738,6 +787,37 @@ def test_only_an_active_match_can_be_closed(clean: Session) -> None:
     row.stato = "attivo"  # only a signed letter gets a match here (phase 3)
     clean.commit()
     assert service.close(match.id, admin_id).stato == "concluso"
+
+
+def test_an_active_matchs_situazione_says_where_its_hours_stand_on_pigro(clean: Session) -> None:
+    """`get` and `list_all` both read `match_words` through `_match_words` (REB-498,
+    spec § 3.5): the wiring, not the sentences themselves, which `test_match_words.py`
+    covers."""
+    admin_id, freelancer_id, company_id = _setup(clean)
+    service = _service(clean)
+    match = service.create(freelancer_id, _body(company_id), admin_id)
+    letter = clean.get(ContractDocument, match.lettera.id)
+    assert letter is not None
+    letter.stato = "firmato"
+    letter.signed_at = datetime(2026, 9, 28, 9, 0, tzinfo=UTC)
+    letter.signed_pdf = PDF
+    row = clean.get(Match, match.id)
+    assert row is not None
+    row.stato = "attivo"
+    row.pigro_stato = "da_collegare"
+    clean.commit()
+
+    read = service.get(match.id)
+    assert read.situazione.endswith(" Pigro non ha ancora il deal: riprova o aspetta lo sweep.")
+    assert read.altre_azioni == ["chiudi", "riprova_pigro"]
+    listed = service.list_all(stato=None, q=None, limit=100, offset=0).items[0]
+    assert listed.situazione == read.situazione
+
+    row.pigro_stato = "collegato"
+    clean.commit()
+    read = service.get(match.id)
+    assert read.situazione.endswith(" Le ore si consuntivano su Pigro.")
+    assert read.altre_azioni == ["chiudi"]
 
 
 def test_the_contracts_page_reads_the_active_framework_its_dates_and_the_matches_newest_first(

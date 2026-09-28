@@ -1,8 +1,8 @@
 """freelancer_cards, team_proposals, team_requests, team_request_talents,
 talent_cloud_grants -- and «Vetted» on freelancers
 
-Revision ID: 0022
-Revises: 0020
+Revision ID: 0023
+Revises: 0021
 
 REB-509 (milestone C, task C2): the tables every later task of the team builder and the
 talent cloud writes to. `freelancer_cards` is Claude's anonymous read of a CV (spec
@@ -15,10 +15,9 @@ for the manual «Vetted» flag, and `ADMIN_ACTION_KINDS` gains `vetted` in Pytho
 ever added one), so there is no `pg_constraint` guard to write for it here.
 
 Written as `0022` revising `0019`, then re-pointed at `0020` when the campaigns branch
-merged into `main`; `0021` (the hours-report branch) still revises `0019`, so
-three migrations would make three heads and `alembic upgrade head` refuse at the API's
-boot. C9 and D5 re-point `down_revision` at whatever `main`'s head is by then and rename
-this file to the next free number, after `git merge origin/main`, before `gh pr ready`.
+merged into `main`, then renamed `0023` and re-pointed at `0021` when the hours-report
+branch (`0021_match_pigro_link`, on `0020`) merged first (C9): two migrations on one
+parent would make two heads, and `alembic upgrade head` refuse at the API's boot.
 
 Every statement is conditional (`CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT
 EXISTS`, `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`), the discipline migration 0001's
@@ -35,8 +34,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0022"
-down_revision: str | Sequence[str] | None = "0020"
+revision: str = "0023"
+down_revision: str | Sequence[str] | None = "0021"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

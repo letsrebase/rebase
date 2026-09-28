@@ -23,6 +23,7 @@ const QUADRO = {
   attivo: false,
   rinnovo: null,
   ultimo_giorno_disdetta: null,
+  pigro_url: null,
 }
 const LETTERA = {
   ...QUADRO,
@@ -158,5 +159,29 @@ describe('«Contratti» in the member area (REB-392)', () => {
     mount({ quadro: QUADRO, quadri_precedenti: [], lettere: [] })
     await screen.findByText('Da firmare')
     expect(screen.queryByText('Contratti quadro precedenti')).toBeNull()
+  })
+
+  it('opens the letter’s deal on Pigro once the match is linked, and says what rebase reads (REB-503)', async () => {
+    const deal = 'https://pigro.letsrebase.com/ada/app/deal/6f1c2d3e-0000-4000-8000-000000000009'
+    const active = { ...LETTERA, stato: 'firmato', signing_url: null, attivo: true, pigro_url: deal }
+    mount({
+      quadro: { ...QUADRO, stato: 'firmato', signing_url: null, attivo: true },
+      quadri_precedenti: [],
+      lettere: [active, { ...LETTERA, id: 'd5', numero: '2026-002' }],
+    })
+
+    const letter = (await screen.findByText('Lettera di incarico n. 2026-001')).closest('li')!
+    const hours = within(letter).getByRole('link', { name: /^Le tue ore su Pigro/ })
+    expect(hours).toHaveTextContent(/^Le tue ore su Pigro$/)
+    expect(hours).toHaveAttribute('href', deal)
+    expect(hours).toHaveAttribute('target', '_blank')
+    expect(
+      within(letter).getByText('rebase legge le ore di questo progetto per la rendicontazione al cliente.'),
+    ).toBeInTheDocument()
+    // A letter whose match is not linked says nothing about Pigro.
+    const other = screen.getByText('Lettera di incarico n. 2026-002').closest('li')!
+    expect(within(other).queryByRole('link', { name: /Pigro/ })).toBeNull()
+    expect(within(other).queryByText(/rebase legge le ore/)).toBeNull()
+    expect(screen.getAllByRole('link', { name: /Le tue ore su Pigro/ })).toHaveLength(1)
   })
 })
