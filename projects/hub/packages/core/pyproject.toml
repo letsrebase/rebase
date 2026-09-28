@@ -22,6 +22,10 @@ dependencies = [
   # a variable axis, so fontTools instances the brand's Outfit. `[woff]` brings brotli.
   # The same pin as the root dev group, which the guide's build already uses.
   "fonttools[woff]==4.65.0",
+  # The Claude seam (REB-508), `llm.py`: the official SDK, for its two callers, the
+  # card writer (spec § 5.1) and the team-proposal engine (spec § 3.4). Pinned exactly,
+  # the current release on PyPI the day the seam was written.
+  "anthropic==1.8.0",
 ]
 
 [project.scripts]

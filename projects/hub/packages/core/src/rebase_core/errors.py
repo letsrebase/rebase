@@ -55,3 +55,33 @@ class SigningUnavailable(DomainError):
     mail key."""
 
     code = "signing_unavailable"
+
+
+class LlmUnavailable(DomainError):
+    """Claude did not answer: a refusal fallback exhausted, a rate limit, an outage
+    (`llm.py`, REB-508). `message` is the one sentence a page can show as it stands. A
+    502 in the API; the MCP's `_call` renders it as the tool's own sentence rather than
+    a traceback."""
+
+    code = "llm_unavailable"
+
+
+class TeamBuilderOff(DomainError):
+    """The team builder cannot run in this environment: `REBASE_TEAM_BUILDER_ENABLED` is
+    false, or no `REBASE_ANTHROPIC_API_KEY` is configured at all (spec § 3.2, § 5).
+    `message` is «Il team builder è spento.», the same sentence for either reason -- a
+    visitor gets nothing useful from knowing which. A 503, the same shape
+    `SigningUnavailable` already gives an environment missing Documenso or a mail
+    sender."""
+
+    code = "team_builder_off"
+
+
+class TeamBuilderBusy(DomainError):
+    """The team builder is on but full: every slot of the API process is taken
+    (`REBASE_TEAM_BUILDER_CONCURRENCY`), or today's proposals reached
+    `REBASE_TEAM_BUILDER_DAILY_CAP` (spec § 5, `team_caps.py`). `message` is «Troppe
+    richieste in questo momento: riprova tra un minuto.» for both, since a visitor does
+    the same thing either way. A 503 with `Retry-After`, like the limiter's 429."""
+
+    code = "team_builder_busy"

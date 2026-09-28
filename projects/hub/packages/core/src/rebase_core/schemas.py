@@ -291,7 +291,10 @@ LINK_MAX_LENGTH = 300
 PROGETTO_MAX_LENGTH = 4000
 
 
-def _clean_text(value: str, *, what: str) -> str:
+def clean_text(value: str, *, what: str) -> str:
+    """A one-line value a person types (a name, a company, a phone): trimmed, no
+    control or direction character, never only spaces. Shared by the wizards' schemas
+    and the team request's (`team_schemas.TeamRequestCreate`)."""
     trimmed = _reject_control_characters(value).strip()
     if not trimmed:
         raise ValueError(f"serve {what}, non solo spazi")
@@ -344,7 +347,7 @@ class FreelancerFields(BaseModel):
     @field_validator("nome", "cognome", "posizione", mode="after")
     @classmethod
     def _trimmed(cls, value: str) -> str:
-        return _clean_text(value, what="un valore")
+        return clean_text(value, what="un valore")
 
     @field_validator("linkedin_url", mode="after")
     @classmethod
@@ -400,12 +403,12 @@ class FreelancerDraft(BaseModel):
     @field_validator("nome", "cognome", mode="after")
     @classmethod
     def _trimmed(cls, value: str) -> str:
-        return _clean_text(value, what="un valore")
+        return clean_text(value, what="un valore")
 
     @field_validator("posizione", mode="after")
     @classmethod
     def _trimmed_or_none(cls, value: str | None) -> str | None:
-        return None if value is None else _clean_text(value, what="una posizione")
+        return None if value is None else clean_text(value, what="una posizione")
 
     @field_validator("linkedin_url", mode="after")
     @classmethod
@@ -444,7 +447,7 @@ class CompanyFields(BaseModel):
     @field_validator("durata", "figura_richiesta", mode="after")
     @classmethod
     def _trimmed(cls, value: str) -> str:
-        return _clean_text(value, what="un valore")
+        return clean_text(value, what="un valore")
 
     @field_validator("progetto", mode="after")
     @classmethod
@@ -479,7 +482,7 @@ class CompanyCreate(CompanyFields):
     )
     @classmethod
     def _trimmed_identity(cls, value: str) -> str:
-        return _clean_text(value, what="un valore")
+        return clean_text(value, what="un valore")
 
 
 class CompanyUpdate(CompanyFields):
@@ -858,7 +861,7 @@ class FreelancerOverride(BaseModel):
     @field_validator("nome", "cognome", "posizione", mode="after")
     @classmethod
     def _trimmed(cls, value: str | None) -> str | None:
-        return _clean_text(value, what="un valore") if value is not None else None
+        return clean_text(value, what="un valore") if value is not None else None
 
     @field_validator("linkedin_url", mode="after")
     @classmethod
@@ -911,7 +914,7 @@ class CompanyOverride(BaseModel):
     @field_validator("nome", "cognome", "nome_azienda", "durata", "figura_richiesta", mode="after")
     @classmethod
     def _trimmed(cls, value: str | None) -> str | None:
-        return _clean_text(value, what="un valore") if value is not None else None
+        return clean_text(value, what="un valore") if value is not None else None
 
     @field_validator("linkedin_url", mode="after")
     @classmethod

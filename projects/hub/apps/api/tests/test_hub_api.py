@@ -1,16 +1,20 @@
 """The hub's two public writes: multipart with a CV, and JSON. Both mute, both limited."""
 
+import hashlib
 from collections.abc import Iterator
+from contextlib import nullcontext
 from typing import Any
 
 import pytest
+from fakes_cards import CARD, card_response, text_pdf
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_sender, get_tracker
+from rebase_api.deps import get_llm, get_sender, get_session_opener, get_tracker
 from rebase_api.ratelimit import SIGNUPS_PER_MINUTE
 from rebase_core.analytics import APPLICATION_COMPLETED, Tracker
+from rebase_core.llm import LlmRequest, LlmResponse, RecordingCall
 from rebase_core.mail import RecordingSender
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
@@ -480,3 +484,87 @@ def test_without_a_key_nothing_is_tracked_and_the_application_still_lands(
     assert client.post("/api/hub/freelancers", data=_form()).status_code == 201
     assert client.post("/api/hub/companies", json=_company()).status_code == 201
     assert api_session.execute(text("SELECT count(*) FROM freelancers")).scalar() == 1
+
+
+# ---- the anonymous card (REB-510): written after the answer, never before it ----------
+
+CV = text_pdf("Ada Lovelace, backend developer a Torino da nove anni: Python, AWS.")
+
+
+def test_the_wizard_schedules_the_card_write(
+    client: TestClient, api_session: Session, llm: RecordingCall
+) -> None:
+    """A new card with a CV gets its anonymous description once the 201 is out, in a
+    session of its own; a repeat of the address and an application with no CV ask
+    Claude nothing."""
+    _clean(api_session)
+    response = client.post(
+        "/api/hub/freelancers", data=_form(), files={"cv": ("Ada CV.pdf", CV, "application/pdf")}
+    )
+    assert response.status_code == 201, response.text
+    assert response.json() == {"ok": True}
+
+    assert len(llm.requests) == 1
+    assert "Ada Lovelace, backend developer" in llm.requests[0].messages[0]["content"][0]["text"]
+    row = api_session.execute(text("SELECT cv_sha256, card, error FROM freelancer_cards")).one()
+    assert (row.cv_sha256, row.card, row.error) == (hashlib.sha256(CV).hexdigest(), CARD, None)
+
+    again = client.post(
+        "/api/hub/freelancers",
+        data=_form(),
+        files={"cv": ("evil.pdf", text_pdf("Un altro CV."), "application/pdf")},
+    )
+    assert again.status_code == 201
+    no_cv = client.post("/api/hub/freelancers", data=_form(email="bob@studio.it"))
+    assert no_cv.status_code == 201
+    assert len(llm.requests) == 1
+    assert api_session.execute(text("SELECT count(*) FROM freelancer_cards")).scalar() == 1
+
+
+class _AfterTheEvent:
+    """Claude, noting whether the completion event had already gone out when it was
+    called: the card write is queued after it, so PostHog never waits on Claude."""
+
+    def __init__(self, tracked: RecordingCapture) -> None:
+        self.tracked = tracked
+        self.events_before: list[int] = []
+
+    def complete(self, request: LlmRequest) -> LlmResponse:
+        self.events_before.append(len(self.tracked.calls))
+        return card_response()
+
+
+def test_the_completion_event_is_not_held_behind_the_card(
+    client: TestClient, api_session: Session, llm: RecordingCall, tracked: RecordingCapture
+) -> None:
+    _clean(api_session)
+    claude = _AfterTheEvent(tracked)
+    client.app.dependency_overrides[get_llm] = lambda: claude  # type: ignore[attr-defined]
+
+    response = client.post(
+        "/api/hub/freelancers", data=_form(), files={"cv": ("Ada CV.pdf", CV, "application/pdf")}
+    )
+
+    assert response.status_code == 201, response.text
+    assert claude.events_before == [1]
+    assert len(tracked.calls) == 1
+
+
+def test_without_a_key_the_wizard_writes_no_card_and_opens_no_session(
+    client: TestClient, api_session: Session
+) -> None:
+    _clean(api_session)
+    opened: list[bool] = []
+
+    def opener() -> Any:
+        opened.append(True)
+        return nullcontext(api_session)
+
+    client.app.dependency_overrides[get_llm] = lambda: None  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_session_opener] = lambda: opener  # type: ignore[attr-defined]
+    response = client.post(
+        "/api/hub/freelancers", data=_form(), files={"cv": ("Ada CV.pdf", CV, "application/pdf")}
+    )
+    assert response.status_code == 201, response.text
+    assert opened == []
+    assert api_session.execute(text("SELECT count(*) FROM freelancer_cards")).scalar() == 0

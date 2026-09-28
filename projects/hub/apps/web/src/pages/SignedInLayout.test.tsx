@@ -187,6 +187,19 @@ describe('the sidebar, gated on role', () => {
     expect(labels).toEqual(['Talenti', 'Match', 'Aziende'])
   })
 
+  it('shows «Richieste team» between Match and Aziende for an admin (REB-514)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
+    mount()
+    await screen.findByRole('heading', { name: 'Dentro' })
+    const richieste = screen.getByRole('link', { name: 'Richieste team' })
+    expect(richieste.getAttribute('href')).toMatch(/\/admin\/team$/)
+    const labels = screen
+      .getAllByRole('link')
+      .map((link) => link.textContent)
+      .filter((label): label is string => ['Match', 'Richieste team', 'Aziende'].includes(label ?? ''))
+    expect(labels).toEqual(['Match', 'Richieste team', 'Aziende'])
+  })
+
   it('hides the admin group and its eyebrow for a member, keeping "La tua area"', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, ADA))
     mount('/me')

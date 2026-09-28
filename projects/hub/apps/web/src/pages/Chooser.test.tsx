@@ -23,8 +23,13 @@ function mount() {
     path: '/companies',
     component: () => <h1>Companies</h1>,
   })
+  const team = createRoute({
+    getParentRoute: () => root,
+    path: '/team',
+    component: () => <h1>Team</h1>,
+  })
   const router = createRouter({
-    routeTree: root.addChildren([chooser, freelance, companies]),
+    routeTree: root.addChildren([chooser, freelance, companies, team]),
     history: createMemoryHistory({ initialEntries: ['/'] }),
   })
   render(<RouterProvider router={router} />)
@@ -45,5 +50,10 @@ describe('the root chooser', () => {
     expect(
       await screen.findByRole('link', { name: /Cerco persone per un progetto/ }),
     ).toHaveAttribute('href', '/companies')
+  })
+
+  it('links «Cerca un team» to the team builder, beside the two doors', async () => {
+    mount()
+    expect(await screen.findByRole('link', { name: 'Cerca un team' })).toHaveAttribute('href', '/team')
   })
 })

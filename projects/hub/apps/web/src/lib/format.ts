@@ -98,6 +98,48 @@ export const DOCUMENT_STATE_LABELS: Record<string, string> = {
   disdetto: 'Disdetto',
 }
 
+/** P-REB-43: a team request's states, in the order the admin moves it («Richieste
+ *  team»), and its words, where it came from, and a talent's answer to the availability
+ *  mail: copies of the core's `team_words.py`, held equal by the core's
+ *  `tests/test_web_labels.py` as the match labels above are. */
+export const TEAM_REQUEST_STATES = ['nuova', 'contattata', 'chiusa'] as const
+export const TEAM_REQUEST_STATE_LABELS: Record<string, string> = {
+  nuova: 'Nuova',
+  contattata: 'Contattata',
+  chiusa: 'Chiusa',
+}
+export const TEAM_ORIGIN_LABELS: Record<string, string> = {
+  pubblico: 'Pubblico',
+  cloud: 'Cloud',
+  admin: 'Admin',
+}
+export const TALENT_ANSWER_LABELS: Record<string, string> = {
+  si: 'Sì',
+  no: 'No',
+}
+
+/** A card's `seniority` (spec § 2.1), in the words a profile uses: the keys are core's
+ *  `CARD_SENIORITIES`, which `tests/test_web_labels.py` holds this map to. */
+export const SENIORITY_LABELS: Record<string, string> = {
+  junior: 'Junior',
+  mid: 'Mid',
+  senior: 'Senior',
+  lead: 'Lead',
+}
+
+/** A team member's `giorni_settimana` as the team reads it: «1 giorno a settimana»,
+ *  «3 giorni a settimana», or «Giorni da definire» when the proposal left it open. */
+export function formatDaysPerWeek(giorni: number | null): string {
+  if (giorni === null) return 'Giorni da definire'
+  return giorni === 1 ? '1 giorno a settimana' : `${giorni} giorni a settimana`
+}
+
+/** A card's `anni`, as a phrase: «meno di un anno», «1 anno», «9 anni di esperienza». */
+export function formatExperience(anni: number): string {
+  if (anni === 0) return 'meno di un anno di esperienza'
+  return anni === 1 ? '1 anno di esperienza' : `${anni} anni di esperienza`
+}
+
 /** Where a match's link to its deal on Pigro stands (REB-497), as the «Pigro» column on
  *  the «Match» list reads it. The web's own words: the core writes the sentence, not a
  *  label. */

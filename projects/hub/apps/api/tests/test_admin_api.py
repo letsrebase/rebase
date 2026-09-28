@@ -1,17 +1,20 @@
 """The admin area over HTTP: a cookie in, the lists out, and nothing without it."""
 
+import hashlib
 import json
 import re
 from collections.abc import Iterator
 
 import pytest
+from fakes_cards import CARD, card_response, text_pdf
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_http_call, get_sender
+from rebase_api.deps import get_http_call, get_llm, get_sender
 from rebase_core.config import Settings, get_settings
 from rebase_core.http import MAX_BODY_BYTES
+from rebase_core.llm import RecordingCall
 from rebase_core.mail import RecordingSender
 from rebase_core.models import Freelancer, Login, User
 from rebase_core.perks import PerkService
@@ -34,6 +37,7 @@ def admin(api_session: Session) -> Iterator[None]:
     yield
     api_session.rollback()
     for table in (
+        "admin_actions",
         "guide_downloads",
         "comments",
         "admin_tokens",
@@ -833,3 +837,104 @@ def test_research_is_refused_on_a_card_the_person_filled(
     assert refused.status_code == 422, refused.text
     assert refused.json()["detail"][0]["loc"][-1] == "email"
     assert client.get("/api/hub/freelancers").json()["items"][0]["posizione"] == "Backend developer"
+
+
+# ---- the anonymous card (REB-510) ------------------------------------------------------
+
+CV = text_pdf("Ada Lovelace, backend developer a Torino da nove anni: Python, AWS.")
+
+
+def _apply_with_text(client: TestClient) -> str:
+    response = client.post(
+        "/api/hub/freelancers",
+        data={
+            "nome": "Ada",
+            "cognome": "Lovelace",
+            "email": "ada@studio.it",
+            "tariffa_giornaliera": "450",
+            "posizione": "Backend developer",
+            "remoto": "remoto",
+        },
+        files={"cv": ("Ada CV.pdf", CV, "application/pdf")},
+    )
+    assert response.status_code == 201, response.text
+    [item] = client.get("/api/hub/freelancers").json()["items"]
+    return str(item["id"])
+
+
+def test_without_the_cookie_the_card_routes_are_a_401(client: TestClient, admin: None) -> None:
+    assert client.get(f"/api/hub/freelancers/{MISSING}/card").status_code == 401
+    assert client.post(f"/api/hub/freelancers/{MISSING}/card").status_code == 401
+
+
+def test_an_admin_reads_and_regenerates_the_anonymous_card(
+    client: TestClient, admin: None, sender: RecordingSender, llm: RecordingCall
+) -> None:
+    _login(client, sender)
+    freelancer_id = _apply_with_text(client)
+    assert len(llm.requests) == 1
+
+    read = client.get(f"/api/hub/freelancers/{freelancer_id}/card")
+    assert read.status_code == 200, read.text
+    body = read.json()
+    assert body["freelancer_id"] == freelancer_id
+    assert body["card"] == CARD
+    assert body["modalita"] == "remoto"
+    # The client's band from the rate (450 plus 40%), which the page shows as it is.
+    assert body["fascia"] == {"min": 500, "max": 650}
+    assert body["cv_sha256"] == hashlib.sha256(CV).hexdigest()
+    assert body["model"] == "claude-opus-5" and body["generated_at"] is not None
+    assert body["error"] is None
+
+    # «Rigenera scheda»: the same CV is written again, on request.
+    again = client.post(f"/api/hub/freelancers/{freelancer_id}/card")
+    assert again.status_code == 200, again.text
+    assert len(llm.requests) == 2
+    assert again.json()["card"] == CARD
+
+    # A refusal keeps the card and says so; the next «Rigenera» ignores the failed hash.
+    refusing = RecordingCall([card_response(stop_reason="refusal"), card_response()])
+    client.app.dependency_overrides[get_llm] = lambda: refusing  # type: ignore[attr-defined]
+    refused = client.post(f"/api/hub/freelancers/{freelancer_id}/card").json()
+    assert refused["card"] == CARD and refused["error"]
+    retried = client.post(f"/api/hub/freelancers/{freelancer_id}/card").json()
+    assert len(refusing.requests) == 2
+    assert retried["card"] == CARD and retried["error"] is None
+
+    assert client.get(f"/api/hub/freelancers/{MISSING}/card").status_code == 404
+    assert client.post(f"/api/hub/freelancers/{MISSING}/card").status_code == 404
+
+
+def test_regenerating_without_a_key_is_the_team_builders_503(
+    client: TestClient, admin: None, sender: RecordingSender, llm: RecordingCall
+) -> None:
+    """«Rigenera scheda» on an environment with no key says so, rather than answering the
+    card unchanged as if it had been written again."""
+    _login(client, sender)
+    freelancer_id = _apply_with_text(client)
+    client.app.dependency_overrides[get_llm] = lambda: None  # type: ignore[attr-defined]
+
+    refused = client.post(f"/api/hub/freelancers/{freelancer_id}/card")
+
+    assert refused.status_code == 503
+    assert refused.json() == {"detail": "Il team builder è spento."}
+    # Reading still works: the card written earlier is there.
+    assert client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()["card"] == CARD
+
+
+def test_clearing_the_cv_drops_the_anonymous_card(
+    client: TestClient,
+    admin: None,
+    sender: RecordingSender,
+    llm: RecordingCall,
+    api_session: Session,
+) -> None:
+    _login(client, sender)
+    freelancer_id = _apply_with_text(client)
+    assert client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()["card"] == CARD
+
+    assert client.delete(f"/api/hub/freelancers/{freelancer_id}/cv").status_code == 200
+
+    body = client.get(f"/api/hub/freelancers/{freelancer_id}/card").json()
+    assert (body["card"], body["cv_sha256"], body["error"]) == (None, None, None)
+    assert api_session.execute(text("SELECT count(*) FROM freelancer_cards")).scalar() == 0

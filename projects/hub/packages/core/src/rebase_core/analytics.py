@@ -1,4 +1,5 @@
-"""The completion event, sent by the server: `iscrizione_completata` (REB-215).
+"""The events the server sends itself: the completion, `iscrizione_completata` (REB-215),
+and the team builder's (REB-511, spec § 6), `team_proposta_generata` among them.
 
 The browsers already report the wizards to PostHog, step by step (`shared/analytics`,
 ORB-185). This exists because the browser's completion event is the one that gets lost:
@@ -25,6 +26,11 @@ rate.
 the call runs in a background task after the response has been sent, and a capture that
 raises answers `False`. An empty `REBASE_POSTHOG_KEY` builds no client at all, which is
 what the tests and a stack that measures nothing want.
+
+**The team builder's events have no browser half.** A proposal, a request and a
+talent's answer are counted where they happen, on the server, each on an id of its own
+and with no person profile, carrying counts and words of ours (the origin, how many
+people, the tokens, the answer) and never a description, a company or an address.
 """
 
 from __future__ import annotations
@@ -42,6 +48,8 @@ if TYPE_CHECKING:
     from posthog import Posthog
 
 APPLICATION_COMPLETED = "iscrizione_completata"
+TEAM_PROPOSAL_GENERATED = "team_proposta_generata"
+TEAM_REQUEST_SENT = "team_richiesta_inviata"
 
 Kind = Literal["freelance", "azienda"]
 
@@ -79,6 +87,20 @@ class Tracker:
                 properties=properties,
             )
         except Exception:  # noqa: BLE001 -- the SDK's failure is not the applicant's
+            return False
+        return True
+
+    def team_event(self, name: str, properties: dict[str, Any]) -> bool:
+        """One team builder event (`team_proposta_generata` and the two that follow it,
+        spec § 6) on an id of its own: no browser sends a half of it, so there is no
+        person to pair it with. Answers whether the SDK took it."""
+        try:
+            self.capture(
+                name,
+                distinct_id=uuid4().hex,
+                properties={**properties, "$process_person_profile": False},
+            )
+        except Exception:  # noqa: BLE001 -- the SDK's failure is not the visitor's
             return False
         return True
 
