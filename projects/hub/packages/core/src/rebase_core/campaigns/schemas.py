@@ -16,10 +16,10 @@ from rebase_core.models import (
 from rebase_core.search import SEARCH_MAX_LENGTH
 
 # A filter's amount is kept like every other amount the hub stores: euro with cents at
-# most, never below zero. The editor sends two decimals (REB-485) and reads a stored one
-# back with two decimals, which is exact only because nothing here keeps a third
-# (REB-526, Greptile on #432).
-FilterAmount = Annotated[Decimal, Field(ge=0, max_digits=9, decimal_places=2)]
+# most and never below zero, with no ceiling the editor's own field lacks. The editor
+# sends two decimals (REB-485) and reads a stored one back with two decimals, which is
+# exact only because nothing here keeps a third (REB-526, Greptile on #432).
+FilterAmount = Annotated[Decimal, Field(ge=0, decimal_places=2)]
 
 
 class TalentiFiltri(BaseModel):

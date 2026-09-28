@@ -320,11 +320,13 @@ jobs:
               - *hub_image
               - '.github/workflows/deploy-hub.yml'
               - '.github/workflows/_deploy-compose.yml'
-            # The scaffolding script's own regression test (REB-422): dependency-free
-            # on purpose, so it runs with node --test rather than through a project's
-            # own gate.
+            # The scaffolding script's own regression test (REB-422) and the weekly
+            # Snyk report's (REB-525): both dependency-free on purpose, so they run with
+            # node --test rather than through a project's own gate. The Snyk tests read
+            # JSON fixtures, hence the whole directory.
             tooling:
               - 'tooling/client-repo-starter/*.mjs'
+              - 'tooling/snyk-weekly/**'
               - '.github/workflows/ci.yml'
 
       # The deploy workflows used to answer "did this push touch my project?" for
@@ -650,11 +652,12 @@ jobs:
         # but lacks pandoc, Typst, fontTools or the brand files is a broken deploy.
         run: docker run --rm rebase-api uv run --no-sync rebase contracts-check
 
-  # REB-422: dependency-free on purpose, same as the script it tests, so this runs
+  # REB-422: dependency-free on purpose, same as the scripts it tests, so this runs
   # node --test directly rather than through _node-gate.yml (which installs a pnpm
-  # workspace this script deliberately sits outside of).
+  # workspace these scripts deliberately sit outside of). REB-525 added the weekly
+  # Snyk report's tests to the same run rather than a second job for seconds of work.
   tooling-starter:
-    name: tooling · client-repo-starter
+    name: tooling · node scripts
     needs: changes
     if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.tooling == 'true') }}
     runs-on: ubuntu-latest
@@ -664,7 +667,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - run: node --test tooling/client-repo-starter/*.test.mjs
+      - run: node --test tooling/client-repo-starter/*.test.mjs tooling/snyk-weekly/*.test.mjs
 
   ci:
     name: ci

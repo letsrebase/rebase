@@ -32,8 +32,8 @@ primitive is generated there and nowhere else**: the repository has exactly one
 copy inside an application (REB-304). A project small enough to be a
 single artifact may be one package at its own root rather than growing an `apps/`
 directory with one entry in it, which is what
-`projects/website` is. `tooling/` is still empty, and a directory is not created
-before something real goes in it.
+`projects/website` is. `tooling/` holds the client-repo starter kit and the weekly
+Snyk report, and a directory is not created there before something real goes in it.
 
 ## The dependency rule, which is the whole reason these projects live together
 
@@ -166,6 +166,15 @@ checks out, verifies and records that. Second: a `workflow_run` workflow only ev
 runs in the version on the default branch, so a change to a deploy file cannot be
 tested on a branch and is proven on the trunk instead.
 
+**The weekly Snyk scan is a fifth thing, and not a status check either.** Every Monday
+at 06:00 UTC, after Dependabot, `.github/workflows/snyk-weekly.yml` runs `snyk test` on
+the pnpm workspace and on the Python dependencies exported from `uv.lock`, `snyk code
+test`, and `snyk container test` on the five images built as tier 3 builds them, and
+files what it finds (§ Conventions). It never runs `snyk monitor`. It needs two
+repository secrets, `SNYK_TOKEN` and `LINEAR_API_KEY`; how to set and rotate them, and
+the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
+`tooling/snyk-weekly/README.md`.
+
 ## Conventions
 
 - **Conventional Commits**, in English, in the first person, written the way a person
@@ -199,8 +208,8 @@ tested on a branch and is proven on the trunk instead.
   prefix `REB-`. Work that is not on the board did not happen, for either of us or
   for any agent either of us runs, and there is no second tracker for development: no
   GitHub Project other than the public roadmap below is part of this repo's flow.
-- **One kind of GitHub issue exists here, and it is not development work.** An issue
-  labelled `roadmap` is a point of the public roadmap
+- **A person opens one kind of GitHub issue here, and it is not development work.** An
+  issue labelled `roadmap` is a point of the public roadmap
   (`github.com/orgs/letsrebase/projects/1`): the company, the contracts, the events,
   the merch, a product line named from far away. It is written in English like
   everything else, it carries the project's own `Area`, `Start`, `End` and `Status`
@@ -208,8 +217,9 @@ tested on a branch and is proven on the trunk instead.
   closes when that piece of work is done, which is how a reader sees what is
   finished. The label alone does not put it on the board: a new point is added by
   hand (`gh project item-add 1 --owner letsrebase --url <issue url>`) and its fields
-  set there; closing the issue is what moves `Status` to `Done`. Nothing else opens a
-  GitHub issue here, and the test is the shape of the work, not its subject: a point
+  set there; closing the issue is what moves `Status` to `Done`. Nobody opens any other
+  GitHub issue here (the weekly Snyk issue below is a workflow's), and the test is the
+  shape of the work, not its subject: a point
   spans weeks or months, is owned by Ivan or Lorenzo and has no worktree of its own,
   which is why a product point (`#297`, `#302`) is still a roadmap point while every
   card under it is not. Anything one agent run can finish, a defect and a release
@@ -220,6 +230,13 @@ tested on a branch and is proven on the trunk instead.
   still passes. `Closes #297` goes on that line only when merging that pull request
   really finishes the whole roadmap point, which on a milestone's draft PR means
   waiting for the card that finishes it.
+- **The weekly Snyk issue is the other kind, and only its workflow opens it.** When the
+  Monday scan finds anything at medium or above, `snyk-weekly.yml` files a GitHub issue
+  labelled `security`, the way Dependabot files an alert, and its twin Linear card,
+  labelled `security`, `parallel` and `area:ci` and left unassigned so whoever is free
+  takes it. The work is done from the card like any other; the issue is closed with it.
+  While either is open, the next Monday comments there instead of filing again
+  (`docs/design/DECISIONS.md`, 2026-09-26).
 - **A Dependabot pull request is the one PR without a card.** Version updates arrive
   on Monday mornings as `.github/dependabot.yml` schedules them, a security update the
   day its advisory lands; both are bumps and nothing else, titled `chore(deps): ...`,
@@ -256,7 +273,8 @@ tested on a branch and is proven on the trunk instead.
   claimed. Anything else gets a comment at most, never an assignee change, a status
   change, a branch or a PR, and being asked for it by name does not make it yours
   (`docs/tracker.md` § Who owns a card). Every issue is filed with an assignee for
-  the same reason: an empty one reads as free.
+  the same reason: an empty one reads as free, which is the one thing the weekly Snyk
+  card, filed unassigned and `parallel`, means to say.
 - An issue carries exactly one `type` label and exactly one `area:*` label, both from
   enforced groups, so Linear drops a second one silently. Priority and effort are
   Linear's native fields and are never labels.
