@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_llm, get_sender, get_session_opener
+from rebase_api.deps import get_clock, get_llm, get_sender, get_session_opener
 from rebase_api.ratelimit import SIGNUPS_PER_MINUTE, reset_rate_limit
 from rebase_core.config import Settings, get_settings
 from rebase_core.errors import LlmUnavailable
@@ -34,7 +34,6 @@ from rebase_core.models import (
     TeamRequestTalent,
     User,
 )
-from rebase_core.team_caps import rome_midnight
 
 ADMIN_EMAIL = "ivan@rebase.it"
 MISSING = "00000000-0000-7000-8000-000000000000"
@@ -46,6 +45,9 @@ DESCRIZIONE = (
 )
 RIASSUNTO = "Un'azienda di logistica rifà il gestionale degli ordini, backend in Python."
 CONTACTS = {"azienda": "Acme S.r.l.", "email": "wile@acme.it", "telefono": "+39 345 1234567"}
+# 00:00:01 in Rome on 29 September (CEST, UTC+2), a second into the day the daily cap
+# counts from: the instant a test that read the wall clock fell over (REB-581).
+JUST_AFTER_MIDNIGHT = datetime(2026, 9, 28, 22, 0, 1, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -72,6 +74,12 @@ def _settings(client: TestClient, **overrides: Any) -> None:
 
 def _llm(client: TestClient, call: Any) -> None:
     client.app.dependency_overrides[get_llm] = lambda: call  # type: ignore[attr-defined]
+
+
+def _clock(client: TestClient, now: datetime) -> None:
+    """The builder's clock pinned at `now`, for the proposals it stamps and the daily cap
+    it counts: a test that counts the day stamps its own rows from the same `now`."""
+    client.app.dependency_overrides[get_clock] = lambda: lambda: now  # type: ignore[attr-defined]
 
 
 def _talent(session: Session, n: int = 1) -> UUID:
@@ -110,7 +118,6 @@ def _proposal_row(
     created_at: datetime | None = None,
     model: str = MODEL,
 ) -> UUID:
-    _now = datetime.now(UTC)
     row = TeamProposal(
         descrizione=DESCRIZIONE,
         riassunto=RIASSUNTO,
@@ -131,12 +138,12 @@ def _proposal_row(
         output_tokens=640 if model else 0,
         cache_read_tokens=0,
         origine=origine,
-        # A few minutes old, so a proposal the test makes afterwards is the newer one, but
-        # not before midnight in Rome as of planting: the daily cap counts from there, and
-        # a row planted at 23:58 Rome for a test running at 00:03 is yesterday's (REB-582,
-        # run 36489673401, green at every other minute of the day). What remains is the
-        # gap between planting and the cap's own clock, under a second once a day.
-        created_at=created_at or max(_now - timedelta(minutes=5), rome_midnight(_now)),
+        # A few minutes old, so a proposal the test makes afterwards is the newer one. The
+        # wall clock decides which day that is in Rome, so a test that counts the day (the
+        # daily cap) pins `_clock` and passes `created_at` from the same instant: planted
+        # at 23:58 for a request at 00:03, or at 23:59:59 for one at 00:00:01, the rows
+        # were yesterday's and the count 0 (REB-582, REB-581).
+        created_at=created_at or datetime.now(UTC) - timedelta(minutes=5),
     )
     session.add(row)
     session.commit()
@@ -294,15 +301,18 @@ def test_public_proposal_is_503_when_the_cap_is_full(client: TestClient, team: S
 def test_public_proposal_is_503_when_the_daily_cap_is_reached(
     client: TestClient, team: Session
 ) -> None:
+    # One instant for the rows, the proposal the route stamps and the cap's count.
+    now = JUST_AFTER_MIDNIGHT
+    _clock(client, now)
     member = _talent(team)
     _settings(client, team_builder_daily_cap=2)
     # Two proposals that cost nothing (an empty catalogue asks no model) do not count.
-    _proposal_row(team, [], model="")
-    _proposal_row(team, [], model="")
+    _proposal_row(team, [], model="", created_at=now)
+    _proposal_row(team, [], model="", created_at=now)
     _llm(client, RecordingCall([proposal_response()]))
     assert _propose(client).status_code == 200
 
-    _proposal_row(team, [member])  # the second paid proposal of the day
+    _proposal_row(team, [member], created_at=now)  # the second paid proposal of the day
     recording = RecordingCall([proposal_response()])
     _llm(client, recording)
     refused = _propose(client)
@@ -310,6 +320,36 @@ def test_public_proposal_is_503_when_the_daily_cap_is_reached(
     assert refused.status_code == 503
     assert refused.json() == {"detail": BUSY}
     assert recording.requests == []
+
+
+class _CrossingMidnight:
+    """A clock at 23:59:59 in Rome on its first read and at 00:00:01 on every later one,
+    as the wall clock is across a call to Claude that ends past midnight."""
+
+    def __init__(self) -> None:
+        self.reads: list[datetime] = []
+
+    def __call__(self) -> datetime:
+        now = JUST_AFTER_MIDNIGHT if self.reads else JUST_AFTER_MIDNIGHT - timedelta(seconds=2)
+        self.reads.append(now)
+        return now
+
+
+def test_public_proposal_is_stamped_at_the_instant_the_daily_cap_counted(
+    client: TestClient, team: Session
+) -> None:
+    # Read twice, the cap would count 28 September and the row be written on the 29th
+    # (REB-581): the route reads the clock once, and both go by that instant.
+    clock = _CrossingMidnight()
+    client.app.dependency_overrides[get_clock] = lambda: clock  # type: ignore[attr-defined]
+    _talent(team)
+    _llm(client, RecordingCall([proposal_response()]))
+
+    assert _propose(client).status_code == 200
+
+    [row] = team.scalars(select(TeamProposal)).all()
+    assert clock.reads == [JUST_AFTER_MIDNIGHT - timedelta(seconds=2)]
+    assert row.created_at == clock.reads[0]
 
 
 def test_public_proposal_is_502_when_claude_is_down(client: TestClient, team: Session) -> None:

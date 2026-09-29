@@ -8,11 +8,11 @@ proof `test_the_production_table_is_adopted_with_its_rows` gives migration 0001.
 """
 
 import hashlib
+from typing import Any
 
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
-from testcontainers.community.postgres import PostgresContainer
 
 from rebase_core.admin_tokens import TOKEN_PREFIX, AdminTokenService
 from rebase_core.config import Settings
@@ -26,8 +26,10 @@ def _upgrade(url: str, revision: str) -> None:
     command.upgrade(config, revision)
 
 
-def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies() -> None:
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+def test_migration_a_backfills_users_from_freelancers_admin_users_and_companies(
+    hub_postgres: Any,
+) -> None:
+    with hub_postgres.fresh_container() as container:
         url = container.get_connection_url()
         _upgrade(url, "0010")
         engine = create_engine(url, future=True)

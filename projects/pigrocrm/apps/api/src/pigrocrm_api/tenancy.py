@@ -50,6 +50,15 @@ class TenantPrefixMiddleware:
         await self.app(scope, receive, send)
 
 
+def is_root_name(root_slug: str, slug: str) -> bool:
+    """Whether `slug` is the root installation's own name (`PIGROCRM_ROOT_SLUG`), the
+    one `split_tenant_prefix` routes to the root and never to a space. The chooser,
+    `enter` and the root's link mail all ask this, so a registry row that happens to
+    wear that name (one created before the name was set) is treated alike by each:
+    never a space to list, open or mail a link for."""
+    return bool(root_slug) and slug == root_slug
+
+
 def tenant_slug(request: Request) -> str | None:
     """The space this request is for, or None for the root installation."""
     slug = getattr(request.state, "tenant", None)

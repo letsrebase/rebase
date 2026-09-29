@@ -38,7 +38,7 @@
         "pyproject.toml",
         "uv.lock"
       ],
-      "why": "The whole Python suite except the two kinds of check that are not only about the code. `-n auto` because it waits on PostgreSQL far more than it computes: 10m00 -> 3m36 locally, each worker getting its own container from the session fixture."
+      "why": "The whole Python suite except the two kinds of check that are not only about the code. `-n auto` because it waits on PostgreSQL far more than it computes: 10m00 -> 3m36 locally, each worker getting its own PostgreSQL from the root conftest's session fixture and cloning each root's schema from a template (REB-579)."
     },
     {
       "id": "pigrocrm-web-lint",
@@ -182,7 +182,7 @@
         "pyproject.toml",
         "uv.lock"
       ],
-      "why": "The hub's whole Python suite: a testcontainers Postgres brought to head by the hub's own migrations, about a minute. mypy is covered by pigrocrm-py-types, whose bare `uv run mypy` reads every source root in [tool.mypy] files. `-n auto --dist loadfile` since REB-564, as the CRM lane: each xdist worker starts its own container from the session fixture and brings it to head with the hub's migrations, and `loadfile` keeps a file's tests on one worker; 1584 tests: 123s of Test serially on the hosted runner (run 36471954567), 84s there on four workers, and about a minute locally on four workers."
+      "why": "The hub's whole Python suite: a testcontainers Postgres brought to head by the hub's own migrations, about a minute. mypy is covered by pigrocrm-py-types, whose bare `uv run mypy` reads every source root in [tool.mypy] files. `-n auto --dist loadfile` since REB-564, as the CRM lane: each xdist worker starts its own PostgreSQL from the root conftest's session fixture, brings a template to head with the hub's migrations once and clones it per root (REB-579), and `loadfile` keeps a file's tests on one worker; 1584 tests: 123s of Test serially on the hosted runner (run 36471954567), 84s there on four workers, and about a minute locally on four workers."
     },
     {
       "id": "hub-web-lint",
