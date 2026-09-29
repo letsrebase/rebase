@@ -1064,8 +1064,20 @@ def test_a_tracker_that_fails_never_fails_the_proposal(clean: Session) -> None:
         {"descrizione": DESCRIZIONE, "costo": 10},
         {"descrizione": DESCRIZIONE, "persone": 0},
         {"descrizione": DESCRIZIONE, "persone": 11},
+        {"descrizione": DESCRIZIONE, "persone": True},
+        {"descrizione": DESCRIZIONE, "persone": "3"},
     ],
-    ids=["short", "long", "blank", "long note", "unknown field", "nobody", "too many"],
+    ids=[
+        "short",
+        "long",
+        "blank",
+        "long note",
+        "unknown field",
+        "nobody",
+        "too many",
+        "a bool",
+        "a string",
+    ],
 )
 def test_a_request_outside_its_bounds_is_refused(fields: dict[str, Any]) -> None:
     with pytest.raises(ValueError):

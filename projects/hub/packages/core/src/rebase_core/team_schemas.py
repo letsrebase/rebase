@@ -143,7 +143,9 @@ class TeamProposalCreate(BaseModel):
     descrizione: SafeStr = Field(
         min_length=DESCRIZIONE_MIN_LENGTH, max_length=DESCRIZIONE_MAX_LENGTH
     )
-    persone: int | None = Field(default=None, ge=1, le=PERSONE_MAX)
+    # Strict: a JSON `true` or `"3"` is not a headcount, and would otherwise reach the
+    # prompt and the event as one.
+    persone: int | None = Field(default=None, ge=1, le=PERSONE_MAX, strict=True)
     nota: SafeStr | None = Field(default=None, max_length=NOTA_MAX_LENGTH)
     previous_id: UUID | None = None
 
