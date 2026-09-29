@@ -28,6 +28,7 @@ from rebase_core.mail import RecordingSender
 from rebase_core.match_words import PIGRO_NOT_CONFIGURED
 from rebase_core.models import AdminAction, ContractDocument, Match, User
 from rebase_core.pigro import NOT_ANSWERING
+from rebase_core.referrals import ReferralService
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 ADMIN_EMAIL = "ivan@rebase.it"
@@ -53,7 +54,11 @@ LETTERA = {
     "giorni_pagamento": 30,
     "fine_mese": True,
 }
+# The same letter priced by the day, which is what a reward can project without an estimate.
+DAY_RATE_LETTERA = {**LETTERA, "modalita": "a giornata", "unita": "a giornata"}
 TABLES = (
+    "referral_rewards",
+    "referrals",
     "admin_actions",
     "contract_documents",
     "matches",
@@ -513,6 +518,52 @@ def test_a_signed_in_member_hitting_the_match_list_is_403_not_401(
     _apply_member(client, "bob@studio.it")
     _login_as(client, sender, "bob@studio.it")
     assert client.get("/api/hub/matches").status_code == 403
+
+
+def test_the_match_list_projects_a_referral_without_ever_answering_the_budget(
+    client: TestClient,
+    api_session: Session,
+    admin: None,
+    sender: RecordingSender,
+    renderer: FakeRenderer,
+) -> None:
+    """The projection is the first code on this list that reads the client's budget
+    (`company_budget_giornaliero`, through `reward_base`): the figure it yields may
+    travel, the budget and the base it is a share of may not."""
+    freelancer_id, company_id = _ready(client, sender)
+    referrer = User(email="mario@community.it", nome="Mario", cognome="Rossi", role="member")
+    api_session.add(referrer)
+    api_session.commit()
+    service = ReferralService(api_session)
+    service.link_signup(
+        "company", UUID(company_id), service.code_for(referrer.id), new_user_id=UUID(MISSING)
+    )
+    created = client.post(
+        f"/api/hub/freelancers/{freelancer_id}/matches",
+        json={"company_id": company_id, "cliente": CLIENTE, "lettera": DAY_RATE_LETTERA},
+    )
+    assert created.status_code == 201, created.text
+
+    listed = client.get("/api/hub/matches")
+
+    assert listed.status_code == 200, listed.text
+    (row,) = listed.json()["items"]
+    (side,) = row["referrals"]
+    # (777.77 - 450) * 1 day at 30%: with no estimate of days a day-rate letter earns one.
+    assert side == {
+        "kind": "company",
+        "referrer_nome": "Mario Rossi",
+        "referrer_freelancer_id": None,
+        "rate": "0.3000",
+        "amount": "98.33",
+        "stato": "previsto",
+        "reward_id": None,
+    }
+    assert row["company_id"] == company_id
+    assert (row["lettera_compenso"], row["lettera_unita"]) == ("450.00", "a giornata")
+    assert BUDGET not in listed.text
+    assert "327.77" not in listed.text
+    assert not any("budget" in key or "base" in key for key in row)
 
 
 def test_the_match_list_answers_200_with_filters_and_carries_no_budget_or_tax_field(

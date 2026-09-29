@@ -179,30 +179,33 @@ describe('the sidebar, gated on role', () => {
     expect(screen.queryByRole('link', { name: /Iscrizioni/ })).toBeNull()
   })
 
-  it('shows Match between Talenti and Aziende for an admin (REB-413)', async () => {
+  it('lists the admin pages in the order they are worked, hairlines between the groups (REB-609)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
     mount()
     await screen.findByRole('heading', { name: 'Dentro' })
-    const match = screen.getByRole('link', { name: 'Match' })
-    expect(match.getAttribute('href')).toMatch(/\/admin\/matches$/)
-    const labels = screen
-      .getAllByRole('link')
-      .map((link) => link.textContent)
-      .filter((label): label is string => ['Talenti', 'Match', 'Aziende'].includes(label ?? ''))
-    expect(labels).toEqual(['Talenti', 'Match', 'Aziende'])
+    const nodes = Array.from(screen.getByRole('navigation').children)
+    const admin = nodes
+      .slice(nodes.findIndex((node) => node.textContent === 'Amministrazione') + 1)
+      .map((node) => (node.getAttribute('role') === 'separator' ? '|' : node.textContent))
+    expect(admin).toEqual([
+      '|',
+      ...['Talenti', 'Aziende', 'Richieste team', 'Match', 'Referral'],
+      '|',
+      'Campagne',
+      '|',
+      ...['Istanze Pigro', 'La guida'],
+      '|',
+      ...['Accessi', 'Amministratori', 'Agenti'],
+    ])
   })
 
-  it('shows «Richieste team» between Match and Aziende for an admin (REB-514)', async () => {
+  it('links Match and Richieste team to their pages (REB-413, REB-514)', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, IVAN))
     mount()
     await screen.findByRole('heading', { name: 'Dentro' })
-    const richieste = screen.getByRole('link', { name: 'Richieste team' })
-    expect(richieste.getAttribute('href')).toMatch(/\/admin\/team$/)
-    const labels = screen
-      .getAllByRole('link')
-      .map((link) => link.textContent)
-      .filter((label): label is string => ['Match', 'Richieste team', 'Aziende'].includes(label ?? ''))
-    expect(labels).toEqual(['Match', 'Richieste team', 'Aziende'])
+    expect(screen.getByRole('link', { name: 'Match' }).getAttribute('href')).toMatch(/\/admin\/matches$/)
+    expect(screen.getByRole('link', { name: 'Richieste team' }).getAttribute('href')).toMatch(/\/admin\/team$/)
+    expect(screen.getByRole('link', { name: 'Referral' }).getAttribute('href')).toMatch(/\/admin\/referrals$/)
   })
 
   it('shows «Talent cloud» to a person the cloud is open for, and to nobody else (REB-518)', async () => {

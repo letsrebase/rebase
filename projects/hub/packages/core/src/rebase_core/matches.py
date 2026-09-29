@@ -87,7 +87,8 @@ from rebase_core.models import (
     Match,
     User,
 )
-from rebase_core.referrals import ReferralService
+from rebase_core.referral_schemas import MatchReferral
+from rebase_core.referrals import ReferralService, letter_unit
 from rebase_core.search import matches_any
 
 ENTITY = "match"
@@ -314,9 +315,11 @@ class MatchService:
         match that came from it, the same as `get`; a soft-deleted freelancer's match is
         gone, the same as `for_freelancer`. `stato` is one of `MATCH_STATES` or a
         `ValidationFailed` naming the field, the same shape a 422 elsewhere in this module
-        already takes. Neither `budget_giornaliero` nor a tax field is read here. Each
+        already takes. No tax field is read here, and the client's `budget_giornaliero` is read only
+        inside a referral's projection, never returned. Each
         row's sentence needs where its freelancer's framework agreement stands: read for
-        the whole page in one more query, never one per row."""
+        the whole page in one more query, never one per row; so are the referrals of the
+        page's freelancers and companies (`ReferralService.for_matches`, REB-609)."""
         if stato is not None and stato not in MATCH_STATES:
             raise ValidationFailed(ENTITY, "stato", "stato sconosciuto")
         limit = max(1, min(limit, LIST_LIMIT_MAX))
@@ -363,6 +366,9 @@ class MatchService:
             base.order_by(Match.created_at.desc(), Match.id.desc()).limit(limit).offset(offset)
         ).all()
         frameworks = framework_states(self.session, {row[0].freelancer_id for row in rows})
+        referrals = ReferralService(self.session).for_matches(
+            [(match, letter) for match, _, _, _, letter in rows]
+        )
         today = self.today()
         return MatchList(
             totale=totale,
@@ -374,6 +380,7 @@ class MatchService:
                     admin,
                     letter,
                     frameworks.get(match.freelancer_id),
+                    referrals.get(match.id, []),
                     today,
                 )
                 for match, company, freelancer, admin, letter in rows
@@ -976,6 +983,7 @@ class MatchService:
         admin_user: User,
         letter: ContractDocument | None,
         framework_stato: str | None,
+        referrals: list[MatchReferral],
         today: date,
     ) -> MatchListItem:
         situazione = (
@@ -992,6 +1000,7 @@ class MatchService:
         return MatchListItem(
             id=match.id,
             freelancer_id=match.freelancer_id,
+            company_id=match.company_id,
             freelancer_nome=freelancer_user.nome,
             freelancer_cognome=freelancer_user.cognome,
             freelancer_email=freelancer_user.email,
@@ -1002,6 +1011,8 @@ class MatchService:
             lettera_stato=letter.stato if letter is not None else None,
             lettera_data_inizio=_printed(letter, "data-inizio") if letter is not None else None,
             lettera_data_fine=_printed(letter, "data-fine") if letter is not None else None,
+            lettera_compenso=match.lettera_compenso,
+            lettera_unita=(letter_unit(letter.data) or None) if letter is not None else None,
             created_at=match.created_at,
             created_by_nome=_full_name(admin_user),
             created_by_email=admin_user.email,
@@ -1009,6 +1020,7 @@ class MatchService:
             giorni_previsti=match.giorni_previsti,
             pigro_stato=match.pigro_stato,
             pigro_url=match.pigro_url,
+            referrals=referrals,
         )
 
     def _renderer(self) -> Renderer:
