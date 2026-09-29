@@ -388,8 +388,9 @@ describe('landing.css text pairs', () => {
     expect(voci?.[0]).toBe('#c50d33')
     expect(voci?.[1]).toBe('#f1f2f3')
     // And not only this one page: index.html carries the same bare kicker on
-    // its two light bands.
-    expect(pairs.filter(([, , element]) => element.matches('.band:not(.dark) p.kicker'))).toHaveLength(3)
+    // its light bands, two until REB-605 and four since («Cosa trovi dentro», the
+    // companies, the events and the perks).
+    expect(pairs.filter(([, , element]) => element.matches('.band:not(.dark) p.kicker'))).toHaveLength(5)
   })
 
   it('reaches 4.5:1 on every text pair landing.css renders alone', () => {

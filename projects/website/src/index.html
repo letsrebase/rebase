@@ -194,6 +194,105 @@
         </div>
       </section>
 
+      <!-- REB-605: how somebody gets in, the deck's «La selezione» slide on the front
+        page, with the roles under it. Four steps on the dark band, the same agenda
+        device as «Come funziona»; the roles are a list of chips, and the line after
+        them says the door is the same for a role the list does not name. -->
+      <section class="band dark" aria-labelledby="selezione">
+        <div class="wrap section">
+          <p class="kicker" data-reveal>La selezione</p>
+          <h2 class="statement" id="selezione" data-reveal style="--d: 0.1s">
+            Il top 1% di chi fa software <span class="accent">in proprio in Italia.</span>
+          </h2>
+          <p class="lead measure intro" data-reveal style="--d: 0.2s">
+            Ogni profilo passa da un CTO, con l'AI accanto. Nessuna selezione automatica.
+          </p>
+          <ol class="steps grid-4">
+            <li data-reveal style="--d: 0.25s">
+              <span class="step-number" aria-hidden="true">01</span>
+              <h3>Ti candidi</h3>
+              <p>Profilo e CV, due minuti, una domanda alla volta.</p>
+            </li>
+            <li data-reveal style="--d: 0.4s">
+              <span class="step-number" aria-hidden="true">02</span>
+              <h3>L'AI legge</h3>
+              <p>Ruolo, seniority, competenze, settori. Una scheda, non un punteggio.</p>
+            </li>
+            <li data-reveal style="--d: 0.55s">
+              <span class="step-number" aria-hidden="true">03</span>
+              <h3>Un CTO ti sente</h3>
+              <p>CV letto e persona sentita, uno a uno. Da chi fa il tuo mestiere.</p>
+            </li>
+            <li data-reveal style="--d: 0.7s">
+              <span class="step-number" aria-hidden="true">04</span>
+              <h3>Verificato</h3>
+              <p>Il badge di chi passa, in cima al talent cloud. Da lì arrivano i progetti.</p>
+            </li>
+          </ol>
+          <div class="roles-block" data-reveal style="--d: 0.25s">
+            <h3>I ruoli</h3>
+            <ul class="roles" aria-label="I ruoli che si trovano in rebase">
+              <li>Backend</li>
+              <li>Frontend</li>
+              <li>Mobile</li>
+              <li>Data e AI engineer</li>
+              <li>DevOps</li>
+              <li>Security</li>
+              <li>Fractional CTO</li>
+            </ul>
+            <p class="fine measure">
+              Fai un mestiere che qui non c'è e fai software in proprio? Candidati lo stesso:
+              la selezione è la stessa.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- REB-605: what a company can buy, the deck's «I nostri servizi» slide with the
+        same three prices. Two doors under the cards: the company wizard and the team
+        builder, both in the hub, so utm.js carries the campaign into them too. -->
+      <section class="band" aria-labelledby="aziende">
+        <div class="wrap section">
+          <p class="kicker" data-reveal>Per le aziende</p>
+          <h2 class="statement" id="aziende" data-reveal style="--d: 0.1s">
+            Tre modi di lavorare con noi. <span class="accent">Il prezzo lo sai prima.</span>
+          </h2>
+          <div class="grid-3">
+            <article class="card" data-reveal style="--d: 0.25s">
+              <span class="swatch" style="background-color: var(--landing-ink)" aria-hidden="true"></span>
+              <h3>Ricerca</h3>
+              <p>
+                Descrivi il progetto in sessanta secondi, ricevi due o tre nomi giusti in sette
+                giorni. Un CTO di rebase segue il progetto fino alla fine.
+              </p>
+              <p class="price">Da 400 a 1.000 € al giorno, tutto incluso.</p>
+            </article>
+            <article class="card" data-reveal style="--d: 0.4s">
+              <span class="swatch" style="background-color: var(--landing-gold)" aria-hidden="true"></span>
+              <h3>Team builder</h3>
+              <p>
+                Descrivi il progetto, l'AI ti propone un team con una fascia di prezzo. Se ti
+                convince, lo assumi da lì. Aperto a tutti, senza login.
+              </p>
+              <p class="price">Gratis, in beta.</p>
+            </article>
+            <article class="card" data-reveal style="--d: 0.55s">
+              <span class="swatch" style="background-color: var(--landing-cta)" aria-hidden="true"></span>
+              <h3>Talent cloud</h3>
+              <p>
+                Gli stessi profili, per nome: CV, link, filtri e richiesta diretta di un talento o
+                di un team. Per le aziende che ammettiamo, si chiede dal team builder.
+              </p>
+              <p class="price">3.000 € al mese.</p>
+            </article>
+          </div>
+          <p class="actions" data-reveal style="--d: 0.4s">
+            <a class="cta" href="/hub/aziende">Ho un progetto</a>
+            <a class="cta secondary" href="/hub/team">Prova il team builder</a>
+          </p>
+        </div>
+      </section>
+
       <!-- The four voices: two talents and two companies, one short sentence each about
         the platform (Ivan, 2026-09-11, ORB-145 then ORB-146). Real names, no placeholder
         left: a tile here is a person who agreed to be quoted, and the role line says
@@ -244,6 +343,109 @@
                 <span><strong>Andrea Ciceri</strong><br /><span class="role">Lead Infrastructure Engineer · talento</span></span>
               </figcaption>
             </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- REB-605: where to meet us, from the public roadmap («Events and brand»,
+        github.com/orgs/letsrebase/projects/1), in date order. Dates go stale by
+        themselves: the card that adds an event here is the one that removes the past
+        ones. The rebase house is the only event of our own, and the only link. -->
+      <section class="band" aria-labelledby="eventi">
+        <div class="wrap section">
+          <p class="kicker" data-reveal>Gli eventi</p>
+          <h2 class="statement" id="eventi" data-reveal style="--d: 0.1s">
+            Ci si vede <span class="accent">anche di persona.</span>
+          </h2>
+          <div class="grid-4">
+            <article class="card" data-reveal style="--d: 0.25s">
+              <p class="when">30 settembre – 4 ottobre · Milano</p>
+              <h3>Milano Digital Week</h3>
+              <p>Ci siamo agli incontri che riusciamo a fare. Se ci vedi, fermaci.</p>
+            </article>
+            <article class="card" data-reveal style="--d: 0.4s">
+              <p class="when">7–9 ottobre · Torino</p>
+              <h3>rebase house</h3>
+              <p>
+                Una casa per i builder che vengono a Wave: si dorme lì, si costruisce a un
+                tavolo solo, si va agli altri eventi in gruppo. Dieci posti.
+                <a class="quiet-link" href="https://luma.com/2n8qng2x">Chiedi un posto su Luma</a>.
+              </p>
+            </article>
+            <article class="card" data-reveal style="--d: 0.55s">
+              <p class="when">7–9 ottobre · Torino</p>
+              <h3>Wave by Vento</h3>
+              <p>Tre giorni alle OGR con le startup che cercano persone. Ci siamo, e la sera dell'8 a TSUNAMI.</p>
+            </article>
+            <article class="card" data-reveal style="--d: 0.7s">
+              <p class="when">28–29 ottobre · Milano</p>
+              <h3>Codemotion</h3>
+              <p>Developer e aziende, due giorni al Superstudio Più. Vieni a cercarci.</p>
+            </article>
+          </div>
+          <p class="fine after" data-reveal style="--d: 0.4s">Chi è dentro lo sa prima.</p>
+        </div>
+      </section>
+
+      <!-- REB-605: the questions both doors get asked, each answered with a sentence the
+        site already stands behind elsewhere: the forfettario line in the CRM band, the
+        deck's seven days, privacy.html's team builder and talent cloud paragraphs for
+        who reads a CV (the closing box's shorter line names only the first reader),
+        and the hub's two contracts, the framework agreement once and a letter of
+        engagement per match, for who signs what. -->
+      <section class="band dark" aria-labelledby="domande">
+        <div class="wrap section">
+          <p class="kicker" data-reveal>Le domande</p>
+          <h2 class="statement" id="domande" data-reveal style="--d: 0.1s">
+            Quello che <span class="accent">ci chiedono tutti.</span>
+          </h2>
+          <div class="grid-2 faq">
+            <div data-reveal style="--d: 0.25s">
+              <h3>Quanto costa entrare?</h3>
+              <p>Niente. PigroCRM e la guida sono gratis per chi è dentro.</p>
+            </div>
+            <div data-reveal style="--d: 0.3s">
+              <h3>Chi legge il mio CV?</h3>
+              <p>
+                Noi, l'AI che ne scrive la scheda anonima, le aziende a cui ti proponiamo e quelle
+                ammesse al talent cloud. Lo cancelliamo quando ce lo chiedi.
+              </p>
+            </div>
+            <div data-reveal style="--d: 0.35s">
+              <h3>Come funziona con il forfettario?</h3>
+              <p>PigroCRM è fatto per quello: fatture, ore e incassi senza sbagliare.</p>
+            </div>
+            <div data-reveal style="--d: 0.4s">
+              <h3>Cosa succede se il progetto non va?</h3>
+              <p>C'è un CTO di rebase dentro dal primo giorno, con te e con l'azienda. Non resti solo.</p>
+            </div>
+            <div data-reveal style="--d: 0.45s">
+              <h3>Chi firma il contratto?</h3>
+              <p>
+                Tu, online: un contratto quadro con rebase la prima volta, poi una lettera di
+                incarico per ogni progetto. Selezione e il CTO che segue il progetto sono inclusi.
+              </p>
+            </div>
+            <div data-reveal style="--d: 0.5s">
+              <h3>Posso vedere il codice?</h3>
+              <p>
+                Sì. PigroCRM è open source
+                <a class="quiet-link" href="https://github.com/letsrebase/rebase">su GitHub</a>,
+                self-hosted quando vuoi.
+              </p>
+            </div>
+            <div data-reveal style="--d: 0.55s">
+              <h3>Quanto ci mette un'azienda ad avere un nome?</h3>
+              <p>Sette giorni per due o tre nomi giusti. Non una lista.</p>
+            </div>
+            <div data-reveal style="--d: 0.6s">
+              <h3>Come vi contatto?</h3>
+              <p>
+                Scrivi a
+                <a class="quiet-link" href="mailto:ivansala@humancraft.tech">ivansala@humancraft.tech</a>,
+                o vieni a uno degli eventi qui sopra.
+              </p>
+            </div>
           </div>
         </div>
       </section>

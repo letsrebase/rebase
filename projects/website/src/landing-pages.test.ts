@@ -56,15 +56,18 @@ describe.each(PAGES)('%s', (name) => {
     // Policy, which Google's verification requires. Allowed as an `<a href>` the reader
     // clicks and nothing else: the same host as a `src`, or as a `<link>`, still fails
     // the allowlist below.
-    const googlePolicyLinks = new Set(
-      [...page.matchAll(/<a\b[^>]*\bhref="(https:\/\/developers\.google\.com\/[^"]*)"/g)].map(
+    // REB-605: the landing's events link the rebase house's own Luma page the same
+    // way, an `<a href>` a reader clicks and nothing else: `luma.com` is not in the
+    // allowlist below, so a Luma `src` or `<link>` still fails it.
+    const hrefOnlyLinks = new Set(
+      [...page.matchAll(/<a\b[^>]*\bhref="(https:\/\/(?:developers\.google\.com|luma\.com)\/[^"]*)"/g)].map(
         (anchor) => anchor[1]!,
       ),
     )
     for (const match of page.matchAll(/(?:href|src)="(https?:\/\/[^"]+)"/g)) {
       const url = match[1]!
       if (url === canonical) continue
-      if (googlePolicyLinks.has(url) && !page.includes(`src="${url}"`)) continue
+      if (hrefOnlyLinks.has(url) && !page.includes(`src="${url}"`)) continue
       // An href the reader clicks -- the repository, the hosted signup, or OpenAI's
       // own privacy policy, which the cookie section has to point at -- is fine; a
       // subresource is not. `humancraft.tech` is in the list because Italian law
@@ -144,6 +147,8 @@ describe.each(PAGES)('%s', (name) => {
 
 describe('index.html', () => {
   const page = html['index.html']
+  /** One band of the page, by the id its heading carries. */
+  const section = (id: string) => page.match(new RegExp(`<section[^>]*aria-labelledby="${id}"[\\s\\S]*?<\\/section>`))?.[0] ?? ''
 
   it('opens with the community and its claim, then presents the perks as a set, the CRM the largest', () => {
     // Since 2026-09-08 PigroCRM is what a member of Orbiters gets: the page says what
@@ -187,8 +192,59 @@ describe('index.html', () => {
   it('explains itself in three steps and says what is inside', () => {
     expect(page).toContain('Come funziona')
     // The deck's agenda since ORB-145: three numbered steps on the dark band, no card.
-    expect(page.match(/<span class="step-number" aria-hidden="true">0[1-3]<\/span>/g)).toHaveLength(3)
+    // Since REB-605 the selection carries four of its own, further down, so the count
+    // is taken inside each section rather than over the whole page.
+    const steps = (id: string) => section(id).match(/<span class="step-number" aria-hidden="true">0[1-4]<\/span>/g) ?? []
+    expect(steps('come-funziona')).toHaveLength(3)
+    expect(steps('selezione')).toHaveLength(4)
+    expect(page.match(/<span class="step-number" aria-hidden="true">0[1-4]<\/span>/g)).toHaveLength(7)
     expect(page).toContain('Cosa trovi dentro')
+  })
+
+  it('carries the selection, the services, the events and the questions (REB-605)', () => {
+    // The order on the page: the five sections sit between the hero and the perks,
+    // and the bands still alternate, so the kicker list is read in sequence. A sixth,
+    // «I numeri», four figures under the hero, went the same day (Ivan, 2026-09-29).
+    const kickers = [...page.matchAll(/<p class="kicker[^"]*"[^>]*>([^<]+)<\/p>/g)].map((m) => m[1])
+    expect(kickers).toEqual([
+      'rebase',
+      'Come funziona',
+      'Cosa trovi dentro',
+      'La selezione',
+      'Per le aziende',
+      'Hanno lavorato con noi',
+      'Gli eventi',
+      'Le domande',
+      'I perk',
+      'PigroCRM',
+    ])
+    const bands = [...page.matchAll(/<section class="band( dark)?/g)].map((m) => (m[1] ? 'dark' : 'light'))
+    for (let index = 1; index < bands.length; index += 1) expect(bands[index], `band ${index}`).not.toBe(bands[index - 1])
+    // The three prices are the company deck's (company.html), and «top 1%» enters
+    // through the selection, nowhere else: the hero is unchanged.
+    expect(page).not.toContain('I numeri')
+    expect(page).toContain('Il top 1% di chi fa software')
+    expect(page.match(/top 1%/g)).toHaveLength(1)
+    expect(page.indexOf('top 1%')).toBeGreaterThan(page.indexOf('>La selezione<'))
+    for (const price of ['Da 400 a 1.000 € al giorno', 'Gratis, in beta.', '3.000 € al mese.']) expect(page).toContain(price)
+    // Seven roles, and the line that keeps the door open for an eighth.
+    expect(page.match(/<ul class="roles"[\s\S]*?<\/ul>/)?.[0]?.match(/<li>/g)).toHaveLength(7)
+    expect(page).toContain('Candidati lo stesso')
+    // The events are the roadmap's, the rebase house the only one with a link, on Luma.
+    // SFSCon (roadmap #295) is a maybe until the end of October: not on the page until
+    // it is decided.
+    for (const event of ['Milano Digital Week', 'rebase house', 'Wave by Vento', 'Codemotion']) expect(page).toContain(`<h3>${event}</h3>`)
+    expect(section('eventi').match(/<a /g)).toHaveLength(1)
+    expect(section('eventi')).toMatch(/<a class="quiet-link" href="https:\/\/luma\.com\/2n8qng2x">/)
+    expect(page).not.toContain('SFSCon')
+    // Eight questions, each followed by its answer, in the same words the page uses
+    // elsewhere.
+    const faq = section('domande')
+    expect(faq.match(/<h3>[^<]+\?<\/h3>\s*<p>/g)).toHaveLength(8)
+    expect(faq).toContain('cancelliamo quando ce lo chiedi')
+    // The two company doors under the services are hub links, so utm.js carries the
+    // campaign into them like the hero's.
+    expect(page).toMatch(/<a class="cta secondary" href="\/hub\/team">Prova il team builder<\/a>/)
   })
 
   it('has one section for the four voices, real people, no placeholder left', () => {
