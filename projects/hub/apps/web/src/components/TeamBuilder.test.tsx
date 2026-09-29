@@ -319,16 +319,22 @@ describe('TeamBuilder, «Assumi team» on the public page', () => {
     expect(screen.queryByRole('button', { name: 'Assumi team' })).toBeNull()
   })
 
-  it('keeps what was typed when the dialog is closed with «Annulla» and opened again', async () => {
+  it('keeps what was typed when the dialog is closed, with Escape or «Annulla», and opened again', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     const user = await proposed(fetchSpy)
     await user.click(screen.getByRole('button', { name: 'Assumi team' }))
     await user.type(await screen.findByLabelText('Azienda'), 'ACME Srl')
-    await user.click(screen.getByRole('button', { name: 'Annulla' }))
+    await user.keyboard('{Escape}')
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
     await user.click(screen.getByRole('button', { name: 'Assumi team' }))
     expect(await screen.findByLabelText('Azienda')).toHaveValue('ACME Srl')
+    await user.type(screen.getByLabelText('Email'), 'ada@acme.it')
+    await user.click(screen.getByRole('button', { name: 'Annulla' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await user.click(screen.getByRole('button', { name: 'Assumi team' }))
+    expect(await screen.findByLabelText('Email')).toHaveValue('ada@acme.it')
     expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 })

@@ -494,13 +494,13 @@ function PublicHire({ proposalId }: { proposalId: string }) {
                     setValue((current) => ({ ...current, [contact.key]: next }))
                   }}
                 />
-                    {error && (
-                      <p role="alert" id={`${id}-error`} className="text-sm text-destructive">
-                        {error}
-                      </p>
-                    )}
-                  </div>
-                )
+                {error && (
+                  <p role="alert" id={`${id}-error`} className="text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
+              </div>
+            )
           })}
           {formError && (
             <p role="alert" className="text-sm text-destructive">
