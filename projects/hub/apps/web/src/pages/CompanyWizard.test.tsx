@@ -202,9 +202,11 @@ describe('CompanyWizard, the draft and the intro (REB-215)', () => {
 describe('CompanyWizard, opened from the team builder (REB-518)', () => {
   it('says above the form that the request is for the talent cloud', async () => {
     mount('/companies?da=team-builder')
-    expect(await screen.findByRole('note', { name: 'Talent cloud' })).toHaveTextContent(
-      'Stai chiedendo l’accesso al talent cloud: compila la richiesta e ti ricontattiamo noi.',
-    )
+    const note = await screen.findByRole('note', { name: 'Talent cloud' })
+    expect(note).toHaveTextContent('Stai chiedendo l’accesso al talent cloud.')
+    expect(note).toHaveTextContent('Compila la richiesta e ti ricontattiamo noi per aprirtelo.')
+    // On royal gold, like the freelancer wizard's guide banner: a banner, not a quiet note (REB-570).
+    expect(note).toHaveClass('bg-(--color-royal-gold)')
   })
 
   it('says nothing of the kind from any other page', async () => {

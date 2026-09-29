@@ -388,6 +388,11 @@ l'accesso al talent cloud: compila la richiesta e ti ricontattiamo noi.» The or
 lands in `companies.origine` as every origin does, and the «Aziende» list shows «da
 team builder» on the row.
 
+Addendum, 2026-09-29 (REB-570). The box above the company wizard is a banner on royal
+gold with the panel's border, the look of the freelancer wizard's guide banner, in two
+lines: «Stai chiedendo l'accesso al talent cloud.» and «Compila la richiesta e ti
+ricontattiamo noi per aprirtelo.» The quiet one-line note above went unnoticed.
+
 ### 4.4 What the talents are told
 
 Before the first grant in production, every freelancer with a card gets one mail from
