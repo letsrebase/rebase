@@ -119,7 +119,8 @@ jobs:
       # the shard selection. Unlike a pull, this one is needed: the install step below
       # waits for the `done` marker and reads the log if it never comes, so a failed
       # download fails the job there, with its reason, rather than at the first test
-      # that shells out to nothing. poppler is installed from the image's own package
+      # that shells out to nothing; a `failed` marker ends the wait at once, so a broken
+      # release URL is reported in seconds rather than after the ten-minute limit. poppler is installed from the image's own package
       # lists first, since `apt-get update` was most of the 13s and the lists on a
       # hosted image are days old at most; a stale index fails that install, and only
       # then is the update paid. Measured on the first run of REB-589: the install step
@@ -134,7 +135,7 @@ jobs:
             && curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" | tar -xJ -C "${dir}" \
             && { sudo apt-get install -y -qq --no-install-recommends poppler-utils \
                  || { sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends poppler-utils; }; } \
-            && touch "${dir}/done"
+            && touch "${dir}/done" || touch "${dir}/failed"
           } > "${dir}/log" 2>&1 &
 
       - uses: astral-sh/setup-uv@v7
@@ -227,11 +228,15 @@ jobs:
           # normally reads the marker at once, and a slow mirror gets the time the old
           # foreground install would have taken anyway.
           for _ in $(seq 600); do
-            [ -f "${dir}/done" ] && break
+            [ -f "${dir}/done" ] || [ -f "${dir}/failed" ] && break
             sleep 1
           done
           if [ ! -f "${dir}/done" ]; then
-            echo "::error::the renderer download did not finish; its log follows"
+            if [ -f "${dir}/failed" ]; then
+              echo "::error::the renderer download failed; its log follows"
+            else
+              echo "::error::the renderer download did not finish in ten minutes; its log follows"
+            fi
             cat "${dir}/log" 2>/dev/null || true
             exit 1
           fi
