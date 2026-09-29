@@ -42,7 +42,7 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.gmail.account import CONSENT_WARNING_HOURS, GoogleAccountService
 from pigrocrm.core.gmail.errors import ConsentExpired, CredentialRevoked, ScopeMissing
-from pigrocrm.core.gmail.schemas import SCOPE_READONLY, SCOPE_SEND
+from pigrocrm.core.gmail.schemas import SCOPE_EMAIL, SCOPE_READONLY, SCOPE_SEND
 
 
 def _service(session: Session, *, unverified: bool = False) -> GoogleAccountService:
@@ -185,7 +185,7 @@ def test_a_partial_grant_leaves_the_account_active_and_refuses_only_the_sync(
 ) -> None:
     """Spec 13, criterion 7. `status` describes the credential; capability is derived
     from the granted scopes at the point of use. The two must not be conflated."""
-    account = connected_account(db_session, scopes=("openid", "email", SCOPE_SEND))
+    account = connected_account(db_session, scopes=("openid", SCOPE_EMAIL, SCOPE_SEND))
     db_session.flush()
     service = _service(db_session)
 
@@ -202,14 +202,14 @@ def test_a_sync_without_the_read_scope_names_the_scope_instead_of_failing_upstre
 ) -> None:
     """And it refuses *before* the lock is taken, so a refused call cannot make the next
     one answer "already running"."""
-    account = connected_account(db_session, scopes=("openid", "email", SCOPE_SEND))
+    account = connected_account(db_session, scopes=("openid", SCOPE_EMAIL, SCOPE_SEND))
     _with_a_correspondent(db_session)
     fake = FakeGmail()
     with pytest.raises(ScopeMissing):
         sync_service(db_session, fake).sync(actor_for(account))
     assert fake.requests == []
 
-    account.scopes_granted = ["openid", "email", SCOPE_READONLY, SCOPE_SEND]
+    account.scopes_granted = ["openid", SCOPE_EMAIL, SCOPE_READONLY, SCOPE_SEND]
     db_session.flush()
     # The lock was never taken, so the very next call runs rather than being told
     # somebody else is already running.
@@ -252,7 +252,7 @@ def test_the_health_banner_has_a_cause_and_a_text_for_each(db_session: Session) 
     assert "rinnovato" in (expiring.banner_text or "")
 
     account.consent_expires_at = None
-    account.scopes_granted = ["openid", "email", SCOPE_SEND]
+    account.scopes_granted = ["openid", SCOPE_EMAIL, SCOPE_SEND]
     db_session.flush()
     partial = service.health(actor)
     assert partial.banner == "scope_missing"

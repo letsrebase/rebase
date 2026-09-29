@@ -48,7 +48,7 @@ const STORAGE_ID = 'CCCCCCCCCCCCCCCCCCCC'
 const ACCOUNT = {
   id: '00000000-0000-7000-8000-000000000001',
   email_address: 'ada@acme.it',
-  scopes_granted: ['openid', 'email', READONLY, FILE],
+  scopes_granted: ['openid', 'https://www.googleapis.com/auth/userinfo.email', READONLY, FILE],
   status: 'active' as const,
   consent_expires_at: null,
   root_folder_ids: [ROOT_ID_1],

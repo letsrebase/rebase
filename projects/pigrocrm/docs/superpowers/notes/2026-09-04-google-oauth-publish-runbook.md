@@ -30,12 +30,13 @@ vanno fatti dal titolare (o da chi ha i permessi di proprietario/editor su quel 
    Da `packages/core/src/pigrocrm/core/gmail/schemas.py`, `REQUESTED_SCOPES` (i quattro
    scope Gmail):
    - `openid`
-   - `email`
+   - `https://www.googleapis.com/auth/userinfo.email` (the code sends the full URI since
+     REB-606, the one form the Console's picker offers, so the review's string match holds)
    - `https://www.googleapis.com/auth/gmail.readonly`
    - `https://www.googleapis.com/auth/gmail.send`
 
    Da `packages/core/src/pigrocrm/core/drive/schemas.py`, `DRIVE_REQUESTED_SCOPES` (i due
-   scope Drive aggiuntivi — `openid` ed `email` sono già in elenco sopra):
+   scope Drive aggiuntivi — `openid` e `https://www.googleapis.com/auth/userinfo.email` sono già in elenco sopra):
    - `https://www.googleapis.com/auth/drive.readonly`
    - `https://www.googleapis.com/auth/drive.file`
 

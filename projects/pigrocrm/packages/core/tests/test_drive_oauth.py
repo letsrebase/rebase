@@ -35,6 +35,7 @@ from pigrocrm.core.gmail.crypto import seal, unseal
 from pigrocrm.core.gmail.errors import ConsentExpired, CredentialRevoked
 from pigrocrm.core.gmail.models import GoogleAccount, GoogleOAuthState
 from pigrocrm.core.gmail.repository import GmailRepository
+from pigrocrm.core.gmail.schemas import SCOPE_EMAIL
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
 from pigrocrm.core.gmail.transport import MAX_HTTP_ATTEMPTS, GmailTransport
 from pigrocrm.core.tenants import space_base_settings
@@ -58,9 +59,11 @@ def admin_user(db_session: Session) -> User:
 
 
 def test_the_requested_scopes_are_exactly_the_four_of_the_spec() -> None:
+    # The email scope by its full URI, the one form the Cloud Console lists, so the
+    # verification review's string match against the authorization URI holds (REB-606).
     assert DRIVE_REQUESTED_SCOPES == (
         "openid",
-        "email",
+        "https://www.googleapis.com/auth/userinfo.email",
         "https://www.googleapis.com/auth/drive.readonly",
         "https://www.googleapis.com/auth/drive.file",
     )
@@ -605,7 +608,7 @@ def test_health_raises_the_scope_missing_banner_for_either_missing_scope(
     could sit there with every upload refused and nothing on any screen saying why.
     """
     account = _connected_drive_account(
-        db_session, admin_user, scopes=("openid", "email", DRIVE_SCOPE_READONLY)
+        db_session, admin_user, scopes=("openid", SCOPE_EMAIL, DRIVE_SCOPE_READONLY)
     )
     db_session.flush()
     health = _drive_service_account(db_session).health(_drive_actor(admin_user))
@@ -614,7 +617,7 @@ def test_health_raises_the_scope_missing_banner_for_either_missing_scope(
     assert DRIVE_SCOPE_FILE in (health.banner_text or "")
     assert health.missing_scopes == [DRIVE_SCOPE_FILE]
 
-    account.scopes_granted = ["openid", "email", DRIVE_SCOPE_FILE]
+    account.scopes_granted = ["openid", SCOPE_EMAIL, DRIVE_SCOPE_FILE]
     db_session.flush()
     health2 = _drive_service_account(db_session).health(_drive_actor(admin_user))
 
@@ -624,7 +627,7 @@ def test_health_raises_the_scope_missing_banner_for_either_missing_scope(
 
     # And a complete grant reports nothing at all: the banner is for a feature that is
     # off, not for a scope list somebody might want to read.
-    account.scopes_granted = ["openid", "email", DRIVE_SCOPE_READONLY, DRIVE_SCOPE_FILE]
+    account.scopes_granted = ["openid", SCOPE_EMAIL, DRIVE_SCOPE_READONLY, DRIVE_SCOPE_FILE]
     db_session.flush()
     health3 = _drive_service_account(db_session).health(_drive_actor(admin_user))
 
@@ -688,7 +691,7 @@ def test_health_names_the_holder_as_unreachable_when_the_write_scope_is_missing(
         db_session,
         other_admin,
         email_address="bruno@example.it",
-        scopes=("openid", "email", DRIVE_SCOPE_READONLY),
+        scopes=("openid", SCOPE_EMAIL, DRIVE_SCOPE_READONLY),
     )
     holder.storage_folder_id = "9CartellaAdmin000001"
     db_session.flush()
@@ -819,7 +822,7 @@ def test_usable_missing_the_requested_scope_names_it_and_leaves_the_account_acti
     db_session: Session, admin_user: User
 ) -> None:
     account = _connected_drive_account(
-        db_session, admin_user, scopes=("openid", "email", DRIVE_SCOPE_FILE)
+        db_session, admin_user, scopes=("openid", SCOPE_EMAIL, DRIVE_SCOPE_FILE)
     )
     db_session.flush()
     service = _drive_service_account(db_session)

@@ -21,10 +21,15 @@ GmailStatus = Literal["active", "expired", "revoked", "disconnected"]
 
 SCOPE_READONLY = "https://www.googleapis.com/auth/gmail.readonly"
 SCOPE_SEND = "https://www.googleapis.com/auth/gmail.send"
-# `openid` + `email` identify *which* mailbox was connected: without the stable `sub`
-# there is no way to refuse a reconnection that points at a different mailbox by
-# mistake and silently relabels the entire history.
-REQUESTED_SCOPES: tuple[str, ...] = ("openid", "email", SCOPE_READONLY, SCOPE_SEND)
+# `openid` + the email scope identify *which* mailbox was connected: without the stable
+# `sub` there is no way to refuse a reconnection that points at a different mailbox by
+# mistake and silently relabels the entire history. The email scope is spelled by its
+# full URI, not the `email` alias Google also accepts: the Cloud Console lists it only in
+# this form, and the verification review compares the authorization URI with the
+# Console string for string (REB-606). Google grants the same thing for either spelling
+# and answers `scopes_granted` in this form either way, so no existing connection moves.
+SCOPE_EMAIL = "https://www.googleapis.com/auth/userinfo.email"
+REQUESTED_SCOPES: tuple[str, ...] = ("openid", SCOPE_EMAIL, SCOPE_READONLY, SCOPE_SEND)
 
 
 class GoogleAccountRead(BaseModel):

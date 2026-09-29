@@ -43,7 +43,7 @@ from pigrocrm.core.gmail.models import (
 )
 from pigrocrm.core.gmail.oauth import GmailOAuthService
 from pigrocrm.core.gmail.repository import GmailRepository
-from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES, SCOPE_READONLY, SCOPE_SEND
+from pigrocrm.core.gmail.schemas import REQUESTED_SCOPES, SCOPE_EMAIL, SCOPE_READONLY, SCOPE_SEND
 from pigrocrm.core.gmail.tokens import GOOGLE_AUTH_URL, GoogleTokenClient
 from pigrocrm.core.gmail.transport import GmailTransport
 from pigrocrm.core.tenants import space_base_settings
@@ -142,6 +142,14 @@ def test_start_asks_for_offline_access_and_forces_the_consent_screen(db_session:
     assert query["response_type"] == ["code"]
     assert query["code_challenge_method"] == ["S256"]
     assert set(query["scope"][0].split()) == set(REQUESTED_SCOPES)
+    # Spelled as the Cloud Console lists them, the email scope by its full URI and never
+    # the `email` alias, so the verification review's string match holds (REB-606).
+    assert query["scope"][0].split() == [
+        "openid",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.send",
+    ]
     assert query["redirect_uri"] == ["https://crm.example.it/api/gmail/oauth/callback"]
 
 
@@ -543,7 +551,7 @@ def test_a_partial_grant_is_stored_as_granted_and_stays_active(db_session: Sessi
     account is healthy and it is *sync* that will refuse."""
     user = _user(db_session)
     fake = _fake()
-    fake.granted_scopes = ("openid", "email", SCOPE_SEND)
+    fake.granted_scopes = ("openid", SCOPE_EMAIL, SCOPE_SEND)
     service = _service(db_session, fake)
 
     read = service.complete(code="c", state=_state_of(service, _actor(user)), actor=_actor(user))
