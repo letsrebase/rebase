@@ -122,10 +122,13 @@ describe('TeamBuilder, the box', () => {
     await user.click(screen.getByRole('button', { name: 'App mobile con un designer' }))
     expect(value()).toContain('designer')
     expect(value().length).toBeGreaterThanOrEqual(40)
-    // The fourth asks for one person, placed at the company's own client.
+    // The fourth asks for one person, placed at the company's own client, and names no
+    // city: the second example already shows a place, and a city here only narrowed the
+    // answer to whoever lives there (REB-598).
     await user.click(screen.getByRole('button', { name: 'Un FDE nel team di un cliente' }))
     expect(value()).toContain('forward deployed engineer')
     expect(value()).toContain('cliente')
+    expect(value()).not.toContain('Torino')
     expect(value()).not.toContain('designer')
     expect(value().length).toBeGreaterThanOrEqual(40)
   })
