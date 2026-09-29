@@ -24,23 +24,28 @@ export const DRIVE_OAUTH_START = `${tenantPrefix}/api/drive/oauth/start`
  * mutation can invalidate everything Drive-related without knowing in advance what else
  * reads it. `health` is the bare prefix a mutation invalidates by (React Query's
  * default `exact: false` match), not what the query itself reads -- see
- * `healthForRole`.
+ * `healthForViewer`.
  */
 export const driveKeys = {
   health: ['drive', 'health'] as const,
   /**
-   * What `useDriveHealth` actually reads, keyed by the viewer's own role (REB-562 fix
-   * round 2, Greptile). `space_storage` names another admin and is computed only for
-   * an admin actor, so a bare `health` key would keep answering from whichever role
-   * first fetched it: a demotion made from another tab or session reaches `useIsAdmin`
-   * within thirty seconds (`AuthProvider`'s own `me` poll, `lib/auth.tsx`), but nothing
-   * would have told *this* query to forget what it already cached. Rolling the role
-   * into the key makes a role change a genuinely different query -- nothing cached
-   * under the new key -- so React Query refetches the moment `useAuth`'s `user.ruolo`
-   * changes, rather than going on serving the pre-demotion response until some other
-   * mutation happened to invalidate the bare key.
+   * What `useDriveHealth` actually reads, keyed by the viewer's own id *and* role
+   * (REB-562 fix rounds 2 and 4, Greptile then CodeRabbit). `space_storage` names
+   * another admin and `account` is the viewer's own connected Drive, both computed
+   * only for -- and about -- one specific person, so a bare `health` key would keep
+   * answering from whichever person first fetched it.
+   *
+   * The id is what a role alone cannot cover: two admins share `ruolo`, so a session
+   * switch from admin A to admin B in the same tab, without a `logout()` in between --
+   * a token client that swaps a cookie, or a browser profile shared between two
+   * people -- would key both fetches identically on role and hand B the cache A left
+   * behind, complete with A's own email address. The role stays in the key too,
+   * alongside the id, for round 2's own reason: a demotion changes `ruolo` while
+   * `user.id` stays the same person, and `space_storage` must disappear at that
+   * moment as well, not only when the person themselves changes.
    */
-  healthForRole: (ruolo: string | undefined) => [...driveKeys.health, ruolo] as const,
+  healthForViewer: (userId: string | undefined, ruolo: string | undefined) =>
+    [...driveKeys.health, userId, ruolo] as const,
 }
 
 /**
@@ -52,7 +57,7 @@ export const driveKeys = {
 export function useDriveHealth() {
   const { user } = useAuth()
   return useQuery({
-    queryKey: driveKeys.healthForRole(user?.ruolo),
+    queryKey: driveKeys.healthForViewer(user?.id, user?.ruolo),
     queryFn: () => unwrap(api.GET('/api/drive/account')),
   })
 }
@@ -67,7 +72,7 @@ export function useDisconnectDrive() {
     mutationFn: async () => {
       await unwrap(api.DELETE('/api/drive/account'))
     },
-    // The bare prefix, not `healthForRole`: a disconnect does not know, and must not
+    // The bare prefix, not `healthForViewer`: a disconnect does not know, and must not
     // need to know, which role's query is currently live.
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: driveKeys.health }),
   })

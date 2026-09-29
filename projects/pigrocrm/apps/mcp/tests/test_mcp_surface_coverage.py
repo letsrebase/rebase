@@ -625,6 +625,11 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     ("DocumentService", "add_version"): "richiede byte gia' resi, che l'MCP non produce",
     ("FiscalProfileService", "get"): "describe_fiscal_profile espone gia' il regime",
     ("TemplateService", "get"): "describe_template espone gia' il template",
+    ("GoogleDriveAccountService", "space_storage"): (
+        "letta solo dalla pagina Drive dell'amministratore, dentro lo stato di Drive: "
+        "describe_drive_account espone gia' il suo risultato, incorporato in health "
+        "(REB-562)"
+    ),
     # Le cinque righe qui sotto sono cio' che resta di 5B-2 dopo che **B2-10 ha deciso
     # la superficie MCP di questa fetta**, come B1-14 aveva deciso quella di 5B-1.
     # `EmailDraftService.create` e `SollecitiService.candidates` erano qui e non ci sono

@@ -79,21 +79,23 @@ const STATUS_LABEL: Record<string, string> = {
  * `routers/drive.py`) -- fix round 1's answer to a stale client-side admin flag, read
  * right after a demotion, showing a false "no folder chosen" instead of nothing.
  *
- * **Both conditions, not one (fix round 2, Greptile).** `useDriveHealth` now keys its
- * query by the viewer's own role (`driveKeys.healthForRole`, `queries.ts`), so a
- * demotion is a genuinely different query -- nothing cached under the new key -- and
- * refetches the moment `useAuth`'s `user.ruolo` changes, rather than going on serving
- * the pre-demotion response until some unrelated mutation happens to invalidate it.
- * This component still checks `choosesWriteFolder` on top of `data.space_storage`'s
- * presence, belt and braces, so a render caught between that role change and the new
- * query settling can never show a holder's name to someone this render already knows
- * is not an admin. Computed once, before every branch below including the unconfigured
- * one (also fix round 2, CodeRabbit): `space_storage` answers a question about the
- * space's storage, resolved independently of whether *this* request's own Google
- * client happens to be fully configured (fix round 1), so an admin sees it on every
- * screen this component can render -- disconnected, connected, unconfigured -- because
- * it is a question about the space, not about this account or this installation's
- * client secret.
+ * **Both conditions, not one (fix round 2, Greptile; fix round 4, CodeRabbit).**
+ * `useDriveHealth` now keys its query by the viewer's own id *and* role
+ * (`driveKeys.healthForViewer`, `queries.ts`), so either kind of change -- a demotion,
+ * or a session switch from one admin to another in the same tab without a `logout()`
+ * in between -- is a genuinely different query, nothing cached under the new key, and
+ * refetches at once rather than going on serving the previous viewer's response
+ * (complete with *their* Drive account's email) until some unrelated mutation happens
+ * to invalidate it. This component still checks `choosesWriteFolder` on top of
+ * `data.space_storage`'s presence, belt and braces, so a render caught between that
+ * change and the new query settling can never show a holder's name to someone this
+ * render already knows is not an admin. Computed once, before every branch below
+ * including the unconfigured one (also fix round 2, CodeRabbit): `space_storage`
+ * answers a question about the space's storage, resolved independently of whether
+ * *this* request's own Google client happens to be fully configured (fix round 1), so
+ * an admin sees it on every screen this component can render -- disconnected,
+ * connected, unconfigured -- because it is a question about the space, not about this
+ * account or this installation's client secret.
  */
 export function DrivePanel() {
   const health = useDriveHealth()
@@ -107,15 +109,16 @@ export function DrivePanel() {
 
   const data: DriveHealth = health.data
 
-  // Both conditions, not presence alone (REB-562 fix round 2, Greptile): the query is
-  // now keyed by role (`driveKeys.healthForRole`, `queries.ts`), so a demotion refetches
-  // as soon as `useAuth`'s `user.ruolo` changes rather than going on serving a cached
-  // response with the previous role's `space_storage` -- but `choosesWriteFolder` is
-  // still checked here too, belt and braces, so a render caught between that role
-  // change and the new query settling can never show a holder's name to someone this
-  // render already knows is not an admin. `choosesWriteFolder` also still governs the
-  // write-folder *editor* below, a client permission decision the server does not need
-  // to answer for.
+  // Both conditions, not presence alone (REB-562 fix round 2, Greptile; fix round 4,
+  // CodeRabbit): the query is now keyed by the viewer's own id *and* role
+  // (`driveKeys.healthForViewer`, `queries.ts`), so either a demotion or a session
+  // switch between two admins in one tab refetches at once rather than going on
+  // serving a cached response with the previous viewer's own `space_storage` --
+  // but `choosesWriteFolder` is still checked here too, belt and braces, so a render
+  // caught between that change and the new query settling can never show a holder's
+  // name to someone this render already knows is not an admin. `choosesWriteFolder`
+  // also still governs the write-folder *editor* below, a client permission decision
+  // the server does not need to answer for.
   //
   // Computed before the `!data.configured` branch, not only in the configured ones
   // (CodeRabbit, fix round 2): `space_storage` answers a question about the space's
