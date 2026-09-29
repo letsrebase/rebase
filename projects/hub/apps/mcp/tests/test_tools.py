@@ -1072,6 +1072,15 @@ async def test_list_team_proposals_reads_every_ask_with_its_request(
             1,
             None,
         )
+        # REB-607: who the proposal held, by name and id, and nobody on an attempt.
+        [held] = cloud["team"]
+        assert (held["freelancer_id"], held["nome"], held["cognome"], held["ruolo"]) == (
+            str(member),
+            "Ada1",
+            "Lovelace1",
+            "Backend developer",
+        )
+        assert failed["team"] == []
         rest = _payload(
             await client.call_tool(
                 "list_team_proposals", {"limit": 2, "cursor": page["next_cursor"]}

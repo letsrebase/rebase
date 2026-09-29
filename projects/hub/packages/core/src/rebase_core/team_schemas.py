@@ -56,6 +56,7 @@ __all__ = [
     "TeamProposalCreate",
     "TeamProposalList",
     "TeamProposalListItem",
+    "TeamProposalListMember",
     "TeamProposalRead",
     "TeamRequestCreate",
     "TeamRequestCreated",
@@ -193,6 +194,21 @@ class TeamProposalRead(BaseModel):
     created_at: datetime
 
 
+class TeamProposalListMember(BaseModel):
+    """One person a listed proposal held (REB-607): their index in the proposal, the
+    role it proposed them for, and who they are, so the admin can open their profile
+    from the list. `nome` and `cognome` are read when the list is, and are `None` for
+    a talent removed with «Elimina» since, whose admin page no longer opens: the row
+    keeps them all by id, since the list is about what was proposed and not about who
+    is still in the catalogue."""
+
+    posizione: int
+    freelancer_id: UUID
+    ruolo: str
+    nome: str | None
+    cognome: str | None
+
+
 class TeamProposalListItem(BaseModel):
     """One «Proponi il team» as the admin's list reads it (0028, DECISIONS.md
     2026-09-29): what was asked (`descrizione`, `persone`, `nota`, `previous_id` on a
@@ -200,8 +216,9 @@ class TeamProposalListItem(BaseModel):
     is `None` on a proposal that answered and the refusal's code
     (`TEAM_PROPOSAL_ERRORS`) on an attempt that did not; `riassunto` is what the
     proposal said, `None` on an attempt; `membri` is how many people the proposal held,
-    0 on an attempt and on a team nobody fit; `request_id` is the «Assumi team» filed on
-    it, `None` while there is none, which is the case the list exists to count."""
+    0 on an attempt and on a team nobody fit, and `team` names each of them in the
+    proposal's order (REB-607); `request_id` is the «Assumi team» filed on it, `None`
+    while there is none, which is the case the list exists to count."""
 
     id: UUID
     descrizione: str
@@ -213,6 +230,7 @@ class TeamProposalListItem(BaseModel):
     errore: str | None
     riassunto: str | None
     membri: int
+    team: list[TeamProposalListMember]
     request_id: UUID | None
     created_at: datetime
 

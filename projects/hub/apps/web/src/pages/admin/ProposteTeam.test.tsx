@@ -29,6 +29,10 @@ const FILED = {
   errore: null,
   riassunto: 'Una fintech vuole una web app per i clienti: dashboard, pagamenti e open banking.',
   membri: 2,
+  team: [
+    { posizione: 1, freelancer_id: 'f1', ruolo: 'Backend developer', nome: 'Ada', cognome: 'Lovelace' },
+    { posizione: 2, freelancer_id: 'f2', ruolo: 'Designer', nome: null, cognome: null },
+  ],
   request_id: 'r1',
   created_at: '2026-09-29T10:00:00Z',
 }
@@ -43,6 +47,7 @@ const NEVER_FILED = {
   origine: 'cloud',
   user_id: 'u1',
   membri: 1,
+  team: [{ posizione: 1, freelancer_id: 'f3', ruolo: 'Data engineer', nome: 'Grace', cognome: 'Hopper' }],
   request_id: null,
   created_at: '2026-09-28T10:00:00Z',
 }
@@ -56,6 +61,7 @@ const FAILED = {
   errore: 'llm_unavailable',
   riassunto: null,
   membri: 0,
+  team: [],
   request_id: null,
   created_at: '2026-09-27T10:00:00Z',
 }
@@ -84,8 +90,13 @@ function mount(path: string) {
     path: '/admin/team/$id',
     component: () => <p>richiesta</p>,
   })
+  const profile = createRoute({
+    getParentRoute: () => signedIn,
+    path: '/admin/freelance/$id',
+    component: () => <p>profilo</p>,
+  })
   const router = createRouter({
-    routeTree: root.addChildren([signedIn.addChildren([list, requests, page])]),
+    routeTree: root.addChildren([signedIn.addChildren([list, requests, page, profile])]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   render(
@@ -125,18 +136,28 @@ describe('«Proposte» (0028): every «Proponi il team», filed or not', () => {
     expect(cellUnder(filed, 'Esito')).toHaveTextContent(FILED.riassunto)
     const link = within(cellUnder(filed, 'Esito')).getByRole('link', { name: 'Richiesta inviata' })
     expect(link.getAttribute('href')).toMatch(/\/admin\/team\/r1$/)
+    // REB-607: each talent by name, linked to their profile, with the role proposed;
+    // one deleted since is named as such and links nowhere.
+    const ada = within(cellUnder(filed, 'Esito')).getByRole('link', { name: 'Ada Lovelace' })
+    expect(ada.getAttribute('href')).toMatch(/\/admin\/freelance\/f1$/)
+    expect(ada.closest('li')).toHaveTextContent('Ada Lovelace · Backend developer')
+    expect(screen.getByText('Profilo cancellato').closest('li')).toHaveTextContent('Profilo cancellato · Designer')
+    expect(within(cellUnder(filed, 'Esito')).getAllByRole('link')).toHaveLength(2)
 
     const never = rowOf(NEVER_FILED.descrizione)
     expect(cellUnder(never, 'Origine')).toHaveTextContent('Cloud')
     expect(cellUnder(never, 'Descrizione')).toHaveTextContent('Rigenera: togli il designer')
     expect(cellUnder(never, 'Esito')).toHaveTextContent('1 persona proposta')
     expect(cellUnder(never, 'Esito')).toHaveTextContent('Nessuna richiesta')
-    expect(within(never).queryByRole('link')).toBeNull()
+    const grace = within(never).getByRole('link', { name: 'Grace Hopper' })
+    expect(grace.getAttribute('href')).toMatch(/\/admin\/freelance\/f3$/)
+    expect(within(never).getAllByRole('link')).toHaveLength(1)
 
     const failed = rowOf(FAILED.descrizione)
     expect(cellUnder(failed, 'Origine')).toHaveTextContent('Admin')
     expect(cellUnder(failed, 'Persone')).toHaveTextContent('—')
     expect(cellUnder(failed, 'Esito')).toHaveTextContent('Fallita: Claude non ha risposto')
+    expect(within(failed).queryByRole('link')).toBeNull()
 
     expect(spy).toHaveBeenCalledWith('/api/hub/team/proposals', expect.anything())
     expect(screen.getByRole('link', { name: 'Tutte le richieste' }).getAttribute('href')).toMatch(/\/admin\/team$/)

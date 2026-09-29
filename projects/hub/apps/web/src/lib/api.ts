@@ -333,11 +333,24 @@ export interface TeamRequestsFilters {
  *  answer, or every slot or the day's proposals were spent. */
 export type TeamProposalErrore = 'llm_unavailable' | 'team_builder_busy'
 
+/** One person a listed proposal held (REB-607): their index in it, the role proposed,
+ *  and who they are, so the row can link their profile. `nome` and `cognome` are
+ *  `null`, together, for a talent removed with «Elimina» since, whose admin page no
+ *  longer opens; the row keeps them by id. */
+export interface TeamProposalListMember {
+  posizione: number
+  freelancer_id: string
+  ruolo: string
+  nome: string | null
+  cognome: string | null
+}
+
 /** One «Proponi il team» as «Proposte» reads it (0028): what was asked, by whom, when,
  *  and what came of it. `errore` is `null` on a proposal that answered and `riassunto`
  *  what it said, `null` on an attempt; `membri` is how many people it held, 0 on an
- *  attempt and on a team nobody fit; `request_id` is the «Assumi team» filed on it,
- *  `null` while there is none. */
+ *  attempt and on a team nobody fit, and `team` names each of them in the proposal's
+ *  order (REB-607); `request_id` is the «Assumi team» filed on it, `null` while there
+ *  is none. */
 export interface TeamProposalListItem {
   id: string
   descrizione: string
@@ -349,6 +362,7 @@ export interface TeamProposalListItem {
   errore: TeamProposalErrore | null
   riassunto: string | null
   membri: number
+  team: TeamProposalListMember[]
   request_id: string | null
   created_at: string
 }

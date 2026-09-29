@@ -793,7 +793,8 @@ def test_a_refusal_of_the_caps_is_kept_as_an_attempt(clean: Session) -> None:
 
 def test_list_recent_pages_filters_and_names_the_request(clean: Session) -> None:
     """«Proposte» (0028): newest first by cursor, every origin and outcome together
-    unless filtered, each row with how many it held and the request filed on it."""
+    unless filtered, each row with how many it held, who they are (REB-607) and the
+    request filed on it."""
     first = _talent(clean, 1)
     ids = _positions(clean)
     owner = _user(clean, "referente@acme.it")
@@ -864,6 +865,17 @@ def test_list_recent_pages_filters_and_names_the_request(clean: Session) -> None
         request_id,
     )
     assert filed.created_at == NOW
+    # REB-607: the row names who it held, so the admin can open the profile from the
+    # list; an attempt and a team nobody fit name nobody.
+    [held] = filed.team
+    assert (held.posizione, held.freelancer_id, held.ruolo, held.nome, held.cognome) == (
+        1,
+        first,
+        "Backend developer",
+        "Ada",
+        "Lovelace1",
+    )
+    assert (attempt.team, regenerated.team) == ([], [])
 
     # The limit is clamped, never refused: the MCP tool passes it through unchecked.
     assert len(builder.list_recent(limit=0).items) == 1
@@ -879,6 +891,51 @@ def test_list_recent_pages_filters_and_names_the_request(clean: Session) -> None
         with pytest.raises(ValidationFailed) as refused:
             builder.list_recent(**kwargs)
         assert refused.value.details["field"] == field
+
+
+def test_list_recent_keeps_a_deleted_talent_by_id_and_names_the_rest(clean: Session) -> None:
+    """REB-607: the list is about what was proposed, so a member removed with «Elimina»
+    since (`deleted_at` set, the product's only delete: their admin page answers 404)
+    stays in the row, unnamed, next to one still on file; a freelancer id the row
+    holds and no row answers, which nothing in the product produces, reads the same."""
+    kept = _talent(clean, 1)
+    soft = _talent(clean, 2, deleted=True)
+    gone = uuid7()
+    clean.add(
+        TeamProposal(
+            descrizione=DESCRIZIONE,
+            riassunto=RIASSUNTO,
+            luogo={"locale": False, "dove": None},
+            team=[
+                {
+                    "posizione": index,
+                    "freelancer_id": str(freelancer_id),
+                    "ruolo": ruolo,
+                    "motivazione": "Serve.",
+                    "giorni_settimana": 5,
+                }
+                for index, (freelancer_id, ruolo) in enumerate(
+                    ((gone, "Designer"), (kept, "Backend developer"), (soft, "Data engineer")),
+                    start=1,
+                )
+            ],
+            economia={"giorno": None, "mese": None, "giorni_mese": 22},
+            model=MODEL,
+            input_tokens=1,
+            output_tokens=1,
+            cache_read_tokens=0,
+            origine="pubblico",
+        )
+    )
+    clean.commit()
+
+    [row] = _builder(clean, _Scripted([])).list_recent().items
+    assert row.membri == 3
+    assert [(m.posizione, m.freelancer_id, m.ruolo, m.nome, m.cognome) for m in row.team] == [
+        (1, gone, "Designer", None, None),
+        (2, kept, "Backend developer", "Ada", "Lovelace1"),
+        (3, soft, "Data engineer", None, None),
+    ]
 
 
 def test_the_database_is_released_during_the_call(clean: Session) -> None:

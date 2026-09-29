@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
-import { admin, type TeamProposalListItem, type TeamProposalsFilters } from '@/lib/api'
+import { admin, type TeamProposalListItem, type TeamProposalListMember, type TeamProposalsFilters } from '@/lib/api'
 import { isFilterActive } from '@/lib/adminList'
 import { TEAM_ORIGIN_LABELS, formatDateTime } from '@/lib/format'
 import { Empty, Header, LoadMore } from './lists'
@@ -69,9 +69,35 @@ function Clamped({ text, className }: { text: string; className?: string }) {
   )
 }
 
+/** Who the proposal held (REB-607): each talent by name, linked to their admin page,
+ *  with the role proposed; a talent removed with «Elimina» since has no name and no
+ *  page to open, and the row says so in their place. */
+function Membri({ team }: { team: TeamProposalListMember[] }) {
+  return (
+    <ul className="space-y-0.5">
+      {team.map((member) => (
+        <li key={member.freelancer_id}>
+          {member.nome === null ? (
+            <span className="text-muted-foreground">Profilo cancellato</span>
+          ) : (
+            <Link
+              to="/admin/freelance/$id"
+              params={{ id: member.freelancer_id }}
+              className="font-medium hover:underline"
+            >
+              {`${member.nome} ${member.cognome}`}
+            </Link>
+          )}
+          <span className="text-muted-foreground">{` · ${member.ruolo}`}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 /** What came of the ask: the refusal on an attempt, otherwise how many people the
- *  proposal held, what it said, and the request filed on it, which is the step the
- *  list is there to count the absence of. */
+ *  proposal held and who, what it said, and the request filed on it, which is the
+ *  step the list is there to count the absence of. */
 function Esito({ item }: { item: TeamProposalListItem }) {
   if (item.errore) {
     return <Badge variant="pill">{`Fallita: ${ERROR_LABELS[item.errore] ?? item.errore}`}</Badge>
@@ -79,6 +105,7 @@ function Esito({ item }: { item: TeamProposalListItem }) {
   return (
     <div className="max-w-md space-y-1">
       <p>{item.membri === 0 ? 'Nessun profilo corrispondente' : membriLabel(item.membri)}</p>
+      {item.team.length > 0 && <Membri team={item.team} />}
       {item.riassunto && <Clamped text={item.riassunto} className="text-muted-foreground" />}
       {item.request_id ? (
         <Link to="/admin/team/$id" params={{ id: item.request_id }} className="font-medium hover:underline">

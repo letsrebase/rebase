@@ -377,7 +377,9 @@ Claude did not answer or the caps refused is a row with `errore` set
 handed out, never regenerated or filed, never counted by the daily cap. «Proposte»
 (`/hub/admin/team/proposte`, linked from «Richieste team») and `list_team_proposals`
 over MCP read them all, newest first, each with the «Assumi team» filed on it when
-there is one. That is where the usage of the builder is read; PostHog's
+there is one and, since REB-607, each talent it held by name, linked to their admin
+page (`team` on the row, one name query per page; a talent removed with «Elimina»
+since stays by id, unnamed, since their page no longer opens). That is where the usage of the builder is read; PostHog's
 `team_proposta_generata` counts only the proposals that answered. One bound: a
 refusal's row holds no proposal slot, so `routers/team.py` writes at most
 `REFUSAL_WRITES` (2) of them at once, and at most `REFUSAL_WAITERS` (8) more wait

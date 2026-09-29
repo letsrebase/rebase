@@ -17,7 +17,7 @@ from uuid import UUID
 import pytest
 from fakes_cards import CARD, MODEL
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -642,6 +642,11 @@ def test_an_admin_reads_and_works_a_request(
     team.commit()
     _login(client, sender)
     member = _talent(team)
+    removed = _talent(team, 2)
+    team.execute(
+        update(Freelancer).where(Freelancer.id == removed).values(deleted_at=datetime.now(UTC))
+    )
+    team.commit()
     ids = []
     for azienda in ("Uno Srl", "Due Srl", "Tre Srl"):
         proposal_id = _proposal_row(team, [member])
@@ -651,6 +656,8 @@ def test_an_admin_reads_and_works_a_request(
         )
         assert created.status_code == 201, created.text
         ids.append(created.json()["id"])
+    # An older ask never filed, holding a talent removed with «Elimina» since (REB-607).
+    never = _proposal_row(team, [member, removed], created_at=datetime.now(UTC) - timedelta(days=1))
 
     page = client.get("/api/hub/team/requests", params={"limit": 2})
     assert page.status_code == 200, page.text
@@ -680,7 +687,7 @@ def test_an_admin_reads_and_works_a_request(
     rest = client.get(
         "/api/hub/team/proposals", params={"limit": 2, "cursor": proposals.json()["next_cursor"]}
     ).json()
-    [oldest] = rest["items"]
+    oldest, unfiled = rest["items"]
     assert (oldest["request_id"], oldest["origine"], oldest["errore"], oldest["membri"]) == (
         ids[0],
         "pubblico",
@@ -688,6 +695,25 @@ def test_an_admin_reads_and_works_a_request(
         1,
     )
     assert oldest["descrizione"] == DESCRIZIONE and oldest["persone"] is None
+    # REB-607: the row names who it held, with the id the admin's profile page takes;
+    # a talent removed with «Elimina» since is kept by id and serialised unnamed.
+    assert (unfiled["id"], unfiled["request_id"], unfiled["membri"]) == (str(never), None, 2)
+    assert unfiled["team"] == [
+        {
+            "posizione": 1,
+            "freelancer_id": str(member),
+            "ruolo": "Backend developer",
+            "nome": "Ada1",
+            "cognome": "Lovelace1",
+        },
+        {
+            "posizione": 2,
+            "freelancer_id": str(removed),
+            "ruolo": "Backend developer",
+            "nome": None,
+            "cognome": None,
+        },
+    ]
     assert rest["next_cursor"] is None
     assert client.get("/api/hub/team/proposals", params={"esito": "errore"}).json()["items"] == []
     assert client.get("/api/hub/team/proposals", params={"esito": "boh"}).status_code == 422
