@@ -626,9 +626,8 @@ _COPERTE_O_UMANE: dict[Method, str] = {
     ("FiscalProfileService", "get"): "describe_fiscal_profile espone gia' il regime",
     ("TemplateService", "get"): "describe_template espone gia' il template",
     ("GoogleDriveAccountService", "space_storage"): (
-        "letta solo dalla pagina Drive dell'amministratore, dentro lo stato di Drive: "
-        "describe_drive_account espone gia' il suo risultato, incorporato in health "
-        "(REB-562)"
+        "read only by the admin's Drive page as part of Drive health; "
+        "describe_drive_account already exposes its result through health (REB-562)"
     ),
     # Le cinque righe qui sotto sono cio' che resta di 5B-2 dopo che **B2-10 ha deciso
     # la superficie MCP di questa fetta**, come B1-14 aveva deciso quella di 5B-1.
