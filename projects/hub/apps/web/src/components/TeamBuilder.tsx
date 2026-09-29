@@ -24,8 +24,9 @@ const DESCRIZIONE_MIN = 40
 const DESCRIZIONE_MAX = 4000
 const NOTA_MAX = 500
 
-/** Three projects a visitor can start from, each a description the API takes as it
- *  stands: remote, on site with a city, and a team that is not only developers. */
+/** Four projects a visitor can start from, each a description the API takes as it
+ *  stands: remote, on site with a city, a team that is not only developers, and a
+ *  software house that needs one forward-deployed engineer to place at its own client. */
 const EXAMPLES = [
   {
     label: 'Web app per una fintech',
@@ -38,6 +39,10 @@ const EXAMPLES = [
   {
     label: 'App mobile con un designer',
     text: 'Vogliamo lanciare un’app per prenotare le lezioni in palestra, su iOS e Android: serve chi la sviluppa, in React Native o Flutter, e un designer che ne curi l’esperienza e l’interfaccia. Tre mesi, da remoto.',
+  },
+  {
+    label: 'Un FDE nel team di un cliente',
+    text: 'Siamo una software house e cerchiamo un forward deployed engineer da inserire da un nostro cliente: lavora nel loro team, capisce i processi e porta in produzione le integrazioni con i loro sistemi. Python, Postgres e API dei gestionali. Sei mesi, in sede a Torino due giorni a settimana.',
   },
 ]
 
