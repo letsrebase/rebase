@@ -25,7 +25,7 @@ pnpm --filter website lint
 
 | Page | Served at | What it is |
 |---|---|---|
-| `src/index.html` | `letsrebase.com/` | The rebase landing: three doors into the hub, how it works, what is inside, the selection with the roles, the three services with a price each, the four voices, the events, the questions, the perks. Since 2026-09-11 (ORB-145), the five content sections since REB-605 |
+| `src/index.html` | `letsrebase.com/` | The rebase landing: three doors into the hub, how it works, what is inside, the selection with the roles, the three services with a price each, the four voices, the events, the questions, the perks. Since 2026-09-11 (ORB-145); the five content sections were added by REB-605 |
 | `src/pigrocrm.html` | `/pigrocrm` | PigroCRM's own page (ORB-159): one door into rebase beside a drawn Claude conversation, the four things inside, the guide, the closing box. Its own `pigrocrm.css` on top of `landing.css` |
 | `src/privacy.html` | `/privacy` | Privacy notice |
 | `src/terms.html` | `/terms` | Terms |
