@@ -140,6 +140,13 @@ accident:
 - **No literal corner.** `--radius` is zero and the derived scale with it, so
   `rounded-lg` is correct and `rounded-[10px]` is not, even though the second one
   looked identical the day it was written.
+- **No English to the user.** The one string a primitive says on its own is the close
+  control of a dialog or a sheet, and it says «Chiudi», to a screen reader in the
+  corner and on the footer's own button, because every rebase product speaks Italian
+  (REB-593). A page with a better word passes `closeLabel`; `dialog.test.tsx` and
+  `sheet.test.tsx` pin the default and refuse shadcn's «Close», which a `shadcn add`
+  of either file brings back: re-apply `closeLabel` after regenerating, the tests say
+  where.
 
 ## The two halves of the contract
 

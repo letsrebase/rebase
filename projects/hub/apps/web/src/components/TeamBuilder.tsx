@@ -501,8 +501,8 @@ function PublicHire({ proposalId }: { proposalId: string }) {
           Assumi team
         </Button>
       </DialogTrigger>
-      {/* The primitive's own close button says «Close» in English: «Annulla» in the
-          footer closes instead, in the page's language, and Escape still works. */}
+      {/* No X in the corner: «Annulla» in the footer is the one way out besides Escape,
+          next to «Invia la richiesta», where a form's two choices belong. */}
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>Assumi team</DialogTitle>

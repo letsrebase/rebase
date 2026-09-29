@@ -41,7 +41,9 @@ export function ConnectAgentDialog({
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="sm:max-w-xl">
+      {/* The footer's own «Chiudi» is the visible way out; the corner X gets a name of its
+          own so a screen reader does not hear two identical controls (REB-593). */}
+      <DialogContent className="sm:max-w-xl" closeLabel="Chiudi la finestra">
         <DialogHeader>
           <DialogTitle>Collega un agente</DialogTitle>
           <DialogDescription>

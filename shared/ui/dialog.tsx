@@ -7,6 +7,12 @@ import { cn } from "./cn"
 import { Button } from "./button"
 import { XIcon } from "lucide-react"
 
+/** What the close controls say to a screen reader, and on the footer's own button
+ *  (REB-593). Every rebase product speaks Italian to its users, so the package's
+ *  default is the product's word rather than shadcn's «Close»; a page with a better
+ *  one passes `closeLabel`. */
+const CLOSE_LABEL = "Chiudi"
+
 function Dialog({
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -51,9 +57,12 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  closeLabel = CLOSE_LABEL,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  /** The close control's label: «Chiudi» unless the page has a better word. */
+  closeLabel?: string
 }) {
   return (
     <DialogPortal>
@@ -76,7 +85,7 @@ function DialogContent({
             >
               <XIcon
               />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">{closeLabel}</span>
             </Button>
           </DialogPrimitive.Close>
         )}
@@ -98,10 +107,13 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
 function DialogFooter({
   className,
   showCloseButton = false,
+  closeLabel = CLOSE_LABEL,
   children,
   ...props
 }: React.ComponentProps<"div"> & {
   showCloseButton?: boolean
+  /** The close control's label: «Chiudi» unless the page has a better word. */
+  closeLabel?: string
 }) {
   return (
     <div
@@ -115,7 +127,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <Button variant="outline">Close</Button>
+          <Button variant="outline">{closeLabel}</Button>
         </DialogPrimitive.Close>
       )}
     </div>
