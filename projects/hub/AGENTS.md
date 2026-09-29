@@ -200,9 +200,14 @@ Resend refused outright (a 422, say), a row whose third attempt failed too (a ti
 a 429 or a 5xx leaves the row `in_coda` for the next pass, with the same
 `Idempotency-Key`), and a row whose checks or render raised, marked rather than let it
 wedge every campaign after it (controller ruling R14). A 401 or 403 (a revoked or
-restricted key, a domain Resend no longer sends for) marks nothing: the pass stops that
+restricted key, a domain Resend no longer sends for) marks no row: the pass stops that
 campaign with its rows still `in_coda` and logs «campaign <id> stopped this tick:
-Resend 401», and the send resumes on the first pass after the key is fixed. No
+Resend 401», and the send resumes on the first pass after the key is fixed. The pass
+also stores the stop on the campaign (`fermo_at`, `fermo_motivo`, REB-524), and so does
+a campaign whose own list raised, so «Campagne» and the campaign's page read «Invio
+fermo: Resend rifiuta l'invio: controlla la chiave e il dominio del mittente» (or «la
+lista non si legge») instead of «Parte il…» until the first mail that leaves clears it.
+The one sentence covers both causes of a 401/403, since only the status is kept. No
 address and no key ever appears in these lines or anywhere else in the logs.
 
 **The same pass stamps what each mail led to** (P-REB-41 phase 2, `rebase_core.campaigns.outcome`).
@@ -218,7 +223,8 @@ refused there, so the preview never has a sent row to stamp.
 **«Riscrivi a chi non ha fatto niente»** (`POST /api/hub/campaigns/{id}/follow-up`) makes a
 `bozza` with `fonte = lista` and `segue_id`. It keeps the earlier campaign's action and a
 copy of its mail, and only the mail can change (`LIST_IS_FIXED`). Its list is the earlier
-campaign's sent rows with no action, each checked live with `done_at`. The gap rule
+campaign's sent rows with no action, each checked live with `done_at`, less the rows
+whose mail bounced or drew a complaint, which the page's «Riscrivi (N)» leaves out too. The gap rule
 applies, so a follow-up drafted within `REBASE_CAMPAIGN_GAP_DAYS` of the send lists
 everyone as excluded, with the date.
 
@@ -231,10 +237,11 @@ checkout, was wiped this way on 24/09. A wave's own scripts belong in the reposi
 they are worth keeping) or outside `/opt/hub` entirely, the same rule `REBASE_DATA_DIR`
 follows for Postgres's own files.
 
-**Four rules keep an address out of a campaign, and only one of them is an opt-out.**
+**Five rules keep an address out of a campaign, and only one of them is an opt-out.**
 `exclusions()` (`rebase_core.campaigns.audience`) runs when the list is shown, when it
 is frozen and again right before each mail, and leaves out, with the reason on screen:
-an admin, by `User.role == "admin"` (`REASON_ADMIN`, no row needed); an address with a
+an admin, by `User.role == "admin"` (`REASON_ADMIN`, no row needed); a person whose card
+an admin marked «scartato» (`REASON_DISCARDED`, DECISIONS.md 2026-09-28); an address with a
 row in `campaign_optouts` -- `fonte='link'` for the recipient's own unsubscribe,
 `'reclamo'` for a spam complaint Resend reports, `'admin'` for «Non scrivere mai»,
 which is how the team goes in rather than relying on the role check; an address that
@@ -352,8 +359,13 @@ Each run takes 50 CVs, the oldest first (`--limit`), and never a turned-down per
 CV that failed on its own account (a refusal, a scan with no text, a card that names the
 person) is not tried again until it changes, so the runs end; an outage stops the batch,
 counts under «non riuscite» and is the next run's, so a run that keeps printing «0
-schede scritte, 1 non riuscite» is Claude not answering, not a CV. «Rigenera scheda» on
-the talent's page asks again for one.
+schede scritte, 1 non riuscite, fermato: Claude non disponibile» is Claude not
+answering, not a CV. «Rigenera scheda» on
+the talent's page asks again for one. A card whose Italian gives the person's gender away
+(`_gendered` in `cards.py`, a net under the prompt's rule, not a gate) is asked for once
+more and then written whatever the answer, never parked: one still gendered adds «N con
+avviso di genere» to the run's line and `written with a gender warning` to the log; an
+outage on the rewrite writes the first card and still stops the batch (REB-574).
 
 **Two caps.** `REBASE_TEAM_BUILDER_CONCURRENCY` (4) is how many proposals run at once
 in the API process: the next one answers 503 «Troppe richieste in questo momento:
@@ -408,9 +420,11 @@ uv run pytest -q projects/hub/packages/core/tests projects/hub/apps/api/tests pr
 uv run --env-file projects/hub/.env uvicorn rebase_api.main:app --port 8010
 ```
 
-The tests bring a `testcontainers` Postgres to `head` with this package's migrations,
-never with `create_all`: a table the model declares and the migration forgets fails
-here rather than on the server.
+The tests bring a template database to `head` with this package's migrations, once per
+xdist worker on the worker's own PostgreSQL (`projects/hub/conftest.py` over the
+repository's root `conftest.py`, REB-579), and each test root clones it; never with
+`create_all`: a table the model declares and the migration forgets fails here rather
+than on the server. A migration test asks the same fixture for an empty database.
 
 **A migration that renames or drops a table is also a change outside this repository.**
 Six of these tables are read by PostHog's warehouse as `posthog_ro`, and a `GRANT`

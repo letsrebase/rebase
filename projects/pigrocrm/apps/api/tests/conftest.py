@@ -1,20 +1,18 @@
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import Engine, text
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session
-from testcontainers.community.postgres import PostgresContainer
 
 from pigrocrm.core.actor import Actor, Role
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings, get_settings
-from pigrocrm.core.contract_expenses.triggers import CONTRACT_EXPENSE_TRIGGER_SQL
-from pigrocrm.core.db import Base, create_engine_from_settings, session_factory
+from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.storage import LocalFileStorage
-from pigrocrm.core.work_units.triggers import WORK_UNIT_TRIGGER_SQL
 from pigrocrm_api.deps import get_session, get_storage
 from pigrocrm_api.main import create_app
 from pigrocrm_api.ratelimit import reset_rate_limit
@@ -28,32 +26,15 @@ TEST_JWT_SECRET = "test-secret-for-the-api-test-suite-only"
 
 
 @pytest.fixture(scope="session")
-def api_engine() -> Iterator[Engine]:
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
-        settings = Settings(database_url=container.get_connection_url(), jwt_secret=TEST_JWT_SECRET)
-        get_settings.cache_clear()
-        engine = create_engine_from_settings(settings)
-        # Before `create_all`, and the order is load-bearing: four models declare GIN
-        # indexes with `gin_trgm_ops`, and `create_all` fails outright with
-        # `operator class "gin_trgm_ops" does not exist` without the extension.
-        # Mirrors packages/core/tests/conftest.py, which explains it at length.
-        with engine.begin() as connection:
-            connection.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
-            connection.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
-        import pigrocrm.core.models_registry  # noqa: F401
-
-        Base.metadata.create_all(engine)
-        # The trigger DDL `create_all` cannot express (packages/core/tests/conftest.py
-        # explains this at length) -- missing here left `contract_expenses.rimborsabile`
-        # silently stuck at its column default through this test database the moment a
-        # real API route (REB-360) started exercising it; `work_units` carries no API
-        # route yet, but installing its own trigger here too avoids leaving the
-        # identical gap for whoever adds one next.
-        with engine.begin() as connection:
-            connection.execute(text(WORK_UNIT_TRIGGER_SQL))
-            connection.execute(text(CONTRACT_EXPENSE_TRIGGER_SQL))
-        yield engine
-        engine.dispose()
+def api_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
+    """A clone of the worker's template database (`projects/pigrocrm/conftest.py`,
+    REB-579): extensions, tables and the trigger DDL are built there once per worker,
+    which is also where the reasons for their order live."""
+    settings = Settings(database_url=pigrocrm_postgres.clone("api"), jwt_secret=TEST_JWT_SECRET)
+    get_settings.cache_clear()
+    engine = create_engine_from_settings(settings)
+    yield engine
+    engine.dispose()
 
 
 @pytest.fixture

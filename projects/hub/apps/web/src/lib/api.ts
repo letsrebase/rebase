@@ -879,6 +879,10 @@ export interface Campaign {
   prova_inviata_at: string | null
   inviata_at: string | null
   created_at: string
+  /** Since when and why the send is stopped (REB-524): a key Resend refuses, a list the
+   *  tick cannot read. Both `null` once a mail leaves. */
+  fermo_at: string | null
+  fermo_motivo: string | null
   /** A test has left since the last edit: «Invia» is enabled only then. */
   pronta: boolean
 }
@@ -1216,6 +1220,7 @@ export const admin = {
     request<Campaign>(`/api/hub/campaigns/${id}/schedule`, json(data)),
   campaignToDraft: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/draft`, { method: 'POST' }),
   cancelCampaign: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/cancel`, { method: 'POST' }),
+  deleteCampaign: (id: string) => request<void>(`/api/hub/campaigns/${id}`, { method: 'DELETE' }),
   followUpCampaign: (id: string) => request<Campaign>(`/api/hub/campaigns/${id}/follow-up`, { method: 'POST' }),
   neverWrite: (email: string) => request<{ ok: boolean }>('/api/hub/campaigns/never-write', json({ email })),
   freelancer: (id: string) => request<Freelancer>(`/api/hub/freelancers/${id}`),

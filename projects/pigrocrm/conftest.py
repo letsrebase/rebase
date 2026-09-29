@@ -29,6 +29,7 @@ import socket
 from typing import Any
 
 import pytest
+from sqlalchemy import text
 
 _LOOPBACK_NAMES = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0", "::"})
 
@@ -103,3 +104,53 @@ def pytest_unconfigure(config: pytest.Config) -> None:
     socket.socket.connect = _original_connect  # type: ignore[method-assign]
     socket.socket.connect_ex = _original_connect_ex  # type: ignore[method-assign]
     socket.getaddrinfo = _original_getaddrinfo  # type: ignore[assignment]
+
+
+# --- this project's databases on the worker's PostgreSQL (`conftest.py` at the repository
+# root, REB-579): the schema `create_all` produces, once per worker, into a template that
+# each test root clones.
+
+_TEMPLATE = "pigrocrm_template"
+
+
+@pytest.fixture(scope="session")
+def pigrocrm_postgres(postgres_per_worker: Any) -> Any:
+    """The CRM's template database, built once per worker, and clones of it on demand.
+
+    `CREATE EXTENSION` runs before `create_all`, and the order is load-bearing: four models
+    declare GIN indexes with `gin_trgm_ops`, and `create_all` fails outright with `operator
+    class "gin_trgm_ops" does not exist` without `pg_trgm`; `RateCard`'s exclusion
+    constraint needs `btree_gist` the same way (REB-358). The trigger DDL runs after
+    `create_all`, since it needs the tables to exist: `WORK_UNIT_TRIGGER_SQL` and
+    `CONTRACT_EXPENSE_TRIGGER_SQL` are the exact text the migrations run (`triggers.py` says
+    why they are imported rather than copied), the only DDL of those tables `create_all`
+    cannot express (REB-359, REB-360). A clone carries all of it: a template copy is the
+    files of the database, extensions included.
+
+    One server per worker means the three roots on a worker now share what a test derives
+    from its engine URL by swapping the database name: the `pigrocrm_tenants` registry and
+    the `pigro_t_<slug>` spaces `test_tenants.py` and `test_tenants_api.py` provision. A
+    worker runs its files one after the other, so nothing overlaps; what changed is that a
+    row a core module fails to clean up is now visible to the api root's `== []`, where it
+    used to vanish with the core root's own server.
+    """
+    from pigrocrm.core.config import Settings
+    from pigrocrm.core.contract_expenses.triggers import CONTRACT_EXPENSE_TRIGGER_SQL
+    from pigrocrm.core.db import Base, create_engine_from_settings
+    from pigrocrm.core.work_units.triggers import WORK_UNIT_TRIGGER_SQL
+
+    def build(url: str) -> None:
+        engine = create_engine_from_settings(Settings(database_url=url))
+        with engine.begin() as connection:
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
+        import pigrocrm.core.models_registry  # noqa: F401  (imports every model)
+
+        Base.metadata.create_all(engine)
+        with engine.begin() as connection:
+            connection.execute(text(WORK_UNIT_TRIGGER_SQL))
+            connection.execute(text(CONTRACT_EXPENSE_TRIGGER_SQL))
+        # A template must have no session connected while it is copied.
+        engine.dispose()
+
+    return postgres_per_worker.project(_TEMPLATE, build)

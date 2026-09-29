@@ -1,8 +1,9 @@
 """One engine per process, one session per request."""
 
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import closing
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.analytics import Tracker, tracker_from_settings
+from rebase_core.audit import utcnow
 from rebase_core.campaigns.sender import CampaignSender, campaign_sender_from_settings
 from rebase_core.cloud import CLOUD_CLOSED, CloudCaller, CloudTalentService
 from rebase_core.config import Settings, get_settings
@@ -241,12 +243,23 @@ def get_session_opener() -> SessionOpener:
 SessionOpenerDep = Annotated[SessionOpener, Depends(get_session_opener)]
 
 
+def get_clock() -> Callable[[], datetime]:
+    """The team builder's «now» (REB-581): the clock a proposal is stamped with and the
+    daily cap counts from (`team_caps.require_daily_room`), one for both. A dependency so
+    a test pins one instant for its rows and its request, the way it hands a
+    `RecordingCall` for Claude, instead of racing midnight in Rome on the wall clock."""
+    return utcnow
+
+
+ClockDep = Annotated[Callable[[], datetime], Depends(get_clock)]
+
+
 def get_team_builder(
-    session: SessionDep, llm: LlmDep, settings: SettingsDep, tracker: TrackerDep
+    session: SessionDep, llm: LlmDep, settings: SettingsDep, tracker: TrackerDep, clock: ClockDep
 ) -> TeamBuilder:
-    """The engine (REB-511) for this request: the Claude seam, `None` without a key, and
-    the tracker that counts the proposal."""
-    return TeamBuilder(session, llm, settings, tracker=tracker)
+    """The engine (REB-511) for this request: the Claude seam, `None` without a key, the
+    tracker that counts the proposal and the clock that stamps it."""
+    return TeamBuilder(session, llm, settings, tracker=tracker, now=clock)
 
 
 TeamBuilderDep = Annotated[TeamBuilder, Depends(get_team_builder)]

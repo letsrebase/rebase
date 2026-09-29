@@ -9,6 +9,14 @@ first is a live, bounded scan across every tenant's own database (§7 decision B
 widened from `_owned_slugs`'s `Tenant.owner_email` to each space's own `users.email`
 so an invited member is listed too, not only a space's creator); the second opens
 exactly the one space chosen, with no second proof, and never creates a row.
+
+The root installation is not a registry row (design §1: optional, grandfathered),
+so the scan alone never names it -- and the day a registry space carried its admin's
+own name, the chooser replaced the login form with that space alone and the root had
+no way in from the login page (REB-583, 2026-09-28). When the root wears
+a name (`PIGROCRM_ROOT_SLUG`), both routes treat that name as the root's own: listed
+first when the identity's email has an active row in the root's `users`, entered
+with the root's own jar at `path=/` (decision 2026-09-09, `tenancy.cookie_path`).
 """
 
 from typing import Annotated
@@ -34,11 +42,12 @@ from pigrocrm_api.deps import (
     REFRESH_COOKIE,
     SettingsDep,
     TenantsRegistryDep,
+    _get_session_factory,
     _tenant_session_factory,
 )
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 from pigrocrm_api.sessions import set_session_cookie
-from pigrocrm_api.tenancy import first_cookie
+from pigrocrm_api.tenancy import first_cookie, is_root_name
 
 router = APIRouter(prefix="/api/identity", tags=["identity"], responses=PROBLEM_RESPONSES)
 
@@ -107,16 +116,43 @@ def _space_role_for(settings: Settings, slug: str, email: str) -> str | None:
         engine.dispose()
 
 
+def _root_role_for(settings: Settings, email: str) -> str | None:
+    """This identity's own role in the root installation, or `None`: no matching row
+    in the root's own `users`, a deactivated one, or a root whose database cannot be
+    reached right now -- skipped like a space the scan cannot open, never a 500. The
+    session comes from the root's own pooled engine, the one `deps` holds for every
+    unprefixed request, so no engine is built for it; it has no connect timeout of
+    its own either, unlike `_space_role_for`, because that pool is the process's own
+    root connection, pre-pinged, not one more remote database per row."""
+    try:
+        with _get_session_factory(settings)() as root:
+            user = UserRepository(root).get_by_email(email)
+            return user.ruolo if user is not None and user.attivo else None
+    except SQLAlchemyError:
+        return None
+
+
 @router.get("/spaces", response_model=list[IdentitySpace])
 def spaces(
     email: IdentityEmailDep, registry: TenantsRegistryDep, settings: SettingsDep
 ) -> list[IdentitySpace]:
     """Every space this identity may enter, per §3's live scan (§7 decision B1): one
     bounded connection per tenant, so one unreachable space is silently absent from
-    this one response rather than failing it -- the next visit tries again."""
-    slugs = [tenant.slug for tenant in TenantService(registry, settings).list()]
+    this one response rather than failing it -- the next visit tries again.
+
+    The root comes first, under its own name, when it has one and this email has an
+    active row there (REB-583): it is nobody's registry row, so the scan below would
+    never find it. A registry row that happens to carry the root's name is skipped:
+    `split_tenant_prefix` already routes that name to the root, never to a space."""
     result: list[IdentitySpace] = []
+    if settings.root_slug:
+        root_role = _root_role_for(settings, email)
+        if root_role is not None:
+            result.append(IdentitySpace(slug=settings.root_slug, ruolo=root_role))
+    slugs = [tenant.slug for tenant in TenantService(registry, settings).list()]
     for slug in slugs:
+        if is_root_name(settings.root_slug, slug):
+            continue
         ruolo = _space_role_for(settings, slug, email)
         if ruolo is not None:
             result.append(IdentitySpace(slug=slug, ruolo=ruolo))
@@ -136,13 +172,24 @@ def enter(
     ever reads `users`, it never creates one. A live, active row mints the ordinary
     access+refresh pair scoped `path=/<slug>/`, exactly as `login` does today
     (`routers/auth.py`), and answers `UserRead` so the SPA can navigate the same way
-    `homeAfterEntry()` already does after any other entry point."""
-    factory = _tenant_session_factory(slug, settings)
+    `homeAfterEntry()` already does after any other entry point.
+
+    The root's own name (`PIGROCRM_ROOT_SLUG`) opens the root (REB-583): the same
+    lookup in the root's own `users`, and the pair at the root's one jar, `path=/`
+    (`tenancy.cookie_path`: the root logs in on the bare page and works under its
+    name, and only `/` serves both), with the stale pair a browser may still hold at
+    `/<root_slug>/` cleared the way `login` clears it, so it cannot shadow the fresh
+    one on every request under the alias."""
+    is_root = is_root_name(settings.root_slug, slug)
+    factory = _get_session_factory(settings) if is_root else _tenant_session_factory(slug, settings)
     with factory() as space:
         user = UserRepository(space).get_by_email(email)
         if user is None or not user.attivo:
             raise NotFound("user", email)
-        path = f"/{slug}/"
+        path = "/" if is_root else f"/{slug}/"
+        if is_root:
+            response.delete_cookie(ACCESS_COOKIE, path=f"/{slug}/")
+            response.delete_cookie(REFRESH_COOKIE, path=f"/{slug}/")
         set_session_cookie(
             response,
             ACCESS_COOKIE,

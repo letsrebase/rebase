@@ -80,6 +80,31 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The test database image, pulled while the toolchain installs (REB-585). On a
+      # fresh runner nothing has pulled it before the Test step, so the four xdist
+      # workers all wait on the same first pull, 5 to 8s at the top of every worker's
+      # setup in the `--durations` table, while the network has room to spare through
+      # `uv sync` and the renderer install. Backgrounded and detached from the step's
+      # output, so the step ends at once and the pull runs beside what follows; a worker
+      # that arrives before it is done starts its own pull and the daemon shares the
+      # layers in flight, and one that finds it failed pulls as before, so a failure
+      # here costs nothing and never reds the job. The database image is read from the
+      # root `conftest.py`, which is what starts it; the reaper is testcontainers' own,
+      # started once per worker before the database (`testcontainers/core/config.py`),
+      # and its tag moves with the package in `uv.lock`.
+      # Each pull writes its outcome to a log the step before the tests prints, so a
+      # failed warm-up is a warning in the job log rather than a silent return of the
+      # setup delay; the job never fails on it.
+      - name: Pull the test images in the background
+        if: inputs.test
+        run: |
+          database=$(grep -oE '^_IMAGE = "[^"]+"' conftest.py | cut -d'"' -f2)
+          log="$RUNNER_TEMP/image-pull.log"
+          for image in "${database}" testcontainers/ryuk:0.8.1; do
+            { docker pull -q "${image}" > /dev/null 2>&1 && echo "pulled ${image}" \
+              || echo "FAILED to pull ${image}"; } >> "${log}" 2>&1 &
+          done
+
       - uses: astral-sh/setup-uv@v7
         with:
           version: '0.9.24'
@@ -169,6 +194,15 @@ jobs:
           # read, never text an expression pastes into a shell line.
           printf '%s\n' "$files" > "$RUNNER_TEMP/pytest-shard-files"
           echo "files-path=$RUNNER_TEMP/pytest-shard-files" >> "$GITHUB_OUTPUT"
+
+      - name: Say how the background pulls went
+        if: inputs.test
+        run: |
+          log="$RUNNER_TEMP/image-pull.log"
+          if [ -s "${log}" ]; then cat "${log}"; else echo "the pulls have not finished yet"; fi
+          if grep -q FAILED "${log}" 2>/dev/null; then
+            echo "::warning::a background image pull failed; the workers pull at test time instead"
+          fi
 
       - name: Test
         if: inputs.test

@@ -1,12 +1,12 @@
 from collections.abc import Iterator
 from contextlib import nullcontext
+from typing import Any
 
 import pytest
 from fakes_cards import card_response
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import Session
-from testcontainers.community.postgres import PostgresContainer
 
 from rebase_api.deps import get_llm, get_sender, get_session, get_session_opener
 from rebase_api.main import create_app
@@ -15,17 +15,15 @@ from rebase_core.config import Settings, get_settings
 from rebase_core.db import create_engine_from_settings, session_factory
 from rebase_core.llm import RecordingCall
 from rebase_core.mail import RecordingSender
-from rebase_core.migrate import upgrade_to_head
 
 
 @pytest.fixture(scope="session")
-def api_engine() -> Iterator[Engine]:
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
-        url = container.get_connection_url()
-        upgrade_to_head(url)
-        engine = create_engine_from_settings(Settings(database_url=url, _env_file=None))  # type: ignore[call-arg]
-        yield engine
-        engine.dispose()
+def api_engine(hub_postgres: Any) -> Iterator[Engine]:
+    """A clone of the worker's template database (`projects/hub/conftest.py`, REB-579)."""
+    url = hub_postgres.clone("api")
+    engine = create_engine_from_settings(Settings(database_url=url, _env_file=None))  # type: ignore[call-arg]
+    yield engine
+    engine.dispose()
 
 
 @pytest.fixture

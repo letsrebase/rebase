@@ -370,16 +370,26 @@ class TeamBuilder:
         self.now = now
 
     def propose(
-        self, data: TeamProposalCreate, *, origine: str, user_id: UUID | None
+        self,
+        data: TeamProposalCreate,
+        *,
+        origine: str,
+        user_id: UUID | None,
+        now: datetime | None = None,
     ) -> TeamProposalRead:
         """A new proposal for `data`, written and read back: public (no ids, no card
         `luogo`) when `origine` is `pubblico`, whole for the cloud and the admin. The
-        concurrency cap and the daily cap are the route's (C5)."""
+        concurrency cap and the daily cap are the route's (C5). `now` is the instant the
+        proposal is asked and stamped at, one read of the clock for the whole of it: the
+        route passes the one its daily cap counted from, so a call to Claude that ends
+        past midnight in Rome is not checked on one day and written on the next
+        (REB-581). Without it, the clock is read once here."""
         if not self.settings.team_builder_enabled or self.llm is None:
             raise TeamBuilderOff(OFF_SENTENCE)
         if origine not in TEAM_PROPOSAL_ORIGINS:
             raise ValueError(f"unknown origin {origine!r}")
-        previous = self._previous(data.previous_id, origine=origine, user_id=user_id)
+        at = now if now is not None else self.now()
+        previous = self._previous(data.previous_id, origine=origine, user_id=user_id, at=at)
         catalogue, positions = catalogue_lines(self.session)
         if not positions:
             # Nobody has a card: nothing for Claude to choose from, and nothing to pay
@@ -395,6 +405,7 @@ class TeamBuilder:
                 team=[],
                 bands=[],
                 response=None,
+                at=at,
             )
         request = proposal_prompt(catalogue, data, previous, positions=positions)
         # Claude takes seconds to tens of seconds: the transaction ends here, so no
@@ -418,6 +429,7 @@ class TeamBuilder:
             team=team,
             bands=bands,
             response=response,
+            at=at,
         )
 
     def get(self, proposal_id: UUID, *, public: bool) -> TeamProposalRead:
@@ -440,9 +452,10 @@ class TeamBuilder:
         team: list[dict[str, Any]],
         bands: list[Band | None],
         response: LlmResponse | None,
+        at: datetime,
     ) -> TeamProposalRead:
         """The row, the event and the read: `response` is the call's usage, `None` when
-        no call was made (every count 0, `model` empty)."""
+        no call was made (every count 0, `model` empty); `at` is the proposal's instant."""
         day, month = team_bands(bands)
         input_tokens = response.input_tokens if response is not None else 0
         output_tokens = response.output_tokens if response is not None else 0
@@ -460,7 +473,7 @@ class TeamBuilder:
             cache_read_tokens=response.cache_read_tokens if response is not None else 0,
             origine=origine,
             user_id=user_id,
-            created_at=self.now(),
+            created_at=at,
         )
         self.session.add(row)
         self.session.commit()
@@ -477,7 +490,7 @@ class TeamBuilder:
         return self._read(row, public=origine == "pubblico")
 
     def _previous(
-        self, previous_id: UUID | None, *, origine: str, user_id: UUID | None
+        self, previous_id: UUID | None, *, origine: str, user_id: UUID | None, at: datetime
     ) -> TeamProposal | None:
         """The proposal «Rigenera» replaces: of the caller's own origin, and on the
         cloud the caller's own, younger than a day. One sentence for every refusal, so
@@ -489,7 +502,7 @@ class TeamBuilder:
             row is None
             or row.origine != origine
             or (origine == "cloud" and row.user_id != user_id)
-            or row.created_at <= self.now() - PREVIOUS_MAX_AGE
+            or row.created_at <= at - PREVIOUS_MAX_AGE
         ):
             raise ValidationFailed(ENTITY, "previous_id", _PREVIOUS_REFUSED)
         return row

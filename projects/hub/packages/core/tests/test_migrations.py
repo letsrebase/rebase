@@ -1,5 +1,7 @@
 """Migration 0001 adopts the table PigroCRM's sidecar left behind, rows included."""
 
+from typing import Any
+
 import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
@@ -7,7 +9,6 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import IntegrityError
-from testcontainers.community.postgres import PostgresContainer
 
 import rebase_core.models  # noqa: F401
 from rebase_core.db import Base
@@ -83,11 +84,11 @@ def test_a_live_grant_is_one_per_person_and_company(hub_engine: Engine) -> None:
     } & indexes == {"uq_talent_cloud_grants_user_company_live"}
 
 
-def test_the_production_table_is_adopted_with_its_rows() -> None:
+def test_the_production_table_is_adopted_with_its_rows(hub_postgres: Any) -> None:
     """The shape `create_all` gave the table on 2026-09-07 plus the columns two
     `ADD COLUMN IF NOT EXISTS` rounds added later, with a row in it: after `upgrade`
     the row is still there, the late columns exist, and the version table is at head."""
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with hub_postgres.fresh_container() as container:
         url = container.get_connection_url()
         engine = create_engine(url, future=True)
         with engine.begin() as connection:
@@ -214,13 +215,13 @@ def test_the_contract_constraints_are_installed(hub_engine: Engine) -> None:
         outer.rollback()
 
 
-def test_migration_0017_can_run_again_and_roll_back() -> None:
+def test_migration_0017_can_run_again_and_roll_back(hub_postgres: Any) -> None:
     """A retried deploy runs 0017's statements over tables that already exist, and the
     downgrade leaves 0016's schema: both must work, and the result must still be the
     models' schema. REB-387: also prove the downgrade actually drops
     the four new tables, and the forced re-run actually recreates them, rather than
     relying only on the final schema diff, which a partial downgrade could still pass."""
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with hub_postgres.fresh_container() as container:
         url = container.get_connection_url()
         upgrade_to_head(url)
         config = Config(str(INI_PATH))
@@ -316,10 +317,10 @@ def test_an_envelope_belongs_to_one_document_and_keeps_its_item(hub_engine: Engi
         outer.rollback()
 
 
-def test_migration_0019_can_run_again_and_roll_back() -> None:
+def test_migration_0019_can_run_again_and_roll_back(hub_postgres: Any) -> None:
     """A retried deploy runs 0019's statements over columns that already exist, and the
     downgrade leaves 0018's schema: both must work, and the result must be the models'."""
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with hub_postgres.fresh_container() as container:
         url = container.get_connection_url()
         upgrade_to_head(url)
         config = Config(str(INI_PATH))
@@ -340,10 +341,10 @@ def test_migration_0019_can_run_again_and_roll_back() -> None:
         engine.dispose()
 
 
-def test_migration_0020_can_run_again_and_roll_back() -> None:
+def test_migration_0020_can_run_again_and_roll_back(hub_postgres: Any) -> None:
     """A retried deploy runs 0020's statements over tables that already exist, and the
     downgrade leaves 0019's schema: both must work, and the result must be the models'."""
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with hub_postgres.fresh_container() as container:
         url = container.get_connection_url()
         upgrade_to_head(url)
         config = Config(str(INI_PATH))
@@ -364,11 +365,11 @@ def test_migration_0020_can_run_again_and_roll_back() -> None:
         engine.dispose()
 
 
-def test_migration_0021_backfills_every_active_match_as_da_collegare() -> None:
+def test_migration_0021_backfills_every_active_match_as_da_collegare(hub_postgres: Any) -> None:
     """REB-497, § 3.1 of the design: a match already `attivo` when 0021 ships waits as
     `da_collegare`, so the sweep links it; nothing else would ever look at it again. A
     match in any other state keeps no link state until it turns active."""
-    with PostgresContainer("postgres:17-alpine", driver="psycopg") as container:
+    with hub_postgres.fresh_container() as container:
         url = container.get_connection_url()
         config = Config(str(INI_PATH))
         config.set_main_option("sqlalchemy.url", url)

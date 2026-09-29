@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from rebase_core.admin_tokens import AdminRead
@@ -47,6 +47,12 @@ from rebase_core.models import (
 )
 
 NOT_A_DRAFT = "Si modifica solo una bozza: riportala in bozza prima."
+ONLY_A_DRAFT_IS_DELETED = (
+    "Si elimina solo una bozza: una campagna programmata, inviata o annullata resta."
+)
+DRAFT_HAS_HISTORY = (
+    "Questa bozza ha destinatari con un invio o un esito registrato: non si elimina."
+)
 ROME = ZoneInfo("Europe/Rome")
 NEED_TEST = "Manda una prova dopo l'ultima modifica, poi invia."
 EMPTY_MAIL = "Oggetto, testo e bottone servono prima della prova."
@@ -356,6 +362,38 @@ class CampaignService:
         self.session.commit()
         return CampaignRead.model_validate(campaign)
 
+    def delete(self, campaign_id: UUID) -> None:
+        """An abandoned draft goes (REB-524). Only a `bozza`: it has never frozen a list,
+        or `back_to_draft` already dropped the one it had, so the row is all there is.
+        The lock is `_require_locked`'s, so a «Programma» racing this delete either
+        lands first and makes this refuse, or waits and finds the row gone."""
+        campaign = self._require_locked(campaign_id)
+        if campaign.stato != "bozza":
+            raise InvalidState(ONLY_A_DRAFT_IS_DELETED)
+        # A draft never carries a row that left or came back, but the cascade would
+        # erase one silently if it ever did (CodeRabbit on #473): refuse instead.
+        r = CampaignRecipient
+        history = self.session.scalar(
+            select(r.id)
+            .where(
+                r.campaign_id == campaign.id,
+                or_(
+                    r.inviata_at.is_not(None),
+                    r.consegnata_at.is_not(None),
+                    r.rimbalzata_at.is_not(None),
+                    r.primo_clic_at.is_not(None),
+                    r.reclamo_at.is_not(None),
+                    r.entrato_at.is_not(None),
+                    r.azione_at.is_not(None),
+                ),
+            )
+            .limit(1)
+        )
+        if history is not None:
+            raise InvalidState(DRAFT_HAS_HISTORY)
+        self.session.delete(campaign)
+        self.session.commit()
+
     def cancel(self, campaign_id: UUID) -> CampaignRead:
         campaign = self._require_locked(campaign_id)
         if campaign.stato not in ("programmata", "in_invio"):
@@ -475,8 +513,14 @@ class CampaignService:
         R12), so a second concurrent call blocks until the first commits, then sees the
         state the first left behind and raises the ordinary `InvalidState` sentence
         instead of racing into a write (`ck_campaign_recipients_...`'s unique index, or
-        two mails to the same person)."""
-        campaign = self.session.get(Campaign, campaign_id, with_for_update=True)
+        two mails to the same person). `populate_existing`: a `FOR UPDATE` read does not
+        overwrite an object this session already holds, so without it the check below
+        would run on the stale state the lock was meant to refresh (CodeRabbit on #473:
+        a `delete` of a `bozza` another session had just scheduled, whose cascade then
+        took the frozen list with it)."""
+        campaign = self.session.get(
+            Campaign, campaign_id, with_for_update=True, populate_existing=True
+        )
         if campaign is None:
             raise NotFound(ENTITY, campaign_id)
         return campaign

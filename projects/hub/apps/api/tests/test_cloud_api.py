@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
 
-from rebase_api.deps import get_llm
+from rebase_api.deps import get_clock, get_llm
 from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.cloud import TalentCloudService
 from rebase_core.companies import CompanyService
@@ -79,6 +79,12 @@ def _settings(client: TestClient, **overrides: Any) -> None:
 
 def _llm(client: TestClient, call: Any) -> None:
     client.app.dependency_overrides[get_llm] = lambda: call  # type: ignore[attr-defined]
+
+
+def _clock(client: TestClient, now: datetime) -> None:
+    """The builder's clock pinned at `now`, for the proposals it stamps and the daily cap
+    it counts (REB-581)."""
+    client.app.dependency_overrides[get_clock] = lambda: lambda: now  # type: ignore[attr-defined]
 
 
 def _login(client: TestClient, sender: RecordingSender, email: str = REFERENTE) -> None:
@@ -466,6 +472,10 @@ def test_the_cloud_proposals_count_in_the_daily_cap(
     _open(cloud)
     _login(client, sender)
     _settings(client, team_builder_daily_cap=1)
+    # One instant for the proposal the route stamps and the cap's count, a second into
+    # the day in Rome: on the wall clock a stamp at 23:59:59 and a count at 00:00:01 were
+    # two days, and the second proposal went through (REB-581).
+    _clock(client, datetime(2026, 9, 28, 22, 0, 1, tzinfo=UTC))
     _llm(client, RecordingCall([proposal_response()]))
     assert _cloud_propose(client).status_code == 200
 

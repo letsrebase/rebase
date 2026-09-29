@@ -18,6 +18,7 @@ from campaign_fixtures import (  # noqa: F401  (fixture)
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
+from rebase_core.campaigns.audience import REASON_DISCARDED, waiting_rows
 from rebase_core.campaigns.schemas import CampaignPatch, ScheduleRequest
 from rebase_core.campaigns.sender import RecordingCampaignSender
 from rebase_core.campaigns.service import (
@@ -186,3 +187,74 @@ def test_a_referente_whose_company_is_soft_deleted_is_not_listed(clean: Session)
     follow = service.follow_up(parent.id, admin(clean).id)
     preview = service.audience(follow.id)
     assert [r.email for r in preview.righe] == ["ada@studio.it"]
+
+
+def _card_of(session: Session, email: str) -> Freelancer:
+    user = session.query(User).filter(User.email == email).one()
+    return session.query(Freelancer).filter(Freelancer.user_id == user.id).one()
+
+
+def test_a_card_turned_down_since_the_mail_shows_as_excluded_in_the_follow_up(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """REB-524, Ivan's decision: «scartato» is left out of every audience, «Riscrivi»
+    included, and the preview says why rather than drop the row unexplained."""
+    clock = Clock(NOW)
+    parent = sent_to(clean, clock, "ada@studio.it", "bob@studio.it")
+    _card_of(clean, "bob@studio.it").stato = "scartato"
+    clean.commit()
+    clock.at += GAP
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    follow = service.follow_up(parent.id, admin(clean).id)
+    preview = service.audience(follow.id)
+    assert [(r.email, r.escluso) for r in preview.righe] == [
+        ("ada@studio.it", None),
+        ("bob@studio.it", REASON_DISCARDED),
+    ]
+
+
+def test_a_bounced_or_complained_row_is_not_waiting_for_a_follow_up(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """The comment on REB-524 (found on PR #447): `waiting_rows` kept a sent row whose
+    mail bounced, which the follow-up's own audience then excluded as bounced. The mail
+    never reached that person, and a complaint is a «never again»: neither is waiting."""
+    clock = Clock(NOW)
+    parent = sent_to(clean, clock, "ada@studio.it", "bob@studio.it", "cleo@studio.it")
+    rows = {r.email: r for r in clean.query(CampaignRecipient).filter_by(campaign_id=parent.id)}
+    rows["ada@studio.it"].rimbalzata_at = clock.at
+    rows["bob@studio.it"].reclamo_at = clock.at
+    clean.commit()
+    assert [r.email for r in waiting_rows(clean, parent)] == ["cleo@studio.it"]
+    clock.at += GAP
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    follow = service.follow_up(parent.id, admin(clean).id)
+    assert [(r.email, r.escluso) for r in service.audience(follow.id).righe] == [
+        ("cleo@studio.it", None)
+    ]
+
+
+def test_a_list_of_only_bounced_rows_leaves_nothing_to_follow(clean: Session) -> None:  # noqa: F811  (fixture)
+    """So «Riscrivi» never drafts a follow-up to nobody, which «Invia» would then refuse
+    with «La lista è vuota»."""
+    clock = Clock(NOW)
+    parent = sent_to(clean, clock, "ada@studio.it")
+    clean.execute(
+        update(CampaignRecipient)
+        .where(CampaignRecipient.campaign_id == parent.id)
+        .values(rimbalzata_at=clock.at)
+    )
+    clean.commit()
+    with pytest.raises(InvalidState, match=NOTHING_TO_FOLLOW):
+        CampaignService(clean, SETTINGS, clock=clock).follow_up(parent.id, admin(clean).id)
+
+
+def test_a_follow_up_draft_can_be_deleted_and_its_parent_stays(clean: Session) -> None:  # noqa: F811  (fixture)
+    clock = Clock(NOW)
+    parent = sent_to(clean, clock, "ada@studio.it")
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    follow = service.follow_up(parent.id, admin(clean).id)
+    service.delete(follow.id)
+    clean.expire_all()
+    assert clean.get(Campaign, follow.id) is None
+    assert clean.get(Campaign, parent.id) is not None

@@ -7,7 +7,9 @@ import pytest
 from pydantic import ValidationError
 
 from rebase_core.campaigns.schemas import (
+    NAME_IS_BLANK,
     AziendeFiltri,
+    CampaignDraft,
     CampaignPatch,
     ScheduleRequest,
     TalentiFiltri,
@@ -114,3 +116,31 @@ def test_a_patch_still_allows_an_explicit_null_on_a_field_the_row_may_hold_null(
     explicit `null` on either must still pass."""
     patch = CampaignPatch.model_validate({"stato_percorso": None, "filtri": None})
     assert patch.stato_percorso is None and patch.filtri is None
+
+
+DRAFT = {
+    "fonte": "stato",
+    "stato_percorso": "manca_cv",
+    "bottone_meta": "area",
+    "azione": "cv",
+}
+
+
+@pytest.mark.parametrize("nome", ["", "   ", "\t \n"])
+def test_a_blank_name_is_refused_on_create_and_on_update_with_a_sentence(nome: str) -> None:
+    """REB-524: `min_length=1` ran before the service stripped the name, so a name of
+    spaces was stored empty. The name is stripped first and then checked, and the
+    refusal is an Italian sentence naming the field, with `nome` last in `loc` as the
+    web reads it (`detail[].loc[-1]`)."""
+    for shape, body in ((CampaignDraft, {**DRAFT, "nome": nome}), (CampaignPatch, {"nome": nome})):
+        with pytest.raises(ValidationError) as refused:
+            shape.model_validate(body)
+        (error,) = refused.value.errors()
+        assert error["loc"][-1] == "nome"
+        assert error["msg"] == NAME_IS_BLANK
+        assert "nome" in NAME_IS_BLANK
+
+
+def test_a_name_is_stored_without_its_surrounding_spaces() -> None:
+    assert CampaignDraft.model_validate({**DRAFT, "nome": "  Manca il CV "}).nome == "Manca il CV"
+    assert CampaignPatch.model_validate({"nome": " Autunno  "}).nome == "Autunno"

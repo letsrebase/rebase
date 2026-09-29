@@ -10,7 +10,7 @@ const DETAIL = {
     id: 'c1', nome: 'Manca il CV', slug: 's', fonte: 'stato', stato_percorso: 'manca_cv', filtri: null, segue_id: null, oggetto: 'o', testo: 't',
     bottone_testo: 'b', bottone_meta: 'area', azione: 'cv', stato: 'programmata', contenuto_at: '2026-09-25T07:00:00Z',
     programmata_per: '2026-09-26T07:30:00Z', prova_inviata_at: '2026-09-25T07:05:00Z', inviata_at: null,
-    created_at: '2026-09-25T07:00:00Z', pronta: true,
+    created_at: '2026-09-25T07:00:00Z', fermo_at: null, fermo_motivo: null, pronta: true,
   },
   conteggi: { destinatari: 2, in_coda: 1, inviate: 0, saltate: 1, fallite: 0, consegnate: 0, rimbalzate: 0, cliccate: 0, entrate: 0, azioni: 0 },
   destinatari: [
@@ -28,8 +28,9 @@ function mount() {
   const signedIn = createRoute({ getParentRoute: () => root, id: 'signedIn', component: () => <Outlet /> })
   const one = createRoute({ getParentRoute: () => signedIn, path: '/admin/campaigns/$id', component: AdminCampagna })
   const edit = createRoute({ getParentRoute: () => signedIn, path: '/admin/campaigns/$id/edit', component: () => <p>modifica</p> })
+  const list = createRoute({ getParentRoute: () => signedIn, path: '/admin/campaigns', component: () => <p>elenco</p> })
   const router = createRouter({
-    routeTree: root.addChildren([signedIn.addChildren([one, edit])]),
+    routeTree: root.addChildren([signedIn.addChildren([one, edit, list])]),
     history: createMemoryHistory({ initialEntries: ['/admin/campaigns/c1'] }),
   })
   render(
@@ -152,5 +153,78 @@ describe('the outcome of a sent campaign (phase 2)', () => {
     mount()
     await screen.findByText('ada@studio.it')
     expect(screen.queryByRole('button', { name: /Riscrivi/ })).not.toBeInTheDocument()
+  })
+})
+
+describe('a stopped send (REB-524)', () => {
+  it('says «Invio fermo» with the reason in place of «Parte il…»', async () => {
+    const stopped = {
+      ...DETAIL,
+      campagna: { ...DETAIL.campagna, stato: 'in_invio', fermo_at: '2026-09-26T07:31:00Z', fermo_motivo: 'Resend rifiuta l’invio: controlla la chiave e il dominio del mittente' },
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(stopped))
+    mount()
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Invio fermo: Resend rifiuta l’invio: controlla la chiave e il dominio del mittente, dal 26 settembre 2026 alle 09:31 (ora di Roma). Si riprova ogni minuto e riparte da solo appena è risolto.',
+    )
+    expect(screen.getByText('Invio fermo')).toBeInTheDocument()
+    expect(screen.queryByText('In invio')).not.toBeInTheDocument()
+    expect(screen.queryByText(/^Parte il/)).not.toBeInTheDocument()
+  })
+})
+
+describe('deleting a draft (REB-524)', () => {
+  const draft = { ...DETAIL, campagna: { ...DETAIL.campagna, stato: 'bozza', programmata_per: null }, destinatari: [] }
+
+  it('deletes it after a second click and goes back to the list', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) =>
+      init?.method === 'DELETE' ? new Response(null, { status: 204 }) : json(draft),
+    )
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Elimina' }))
+    expect(screen.getByText('Eliminare la bozza?')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Indietro' }))
+    expect(fetch.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false)
+    await userEvent.click(screen.getByRole('button', { name: 'Elimina' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Conferma' }))
+    expect(await screen.findByText('elenco')).toBeInTheDocument()
+    const call = fetch.mock.calls.find(([, init]) => init?.method === 'DELETE')!
+    expect(String(call[0])).toMatch(/\/api\/hub\/campaigns\/c1$/)
+  })
+
+  it('says why when the server refuses, and stays', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) =>
+      init?.method === 'DELETE' ? json({ detail: 'Si elimina solo una bozza.' }, 409) : json(draft),
+    )
+    mount()
+    await userEvent.click(await screen.findByRole('button', { name: 'Elimina' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Conferma' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Si elimina solo una bozza.')
+  })
+
+  it('is not offered once the campaign is scheduled or sent', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(DETAIL))
+    mount()
+    await screen.findByText('ada@studio.it')
+    expect(screen.queryByRole('button', { name: 'Elimina' })).not.toBeInTheDocument()
+  })
+})
+
+describe('«Riscrivi» and a bounced mail (REB-524)', () => {
+  it('counts neither a bounced nor a complained row as waiting', async () => {
+    const [ada, bob, cleo] = SENT.destinatari
+    const withBounces = {
+      ...SENT,
+      destinatari: [
+        ada,
+        { ...bob!, rimbalzata_at: '2026-09-26T07:33:00Z' },
+        { ...cleo!, reclamo_at: '2026-09-26T08:00:00Z' },
+        { ...cleo!, id: 'r4', email: 'dora@studio.it', nome: 'Dora' },
+      ],
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json(withBounces))
+    mount()
+    expect(await screen.findByRole('button', { name: 'Riscrivi a chi non ha fatto niente (1)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Non ha fatto niente (1)' })).toBeInTheDocument()
   })
 })
