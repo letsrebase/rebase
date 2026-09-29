@@ -30,7 +30,7 @@ pnpm --filter website lint
 | `src/privacy.html` | `/privacy` | Privacy notice |
 | `src/terms.html` | `/terms` | Terms |
 | `src/pitch.html` | `/pitch` | The pitch deck, nineteen slides with keyboard, swipe and wheel navigation; shared by link, `noindex`. Its own stylesheet, `pitch.css`; its pictures under `src/pitch/`; its script, `deck.js`, shared with the page below |
-| `src/company.html` | `/company` | The deck for companies hiring a freelancer (REB-553): fourteen slides on the same stage, `pitch.css` and `deck.js`, the numbers, the selection, the day rates, the team builder, the talent cloud; shared by link, `noindex`. Its own picture under `src/company/` |
+| `src/company.html` | `/company` | The deck for companies hiring a freelancer (REB-553): fifteen slides on the same stage, `pitch.css` and `deck.js`, the numbers, the selection, the day rates, the three services with a price each, the team builder, the talent cloud; shared by link, `noindex`. Its own picture under `src/company/` |
 
 The community page (its own signup form, at `/community`, `/orbiters` before
 REB-212) is gone (REB-72): both names 301 to `/` now, a week after the landing had
