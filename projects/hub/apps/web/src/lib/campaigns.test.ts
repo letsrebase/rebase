@@ -7,7 +7,11 @@ import {
   META_LABELS,
   RECIPIENT_STATE_LABELS,
   campaignMoment,
+  campaignStateLabel,
   defaultSchedule,
+  isStalled,
+  listRefetchEvery,
+  oneLine,
   outcomeLine,
   peopleLabel,
   personalise,
@@ -16,6 +20,8 @@ import {
   romeToday,
   scheduleLabel,
   share,
+  stallLine,
+  subjectFor,
 } from './campaigns'
 
 describe('personalise', () => {
@@ -132,6 +138,51 @@ describe('campaignMoment', () => {
   it('says nothing for a draft or a campaign cancelled before it left', () => {
     expect(campaignMoment({ stato: 'bozza', programmata_per: null, inviata_at: null })).toBeNull()
     expect(campaignMoment({ stato: 'annullata', programmata_per: '2026-09-26T07:30:00Z', inviata_at: null })).toBeNull()
+  })
+})
+
+describe('a stopped send (REB-524)', () => {
+  const stopped = { stato: 'in_invio' as const, fermo_at: '2026-09-28T09:32:00Z', fermo_motivo: 'Resend rifiuta l’invio: controlla la chiave e il dominio del mittente' }
+
+  it('reads «Invio fermo» with its reason and since when, in Rome time, in place of «In invio»', () => {
+    expect(isStalled(stopped)).toBe(true)
+    expect(campaignStateLabel(stopped)).toBe('Invio fermo')
+    expect(stallLine(stopped)).toBe(
+      'Invio fermo: Resend rifiuta l’invio: controlla la chiave e il dominio del mittente, dal 28 settembre 2026 alle 11:32 (ora di Roma). Si riprova ogni minuto e riparte da solo appena è risolto.',
+    )
+  })
+
+  it('is nothing once the send moves again, or on a campaign no longer sending', () => {
+    const moving = { ...stopped, fermo_at: null, fermo_motivo: null }
+    expect(isStalled(moving)).toBe(false)
+    expect(campaignStateLabel(moving)).toBe('In invio')
+    expect(stallLine(moving)).toBeNull()
+    expect(isStalled({ ...stopped, stato: 'annullata' })).toBe(false)
+    expect(campaignStateLabel({ ...stopped, stato: 'annullata' })).toBe('Annullata')
+  })
+})
+
+describe('the subject on one line, as render.py sends it (REB-524)', () => {
+  it('turns each run of control characters into one space and trims the ends', () => {
+    expect(oneLine('Ada\r\nBcc: x@y')).toBe('Ada Bcc: x@y')
+    expect(oneLine('\tCiao\u0085mondo\u2028!\n')).toBe('Ciao mondo !')
+    expect(oneLine('Già pulito')).toBe('Già pulito')
+  })
+
+  it('puts the name in on one line, and a name that is only a newline counts as missing', () => {
+    expect(subjectFor('{nome}, manca solo il CV', 'Ada\r\nBcc: x@y')).toBe('Ada Bcc: x@y, manca solo il CV')
+    expect(subjectFor('Ciao {nome}!', '\n')).toBe('Ciao!')
+    expect(subjectFor('Ciao {nome}!', null)).toBe('Ciao!')
+    expect(subjectFor('Manca solo il CV\t', 'Ada')).toBe('Manca solo il CV')
+  })
+})
+
+describe('listRefetchEvery', () => {
+  it('polls «Campagne» every 30 s while a campaign is scheduled or sending, and never otherwise', () => {
+    expect(listRefetchEvery([{ stato: 'inviata' }, { stato: 'in_invio' }])).toBe(30_000)
+    expect(listRefetchEvery([{ stato: 'programmata' }])).toBe(30_000)
+    expect(listRefetchEvery([{ stato: 'bozza' }, { stato: 'inviata' }, { stato: 'annullata' }])).toBe(false)
+    expect(listRefetchEvery([])).toBe(false)
   })
 })
 

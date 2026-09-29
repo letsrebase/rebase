@@ -44,6 +44,17 @@ def person_code(email: str) -> str:
     return hashlib.sha1(email.lower().encode()).hexdigest()[:8]
 
 
+# Every C0 and C1 control character, DEL, and the two Unicode line separators: none may
+# reach a header, where a CR/LF would start another one (CodeRabbit on #473).
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
+
+
+def one_line(text: str) -> str:
+    """`text` as a header can carry it: each run of control characters becomes one
+    space, and the ends are trimmed."""
+    return _CONTROL.sub(" ", text).strip()
+
+
 def personalise(testo: str, nome: str | None) -> str:
     if nome:
         return testo.replace("{nome}", nome)
@@ -87,6 +98,9 @@ def render(
     campaign: Campaign, target: RenderTarget, settings: Settings, *, test: bool = False
 ) -> RenderedMail:
     paragraphs = _paragraphs(personalise(campaign.testo, target.nome))
+    # The subject follows the body's rule (REB-524): «{nome}» was left literal there. A
+    # name is the person's own input, so it goes in on one line, and so does the whole.
+    subject = one_line(personalise(campaign.oggetto, one_line(target.nome or "") or None))
     url = _tracked(destination(campaign, settings), campaign, target.codice)
     page, api = unsubscribe_urls(target.token, settings)
     text = "\n\n".join(
@@ -110,9 +124,9 @@ def render(
     )
     mail = Mail(
         to=target.email,
-        subject=("[prova] " if test else "") + campaign.oggetto,
+        subject=("[prova] " if test else "") + subject,
         text=text + "\n",
-        html=_frame(campaign.oggetto, body),
+        html=_frame(subject, body),
     )
     headers = {
         "List-Unsubscribe": f"<{api}>",

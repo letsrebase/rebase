@@ -823,6 +823,7 @@ CAMPAIGN_SUBJECT_MAX_LENGTH = 200
 CAMPAIGN_BUTTON_MAX_LENGTH = 60
 CAMPAIGN_TEXT_MAX_LENGTH = 5000
 RECIPIENT_REASON_MAX_LENGTH = 200
+CAMPAIGN_STALL_MAX_LENGTH = 200
 
 
 class Campaign(Base, PrimaryKeyMixin, TimestampMixin):
@@ -860,6 +861,13 @@ class Campaign(Base, PrimaryKeyMixin, TimestampMixin):
     # Phase 3 (spec § 6.3): the last good and the last failed read of the CRM's usage.
     pigro_letto_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     pigro_errore_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # REB-524: the last time a pass stopped on something that will not fix itself (a
+    # key Resend refuses, a list it can no longer read), and why, in the admin's words.
+    # Both `None` again once a mail leaves or the send ends (`tick.py`).
+    fermo_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    fermo_motivo: Mapped[str | None] = mapped_column(
+        String(CAMPAIGN_STALL_MAX_LENGTH), default=None
+    )
 
     __table_args__ = (
         Index("uq_campaigns_slug", "slug", unique=True),

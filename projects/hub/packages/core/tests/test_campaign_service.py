@@ -29,9 +29,14 @@ from rebase_core.campaigns.schemas import (
     TalentiFiltri,
 )
 from rebase_core.campaigns.sender import RecordingCampaignSender, SendOutcome
-from rebase_core.campaigns.service import NOT_A_DRAFT, CampaignService
+from rebase_core.campaigns.service import (
+    DRAFT_HAS_HISTORY,
+    NOT_A_DRAFT,
+    ONLY_A_DRAFT_IS_DELETED,
+    CampaignService,
+)
 from rebase_core.db import session_factory
-from rebase_core.errors import InvalidState, ValidationFailed
+from rebase_core.errors import InvalidState, NotFound, ValidationFailed
 from rebase_core.models import Campaign, CampaignRecipient, Freelancer, Login, User
 
 
@@ -604,3 +609,125 @@ def test_a_card_with_the_slug_but_another_persons_code_is_not_dalla_mail(clean: 
     )
     rows = {r.email: r for r in CampaignService(clean, SETTINGS).detail(campaign.id).destinatari}
     assert rows["nina@studio.it"].azione_dalla_mail is False
+
+
+def test_the_test_mail_greets_the_admin_in_the_subject_too(clean: Session) -> None:  # noqa: F811  (fixture)
+    """REB-524: the test shows the subject as a person will read it, `{nome}` included."""
+    service = CampaignService(clean, SETTINGS, clock=Clock(NOW))
+    who = admin(clean)
+    created = service.create(who.id, draft(oggetto="{nome}, manca solo il CV"))
+    recording = RecordingCampaignSender()
+    service.send_test(created.id, as_admin(who), recording)
+    assert recording.sent[0].mail.subject == "[prova] Ivan, manca solo il CV"
+
+
+def test_a_draft_is_deleted_and_nothing_else_is(clean: Session) -> None:  # noqa: F811  (fixture)
+    """REB-524: an abandoned draft can go. It never froze a list (`back_to_draft` drops
+    the one it had), so the row is all there is to delete."""
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    kept = service.create(admin(clean).id, draft(nome="Resta"))
+    service.delete(campaign.id)
+    clean.expire_all()
+    assert clean.get(Campaign, campaign.id) is None
+    assert clean.get(Campaign, kept.id) is not None
+    with pytest.raises(NotFound):
+        service.delete(campaign.id)
+
+
+def test_a_draft_moved_back_from_scheduled_is_a_draft_again_and_can_go(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    service.schedule(campaign.id, ScheduleRequest(giorno=date(2026, 9, 30), ora=time(9, 30)))
+    service.back_to_draft(campaign.id)
+    service.delete(campaign.id)
+    clean.expire_all()
+    assert clean.get(Campaign, campaign.id) is None
+
+
+@pytest.mark.parametrize("stato", ["programmata", "in_invio", "inviata", "annullata"])
+def test_a_campaign_past_its_draft_is_never_deleted(
+    clean: Session,  # noqa: F811  (fixture)
+    stato: str,
+) -> None:
+    """A scheduled, sending, sent or cancelled campaign carries rows people received or
+    were meant to: it stays, with every one of them."""
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    service.schedule(campaign.id, ScheduleRequest())
+    row = clean.get(Campaign, campaign.id)
+    assert row is not None
+    row.stato = stato
+    clean.commit()
+    before = clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).count()
+    with pytest.raises(InvalidState, match=ONLY_A_DRAFT_IS_DELETED):
+        service.delete(campaign.id)
+    clean.expire_all()
+    assert clean.get(Campaign, campaign.id) is not None
+    assert clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).count() == before
+
+
+def test_a_delete_from_a_session_holding_a_stale_draft_is_refused(
+    clean: Session,  # noqa: F811  (fixture)
+    hub_engine: Engine,
+) -> None:
+    """CodeRabbit on #473: session A still holds the campaign as a `bozza` in its identity
+    map while session B schedules it and commits. `SELECT ... FOR UPDATE` alone does not
+    overwrite an object already loaded, so A's delete used to act on the stale `bozza`
+    and `ON DELETE CASCADE` took B's frozen list with it. The locked read repopulates the
+    row: the delete is refused and the recipients stay."""
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    campaign, _ = ready(service, clean, clock)
+    held = clean.get(Campaign, campaign.id)
+    assert held is not None and held.stato == "bozza"
+
+    other = session_factory(hub_engine)()
+    try:
+        CampaignService(other, SETTINGS, clock=Clock(clock.at)).schedule(
+            campaign.id, ScheduleRequest()
+        )
+    finally:
+        other.close()
+    assert held.stato == "bozza"  # A's copy is stale on purpose
+
+    with pytest.raises(InvalidState, match=ONLY_A_DRAFT_IS_DELETED):
+        service.delete(campaign.id)
+    clean.expire_all()
+    assert clean.get(Campaign, campaign.id).stato == "programmata"  # type: ignore[union-attr]
+    assert clean.query(CampaignRecipient).filter_by(campaign_id=campaign.id).count() == 2
+
+
+@pytest.mark.parametrize(
+    "stamp",
+    [
+        "inviata_at",
+        "consegnata_at",
+        "rimbalzata_at",
+        "primo_clic_at",
+        "reclamo_at",
+        "entrato_at",
+        "azione_at",
+    ],
+)
+def test_a_draft_whose_rows_carry_a_send_or_an_outcome_is_not_deleted(
+    clean: Session,  # noqa: F811  (fixture)
+    stamp: str,
+) -> None:
+    """CodeRabbit on #473, round 2: a `bozza` never has such a row, but if one ever did,
+    the cascade would erase the history silently. The delete refuses with a sentence."""
+    clock = Clock(NOW)
+    service = CampaignService(clean, SETTINGS, clock=clock)
+    created = service.create(admin(clean).id, draft())
+    fields: dict[str, object] = {"stato": "in_coda", "inviata_at": None, stamp: T0}
+    _recipient(clean, created.id, "ada@studio.it", **fields)
+    with pytest.raises(InvalidState, match=DRAFT_HAS_HISTORY):
+        service.delete(created.id)
+    clean.expire_all()
+    assert clean.get(Campaign, created.id) is not None
+    assert clean.query(CampaignRecipient).filter_by(campaign_id=created.id).count() == 1

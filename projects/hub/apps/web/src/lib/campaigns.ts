@@ -37,6 +37,20 @@ export function personalise(testo: string, nome: string | null): string {
   return testo.replaceAll(' {nome}', '').replaceAll('{nome}', '')
 }
 
+/** The server's `one_line` (`campaigns/render.py`): each run of control characters,
+ *  C0 and C1 alike, and the two Unicode line separators becomes one space, and the
+ *  ends are trimmed, so a subject can never carry a line break. */
+export function oneLine(text: string): string {
+  return text.replace(/[\p{Cc}\u2028\u2029]+/gu, ' ').trim()
+}
+
+/** The subject a person receives (`campaigns/render.py:render`): the name on one line,
+ *  a name that is nothing once trimmed counting as missing, then the whole subject on
+ *  one line too. */
+export function subjectFor(oggetto: string, nome: string | null): string {
+  return oneLine(personalise(oggetto, oneLine(nome ?? '') || null))
+}
+
 /** Today and the current time in Europe/Rome, as the «Programma» inputs want them. */
 export function romeToday(now = new Date()): { giorno: string; ora: string } {
   const parts = Object.fromEntries(
@@ -88,6 +102,28 @@ export function campaignMoment(campagna: Pick<Campaign, 'stato' | 'programmata_p
   return null
 }
 
+type Stoppable = Pick<Campaign, 'stato' | 'fermo_at' | 'fermo_motivo'>
+
+/** A send the tick stopped on something that will not fix itself (REB-524): it stays
+ *  `in_invio` and is tried every minute, so its state alone would read as moving. */
+export function isStalled(campagna: Stoppable): boolean {
+  return (campagna.stato === 'programmata' || campagna.stato === 'in_invio') && Boolean(campagna.fermo_motivo)
+}
+
+/** The state as the badge says it: «Invio fermo» rather than «In invio» for a stopped send. */
+export function campaignStateLabel(campagna: Stoppable): string {
+  return isStalled(campagna) ? 'Invio fermo' : CAMPAIGN_STATE_LABELS[campagna.stato]
+}
+
+/** The campaign page's line in place of «Parte il…» while the send is stopped. */
+export function stallLine(campagna: Stoppable): string | null {
+  if (!isStalled(campagna)) return null
+  const since = campagna.fermo_at
+    ? `, dal ${romeDay.format(new Date(campagna.fermo_at))} alle ${romeClock.format(new Date(campagna.fermo_at))} (ora di Roma)`
+    : ''
+  return `Invio fermo: ${campagna.fermo_motivo}${since}. Si riprova ogni minuto e riparte da solo appena è risolto.`
+}
+
 /** A moment's time of day in Rome, «10:32»: when the draft was saved, when the test left. */
 export function romeTime(iso: string): string {
   return romeClock.format(new Date(iso))
@@ -120,6 +156,15 @@ export function refetchEvery(campagna: Pick<Campaign, 'stato' | 'inviata_at'>, n
     return POLL_MS
   }
   return false
+}
+
+const LIST_POLL_MS = 30_000
+
+/** How often «Campagne» rereads itself (REB-524): while any campaign is scheduled or
+ *  sending, so a send that stops, or ends, shows without a reload; otherwise never.
+ *  Slower than the campaign page's `refetchEvery`, since it reads every campaign. */
+export function listRefetchEvery(items: readonly Pick<Campaign, 'stato'>[]): number | false {
+  return items.some((item) => item.stato === 'programmata' || item.stato === 'in_invio') ? LIST_POLL_MS : false
 }
 
 /** The campaign page's figure for the action, once done. */

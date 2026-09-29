@@ -27,6 +27,7 @@ from rebase_core.campaigns.actions import done_at, snapshot
 from rebase_core.campaigns.audience import (
     REASON_ADMIN,
     REASON_BOUNCED,
+    REASON_DISCARDED,
     REASON_NEVER,
     build_audience,
     candidates,
@@ -547,3 +548,46 @@ def test_a_value_error_from_inside_done_at_propagates_too(
     monkeypatch.setattr(audience_module, "done_at", raising)
     with pytest.raises(ValueError, match="not this row's own snapshot"):
         waiting_rows(clean, parent)
+
+
+def test_a_card_marked_scartato_is_excluded_with_its_reason(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """REB-524, Ivan's decision (2026-09-28): a card an admin turned down never gets a
+    campaign. The journey states ignore `Freelancer.stato`, so the rule is one of the
+    exclusions, shown on screen with its reason, checked again before each mail."""
+    person(clean, "no@studio.it", stato="scartato")
+    person(clean, "si@studio.it", stato="attivo")
+    current = campaign_row(clean, stato_percorso="completo")
+    reasons = exclusions(
+        clean, ["no@studio.it", "si@studio.it"], campaign_id=current.id, now=T0, gap_days=3
+    )
+    assert reasons == {"no@studio.it": REASON_DISCARDED}
+
+
+def test_a_state_list_shows_a_scartato_card_as_excluded(
+    clean: Session,  # noqa: F811  (fixture)
+) -> None:
+    """«Profilo completo» was the case the card named: a turned-down card is complete."""
+    person(clean, "no@studio.it", stato="scartato")
+    person(clean, "si@studio.it")
+    campaign = campaign_row(clean, stato_percorso="completo")
+    rows = build_audience(clean, campaign, now=T0, gap_days=3)
+    assert [(r.candidate.email, r.escluso) for r in rows] == [
+        ("no@studio.it", REASON_DISCARDED),
+        ("si@studio.it", None),
+    ]
+
+
+@pytest.mark.parametrize(
+    "filtri",
+    [{"lista": "talenti"}, {"lista": "talenti", "stato": "scartato"}],
+)
+def test_a_filtered_list_shows_a_scartato_card_as_excluded_even_when_it_asks_for_them(
+    clean: Session,  # noqa: F811  (fixture)
+    filtri: dict[str, str],
+) -> None:
+    person(clean, "no@studio.it", stato="scartato")
+    campaign = campaign_row(clean, fonte="filtri", stato_percorso=None, filtri=filtri)
+    rows = build_audience(clean, campaign, now=T0, gap_days=3)
+    assert [(r.candidate.email, r.escluso) for r in rows] == [("no@studio.it", REASON_DISCARDED)]
