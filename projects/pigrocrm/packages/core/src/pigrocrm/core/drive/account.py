@@ -44,7 +44,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
-from pigrocrm.core.actor import Actor
+from pigrocrm.core.actor import ADMIN_ROLES, Actor
 from pigrocrm.core.config import Settings, gmail_configured
 from pigrocrm.core.drive.errors import DriveConsentExpired, DriveCredentialRevoked
 from pigrocrm.core.drive.models import GoogleDriveAccount
@@ -57,6 +57,9 @@ from pigrocrm.core.drive.schemas import (
     DriveHealth,
     DriveRootsUpdate,
     GoogleDriveAccountRead,
+    GoogleDriveSpaceStorage,
+    GoogleDriveSpaceStorageHolder,
+    drive_health,
 )
 from pigrocrm.core.drive.transport import DriveTransport, user_transport_for
 from pigrocrm.core.errors import Conflict, ValidationFailed
@@ -158,20 +161,32 @@ class GoogleDriveAccountService:
         No account at all is not a problem to report: an installation that never
         connected Drive has nothing to say about it, and a banner there would be an
         error message for a feature nobody switched on.
+
+        `space_storage` (REB-562) is computed once, here, and carried unchanged into
+        every branch below: it answers a question about the *space*, not about the
+        account this call is otherwise describing, so it does not belong inside
+        `answer`'s per-cause logic and must not vary with it. It is independent of
+        `configured` on purpose (fix round 1, Greptile): `self.space_storage` reads
+        `DriveRepository.storage_account` directly, which does not gate on
+        `gmail_configured` either, so a Google variable dropped after an admin already
+        chose a folder must not hide that a document generated right now would still
+        land there.
         """
         # Read here, not taken from the caller, for the same reason
         # `GoogleAccountService.health` reads it itself: one Google OAuth client
         # serves both credentials, so whether *Google* is configured at all is a fact
         # about the installation, not about which grant an adapter remembered to ask.
         configured = gmail_configured(self.settings)
+        space_storage = self.space_storage(actor)
         account = self.repo.account_for_user(actor.id) if actor.id else None
         if account is None:
-            return DriveHealth(
+            return drive_health(
                 account=None,
                 banner=None,
                 banner_text=None,
                 missing_scopes=[],
                 configured=configured,
+                space_storage=space_storage,
             )
 
         read = GoogleDriveAccountRead.model_validate(account)
@@ -186,12 +201,13 @@ class GoogleDriveAccountService:
             """Every branch below answers with the same account and the same scope
             list; only the cause and its sentence differ -- written once so a new
             cause cannot be added that forgets to report `missing_scopes`."""
-            return DriveHealth(
+            return drive_health(
                 account=read,
                 banner=banner,
                 banner_text=text,
                 missing_scopes=missing,
                 configured=configured,
+                space_storage=space_storage,
             )
 
         # Order matters, and it is an order of actionability -- the same order
@@ -234,6 +250,52 @@ class GoogleDriveAccountService:
             # one, and the fix for either is the same single re-authorisation.
             return answer("scope_missing", _SCOPE_TEXT.format(scope=" e ".join(missing)))
         return answer(None, None)
+
+    def space_storage(self, actor: Actor) -> GoogleDriveSpaceStorage | None:
+        """`DriveHealth.space_storage`: the space's write folder as of right now, and
+        whether the admin behind it can actually write into it. Public, not an
+        internal of `health` (REB-562 fix round 1, Greptile): `routers/drive.py` calls
+        this directly on the branch where Google is not (fully) configured, since
+        `DriveRepository.storage_account` -- what `storage/lazy_drive.py` actually
+        resolves a document write against -- reads `google_drive_accounts` and `users`
+        directly and was never gated on `gmail_configured`. A `public_url` (or any
+        other Google variable) dropped after an admin already chose a folder does not
+        stop `storage_account` from finding that row, so this must not hide it either.
+
+        Admin-only, matching `set_roots`'s own gate on *naming* this folder
+        (`require_admin`): a collaboratore makes no decision about it, and what this
+        would otherwise answer is another user's name and email. Returning `None` here
+        is what tells `drive_health` to leave `DriveHealth.space_storage` genuinely
+        unset for them, rather than a `null` that would read the same on the wire as
+        "no admin has chosen a folder yet" -- see that field's own docstring for why
+        conflating the two was fix round 1's Greptile finding. For an admin the answer
+        is always a concrete `GoogleDriveSpaceStorage`, never `None`: `in_effect=False`
+        says plainly that nothing is, rather than reusing `None` for that too.
+        """
+        if actor.role not in ADMIN_ROLES:
+            return None
+        found = self.repo.storage_holder()
+        if found is None:
+            # `holder=None` explicitly, not the field's own default: the route's
+            # `response_model_exclude_unset=True` (needed so a non-admin's whole
+            # `space_storage` can be left unset, see this method's docstring) walks
+            # into nested models too, so a `holder` left at its default would be
+            # dropped from the JSON here as well -- an admin's answer must carry the
+            # key as `null`, not omit it, or this state would read on the wire
+            # exactly like a non-admin's absent field.
+            return GoogleDriveSpaceStorage(in_effect=False, holder=None)
+        account, holder_name = found
+        return GoogleDriveSpaceStorage(
+            in_effect=True,
+            holder=GoogleDriveSpaceStorageHolder(
+                name=holder_name,
+                email=account.email_address,
+                # `storage_holder`'s own query proves `status == 'active'` but not the
+                # scopes: an active grant can still be missing `drive.file` (CodeRabbit,
+                # fix round 1), which is a working credential that cannot actually write.
+                reachable=DRIVE_SCOPE_FILE in account.scopes_granted,
+            ),
+        )
 
     def usable(self, actor: Actor, *, scope: str, feature: str) -> GoogleDriveAccount:
         """The gate. Called **before** anything is composed and before any HTTP call

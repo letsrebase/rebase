@@ -68,6 +68,34 @@ const STATUS_LABEL: Record<string, string> = {
  * `storage_folder_id`, which the `PATCH` reads as "leave it alone" (`DriveRootsUpdate`).
  * Their own row never supplies the space's storage, so their disconnect confirmation has
  * no write folder to warn about.
+ *
+ * **One more line, admin-only (REB-562).** `data.space_storage` is
+ * `DriveRepository.storage_account`'s own answer -- the folder the space actually
+ * writes generated documents into, which may be a *different* admin's, or nobody's,
+ * regardless of what this page's own `account`/roots editor shows about the viewer's
+ * own credential. The server computes it only for an admin actor
+ * (`GoogleDriveAccountService.space_storage`) and, for anyone else, leaves the field
+ * genuinely **unset** rather than `null` (`response_model_exclude_unset=True`,
+ * `routers/drive.py`) -- fix round 1's answer to a stale client-side admin flag, read
+ * right after a demotion, showing a false "no folder chosen" instead of nothing.
+ *
+ * **Both conditions, not one (fix round 2, Greptile; fix round 4, CodeRabbit).**
+ * `useDriveHealth` now keys its query by the viewer's own id *and* role
+ * (`driveKeys.healthForViewer`, `queries.ts`), so either kind of change -- a demotion,
+ * or a session switch from one admin to another in the same tab without a `logout()`
+ * in between -- is a genuinely different query, nothing cached under the new key, and
+ * refetches at once rather than going on serving the previous viewer's response
+ * (complete with *their* Drive account's email) until some unrelated mutation happens
+ * to invalidate it. This component still checks `choosesWriteFolder` on top of
+ * `data.space_storage`'s presence, belt and braces, so a render caught between that
+ * change and the new query settling can never show a holder's name to someone this
+ * render already knows is not an admin. Computed once, before every branch below
+ * including the unconfigured one (also fix round 2, CodeRabbit): `space_storage`
+ * answers a question about the space's storage, resolved independently of whether
+ * *this* request's own Google client happens to be fully configured (fix round 1), so
+ * an admin sees it on every screen this component can render -- disconnected,
+ * connected, unconfigured -- because it is a question about the space, not about this
+ * account or this installation's client secret.
  */
 export function DrivePanel() {
   const health = useDriveHealth()
@@ -80,81 +108,118 @@ export function DrivePanel() {
   if (health.isPending || !health.data) return <p className="text-muted-foreground">Caricamento…</p>
 
   const data: DriveHealth = health.data
-  if (!data.configured) return <NotConfigured />
+
+  // Both conditions, not presence alone (REB-562 fix round 2, Greptile; fix round 4,
+  // CodeRabbit): the query is now keyed by the viewer's own id *and* role
+  // (`driveKeys.healthForViewer`, `queries.ts`), so either a demotion or a session
+  // switch between two admins in one tab refetches at once rather than going on
+  // serving a cached response with the previous viewer's own `space_storage` --
+  // but `choosesWriteFolder` is still checked here too, belt and braces, so a render
+  // caught between that change and the new query settling can never show a holder's
+  // name to someone this render already knows is not an admin. `choosesWriteFolder`
+  // also still governs the write-folder *editor* below, a client permission decision
+  // the server does not need to answer for.
+  //
+  // Computed before the `!data.configured` branch, not only in the configured ones
+  // (CodeRabbit, fix round 2): `space_storage` answers a question about the space's
+  // storage, which `DriveRepository.storage_account` resolves independently of whether
+  // *this* request's Google client happens to be fully configured (fix round 1) -- so
+  // an admin must see it on every screen this component can render, unconfigured
+  // included.
+  const spaceStorage = choosesWriteFolder && data.space_storage != null ? (
+    <SpaceStorageLine storage={data.space_storage} />
+  ) : null
+
+  if (!data.configured) {
+    return (
+      <>
+        {spaceStorage}
+        <NotConfigured />
+      </>
+    )
+  }
 
   const account = data.account
   if (account === null || account.status === 'disconnected') {
-    return <NotConnected account={account} choosesWriteFolder={choosesWriteFolder} />
+    return (
+      <>
+        {spaceStorage}
+        <NotConnected account={account} choosesWriteFolder={choosesWriteFolder} />
+      </>
+    )
   }
 
   return (
-    <section className="max-w-3xl space-y-6">
-      <header className="space-y-1">
-        <h2 className="text-lg font-medium">Google Drive collegato</h2>
-        <p className="font-medium">{account.email_address}</p>
-        <p className="text-sm text-muted-foreground">
-          Stato: {STATUS_LABEL[account.status] ?? account.status}
-          {account.consent_expires_at
-            ? ` · Consenso da rinnovare entro il ${formatInstant(account.consent_expires_at)}`
-            : ''}
-        </p>
-      </header>
+    <>
+      {spaceStorage}
+      <section className="max-w-3xl space-y-6">
+        <header className="space-y-1">
+          <h2 className="text-lg font-medium">Google Drive collegato</h2>
+          <p className="font-medium">{account.email_address}</p>
+          <p className="text-sm text-muted-foreground">
+            Stato: {STATUS_LABEL[account.status] ?? account.status}
+            {account.consent_expires_at
+              ? ` · Consenso da rinnovare entro il ${formatInstant(account.consent_expires_at)}`
+              : ''}
+          </p>
+        </header>
 
-      {data.banner_text ? (
-        <p
-          role="status"
-          className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          {data.banner_text}
-        </p>
-      ) : null}
+        {data.banner_text ? (
+          <p
+            role="status"
+            className="border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {data.banner_text}
+          </p>
+        ) : null}
 
-      {account.last_error ? (
-        <p className="text-sm text-muted-foreground">
-          Ultimo errore: {account.last_error} ({formatInstant(account.last_error_at)})
-        </p>
-      ) : null}
+        {account.last_error ? (
+          <p className="text-sm text-muted-foreground">
+            Ultimo errore: {account.last_error} ({formatInstant(account.last_error_at)})
+          </p>
+        ) : null}
 
-      {/* In every connected state, banner or not: see the component docstring. The
-          server accepts this PATCH from a revoked or expired credential, so the panel
-          must not be the thing that refuses it. */}
-      <RootsEditor account={account} choosesWriteFolder={choosesWriteFolder} />
+        {/* In every connected state, banner or not: see the component docstring. The
+            server accepts this PATCH from a revoked or expired credential, so the panel
+            must not be the thing that refuses it. */}
+        <RootsEditor account={account} choosesWriteFolder={choosesWriteFolder} />
 
-      <div className="space-y-2 border-t pt-4">
-        <Button variant="destructive" onClick={() => setConfirmOpen(true)}>
-          Scollega Drive
-        </Button>
-      </div>
+        <div className="space-y-2 border-t pt-4">
+          <Button variant="destructive" onClick={() => setConfirmOpen(true)}>
+            Scollega Drive
+          </Button>
+        </div>
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Scollegare Google Drive?</DialogTitle>
-            <DialogDescription>
-              {choosesWriteFolder
-                ? 'La CRM non potrà più leggere le cartelle configurate né scrivere nella ' +
-                  "cartella di archiviazione, finché non ricolleghi l'account."
-                : "La CRM non potrà più leggere le cartelle configurate, finché non ricolleghi l'account."}
-            </DialogDescription>
-          </DialogHeader>
-          <ActionError error={disconnect.error} />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
-              Annulla
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={disconnect.isPending}
-              onClick={() =>
-                disconnect.mutate(undefined, { onSuccess: () => setConfirmOpen(false) })
-              }
-            >
-              Scollega Drive
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </section>
+        <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Scollegare Google Drive?</DialogTitle>
+              <DialogDescription>
+                {choosesWriteFolder
+                  ? 'La CRM non potrà più leggere le cartelle configurate né scrivere nella ' +
+                    "cartella di archiviazione, finché non ricolleghi l'account."
+                  : "La CRM non potrà più leggere le cartelle configurate, finché non ricolleghi l'account."}
+              </DialogDescription>
+            </DialogHeader>
+            <ActionError error={disconnect.error} />
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+                Annulla
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={disconnect.isPending}
+                onClick={() =>
+                  disconnect.mutate(undefined, { onSuccess: () => setConfirmOpen(false) })
+                }
+              >
+                Scollega Drive
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </section>
+    </>
   )
 }
 
@@ -163,6 +228,42 @@ export function DrivePanel() {
 function ActionError({ error }: { error: unknown }) {
   if (!error) return null
   return <p className="text-sm text-destructive">{toProblem(error).detail}</p>
+}
+
+/**
+ * REB-562. What `DriveHealth.space_storage` answers, read as it comes -- the id of
+ * which admin's row is not derived here, only what the server already resolved
+ * (`GoogleDriveAccountService.space_storage`, from `DriveRepository.storage_holder`).
+ * Rendered only when `DrivePanel` finds the field present at all (never `null` in
+ * practice for the admin actor this component is reached for; see that field's own
+ * docstring for why an admin's response always carries a concrete object).
+ *
+ * **Wording, fix round 1 (CodeRabbit).** `in_effect` never claims a document *will*
+ * land there: `storage_holder`'s own query proves the row is `active` and names a
+ * folder, not that the holder's credential still carries `drive.file` -- a re-consent
+ * that dropped the scope leaves a working, `active` credential that cannot actually
+ * write. So the sentence names the folder as configured ("cartella di scrittura dei
+ * documenti: quella di ...") and only *adds* "al momento non raggiungibile" when
+ * `holder.reachable` says the write itself would fail. And when nothing is in effect,
+ * the sentence does not claim no admin ever chose one -- the row could be sitting on a
+ * revoked or expired account, chosen once and then broken -- only that no write is
+ * available right now.
+ */
+function SpaceStorageLine({
+  storage,
+}: {
+  storage: NonNullable<DriveHealth['space_storage']>
+}) {
+  return (
+    <p className="max-w-3xl text-sm text-muted-foreground">
+      {storage.in_effect && storage.holder
+        ? `Cartella di scrittura dei documenti: quella di ${storage.holder.name} ` +
+          `(${storage.holder.email})` +
+          (storage.holder.reachable ? '.' : ', al momento non raggiungibile.')
+        : 'Nessuna cartella di scrittura disponibile: i documenti generati non si ' +
+          'possono salvare finché un amministratore non ne collega una.'}
+    </p>
+  )
 }
 
 function NotConfigured() {

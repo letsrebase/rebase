@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Loader } from '@rebase/ui/loader'
-import { admin, ApiError, type Campaign, type CampaignDraft } from '@/lib/api'
+import { admin, ApiError, type Campaign, type CampaignDraft, type CampaignMeta } from '@/lib/api'
 import { CAMPAIGN_MAX_LENGTH, defaultSchedule, romeTime } from '@/lib/campaigns'
 import { useMe } from '@/lib/me'
 import { Header } from './lists'
@@ -19,7 +19,9 @@ import {
   defaultNome,
   formFromCampaign,
   keyOf,
+  linkProblem,
   payloadOf,
+  withMeta,
   withTemplate,
   type CampaignForm,
 } from './crea-campagna/form'
@@ -62,9 +64,11 @@ function Editor({ initial }: { initial: Campaign | null }) {
 
   const [form, setForm] = useState<CampaignForm>(() => (initial ? formFromCampaign(initial) : EMPTY_FORM))
   // Once the admin has written into the mail, picking another state must not overwrite
-  // it (spec § 1); the same for the name, on its own. A stored campaign's are the
-  // admin's already.
-  const [touched, setTouched] = useState({ mail: initial !== null, nome: initial !== null })
+  // it (spec § 1); the same for the name and for «Dove porta», each on its own: picking
+  // a destination is not writing the mail, so a state picked after it still fills the
+  // subject, the text and the button (REB-530). A stored campaign's are the admin's
+  // already.
+  const [touched, setTouched] = useState({ mail: initial !== null, nome: initial !== null, meta: initial !== null })
   const [esclusi, setEsclusi] = useState<string[]>([])
   const [persona, setPersona] = useState<string | null>(null)
   const [mode, setMode] = useState<Quando>('adesso')
@@ -84,9 +88,21 @@ function Editor({ initial }: { initial: Campaign | null }) {
 
   const payload = payloadOf(form)
   const key = keyOf(payload)
-  const save = useAutosave(key, initial)
+  // «Un link» without a valid address is not saved at all (REB-530): the server would
+  // refuse it, and a half-typed address is not a failure worth a request. The field
+  // says why, and so do the header and the send bar.
+  const linkError = linkProblem(form)
+  const save = useAutosave(linkError ? null : key, initial)
   const { campaign } = save
   const dirty = key !== save.savedKey
+  const saveError = linkError ? new ApiError(422, linkError, ['bottone_url']) : save.error
+  // What the server refused about the address of the draft on screen, said under the
+  // field too: a rule the editor lacks is still explained where the admin types, and
+  // the other fields go on saving as soon as the address changes (REB-530).
+  const linkRefused =
+    key !== null && key === save.failedKey && save.error instanceof ApiError && save.error.fields.includes('bottone_url')
+      ? save.error.message
+      : null
 
   const audience = useQuery({
     queryKey: ['campaignAudience', campaign?.id, campaign ? audienceSource(campaign) : null],
@@ -119,6 +135,16 @@ function Editor({ initial }: { initial: Campaign | null }) {
   function changeMail(patch: Partial<CampaignForm>) {
     setForm((current) => ({ ...current, ...patch }))
     setTouched((current) => ({ ...current, mail: true }))
+  }
+  function changeMeta(meta: CampaignMeta) {
+    setForm((current) =>
+      withMeta(current, meta, templates.data?.find((item) => item.stato_percorso === current.statoPercorso)?.azione),
+    )
+    setTouched((current) => ({ ...current, meta: true }))
+  }
+  function changeLink(bottoneUrl: string) {
+    setForm((current) => ({ ...current, bottoneUrl }))
+    setTouched((current) => ({ ...current, meta: true }))
   }
   function changeNome(nome: string) {
     setForm((current) => ({ ...current, nome }))
@@ -156,6 +182,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
   function blockedReason(): string | null {
     if (payload === null) return 'Scegli prima a chi scrivere.'
     if (!contentReady(form)) return 'Scrivi oggetto, testo e bottone della mail.'
+    if (linkError) return linkError
     if (dirty && save.error) return `Le modifiche non sono salvate: ${failureMessage(save.error)}`
     if (dirty || save.saving) return 'Salvo le modifiche…'
     if (audience.error) return `L’elenco non si carica: ${failureMessage(audience.error)}`
@@ -186,7 +213,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
             className="-mx-2.5 h-auto max-w-xl border-transparent py-0.5 text-2xl font-semibold tracking-tight hover:border-border md:text-2xl"
           />
         </div>
-        <SaveStatus saving={save.saving} error={save.error} savedAt={save.savedAt} />
+        <SaveStatus saving={save.saving} error={saveError} savedAt={save.savedAt} />
       </header>
       <div className="grid flex-1 gap-x-10 gap-y-8 p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)]">
         <div className="min-w-0 space-y-10">
@@ -204,13 +231,14 @@ function Editor({ initial }: { initial: Campaign | null }) {
             segue={segue}
             segueError={segueError}
           />
-          <Messaggio form={form} onChange={changeMail} />
+          <Messaggio form={form} onChange={changeMail} onMeta={changeMeta} onLink={changeLink} linkRefused={linkRefused} />
         </div>
         <aside className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:self-start">
           <Anteprima
             oggetto={form.oggetto}
             testo={form.testo}
             bottoneTesto={form.bottoneTesto}
+            link={form.bottoneMeta === 'link' && !linkError ? form.bottoneUrl.trim() : null}
             righe={riceventi}
             persona={personaRow}
             onPersona={setPersona}
@@ -219,7 +247,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
             campaign={campaign}
             dirty={dirty}
             email={me.data?.email}
-            ready={payload !== null && contentReady(form)}
+            ready={payload !== null && contentReady(form) && !linkError}
             pending={test.isPending}
             failure={failureMessage(test.error)}
             onTest={() => test.mutate()}

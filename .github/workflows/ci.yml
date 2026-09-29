@@ -407,7 +407,9 @@ jobs:
   # four cores, so the next unit of parallelism is another runner: hosted larger
   # runners are billed even on a public repository and the self-hosted pool is closed
   # to this repository (`docs/ci-runner-pool.md`), while two more free jobs cost
-  # nothing but their slots. Each shard is every third file of the sorted list
+  # nothing but their slots. Four shards since REB-589, three before: at three they
+  # ran 112 to 160s apiece, about 1,900 tests each, and were the CRM's critical path
+  # with the web. Each shard is every fourth file of the sorted list
   # (`_python-gate.yml`'s `shard` input) with its own `-n auto` inside; lint and mypy
   # run once, in `pigrocrm-py-lint` below (REB-572). `ci` reads one aggregate result
   # for the matrix, so
@@ -421,7 +423,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ['1/3', '2/3', '3/3']
+        shard: ['1/4', '2/4', '3/4', '4/4']
     uses: ./.github/workflows/_python-gate.yml
     with:
       shard: ${{ matrix.shard }}
@@ -464,7 +466,7 @@ jobs:
       renderer: true
 
   # ruff and mypy, once, in a job of their own (REB-572): about 30s including the
-  # setup, beside the three shards rather than in front of the first one's tests.
+  # setup, beside the shards rather than in front of the first one's tests.
   pigrocrm-py-lint:
     name: pigrocrm · python lint
     needs: changes
@@ -485,8 +487,9 @@ jobs:
   # was the longest job of a CRM pull request, 186s on run 36471954567, 121s of them
   # 120 vitest files under jsdom on four cores, and the load of that full run is what
   # REB-405, REB-416 and REB-559 keep chasing as timeouts. Each shard is vitest's own
-  # `--shard=k/2` over the files ordered by a hash of their path; lint, build and tsc run once, on the
-  # first, since the second has nothing new to lint. `fail-fast: false` so a red
+  # `--shard=k/2` over the files ordered by a hash of their path; lint, build and tsc
+  # ran once on the first shard until REB-588 moved them to `pigrocrm-web-lint` below.
+  # `fail-fast: false` so a red
   # shard does not cancel its sibling and hide a second failure. `preflight.json`'s
   # `pigrocrm-web-unit` lane still runs the whole suite in one lane.
   pigrocrm-web:
@@ -501,10 +504,29 @@ jobs:
     with:
       filter: web
       shard: ${{ matrix.shard }}
-      job-name: ${{ matrix.shard == '1/2' && 'lint · unit · build · typecheck' || 'unit' }}
-      lint: ${{ matrix.shard == '1/2' }}
-      build: ${{ matrix.shard == '1/2' }}
-      typecheck: ${{ matrix.shard == '1/2' }}
+      # Tests only: lint, build and tsc are `pigrocrm-web-lint` below (REB-588). On the
+      # first shard they made it 127s against 59s for the second (run 36540443668), the
+      # web's critical path on every CRM run.
+      job-name: unit
+      lint: false
+      build: false
+      typecheck: false
+
+  # Lint and build once, in a job of their own beside the shards (REB-588), the shape
+  # the Python gate has had since REB-572. The app's own `build` script runs `vite build`
+  # and then `tsc --noEmit`, in that order because on a clean checkout tsc needs the
+  # route tree only a vite run writes; so the gate's separate Type check step would be
+  # the same tsc a second time (14s, run 36540443668) and is off here.
+  pigrocrm-web-lint:
+    name: pigrocrm · web lint
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.pigrocrm_web == 'true') }}
+    uses: ./.github/workflows/_node-gate.yml
+    with:
+      filter: web
+      job-name: lint · build
+      test: false
+      typecheck: false
 
   # The committed `apps/web/src/lib/api-types.ts` is generated from the running API's
   # own OpenAPI document, never written by hand (apps/web/package.json's
@@ -610,13 +632,37 @@ jobs:
 
   # The hub's SPA (projects/hub/apps/web, pnpm package `hub`): the same node gate as the
   # CRM's web and the website.
+  # Two shards of tests and a lint job, as the CRM's web (REB-588): one job was 130s,
+  # 78s of them the unit tests (run 36538611109), with lint, build and tsc in front of
+  # nothing. The hub's `build` runs tsc too, so the gate's Type check step is off on
+  # its lint job as on the CRM's.
   hub-web:
-    name: hub · web
+    name: hub · web ${{ matrix.shard }}
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.hub_web == 'true') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/2', '2/2']
+    uses: ./.github/workflows/_node-gate.yml
+    with:
+      filter: hub
+      shard: ${{ matrix.shard }}
+      job-name: unit
+      lint: false
+      build: false
+      typecheck: false
+
+  hub-web-lint:
+    name: hub · web lint
     needs: changes
     if: ${{ !cancelled() && (needs.changes.outputs.all == 'true' || needs.changes.outputs.hub_web == 'true') }}
     uses: ./.github/workflows/_node-gate.yml
     with:
       filter: hub
+      job-name: lint · build
+      test: false
+      typecheck: false
 
   # shared/analytics's own suite: two vitest files (posthog.test.ts and
   # browser.test.ts) and a tsconfig, run by no hosted tier before this -- a
@@ -738,7 +784,7 @@ jobs:
     # arrives. This is the only status check the repository should ever be asked to
     # require: every job name above can change forever without touching a ruleset.
     if: always()
-    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-api-types, website, hub-py, hub-web, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter]
+    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-web-lint, pigrocrm-api-types, website, hub-py, hub-web, hub-web-lint, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

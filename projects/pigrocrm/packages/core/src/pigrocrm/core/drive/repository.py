@@ -52,6 +52,22 @@ class DriveRepository:
         own, is written with the titolare's credential -- so the question this answers
         has no actor in it, only the owner's current role.
 
+        A thin wrapper over `storage_holder`, below: the eligible row, with the name
+        of the admin behind it discarded (REB-562). One query decides which row
+        qualifies; keeping a second copy of that decision here, for a caller that
+        does not want the name, is exactly the kind of duplication that drifts.
+        """
+        found = self.storage_holder()
+        return found[0] if found is not None else None
+
+    def storage_holder(self) -> tuple[GoogleDriveAccount, str] | None:
+        """`storage_account`'s own row, with the admin's `nome` beside it -- what an
+        admin's Drive page names as whose account holds the space's write folder
+        (REB-562, `GoogleDriveAccountService.health`'s `space_storage`). The `users`
+        join `storage_account` already makes to decide eligibility is the one that
+        also knows the name, so this is the one query, not a second lookup by
+        `user_id` once the eligible row is known.
+
         `scalar_one_or_none` is deliberately not used, and `LIMIT 1` is not a
         micro-optimisation. The installation is single-tenant and `user_id` is unique,
         so more than one qualifying row is not the expected state -- but it is reachable
@@ -68,8 +84,8 @@ class DriveRepository:
         different folders with nothing in the code to explain it. The ids here are
         UUIDv7, so the tie-break is itself chronological rather than arbitrary.
         """
-        return self.session.execute(
-            select(GoogleDriveAccount)
+        row = self.session.execute(
+            select(GoogleDriveAccount, User.nome)
             .join(User, User.id == GoogleDriveAccount.user_id)
             .where(
                 GoogleDriveAccount.status == "active",
@@ -78,7 +94,8 @@ class DriveRepository:
             )
             .order_by(GoogleDriveAccount.updated_at.desc(), GoogleDriveAccount.id.desc())
             .limit(1)
-        ).scalar_one_or_none()
+        ).first()
+        return (row[0], row[1]) if row is not None else None
 
     def add(self, account: GoogleDriveAccount) -> GoogleDriveAccount:
         self.session.add(account)
