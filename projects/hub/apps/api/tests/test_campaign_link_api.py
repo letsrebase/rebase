@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_campaign_sender
-from rebase_core.campaigns.links import LINK_URL_MISSING, LINK_URL_NOT_HTTPS
+from rebase_core.campaigns.links import LINK_URL_INVALID, LINK_URL_MISSING, LINK_URL_NOT_HTTPS
 from rebase_core.campaigns.sender import RecordingCampaignSender
 from rebase_core.config import Settings, get_settings
 from rebase_core.mail import RecordingSender
@@ -40,7 +40,13 @@ def test_a_refused_address_names_its_field_in_a_sentence(
     sender: RecordingSender,
 ) -> None:
     signed_in(client, sender, tidy)
-    for url, sentence in ((None, LINK_URL_MISSING), ("http://lu.ma/x", LINK_URL_NOT_HTTPS)):
+    for url, sentence in (
+        (None, LINK_URL_MISSING),
+        ("http://lu.ma/x", LINK_URL_NOT_HTTPS),
+        # A 422, never the 500 `urlsplit`'s own `ValueError` would be (Greptile on #476).
+        ("https://[invalid", LINK_URL_INVALID),
+        ("https://lu.ma:99999/rebase-house", LINK_URL_INVALID),
+    ):
         answer = client.post("/api/hub/campaigns", json={**BODY, "bottone_url": url})
         assert answer.status_code == 422
         assert answer.json()["detail"] == [

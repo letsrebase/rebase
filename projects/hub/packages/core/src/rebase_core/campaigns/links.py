@@ -8,6 +8,7 @@ the one thing the hub can see of a page it does not own, the click Resend report
 (`campaign_recipients.primo_clic_at`), so «Un link» and the action «clic» go together
 (DECISIONS.md, 2026-09-28)."""
 
+import re
 from urllib.parse import urlsplit
 
 from rebase_core.mail import SITE
@@ -31,9 +32,22 @@ CLICK_NEEDS_LINK = "Il clic si misura come azione solo quando il bottone porta a
 # letsrebase.com, from the one constant the mails already link the site with.
 OUR_DOMAIN = (urlsplit(SITE).hostname or "").lower()
 
+_HTTPS = "https://"
+_SCHEME = re.compile(r"([a-z][a-z0-9+.-]*):", re.IGNORECASE)
+_AUTHORITY_END = re.compile(r"[/?#]")
+# The WHATWG URL standard's forbidden host code points a browser refuses and
+# `urlsplit` lets through into `hostname` (the delimiters never get that far).
+_FORBIDDEN_HOST = frozenset("<>^|[]:")
+_NUMBER = re.compile(r"\d+|0[xX][0-9a-fA-F]*")
+_OCTET = r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+_IPV4 = re.compile(rf"{_OCTET}(?:\.{_OCTET}){{3}}")
+
 
 def link_problem(url: str) -> str | None:
-    """Why `url`, already stripped, cannot be a button's address, or `None`."""
+    """Why `url`, already stripped, cannot be a button's address, or `None`. The editor
+    runs the same steps in the same order (`linkProblem`, `crea-campagna/form.ts`), and
+    what it cannot parse (`new URL` throws) is refused here too, so a request that skips
+    the editor gets the same 422 and never a 500 or a link a browser cannot open."""
     if not url:
         return LINK_URL_MISSING
     if len(url) > CAMPAIGN_BUTTON_URL_MAX_LENGTH:
@@ -42,12 +56,47 @@ def link_problem(url: str) -> str | None:
     # and evil.io to the person who clicks; a space or a control character is no link.
     if "\\" in url or any(ch.isspace() or not ch.isprintable() for ch in url):
         return LINK_URL_INVALID
-    parts = urlsplit(url)
-    if parts.scheme.lower() != "https":
+    scheme = _SCHEME.match(url)
+    if scheme is None or scheme.group(1).lower() != "https":
         return LINK_URL_NOT_HTTPS
-    if not parts.hostname or parts.username is not None or parts.password is not None:
+    if url[: len(_HTTPS)].lower() != _HTTPS:
+        return LINK_URL_INVALID  # `https:lu.ma`: no host for `urlsplit`
+    authority = _AUTHORITY_END.split(url[len(_HTTPS) :], maxsplit=1)[0]
+    # Credentials in front of the host, and a percent-encoded host, which a browser
+    # decodes (or refuses) and `urlsplit` does not: neither belongs in a campaign link.
+    if "@" in authority or "%" in authority:
         return LINK_URL_INVALID
+    try:
+        parts = urlsplit(url)  # raises on a broken `[...]` host
+        _ = parts.port  # raises on a port out of range or not a number
+    except ValueError:
+        return LINK_URL_INVALID
+    host = parts.hostname
+    if not host:
+        return LINK_URL_INVALID
+    if not authority.startswith("["):  # `urlsplit` has already checked an IPv6 literal
+        if any(ch in _FORBIDDEN_HOST for ch in host):
+            return LINK_URL_INVALID
+        # A last label that is a number makes the host an IPv4 address for a browser,
+        # which refuses `999.1.1.1`: only four numbers up to 255 pass, on both sides.
+        name = host.removesuffix(".")
+        if _NUMBER.fullmatch(name.rsplit(".", 1)[-1]) and not _IPV4.fullmatch(name):
+            return LINK_URL_INVALID
+        if not all(_punycode_ok(label) for label in name.split(".")):
+            return LINK_URL_INVALID
     return None
+
+
+def _punycode_ok(label: str) -> bool:
+    """A browser refuses an `xn--` label that does not decode to printable text
+    (`xn--a`, `xn--`); `urlsplit` takes any of them."""
+    if not label.startswith("xn--"):
+        return True
+    try:
+        decoded = label[4:].encode("ascii").decode("punycode")
+    except UnicodeError:
+        return False
+    return bool(decoded) and decoded.isprintable()
 
 
 def button_problem(meta: str, url: str | None, azione: str) -> tuple[str, str] | None:

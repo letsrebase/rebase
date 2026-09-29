@@ -49,6 +49,21 @@ describe('the address «Un link» carries (REB-530)', () => {
       ['https://evil.io\\@lu.ma/', LINK_URL_INVALID],
       ['https://lu.ma/\u202Eesac', LINK_URL_INVALID],
       [`https://lu.ma/${'a'.repeat(490)}`, LINK_URL_TOO_LONG],
+      // What `new URL` refuses, or reads differently from the server's `urlsplit`
+      // (Greptile P1s on #476): the server refuses the same, with the same sentence.
+      ['https://[invalid', LINK_URL_INVALID],
+      ['https://lu.ma:99999/rebase-house', LINK_URL_INVALID],
+      ['https://lu.ma:abc/', LINK_URL_INVALID],
+      ['https:///lu.ma', LINK_URL_INVALID],
+      ['https://@lu.ma/', LINK_URL_INVALID],
+      ['https://a%2eb.com/', LINK_URL_INVALID],
+      ['https://999.1.1.1/', LINK_URL_INVALID],
+      ['https://127.1/', LINK_URL_INVALID],
+      ['https://xn--a.com/', LINK_URL_INVALID],
+      ['https://lu.ma:443/rebase-house', null],
+      ['https://[::1]:8443/x', null],
+      ['https://1.2.3.4/', null],
+      ['https://bücher.example/', null],
     ]
     for (const [bottoneUrl, expected] of cases) {
       expect([bottoneUrl, linkProblem({ bottoneMeta: 'link', bottoneUrl })]).toEqual([bottoneUrl, expected])

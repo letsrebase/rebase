@@ -1,7 +1,7 @@
 """A campaign button that leads out of the hub (REB-530): «Un link», its address, the
 tracking it gets only on our own domain, and the click it measures."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from alembic import command
@@ -24,6 +24,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from testcontainers.community.postgres import PostgresContainer
 
+from rebase_core.campaigns.actions import earlier_click
+from rebase_core.campaigns.audience import REASON_DONE
 from rebase_core.campaigns.links import (
     CLICK_NEEDS_LINK,
     LINK_MEASURES_CLICK,
@@ -37,7 +39,7 @@ from rebase_core.campaigns.links import (
 from rebase_core.campaigns.outcome import stamp_outcomes
 from rebase_core.campaigns.render import RenderTarget, destination, render
 from rebase_core.campaigns.schemas import CampaignDraft, CampaignPatch, ScheduleRequest
-from rebase_core.campaigns.sender import RecordingCampaignSender
+from rebase_core.campaigns.sender import RecordingCampaignSender, SendOutcome
 from rebase_core.campaigns.service import CampaignService
 from rebase_core.campaigns.tick import run_tick
 from rebase_core.db import Base
@@ -131,6 +133,27 @@ def test_a_link_campaign_is_stored_with_its_trimmed_address(clean: Session) -> N
 
 
 @pytest.mark.parametrize(
+    "url",
+    [
+        "https://lu.ma:443/rebase-house",
+        "https://lu.ma:8443/x",
+        "https://lu.ma:/x",
+        "https://[::1]:8443/x",
+        "https://1.2.3.4/",
+        "https://xn--bcher-kva.example/",
+        "https://bücher.example/",
+        "HTTPS://LU.MA/Casa?giorno=3#programma",
+    ],
+)
+def test_an_address_a_browser_opens_is_taken(
+    clean: Session,  # noqa: F811  (fixture)
+    url: str,
+) -> None:
+    service = CampaignService(clean, SETTINGS, clock=Clock(NOW))
+    assert service.create(admin(clean).id, link_draft(bottone_url=url)).bottone_url == url
+
+
+@pytest.mark.parametrize(
     ("fields", "field", "sentence"),
     [
         ({"bottone_url": None}, "bottone_url", LINK_URL_MISSING),
@@ -142,6 +165,24 @@ def test_a_link_campaign_is_stored_with_its_trimmed_address(clean: Session) -> N
         ({"bottone_url": "https://ivan:pw@lu.ma/casa"}, "bottone_url", LINK_URL_INVALID),
         ({"bottone_url": "https://evil.io\\@lu.ma/"}, "bottone_url", LINK_URL_INVALID),
         ({"bottone_url": "https://lu.ma/" + "a" * 490}, "bottone_url", LINK_URL_TOO_LONG),
+        # Greptile P1s on #476: what `urlsplit` raises on, or lets through while a
+        # browser (and the editor's `new URL`) refuses it, is the same 422.
+        ({"bottone_url": "https://[invalid"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://a]b.com/"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://[zzz]/"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://lu.ma:99999/rebase-house"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://lu.ma:65536/"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://lu.ma:abc/"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://lu.ma:-1/"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https:lu.ma"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https:///lu.ma"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://@lu.ma/"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://a%2eb.com/"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://a<b.com/"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://a|b.com/"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://999.1.1.1/"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://127.1/"}, "bottone_url", LINK_URL_INVALID),
+        ({"bottone_url": "https://xn--a.com/"}, "bottone_url", LINK_URL_INVALID),
         ({"azione": "entrato"}, "azione", LINK_MEASURES_CLICK),
     ],
 )
@@ -255,6 +296,70 @@ def test_a_follow_up_keeps_the_link(clean: Session) -> None:  # noqa: F811  (fix
     with pytest.raises(ValidationFailed) as refused:
         service.update(follow.id, CampaignPatch(bottone_meta="area"))
     assert refused.value.details["reason"] == CLICK_NEEDS_LINK
+
+
+GAP = timedelta(days=SETTINGS.campaign_gap_days, hours=1)
+
+
+def scheduled_follow_up(session: Session, clock: Clock) -> tuple[Campaign, Campaign]:
+    """A link campaign sent to Ada, and its «Riscrivi», tested and scheduled for now."""
+    person(session, "ada@studio.it")
+    parent = sent_link_campaign(session, clock)
+    clock.at += GAP
+    service = CampaignService(session, SETTINGS, clock=clock)
+    who = admin(session)
+    follow = service.follow_up(parent.id, who.id)
+    clock.at += timedelta(minutes=1)
+    service.send_test(follow.id, as_admin(who), RecordingCampaignSender())
+    service.schedule(follow.id, ScheduleRequest())
+    return parent, session.get(Campaign, follow.id)  # type: ignore[return-value]
+
+
+def click_on(session: Session, campaign: Campaign, at: datetime) -> None:
+    session.execute(
+        update(CampaignRecipient)
+        .where(CampaignRecipient.campaign_id == campaign.id)
+        .values(primo_clic_at=at)
+    )
+    session.commit()
+
+
+def test_a_click_on_the_first_mail_after_scheduling_stops_the_follow_up(clean: Session) -> None:  # noqa: F811  (fixture)
+    """Greptile P1 on #476: the follow-up's own row has no click before its mail leaves,
+    so the send-time check reads the click on the mail it follows."""
+    clock = Clock(NOW)
+    parent, follow = scheduled_follow_up(clean, clock)
+    click_on(clean, parent, clock.at + timedelta(seconds=30))
+    clock.at += timedelta(minutes=1)
+    recording = RecordingCampaignSender()
+    result = run_tick(clean, recording, SETTINGS, clock=clock, pause=NO_PAUSE)
+    assert (result.inviate, result.saltate, recording.sent) == (0, 1, [])
+    clean.expire_all()
+    row = clean.query(CampaignRecipient).filter_by(campaign_id=follow.id).one()
+    assert (row.stato, row.motivo) == ("saltata", REASON_DONE)
+
+
+def test_a_follow_up_is_credited_only_with_a_click_after_it_left(clean: Session) -> None:  # noqa: F811  (fixture)
+    clock = Clock(NOW)
+    parent, follow = scheduled_follow_up(clean, clock)
+    # Its own Resend id: a second recorder would answer `rec-1` again, which the parent's
+    # row already holds (`uq_campaign_recipients_resend_id`).
+    follow_sender = RecordingCampaignSender([SendOutcome("accettata", "rec-follow")])
+    run_tick(clean, follow_sender, SETTINGS, clock=clock, pause=NO_PAUSE)
+    clean.expire_all()
+    row = clean.query(CampaignRecipient).filter_by(campaign_id=follow.id).one()
+    assert row.stato == "inviata" and row.inviata_at is not None
+    # A click on the first mail from before this one left does not count for it...
+    assert earlier_click(clean, row, since=row.inviata_at) is None
+    click_on(clean, parent, row.inviata_at - timedelta(minutes=1))
+    assert earlier_click(clean, row, since=row.inviata_at) is None
+    # ...one after it does, and the tick stamps it.
+    later = row.inviata_at + timedelta(hours=2)
+    click_on(clean, parent, later)
+    assert stamp_outcomes(clean, now=later + timedelta(minutes=1)) >= 1
+    clean.expire_all()
+    row = clean.query(CampaignRecipient).filter_by(campaign_id=follow.id).one()
+    assert row.azione_at == later
 
 
 # ---- the database -------------------------------------------------------------------

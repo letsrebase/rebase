@@ -4,12 +4,21 @@ something already done; the tick's `stamp_outcomes` (`outcome.py`) asks it when.
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, defer
 
 from rebase_core.campaigns.states import Candidate, card_state
-from rebase_core.models import CampaignRecipient, Comment, Company, Freelancer, Login, User
+from rebase_core.models import (
+    Campaign,
+    CampaignRecipient,
+    Comment,
+    Company,
+    Freelancer,
+    Login,
+    User,
+)
 
 # What `MemberService.replace_cv` writes on a card's first CV (`members.py:303`).
 CV_COMMENT_PREFIX = "CV caricato dalla persona"
@@ -114,6 +123,41 @@ def done_at(
         return min(moments) if moments else None
     if azione == "clic":
         # «Un link» (REB-530): of a page outside the hub, the first click Resend reports
-        # on this very mail is all the hub sees. None before the mail has left.
-        return recipient.primo_clic_at
+        # is all the hub sees. This mail's own, or, for a «Riscrivi», the click on a mail
+        # of the campaigns it follows.
+        if recipient.primo_clic_at is not None:
+            return recipient.primo_clic_at
+        return earlier_click(session, recipient, since=since)
     return None  # `pigro_cliente`: phase 3 (spec § 6.3)
+
+
+# A «Riscrivi» of a «Riscrivi» is possible; nobody writes ten of them.
+_MAX_CHAIN = 10
+
+
+def earlier_click(
+    session: Session, recipient: CampaignRecipient, *, since: datetime | None = None
+) -> datetime | None:
+    """The first click the same address made on a mail of the campaigns `recipient`'s
+    campaign follows (`segue_id`, up the chain), or `None`. A follow-up row has no click
+    of its own until its mail has left, so without this the send-time check would mail
+    somebody who clicked the earlier mail after the follow-up was scheduled (Greptile P1
+    on #476). `since` given, as the tick's stamping gives it, only a click after that
+    moment counts: a follow-up is credited with what happened after it was sent. `None`,
+    the send-time check, counts any click: it means the person has already done it."""
+    chain: list[UUID] = []
+    campaign_id = session.scalar(
+        select(Campaign.segue_id).where(Campaign.id == recipient.campaign_id)
+    )
+    while campaign_id is not None and campaign_id not in chain and len(chain) < _MAX_CHAIN:
+        chain.append(campaign_id)
+        campaign_id = session.scalar(select(Campaign.segue_id).where(Campaign.id == campaign_id))
+    if not chain:
+        return None
+    query = select(func.min(CampaignRecipient.primo_clic_at)).where(
+        CampaignRecipient.campaign_id.in_(chain),
+        CampaignRecipient.email == recipient.email,
+    )
+    if since is not None:
+        query = query.where(CampaignRecipient.primo_clic_at > since)
+    return session.scalar(query)

@@ -371,8 +371,12 @@ export const LINK_URL_TOO_LONG = `Il link del bottone è troppo lungo: al massim
 export const LINK_URL_NOT_HTTPS = 'Il link del bottone deve iniziare con https://.'
 export const LINK_URL_INVALID = 'Il link del bottone non è un indirizzo valido.'
 
+const OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)'
+const IPV4 = new RegExp(`^${OCTET}(?:\\.${OCTET}){3}$`)
+
 /** Why the address «Un link» carries cannot be saved, or `null`: always `null` for any
- *  other destination. The server's rules (`link_problem`), in the same order. */
+ *  other destination. The server's rules (`link_problem`), in the same order, so the
+ *  field refuses exactly what a save would be refused for. */
 export function linkProblem(form: Pick<CampaignForm, 'bottoneMeta' | 'bottoneUrl'>): string | null {
   if (form.bottoneMeta !== 'link') return null
   const url = form.bottoneUrl.trim()
@@ -385,13 +389,25 @@ export function linkProblem(form: Pick<CampaignForm, 'bottoneMeta' | 'bottoneUrl
   if (scheme?.toLowerCase() !== 'https') return LINK_URL_NOT_HTTPS
   // `new URL('https:lu.ma')` would find a host there; `urlsplit` on the server does not.
   if (!/^https:\/\//i.test(url)) return LINK_URL_INVALID
+  const authority = url.slice('https://'.length).split(/[/?#]/, 1)[0] ?? ''
+  // No host right after `https://` (`new URL` skips extra slashes, `urlsplit` does
+  // not), credentials in front of the host, and a percent-encoded host, which `new
+  // URL` decodes and `urlsplit` does not: none belongs in a campaign link.
+  if (authority === '' || /[@%]/.test(authority)) return LINK_URL_INVALID
   let parsed: URL
   try {
-    parsed = new URL(url)
+    parsed = new URL(url) // throws on a broken host or a port out of range
   } catch {
     return LINK_URL_INVALID
   }
-  if (!parsed.hostname || parsed.username || parsed.password) return LINK_URL_INVALID
+  if (!parsed.hostname) return LINK_URL_INVALID
+  if (!authority.startsWith('[')) {
+    // A last label that is a number makes the host an IPv4 address: only four numbers
+    // up to 255 pass, on both sides (`new URL` alone would turn `127.1` into one).
+    const name = authority.replace(/:[^:]*$/, '').replace(/\.$/, '').toLowerCase()
+    const last = name.split('.').at(-1) ?? ''
+    if (/^(?:\d+|0x[0-9a-f]*)$/.test(last) && !IPV4.test(name)) return LINK_URL_INVALID
+  }
   return null
 }
 
