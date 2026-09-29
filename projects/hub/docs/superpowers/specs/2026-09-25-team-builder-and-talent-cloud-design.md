@@ -242,6 +242,15 @@ the visitor.
   expired token. A GET records nothing, which is what keeps a mail scanner from
   answering for the talent.
 
+Addendum, 2026-09-29 (REB-591). Both proposal routes also take `persone?`, an integer
+from 1 to 10: how many people the company wants. The page always sends it, 1 unless the
+visitor picks more, and «Rigenera» resends the number the proposal on screen was asked
+with; the engine adds the sentence «The visitor wants a team of exactly N …» to the user
+turn and the rules read it as the team's size, a note that adds or removes someone
+winning over it on a regeneration. Left out, as the MCP tool does, the team is sized
+from the description as § 3.3 says. The number is not stored on `team_proposals`; it
+reaches the `team_proposta_generata` event as `persone_richieste`.
+
 ### 3.3 The proposal
 
 `TeamProposalRead`: `id`, `riassunto`, `luogo`, `team: [{posizione, ruolo, motivazione,

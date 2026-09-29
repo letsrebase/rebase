@@ -350,7 +350,7 @@ describe('Talent cloud, the builder inside', () => {
     await user.type(await screen.findByLabelText('Descrizione del progetto'), DESCRIZIONE)
     await user.click(screen.getByRole('button', { name: 'Proponi il team' }))
     await screen.findByText(PROPOSAL.riassunto)
-    expect(posted(spy, '/api/hub/me/cloud/proposals')).toEqual([{ descrizione: DESCRIZIONE }])
+    expect(posted(spy, '/api/hub/me/cloud/proposals')).toEqual([{ descrizione: DESCRIZIONE, persone: 1 }])
     expect(posted(spy, '/api/hub/team/proposals')).toEqual([])
     // The cloud shows who each person is: the builder's card is headed by the name.
     const team = screen.getByRole('list', { name: 'Il team' })

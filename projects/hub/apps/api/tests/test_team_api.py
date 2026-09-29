@@ -228,6 +228,11 @@ def test_public_proposal_is_422_on_a_short_description_or_a_foreign_previous(
     assert refused.status_code == 422
     assert refused.json()["detail"][0]["loc"][-1] == "descrizione"
 
+    # The number of people is one to ten (REB-591).
+    nobody = client.post("/api/hub/team/proposals", json={"descrizione": DESCRIZIONE, "persone": 0})
+    assert nobody.status_code == 422
+    assert nobody.json()["detail"][0]["loc"] == ["body", "persone"]
+
     # «Rigenera» on the public page takes only a public proposal (spec § 3.2).
     cloud = _proposal_row(team, [member], origine="cloud")
     foreign = client.post(

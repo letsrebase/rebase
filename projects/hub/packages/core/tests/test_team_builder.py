@@ -1034,6 +1034,7 @@ def test_proposal_row_keeps_the_tokens_and_origin(clean: Session) -> None:
     assert properties == {
         "origine": "cloud",
         "persone": 2,
+        "persone_richieste": None,
         "input_tokens": 5200,
         "output_tokens": 640,
         "$process_person_profile": False,
@@ -1061,9 +1062,53 @@ def test_a_tracker_that_fails_never_fails_the_proposal(clean: Session) -> None:
         {"descrizione": " " * 60},
         {"descrizione": DESCRIZIONE, "nota": "n" * 501},
         {"descrizione": DESCRIZIONE, "costo": 10},
+        {"descrizione": DESCRIZIONE, "persone": 0},
+        {"descrizione": DESCRIZIONE, "persone": 11},
+        {"descrizione": DESCRIZIONE, "persone": True},
+        {"descrizione": DESCRIZIONE, "persone": "3"},
     ],
-    ids=["short", "long", "blank", "long note", "unknown field"],
+    ids=[
+        "short",
+        "long",
+        "blank",
+        "long note",
+        "unknown field",
+        "nobody",
+        "too many",
+        "a bool",
+        "a string",
+    ],
 )
-def test_the_description_is_forty_to_four_thousand_characters(fields: dict[str, Any]) -> None:
+def test_a_request_outside_its_bounds_is_refused(fields: dict[str, Any]) -> None:
     with pytest.raises(ValueError):
         TeamProposalCreate.model_validate(fields)
+
+
+def test_the_number_of_people_reaches_the_prompt_only_when_asked(clean: Session) -> None:
+    """REB-591: the page sends how many people the visitor wants; the MCP tool sends
+    nothing and the team is sized from the description, as before."""
+    _talent(clean, 1)
+    llm = RecordingCall([proposal_response([_member("t1")]) for _ in range(3)])
+    capture = FakeCapture()
+    builder = _builder(clean, llm, tracker=Tracker(capture))
+
+    builder.propose(TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None)
+    builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE, persone=1), origine="pubblico", user_id=None
+    )
+    builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE, persone=3), origine="pubblico", user_id=None
+    )
+
+    assert "exactly" not in _user_text(llm.requests[0])
+    assert "The visitor wants a team of exactly 1 person." in _user_text(llm.requests[1])
+    assert "The visitor wants a team of exactly 3 people." in _user_text(llm.requests[2])
+    # The number is a sentence of the user turn: the cached system prefix never moves.
+    assert llm.requests[2].system == llm.requests[0].system
+    assert "The visitor wants a team of exactly N" in llm.requests[0].system[0]["text"]
+    # The event tells the asked number from the proposed one, since the row keeps neither.
+    assert [(p["persone"], p["persone_richieste"]) for _, _, p in capture.calls] == [
+        (1, None),
+        (1, 1),
+        (1, 3),
+    ]

@@ -127,18 +127,25 @@ class CardsRefreshed(NamedTuple):
 DESCRIZIONE_MIN_LENGTH = 40
 DESCRIZIONE_MAX_LENGTH = 4000
 NOTA_MAX_LENGTH = 500
+PERSONE_MAX = 10
 
 
 class TeamProposalCreate(BaseModel):
     """What a visitor, a cloud user or an admin asks the engine for: the project's
-    description, and on «Rigenera» the proposal it replaces and a note on it («togli il
-    designer»). Stripped before it is measured, so forty spaces are not a description."""
+    description, how many people they want (`persone`, REB-591: the page sends 1 unless
+    the visitor picks more; left out, the engine sizes the team from the description
+    alone, which is what the MCP tool does), and on «Rigenera» the proposal it replaces
+    and a note on it («togli il designer»). Stripped before it is measured, so forty
+    spaces are not a description."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     descrizione: SafeStr = Field(
         min_length=DESCRIZIONE_MIN_LENGTH, max_length=DESCRIZIONE_MAX_LENGTH
     )
+    # Strict: a JSON `true` or `"3"` is not a headcount, and would otherwise reach the
+    # prompt and the event as one.
+    persone: int | None = Field(default=None, ge=1, le=PERSONE_MAX, strict=True)
     nota: SafeStr | None = Field(default=None, max_length=NOTA_MAX_LENGTH)
     previous_id: UUID | None = None
 

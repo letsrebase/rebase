@@ -130,6 +130,33 @@ describe('TeamBuilder, the box', () => {
     expect(value().length).toBeGreaterThanOrEqual(40)
   })
 
+  it('asks for one person by default, for the number picked, and for the example’s own', async () => {
+    const user = userEvent.setup()
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, PROPOSAL))
+    render(<TeamBuilder mode="public" />)
+    const selector = screen.getByRole('combobox', { name: 'Quante persone' })
+    expect(selector).toHaveTextContent('1 persona')
+
+    await user.click(selector)
+    await user.click(await screen.findByRole('option', { name: '3 persone' }))
+    await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIZIONE)
+    await user.click(screen.getByRole('button', { name: 'Proponi il team' }))
+    await screen.findByText(PROPOSAL.riassunto)
+    expect(sent(fetchSpy, 0).body).toEqual({ descrizione: DESCRIZIONE, persone: 3 })
+
+    // An example sets the number its text implies, and «Rigenera» keeps the number the
+    // proposal on screen was asked with, not the selector's.
+    await user.click(screen.getByRole('button', { name: 'App mobile con un designer' }))
+    expect(screen.getByRole('combobox', { name: 'Quante persone' })).toHaveTextContent('2 persone')
+    await user.click(screen.getByRole('button', { name: 'Rigenera' }))
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2))
+    expect(sent(fetchSpy, 1).body).toEqual({
+      descrizione: DESCRIZIONE,
+      persone: 3,
+      previous_id: PROPOSAL.id,
+    })
+  })
+
   it('asks for forty characters before it calls anyone', async () => {
     const user = userEvent.setup()
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
@@ -158,7 +185,7 @@ describe('TeamBuilder, the box', () => {
     expect(sent(fetchSpy, 0)).toEqual({
       url: '/api/hub/team/proposals',
       method: 'POST',
-      body: { descrizione: DESCRIZIONE },
+      body: { descrizione: DESCRIZIONE, persone: 1 },
     })
 
     resolve(answer(200, PROPOSAL))
@@ -263,7 +290,7 @@ describe('TeamBuilder, the result', () => {
     expect(sent(fetchSpy, 1)).toEqual({
       url: '/api/hub/team/proposals',
       method: 'POST',
-      body: { descrizione: DESCRIZIONE, nota: 'togli il frontend', previous_id: PROPOSAL.id },
+      body: { descrizione: DESCRIZIONE, persone: 1, nota: 'togli il frontend', previous_id: PROPOSAL.id },
     })
     expect(within(screen.getByRole('list', { name: 'Il team' })).getAllByRole('listitem')).toHaveLength(1)
     expect(screen.getByRole('region', { name: 'Quanto costa il team' }).textContent).toContain(
@@ -425,7 +452,7 @@ describe('TeamBuilder in the cloud', () => {
     await user.type(screen.getByLabelText('Descrizione del progetto'), DESCRIZIONE)
     await user.click(screen.getByRole('button', { name: 'Proponi il team' }))
     await screen.findByText(PROPOSAL.riassunto)
-    expect(propose).toHaveBeenCalledWith({ descrizione: DESCRIZIONE })
+    expect(propose).toHaveBeenCalledWith({ descrizione: DESCRIZIONE, persone: 1 })
 
     await user.click(screen.getByRole('button', { name: 'Assumi team' }))
     await waitFor(() => expect(hire).toHaveBeenCalledWith(PROPOSAL.id))
