@@ -58,11 +58,15 @@ router = APIRouter(prefix="/api/hub/team", tags=["hub"])
 
 _log = logging.getLogger(__name__)
 
-# How many refused asks may be written at once (PR #495, Greptile): a refusal holds no
-# proposal slot, so under a flood from many clients the rows would be the one thing
-# left unbounded. Past this, the refusal is answered and the row is not written: a
-# metric lost under a flood is cheaper than a pool held by the flood.
+# How many refused asks may be written at once, and how long one more waits for its
+# turn (PR #495): a refusal holds no proposal slot, so under a flood from many clients
+# the rows would be the one thing left unbounded. Two writes at a time serve hundreds
+# of refusals a second, since each is one insert; the wait keeps a burst from losing a
+# row, and its ceiling keeps a flood from holding the worker threads the member area
+# shares. Past both, the refusal is answered and the row is not written, and logged:
+# a metric lost under a flood is cheaper than a pool held by the flood.
 REFUSAL_WRITES = 2
+REFUSAL_WAIT_SECONDS = 0.5
 _refusal_slots = threading.BoundedSemaphore(REFUSAL_WRITES)
 
 
@@ -123,11 +127,12 @@ def _refuse(
 ) -> NoReturn:
     """A «Troppe richieste» is kept as an attempt row before it is answered (0028):
     what was asked is a measure of use whether the hub had room for it or not. The
-    write holds no proposal slot, only one of `REFUSAL_WRITES`, and past those the row
-    is skipped; a database that refuses it is logged. Neither is ever a 500 in place of
-    the 503 the visitor gets either way."""
-    if not _refusal_slots.acquire(blocking=False):
-        _log.info("team builder: refused ask not kept, every refusal write is busy")
+    write holds no proposal slot, only one of `REFUSAL_WRITES`, waited for up to
+    `REFUSAL_WAIT_SECONDS`; past that the row is skipped, and a database that refuses
+    it is logged. Neither is ever a 500 in place of the 503 the visitor gets either
+    way."""
+    if not _refusal_slots.acquire(timeout=REFUSAL_WAIT_SECONDS):
+        _log.warning("team builder: refused ask not kept, every refusal write is busy")
         raise busy
     try:
         builder.record_refusal(data, origine=origine, user_id=user_id, error=busy, now=now)

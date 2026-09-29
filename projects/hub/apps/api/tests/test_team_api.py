@@ -382,8 +382,8 @@ def test_a_failing_count_or_record_never_keeps_a_slot_or_hides_the_refusal(
     assert refused.json() == {"detail": BUSY}
     monkeypatch.undo()
 
-    # With every refusal write busy (PR #495, Greptile) the row is skipped, never waited
-    # for: the answer is the same 503 and the table does not grow.
+    # With every refusal write busy for longer than the wait (PR #495) the row is
+    # skipped: the answer is the same 503 and the table does not grow.
     from rebase_api.routers import team as routes
 
     _settings(client, team_builder_concurrency=1, team_builder_daily_cap=1)
