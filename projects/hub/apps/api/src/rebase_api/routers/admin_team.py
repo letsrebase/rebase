@@ -7,6 +7,10 @@ Everything here reads or edits what an admin owns: the state, their note, and th
 summary the talents will read; and «Contatta i talenti» (REB-517, `/contact`), whose
 mails leave after the answer, in a session of their own, so a slow provider never holds
 the admin's page and the answer already shows every talent as contacted.
+
+«Proposte» (`GET /proposals`, 0028) is the other list: every «Proponi il team» the
+public page, the cloud and an admin asked, answered or not, with the request filed on
+it when there is one. The public route posts to the same path; this one only reads it.
 """
 
 import logging
@@ -15,11 +19,21 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 
-from rebase_api.deps import AdminDep, SenderDep, SessionDep, SessionOpenerDep, SettingsDep
+from rebase_api.deps import (
+    AdminDep,
+    SenderDep,
+    SessionDep,
+    SessionOpenerDep,
+    SettingsDep,
+    TeamBuilderDep,
+)
 from rebase_core.config import Settings
 from rebase_core.db import SessionOpener
 from rebase_core.mail import EmailSender
 from rebase_core.pagination import CURSOR_MAX_LENGTH
+from rebase_core.team_builder import (
+    LIST_LIMIT_DEFAULT as PROPOSALS_LIMIT_DEFAULT,
+)
 from rebase_core.team_requests import (
     LIST_LIMIT_DEFAULT,
     LIST_LIMIT_MAX,
@@ -28,6 +42,7 @@ from rebase_core.team_requests import (
     TeamRequestService,
 )
 from rebase_core.team_schemas import (
+    TeamProposalList,
     TeamRequestList,
     TeamRequestNote,
     TeamRequestRead,
@@ -59,6 +74,21 @@ def list_team_requests(
     return TeamRequestService(session, settings=settings).list_recent(
         stato=stato, origine=origine, limit=limit, cursor=cursor
     )
+
+
+@router.get("/proposals", response_model=TeamProposalList)
+def list_team_proposals(
+    _: AdminDep,
+    builder: TeamBuilderDep,
+    origine: Word = None,
+    esito: Word = None,
+    limit: Limit = PROPOSALS_LIMIT_DEFAULT,
+    cursor: Cursor = None,
+) -> TeamProposalList:
+    """«Proposte» (0028): every ask, newest first, by cursor; `origine` (`pubblico`,
+    `cloud`, `admin`) and `esito` (`ok`, `errore`) filter, and a word that is not one of
+    theirs is a 422 naming the field. The builder needs no key to read."""
+    return builder.list_recent(origine=origine, esito=esito, limit=limit, cursor=cursor)
 
 
 @router.get("/requests/{request_id}", response_model=TeamRequestRead)

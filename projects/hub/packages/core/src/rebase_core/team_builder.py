@@ -14,7 +14,7 @@ positions for the call and maps the answer back through them.
 **The answer is checked, not trusted.** Claude's JSON is validated by `ProposalAnswer`
 (the schema sent is its own; the seam strips what the API refuses and Pydantic enforces
 all of it here); a refusal, a cut answer or a body that is not the shape is
-`LlmUnavailable`, and nothing is written. A position the catalogue does not hold, or one
+`LlmUnavailable`, and no proposal is written. A position the catalogue does not hold, or one
 already in the team, drops that line, and so does a member who left the catalogue while
 Claude was writing. What was dropped is logged by position, never by anything the model
 wrote. Where a person works is not a check but the model's judgement (REB-598): on a need
@@ -31,6 +31,16 @@ and answers that sentence at once, for free.
 **The economics are the hub's.** Each member's band comes from their own rate
 (`bands.py`), read when the proposal is read, and the team's bands are their sum; the
 model sees a band in the catalogue and never a rate.
+
+**Every ask is a row, answered or not** (0028, DECISIONS.md 2026-09-29). Ivan: «è
+importante salvare tutte le richieste dopo il click proponi team anche se non ancora
+finalizzate/inviate così raccogliamo metriche di uso». A proposal Claude answered was
+always a row; an ask that ended in `LlmUnavailable`, or that the route's caps refused
+(`record_refusal`), is one too, with `errore` set, an empty summary and nobody in it,
+so «Proposte» in the admin area counts what people asked for and never filed. Such a
+row is an attempt, not a proposal: its id never leaves the hub, `get` answers
+`NotFound` for it, «Rigenera» and «Assumi team» refuse it, and the daily cap does not
+count it (`NO_CALL_MODEL`). The `LlmUnavailable` still reaches the caller after the row.
 
 The Claude call holds no transaction: the catalogue is read and the session committed
 before it, and the row is written in a new one after. Nothing here logs the
@@ -55,17 +65,33 @@ from rebase_core.analytics import TEAM_PROPOSAL_GENERATED, Tracker
 from rebase_core.audit import utcnow
 from rebase_core.bands import DAYS_PER_MONTH, Band, band_for, team_bands
 from rebase_core.config import Settings
-from rebase_core.errors import LlmUnavailable, NotFound, TeamBuilderOff, ValidationFailed
+from rebase_core.errors import (
+    DomainError,
+    LlmUnavailable,
+    NotFound,
+    TeamBuilderOff,
+    ValidationFailed,
+)
 from rebase_core.llm import UNAVAILABLE_SENTENCE, LlmCall, LlmRequest, LlmResponse
 from rebase_core.models import (
     POSIZIONE_MAX_LENGTH,
+    TEAM_PROPOSAL_ERRORS,
     TEAM_PROPOSAL_ORIGINS,
     Freelancer,
     FreelancerCard,
     TeamProposal,
+    TeamRequest,
     User,
 )
-from rebase_core.team_schemas import Card, TeamMemberRead, TeamProposalCreate, TeamProposalRead
+from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
+from rebase_core.team_schemas import (
+    Card,
+    TeamMemberRead,
+    TeamProposalCreate,
+    TeamProposalList,
+    TeamProposalListItem,
+    TeamProposalRead,
+)
 from rebase_core.validation import SafeStr
 
 logger = logging.getLogger(__name__)
@@ -80,11 +106,18 @@ OFF_SENTENCE = "Il team builder è spento."
 # is empty, so nobody was asked, or the checks dropped everyone the model chose, so its
 # own summary describes a team that is not there.
 NO_FIT_SENTENCE = "Al momento nessun profilo corrisponde alla richiesta."
-# `TeamProposal.model` when no model was asked: an empty catalogue costs no call.
+# `TeamProposal.model` when no model was asked: an empty catalogue costs no call, and
+# nor does an attempt the caps refused or Claude did not answer (0028).
 NO_CALL_MODEL = ""
 # How long a proposal can be regenerated (spec § 3.2): the same day a visitor asked it.
 PREVIOUS_MAX_AGE = timedelta(days=1)
 _PREVIOUS_REFUSED = "la proposta da rigenerare non esiste o è scaduta"
+# The admin's «Proposte» (0028): a page at a time, newest first, like «Richieste team».
+LIST_LIMIT_DEFAULT = 50
+LIST_LIMIT_MAX = 200
+# What `esito` filters the list by: the proposals that answered, or the attempts.
+LIST_OUTCOMES = ("ok", "errore")
+_SORT = SortSpec("created_at", "datetime")
 # A catalogue id as the model writes it; the number is checked against the catalogue.
 _POSITION = re.compile(r"t([0-9]{1,6})")
 # What a public read says of a member in place of a motivazione that names the place on
@@ -445,8 +478,22 @@ class TeamBuilder:
         # Claude takes seconds to tens of seconds: the transaction ends here, so no
         # pooled connection waits on it. The row is written in the next one.
         self.session.commit()
-        response = self.llm.complete(request)
-        answer = _answer_from(response)
+        try:
+            response = self.llm.complete(request)
+            answer = _answer_from(response)
+        except LlmUnavailable as exc:
+            # The ask is kept all the same (0028): what was written, by whom, and that
+            # Claude did not answer it. The caller still gets the refusal, and gets it
+            # even when the database refuses the row: the record is a metric, the
+            # refusal is the product.
+            try:
+                self._write_attempt(
+                    data, previous, origine=origine, user_id=user_id, error=exc, at=at
+                )
+            except Exception:
+                self.session.rollback()
+                logger.exception("team proposal attempt not kept")
+            raise
         team, bands = self._team(answer, positions)
         riassunto = answer.riassunto
         if answer.team and not team:
@@ -468,9 +515,95 @@ class TeamBuilder:
 
     def get(self, proposal_id: UUID, *, public: bool) -> TeamProposalRead:
         row = self.session.get(TeamProposal, proposal_id)
-        if row is None:
+        # An attempt that failed is not a proposal anybody was handed (0028).
+        if row is None or row.errore is not None:
             raise NotFound(ENTITY, proposal_id)
         return self._read(row, public=public)
+
+    def record_refusal(
+        self,
+        data: TeamProposalCreate,
+        *,
+        origine: str,
+        user_id: UUID | None,
+        error: DomainError,
+        now: datetime | None = None,
+    ) -> None:
+        """The ask the route refused before this engine ran (`TeamBuilderBusy`: every
+        slot taken, or the day's proposals spent), kept as an attempt row (0028) so it is
+        counted with the rest. `previous_id` is linked when it names a proposal the
+        caller could regenerate and left `NULL` otherwise: a refusal is not the place to
+        say which proposals exist. Never raises past the write: the caller re-raises the
+        refusal it was given."""
+        if origine not in TEAM_PROPOSAL_ORIGINS:
+            raise ValueError(f"unknown origin {origine!r}")
+        at = now if now is not None else self.now()
+        try:
+            previous = self._previous(data.previous_id, origine=origine, user_id=user_id, at=at)
+        except ValidationFailed:
+            previous = None
+        self._write_attempt(data, previous, origine=origine, user_id=user_id, error=error, at=at)
+
+    def list_recent(
+        self,
+        *,
+        origine: str | None = None,
+        esito: str | None = None,
+        limit: int = LIST_LIMIT_DEFAULT,
+        cursor: str | None = None,
+    ) -> TeamProposalList:
+        """«Proposte» in the admin area (0028): every ask, newest first, by cursor, with
+        the «Assumi team» filed on it when there is one. `origine` filters by who asked
+        and `esito` by whether it answered (`ok`) or not (`errore`); a word that is not
+        one of theirs is a 422 naming the field. The rows are read as written, never
+        through `_read`: the list is about what was asked, not about who is still in
+        the catalogue."""
+        if origine is not None and origine not in TEAM_PROPOSAL_ORIGINS:
+            raise ValidationFailed(ENTITY, "origine", f"uno fra {', '.join(TEAM_PROPOSAL_ORIGINS)}")
+        if esito is not None and esito not in LIST_OUTCOMES:
+            raise ValidationFailed(ENTITY, "esito", f"uno fra {', '.join(LIST_OUTCOMES)}")
+        limit = max(1, min(limit, LIST_LIMIT_MAX))
+        stmt = select(TeamProposal, TeamRequest.id).outerjoin(
+            TeamRequest, TeamRequest.proposal_id == TeamProposal.id
+        )
+        if origine is not None:
+            stmt = stmt.where(TeamProposal.origine == origine)
+        if esito == "ok":
+            stmt = stmt.where(TeamProposal.errore.is_(None))
+        elif esito == "errore":
+            stmt = stmt.where(TeamProposal.errore.is_not(None))
+        if cursor:
+            value, row_id = decode_cursor(_SORT, cursor)
+            stmt = stmt.where(
+                keyset_predicate(TeamProposal.created_at, TeamProposal.id, value, row_id)
+            )
+        rows = self.session.execute(
+            stmt.order_by(TeamProposal.created_at.desc(), TeamProposal.id.desc()).limit(limit + 1)
+        ).all()
+        page = rows[:limit]
+        next_cursor = None
+        if len(rows) > limit and page:
+            last = page[-1][0]
+            next_cursor = encode_cursor(_SORT, last.created_at, last.id)
+        return TeamProposalList(
+            items=[
+                TeamProposalListItem(
+                    id=row.id,
+                    descrizione=row.descrizione,
+                    persone=row.persone,
+                    nota=row.nota,
+                    previous_id=row.previous_id,
+                    origine=row.origine,
+                    user_id=row.user_id,
+                    errore=row.errore,
+                    membri=len(row.team),
+                    request_id=request_id,
+                    created_at=row.created_at,
+                )
+                for row, request_id in page
+            ],
+            next_cursor=next_cursor,
+        )
 
     # ---- helpers -----------------------------------------------------------------------
 
@@ -507,6 +640,7 @@ class TeamBuilder:
             cache_read_tokens=response.cache_read_tokens if response is not None else 0,
             origine=origine,
             user_id=user_id,
+            persone=data.persone,
             created_at=at,
         )
         self.session.add(row)
@@ -524,6 +658,44 @@ class TeamBuilder:
             )
         return self._read(row, public=origine == "pubblico")
 
+    def _write_attempt(
+        self,
+        data: TeamProposalCreate,
+        previous: TeamProposal | None,
+        *,
+        origine: str,
+        user_id: UUID | None,
+        error: DomainError,
+        at: datetime,
+    ) -> None:
+        """The row of an ask that got no proposal (0028): the ask as it came, `errore`
+        the refusal's code, an empty summary, nobody in the team, no call counted. No
+        event: `team_proposta_generata` counts proposals, and this is not one. A
+        refusal whose code is not one the table takes is a bug in the caller."""
+        if error.code not in TEAM_PROPOSAL_ERRORS:
+            raise ValueError(f"not an attempt's error: {error.code!r}")
+        row = TeamProposal(
+            descrizione=data.descrizione,
+            nota=data.nota,
+            previous_id=previous.id if previous is not None else None,
+            riassunto="",
+            luogo={"locale": False, "dove": None},
+            team=[],
+            economia=_economia(None, None, dump=True),
+            model=NO_CALL_MODEL,
+            input_tokens=0,
+            output_tokens=0,
+            cache_read_tokens=0,
+            origine=origine,
+            user_id=user_id,
+            persone=data.persone,
+            errore=error.code,
+            created_at=at,
+        )
+        self.session.add(row)
+        self.session.commit()
+        logger.info("team proposal attempt kept: %s", error.code)
+
     def _previous(
         self, previous_id: UUID | None, *, origine: str, user_id: UUID | None, at: datetime
     ) -> TeamProposal | None:
@@ -535,6 +707,7 @@ class TeamBuilder:
         row = self.session.get(TeamProposal, previous_id)
         if (
             row is None
+            or row.errore is not None
             or row.origine != origine
             or (origine == "cloud" and row.user_id != user_id)
             or row.created_at <= at - PREVIOUS_MAX_AGE

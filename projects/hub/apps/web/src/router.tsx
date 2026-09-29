@@ -5,7 +5,14 @@ import {
   createRouter,
   redirect,
 } from '@tanstack/react-router'
-import type { CompaniesFilters, MatchesFilters, Remoto, TalentiFilters, TeamRequestsFilters } from '@/lib/api'
+import type {
+  CompaniesFilters,
+  MatchesFilters,
+  Remoto,
+  TalentiFilters,
+  TeamProposalsFilters,
+  TeamRequestsFilters,
+} from '@/lib/api'
 import { periodParam } from '@/lib/report'
 import { parseSearch } from '@/lib/search'
 import { Shell } from '@/components/Shell'
@@ -29,6 +36,7 @@ import { AdminCreaCampagna } from '@/pages/admin/CreaCampagna'
 import { AdminCreaMatch } from '@/pages/admin/CreaMatch'
 import { AdminMatches } from '@/pages/admin/Matches'
 import { AdminReferrals } from '@/pages/admin/Referrals'
+import { AdminProposteTeam } from '@/pages/admin/ProposteTeam'
 import { AdminRichiestaTeam } from '@/pages/admin/RichiestaTeam'
 import { AdminRichiesteTeam } from '@/pages/admin/RichiesteTeam'
 import { Disiscrizione } from '@/pages/Disiscrizione'
@@ -371,6 +379,16 @@ const adminTeamRequest = createRoute({
   path: '/team/$id',
   component: AdminRichiestaTeam,
 })
+// 0028: «Proposte», every «Proponi il team» asked, filed or not; a static segment
+// beside `$id`, which the router ranks first. The outcome pill lives in the URL.
+const adminTeamProposals = createRoute({
+  getParentRoute: () => adminArea,
+  path: '/team/proposte',
+  component: AdminProposteTeam,
+  validateSearch: (search: Record<string, unknown>): TeamProposalsFilters => ({
+    esito: strParam(search.esito),
+  }),
+})
 // REB-503: «Consuntivo», a match's hours on its deal on Pigro, from the match card and
 // the «Pigro» column of «Match». `mese` is the period shown, a month as `YYYY-MM` or
 // `tutto` for the whole engagement; absent, or anything else, is the current month.
@@ -509,6 +527,7 @@ export const routeTree = root.addChildren([
       adminMatchReport,
       adminTeamRequests,
       adminTeamRequest,
+      adminTeamProposals,
       adminCampaigns,
       adminCampaignNew,
       adminCampaign,

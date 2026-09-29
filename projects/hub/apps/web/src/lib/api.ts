@@ -329,6 +329,42 @@ export interface TeamRequestsFilters {
   stato?: string
 }
 
+/** The refusal an attempt row keeps (core's `TEAM_PROPOSAL_ERRORS`): Claude did not
+ *  answer, or every slot or the day's proposals were spent. */
+export type TeamProposalErrore = 'llm_unavailable' | 'team_builder_busy'
+
+/** One «Proponi il team» as «Proposte» reads it (0028): what was asked, by whom, when,
+ *  and what came of it. `errore` is `null` on a proposal that answered; `membri` is how
+ *  many people it held, 0 on an attempt and on a team nobody fit; `request_id` is the
+ *  «Assumi team» filed on it, `null` while there is none. */
+export interface TeamProposalListItem {
+  id: string
+  descrizione: string
+  persone: number | null
+  nota: string | null
+  previous_id: string | null
+  origine: 'pubblico' | 'cloud' | 'admin'
+  user_id: string | null
+  errore: TeamProposalErrore | null
+  membri: number
+  request_id: string | null
+  created_at: string
+}
+
+/** `GET /api/hub/team/proposals`: newest first, `next_cursor` `null` on the last page. */
+export interface TeamProposalList {
+  items: TeamProposalListItem[]
+  next_cursor: string | null
+}
+
+/** What «Proposte» takes beside `cursor`/`limit`, and what `/admin/team/proposte`
+ *  carries in its URL: `esito` is `ok` or `errore`, checked by the API. The API and
+ *  the MCP tool filter by `origine` too; the page has no control for it yet, so the
+ *  URL does not carry one. */
+export interface TeamProposalsFilters {
+  esito?: string
+}
+
 /** A talent's anonymous card as the admin reads it (§ 5.1): the last card written and
  *  when, from which model, and the last failure, which may sit beside an older card.
  *  `card` is `null` until a CV produces one; `modalita` is the profile's own and
@@ -1265,6 +1301,11 @@ export const admin = {
     return request<TeamRequestList>(`/api/hub/team/requests${qs ? `?${qs}` : ''}`)
   },
   teamRequest: (id: string) => request<TeamRequest>(`/api/hub/team/requests/${id}`),
+  /** «Proposte» (0028): every «Proponi il team», newest first, a page at a time. */
+  teamProposals: (filters: TeamProposalsFilters & { cursor?: string; limit?: number } = {}) => {
+    const qs = filterQuery(filters)
+    return request<TeamProposalList>(`/api/hub/team/proposals${qs ? `?${qs}` : ''}`)
+  },
   /** «Segna come contattata», «Chiudi», «Riapri». */
   setTeamRequestStatus: (id: string, stato: TeamRequestStato) =>
     request<TeamRequest>(`/api/hub/team/requests/${id}/status`, json({ stato })),

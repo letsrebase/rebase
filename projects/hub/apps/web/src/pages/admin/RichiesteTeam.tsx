@@ -55,12 +55,18 @@ export function AdminRichiesteTeam() {
   return (
     <>
       <Header title="Richieste team">
-        <StateFilter
-          states={TEAM_REQUEST_STATES}
-          value={search.stato}
-          onChange={setState}
-          labels={TEAM_REQUEST_STATE_LABELS}
-        />
+        <div className="flex flex-wrap items-center gap-4">
+          <StateFilter
+            states={TEAM_REQUEST_STATES}
+            value={search.stato}
+            onChange={setState}
+            labels={TEAM_REQUEST_STATE_LABELS}
+          />
+          {/* 0028: every «Proponi il team» asked, the ones never filed included. */}
+          <Link to="/admin/team/proposte" className="text-sm underline-offset-2 hover:underline">
+            Tutte le proposte
+          </Link>
+        </div>
       </Header>
       {list.isError ? (
         <Empty>Non riesco a leggere la lista.</Empty>

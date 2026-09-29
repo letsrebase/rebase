@@ -263,6 +263,27 @@ winning over it on a regeneration. Left out, as the MCP tool does, the team is s
 from the description as § 3.3 says. The number is not stored on `team_proposals`; it
 reaches the `team_proposta_generata` event as `persone_richieste`.
 
+Addendum, 2026-09-29 (migration 0028, DECISIONS.md the same day). Ivan: «è importante
+salvare tutte le richieste dopo il click proponi team anche se non ancora
+finalizzate/inviate così raccogliamo metriche di uso». So every ask that reaches the
+hub is a `team_proposals` row, not only the ones Claude answered: two nullable columns,
+`persone`, the number of the addendum above (which is stored now, and supersedes the
+sentence before this one), and `errore`, `NULL` on a proposal that answered and the
+refusal's code on an attempt, `llm_unavailable` from the engine (`TeamBuilder.propose`
+writes the row before re-raising) or `team_builder_busy` from the route
+(`propose_in_a_slot` calls `TeamBuilder.record_refusal` before answering the 503). An
+attempt keeps the description, the note, the headcount, the origin and the user, with
+an empty summary, nobody in the team and `model` empty, so the daily cap of § 5 does not
+count it; its id is never answered, `get` is a 404 on it, and «Rigenera» and «Assumi
+team» refuse it as they refuse a proposal that does not exist. A switch that is off or
+a description the schema refuses (a 422) never reaches the engine and leaves no row.
+No PostHog event for an attempt: `team_proposta_generata` counts proposals. The admin
+reads all of it in «Proposte» (`/admin/team/proposte`, linked from «Richieste team»):
+`GET /api/hub/team/proposals` behind `AdminDep`, newest first by cursor, `origine` and
+`esito` (`ok` | `errore`) as filters, each row with how many people the proposal held
+and the `request_id` of the «Assumi team» filed on it, `null` while there is none,
+which is the count the list exists for; and `list_team_proposals` over MCP (§ 8).
+
 ### 3.3 The proposal
 
 `TeamProposalRead`: `id`, `riassunto`, `luogo`, `team: [{posizione, ruolo, motivazione,
@@ -544,6 +565,7 @@ description go to Anthropic's API and nowhere else.
 | Tool | Does |
 |---|---|
 | `list_team_requests(stato=None, origine=None, limit)`, `get_team_request(id)` | the admin list and page |
+| `list_team_proposals(origine=None, esito=None, limit)` | «Proposte»: every ask, filed or not (addendum of § 3.2, 2026-09-29) |
 | `set_team_request_summary(id, riassunto)` | the editable summary |
 | `contact_team_talents(id, only_silent=False)` | «Contatta i talenti» / «Rimanda» |
 | `set_team_request_status(id, stato, note=None)` | `contattata`, `chiusa` |

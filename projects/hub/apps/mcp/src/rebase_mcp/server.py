@@ -78,6 +78,9 @@ from rebase_core.search import SEARCH_MAX_LENGTH
 from rebase_core.service import LIST_LIMIT_DEFAULT
 from rebase_core.signing import SigningFactory, SigningService
 from rebase_core.talenti import TalentiService
+from rebase_core.team_builder import (
+    LIST_LIMIT_DEFAULT as TEAM_PROPOSAL_LIST_LIMIT_DEFAULT,
+)
 from rebase_core.team_builder import TeamBuilder
 from rebase_core.team_requests import (
     LIST_LIMIT_DEFAULT as TEAM_REQUEST_LIST_LIMIT_DEFAULT,
@@ -805,6 +808,29 @@ def build_server(
         return _run(
             lambda s: TeamRequestService(s, settings=team_settings()).list_recent(
                 stato=stato, origine=origine, limit=limit, cursor=cursor
+            )
+        )
+
+    @mcp.tool()
+    def list_team_proposals(
+        origine: str | None = None,
+        esito: str | None = None,
+        limit: int = TEAM_PROPOSAL_LIST_LIMIT_DEFAULT,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """«Proposte»: ogni «Proponi il team» chiesto dalla pagina pubblica, dal talent
+        cloud o da un admin, dalla più recente, anche quando nessuna richiesta è poi
+        stata inviata: la descrizione del progetto, quante persone sono state chieste,
+        la nota di un «Rigenera», chi l'ha chiesto, quanti membri aveva la proposta, e
+        `request_id` della richiesta «Assumi team» se c'è. `errore` è vuoto su una
+        proposta che ha risposto e il codice del rifiuto (`llm_unavailable`,
+        `team_builder_busy`) su un tentativo senza proposta. `origine` (`pubblico`,
+        `cloud`, `admin`) ed `esito` (`ok`, `errore`) filtrano; una parola che non è
+        una di quelle è rifiutata nominando il campo. `next_cursor` è il cursore opaco
+        della pagina successiva, `None` all'ultima. Solo lettura."""
+        return _run(
+            lambda s: TeamBuilder(s, None, team_settings()).list_recent(
+                origine=origine, esito=esito, limit=limit, cursor=cursor
             )
         )
 

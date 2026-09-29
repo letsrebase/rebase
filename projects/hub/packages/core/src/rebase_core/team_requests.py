@@ -762,6 +762,7 @@ class TeamRequestService:
         proposal = self.session.get(TeamProposal, proposal_id)
         if (
             proposal is None
+            or proposal.errore is not None
             or proposal.origine != origine
             or (origine == "cloud" and proposal.user_id != user_id)
             or proposal.created_at <= self.now() - REQUEST_MAX_AGE

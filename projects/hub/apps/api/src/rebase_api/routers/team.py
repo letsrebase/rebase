@@ -23,6 +23,8 @@ behind the same speed bump as the wizards all the same.
 
 import logging
 import threading
+from datetime import datetime
+from typing import NoReturn
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Request, status
@@ -85,15 +87,42 @@ def propose_in_a_slot(
     # richieste», whatever the day's count.
     if not settings.team_builder_enabled or builder.llm is None:
         raise TeamBuilderOff(OFF_SENTENCE)
+    now = builder.now()
     if not slots.acquire(blocking=False):
         _log.info("team builder: every proposal slot is taken")
-        raise TeamBuilderBusy(BUSY_SENTENCE)
+        _refuse(data, TeamBuilderBusy(BUSY_SENTENCE), origine, user_id, builder, now)
+    # One release site for the slot, whatever the count or the call raises: a query that
+    # fails here with the slot still held would, four times over, close the builder
+    # until the process restarts.
     try:
-        now = builder.now()
-        require_daily_room(session, settings, now=now)
-        return builder.propose(data, origine=origine, user_id=user_id, now=now)
+        try:
+            require_daily_room(session, settings, now=now)
+        except TeamBuilderBusy as busy:
+            refused = busy
+        else:
+            return builder.propose(data, origine=origine, user_id=user_id, now=now)
     finally:
         slots.release()
+    _refuse(data, refused, origine, user_id, builder, now)
+
+
+def _refuse(
+    data: TeamProposalCreate,
+    busy: TeamBuilderBusy,
+    origine: str,
+    user_id: UUID | None,
+    builder: TeamBuilder,
+    now: datetime,
+) -> NoReturn:
+    """A «Troppe richieste» is kept as an attempt row before it is answered (0028):
+    what was asked is a measure of use whether the hub had room for it or not. The
+    write holds no slot, and a database that refuses it is logged, never a 500 in
+    place of the 503 the visitor gets either way."""
+    try:
+        builder.record_refusal(data, origine=origine, user_id=user_id, error=busy, now=now)
+    except Exception:
+        _log.exception("team builder: the refused ask was not kept")
+    raise busy
 
 
 @router.post("/proposals", response_model=TeamProposalRead)

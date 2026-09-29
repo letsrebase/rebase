@@ -28,6 +28,7 @@ from rebase_core.models import (
     AZIENDA_MAX_LENGTH,
     CARD_SENIORITIES,
     TALENT_ANSWERS,
+    TEAM_PROPOSAL_ERRORS,
     TEAM_PROPOSAL_ORIGINS,
     TEAM_REQUEST_ORIGINS,
     TEAM_REQUEST_STATES,
@@ -47,11 +48,14 @@ __all__ = [
     "CloudTalentRead",
     "FreelancerCardRead",
     "TALENT_ANSWERS",
+    "TEAM_PROPOSAL_ERRORS",
     "TEAM_PROPOSAL_ORIGINS",
     "TEAM_REQUEST_ORIGINS",
     "TEAM_REQUEST_STATES",
     "TeamMemberRead",
     "TeamProposalCreate",
+    "TeamProposalList",
+    "TeamProposalListItem",
     "TeamProposalRead",
     "TeamRequestCreate",
     "TeamRequestCreated",
@@ -187,6 +191,36 @@ class TeamProposalRead(BaseModel):
     previous_id: UUID | None
     origine: str
     created_at: datetime
+
+
+class TeamProposalListItem(BaseModel):
+    """One «Proponi il team» as the admin's list reads it (0028, DECISIONS.md
+    2026-09-29): what was asked (`descrizione`, `persone`, `nota`, `previous_id` on a
+    «Rigenera»), who asked (`origine`, `user_id`), when, and what came of it. `errore`
+    is `None` on a proposal that answered and the refusal's code
+    (`TEAM_PROPOSAL_ERRORS`) on an attempt that did not; `membri` is how many people the
+    proposal held, 0 on an attempt and on a team nobody fit; `request_id` is the «Assumi
+    team» filed on it, `None` while there is none, which is the case the list exists
+    to count."""
+
+    id: UUID
+    descrizione: str
+    persone: int | None
+    nota: str | None
+    previous_id: UUID | None
+    origine: str
+    user_id: UUID | None
+    errore: str | None
+    membri: int
+    request_id: UUID | None
+    created_at: datetime
+
+
+class TeamProposalList(BaseModel):
+    """A page of the list, newest first; `next_cursor` is `None` on the last page."""
+
+    items: list[TeamProposalListItem]
+    next_cursor: str | None = None
 
 
 # ---- the request (REB-512, spec § 3.2, § 3.5) -----------------------------------------------

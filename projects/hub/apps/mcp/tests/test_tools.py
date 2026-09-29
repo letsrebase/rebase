@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fakes_cards import CARD, MODEL, card_response, text_pdf
 from mcp import Client
-from sqlalchemy import text
+from sqlalchemy import text, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from rebase_core.admin_tokens import AdminRead
@@ -185,6 +185,7 @@ async def test_the_admin_tools_read_and_move_a_candidate_without_the_cv(
             "revert_company_action",
             "add_company_comment",
             "list_team_requests",
+            "list_team_proposals",
             "get_team_request",
             "set_team_request_summary",
             "contact_team_talents",
@@ -1018,6 +1019,72 @@ async def test_contact_team_talents_without_a_sender_is_the_no_sender_sentence(
         refused = await client.call_tool("contact_team_talents", {"request_id": request_id})
         assert refused.is_error
         assert "L'invio delle email non è attivo" in refused.content[0].text
+    _wipe_team(factory)
+
+
+async def test_list_team_proposals_reads_every_ask_with_its_request(
+    factory: sessionmaker[Session],
+) -> None:
+    """0028: the asks newest first, the request filed on one, and an attempt Claude
+    did not answer beside them; a word the filters do not take names the field."""
+    session = factory()
+    member = _talent_with_card(session)
+    session.close()
+    filed = _team_request(factory, [member], azienda="Uno Srl")
+    session = factory()
+    never_filed = _proposal_row(session, [member], origine="cloud")
+    session.execute(
+        update(TeamProposal)
+        .where(TeamProposal.id == never_filed)
+        .values(persone=2, created_at=datetime.now(UTC) - timedelta(minutes=4))
+    )
+    attempt = TeamProposal(
+        descrizione="Una pipeline dati su Google Cloud, in sede a Milano, quattro mesi di lavoro.",
+        riassunto="",
+        luogo={"locale": False, "dove": None},
+        team=[],
+        economia={"giorno": None, "mese": None, "giorni_mese": 22},
+        model="",
+        input_tokens=0,
+        output_tokens=0,
+        cache_read_tokens=0,
+        origine="pubblico",
+        errore="llm_unavailable",
+        created_at=datetime.now(UTC) - timedelta(minutes=3),
+    )
+    session.add(attempt)
+    session.commit()
+    attempt_id = str(attempt.id)
+    session.close()
+
+    async with Client(build_server(factory, lambda: IVAN, settings=_team_settings())) as client:
+        page = _payload(await client.call_tool("list_team_proposals", {"limit": 2}))
+        assert [item["id"] for item in page["items"]] == [attempt_id, str(never_filed)]
+        failed, cloud = page["items"]
+        assert (failed["errore"], failed["membri"], failed["request_id"]) == (
+            "llm_unavailable",
+            0,
+            None,
+        )
+        assert (cloud["origine"], cloud["persone"], cloud["membri"], cloud["request_id"]) == (
+            "cloud",
+            2,
+            1,
+            None,
+        )
+        rest = _payload(
+            await client.call_tool(
+                "list_team_proposals", {"limit": 2, "cursor": page["next_cursor"]}
+            )
+        )
+        [first] = rest["items"]
+        assert first["request_id"] == filed and first["errore"] is None
+        assert rest["next_cursor"] is None
+
+        only = _payload(await client.call_tool("list_team_proposals", {"esito": "errore"}))
+        assert [item["id"] for item in only["items"]] == [attempt_id]
+        bad = await client.call_tool("list_team_proposals", {"origine": "sito"})
+        assert bad.is_error and "origine" in bad.content[0].text
     _wipe_team(factory)
 
 
