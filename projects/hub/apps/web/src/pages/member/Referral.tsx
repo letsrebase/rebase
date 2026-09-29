@@ -78,7 +78,9 @@ function Earnings({ rates }: { rates: Pick<MemberReferralData, 'rate_freelancer'
             cliente meno quello che guadagna il freelance, non del prezzo del cliente.
           </p>
           <p>
-            Vale la percentuale in vigore alla firma. rebase conferma il compenso e poi te lo paga.
+            Vale la percentuale in vigore alla firma. rebase conferma il compenso e poi te lo paga. Per
+            un incarico a corpo senza una stima dei giorni, l&apos;importo lo stabilisce rebase caso per
+            caso.
           </p>
           <div className="space-y-1 border-t pt-3">
             <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
