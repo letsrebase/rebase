@@ -667,7 +667,9 @@ class TeamBuilder:
         return TeamProposalRead(
             id=row.id,
             riassunto=(
-                _public_riassunto(row.id, row.riassunto, row.luogo.get("dove"), cards)
+                _public_riassunto(
+                    row.id, row.riassunto, row.luogo.get("dove"), row.descrizione, cards
+                )
                 if public
                 else row.riassunto
             ),
@@ -713,22 +715,34 @@ def _names_any(text: str, words: set[str], *, in_any_case: bool = False) -> bool
 
 
 def _public_riassunto(
-    proposal_id: UUID, riassunto: str, dove: str | None, cards: Sequence[Card]
+    proposal_id: UUID,
+    riassunto: str,
+    dove: str | None,
+    descrizione: str,
+    cards: Sequence[Card],
 ) -> str:
     """The summary a public page reads. The prompt lets it name the place the visitor
     wrote and no place of a person; one that names the place on a member's card anyway
     would give back what the public read withholds, so it reads as the hub's own sentence
     instead (REB-598, the same test as `_public_reason`). The place the description
-    names as the client's, as the model read it into `luogo.dove`, is the visitor's own
-    word and no secret to them, so a member who is there does not withhold the summary;
-    a word of the description that only looks like a place («all'alba» for a card in
-    Alba) earns no such pass, which is why the exemption is `dove` and not the
-    description's text. Every other place is read in any case, since prose writes a city
-    in lower case as readily as not, and a match on a common word costs one sentence
-    while a miss costs a card's place. The row, the admin's and the cloud's reads keep
-    the model's words."""
+    names as the client's is the visitor's own word and no secret to them, so a member
+    who is there does not withhold the summary. That pass needs both signals: the word is
+    in `luogo.dove`, the place the model read as the client's, and it is in the
+    description the visitor wrote. Either alone is not enough: a word of the description
+    that only looks like a place («all'alba» for a card in Alba) is not in `dove`, and
+    `dove` is the model's own text, which a model writing against its rules could fill
+    with a member's card city, so a word there that the visitor never wrote is no pass
+    either. Every other place is read in any case, since prose writes a city in lower
+    case as readily as not, and a match on a common word costs one sentence while a miss
+    costs a card's place. The row, the admin's and the cloud's reads keep the model's
+    words."""
     words = {word for card in cards for word in _place_words(card.luogo)}
-    if _names_any(riassunto, words - _place_words(dove), in_any_case=True):
+    written = {
+        word
+        for word in _place_words(dove)
+        if re.search(rf"\b{re.escape(word)}\b", descrizione, re.IGNORECASE)
+    }
+    if _names_any(riassunto, words - written, in_any_case=True):
         logger.warning("team proposal %s: the summary names a member's place", proposal_id)
         return PLACE_WITHHELD_RIASSUNTO
     return riassunto

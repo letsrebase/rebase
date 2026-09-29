@@ -905,6 +905,7 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session)
     leaked = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a VERONA."
     lowered = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a verona."
     dawn = "Un'azienda cerca un backend developer per un turno all'alba: chi lo fa vive ad Alba."
+    copied = "Un'azienda cerca un backend developer in sede dal cliente: chi lo fa vive ad Alba."
     llm = RecordingCall(
         [
             proposal_response(
@@ -917,6 +918,9 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session)
                 [_member(positions[verona])], riassunto=lowered, locale=True, dove="Torino"
             ),
             proposal_response([_member(positions[alba])], riassunto=dawn, locale=False, dove=None),
+            proposal_response(
+                [_member(positions[alba])], riassunto=copied, locale=True, dove="Alba"
+            ),
         ]
     )
     builder = _builder(clean, llm)
@@ -938,20 +942,28 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session)
         origine="pubblico",
         user_id=None,
     )
+    withheld_copied = builder.propose(
+        TeamProposalCreate(descrizione="Cerchiamo un backend developer in sede dal cliente."),
+        origine="pubblico",
+        user_id=None,
+    )
 
     # «Torino» is the place the description names as the client's, whatever case the
     # visitor typed it in; «Verona» is the catalogue's alone, and the summary is read in
-    # any case, unlike a card's field; «all'alba» in a description is no pass for Alba.
+    # any case, unlike a card's field; «all'alba» in a description is no pass for Alba,
+    # and neither is an «Alba» the model wrote into `dove` on its own.
     assert named.riassunto == kept
     assert withheld.riassunto == PLACE_WITHHELD_RIASSUNTO
     assert withheld_lower.riassunto == PLACE_WITHHELD_RIASSUNTO
     assert withheld_dawn.riassunto == PLACE_WITHHELD_RIASSUNTO
+    assert withheld_copied.riassunto == PLACE_WITHHELD_RIASSUNTO
     assert PLACE_WITHHELD_RIASSUNTO == (
         "Il riassunto di questa proposta non è pubblico: la modalità di lavoro di ogni "
         "persona proposta è sulla sua scheda."
     )
     assert "VERONA" not in withheld.model_dump_json()
     assert "Alba" not in withheld_dawn.model_dump_json()
+    assert "Alba" not in withheld_copied.riassunto
     assert builder.get(withheld.id, public=False).riassunto == leaked
     assert builder.get(withheld.id, public=True).riassunto == PLACE_WITHHELD_RIASSUNTO
 
