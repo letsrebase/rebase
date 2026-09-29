@@ -33,12 +33,16 @@ export interface paths {
         /**
          * Request Link
          * @description A link by mail (spec 2026-09-12 §6.2). Under a space's prefix, the space's own
-         *     user. At the root, every space the registry says this address owns gets a link in
-         *     one mail, and the root itself is tried when none does. 202 whether the address is
-         *     known or not, and the mail leaves after the response, so neither the status nor the
-         *     timing says which; 503 while no sender is configured. Unauthenticated by design, like
-         *     `member` and `signup`, so the bucket is what stops a script from mail-bombing a known
-         *     address (ORB-173's limiter; REB-228).
+         *     user. At the root, every space the registry says this address owns gets a link, in
+         *     one mail, and the root itself comes first whenever it wears a name
+         *     (`PIGROCRM_ROOT_SLUG`) and the address has a user there: it is nobody's registry
+         *     row, and a space in its admin's own name must not hide it (REB-583). A root with
+         *     no name is tried only when the address owns no space, as before: the chooser does
+         *     not name it either. 202 whether the address is known or not, and the mail leaves
+         *     after the response, so neither the status nor the timing says which; 503 while no
+         *     sender is configured. Unauthenticated by design, like `member` and `signup`, so the
+         *     bucket is what stops a script from mail-bombing a known address (ORB-173's limiter;
+         *     REB-228).
          */
         post: operations["request_link_api_auth_link_post"];
         delete?: never;
@@ -2870,6 +2874,11 @@ export interface paths {
          * @description Every space this identity may enter, per §3's live scan (§7 decision B1): one
          *     bounded connection per tenant, so one unreachable space is silently absent from
          *     this one response rather than failing it -- the next visit tries again.
+         *
+         *     The root comes first, under its own name, when it has one and this email has an
+         *     active row there (REB-583): it is nobody's registry row, so the scan below would
+         *     never find it. A registry row that happens to carry the root's name is skipped:
+         *     `split_tenant_prefix` already routes that name to the root, never to a space.
          */
         get: operations["spaces_api_identity_spaces_get"];
         put?: never;
@@ -2901,6 +2910,13 @@ export interface paths {
          *     access+refresh pair scoped `path=/<slug>/`, exactly as `login` does today
          *     (`routers/auth.py`), and answers `UserRead` so the SPA can navigate the same way
          *     `homeAfterEntry()` already does after any other entry point.
+         *
+         *     The root's own name (`PIGROCRM_ROOT_SLUG`) opens the root (REB-583): the same
+         *     lookup in the root's own `users`, and the pair at the root's one jar, `path=/`
+         *     (`tenancy.cookie_path`: the root logs in on the bare page and works under its
+         *     name, and only `/` serves both), with the stale pair a browser may still hold at
+         *     `/<root_slug>/` cleared the way `login` clears it, so it cannot shadow the fresh
+         *     one on every request under the alias.
          */
         post: operations["enter_api_identity_enter__slug__post"];
         delete?: never;

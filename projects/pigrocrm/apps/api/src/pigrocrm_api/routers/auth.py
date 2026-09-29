@@ -49,7 +49,13 @@ from pigrocrm_api.sessions import (  # noqa: F401 - get_sender is the override s
     mail_origin,
     set_session_cookie,
 )
-from pigrocrm_api.tenancy import cookie_path, cookie_paths_to_clear, first_cookie, tenant_slug
+from pigrocrm_api.tenancy import (
+    cookie_path,
+    cookie_paths_to_clear,
+    first_cookie,
+    is_root_name,
+    tenant_slug,
+)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"], responses=PROBLEM_RESPONSES)
 
@@ -200,7 +206,16 @@ def login(
         secure=settings.cookie_secure,
         path=cookie_path(request),
     )
-    _issue_identity_cookie(response, settings, user.email)
+    # Only an address a click has proven gets the durable, cross-space cookie. A
+    # password proves the row's password, not the mailbox, and an admin may set a row
+    # up with any address and a password of their own choosing: with that row's login
+    # minting the identity, one space's admin could enter every other space that
+    # address belongs to, the root included (REB-583's review). `email_verificata_il`
+    # is set only by `enter_with_link` and `accept_invite`, each of which needs the
+    # mailbox; `authenticate` answers a `UserRead`, which does not carry it.
+    row = UserRepository(session).get_by_email(user.email)
+    if row is not None and row.email_verificata_il is not None:
+        _issue_identity_cookie(response, settings, user.email)
     return user
 
 
@@ -305,12 +320,16 @@ def request_link(
     sender: SenderDep,
 ) -> Ack:
     """A link by mail (spec 2026-09-12 §6.2). Under a space's prefix, the space's own
-    user. At the root, every space the registry says this address owns gets a link in
-    one mail, and the root itself is tried when none does. 202 whether the address is
-    known or not, and the mail leaves after the response, so neither the status nor the
-    timing says which; 503 while no sender is configured. Unauthenticated by design, like
-    `member` and `signup`, so the bucket is what stops a script from mail-bombing a known
-    address (ORB-173's limiter; REB-228)."""
+    user. At the root, every space the registry says this address owns gets a link, in
+    one mail, and the root itself comes first whenever it wears a name
+    (`PIGROCRM_ROOT_SLUG`) and the address has a user there: it is nobody's registry
+    row, and a space in its admin's own name must not hide it (REB-583). A root with
+    no name is tried only when the address owns no space, as before: the chooser does
+    not name it either. 202 whether the address is known or not, and the mail leaves
+    after the response, so neither the status nor the timing says which; 503 while no
+    sender is configured. Unauthenticated by design, like `member` and `signup`, so the
+    bucket is what stops a script from mail-bombing a known address (ORB-173's limiter;
+    REB-228)."""
     spend_one(request)
     if sender is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, NO_SENDER)
@@ -326,15 +345,21 @@ def request_link(
             links.append((slug, _entra_url(origin, "", raw)))
     else:
         for owned_slug in _owned_slugs(settings, email):
+            # A registry row wearing the root's own name is the root, not a space
+            # (`is_root_name`): its link, if any, is the root's own below.
+            if is_root_name(settings.root_slug, owned_slug):
+                continue
             raw = _space_link(settings, owned_slug, email)
             if raw:
                 links.append((owned_slug, _entra_url(origin, f"/{owned_slug}", raw)))
-        if not links:
+        # The token is minted only when the root's link may be mailed: a named root
+        # always, an unnamed one as the fallback it always was.
+        if settings.root_slug or not links:
             raw = MagicLinkService(session, settings).request(email)
             if raw:
                 # The root logs in on the bare page (decision 2026-09-09); its cookies
                 # live at `/`, so the entry page is the bare one too.
-                links.append((settings.root_slug or "PigroCRM", _entra_url(origin, "", raw)))
+                links.insert(0, (settings.root_slug or "PigroCRM", _entra_url(origin, "", raw)))
     if links:
         background.add_task(sender.send, magic_link_mail(email, links, settings.magic_link_minutes))
     return Ack()
@@ -369,7 +394,16 @@ def enter_with_link(
         secure=settings.cookie_secure,
         path=cookie_path(request),
     )
-    _issue_identity_cookie(response, settings, user.email)
+    # Only an address a click has proven gets the durable, cross-space cookie. A
+    # password proves the row's password, not the mailbox, and an admin may set a row
+    # up with any address and a password of their own choosing: with that row's login
+    # minting the identity, one space's admin could enter every other space that
+    # address belongs to, the root included (REB-583's review). `email_verificata_il`
+    # is set only by `enter_with_link` and `accept_invite`, each of which needs the
+    # mailbox; `authenticate` answers a `UserRead`, which does not carry it.
+    row = UserRepository(session).get_by_email(user.email)
+    if row is not None and row.email_verificata_il is not None:
+        _issue_identity_cookie(response, settings, user.email)
     return user
 
 
@@ -461,7 +495,16 @@ def accept_invite(
         secure=settings.cookie_secure,
         path=cookie_path(request),
     )
-    _issue_identity_cookie(response, settings, user.email)
+    # Only an address a click has proven gets the durable, cross-space cookie. A
+    # password proves the row's password, not the mailbox, and an admin may set a row
+    # up with any address and a password of their own choosing: with that row's login
+    # minting the identity, one space's admin could enter every other space that
+    # address belongs to, the root included (REB-583's review). `email_verificata_il`
+    # is set only by `enter_with_link` and `accept_invite`, each of which needs the
+    # mailbox; `authenticate` answers a `UserRead`, which does not carry it.
+    row = UserRepository(session).get_by_email(user.email)
+    if row is not None and row.email_verificata_il is not None:
+        _issue_identity_cookie(response, settings, user.email)
     return user
 
 

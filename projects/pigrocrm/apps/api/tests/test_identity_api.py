@@ -18,7 +18,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.exc import SQLAlchemyError
 
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
+from pigrocrm.core.auth.schemas import UserCreate, UserRead
+from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db.session import session_factory
 from pigrocrm.core.db.sidecar import drop_database
@@ -194,8 +197,16 @@ def test_enter_with_link_mints_the_identity_cookie_at_the_root_path(
 # --- login ---------------------------------------------------------------------------
 
 
-def test_login_mints_the_identity_cookie_as_a_side_effect(spaces_client: TestClient) -> None:
-    _sign_up_and_verify(spaces_client)
+def test_login_mints_the_identity_cookie_only_for_an_address_a_link_has_proven(
+    spaces_client: TestClient,
+) -> None:
+    """A password proves the row's password, not the mailbox: an admin may create a
+    row with any address and a password of their own choosing, and until that address
+    has clicked a link of its own its login mints no identity cookie -- otherwise one
+    space's admin could enter every other space that address belongs to (REB-583's
+    review). Once the link has been clicked, a later password login mints it as a
+    side effect, as design 2026-09-23 §2 always meant."""
+    recording = _sign_up_and_verify(spaces_client)
     collaborator = spaces_client.post(
         f"/{SLUG}/api/users",
         json={
@@ -212,7 +223,23 @@ def test_login_mints_the_identity_cookie_as_a_side_effect(spaces_client: TestCli
         f"/{SLUG}/api/auth/login", json={"email": "b@identita.it", "password": "lunghissima1"}
     )
     assert response.status_code == 200, response.text
-    identity_cookie = _cookie(response.headers.get_list("set-cookie"), IDENTITY_COOKIE)
+    assert not any(
+        c.startswith(f"{IDENTITY_COOKIE}=") for c in response.headers.get_list("set-cookie")
+    )
+
+    asked = spaces_client.post(f"/{SLUG}/api/auth/link", json={"email": "b@identita.it"})
+    assert asked.status_code == 202, asked.text
+    entered = spaces_client.post(
+        f"/{SLUG}/api/auth/verify", json={"t": _token_from(recording.sent[-1].text)}
+    )
+    assert entered.status_code == 200, entered.text
+    spaces_client.cookies.clear()
+
+    again = spaces_client.post(
+        f"/{SLUG}/api/auth/login", json={"email": "b@identita.it", "password": "lunghissima1"}
+    )
+    assert again.status_code == 200, again.text
+    identity_cookie = _cookie(again.headers.get_list("set-cookie"), IDENTITY_COOKIE)
     assert _cookie_path(identity_cookie) == "/"
 
 
@@ -601,3 +628,251 @@ def test_enter_opens_the_space_with_a_fresh_pair_scoped_to_its_own_path(
         assert me.json()["email"] == SIGNUP["email"]
     finally:
         _drop_second_tenant(container_settings)
+
+
+# --- the root under its own name (REB-583) ------------------------------------------
+
+ROOT_SLUG = "radice-prova"
+ROOT_ADMIN = {"email": "radice@identita.it", "password": "lunghissima1"}
+
+
+@pytest.fixture
+def root_admin(api_engine: Engine) -> Iterator[UserRead]:
+    """One admin committed in the root's own `users` -- the root's database is
+    `api_engine`'s, the one `spaces_client` serves unprefixed -- who once entered with
+    a link, so a password login of theirs mints the identity cookie (`login`'s own
+    rule); removed again afterwards, with the tokens a login leaves behind and the
+    activity the creation wrote, so the root database every other test in this
+    directory shares goes back to how they found it."""
+    with session_factory(api_engine)() as root:
+        user = UserService(root).create(
+            UserCreate(
+                email=ROOT_ADMIN["email"],
+                password=ROOT_ADMIN["password"],
+                nome="Radice",
+                ruolo="admin",
+            ),
+            Actor.system(),
+        )
+        root.execute(
+            text("UPDATE users SET email_verificata_il = now() WHERE id = :id"), {"id": user.id}
+        )
+        root.commit()
+    try:
+        yield user
+    finally:
+        with api_engine.begin() as connection:
+            for table in ("refresh_tokens", "magic_link_tokens", "personal_access_tokens"):
+                connection.execute(
+                    text(f"DELETE FROM {table} WHERE user_id = :id"), {"id": user.id}
+                )
+            connection.execute(
+                text("DELETE FROM activities WHERE entity_type = 'user' AND entity_id = :id"),
+                {"id": user.id},
+            )
+            connection.execute(text("DELETE FROM users WHERE id = :id"), {"id": user.id})
+
+
+@pytest.fixture
+def rooted_client(
+    container_settings: Settings, root_admin: UserRead, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
+    """`spaces_client` for a root that wears a name (`PIGROCRM_ROOT_SLUG`), the shape
+    `test_the_root_slug_is_the_root_itself_and_nobody_elses_name` already serves, with
+    `root_admin` committed in it. The environment as well as the override: the prefix
+    middleware reads `get_settings()` itself, past `dependency_overrides`, and without
+    the name in the environment `/<root_slug>/api/...` is routed as a space."""
+    monkeypatch.setenv("PIGROCRM_ROOT_SLUG", ROOT_SLUG)
+    monkeypatch.setenv("PIGROCRM_DATABASE_URL", container_settings.database_url)
+    monkeypatch.setenv("PIGROCRM_JWT_SECRET", container_settings.jwt_secret)
+    rooted = container_settings.model_copy(update={"root_slug": ROOT_SLUG})
+    with _serving(rooted) as client:
+        yield client
+
+
+def _identity_only(client: TestClient) -> TestClient:
+    """A fresh client holding nothing but this jar's identity cookie: what a browser
+    has once the root's own pair expired or was cleared, and the one proof `enter`
+    accepts."""
+    fresh = TestClient(client.app, base_url="https://testserver")
+    fresh.cookies.set(IDENTITY_COOKIE, client.cookies[IDENTITY_COOKIE])
+    return fresh
+
+
+def _minted(headers: list[str], name: str) -> str:
+    """The `Set-Cookie` that mints `name`, skipping the deletions (`Max-Age=0`) a
+    response may carry for the same name at another path."""
+    return next(h for h in headers if h.startswith(f"{name}=") and "max-age=0" not in h.lower())
+
+
+def test_spaces_lists_the_root_first_under_its_own_name(
+    rooted_client: TestClient, container_settings: Settings
+) -> None:
+    """The root is nobody's registry row, so the scan alone never found it -- and the
+    day a space carried its admin's own name, the chooser showed that space alone and
+    the root was gone from the login page (REB-583). Named, it comes first, with the
+    role the root's own `users` gives this email; the invitation into Grace's space
+    follows, so a root admin who is also a member somewhere sees both."""
+    grace = rooted_client
+    try:
+        recording = _sign_up_and_verify(grace, slug=SLUG2, signup=OWNER2)
+        invite = grace.post(
+            f"/{SLUG2}/api/users/invites", json={"email": ROOT_ADMIN["email"], "nome": "Radice"}
+        )
+        assert invite.status_code == 201, invite.text
+        invite_token = _token_from(recording.sent[0].text)
+
+        radice = TestClient(grace.app, base_url="https://testserver")
+        accepted = radice.post(f"/{SLUG2}/api/auth/invite", json={"t": invite_token})
+        assert accepted.status_code == 200, accepted.text
+
+        listed = radice.get("/api/identity/spaces")
+        assert listed.status_code == 200, listed.text
+        assert listed.json() == [
+            {"slug": ROOT_SLUG, "ruolo": "admin"},
+            {"slug": SLUG2, "ruolo": "collaboratore"},
+        ]
+    finally:
+        _drop_second_tenant(container_settings)
+
+
+def test_spaces_does_not_name_the_root_for_an_email_with_no_row_there(
+    rooted_client: TestClient,
+) -> None:
+    """Ada is nobody in the root: its name is not hers to see, however the root is
+    called."""
+    _sign_up_and_verify(rooted_client)
+    assert rooted_client.get("/api/identity/spaces").json() == [{"slug": SLUG, "ruolo": "admin"}]
+
+
+def test_spaces_never_names_a_root_that_has_no_name(
+    spaces_client: TestClient, root_admin: UserRead
+) -> None:
+    """Without `PIGROCRM_ROOT_SLUG` there is no address to send anyone to: the root
+    admin's own login proves the identity, and the chooser still has nothing to list.
+    (Were that address to own a space as well, the chooser would show that space alone
+    and hide the form, as it did in production: an unnamed root has no row to offer.
+    This card names the root; that gap is its own.)"""
+    login = spaces_client.post("/api/auth/login", json=ROOT_ADMIN)
+    assert login.status_code == 200, login.text
+    assert spaces_client.get("/api/identity/spaces").json() == []
+
+
+def test_enter_opens_the_root_under_its_own_name_with_the_roots_jar_at_slash(
+    rooted_client: TestClient,
+) -> None:
+    """`enter/<root_slug>` mints the pair at `/`, the root's one jar (decision
+    2026-09-09), never at `/<root_slug>/` -- and clears what a browser may still hold
+    there, as `login` does -- proven by the follow-up calls under the alias and bare."""
+    login = rooted_client.post("/api/auth/login", json=ROOT_ADMIN)
+    assert login.status_code == 200, login.text
+    radice = _identity_only(rooted_client)
+
+    entered = radice.post(f"/api/identity/enter/{ROOT_SLUG}")
+    assert entered.status_code == 200, entered.text
+    assert entered.json()["email"] == ROOT_ADMIN["email"]
+    cookies = entered.headers.get_list("set-cookie")
+    assert _cookie_path(_minted(cookies, "pigrocrm_access")) == "/"
+    assert _cookie_path(_minted(cookies, "pigrocrm_refresh")) == "/"
+    assert sum(f"Path=/{ROOT_SLUG}/" in c and "max-age=0" in c.lower() for c in cookies) == 2
+
+    me = radice.get(f"/{ROOT_SLUG}/api/auth/me")
+    assert me.status_code == 200, me.text
+    assert me.json()["email"] == ROOT_ADMIN["email"]
+    assert radice.get("/api/auth/me").status_code == 200
+
+
+def test_enter_answers_404_for_the_root_name_when_this_email_has_no_root_row(
+    rooted_client: TestClient,
+) -> None:
+    """Ada, proven by her own space, is a stranger to the root: its name answers the
+    same 404 a space she has no row in does, and nothing is created there."""
+    _sign_up_and_verify(rooted_client)
+    assert rooted_client.post(f"/api/identity/enter/{ROOT_SLUG}").status_code == 404
+
+
+def test_a_registry_row_wearing_the_roots_name_is_never_listed_nor_entered(
+    rooted_client: TestClient, container_settings: Settings
+) -> None:
+    """`TenantService.provision` refuses the root's name, but a row created before the
+    name was set may still carry it (`cli.py`'s own caveat). `split_tenant_prefix`
+    routes that name to the root, so the chooser must not list it as a space nor
+    `enter` open it as one: Ada, its owner on paper, is still nobody in the root."""
+    _sign_up_and_verify(rooted_client)
+    registry = ensure_tenants_database(container_settings)
+    try:
+        with session_factory(registry)() as session:
+            # A database of its own that nobody created: on a row wearing the root's
+            # name the API must never get as far as opening one.
+            session.add(
+                Tenant(
+                    slug=ROOT_SLUG,
+                    db_name=tenant_database_name(ROOT_SLUG),
+                    owner_email=SIGNUP["email"],
+                )
+            )
+            session.commit()
+    finally:
+        registry.dispose()
+
+    assert rooted_client.get("/api/identity/spaces").json() == [{"slug": SLUG, "ruolo": "admin"}]
+    assert rooted_client.post(f"/api/identity/enter/{ROOT_SLUG}").status_code == 404
+
+
+def test_a_deactivated_root_row_is_neither_listed_nor_entered(
+    rooted_client: TestClient, root_admin: UserRead, api_engine: Engine
+) -> None:
+    """The root's row is read live like a space's (§3): switched off, it drops out of
+    the chooser and its name answers 404, whatever the identity cookie still says."""
+    login = rooted_client.post("/api/auth/login", json=ROOT_ADMIN)
+    assert login.status_code == 200, login.text
+    radice = _identity_only(rooted_client)
+    with api_engine.begin() as connection:
+        connection.execute(
+            text("UPDATE users SET attivo = false WHERE id = :id"), {"id": root_admin.id}
+        )
+
+    assert radice.get("/api/identity/spaces").json() == []
+    assert radice.post(f"/api/identity/enter/{ROOT_SLUG}").status_code == 404
+
+
+def test_a_link_asked_at_the_root_names_the_root_beside_the_space_the_address_owns(
+    rooted_client: TestClient,
+) -> None:
+    """Spec 2026-09-12 §6.2 mailed the root only when the address owned no space: a
+    root admin who opened a space of their own got one link, to that space, and the
+    root fell out of the mail (REB-583). The mail now names both, the root first."""
+    recording = _sign_up_and_verify(
+        rooted_client, signup={**WIZARD_SIGNUP, "email": ROOT_ADMIN["email"]}
+    )
+    rooted_client.cookies.clear()
+
+    response = rooted_client.post("/api/auth/link", json={"email": ROOT_ADMIN["email"]})
+    assert response.status_code == 202, response.text
+    assert len(recording.sent) == 1
+    body = recording.sent[0].text
+    root_link = "https://pigro.test/app/verify?t="
+    space_link = f"https://pigro.test/{SLUG}/app/verify?t="
+    assert root_link in body and space_link in body
+    assert body.index(root_link) < body.index(space_link)
+    # Two links, so each carries its label: the root's is its own name.
+    assert f"{ROOT_SLUG}: {root_link}" in body
+
+
+def test_a_link_asked_at_an_unnamed_root_still_names_only_the_space_the_address_owns(
+    spaces_client: TestClient, root_admin: UserRead
+) -> None:
+    """A root with no name is not in the chooser, and the mail follows suit: with a
+    space of their own, the root admin gets that space's link alone, as before
+    REB-583; the root stays the fallback for an address that owns nothing."""
+    recording = _sign_up_and_verify(
+        spaces_client, signup={**WIZARD_SIGNUP, "email": ROOT_ADMIN["email"]}
+    )
+    spaces_client.cookies.clear()
+
+    response = spaces_client.post("/api/auth/link", json={"email": ROOT_ADMIN["email"]})
+    assert response.status_code == 202, response.text
+    assert len(recording.sent) == 1
+    body = recording.sent[0].text
+    assert f"https://pigro.test/{SLUG}/app/verify?t=" in body
+    assert "https://pigro.test/app/verify?t=" not in body
