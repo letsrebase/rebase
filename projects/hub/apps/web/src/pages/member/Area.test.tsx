@@ -25,7 +25,7 @@ function answer(status: number, body: unknown) {
 }
 
 const NO_CONTRACTS = { quadro: null, quadri_precedenti: [], lettere: [] }
-const NO_REFERRAL = { code: 'ABCDEFGH', referred: [] }
+const NO_REFERRAL = { code: 'ABCDEFGH', rate_freelancer: '0.1000', rate_company: '0.3000', referred: [] }
 
 /** `/me` answers `profile`; a card's page also reads its contracts (REB-392), and
  *  every page reads its own referral link (P-REB-44). A fresh Response per call,
@@ -415,45 +415,55 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
   })
 })
 
-describe('/me, the page in two columns (REB-602)', () => {
-  const cases: [string, unknown][] = [
-    ['a card only', PROFILE],
-    ['a company only', COMPANY_ONLY],
-    ['a company with two requests', COMPANY_TWO_REQUESTS],
-    ['a card and a company', BOTH],
-    ['a card-less admin', CARDLESS_ADMIN],
-    ['a plain member with nothing else', NOBODY],
+describe('/me, the page in two columns (REB-602), the referral panel on top of the left one (REB-610)', () => {
+  const PERKS = ['PigroCRM è tuo, gratis', 'I primi passi da freelance']
+  const cases: [string, unknown, string[], string[]][] = [
+    ['a card only', PROFILE, ['La tua scheda', 'Contratti'], PERKS],
+    ['a company only', COMPANY_ONLY, [], ['La tua richiesta']],
+    ['a company with two requests', COMPANY_TWO_REQUESTS, [], ['Le tue richieste']],
+    ['a card and a company', BOTH, ['La tua scheda', 'Contratti'], ['La tua richiesta', ...PERKS]],
+    ['a card-less admin', CARDLESS_ADMIN, [], PERKS],
+    ['a plain member with nothing else', NOBODY, [], []],
   ]
 
-  it.each(cases)('leaves neither column empty for %s', async (_name, profile) => {
+  it.each(cases)('opens the left column with the referral panel and fills the right for %s', async (_name, profile, alsoLeft, onTheRight) => {
     meFetch(profile)
     mount()
     await screen.findByRole('heading', { level: 1 })
-    // The referral link reads its own route: wait for it, so the right column is settled.
+    // The referral panel reads its own route: wait for it, so the columns are settled.
     await screen.findByText('Nessuna segnalazione ancora.')
     const [left, right] = columns() as [HTMLElement, HTMLElement]
     expect(columns()).toHaveLength(2)
-    expect(left).not.toBeEmptyDOMElement()
     expect(right).not.toBeEmptyDOMElement()
-    expect(within(left).queryByText('Il tuo link di segnalazione')).toBeNull()
-    expect(within(right).getByText('Il tuo link di segnalazione')).toBeInTheDocument()
+    const headings = within(left)
+      .getAllByRole('heading', { level: 2 })
+      .map((heading) => heading.textContent)
+    expect(headings[0]).toBe('Il tuo link di segnalazione')
+    expect(headings.slice(1)).toEqual(alsoLeft)
+    expect(within(right).queryAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(
+      onTheRight,
+    )
+    expect(within(right).queryByText('Il tuo link di segnalazione')).toBeNull()
   })
 
-  it('reads card, contracts, requests, perks, referral once the columns collapse', async () => {
+  it('reads referral, card, contracts, requests, perks once the columns collapse', async () => {
     meFetch(BOTH)
     mount()
     await screen.findByText('Nessuna segnalazione ancora.')
     const order = [
+      screen.getByRole('heading', { name: 'Il tuo link di segnalazione' }),
       screen.getByRole('heading', { name: 'La tua scheda' }),
       await screen.findByRole('heading', { name: 'Contratti' }),
       screen.getByRole('heading', { name: 'La tua richiesta' }),
       screen.getByRole('heading', { name: 'PigroCRM è tuo, gratis' }),
-      screen.getByRole('heading', { name: 'Il tuo link di segnalazione' }),
     ]
     order.slice(1).forEach((heading, index) => {
       const before = order[index] as HTMLElement
       expect(before.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
+    // Straight after the header: nothing but the header comes before it.
+    const header = screen.getByRole('heading', { level: 1 }).closest('header') as HTMLElement
+    expect(header.nextElementSibling?.firstElementChild?.firstElementChild).toContainElement(order[0] as HTMLElement)
   })
 })
 

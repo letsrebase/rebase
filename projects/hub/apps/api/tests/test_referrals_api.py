@@ -76,6 +76,26 @@ def _member(api_session: Session, email: str = "mario@community.it") -> None:
     api_session.commit()
 
 
+def test_my_referral_states_the_rates_in_force_on_every_call(
+    client: TestClient, sender: RecordingSender, admin: None
+) -> None:
+    """An admin editing the rates on the ledger changes the member's next read: nothing
+    is cached and nothing is hard-coded. The admin reads their own panel here, since a
+    signed-in admin is a member too."""
+    _login(client, sender)
+
+    before = client.get("/api/hub/me/referral").json()
+    assert (before["rate_freelancer"], before["rate_company"]) == ("0.1000", "0.3000")
+
+    saved = client.put(
+        "/api/hub/referral-settings", json={"rate_freelancer": "0.125", "rate_company": "0.35"}
+    )
+    assert saved.status_code == 200, saved.text
+
+    after = client.get("/api/hub/me/referral").json()
+    assert (after["rate_freelancer"], after["rate_company"]) == ("0.1250", "0.3500")
+
+
 def test_my_referral_needs_a_session(client: TestClient, clean: None) -> None:
     assert client.get("/api/hub/me/referral").status_code == 401
 

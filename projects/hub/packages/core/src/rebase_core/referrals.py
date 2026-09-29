@@ -276,7 +276,13 @@ class ReferralService:
             for row in company_rows
         ]
         referred.sort(key=lambda item: item.created_at, reverse=True)
-        return MemberReferral(code=self.code_for(user_id), referred=referred)
+        settings = self.get_settings()
+        return MemberReferral(
+            code=self.code_for(user_id),
+            rate_freelancer=settings.rate_freelancer,
+            rate_company=settings.rate_company,
+            referred=referred,
+        )
 
     # ---- the admin's two rates ---------------------------------------------------------
 
