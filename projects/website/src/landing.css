@@ -631,6 +631,109 @@ a.avatar:hover {
   padding-top: 1.5rem;
 }
 
+/* --- REB-605: the four-step selection with the roles under it, the prices on the
+   company cards, the events and the questions. The same system: ink
+   rules, offsets, no radius, and no colour that is not a token declared above. */
+
+/* Four across, two on a tablet, one on a phone: the selection's four steps and the
+   four events share it. Counted, never auto-fit, for the reason
+   `.grid-2` gives: an auto-fit row of four went 3 + 1 between 740 and 1000 px, the
+   fourth alone under a row of three (measured at 768 and 900 in review). */
+.grid-4 {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 64rem) {
+  .grid-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 40rem) {
+  .grid-4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A sentence between a statement and its steps: pulled up under the statement, and
+   the statement's own beat below it, so the steps do not sit on the lead. */
+.deck .intro {
+  margin-top: calc(-1 * clamp(1rem, 2vw, 2rem));
+  margin-bottom: clamp(2rem, 4vw, 3.5rem);
+}
+
+/* The roles under the selection's steps: a rule of their own above the block, the
+   way each step carries one, and chips drawn with the same rule and no fill. The
+   rule is the dark band's, like `.faq`'s below: on a light band both would vanish. */
+.roles-block {
+  display: grid;
+  gap: 1rem;
+  margin-top: clamp(2rem, 4vw, 3.5rem);
+  border-top-width: 2px;
+  border-top-color: var(--landing-rule-on-ink);
+  padding-top: 1.5rem;
+}
+
+.roles {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.roles li {
+  border-width: 2px;
+  border-color: var(--landing-rule-on-ink);
+  padding: 0.4rem 0.9rem;
+  font-size: 1.0625rem;
+  font-weight: 500;
+}
+
+/* The price under a company card, and the date over an event: the ink a weight up,
+   the price behind a rule, the date small like the caption of a voice. */
+.card .price {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top-width: 2px;
+  color: var(--landing-ink);
+  font-weight: 500;
+}
+
+.card .when {
+  font-size: 1rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+/* A line after a grid, in a band: the grid's own gap above it. */
+.band .section > .after {
+  margin-top: 2.25rem;
+}
+
+/* A citation on the ink: the quiet ink is 2.2:1 there, so the link takes the band's
+   own quiet paper and goes white on hover, the way the band's text and headings do. */
+.band.dark .quiet-link {
+  color: var(--landing-quiet-on-ink);
+}
+
+.band.dark .quiet-link:hover {
+  color: var(--landing-cta-ink);
+}
+
+/* The questions: two columns, a rule over each pair, on the ink like the voices. */
+.faq > div {
+  border-top-width: 2px;
+  border-top-color: var(--landing-rule-on-ink);
+  padding-top: 1.25rem;
+}
+
+.faq h3 {
+  font-size: 1.3rem;
+}
+
 /* Rising in: the deck's reveal. Only under `html.js` (the gate in index.html's head),
    so a page without the script shows everything where it is; `.reveal-all` is the
    three-second net for a script that loaded and did nothing. `transform` moves nothing

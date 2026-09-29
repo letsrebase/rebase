@@ -71,6 +71,8 @@ function idsOn(page: string): Set<string> {
 // `developers.google.com` since REB-410: the privacy page links Google's User Data Policy.
 // `www.anthropic.com` since REB-515: the privacy page's team builder section links
 // Anthropic's own privacy page, the way it already links PostHog's and OpenAI's.
+// `luma.com` since REB-605: the landing's events link the rebase house's own Luma
+// page, the one event of ours with a registration.
 const EXTERNAL_HOSTS = [
   'github.com',
   'pigro.letsrebase.com',
@@ -80,6 +82,7 @@ const EXTERNAL_HOSTS = [
   'www.linkedin.com',
   'developers.google.com',
   'www.anthropic.com',
+  'luma.com',
 ]
 
 function checkExternal(href: string): string | undefined {
