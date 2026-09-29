@@ -15,12 +15,15 @@ positions for the call and maps the answer back through them.
 (the schema sent is its own; the seam strips what the API refuses and Pydantic enforces
 all of it here); a refusal, a cut answer or a body that is not the shape is
 `LlmUnavailable`, and nothing is written. A position the catalogue does not hold, or one
-already in the team, drops that line; so does, when the description asks for people on
-site, a member whose work mode is remote or unknown, and a member who left the catalogue
-while Claude was writing. What was dropped is logged by position, never by anything the
-model wrote. When the checks drop everyone the model chose, its summary describes a team
-that is not there, and the hub's own sentence (`NO_FIT_SENTENCE`) takes its place; an
-empty catalogue asks nobody and answers that sentence at once, for free.
+already in the team, drops that line, and so does a member who left the catalogue while
+Claude was writing. What was dropped is logged by position, never by anything the model
+wrote. Where a person works is not a check but the model's judgement (REB-598): on a need
+on site it prefers whoever is hybrid or on site and near the place, and when nobody such
+fits the skills it proposes the best fits anyway and says in the summary that they work
+remotely or from elsewhere, so the company decides; the member's work mode is on every
+read for the same reason. When the checks drop everyone the model chose, its summary
+describes a team that is not there, and the hub's own sentence (`NO_FIT_SENTENCE`) takes
+its place; an empty catalogue asks nobody and answers that sentence at once, for free.
 
 **The economics are the hub's.** Each member's band comes from their own rate
 (`bands.py`), read when the proposal is read, and the team's bands are their sum; the
@@ -81,9 +84,6 @@ PREVIOUS_MAX_AGE = timedelta(days=1)
 _PREVIOUS_REFUSED = "la proposta da rigenerare non esiste o è scaduta"
 # A catalogue id as the model writes it; the number is checked against the catalogue.
 _POSITION = re.compile(r"t([0-9]{1,6})")
-# Who is not proposed for a need on site (spec § 1): the remote-only, and whoever never
-# said how they work.
-_NOT_ON_SITE: tuple[str | None, ...] = ("remoto", None)
 # What a public read says of a member in place of a motivazione that names the place on
 # their card, which the same read withholds (`_public_reason`).
 PLACE_WITHHELD_REASON = "Profilo adatto al ruolo."
@@ -232,8 +232,10 @@ known yet.
 Answer in the JSON schema you are given:
 - riassunto: an anonymous summary of the project, two to four sentences: what is to \
 be done, for how long, with which technologies, and where when the description says \
-so. When nobody in the catalogue fits, one sentence saying why (for example: nobody \
-works on site in the place the description names), and an empty team.
+so. When the description asks for people on site and the people you propose do not \
+work on site there, say so here in one plain sentence (for example: nobody with these \
+skills works on site in the place named, so the people proposed work remotely). When \
+nobody in the catalogue fits the skills, one sentence saying why, and an empty team.
 - luogo: what the description says about place. locale is true when it asks for \
 people on site, at the client's or the project's premises, for all or part of the \
 week, and false when the work can be remote or the description does not say; dove is \
@@ -257,9 +259,12 @@ over that number.
 names. Sectors, seniority and languages come after, to choose between people whose \
 skills fit.
 - Remote and local: when the description asks for people on site, set luogo.locale to \
-true and propose nobody whose modalita is "remoto" or null. When it names where the \
-client or the work is, prefer people whose luogo is there or nearby; when it also asks \
-for people on site, propose only those, or nobody, and say so in the riassunto.
+true and prefer people whose modalita is "ibrido" or "in_sede" and, when it names where \
+the client or the work is, whose luogo is there or nearby. Skills come first all the \
+same: when nobody who works on site fits the skills, propose the people who do fit, \
+whatever their modalita or luogo, and say in the riassunto that they work remotely or \
+from another city. A description that only names a place, without asking for people on \
+site, prefers people nearby and excludes nobody.
 - The riassunto names no company, product or person from the description: describe \
 them by their kind instead ("un'azienda di logistica", "un'app per le prenotazioni").
 - A motivazione names no place.
@@ -550,14 +555,6 @@ class TeamBuilder:
             if freelancer_id not in live:
                 logger.info("team proposal: %r dropped: left the catalogue", member.id)
                 continue
-            remoto, tariffa = live[freelancer_id]
-            if answer.luogo.locale and remoto in _NOT_ON_SITE:
-                logger.warning(
-                    "team proposal: %r dropped: %s on a local need",
-                    member.id,
-                    remoto or "no work mode",
-                )
-                continue
             team.append(
                 {
                     "posizione": len(team) + 1,
@@ -567,20 +564,20 @@ class TeamBuilder:
                     "giorni_settimana": member.giorni_settimana,
                 }
             )
-            bands.append(band_for(tariffa))
+            bands.append(band_for(live[freelancer_id]))
         return team, bands
 
-    def _live(self, ids: list[UUID]) -> dict[UUID, tuple[str | None, Decimal | None]]:
-        """Work mode and rate of whoever is still in the catalogue now, after the call:
-        a talent deleted, turned down or left without a card meanwhile is not proposed."""
+    def _live(self, ids: list[UUID]) -> dict[UUID, Decimal | None]:
+        """The rate of whoever is still in the catalogue now, after the call: a talent
+        deleted, turned down or left without a card meanwhile is not proposed."""
         if not ids:
             return {}
         rows = self.session.execute(
-            cloud_visible(
-                select(Freelancer.id, Freelancer.remoto, Freelancer.tariffa_giornaliera)
-            ).where(Freelancer.id.in_(ids))
+            cloud_visible(select(Freelancer.id, Freelancer.tariffa_giornaliera)).where(
+                Freelancer.id.in_(ids)
+            )
         ).all()
-        return {freelancer_id: (remoto, tariffa) for freelancer_id, remoto, tariffa in rows}
+        return {freelancer_id: tariffa for freelancer_id, tariffa in rows}
 
     def _read(self, row: TeamProposal, *, public: bool) -> TeamProposalRead:
         """The row as a page reads it, with each member's card, work mode and band as

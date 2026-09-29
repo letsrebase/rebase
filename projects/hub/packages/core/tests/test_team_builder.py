@@ -441,50 +441,45 @@ def test_engine_drops_unknown_and_repeated_positions(
     assert DESCRIZIONE not in logs.text
 
 
-def test_engine_drops_remote_members_on_a_local_need(
+def test_engine_keeps_remote_members_on_a_local_need(
     clean: Session, logs: pytest.LogCaptureFixture
 ) -> None:
+    """Where a person works is the model's judgement, not a check (REB-598): on a need
+    on site the summary says the people proposed work remotely, and every one of them
+    stays, whatever their work mode, the one who never said how they work included."""
     remote = _talent(clean, 1, remoto="remoto")
     unknown = _talent(clean, 2, remoto=None)
     hybrid = _talent(clean, 3, remoto="ibrido")
     on_site = _talent(clean, 4, remoto="in_sede")
     ids = _positions(clean)
     team = [_member(ids[who]) for who in (remote, unknown, hybrid, on_site)]
-    llm = RecordingCall(
-        [
-            proposal_response(team, locale=True, dove="Torino"),
-            proposal_response(team, locale=False, dove="Torino"),
-        ]
+    sentence = (
+        "Un'azienda cerca un backend developer in sede a Torino: nessuno con queste "
+        "competenze lavora in sede, quindi le persone proposte lavorano da remoto."
     )
-    builder = _builder(clean, llm)
+    llm = RecordingCall([proposal_response(team, riassunto=sentence, locale=True, dove="Torino")])
 
-    local = builder.propose(
-        TeamProposalCreate(descrizione=DESCRIZIONE), origine="admin", user_id=None
-    )
-    remote_ok = builder.propose(
+    local = _builder(clean, llm).propose(
         TeamProposalCreate(descrizione=DESCRIZIONE), origine="admin", user_id=None
     )
 
     assert local.luogo == {"locale": True, "dove": "Torino"}
-    assert [(m.posizione, m.freelancer_id) for m in local.team] == [(1, hybrid), (2, on_site)]
-    assert [m.freelancer_id for m in remote_ok.team] == [remote, unknown, hybrid, on_site]
-    assert "local need" in logs.text
-    assert f"{ids[remote]!r}" in logs.text and f"{ids[unknown]!r}" in logs.text
+    assert local.riassunto == sentence
+    assert [(m.posizione, m.freelancer_id, m.modalita) for m in local.team] == [
+        (1, remote, "remoto"),
+        (2, unknown, None),
+        (3, hybrid, "ibrido"),
+        (4, on_site, "in_sede"),
+    ]
+    assert "dropped" not in logs.text
 
 
-@pytest.mark.parametrize("dropped_by", ["on site", "unknown ids"])
-def test_a_team_dropped_whole_carries_the_hubs_sentence(clean: Session, dropped_by: str) -> None:
+def test_a_team_dropped_whole_carries_the_hubs_sentence(clean: Session) -> None:
     """The model's summary describes the team it chose: when the checks leave nobody of
     it, the page says nobody fits rather than describing people who are not there."""
-    remote = _talent(clean, 1, remoto="remoto")
-    unknown = _talent(clean, 2, remoto=None)
-    ids = _positions(clean)
-    team = (
-        [_member(ids[remote]), _member(ids[unknown])]
-        if dropped_by == "on site"
-        else [_member("t9"), _member("t12")]
-    )
-    llm = RecordingCall([proposal_response(team, locale=dropped_by == "on site", dove="Bari")])
+    _talent(clean, 1, remoto="remoto")
+    team = [_member("t9"), _member("t12")]
+    llm = RecordingCall([proposal_response(team, locale=False, dove="Bari")])
 
     read = _builder(clean, llm).propose(
         TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
@@ -494,7 +489,7 @@ def test_a_team_dropped_whole_carries_the_hubs_sentence(clean: Session, dropped_
     assert read.economia == {"giorno": None, "mese": None, "giorni_mese": 22}
     [row] = _rows(clean)
     assert (row.riassunto, row.team) == (NO_FIT_SENTENCE, [])
-    assert row.luogo == {"locale": dropped_by == "on site", "dove": "Bari"}
+    assert row.luogo == {"locale": False, "dove": "Bari"}
 
 
 def test_an_empty_catalogue_asks_nobody(clean: Session) -> None:
@@ -1106,6 +1101,10 @@ def test_the_number_of_people_reaches_the_prompt_only_when_asked(clean: Session)
     # The number is a sentence of the user turn: the cached system prefix never moves.
     assert llm.requests[2].system == llm.requests[0].system
     assert "The visitor wants a team of exactly N" in llm.requests[0].system[0]["text"]
+    # Place is a preference, never an exclusion (REB-598): the rule says so in as many
+    # words, and the old sentence is gone.
+    rules = llm.requests[0].system[0]["text"]
+    assert "excludes nobody" in rules and "propose nobody" not in rules
     # The event tells the asked number from the proposed one, since the row keeps neither.
     assert [(p["persone"], p["persone_richieste"]) for _, _, p in capture.calls] == [
         (1, None),

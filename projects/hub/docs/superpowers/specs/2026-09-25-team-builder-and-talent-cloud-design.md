@@ -69,6 +69,17 @@ the CV places there or nearby, or none, and the summary says so. The prompt forb
 place in a person's `motivazione`. Ivan: «se il need dice che serve un team locale non
 proporre remoti e se indicano dove sono comportati di conseguenza».
 
+*Amended 2026-09-29 (REB-598).* The exclusion was too strict for the need it was
+written for: the fourth example, one forward-deployed engineer «in sede a Torino due
+giorni a settimana», came back with nobody because every Python profile in the catalogue
+works remotely. Ivan: «non mi da risultati cercando fde invece dovrebbe». Now an on-site
+need prefers hybrid and on-site people near the place named, and when nobody such fits
+the skills the builder proposes the best fits anyway and the summary says plainly that
+they work remotely or from another city; the company reads each member's work mode on
+the card and decides. The engine no longer drops a `remoto` or unknown member on a local
+need (§ 3.4); `luogo.locale` still records what the description asked. Row in
+`docs/design/DECISIONS.md`, 2026-09-29.
+
 **Contacts at «Assumi team», nothing before, nothing verified.** Ivan: «dopo che è
 stata generata e l'utente preme assumi il team, chiedi le sue info per il ricontatto,
 no magic link o altro». Email, phone and company name make the request; it lands in a
@@ -228,7 +239,8 @@ the visitor.
   refusal, runs out of tokens, or answers something that is not the shape
   (`LlmUnavailable`, a domain error mapped to `502`; the refusal is logged with its
   category); `200` with an empty `team` and the summary's sentence when no talent
-  fits (a local need with nobody there, say).
+  fits (nobody with the skills named, say; a local need with nobody there no longer
+  empties the team since 2026-09-29, REB-598, § 1).
 - `POST /api/hub/team/requests` (public, behind the same `spend_one` speed bump as the
   wizards: it mails ciao@ on every call): `{proposal_id, azienda, email, telefono}` →
   `201` `{id}`; a proposal already requested is `409` (the unique index decides, so a
@@ -291,9 +303,10 @@ previous team's positions and the note («togli il designer»). Output through
 `output_config.format` with the JSON schema of `{riassunto, luogo: {locale, dove},
 team: [{id, ruolo, motivazione, giorni_settimana}]}`, `additionalProperties: false`,
 validated again by a Pydantic model on the way in; an id the catalogue does not hold
-or repeats drops that line and logs it, and so does, when `luogo.locale` is true, a
-member whose `modalita` is `remoto` or unknown (the place itself stays the model's
-judgement: the catalogue carries `luogo` and `modalita` for it); a `max_tokens` stop, a body that is not JSON
+or repeats drops that line and logs it, and so did, when `luogo.locale` is true, a
+member whose `modalita` is `remoto` or unknown, until 2026-09-29 (REB-598, § 1): place
+and work mode are the model's judgement alone now, and the catalogue carries `luogo`
+and `modalita` for it; a `max_tokens` stop, a body that is not JSON
 or does not validate is `LlmUnavailable`. Adaptive thinking, effort `medium`,
 `max_tokens` 8000, the server-side fallback `default` with its beta header. The
 proposal row keeps `model` and the three token counts from `usage`. The seam passes
@@ -502,8 +515,8 @@ description go to Anthropic's API and nowhere else.
   rendering (positional ids, no name, no link, no `sintesi`, the vetted flag absent,
   stable order); the engine with a `RecordingCall` (a scripted answer mapped back to
   freelancers, an unknown or repeated id dropped, a refusal, a `max_tokens` stop, a
-  non-JSON body and a non-validating body each → `LlmUnavailable`, a local need with an
-  empty team, the «Rigenera» turn carrying the previous positions and the note, the
+  non-JSON body and a non-validating body each → `LlmUnavailable`, a local need keeping
+  every member whatever their work mode (REB-598, since 2026-09-29), the «Rigenera» turn carrying the previous positions and the note, the
   token counts stored, the public read without ids); the card writer (the hash, the
   refresh of a changed CV only, the failed hash skipped, the empty text, the deletion
   through `clear_cv`); the request (states, the unique proposal, the one-use tokens,
