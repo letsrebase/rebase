@@ -24,9 +24,13 @@ per call would turn one upload into one OAuth round-trip per Drive request.
 **What it does not do.** No placement, no keys, no HTTP: it holds a `GDriveStorage` and
 delegates. The only behaviour of its own is resolution, and reacting to the one failure
 that invalidates it -- a revoked grant, recorded on the row so the Drive settings page can say
-so, then re-raised unchanged.
+so, then re-raised **as `StorageUnreachable`** (REB-562 fix round 3): the holder's own
+`DriveCredentialRevoked`/`DriveConsentExpired` names that admin's email, and every
+operation through here can be reached by any actor with access to the document, not
+only the holder. See `_run`'s own docstring.
 """
 
+import logging
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -39,14 +43,16 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.drive.account import GoogleDriveAccountService, missing_scope_conflict
-from pigrocrm.core.drive.errors import DriveCredentialRevoked
+from pigrocrm.core.drive.errors import DriveConsentExpired, DriveCredentialRevoked
 from pigrocrm.core.drive.models import GoogleDriveAccount
 from pigrocrm.core.drive.repository import DriveRepository
 from pigrocrm.core.drive.schemas import DRIVE_SCOPE_FILE
 from pigrocrm.core.drive.transport import HttpCall, user_transport_for
 from pigrocrm.core.gmail.tokens import GoogleTokenClient
-from pigrocrm.core.storage.errors import StorageNotConfigured
+from pigrocrm.core.storage.errors import StorageNotConfigured, StorageUnreachable
 from pigrocrm.core.storage.gdrive import GDriveStorage
+
+logger = logging.getLogger(__name__)
 
 # A callable that opens a `Session` the storage then owns and closes -- in production
 # the `sessionmaker` the adapter already builds. Not a `Session`: this object outlives
@@ -334,7 +340,8 @@ class LazyUserDriveStorage:
             pass
 
     def _run(self, operation: Callable[[GDriveStorage], _T], feature: str) -> _T:
-        """Resolve, delegate, and turn a revoked grant into a recorded fact.
+        """Resolve, delegate, turn a revoked grant into a recorded fact, and never let
+        the holder's own exception past this method (REB-562 fix round 3).
 
         `feature` names, in Italian, what the caller was doing, and is used by exactly
         one thing: the sentence `_resolve` refuses a scope-short grant with. It is a
@@ -344,18 +351,40 @@ class LazyUserDriveStorage:
 
         One place, four methods: a revocation can surface from any Drive call (the token
         refresh happens inside each of them), so a per-method `try` would be four
-        chances to forget one. The exception is re-raised as the very class
-        `UserTokens` raised, not flattened -- a caller that reacts to a revocation has
-        to be able to match on it, which is why `drive/errors.py` made it a type.
+        chances to forget one.
+
+        **The exception is translated, not re-raised.** `DriveCredentialRevoked` and
+        `DriveConsentExpired` both name the holder's account -- `email_address` in the
+        sentence and in `details`, which `domain_error_handler`
+        (`pigrocrm_api/errors.py`) spreads into the JSON body verbatim -- and this
+        method is reached by *any* actor with access to the document, not only the
+        admin whose credential this is. `GoogleDriveAccountService.usable`'s own
+        callers keep the named version (the viewer *is* the account owner there,
+        `drive/account.py`), but this shared path answers with `StorageUnreachable`
+        instead, which names nobody. The email is not lost: it is logged, once, before
+        the sanitised error replaces the original -- `from failed` keeps the real cause
+        on the traceback for anyone reading the log, without putting it on the wire.
+
+        `DriveConsentExpired` cannot reach here today -- nothing on this path predicts
+        an expiry the way `GoogleDriveAccountService.usable` does, only Google's own
+        `invalid_grant` ever surfaces from a real token refresh -- but it is caught
+        anyway: the two are the same shape and the same leak, and a future call this
+        method starts making would otherwise have to remember this rule a second time.
         """
         resolution = self._resolve(feature)
         try:
             return operation(resolution.storage)
-        except DriveCredentialRevoked:
-            # The resolution this operation actually used, not whatever is cached by the
-            # time the failure surfaces -- see `_record_revocation`.
-            self._record_revocation(resolution)
-            raise
+        except (DriveCredentialRevoked, DriveConsentExpired) as failed:
+            if isinstance(failed, DriveCredentialRevoked):
+                # The resolution this operation actually used, not whatever is cached
+                # by the time the failure surfaces -- see `_record_revocation`.
+                self._record_revocation(resolution)
+            logger.warning(
+                "drive storage: holder %s failed with %s; the caller sees no account information",
+                resolution.email_address,
+                type(failed).__name__,
+            )
+            raise StorageUnreachable() from failed
 
     # ---- DocumentStorage --------------------------------------------------------
 

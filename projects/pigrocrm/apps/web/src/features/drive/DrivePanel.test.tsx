@@ -8,10 +8,18 @@ import { api } from '@/lib/api'
 
 // REB-457: the panel is open to a collaboratore too, who manages their own Drive but not
 // the space's write folder. Every test below runs as an admin unless it says otherwise.
-const mockAuth = vi.hoisted(() => ({ isAdmin: true }))
+// `useAuth` is mocked too (REB-562 fix rounds 2 and 4): `useDriveHealth` (`queries.ts`)
+// now reads `user.id` and `user.ruolo` itself, to key the health query by viewer, so a
+// demotion or a session switch mid-session changes `mockAuth.isAdmin`/`mockAuth.userId`
+// and the mocked `user` together, the same way the real `AuthProvider`'s `user` would
+// after its own poll notices either change.
+const mockAuth = vi.hoisted(() => ({ isAdmin: true, userId: 'admin-a' }))
 vi.mock('@/lib/auth', () => ({
   useIsAdmin: () => mockAuth.isAdmin,
   useCanWrite: () => true,
+  useAuth: () => ({
+    user: { id: mockAuth.userId, ruolo: mockAuth.isAdmin ? 'admin' : 'collaboratore' },
+  }),
 }))
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -52,6 +60,12 @@ const ACCOUNT = {
   disconnected_at: null,
 }
 
+// `space_storage` is omitted here on purpose, not set to `null`: the server leaves it
+// genuinely unset for a non-admin (REB-562 fix round 1), and `DrivePanel` now renders
+// the space-storage line from the field's *presence*, never from the admin flag alone.
+// Omitting it from these two base fixtures is what keeps every test below that does
+// not care about REB-562 from having to reason about it; the dedicated describe block
+// further down sets it explicitly for both admin states.
 const CONNECTED: DriveHealth = {
   account: ACCOUNT,
   banner: null,
@@ -79,8 +93,36 @@ function renderPanel() {
   )
 }
 
+/**
+ * Like `renderPanel`, but with a `rerenderPanel` that re-renders onto the exact same
+ * `QueryClient` (REB-562 fix rounds 2 and 4). A role change, or a session switch to a
+ * different admin, mid-session is not a new mount -- the same query client is still
+ * there, `useDriveHealth` just reads a different `user.id`/`user.ruolo` on the next
+ * render, which is what the tests below need to actually exercise `driveKeys.
+ * healthForViewer` picking a different cache entry rather than starting from an empty
+ * client that would refetch either way.
+ *
+ * `ui()` builds a *fresh* element on every call rather than one captured up front and
+ * replayed: passing the very same element reference back into `rerender` measurably
+ * skipped `DrivePanel`'s own re-render here (confirmed against the failing assertion
+ * before this fix), the way a `key`-less list item or a memoised child can bail out on
+ * an unchanged element -- a new element every call is what keeps this the ordinary
+ * "parent re-rendered" path rather than that one.
+ */
+function renderPanelForRerender() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const ui = () => (
+    <QueryClientProvider client={client}>
+      <DrivePanel />
+    </QueryClientProvider>
+  )
+  const result = render(ui())
+  return { ...result, rerenderPanel: () => result.rerender(ui()) }
+}
+
 beforeEach(() => {
   mockAuth.isAdmin = true
+  mockAuth.userId = 'admin-a'
   vi.mocked(api.GET).mockReset()
   vi.mocked(api.POST).mockReset()
   vi.mocked(api.PATCH).mockReset()
@@ -263,6 +305,212 @@ describe('DrivePanel', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
 
     expect(await screen.findByText('ID cartella non valido')).toBeInTheDocument()
+  })
+})
+
+/**
+ * REB-562. `space_storage` is the space's *effective* write folder -- read from
+ * `DriveRepository.storage_holder` through the health response, never recomputed here
+ * -- as opposed to `account.storage_folder_id`, which is only the viewing admin's own
+ * row. Both states render for an admin; a collaboratore sees neither, regardless of
+ * what `space_storage` carries, since the server itself answers `null` for them
+ * (`GoogleDriveAccountService._space_storage`'s own admin gate).
+ */
+describe('DrivePanel space storage line (REB-562)', () => {
+  it('names the admin whose account holds the write folder, when reachable', async () => {
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        ...CONNECTED,
+        space_storage: {
+          in_effect: true,
+          holder: { name: 'Bruno', email: 'bruno@acme.it', reachable: true },
+        },
+      }),
+    )
+    renderPanel()
+
+    // Neutral wording (CodeRabbit, fix round 1): never claims documents ARE saved
+    // there, only that this is the configured folder, and reachable carries no caveat.
+    const line = await screen.findByText(/Cartella di scrittura dei documenti/)
+    expect(line).toHaveTextContent('Cartella di scrittura dei documenti: quella di Bruno (bruno@acme.it).')
+    expect(line).not.toHaveTextContent(/non raggiungibile/)
+  })
+
+  it('adds "non raggiungibile" when the holder cannot actually write there', async () => {
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        ...CONNECTED,
+        space_storage: {
+          in_effect: true,
+          holder: { name: 'Bruno', email: 'bruno@acme.it', reachable: false },
+        },
+      }),
+    )
+    renderPanel()
+
+    expect(
+      await screen.findByText(
+        'Cartella di scrittura dei documenti: quella di Bruno (bruno@acme.it), al momento non raggiungibile.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('says no write folder is available when none is in effect, without claiming nobody ever chose one', async () => {
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({ ...CONNECTED, space_storage: { in_effect: false, holder: null } }),
+    )
+    renderPanel()
+
+    expect(
+      await screen.findByText(
+        'Nessuna cartella di scrittura disponibile: i documenti generati non si possono salvare finché un amministratore non ne collega una.',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the line on the not-connected screen too, not only once this admin has their own Drive', async () => {
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        ...NOT_CONFIGURED,
+        configured: true,
+        space_storage: {
+          in_effect: true,
+          holder: { name: 'Bruno', email: 'bruno@acme.it', reachable: true },
+        },
+      }),
+    )
+    renderPanel()
+
+    expect(await screen.findByText(/Bruno \(bruno@acme\.it\)/)).toBeInTheDocument()
+    expect(
+      await screen.findByRole('link', { name: 'Collega Google Drive' }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows a collaboratore neither line: the field is absent from their response entirely', async () => {
+    mockAuth.isAdmin = false
+    // No `space_storage` key at all -- the server never sends one for a non-admin
+    // actor (REB-562 fix round 1); `CONNECTED` already omits it.
+    vi.mocked(api.GET).mockResolvedValue(ok(CONNECTED))
+    renderPanel()
+
+    await screen.findByText('ada@acme.it')
+    expect(screen.queryByText(/Cartella di scrittura dei documenti/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Nessuna cartella di scrittura/)).not.toBeInTheDocument()
+  })
+
+  it('renders nothing from a stale admin flag when the server already left the field unset, rather than a false "nessuna cartella"', async () => {
+    // Greptile P2: a demotion the client has not refetched yet must not make this
+    // component invent a state the server never sent. `choosesWriteFolder` (from
+    // `useIsAdmin`) stays `true` here on purpose -- the response is what changed.
+    mockAuth.isAdmin = true
+    vi.mocked(api.GET).mockResolvedValue(ok(CONNECTED))
+    renderPanel()
+
+    await screen.findByText('ada@acme.it')
+    expect(screen.queryByText(/Cartella di scrittura dei documenti/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Nessuna cartella di scrittura/)).not.toBeInTheDocument()
+  })
+
+  it('shows the line even when Google itself is only partially configured', async () => {
+    // CodeRabbit, fix round 2: `configured: false` used to return `<NotConfigured />`
+    // before `spaceStorage` was even computed, dropping an admin-only fact the server
+    // answers independently of `configured` (fix round 1).
+    vi.mocked(api.GET).mockResolvedValue(
+      ok({
+        ...NOT_CONFIGURED,
+        space_storage: {
+          in_effect: true,
+          holder: { name: 'Bruno', email: 'bruno@acme.it', reachable: true },
+        },
+      }),
+    )
+    renderPanel()
+
+    expect(await screen.findByText(/Bruno \(bruno@acme\.it\)/)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/non è configurato su questa installazione/),
+    ).toBeInTheDocument()
+  })
+
+  it('refetches on a role change and hides the line at once, rather than going on with the cached admin response', async () => {
+    // Greptile P1: `useDriveHealth` keys its query by viewer (`driveKeys.
+    // healthForViewer`), so a demotion mid-session -- `mockAuth.isAdmin` flips, the
+    // mocked `useAuth` follows it -- is a different query with nothing cached, and
+    // React Query issues a second `GET` rather than continuing to serve the first
+    // response's holder.
+    mockAuth.isAdmin = true
+    vi.mocked(api.GET).mockResolvedValueOnce(
+      ok({
+        ...CONNECTED,
+        space_storage: {
+          in_effect: true,
+          holder: { name: 'Bruno', email: 'bruno@acme.it', reachable: true },
+        },
+      }),
+    )
+    const { rerenderPanel } = renderPanelForRerender()
+
+    expect(await screen.findByText(/Bruno \(bruno@acme\.it\)/)).toBeInTheDocument()
+
+    // The demotion: the next fetch answers the way the server does for a
+    // collaboratore, the field absent entirely.
+    mockAuth.isAdmin = false
+    vi.mocked(api.GET).mockResolvedValueOnce(ok(CONNECTED))
+    rerenderPanel()
+
+    await waitFor(() => expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(2))
+    await waitFor(() =>
+      expect(screen.queryByText(/Cartella di scrittura dei documenti/)).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/Bruno/)).not.toBeInTheDocument()
+  })
+
+  it('refetches on a session switch between two admins in one tab, and never shows the first admin\'s cached account', async () => {
+    // CodeRabbit Major, fix round 4: a role alone does not identify the viewer -- two
+    // admins share `ruolo` -- so a switch from admin A to admin B without a
+    // `logout()` in between (a shared browser profile, a token client that swaps a
+    // cookie) must still be a different query. `driveKeys.healthForViewer` keys on
+    // `user.id` too, and this test keeps `mockAuth.isAdmin` `true` throughout: the
+    // role never changes here, only the person.
+    mockAuth.isAdmin = true
+    mockAuth.userId = 'admin-a'
+    vi.mocked(api.GET).mockResolvedValueOnce(
+      ok({
+        ...CONNECTED,
+        account: { ...ACCOUNT, email_address: 'a@acme.it' },
+        space_storage: {
+          in_effect: true,
+          holder: { name: 'Admin A', email: 'a@acme.it', reachable: true },
+        },
+      }),
+    )
+    const { rerenderPanel } = renderPanelForRerender()
+
+    expect(await screen.findByText('a@acme.it')).toBeInTheDocument()
+    expect(await screen.findByText(/Admin A \(a@acme\.it\)/)).toBeInTheDocument()
+
+    // The switch: still an admin, a different person, and the server answers with
+    // that person's own connected Drive and the space's storage as they see it.
+    mockAuth.userId = 'admin-b'
+    vi.mocked(api.GET).mockResolvedValueOnce(
+      ok({
+        ...CONNECTED,
+        account: { ...ACCOUNT, email_address: 'b@acme.it' },
+        space_storage: {
+          in_effect: true,
+          holder: { name: 'Admin B', email: 'b@acme.it', reachable: true },
+        },
+      }),
+    )
+    rerenderPanel()
+
+    await waitFor(() => expect(vi.mocked(api.GET)).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.getByText('b@acme.it')).toBeInTheDocument())
+    expect(await screen.findByText(/Admin B \(b@acme\.it\)/)).toBeInTheDocument()
+    // Neither A's own account email nor A's holder line survives the switch.
+    expect(screen.queryByText('a@acme.it')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Admin A/)).not.toBeInTheDocument()
   })
 })
 

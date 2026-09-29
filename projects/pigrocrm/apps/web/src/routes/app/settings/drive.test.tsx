@@ -25,6 +25,10 @@ const mockAuth = vi.hoisted(() => ({ ruolo: 'collaboratore' as 'admin' | 'collab
 vi.mock('@/lib/auth', () => ({
   useIsAdmin: () => mockAuth.ruolo === 'admin',
   useCanWrite: () => true,
+  // `useDriveHealth` (`features/drive/queries.ts`) reads `user.ruolo` itself, to key
+  // its query by role (REB-562 fix round 2), so the mocked panel underneath this page
+  // needs the same `useAuth` every other Drive test file mocks.
+  useAuth: () => ({ user: { ruolo: mockAuth.ruolo } }),
 }))
 
 vi.mock('@/lib/api', async (importOriginal) => {

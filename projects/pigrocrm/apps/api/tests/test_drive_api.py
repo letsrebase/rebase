@@ -124,6 +124,9 @@ def _connected_account(session: Session, user_id: Any, **overrides: Any) -> Goog
 
 
 def test_the_account_endpoint_is_readable_even_with_google_off(logged_in: TestClient) -> None:
+    """`space_storage` is still a concrete answer for `logged_in` (an admin), even
+    with Google entirely off: `configured` answers `gmail_configured`, but
+    `space_storage` does not read it (REB-562 fix round 1, Greptile)."""
     response = logged_in.get("/api/drive/account")
     assert response.status_code == 200, response.text
     assert response.json() == {
@@ -132,6 +135,7 @@ def test_the_account_endpoint_is_readable_even_with_google_off(logged_in: TestCl
         "banner_text": None,
         "missing_scopes": [],
         "configured": False,
+        "space_storage": {"in_effect": False, "holder": None},
     }
 
 
@@ -629,6 +633,89 @@ def test_a_collaboratore_still_sets_their_own_read_roots(
 
     assert response.status_code == 200, response.text
     assert response.json()["root_folder_ids"] == [ROOT_ID]
+
+
+# --- space_storage: whose account holds the space's write folder (REB-562) -----------
+
+
+def test_the_account_endpoint_names_the_admin_holding_the_spaces_storage(
+    logged_in: TestClient, drive_ready: TestClient, api_session: Session
+) -> None:
+    """The admin's own Drive page, over real HTTP: `space_storage` answers from
+    `DriveRepository.storage_holder`, not from the viewer's own `account` field, with
+    `in_effect: true` and the holder's `reachable` (`_connected_account`'s default
+    scopes include `drive.file`)."""
+    user_id = logged_in.get("/api/auth/me").json()["id"]
+    _connected_account(api_session, user_id, storage_folder_id=STORAGE_ID)
+
+    response = logged_in.get("/api/drive/account")
+
+    assert response.status_code == 200, response.text
+    space_storage = response.json()["space_storage"]
+    assert space_storage == {
+        "in_effect": True,
+        "holder": {"name": "Admin", "email": "io@example.it", "reachable": True},
+    }
+
+
+def test_the_account_endpoint_says_no_space_storage_is_in_effect(
+    logged_in: TestClient, drive_ready: TestClient
+) -> None:
+    """An admin with no connected Drive at all, on an installation where nobody has
+    named a write folder: `in_effect: false`, `holder: null` -- a concrete answer, not
+    the key being merely absent (that is only for a non-admin, proven below)."""
+    response = logged_in.get("/api/drive/account")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["space_storage"] == {"in_effect": False, "holder": None}
+
+
+def test_the_account_endpoint_names_no_space_storage_to_a_collaboratore(
+    logged_in: TestClient, drive_ready: TestClient, api_session: Session
+) -> None:
+    """A collaboratore chooses no write folder (`set_roots`'s own `require_admin`), so
+    their `GET /api/drive/account` must not learn who the admin is, even while an
+    admin's write folder is genuinely in effect. `space_storage` is absent from the
+    JSON entirely (REB-562 fix round 1), never `null`: a stale client-side admin flag
+    after a demotion must read as "nothing to show", not as a false "no folder"."""
+    admin_id = logged_in.get("/api/auth/me").json()["id"]
+    _connected_account(api_session, admin_id, storage_folder_id=STORAGE_ID)
+    collab = _second_actor(logged_in, "collaboratore")
+
+    response = collab.get("/api/drive/account")
+
+    assert response.status_code == 200, response.text
+    assert "space_storage" not in response.json()
+
+
+def test_space_storage_survives_a_partially_configured_google_client(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    """REB-562 fix round 1 (Greptile P1). `configured` answers `gmail_configured`,
+    which needs all four Google variables, but `DriveRepository.storage_account` --
+    what `storage/lazy_drive.py` actually resolves a document write against -- reads
+    `google_drive_accounts` directly and was never gated on it. A `public_url` dropped
+    after an admin already chose a folder must not hide that a document generated
+    right now would still land there."""
+    user_id = logged_in.get("/api/auth/me").json()["id"]
+    _connected_account(api_session, user_id, storage_folder_id=STORAGE_ID)
+
+    def _partially_configured() -> Settings:
+        return _configured().model_copy(update={"public_url": ""})
+
+    logged_in.app.dependency_overrides[get_settings] = _partially_configured
+    try:
+        response = logged_in.get("/api/drive/account")
+    finally:
+        logged_in.app.dependency_overrides.pop(get_settings, None)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["configured"] is False
+    assert body["space_storage"] == {
+        "in_effect": True,
+        "holder": {"name": "Admin", "email": "io@example.it", "reachable": True},
+    }
 
 
 # --- one token-client cache for both Google credentials --------------------------------

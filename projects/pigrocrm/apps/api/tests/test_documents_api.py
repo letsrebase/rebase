@@ -370,7 +370,7 @@ def fresh_storage_cache() -> Iterator[None]:
 
 def _drive_installation(
     session: Session, monkeypatch: pytest.MonkeyPatch, drive: FakeDrive, gmail: FakeGmail
-) -> Settings:
+) -> tuple[Settings, GoogleTokenClient]:
     """An installation whose documents go to the titolare's own Drive, wired to fakes.
 
     Three things, and each of them replaces exactly one piece of the outside world:
@@ -395,6 +395,11 @@ def _drive_installation(
     `jwt_secret` is the one the `logged_in` cookie was signed with (`conftest.py`
     overrides `get_settings` with a bare `Settings`), so replacing the settings mid-test
     changes the storage backend and nothing else about who the caller is.
+
+    Returns the `GoogleTokenClient` alongside the settings (REB-562 fix round 3): a test
+    that revokes the grant *after* a first successful call needs `tokens.forget(account_
+    id)` to clear the cached access token first, or a still-valid one would let the next
+    call succeed instead of meeting the revocation it exists to provoke.
     """
     settings = gmail_settings(
         storage_backend="gdrive",
@@ -421,7 +426,7 @@ def _drive_installation(
             account, account_settings, http=drive, tokens=tokens
         ),
     )
-    return settings
+    return settings, tokens
 
 
 def test_an_upload_goes_to_the_titolares_own_drive_and_downloads_back_identical(
@@ -448,7 +453,7 @@ def test_an_upload_goes_to_the_titolares_own_drive_and_downloads_back_identical(
     """
     drive = FakeDrive(root_id=STORAGE_FOLDER)
     gmail = FakeGmail()
-    settings = _drive_installation(api_session, monkeypatch, drive, gmail)
+    settings, _tokens = _drive_installation(api_session, monkeypatch, drive, gmail)
     _connected_drive(api_session)
     logged_in.app.dependency_overrides[get_settings] = lambda: settings
     del logged_in.app.dependency_overrides[get_storage]
@@ -477,6 +482,83 @@ def test_an_upload_goes_to_the_titolares_own_drive_and_downloads_back_identical(
     document_folder = folders[written[0].parent]
     assert folders[document_folder.parent].parent == STORAGE_FOLDER
     assert gmail.token_requests == 1
+
+
+def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
+    """A genuinely independent session, not `admin_client`'s own cookie jar -- the same
+    helper `test_drive_api.py` uses and for the same reason: `logged_in` and a second
+    role built through `_client_as` share one cookie jar (it is the same `client`
+    fixture, re-logged-in), so requesting both in one test leaves exactly one login
+    active on it for every call made under *either* variable. `TestClient(admin_client.
+    app)` is the fix -- a fresh cookie jar over the same ASGI app, and therefore the
+    same database session and settings overrides this test already installed on
+    `admin_client`."""
+    email = f"{ruolo}-{uuid4().hex[:8]}@pigro.it"
+    created = admin_client.post(
+        "/api/users",
+        json={"email": email, "password": "supersegreta1", "nome": "Test", "ruolo": ruolo},
+    )
+    assert created.status_code == 201, created.text
+    client = TestClient(admin_client.app, base_url="https://testserver")
+    response = client.post("/api/auth/login", json={"email": email, "password": "supersegreta1"})
+    assert response.status_code == 200, response.text
+    return client
+
+
+def test_a_collaboratores_download_never_names_the_revoked_storage_holder(
+    logged_in: TestClient,
+    api_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+    fresh_storage_cache: None,
+) -> None:
+    """REB-562 fix round 3 (CodeRabbit's adversarial pass on PR #470). The space's write
+    folder is an admin's, and any writer can download a document regardless of whose
+    Drive backs the space's storage (spec 5) -- so when that admin's grant has been
+    revoked, a collaboratore's download must not learn who they are: not the email
+    `DriveCredentialRevoked` names in its sentence, and not the `email_address`/
+    `account_id` it carries in `details`, both of which `domain_error_handler` would
+    otherwise spread into the JSON body verbatim.
+
+    The document is uploaded first, while the grant is still good, so there is a real
+    version with a real `storage_key` to ask for; the revocation is provoked only for
+    the download, by forgetting the cached access token (`tokens.forget`) and then
+    flipping `gmail.revoked` -- the same two steps a real `invalid_grant` needs, since a
+    still-cached token would let the download succeed instead of meeting the failure
+    this test exists to check the wording of.
+    """
+    drive = FakeDrive(root_id=STORAGE_FOLDER)
+    gmail = FakeGmail()
+    settings, tokens = _drive_installation(api_session, monkeypatch, drive, gmail)
+    account = _connected_drive(api_session)
+    logged_in.app.dependency_overrides[get_settings] = lambda: settings
+    del logged_in.app.dependency_overrides[get_storage]
+
+    customer_id = _customer(logged_in)
+    document_id = logged_in.post(
+        "/api/documents", json={"customer_id": customer_id, "tipo": "documento", "titolo": "Doc"}
+    ).json()["id"]
+    uploaded = logged_in.post(
+        f"/api/documents/{document_id}/versions",
+        files={"file": ("scansione.pdf", PDF, "application/pdf")},
+    )
+    assert uploaded.status_code == 201, uploaded.text
+
+    tokens.forget(account.id)
+    gmail.revoked = True
+    collab = _second_actor(logged_in, "collaboratore")
+
+    response = collab.get(f"/api/documents/{document_id}/download")
+
+    assert response.status_code == 409, response.text
+    body = response.json()
+    assert body["code"] == "conflict"
+    assert "non è raggiungibile" in body["detail"]
+    assert "Impostazioni → Drive" in body["detail"]
+    assert "email_address" not in body
+    assert "account_id" not in body
+    # Belt and braces over the two named fields above: the address must not be
+    # reachable through any other key either, or as a substring of some other value.
+    assert DRIVE_MAILBOX not in response.text
 
 
 def test_the_api_builds_one_storage_for_the_whole_process_and_opens_nothing_to_do_it(

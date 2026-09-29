@@ -25,7 +25,12 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.config import Settings, gmail_configured
 from pigrocrm.core.drive.account import GoogleDriveAccountService
 from pigrocrm.core.drive.oauth import GoogleDriveOAuthService
-from pigrocrm.core.drive.schemas import DriveHealth, DriveRootsUpdate, GoogleDriveAccountRead
+from pigrocrm.core.drive.schemas import (
+    DriveHealth,
+    DriveRootsUpdate,
+    GoogleDriveAccountRead,
+    drive_health,
+)
 from pigrocrm.core.errors import Conflict
 from pigrocrm_api.deps import ActorDep, SessionDep, SettingsDep, callback_actor
 from pigrocrm_api.errors import PROBLEM_RESPONSES
@@ -62,14 +67,34 @@ def _oauth(session: Session, settings: Settings) -> GoogleDriveOAuthService:
     return GoogleDriveOAuthService(session, settings=settings, tokens=token_client(settings))
 
 
-@router.get(_ACCOUNT_PATH, response_model=DriveHealth)
+@router.get(_ACCOUNT_PATH, response_model=DriveHealth, response_model_exclude_unset=True)
 def read_account(session: SessionDep, actor: ActorDep, settings: SettingsDep) -> DriveHealth:
-    """200 even when Drive is not configured -- see the module docstring."""
+    """200 even when Drive is not configured -- see the module docstring.
+
+    `response_model_exclude_unset=True` is load-bearing, not cosmetic: it is what
+    turns `DriveHealth.space_storage` being left unset (by `drive_health`, below, for a
+    non-admin actor) into the key being absent from the JSON, rather than `null`. See
+    that field's own docstring for why the distinction matters (REB-562 fix round 1).
+
+    `space_storage` is read from `GoogleDriveAccountService.space_storage` even on this
+    branch, independent of `gmail_configured`: `DriveRepository.storage_account` --
+    what `storage/lazy_drive.py` actually resolves a document write against -- reads
+    the row directly and was never gated on whether *this* request's Google
+    configuration happens to be complete, so an admin must still learn whether the
+    space has a write folder in effect when this installation's own client is (no
+    longer, or not yet) fully configured.
+    """
+    service = GoogleDriveAccountService(session, settings=settings)
     if not gmail_configured(settings):
-        return DriveHealth(
-            account=None, banner=None, banner_text=None, missing_scopes=[], configured=False
+        return drive_health(
+            account=None,
+            banner=None,
+            banner_text=None,
+            missing_scopes=[],
+            configured=False,
+            space_storage=service.space_storage(actor),
         )
-    return GoogleDriveAccountService(session, settings=settings).health(actor)
+    return service.health(actor)
 
 
 @router.get("/oauth/start")

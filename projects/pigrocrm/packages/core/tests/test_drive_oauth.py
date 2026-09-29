@@ -632,6 +632,118 @@ def test_health_raises_the_scope_missing_banner_for_either_missing_scope(
     assert health3.missing_scopes == []
 
 
+# --- space_storage: whose account holds the space's write folder (REB-562) -----------
+
+
+def test_health_names_the_admin_whose_account_holds_the_spaces_storage(
+    db_session: Session, admin_user: User
+) -> None:
+    """`space_storage` is `DriveRepository.storage_holder`'s own answer, not the
+    viewing admin's own row: an admin with no Drive of their own still learns whose
+    account the space actually writes into. `in_effect` is `True`, and the holder's
+    `reachable` is `True` too: `_connected_drive_account`'s default scopes include
+    `drive.file`."""
+    other_admin = User(
+        email=f"other-admin-{uuid4().hex[:8]}@example.it",
+        nome="Bruno",
+        password_hash="x",
+        ruolo="admin",
+        attivo=True,
+    )
+    db_session.add(other_admin)
+    db_session.flush()
+    holder = _connected_drive_account(db_session, other_admin, email_address="bruno@example.it")
+    holder.storage_folder_id = "9CartellaAdmin000001"
+    db_session.flush()
+
+    health = _drive_service_account(db_session).health(_drive_actor(admin_user))
+
+    assert health.space_storage is not None
+    assert health.space_storage.in_effect is True
+    assert health.space_storage.holder is not None
+    assert health.space_storage.holder.name == "Bruno"
+    assert health.space_storage.holder.email == "bruno@example.it"
+    assert health.space_storage.holder.reachable is True
+
+
+def test_health_names_the_holder_as_unreachable_when_the_write_scope_is_missing(
+    db_session: Session, admin_user: User
+) -> None:
+    """REB-562 fix round 1 (CodeRabbit). `storage_holder`'s own query proves
+    `status == 'active'`, never the scopes: an active grant can still be missing
+    `drive.file` (a re-consent that dropped it), which is a working credential that
+    cannot actually write -- `usable` and `_verify_storage_folder` both refuse exactly
+    that state. The Drive page must not claim a document generated right now would
+    land there."""
+    other_admin = User(
+        email=f"other-admin-{uuid4().hex[:8]}@example.it",
+        nome="Bruno",
+        password_hash="x",
+        ruolo="admin",
+        attivo=True,
+    )
+    db_session.add(other_admin)
+    db_session.flush()
+    holder = _connected_drive_account(
+        db_session,
+        other_admin,
+        email_address="bruno@example.it",
+        scopes=("openid", "email", DRIVE_SCOPE_READONLY),
+    )
+    holder.storage_folder_id = "9CartellaAdmin000001"
+    db_session.flush()
+
+    health = _drive_service_account(db_session).health(_drive_actor(admin_user))
+
+    assert health.space_storage is not None
+    assert health.space_storage.in_effect is True
+    assert health.space_storage.holder is not None
+    assert health.space_storage.holder.reachable is False
+
+
+def test_health_says_no_space_storage_when_only_a_collaboratores_row_names_one(
+    db_session: Session, admin_user: User
+) -> None:
+    """The behaviour `DriveRepository.storage_account` already settled on (REB-457):
+    a folder left on a non-admin's row is not a candidate, so the admin's page must
+    say there is none in effect (`in_effect=False`, no `holder`) rather than name the
+    collaboratore."""
+    collab = _collaboratore(db_session)
+    stray = _connected_drive_account(db_session, collab, email_address="collab@example.it")
+    stray.storage_folder_id = "8CartellaDelCollab01"
+    db_session.flush()
+
+    health = _drive_service_account(db_session).health(_drive_actor(admin_user))
+
+    assert health.space_storage is not None
+    assert health.space_storage.in_effect is False
+    assert health.space_storage.holder is None
+
+
+def test_health_reports_no_space_storage_to_a_non_admin_actor(
+    db_session: Session, admin_user: User
+) -> None:
+    """`space_storage` names another user's email, and only an admin may choose or
+    change the folder it describes (`set_roots`'s own `require_admin`): a
+    collaboratore's own `health()` call must not learn who the admin is, even while an
+    admin's write folder is genuinely in effect. The field is left genuinely **unset**
+    on the model (REB-562 fix round 1), not `None`-as-a-value, which is what
+    `response_model_exclude_unset=True` (`routers/drive.py`) turns into the key being
+    absent from the JSON rather than `null` -- `test_drive_api.py` proves the wire
+    shape; this proves the model underneath it."""
+    account = _connected_drive_account(db_session, admin_user)
+    account.storage_folder_id = "9CartellaAdmin000001"
+    db_session.flush()
+    collab = _collaboratore(db_session)
+
+    health = _drive_service_account(db_session).health(
+        Actor(id=collab.id, type="user", role="collaboratore")
+    )
+
+    assert "space_storage" not in health.model_fields_set
+    assert health.space_storage is None
+
+
 def test_usable_on_a_revoked_account_raises_credential_revoked(
     db_session: Session, admin_user: User
 ) -> None:
