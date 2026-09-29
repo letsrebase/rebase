@@ -67,7 +67,13 @@ export function LongTextField({
   )
 }
 
-/** A choice made by pressing one of a few large cards: the number key selects too. */
+/** A choice made by pressing one of a few large cards: the number key selects too.
+ *
+ *  It draws with the application's own tokens (`--foreground`, `--primary-foreground`,
+ *  `--ring`, `--line-strong`), never `--landing-*`: those exist only inside `.site`, and
+ *  this field is also on the signed-in edit pages, where a `--landing-*` fill resolves to
+ *  nothing and the chosen card is never drawn (REB-611). Inside `.site` the two sets are
+ *  the same values. */
 export function ChoiceField<V extends string>({
   value,
   onChange,
@@ -98,16 +104,16 @@ export function ChoiceField<V extends string>({
             aria-checked={selected}
             onClick={() => onChange(option.value)}
             className={cn(
-              'flex flex-col items-start gap-1 border-(length:--landing-border-width) bg-card p-4 text-left transition-colors hover:bg-muted focus-visible:outline-3 focus-visible:outline-(--landing-focus) focus-visible:outline-offset-3',
-              selected && 'bg-(--landing-ink) text-(--landing-cta-ink) hover:bg-(--landing-ink)',
+              'flex flex-col items-start gap-1 border-(length:--line-strong) bg-card p-4 text-left transition-colors hover:bg-muted focus-visible:outline-3 focus-visible:outline-ring focus-visible:outline-offset-3',
+              selected && 'bg-foreground text-primary-foreground hover:bg-foreground',
             )}
           >
-            <span className={cn('text-xs', selected ? 'text-(--landing-cta-ink)/70' : 'text-muted-foreground')}>
+            <span className={cn('text-xs', selected ? 'text-primary-foreground/70' : 'text-muted-foreground')}>
               {index + 1}
             </span>
             <span className="font-medium">{option.label}</span>
             {option.hint && (
-              <span className={cn('text-sm', selected ? 'text-(--landing-cta-ink)/85' : 'text-muted-foreground')}>
+              <span className={cn('text-sm', selected ? 'text-primary-foreground/85' : 'text-muted-foreground')}>
                 {option.hint}
               </span>
             )}
@@ -187,7 +193,7 @@ export function FileField({
       ) : (
         <p className="text-sm text-muted-foreground">Trascina qui il file, oppure</p>
       )}
-      <label className="cursor-pointer text-sm font-medium underline underline-offset-2 has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-(--landing-focus) has-[:focus-visible]:outline-offset-3">
+      <label className="cursor-pointer text-sm font-medium underline underline-offset-2 has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-ring has-[:focus-visible]:outline-offset-3">
         {value ? 'Scegli un altro file' : 'Scegli il file'}
         <input
           ref={inputRef}
