@@ -548,11 +548,15 @@ def test_an_empty_team_when_nobody_fits(clean: Session) -> None:
     llm = RecordingCall([proposal_response([], riassunto=sentence, locale=True, dove="Bari")])
 
     read = _builder(clean, llm).propose(
-        TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
+        TeamProposalCreate(
+            descrizione="Cerchiamo un backend developer in sede a Bari, per sei mesi."
+        ),
+        origine="pubblico",
+        user_id=None,
     )
 
     assert (read.riassunto, read.team) == (sentence, [])
-    assert read.luogo == {"locale": True, "dove": "Bari"}
+    assert read.luogo == {"locale": True, "dove": "Bari"}  # the visitor's own word
     assert read.economia == {"giorno": None, "mese": None, "giorni_mese": 22}
 
 
@@ -900,12 +904,14 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session)
     torino = _talent(clean, 1, card={**CARD, "luogo": "Torino"})
     verona = _talent(clean, 2, card={**CARD, "luogo": "Provincia di Verona"})
     alba = _talent(clean, 3, card={**CARD, "luogo": "Alba"})
+    rho = _talent(clean, 4, card={**CARD, "luogo": "Rho"})
     positions = _positions(clean)
     kept = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa lavora da remoto."
     leaked = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a VERONA."
     lowered = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a verona."
     dawn = "Un'azienda cerca un backend developer per un turno all'alba: chi lo fa vive ad Alba."
     copied = "Un'azienda cerca un backend developer in sede dal cliente: chi lo fa vive ad Alba."
+    short = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a Rho."
     llm = RecordingCall(
         [
             proposal_response(
@@ -920,6 +926,9 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session)
             proposal_response([_member(positions[alba])], riassunto=dawn, locale=False, dove=None),
             proposal_response(
                 [_member(positions[alba])], riassunto=copied, locale=True, dove="Alba"
+            ),
+            proposal_response(
+                [_member(positions[rho])], riassunto=short, locale=True, dove="Torino"
             ),
         ]
     )
@@ -947,6 +956,9 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session)
         origine="pubblico",
         user_id=None,
     )
+    withheld_short = builder.propose(
+        TeamProposalCreate(descrizione=descrizione), origine="pubblico", user_id=None
+    )
 
     # «Torino» is the place the description names as the client's, whatever case the
     # visitor typed it in; «Verona» is the catalogue's alone, and the summary is read in
@@ -957,6 +969,11 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session)
     assert withheld_lower.riassunto == PLACE_WITHHELD_RIASSUNTO
     assert withheld_dawn.riassunto == PLACE_WITHHELD_RIASSUNTO
     assert withheld_copied.riassunto == PLACE_WITHHELD_RIASSUNTO
+    assert withheld_short.riassunto == PLACE_WITHHELD_RIASSUNTO
+    # The public `luogo` keeps a `dove` the visitor wrote and drops one the model made up.
+    assert named.luogo == {"locale": True, "dove": "Torino"}
+    assert withheld_copied.luogo == {"locale": True, "dove": None}
+    assert builder.get(withheld_copied.id, public=False).luogo == {"locale": True, "dove": "Alba"}
     assert PLACE_WITHHELD_RIASSUNTO == (
         "Il riassunto di questa proposta non è pubblico: la modalità di lavoro di ogni "
         "persona proposta è sulla sua scheda."

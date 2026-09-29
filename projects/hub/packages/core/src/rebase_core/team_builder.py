@@ -603,7 +603,8 @@ class TeamBuilder:
         admin's read name each member (§ 4.2); the public read names nobody, and it
         withholds the card's `luogo`, and with it any field of the card, a motivazione
         and the summary that name that place (`_public_card`, `_public_reason`,
-        `_public_riassunto`)."""
+        `_public_riassunto`), and a `luogo.dove` the visitor did not write
+        (`_public_place`)."""
         ids = [UUID(member["freelancer_id"]) for member in row.team]
         found: dict[UUID, tuple[str | None, Decimal | None, Any, str, str]] = {}
         if ids:
@@ -673,7 +674,7 @@ class TeamBuilder:
                 if public
                 else row.riassunto
             ),
-            luogo=row.luogo,
+            luogo=_public_place(row.luogo, row.descrizione) if public else row.luogo,
             team=members,
             economia=_economia(day, month),
             previous_id=row.previous_id,
@@ -691,15 +692,38 @@ def _names_place(text: str, luogo: str | None) -> bool:
     return _names_any(text, _place_words(luogo))
 
 
-def _place_words(luogo: str | None) -> set[str]:
-    """The words of a card's `luogo` that name the place, case folded."""
+def _place_words(luogo: str | None, *, at_least: int = 4) -> set[str]:
+    """The words of a card's `luogo` that name the place, case folded: those of
+    `at_least` letters, four by default, so «sud» and «est» are never read."""
     if not luogo:
         return set()
     return {
         word.casefold()
-        for word in re.findall(r"[^\W\d_]{4,}", luogo)
+        for word in re.findall(rf"[^\W\d_]{{{at_least},}}", luogo)
         if word.casefold() not in _PLACE_GENERIC
     }
+
+
+def _written(dove: str | None, descrizione: str) -> set[str]:
+    """The words of `dove`, the place the model read as the client's, that the visitor
+    wrote in the description themselves, in any case: the only place words a public
+    read may give back, since the visitor already holds them."""
+    return {
+        word
+        for word in _place_words(dove, at_least=2)
+        if re.search(rf"\b{re.escape(word)}\b", descrizione, re.IGNORECASE)
+    }
+
+
+def _public_place(luogo: dict[str, Any], descrizione: str) -> dict[str, Any]:
+    """The `luogo` a public page reads: `dove` only when every place word of it is the
+    visitor's own, from the description; a `dove` the model wrote on its own (a member's
+    card city, say) reads as `None`, and `locale` is kept as it is."""
+    dove = luogo.get("dove")
+    words = _place_words(dove, at_least=2)
+    if not words or words != _written(dove, descrizione):
+        return {**luogo, "dove": None}
+    return luogo
 
 
 def _names_any(text: str, words: set[str], *, in_any_case: bool = False) -> bool:
@@ -734,15 +758,16 @@ def _public_riassunto(
     with a member's card city, so a word there that the visitor never wrote is no pass
     either. Every other place is read in any case, since prose writes a city in lower
     case as readily as not, and a match on a common word costs one sentence while a miss
-    costs a card's place. The row, the admin's and the cloud's reads keep the model's
-    words."""
-    words = {word for card in cards for word in _place_words(card.luogo)}
-    written = {
-        word
-        for word in _place_words(dove)
-        if re.search(rf"\b{re.escape(word)}\b", descrizione, re.IGNORECASE)
-    }
-    if _names_any(riassunto, words - written, in_any_case=True):
+    costs a card's place; a town shorter than four letters is read as a capitalised
+    word only. The row, the admin's and the cloud's reads keep the model's words."""
+    written = _written(dove, descrizione)
+    long_words = {word for card in cards for word in _place_words(card.luogo)}
+    # A town shorter than four letters («Rho») is read too, as a capitalised word only:
+    # in any case, a member from Ora would withhold every summary that says «ora».
+    short_words = {word for card in cards for word in _place_words(card.luogo, at_least=2)}
+    if _names_any(riassunto, long_words - written, in_any_case=True) or _names_any(
+        riassunto, short_words - long_words - written
+    ):
         logger.warning("team proposal %s: the summary names a member's place", proposal_id)
         return PLACE_WITHHELD_RIASSUNTO
     return riassunto
