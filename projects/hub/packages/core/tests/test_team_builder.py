@@ -31,6 +31,7 @@ from rebase_core.models import Freelancer, FreelancerCard, TeamProposal, User
 from rebase_core.team_builder import (
     NO_FIT_SENTENCE,
     PLACE_WITHHELD_REASON,
+    PLACE_WITHHELD_RIASSUNTO,
     PLACE_WITHHELD_SUMMARY,
     PROPOSAL_MAX_TOKENS,
     PROPOSAL_SCHEMA,
@@ -441,50 +442,46 @@ def test_engine_drops_unknown_and_repeated_positions(
     assert DESCRIZIONE not in logs.text
 
 
-def test_engine_drops_remote_members_on_a_local_need(
+def test_engine_keeps_remote_members_on_a_local_need(
     clean: Session, logs: pytest.LogCaptureFixture
 ) -> None:
+    """Where a person works is the model's judgement, not a check (REB-598): on a need
+    on site the summary says the people proposed work remotely, and every one of them
+    stays, whatever their work mode, the one who never said how they work included."""
     remote = _talent(clean, 1, remoto="remoto")
     unknown = _talent(clean, 2, remoto=None)
     hybrid = _talent(clean, 3, remoto="ibrido")
     on_site = _talent(clean, 4, remoto="in_sede")
     ids = _positions(clean)
     team = [_member(ids[who]) for who in (remote, unknown, hybrid, on_site)]
-    llm = RecordingCall(
-        [
-            proposal_response(team, locale=True, dove="Torino"),
-            proposal_response(team, locale=False, dove="Torino"),
-        ]
+    sentence = (
+        "Un'azienda cerca un backend developer in sede a Torino: nessuno con queste "
+        "competenze lavora in sede, quindi le persone proposte lavorano da remoto o non "
+        "hanno indicato come lavorano."
     )
-    builder = _builder(clean, llm)
+    llm = RecordingCall([proposal_response(team, riassunto=sentence, locale=True, dove="Torino")])
 
-    local = builder.propose(
-        TeamProposalCreate(descrizione=DESCRIZIONE), origine="admin", user_id=None
-    )
-    remote_ok = builder.propose(
+    local = _builder(clean, llm).propose(
         TeamProposalCreate(descrizione=DESCRIZIONE), origine="admin", user_id=None
     )
 
     assert local.luogo == {"locale": True, "dove": "Torino"}
-    assert [(m.posizione, m.freelancer_id) for m in local.team] == [(1, hybrid), (2, on_site)]
-    assert [m.freelancer_id for m in remote_ok.team] == [remote, unknown, hybrid, on_site]
-    assert "local need" in logs.text
-    assert f"{ids[remote]!r}" in logs.text and f"{ids[unknown]!r}" in logs.text
+    assert local.riassunto == sentence
+    assert [(m.posizione, m.freelancer_id, m.modalita) for m in local.team] == [
+        (1, remote, "remoto"),
+        (2, unknown, None),
+        (3, hybrid, "ibrido"),
+        (4, on_site, "in_sede"),
+    ]
+    assert "dropped" not in logs.text
 
 
-@pytest.mark.parametrize("dropped_by", ["on site", "unknown ids"])
-def test_a_team_dropped_whole_carries_the_hubs_sentence(clean: Session, dropped_by: str) -> None:
+def test_a_team_dropped_whole_carries_the_hubs_sentence(clean: Session) -> None:
     """The model's summary describes the team it chose: when the checks leave nobody of
     it, the page says nobody fits rather than describing people who are not there."""
-    remote = _talent(clean, 1, remoto="remoto")
-    unknown = _talent(clean, 2, remoto=None)
-    ids = _positions(clean)
-    team = (
-        [_member(ids[remote]), _member(ids[unknown])]
-        if dropped_by == "on site"
-        else [_member("t9"), _member("t12")]
-    )
-    llm = RecordingCall([proposal_response(team, locale=dropped_by == "on site", dove="Bari")])
+    _talent(clean, 1, remoto="remoto")
+    team = [_member("t9"), _member("t12")]
+    llm = RecordingCall([proposal_response(team, locale=False, dove="Bari")])
 
     read = _builder(clean, llm).propose(
         TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
@@ -494,7 +491,7 @@ def test_a_team_dropped_whole_carries_the_hubs_sentence(clean: Session, dropped_
     assert read.economia == {"giorno": None, "mese": None, "giorni_mese": 22}
     [row] = _rows(clean)
     assert (row.riassunto, row.team) == (NO_FIT_SENTENCE, [])
-    assert row.luogo == {"locale": dropped_by == "on site", "dove": "Bari"}
+    assert row.luogo == {"locale": False, "dove": "Bari"}
 
 
 def test_an_empty_catalogue_asks_nobody(clean: Session) -> None:
@@ -551,11 +548,15 @@ def test_an_empty_team_when_nobody_fits(clean: Session) -> None:
     llm = RecordingCall([proposal_response([], riassunto=sentence, locale=True, dove="Bari")])
 
     read = _builder(clean, llm).propose(
-        TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
+        TeamProposalCreate(
+            descrizione="Cerchiamo un backend developer in sede a Bari, per sei mesi."
+        ),
+        origine="pubblico",
+        user_id=None,
     )
 
     assert (read.riassunto, read.team) == (sentence, [])
-    assert read.luogo == {"locale": True, "dove": "Bari"}
+    assert read.luogo == {"locale": True, "dove": "Bari"}  # the visitor's own word
     assert read.economia == {"giorno": None, "mese": None, "giorni_mese": 22}
 
 
@@ -895,6 +896,95 @@ def test_a_public_reason_that_names_the_cards_place_is_withheld(clean: Session) 
     assert [member.motivazione for member in admin.team] == reasons
 
 
+def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session) -> None:
+    """The prompt lets the summary name the place the description names and no place of
+    a person; a summary that names a member's card place anyway would give back what the
+    public read withholds, unless that place is the one the description names as the
+    client's (`luogo.dove`). The row and the admin's read keep the model's words."""
+    torino = _talent(clean, 1, card={**CARD, "luogo": "Torino"})
+    verona = _talent(clean, 2, card={**CARD, "luogo": "Provincia di Verona"})
+    alba = _talent(clean, 3, card={**CARD, "luogo": "Alba"})
+    rho = _talent(clean, 4, card={**CARD, "luogo": "Rho"})
+    positions = _positions(clean)
+    kept = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa lavora da remoto."
+    leaked = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a VERONA."
+    lowered = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a verona."
+    dawn = "Un'azienda cerca un backend developer per un turno all'alba: chi lo fa vive ad Alba."
+    copied = "Un'azienda cerca un backend developer in sede dal cliente: chi lo fa vive ad Alba."
+    short = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a Rho."
+    llm = RecordingCall(
+        [
+            proposal_response(
+                [_member(positions[torino])], riassunto=kept, locale=True, dove="Torino"
+            ),
+            proposal_response(
+                [_member(positions[verona])], riassunto=leaked, locale=True, dove="Torino"
+            ),
+            proposal_response(
+                [_member(positions[verona])], riassunto=lowered, locale=True, dove="Torino"
+            ),
+            proposal_response([_member(positions[alba])], riassunto=dawn, locale=False, dove=None),
+            proposal_response(
+                [_member(positions[alba])], riassunto=copied, locale=True, dove="Alba"
+            ),
+            proposal_response(
+                [_member(positions[rho])], riassunto=short, locale=True, dove="Torino"
+            ),
+        ]
+    )
+    builder = _builder(clean, llm)
+    descrizione = "Cerchiamo un backend developer in sede a torino due giorni a settimana."
+
+    named = builder.propose(
+        TeamProposalCreate(descrizione=descrizione), origine="pubblico", user_id=None
+    )
+    withheld = builder.propose(
+        TeamProposalCreate(descrizione=descrizione), origine="pubblico", user_id=None
+    )
+    withheld_lower = builder.propose(
+        TeamProposalCreate(descrizione=descrizione), origine="pubblico", user_id=None
+    )
+    withheld_dawn = builder.propose(
+        TeamProposalCreate(
+            descrizione="Cerchiamo un backend developer per le integrazioni che partono all'alba."
+        ),
+        origine="pubblico",
+        user_id=None,
+    )
+    withheld_copied = builder.propose(
+        TeamProposalCreate(descrizione="Cerchiamo un backend developer in sede dal cliente."),
+        origine="pubblico",
+        user_id=None,
+    )
+    withheld_short = builder.propose(
+        TeamProposalCreate(descrizione=descrizione), origine="pubblico", user_id=None
+    )
+
+    # «Torino» is the place the description names as the client's, whatever case the
+    # visitor typed it in; «Verona» is the catalogue's alone, and the summary is read in
+    # any case, unlike a card's field; «all'alba» in a description is no pass for Alba,
+    # and neither is an «Alba» the model wrote into `dove` on its own.
+    assert named.riassunto == kept
+    assert withheld.riassunto == PLACE_WITHHELD_RIASSUNTO
+    assert withheld_lower.riassunto == PLACE_WITHHELD_RIASSUNTO
+    assert withheld_dawn.riassunto == PLACE_WITHHELD_RIASSUNTO
+    assert withheld_copied.riassunto == PLACE_WITHHELD_RIASSUNTO
+    assert withheld_short.riassunto == PLACE_WITHHELD_RIASSUNTO
+    # The public `luogo` keeps a `dove` the visitor wrote and drops one the model made up.
+    assert named.luogo == {"locale": True, "dove": "Torino"}
+    assert withheld_copied.luogo == {"locale": True, "dove": None}
+    assert builder.get(withheld_copied.id, public=False).luogo == {"locale": True, "dove": "Alba"}
+    assert PLACE_WITHHELD_RIASSUNTO == (
+        "Il riassunto di questa proposta non è pubblico: la modalità di lavoro di ogni "
+        "persona proposta è sulla sua scheda."
+    )
+    assert "VERONA" not in withheld.model_dump_json()
+    assert "Alba" not in withheld_dawn.model_dump_json()
+    assert "Alba" not in withheld_copied.riassunto
+    assert builder.get(withheld.id, public=False).riassunto == leaked
+    assert builder.get(withheld.id, public=True).riassunto == PLACE_WITHHELD_RIASSUNTO
+
+
 def test_a_public_card_names_its_place_nowhere(clean: Session) -> None:
     """The public read withholds `luogo`, so a card that names the place anywhere else
     (one written against the prompt, or before its rule) gives none of it back: the
@@ -1106,6 +1196,11 @@ def test_the_number_of_people_reaches_the_prompt_only_when_asked(clean: Session)
     # The number is a sentence of the user turn: the cached system prefix never moves.
     assert llm.requests[2].system == llm.requests[0].system
     assert "The visitor wants a team of exactly N" in llm.requests[0].system[0]["text"]
+    # Place is a preference, never an exclusion (REB-598): the rule says so in as many
+    # words, and the old sentence is gone.
+    rules = llm.requests[0].system[0]["text"]
+    assert "excludes nobody" in rules and "propose nobody" not in rules
+    assert "a null modalita is unknown, never remote" in rules
     # The event tells the asked number from the proposed one, since the row keeps neither.
     assert [(p["persone"], p["persone_richieste"]) for _, _, p in capture.calls] == [
         (1, None),

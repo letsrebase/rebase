@@ -65,7 +65,7 @@ const EXAMPLES = [
   },
   {
     label: 'Un FDE nel team di un cliente',
-    text: 'Siamo una software house e cerchiamo un forward deployed engineer da inserire da un nostro cliente: lavora nel loro team, capisce i processi e porta in produzione le integrazioni con i loro sistemi. Python, Postgres e API dei gestionali. Sei mesi, in sede a Torino due giorni a settimana.',
+    text: 'Siamo una software house e cerchiamo un forward deployed engineer da inserire da un nostro cliente: lavora nel loro team, capisce i processi e porta in produzione le integrazioni con i loro sistemi. Python, Postgres e API dei gestionali. Sei mesi, due giorni a settimana in sede dal cliente.',
     persone: 1,
   },
 ]
