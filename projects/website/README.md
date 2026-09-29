@@ -25,7 +25,7 @@ pnpm --filter website lint
 
 | Page | Served at | What it is |
 |---|---|---|
-| `src/index.html` | `letsrebase.com/` | The rebase landing: two doors into the hub, how it works, what is inside, the selection with the roles, the three services with a price each, the four voices, the events, the questions, the perks. Since 2026-09-11 (ORB-145), the five content sections since REB-605 |
+| `src/index.html` | `letsrebase.com/` | The rebase landing: three doors into the hub, how it works, what is inside, the selection with the roles, the three services with a price each, the four voices, the events, the questions, the perks. Since 2026-09-11 (ORB-145), the five content sections since REB-605 |
 | `src/pigrocrm.html` | `/pigrocrm` | PigroCRM's own page (ORB-159): one door into rebase beside a drawn Claude conversation, the four things inside, the guide, the closing box. Its own `pigrocrm.css` on top of `landing.css` |
 | `src/privacy.html` | `/privacy` | Privacy notice |
 | `src/terms.html` | `/terms` | Terms |
@@ -38,10 +38,9 @@ held the front door long enough that nothing still pointed people at the old one
 hub owns every signup since 2026-09-09 (REB-17), so the page's own form was not
 carried forward.
 
-The landing's two calls to action point at `/hub/freelance` and `/hub/aziende`,
-implemented in the rebase hub's API (`projects/hub/apps/api`) and reached on the same
-origin. The landing's two calls to action point at `/hub/freelance` and `/hub/aziende`,
-the hub's wizards, on the same origin again. Those paths are the things this project
+The landing's three calls to action point at `/hub/freelance` and `/hub/aziende`, the
+hub's wizards, and at `/hub/team`, the public team builder (REB-608), all served by the
+rebase hub (`projects/hub`) on the same origin. Those paths are the things this project
 does not own, and why the dev server proxies `/api` and leaves `/hub/` alone.
 
 ## Measurement

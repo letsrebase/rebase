@@ -173,12 +173,18 @@ describe('index.html', () => {
     expect(page).toContain('Gratis per chi è in community.')
   })
 
-  it('has two doors in the hero, one per side of the marketplace, both into the hub', () => {
+  it('has three doors in the hero, all into the hub: the two wizards and the team builder', () => {
     // The hub (projects/hub) is where somebody signs up since 2026-09-09: the freelancer
     // wizard and the company wizard. Same origin, different deployable; the paths are
     // relative so the page has one origin in every environment.
     expect(page).toMatch(/<a class="cta" href="\/hub\/freelance">Entra come talento<\/a>/)
     expect(page).toMatch(/<a class="cta secondary" href="\/hub\/aziende">[^<]+<\/a>/)
+    // The third door (REB-608) is the public team builder, drawn like the company's door
+    // and inside the hero's own `.actions` paragraph, so utm.js decorates all three. The
+    // page has other `.actions` paragraphs further down: anchor on the hero, not on order.
+    const actions = page.match(/<section class="hero">[\s\S]*?<p class="actions">([\s\S]*?)<\/p>/)?.[1] ?? ''
+    expect(actions).toMatch(/<a class="cta secondary" href="\/hub\/team">Prova il team builder<\/a>/)
+    expect(actions.match(/<a class="cta[^"]*" href="\/hub\//g)).toHaveLength(3)
     // The old door, the email form on `/`, is not what this page sells any more.
     expect(page).not.toMatch(/<a class="cta" href="\/community">/)
     // Whoever is already in finds the CRM through its own page (ORB-165): the landing
