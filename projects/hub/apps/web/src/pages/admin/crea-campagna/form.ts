@@ -308,25 +308,29 @@ export function formFromCampaign(c: Campaign): CampaignForm {
  *  since it is not the admin's to set for a state (fix 4, REB-472 round 1); the mail
  *  follows it only until the admin has written into it (spec § 1), and the name only
  *  until the admin has typed one: the name is not the mail, so typing the title first
- *  must not stop the template from filling the mail. */
+ *  must not stop the template from filling the mail. The destination is the same: a
+ *  «Dove porta» picked first keeps the template out of it, and out of nothing else, so
+ *  a link chosen before the state is never replaced and keeps measuring the click,
+ *  while the subject, the text and the button's words still come from the template
+ *  (REB-530, CodeRabbit on #476). */
 export function withTemplate(
   form: CampaignForm,
   template: CampaignTemplate | undefined,
   value: string,
-  touched: { mail: boolean; nome: boolean },
+  touched: { mail: boolean; nome: boolean; meta?: boolean },
 ): CampaignForm {
   const next = { ...form, statoPercorso: value }
   if (!template) return next
-  // A button the admin sent to «Un link» keeps measuring the click (REB-530).
-  next.azione = touched.mail && form.bottoneMeta === 'link' ? 'clic' : template.azione
+  const keepMeta = touched.mail || touched.meta === true
+  next.azione = keepMeta && form.bottoneMeta === 'link' ? 'clic' : template.azione
   if (!touched.nome) next.nome = template.etichetta
+  if (!keepMeta) next.bottoneMeta = template.bottone_meta
   if (touched.mail) return next
   return {
     ...next,
     oggetto: template.oggetto,
     testo: template.testo,
     bottoneTesto: template.bottone_testo,
-    bottoneMeta: template.bottone_meta,
   }
 }
 

@@ -146,6 +146,36 @@ describe('«Un link» (REB-530)', () => {
     expect(preview().queryByRole('link')).not.toBeInTheDocument()
   })
 
+  it('fills the mail from a state picked after «Un link», and keeps the link (CodeRabbit on #476)', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json({ ...DRAFT, bottone_meta: 'link', bottone_url: LUMA, azione: 'clic' }, 201),
+    })
+    mountAt('/admin/campaigns/new', '/admin/campaigns/new')
+    await pick('Dove porta', 'Un link')
+    await userEvent.type(screen.getByLabelText('Indirizzo del link'), LUMA)
+    await pick('Stato del percorso', 'Manca solo il CV')
+    // The template fills what the admin never wrote, and leaves the destination alone.
+    expect(screen.getByLabelText('Oggetto')).toHaveValue(TEMPLATE.oggetto)
+    expect(screen.getByLabelText('Testo del bottone')).toHaveValue(TEMPLATE.bottone_testo)
+    expect(screen.getByRole('combobox', { name: 'Dove porta' })).toHaveTextContent('Un link')
+    expect(screen.getByLabelText('Indirizzo del link')).toHaveValue(LUMA)
+    expect(screen.getByText('Ha cliccato il link')).toBeInTheDocument()
+    await screen.findByText('riceverà la mail', { exact: false }, SAVED)
+    const created = calls.mock.calls.filter(([url, init]) => init?.method === 'POST' && String(url).endsWith('/api/hub/campaigns'))
+    expect(created).toHaveLength(1)
+    expect(JSON.parse(String(created[0]![1]!.body))).toMatchObject({
+      oggetto: TEMPLATE.oggetto,
+      testo: TEMPLATE.testo,
+      bottone_testo: TEMPLATE.bottone_testo,
+      bottone_meta: 'link',
+      bottone_url: LUMA,
+      azione: 'clic',
+    })
+  })
+
   it('takes the menu of actions away from a filtered list while it leads to a link', async () => {
     api({
       'GET /api/hub/me': () => json(ME),

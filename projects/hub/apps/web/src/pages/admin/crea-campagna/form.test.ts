@@ -97,6 +97,22 @@ describe('«Dove porta» and the action (REB-530)', () => {
     expect(withTemplate(LINK, TEMPLATE, 'manca_cv', { mail: true, nome: false }).azione).toBe('clic')
     expect(withTemplate(STATO, TEMPLATE, 'manca_cv', { mail: true, nome: false }).azione).toBe('cv')
   })
+
+  it('fills the untouched mail from the state and keeps a destination picked before it', () => {
+    const blank: CampaignForm = { ...EMPTY_FORM, bottoneMeta: 'link', bottoneUrl: LUMA, azione: 'clic' }
+    const filled = withTemplate(blank, TEMPLATE, 'manca_cv', { mail: false, nome: false, meta: true })
+    expect(filled).toMatchObject({
+      oggetto: TEMPLATE.oggetto,
+      testo: TEMPLATE.testo,
+      bottoneTesto: TEMPLATE.bottone_testo,
+      bottoneMeta: 'link',
+      bottoneUrl: LUMA,
+      azione: 'clic',
+    })
+    const wizard = withTemplate({ ...EMPTY_FORM, bottoneMeta: 'wizard' }, TEMPLATE, 'manca_cv', { mail: false, nome: false, meta: true })
+    expect([wizard.bottoneMeta, wizard.azione, wizard.oggetto]).toEqual(['wizard', 'cv', TEMPLATE.oggetto])
+    expect(withTemplate(EMPTY_FORM, TEMPLATE, 'manca_cv', { mail: false, nome: false }).bottoneMeta).toBe('area')
+  })
 })
 
 describe('what the page saves (REB-530)', () => {

@@ -64,9 +64,11 @@ function Editor({ initial }: { initial: Campaign | null }) {
 
   const [form, setForm] = useState<CampaignForm>(() => (initial ? formFromCampaign(initial) : EMPTY_FORM))
   // Once the admin has written into the mail, picking another state must not overwrite
-  // it (spec § 1); the same for the name, on its own. A stored campaign's are the
-  // admin's already.
-  const [touched, setTouched] = useState({ mail: initial !== null, nome: initial !== null })
+  // it (spec § 1); the same for the name and for «Dove porta», each on its own: picking
+  // a destination is not writing the mail, so a state picked after it still fills the
+  // subject, the text and the button (REB-530). A stored campaign's are the admin's
+  // already.
+  const [touched, setTouched] = useState({ mail: initial !== null, nome: initial !== null, meta: initial !== null })
   const [esclusi, setEsclusi] = useState<string[]>([])
   const [persona, setPersona] = useState<string | null>(null)
   const [mode, setMode] = useState<Quando>('adesso')
@@ -131,7 +133,11 @@ function Editor({ initial }: { initial: Campaign | null }) {
     setForm((current) =>
       withMeta(current, meta, templates.data?.find((item) => item.stato_percorso === current.statoPercorso)?.azione),
     )
-    setTouched((current) => ({ ...current, mail: true }))
+    setTouched((current) => ({ ...current, meta: true }))
+  }
+  function changeLink(bottoneUrl: string) {
+    setForm((current) => ({ ...current, bottoneUrl }))
+    setTouched((current) => ({ ...current, meta: true }))
   }
   function changeNome(nome: string) {
     setForm((current) => ({ ...current, nome }))
@@ -218,7 +224,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
             segue={segue}
             segueError={segueError}
           />
-          <Messaggio form={form} onChange={changeMail} onMeta={changeMeta} />
+          <Messaggio form={form} onChange={changeMail} onMeta={changeMeta} onLink={changeLink} />
         </div>
         <aside className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:self-start">
           <Anteprima

@@ -7,16 +7,19 @@ import { AZIONE_LABELS, CAMPAIGN_MAX_LENGTH } from '@/lib/campaigns'
 import { linkProblem, metaOptions, type CampaignForm } from './form'
 
 /** Messaggio (REB-526): what the mail says and where its button leads. The preview
- *  beside it follows every keystroke. «Dove porta» goes through `onMeta`, since «Un
- *  link» brings its own address field and its own action (REB-530). */
+ *  beside it follows every keystroke. «Dove porta» goes through `onMeta` and the link's
+ *  address through `onLink`, not `onChange`: «Un link» brings its own action, and
+ *  choosing where the button leads is not writing the mail (REB-530). */
 export function Messaggio({
   form,
   onChange,
   onMeta,
+  onLink,
 }: {
   form: CampaignForm
   onChange: (patch: Partial<CampaignForm>) => void
   onMeta: (meta: CampaignMeta) => void
+  onLink: (url: string) => void
 }) {
   const link = form.bottoneMeta === 'link'
   // Said while typing, but not before anything is typed: an empty field shows what to
@@ -87,7 +90,7 @@ export function Messaggio({
             aria-invalid={problem !== null}
             aria-describedby="campagna-bottone-url-aiuto"
             value={form.bottoneUrl}
-            onChange={(event) => onChange({ bottoneUrl: event.target.value })}
+            onChange={(event) => onLink(event.target.value)}
           />
           <p id="campagna-bottone-url-aiuto" className={problem ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
             {problem ?? 'Una pagina fuori dal hub: un evento su Luma, un gruppo WhatsApp, un modulo. Deve iniziare con https://.'}
