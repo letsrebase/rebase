@@ -23,6 +23,16 @@ on:
         required: false
         default: true
         type: boolean
+      test:
+        description: >-
+          run the package's unit tests. Off for a call that only lints, builds and
+          type-checks, so those three can be a job of their own beside test shards that
+          do nothing else. With `typecheck` on and `test` off, keep `build` on for a
+          package whose route tree is generated (the CRM's web): only a vite run writes
+          it, and tsc fails with TS2307 without it.
+        required: false
+        default: true
+        type: boolean
       typecheck:
         description: run tsc. Off for a shard that only adds tests.
         required: false
@@ -82,6 +92,7 @@ jobs:
       # reaches `vitest run` as is; nothing is appended when the caller did not shard.
       # Through `env`, so the value is data to the shell rather than text pasted into it.
       - name: Unit tests
+        if: inputs.test
         env:
           SHARD: ${{ inputs.shard }}
         run: pnpm --filter ${{ inputs.filter }} test ${SHARD:+--shard=$SHARD}
