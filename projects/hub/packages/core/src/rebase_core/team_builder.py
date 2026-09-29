@@ -696,9 +696,13 @@ def _place_words(luogo: str | None) -> set[str]:
     }
 
 
-def _names_any(text: str, words: set[str]) -> bool:
+def _names_any(text: str, words: set[str], *, in_any_case: bool = False) -> bool:
+    """Whether `text` holds any of `words` as a whole word: written with a capital, as
+    `_names_place` reads a card's fields, or in any case when `in_any_case` is set, as the
+    summary is read, where «vive a verona» is the place all the same and a match on «di
+    alto livello» costs one hub sentence rather than a leak."""
     return any(
-        not found.group().islower()
+        in_any_case or not found.group().islower()
         for word in words
         for found in re.finditer(rf"\b{re.escape(word)}\b", text, re.IGNORECASE)
     )
@@ -712,13 +716,14 @@ def _public_riassunto(
     would give back what the public read withholds, so it reads as the hub's own sentence
     instead (REB-598, the same test as `_public_reason`). A place the description itself
     names, in any case, is the visitor's own word and no secret to them, so a member who
-    is there does not withhold the summary. The row, the admin's and the cloud's reads
-    keep the model's words."""
+    is there does not withhold the summary; any other place is read in any case too,
+    since prose writes a city in lower case as readily as not. The row, the admin's and
+    the cloud's reads keep the model's words."""
     words = {word for card in cards for word in _place_words(card.luogo)}
     written = {
         word for word in words if re.search(rf"\b{re.escape(word)}\b", descrizione, re.IGNORECASE)
     }
-    if _names_any(riassunto, words - written):
+    if _names_any(riassunto, words - written, in_any_case=True):
         logger.warning("team proposal %s: the summary names a member's place", proposal_id)
         return PLACE_WITHHELD_RIASSUNTO
     return riassunto

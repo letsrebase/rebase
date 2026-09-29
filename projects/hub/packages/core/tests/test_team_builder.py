@@ -902,10 +902,12 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session)
     positions = _positions(clean)
     kept = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa lavora da remoto."
     leaked = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a VERONA."
+    lowered = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a verona."
     llm = RecordingCall(
         [
             proposal_response([_member(positions[torino])], riassunto=kept, locale=True),
             proposal_response([_member(positions[verona])], riassunto=leaked, locale=True),
+            proposal_response([_member(positions[verona])], riassunto=lowered, locale=True),
         ]
     )
     builder = _builder(clean, llm)
@@ -917,10 +919,15 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session)
     withheld = builder.propose(
         TeamProposalCreate(descrizione=descrizione), origine="pubblico", user_id=None
     )
+    withheld_lower = builder.propose(
+        TeamProposalCreate(descrizione=descrizione), origine="pubblico", user_id=None
+    )
 
-    # «Torino» is the visitor's own word, in any case; «Verona» is the catalogue's alone.
+    # «Torino» is the visitor's own word, in any case; «Verona» is the catalogue's alone,
+    # and the summary is read in any case, unlike a card's field.
     assert named.riassunto == kept
     assert withheld.riassunto == PLACE_WITHHELD_RIASSUNTO
+    assert withheld_lower.riassunto == PLACE_WITHHELD_RIASSUNTO
     assert PLACE_WITHHELD_RIASSUNTO == "Il riassunto di questa proposta non è pubblico."
     assert "VERONA" not in withheld.model_dump_json()
     assert builder.get(withheld.id, public=False).riassunto == leaked
