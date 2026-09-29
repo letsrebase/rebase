@@ -290,15 +290,17 @@ function Intro() {
 
 /** Above the form when the team builder's beta box opened the wizard (REB-518, spec
  *  § 4.3): this request is how a company asks for the talent cloud, and the origin it
- *  carries tells the admin so. */
+ *  carries tells the admin so. On royal gold like the freelancer wizard's guide banner
+ *  (REB-570): a banner the company is meant to notice, not one more quiet note. */
 function TalentCloudNote() {
   return (
     <aside
       role="note"
       aria-label="Talent cloud"
-      className="mx-auto mb-8 w-full max-w-2xl border-l-4 border-(--landing-ink) bg-card px-4 py-3 text-sm"
+      className="mx-auto mb-8 w-full max-w-2xl border-(length:--landing-border-width) bg-(--color-royal-gold) px-4 py-3 text-(--landing-ink) shadow-sm"
     >
-      Stai chiedendo l’accesso al talent cloud: compila la richiesta e ti ricontattiamo noi.
+      <p className="font-medium">Stai chiedendo l’accesso al talent cloud.</p>
+      <p className="mt-1 text-sm">Compila la richiesta e ti ricontattiamo noi per aprirtelo.</p>
     </aside>
   )
 }
