@@ -39,6 +39,8 @@ const IVAN = {
   remoto: null,
   links: [],
   completa: false,
+  ha_azienda: false,
+  richieste: [],
 }
 const ADA = { ...IVAN, id: 'f1', nome: 'Ada', cognome: 'Lovelace', email: 'ada@studio.it', role: 'member' }
 

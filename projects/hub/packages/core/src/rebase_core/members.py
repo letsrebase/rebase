@@ -1,21 +1,21 @@
-"""The member area: the freelancer card, and the referente's own company request,
+"""The member area: the freelancer card, and the referente's own company requests,
 and what each owner may change once signed in.
 
 The way in -- the magic link, session open/close, `resolve` -- moved to
 `rebase_core.users` (REB-278): a person signs in as a `users` row, member or admin
 alike. Every change the person makes is a comment in the row's thread (ORB-59), so
-the admin sees what moved without an audit table. Self-edit of a company request
-(REB-314) reaches only the signed-in person's most recent `Company` row -- a company
-files several requests over time, and older ones stay admin-editable-only. Filing a
-genuinely new request instead of editing that newest one (REB-381,
-`create_additional_request`) is the same signed-in door: it carries the company's
-name forward and asks everything else fresh, as a new row the older ones are none
-the wiser about.
+the admin sees what moved without an audit table. A company files several requests
+over time (REB-381, `create_additional_request`), and since REB-602 the member area
+lists every one an admin has not soft-deleted and lets the person edit any of them by
+its id, never somebody else's: `requests_for_user` is the list, `require_request` the
+one door onto a single row. Filing a genuinely new request is the same signed-in door:
+it carries the company's name forward and asks everything else fresh, as a new row the
+older ones are none the wiser about.
 """
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from rebase_core.cloud import TalentCloudService
@@ -29,6 +29,7 @@ from rebase_core.schemas import (
     CvFile,
     MemberLookup,
     MemberProfile,
+    MemberRequest,
     MemberUpdate,
     MeRead,
 )
@@ -52,7 +53,7 @@ _IDENTITY_FIELDS = ("nome", "cognome", "linkedin_url")
 COMPANY_ENTITY = "company"
 # What the comment calls each field, in the admin's language, in the wizard's order
 # (REB-314; REB-380 adds the last four): the eight a company contact may change about
-# their most recent request.
+# one of their requests.
 COMPANY_FIELD_LABELS: dict[str, str] = {
     "progetto": "progetto",
     "periodo_da": "data di inizio",
@@ -110,27 +111,31 @@ class MemberService:
 
     # ---- the identity behind a company request -----------------------------------------
 
-    def company_for_user(self, user_id: UUID) -> Company | None:
-        """The signed-in person's actual most recent request (REB-314 decision), or
-        `None` when there is none or an admin has soft-deleted it (REB-347) -- never an
-        older request instead: self-edit reaches only the newest one ever filed, the
-        same one the admin's list shows first, and a delete of it must not quietly
-        make an older, admin-editable-only request self-editable again."""
-        newest = self.session.scalar(
+    @staticmethod
+    def _live_requests(user_id: UUID) -> Select[tuple[Company]]:
+        return (
             select(Company)
-            .where(Company.user_id == user_id)
-            # `id` (UUIDv7, time-ordered) breaks a tie on `created_at`, the same
-            # tiebreak `_list_stmt`'s own ordering uses (`companies.py`): two requests
-            # a `func.now()` transaction start could otherwise date identically.
+            .where(Company.user_id == user_id, Company.deleted_at.is_(None))
+            # `id` (UUIDv7, time-ordered) breaks a tie on `created_at`, the same tiebreak
+            # `_list_stmt`'s own ordering uses (`companies.py`): two requests a
+            # `func.now()` transaction start could otherwise date identically.
             .order_by(Company.created_at.desc(), Company.id.desc())
-            .limit(1)
         )
-        if newest is None or newest.deleted_at is not None:
-            return None
-        return newest
+
+    def requests_for_user(self, user_id: UUID) -> list[Company]:
+        """Every request the signed-in person filed that an admin has not soft-deleted
+        (REB-347), newest first: the list the member area shows (REB-602). A deleted
+        request is gone from it, and its older siblings stay, each one editable."""
+        return list(self.session.scalars(self._live_requests(user_id)))
+
+    def company_for_user(self, user_id: UUID) -> Company | None:
+        """The signed-in person's newest live request, or `None` when they have none:
+        what the request-less `PATCH /me/company` edits and what a new request carries
+        the company's name forward from."""
+        return self.session.scalar(self._live_requests(user_id).limit(1))
 
     def require_company(self, user_id: UUID) -> Company:
-        """The signed-in person's most recent request, or a 404 named "azienda": a
+        """The signed-in person's newest live request, or a 404 named "azienda": a
         person with no request yet is the ordinary case for anyone who is not a
         company contact."""
         row = self.company_for_user(user_id)
@@ -138,16 +143,30 @@ class MemberService:
             raise NotFound("azienda", user_id)
         return row
 
+    def require_request(self, user_id: UUID, company_id: UUID) -> Company:
+        """One of the signed-in person's own live requests by id, or a 404 named
+        "azienda". Somebody else's request, a soft-deleted one and an id that does not
+        exist are the same 404: a 403 would say the row exists."""
+        row = self.session.scalar(
+            select(Company).where(
+                Company.id == company_id,
+                Company.user_id == user_id,
+                Company.deleted_at.is_(None),
+            )
+        )
+        if row is None:
+            raise NotFound("azienda", company_id)
+        return row
+
     def me_read(self, user_id: UUID) -> MeRead:
         """The full `GET /me` shape for whoever `user_id` names: the identity off
-        `users`, plus the freelancer card's own fields when one exists and the most
-        recent company request's own fields when one exists (REB-314), blank
-        otherwise, and whether a talent cloud grant of theirs is live (REB-518)."""
+        `users`, plus the freelancer card's own fields when one exists and every live
+        company request, newest first (REB-602), blank or empty otherwise, and whether
+        a talent cloud grant of theirs is live (REB-518)."""
         user = self.session.get(User, user_id)
         if user is None:
             raise NotFound("user", user_id)
         card = self.card_for_user(user_id)
-        company = self.company_for_user(user_id)
         return MeRead(
             id=user.id,
             nome=user.nome,
@@ -165,15 +184,9 @@ class MemberService:
             posizione=card.posizione if card else None,
             remoto=card.remoto if card else None,
             links=list(card.links) if card else [],
-            ha_azienda=company is not None,
-            progetto=company.progetto if company else None,
-            periodo_da=company.periodo_da if company else None,
-            durata=company.durata if company else None,
-            budget_giornaliero=company.budget_giornaliero if company else None,
-            azienda_remoto=company.remoto if company else None,
-            azienda_giorni_presenza=company.giorni_presenza if company else None,
-            azienda_numero_risorse=company.numero_risorse if company else None,
-            azienda_figura_richiesta=company.figura_richiesta if company else None,
+            richieste=[
+                MemberRequest.model_validate(row) for row in self.requests_for_user(user_id)
+            ],
             talent_cloud=TalentCloudService(self.session).for_user(user_id) is not None,
         )
 
@@ -228,14 +241,20 @@ class MemberService:
             self._comment(user, row, "Scheda confermata dalla persona")
         return _to_profile(row, user)
 
-    def update_company(self, user_id: UUID, data: CompanyUpdate) -> MeRead:
+    def update_company(
+        self, user_id: UUID, data: CompanyUpdate, company_id: UUID | None = None
+    ) -> MeRead:
         """Applies the eight project answers (REB-314; REB-380 adds the last four) to
-        the signed-in person's most recent request (REB-314 decision: self-edit
-        reaches only the newest) and leaves a comment naming what moved, the same
-        discipline `update` keeps for the freelancer card. `stato`, `note`,
+        one of the signed-in person's own requests -- `company_id`, or their newest live
+        one when it is `None` (REB-602) -- and leaves a comment naming what moved, the
+        same discipline `update` keeps for the freelancer card. `stato`, `note`,
         `nome_azienda`, `telefono` and the referente's identity are never touched
         here."""
-        row = self.require_company(user_id)
+        row = (
+            self.require_company(user_id)
+            if company_id is None
+            else self.require_request(user_id, company_id)
+        )
         user = self.session.get(User, user_id)
         assert user is not None
         changed: list[str] = []
@@ -257,16 +276,15 @@ class MemberService:
 
     def create_additional_request(self, user_id: UUID, payload: CompanyFields) -> MeRead:
         """A signed-in referente files a genuinely new request instead of correcting
-        their newest one (REB-381): a fresh `Company` row, not an edit, so the request
-        `update_company` already reaches (`require_company`) stands exactly as it was
-        -- admin-editable, like any other. The company's own name is read off that
-        same newest row and carried forward, never asked again; everything else is
-        the payload's own fresh answers. No UTM carried forward either: unlike the
-        public wizard's own `CompanyService.request`, a request filed from inside the
-        member area is not attributable to whatever ad brought the referente in the
-        first time, so it goes in blank, the same as anything an admin creates. A
-        person with no request yet has nothing to add to, so this is a 404 named
-        "azienda" for them too, the same as `update_company`."""
+        one of theirs (REB-381): a fresh `Company` row, not an edit, so every request
+        already on file stands exactly as it was -- admin-editable, like any other. The
+        company's own name is read off the newest live request and carried forward,
+        never asked again; everything else is the payload's own fresh answers. No UTM
+        carried forward either: unlike the public wizard's own `CompanyService.request`,
+        a request filed from inside the member area is not attributable to whatever ad
+        brought the referente in the first time, so it goes in blank, the same as
+        anything an admin creates. A person with no live request has nothing to add to,
+        so this is a 404 named "azienda" for them too, the same as `update_company`."""
         existing = self.require_company(user_id)
         row = Company(
             user_id=user_id,

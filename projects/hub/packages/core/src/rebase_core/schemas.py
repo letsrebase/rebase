@@ -522,10 +522,10 @@ class CompanyCreate(CompanyFields):
 
 
 class CompanyUpdate(CompanyFields):
-    """What a company contact changes about their most recent request (REB-314): the
-    eight project answers, never `stato`, `note`, `nome_azienda`, `telefono` or the
-    referente's identity -- the same field-isolation `MemberUpdate` keeps for the
-    freelancer card."""
+    """What a company contact changes about one of their requests (REB-314, by id since
+    REB-602): the eight project answers, never `stato`, `note`, `nome_azienda`,
+    `telefono` or the referente's identity -- the same field-isolation `MemberUpdate`
+    keeps for the freelancer card."""
 
 
 class Ack(BaseModel):
@@ -611,6 +611,27 @@ class MemberProfile(BaseModel):
         return _is_complete(self)
 
 
+class MemberRequest(BaseModel):
+    """One company request as the person who filed it reads it (REB-602): the eight
+    answers they gave, plus its id, so the member area can open that very request for
+    editing, and when it was filed. Never `stato`, `note` or the company's own name:
+    what the admin wrote about a request stays the admin's, the same isolation
+    `MemberProfile` keeps for the card."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    figura_richiesta: str
+    progetto: str
+    periodo_da: date
+    durata: str
+    budget_giornaliero: Decimal
+    remoto: str
+    giorni_presenza: int | None
+    numero_risorse: int
+    created_at: datetime
+
+
 class MeRead(BaseModel):
     """Whoever `orbiters_user` resolves to, member or admin, replacing `MemberProfile`
     on `GET /me` (REB-278): a `users` row is not necessarily an applicant with a card
@@ -621,14 +642,11 @@ class MeRead(BaseModel):
     never blanked by `ha_scheda`/`ha_azienda`: it lives on `users` regardless of
     which of the two a person carries.
 
-    `ha_azienda` and the eight request fields mirror `ha_scheda`'s own shape for the
-    company side (REB-314; REB-380 widens the original four): populated from the
-    signed-in person's most recent `Company` row when one exists, blank otherwise. A
-    person can carry both, or neither, or just one -- the two pairs are independent.
-    The four REB-380 additions carry an `azienda_` prefix here, and only here: `Company`
-    and `Freelancer` both have a `remoto`, and this is the one shape that flattens
-    both onto one row, so the company's own copy needs a name of its own to avoid
-    silently colliding with the card's."""
+    The company side is a list, `richieste` (REB-602): every request the person filed
+    that an admin has not soft-deleted, newest first, each one editable by its own id.
+    `ha_azienda` is true exactly when the list is not empty, since the wizard and edit
+    guards read the flag and not the list. A person can carry a card, requests, both
+    or neither."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -648,15 +666,7 @@ class MeRead(BaseModel):
     posizione: str | None = None
     remoto: str | None = None
     links: list[str] = Field(default_factory=list)
-    ha_azienda: bool
-    progetto: str | None = None
-    periodo_da: date | None = None
-    durata: str | None = None
-    budget_giornaliero: Decimal | None = None
-    azienda_remoto: str | None = None
-    azienda_giorni_presenza: int | None = None
-    azienda_numero_risorse: int | None = None
-    azienda_figura_richiesta: str | None = None
+    richieste: list[MemberRequest] = Field(default_factory=list)
     # REB-518: whether any talent cloud grant of this person is live, which puts «Talent
     # cloud» in the member area's nav (`rebase_core.cloud.TalentCloudService.for_user`).
     talent_cloud: bool = False
@@ -665,6 +675,11 @@ class MeRead(BaseModel):
     @property
     def completa(self) -> bool:
         return _is_complete(self)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def ha_azienda(self) -> bool:
+        return bool(self.richieste)
 
 
 class MemberLookupRequest(BaseModel):

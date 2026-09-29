@@ -7,6 +7,7 @@ import {
   type CompanyUpdate,
   type FreelancerApplication,
   type Me,
+  type MemberRequest,
   type MemberUpdate,
 } from './api'
 import { sentAmount } from './amount'
@@ -63,7 +64,7 @@ export function useUpdateProfile() {
 export function useUpdateCompany() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (data: CompanyUpdate) => member.updateCompany(data),
+    mutationFn: ({ id, data }: { id: string; data: CompanyUpdate }) => member.updateCompany(id, data),
     onSuccess: (me) => client.setQueryData(ME_KEY, me),
   })
 }
@@ -132,28 +133,26 @@ export function toUpdate(value: FreelancerApplication): MemberUpdate {
   }
 }
 
-/** The most recent request in the wizard's own shape, so `COMPANY_FIELDS`' seven
- *  editable entries can render and validate it exactly as they do in
- *  `CompanyWizard` (REB-314; REB-380 adds `remoto`/`giorni_presenza`/
- *  `numero_risorse`/`figura_richiesta`). The company's own identity (`nome_azienda`,
- *  the referente, `telefono`) is never part of self-edit and is left blank here --
- *  those fields never read it. Only meaningful when `ha_azienda` is true; the
- *  caller checks that first (`Area.tsx`, `ModificaAzienda.tsx`). */
-export function toCompanyApplication(me: Me): CompanyRequest {
+/** One request in the wizard's own shape, so `COMPANY_FIELDS`' editable entries can
+ *  render, validate and summarise it exactly as they do in `CompanyWizard` (REB-314;
+ *  REB-380 adds `remoto`/`giorni_presenza`/`numero_risorse`/`figura_richiesta`). The
+ *  company's own identity (`nome_azienda`, the referente, `telefono`) is never part of
+ *  self-edit and is left blank here -- those fields never read it. */
+export function toCompanyApplication(request: MemberRequest): CompanyRequest {
   return {
     nome_azienda: '',
-    figura_richiesta: me.azienda_figura_richiesta ?? '',
+    figura_richiesta: request.figura_richiesta,
     referente_nome: '',
     referente_cognome: '',
     email: '',
     telefono: '',
-    progetto: me.progetto ?? '',
-    periodo_da: me.periodo_da ?? '',
-    durata: me.durata ?? '',
-    budget_giornaliero: me.budget_giornaliero ?? '',
-    remoto: me.azienda_remoto ?? '',
-    giorni_presenza: me.azienda_giorni_presenza != null ? String(me.azienda_giorni_presenza) : '',
-    numero_risorse: me.azienda_numero_risorse != null ? String(me.azienda_numero_risorse) : '',
+    progetto: request.progetto,
+    periodo_da: request.periodo_da,
+    durata: request.durata,
+    budget_giornaliero: request.budget_giornaliero,
+    remoto: request.remoto,
+    giorni_presenza: request.giorni_presenza != null ? String(request.giorni_presenza) : '',
+    numero_risorse: String(request.numero_risorse),
   }
 }
 

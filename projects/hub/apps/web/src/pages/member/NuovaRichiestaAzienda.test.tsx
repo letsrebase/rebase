@@ -40,14 +40,20 @@ const PROFILE = {
   links: [],
   completa: false,
   ha_azienda: true,
-  progetto: 'Serve un backend developer per tre mesi, da ottobre.',
-  periodo_da: '2026-10-01',
-  durata: '3 mesi',
-  budget_giornaliero: '500.00',
-  azienda_remoto: 'remoto',
-  azienda_giorni_presenza: null,
-  azienda_numero_risorse: 2,
-  azienda_figura_richiesta: 'Backend developer',
+  richieste: [
+    {
+      id: 'r1',
+      figura_richiesta: 'Backend developer',
+      progetto: 'Serve un backend developer per tre mesi, da ottobre.',
+      periodo_da: '2026-10-01',
+      durata: '3 mesi',
+      budget_giornaliero: '500.00',
+      remoto: 'remoto',
+      giorni_presenza: null,
+      numero_risorse: 2,
+      created_at: '2026-09-20T10:00:00Z',
+    },
+  ],
 }
 
 function mount() {
@@ -131,7 +137,7 @@ describe('/me/new-company', () => {
       .spyOn(globalThis, 'fetch')
       .mockImplementation(async (_url, init) =>
         init?.method === 'POST' && (_url as string) === '/api/hub/me/company'
-          ? answer(201, { ...PROFILE, durata: '6 mesi', figura_richiesta: 'Data engineer' })
+          ? answer(201, PROFILE)
           : answer(200, PROFILE),
       )
     mount()
@@ -226,7 +232,7 @@ describe('/me/new-company', () => {
   it('redirects to the member area on a direct visit with no company yet (Greptile, PR #313)', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(answer(200, { ...PROFILE, ha_azienda: false }))
+      .mockResolvedValue(answer(200, { ...PROFILE, ha_azienda: false, richieste: [] }))
     mount()
     await screen.findByRole('heading', { name: 'La tua area' })
     expect(screen.queryByLabelText('Progetto')).toBeNull()

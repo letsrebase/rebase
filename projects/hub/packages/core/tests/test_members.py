@@ -285,74 +285,103 @@ def test_a_person_can_carry_both_a_card_and_a_company_at_once(
     assert me.ha_scheda is True and me.ha_azienda is True
 
 
-def test_me_read_answers_the_identity_and_the_most_recent_company_together(
+def test_me_read_lists_every_live_request_newest_first_with_nothing_the_admin_wrote(
     members: MemberService, hub_session: Session
 ) -> None:
-    """REB-314 decision: self-edit, and `me_read`, reach only the newest of a
-    company's several requests. REB-380: `telefono` and the four `azienda_`
-    fields come along too, off that same newest row."""
-    _request_company(hub_session, durata="1 mese")
+    """REB-602: `richieste` carries each request the person filed, newest first, each
+    with its own id and answers, and never `stato` or `note`. REB-380: `telefono` comes
+    along on the identity. `ha_azienda` follows the list."""
+    older_id = _request_company(hub_session, durata="1 mese")
     newest_id = _request_company(
         hub_session, durata="3 mesi", remoto="ibrido", giorni_presenza=3, numero_risorse=2
+    )
+    CompanyService(hub_session).set_status(
+        older_id, StatusChange(stato="in_corso", note="da richiamare")
     )
     user = UserService(hub_session).by_email("wile@acme.it")
     assert user is not None
     me = members.me_read(user.id)
-    assert me.ha_azienda is True and me.durata == "3 mesi"
+    assert me.ha_azienda is True
     assert me.telefono == "+39 345 1234567"
-    assert (me.azienda_remoto, me.azienda_giorni_presenza, me.azienda_numero_risorse) == (
+    assert [item.id for item in me.richieste] == [newest_id, older_id]
+    newest, older = me.richieste
+    assert (newest.durata, newest.remoto, newest.giorni_presenza, newest.numero_risorse) == (
+        "3 mesi",
         "ibrido",
         3,
         2,
     )
-    assert me.azienda_figura_richiesta == "Backend developer"
+    assert (older.durata, older.remoto, older.giorni_presenza) == ("1 mese", "remoto", None)
+    assert newest.figura_richiesta == "Backend developer"
     assert members.require_company(user.id).id == newest_id
+    dumped = me.model_dump()["richieste"][0]
+    assert "stato" not in dumped and "note" not in dumped and "nome_azienda" not in dumped
 
     bare = UserService(hub_session).get_or_create("ivan@rebase.it", "Ivan", "Fiore")
     bare_read = members.me_read(bare.id)
-    assert bare_read.ha_azienda is False
-    assert (
-        bare_read.progetto,
-        bare_read.periodo_da,
-        bare_read.durata,
-        bare_read.budget_giornaliero,
-        bare_read.azienda_remoto,
-        bare_read.azienda_giorni_presenza,
-        bare_read.azienda_numero_risorse,
-        bare_read.azienda_figura_richiesta,
-    ) == (None, None, None, None, None, None, None, None)
+    assert bare_read.ha_azienda is False and bare_read.richieste == []
 
 
-def test_a_company_update_changes_the_most_recent_row_and_leaves_one_comment(
+def test_a_company_update_by_id_changes_that_row_and_leaves_one_comment(
     members: MemberService, hub_session: Session
 ) -> None:
     older_id = _request_company(hub_session, durata="1 mese")
     newest_id = _request_company(hub_session, durata="3 mesi")
     CompanyService(hub_session).set_status(
-        newest_id, StatusChange(stato="in_corso", note="da richiamare")
+        older_id, StatusChange(stato="in_corso", note="da richiamare")
     )
     user = UserService(hub_session).by_email("wile@acme.it")
     assert user is not None
 
-    unchanged = members.update_company(user.id, CompanyUpdate(**GOOD_COMPANY))
-    assert unchanged.durata == "3 mesi"
-    assert CommentService(hub_session).list("company", newest_id) == []
+    unchanged = members.update_company(
+        user.id, CompanyUpdate(**{**GOOD_COMPANY, "durata": "1 mese"}), older_id
+    )
+    assert [item.durata for item in unchanged.richieste] == ["3 mesi", "1 mese"]
+    assert CommentService(hub_session).list("company", older_id) == []
 
     changed = members.update_company(
         user.id,
         CompanyUpdate(**{**GOOD_COMPANY, "durata": "4 mesi", "budget_giornaliero": Decimal("600")}),
+        older_id,
     )
-    assert changed.durata == "4 mesi" and changed.budget_giornaliero == Decimal("600")
-    thread = CommentService(hub_session).list("company", newest_id)
+    older = next(item for item in changed.richieste if item.id == older_id)
+    assert older.durata == "4 mesi" and older.budget_giornaliero == Decimal("600")
+    thread = CommentService(hub_session).list("company", older_id)
     assert len(thread) == 1
     assert thread[0].testo == "Richiesta aggiornata dal referente: durata, budget giornaliero"
     assert thread[0].autore == "Wile E."
 
-    # `stato`/`note` are the admin's, and the older request is untouched.
-    admin_view = CompanyService(hub_session).get(newest_id)
+    # `stato`/`note` are the admin's, and the newer request is untouched.
+    admin_view = CompanyService(hub_session).get(older_id)
     assert (admin_view.stato, admin_view.note) == ("in_corso", "da richiamare")
-    older_view = CompanyService(hub_session).get(older_id)
-    assert older_view.durata == "1 mese"
+    assert CompanyService(hub_session).get(newest_id).durata == "3 mesi"
+
+
+def test_a_company_update_without_an_id_changes_the_newest_row(
+    members: MemberService, hub_session: Session
+) -> None:
+    older_id = _request_company(hub_session, durata="1 mese")
+    newest_id = _request_company(hub_session, durata="3 mesi")
+    user = UserService(hub_session).by_email("wile@acme.it")
+    assert user is not None
+
+    members.update_company(user.id, CompanyUpdate(**{**GOOD_COMPANY, "durata": "5 mesi"}))
+    assert CompanyService(hub_session).get(newest_id).durata == "5 mesi"
+    assert CompanyService(hub_session).get(older_id).durata == "1 mese"
+
+
+def test_a_request_of_somebody_else_is_a_named_404_and_stays_untouched(
+    members: MemberService, hub_session: Session
+) -> None:
+    theirs = _request_company(hub_session, email="wile@acme.it", durata="1 mese")
+    _request_company(hub_session, email="road@runner.it", durata="2 mesi")
+    me = UserService(hub_session).by_email("road@runner.it")
+    assert me is not None
+
+    with pytest.raises(NotFound) as refused:
+        members.update_company(me.id, CompanyUpdate(**GOOD_COMPANY), theirs)
+    assert refused.value.details["entity"] == "azienda"
+    assert CompanyService(hub_session).get(theirs).durata == "1 mese"
 
 
 def test_a_signed_in_person_with_no_company_gets_a_named_404(
@@ -389,7 +418,8 @@ def test_an_additional_request_carries_the_name_forward_as_a_new_row(
         CompanyFields(**{**GOOD_COMPANY, "durata": "6 mesi", "figura_richiesta": "Data engineer"}),
     )
     assert created.ha_azienda is True
-    assert created.durata == "6 mesi" and created.azienda_figura_richiesta == "Data engineer"
+    assert [item.durata for item in created.richieste] == ["6 mesi", "1 mese"]
+    assert created.richieste[0].figura_richiesta == "Data engineer"
 
     newest = members.require_company(user.id)
     assert newest.id != first_id

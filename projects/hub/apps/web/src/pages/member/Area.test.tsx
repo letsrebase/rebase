@@ -58,14 +58,7 @@ const PROFILE = {
   links: ['https://github.com/ada'],
   completa: true,
   ha_azienda: false,
-  progetto: null,
-  periodo_da: null,
-  durata: null,
-  budget_giornaliero: null,
-  azienda_remoto: null,
-  azienda_giorni_presenza: null,
-  azienda_numero_risorse: null,
-  azienda_figura_richiesta: null,
+  richieste: [],
 }
 
 /** The card an admin wrote from Ada's signup (ORB-155): the person has yet to add the
@@ -113,9 +106,36 @@ const NOBODY = {
   role: 'member',
 }
 
-/** A company contact with no freelancer card, and the referente's most recent
- *  request (REB-314; REB-380 adds the last four fields): `ha_scheda` false,
- *  `ha_azienda` true, the project's own seven answers filled in. */
+/** The request a company filed first (REB-602), the older of two. */
+const OLDER_REQUEST = {
+  id: 'r1',
+  figura_richiesta: 'Backend developer',
+  progetto: 'Serve un backend developer per tre mesi, da ottobre.',
+  periodo_da: '2026-10-01',
+  durata: '3 mesi',
+  budget_giornaliero: '500.00',
+  remoto: 'ibrido',
+  giorni_presenza: 3,
+  numero_risorse: 2,
+  created_at: '2026-09-20T10:00:00Z',
+}
+
+/** The one it filed afterwards, through «Richiedi una nuova figura». */
+const NEWER_REQUEST = {
+  id: 'r2',
+  figura_richiesta: 'Data engineer',
+  progetto: 'Serve un data engineer per costruire la pipeline dei dati.',
+  periodo_da: '2026-11-02',
+  durata: '2 mesi',
+  budget_giornaliero: '550.00',
+  remoto: 'remoto',
+  giorni_presenza: null,
+  numero_risorse: 1,
+  created_at: '2026-09-29T09:00:00Z',
+}
+
+/** A company contact with no freelancer card and one request (REB-314; REB-602 makes
+ *  it a list): `ha_scheda` false, `ha_azienda` true, `richieste` newest first. */
 const COMPANY_ONLY = {
   ...PROFILE,
   id: 'c1',
@@ -133,30 +153,15 @@ const COMPANY_ONLY = {
   links: [],
   completa: false,
   ha_azienda: true,
-  progetto: 'Serve un backend developer per tre mesi, da ottobre.',
-  periodo_da: '2026-10-01',
-  durata: '3 mesi',
-  budget_giornaliero: '500.00',
-  azienda_remoto: 'ibrido',
-  azienda_giorni_presenza: 3,
-  azienda_numero_risorse: 2,
-  azienda_figura_richiesta: 'Backend developer',
+  richieste: [OLDER_REQUEST],
 }
 
-/** The same request, on a person who also has a freelancer card (REB-314): both
- *  sections render together. */
-const BOTH = {
-  ...PROFILE,
-  ha_azienda: true,
-  progetto: COMPANY_ONLY.progetto,
-  periodo_da: COMPANY_ONLY.periodo_da,
-  durata: COMPANY_ONLY.durata,
-  budget_giornaliero: COMPANY_ONLY.budget_giornaliero,
-  azienda_remoto: COMPANY_ONLY.azienda_remoto,
-  azienda_giorni_presenza: COMPANY_ONLY.azienda_giorni_presenza,
-  azienda_numero_risorse: COMPANY_ONLY.azienda_numero_risorse,
-  azienda_figura_richiesta: COMPANY_ONLY.azienda_figura_richiesta,
-}
+/** The same company after a second request: both are listed, the newest first. */
+const COMPANY_TWO_REQUESTS = { ...COMPANY_ONLY, richieste: [NEWER_REQUEST, OLDER_REQUEST] }
+
+/** The request, on a person who also has a freelancer card (REB-314): both sections
+ *  render together. */
+const BOTH = { ...PROFILE, ha_azienda: true, richieste: [OLDER_REQUEST] }
 
 function mount(path = '/me') {
   const root = createRootRoute({ component: () => <Outlet /> })
@@ -175,13 +180,20 @@ function mount(path = '/me') {
     path: '/edit-company',
     component: () => <h1>Modifica azienda</h1>,
   })
+  const modificaRichiesta = createRoute({
+    getParentRoute: () => me,
+    path: '/edit-company/$id',
+    component: () => <h1>Modifica una richiesta</h1>,
+  })
   const nuovaRichiestaAzienda = createRoute({
     getParentRoute: () => me,
     path: '/new-company',
     component: () => <h1>Richiedi una nuova figura</h1>,
   })
   const router = createRouter({
-    routeTree: root.addChildren([me.addChildren([index, edit, modificaAzienda, nuovaRichiestaAzienda])]),
+    routeTree: root.addChildren([
+      me.addChildren([index, edit, modificaAzienda, modificaRichiesta, nuovaRichiestaAzienda]),
+    ]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -285,8 +297,8 @@ describe('/me, no card (REB-279: a card-less admin reads name, email and role, n
     expect(screen.queryByRole('link', { name: 'Modifica' })).toBeNull()
     expect(screen.queryByText('Nessun CV')).toBeNull()
     // No company request either: neither section replaces the bare identity one.
-    expect(screen.queryByText('La tua richiesta più recente')).toBeNull()
-    expect(screen.queryByRole('link', { name: /Modifica richiesta/ })).toBeNull()
+    expect(screen.queryByRole('heading', { name: /^(La tua richiesta|Le tue richieste)$/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: /^Modifica la richiesta/ })).toBeNull()
     expect(screen.queryByRole('link', { name: /Richiedi una nuova figura/ })).toBeNull()
     // The perks stay visible with no card, because this fixture is an admin
     // (REB-385: freelancer-or-admin still gets both boxes).
@@ -304,22 +316,31 @@ describe('/me, no card (REB-279: a card-less admin reads name, email and role, n
   })
 })
 
+/** The two columns of the page below the header (REB-602): each must hold something, or
+ *  the page reads as a half-empty screen with a gap at one side. */
+function columns(): HTMLElement[] {
+  const header = screen.getByRole('heading', { level: 1 }).closest('header')
+  const grid = header?.nextElementSibling
+  return Array.from(grid?.children ?? []) as HTMLElement[]
+}
+
 describe('/me, a company request (REB-314: reads `ha_azienda` independently of `ha_scheda`)', () => {
-  it('shows the project under the wizard’s own questions, with its own edit link', async () => {
+  it('shows the one request with its answers and its own edit link', async () => {
     meFetch(COMPANY_ONLY)
     mount()
-    expect(await screen.findByText('La tua richiesta più recente')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'La tua richiesta' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Backend developer' })).toBeInTheDocument()
     expect(
       screen.getByText('Serve un backend developer per tre mesi, da ottobre.'),
     ).toBeInTheDocument()
-    expect(screen.getByText('dal 2026-10-01, 3 mesi')).toBeInTheDocument()
-    expect(screen.getByText('500.00 € / giorno')).toBeInTheDocument()
-    expect(screen.getByText('Backend developer')).toBeInTheDocument()
+    expect(screen.getByText(/^1 ott 2026, 3 mesi$/)).toBeInTheDocument()
+    expect(screen.getByText(/^500,00\s€ \/ giorno$/)).toBeInTheDocument()
     expect(screen.getByText('Ibrido · 3 giorni in sede')).toBeInTheDocument()
     expect(screen.getByText('2 persone')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Modifica richiesta/ })).toHaveAttribute(
+    expect(screen.getByText(/^Inviata il 20 set 2026$/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Modifica la richiesta 1 di 1: Backend developer' })).toHaveAttribute(
       'href',
-      '/me/edit-company',
+      '/me/edit-company/r1',
     )
     expect(screen.getByRole('link', { name: /Richiedi una nuova figura/ })).toHaveAttribute(
       'href',
@@ -336,15 +357,52 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
     expect(screen.queryByRole('link', { name: /Scarica la guida/ })).toBeNull()
   })
 
+  it('lists every request newest first, each opening its own edit page (REB-602)', async () => {
+    meFetch(COMPANY_TWO_REQUESTS)
+    mount()
+    expect(await screen.findByRole('heading', { name: 'Le tue richieste' })).toBeInTheDocument()
+    const [newer, older] = screen.getAllByRole('listitem') as [HTMLElement, HTMLElement]
+    expect(screen.getAllByRole('listitem')).toHaveLength(2)
+    expect(within(newer).getByRole('heading', { name: 'Data engineer' })).toBeInTheDocument()
+    expect(within(older).getByRole('heading', { name: 'Backend developer' })).toBeInTheDocument()
+    expect(within(newer).getByRole('link', { name: /^Modifica/ })).toHaveAttribute(
+      'href',
+      '/me/edit-company/r2',
+    )
+    expect(within(older).getByRole('link', { name: /^Modifica/ })).toHaveAttribute(
+      'href',
+      '/me/edit-company/r1',
+    )
+    // Each card carries its own answers, so the older one is not the newer one's twin.
+    expect(within(newer).getByText('Da remoto')).toBeInTheDocument()
+    expect(within(newer).getByText('1 persona')).toBeInTheDocument()
+    expect(within(older).getByText('Ibrido · 3 giorni in sede')).toBeInTheDocument()
+    // One action for the section, not one per request.
+    expect(screen.getAllByRole('link', { name: /Richiedi una nuova figura/ })).toHaveLength(1)
+  })
+
+  it('names the edit links apart when two requests are identical down to the minute they were filed', async () => {
+    meFetch({ ...COMPANY_ONLY, richieste: [{ ...OLDER_REQUEST, id: 'r3' }, OLDER_REQUEST] })
+    mount()
+    await screen.findByRole('heading', { name: 'Le tue richieste' })
+    const names = screen
+      .getAllByRole('link', { name: /^Modifica la richiesta/ })
+      .map((link) => link.getAttribute('aria-label'))
+    expect(names).toEqual([
+      'Modifica la richiesta 1 di 2: Backend developer',
+      'Modifica la richiesta 2 di 2: Backend developer',
+    ])
+  })
+
   it('renders alongside the freelancer card when a person has both (REB-314)', async () => {
     meFetch(BOTH)
     mount()
     expect(await screen.findByText('Come ti chiami?')).toBeInTheDocument()
-    expect(screen.getByText('La tua richiesta più recente')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'La tua richiesta' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Modifica' })).toHaveAttribute('href', '/me/edit')
-    expect(screen.getByRole('link', { name: /Modifica richiesta/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Modifica la richiesta/ })).toHaveAttribute(
       'href',
-      '/me/edit-company',
+      '/me/edit-company/r1',
     )
     expect(screen.getByRole('link', { name: /Richiedi una nuova figura/ })).toHaveAttribute(
       'href',
@@ -354,6 +412,61 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
     // though this person is also a company referente (REB-385).
     expect(screen.getByRole('link', { name: /Apri PigroCRM/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Scarica la guida/ })).toBeInTheDocument()
+  })
+})
+
+describe('/me, the page in two columns (REB-602)', () => {
+  const cases: [string, unknown][] = [
+    ['a card only', PROFILE],
+    ['a company only', COMPANY_ONLY],
+    ['a company with two requests', COMPANY_TWO_REQUESTS],
+    ['a card and a company', BOTH],
+    ['a card-less admin', CARDLESS_ADMIN],
+    ['a plain member with nothing else', NOBODY],
+  ]
+
+  it.each(cases)('leaves neither column empty for %s', async (_name, profile) => {
+    meFetch(profile)
+    mount()
+    await screen.findByRole('heading', { level: 1 })
+    // The referral link reads its own route: wait for it, so the right column is settled.
+    await screen.findByText('Nessuna segnalazione ancora.')
+    const [left, right] = columns() as [HTMLElement, HTMLElement]
+    expect(columns()).toHaveLength(2)
+    expect(left).not.toBeEmptyDOMElement()
+    expect(right).not.toBeEmptyDOMElement()
+    expect(within(left).queryByText('Il tuo link di segnalazione')).toBeNull()
+    expect(within(right).getByText('Il tuo link di segnalazione')).toBeInTheDocument()
+  })
+
+  it('reads card, contracts, requests, perks, referral once the columns collapse', async () => {
+    meFetch(BOTH)
+    mount()
+    await screen.findByText('Nessuna segnalazione ancora.')
+    const order = [
+      screen.getByRole('heading', { name: 'La tua scheda' }),
+      await screen.findByRole('heading', { name: 'Contratti' }),
+      screen.getByRole('heading', { name: 'La tua richiesta' }),
+      screen.getByRole('heading', { name: 'PigroCRM è tuo, gratis' }),
+      screen.getByRole('heading', { name: 'Il tuo link di segnalazione' }),
+    ]
+    order.slice(1).forEach((heading, index) => {
+      const before = order[index] as HTMLElement
+      expect(before.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+  })
+})
+
+describe('/me, «Apri PigroCRM» (REB-602)', () => {
+  it('opens PigroCRM in another tab and does not hand it the opener', async () => {
+    meFetch(PROFILE)
+    mount()
+    const link = await screen.findByRole('link', { name: /Apri PigroCRM/ })
+    expect(link).toHaveAttribute('target', '_blank')
+    const rel = (link.getAttribute('rel') ?? '').split(/\s+/)
+    expect(rel).toEqual(expect.arrayContaining(['noopener', 'noreferrer']))
+    // The guide is a download, not a page: it stays in this tab.
+    expect(screen.getByRole('link', { name: /Scarica la guida/ })).not.toHaveAttribute('target')
   })
 })
 
@@ -406,7 +519,7 @@ describe('/me, «Contratti» (REB-392: on a card, never on a company-only profil
   it('has no «Contratti» for a company-only profile', async () => {
     meFetch(COMPANY_ONLY)
     mount()
-    await screen.findByText('La tua richiesta più recente')
+    await screen.findByRole('heading', { name: 'La tua richiesta' })
     expect(screen.queryByRole('heading', { name: 'Contratti' })).toBeNull()
   })
 })

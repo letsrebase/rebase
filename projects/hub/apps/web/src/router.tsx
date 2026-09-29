@@ -224,6 +224,13 @@ const meEditCompany = createRoute({
   path: '/edit-company',
   component: ModificaAzienda,
 })
+// One request by its id (REB-602): every request the member area lists has its own
+// «Modifica». `/edit-company` with no id stays, on the same page, for the newest one.
+const meEditCompanyById = createRoute({
+  getParentRoute: () => me,
+  path: '/edit-company/$id',
+  component: ModificaAzienda,
+})
 const meNewCompany = createRoute({
   getParentRoute: () => me,
   path: '/new-company',
@@ -509,7 +516,7 @@ export const routeTree = root.addChildren([
     unsubscribe,
   ]),
   signedInLayout.addChildren([
-    me.addChildren([meIndex, meEdit, meEditCompany, meNewCompany, meCloud]),
+    me.addChildren([meIndex, meEdit, meEditCompany, meEditCompanyById, meNewCompany, meCloud]),
     meRedirect,
     meEditRedirect,
     meEditCompanyRedirect,

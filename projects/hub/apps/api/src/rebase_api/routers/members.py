@@ -6,12 +6,15 @@ provider failure says whether an address is known. `POST /auth/enter` spends the
 and sets `orbiters_user`, for anyone with a `users` row, member or admin alike
 (REB-278): the identity resolution behind both lives in `rebase_core.users`, not here.
 Everything under `/me` reads the row from the session and never from the URL: there is
-no `/me/{id}`. `PATCH /me/company` (REB-314) is the same discipline for the referente's
-company side: it reaches only their most recent `Company` request, never `stato`,
-`note` or the company's own identity. `POST /me/company` (REB-381) is a different
-door onto the same row: not an edit, a brand-new `Company` request, the company's
-name carried forward and everything else asked fresh -- a 404 for a referente with
-nothing to add to yet, the same as the `PATCH`.
+no `/me/{id}`. The one id the URL does carry is a company request's: `PATCH
+/me/company/{id}` (REB-602) edits one of the caller's own requests, and somebody
+else's, a soft-deleted one and an id that does not exist are the same 404.
+`PATCH /me/company` (REB-314) is the id-less form of it, for the caller's newest
+request. Neither reaches `stato`, `note` or the company's own identity. `POST
+/me/company` (REB-381) is a different door onto the same table: not an edit, a
+brand-new `Company` request, the company's name carried forward and everything else
+asked fresh -- a 404 for a referente with nothing to add to yet, the same as the
+`PATCH`.
 
 `GET /me/contracts` (REB-392) is the same discipline for the contracts: the caller's
 own, a 404 for anybody else's.
@@ -154,7 +157,15 @@ def update_me(me: MeDep, session: SessionDep, payload: MemberUpdate) -> MeRead:
 
 @router.patch("/me/company", response_model=MeRead)
 def update_my_company(me: MeDep, session: SessionDep, payload: CompanyUpdate) -> MeRead:
+    """The caller's newest request, the id-less form of the route below."""
     return MemberService(session).update_company(me.id, payload)
+
+
+@router.patch("/me/company/{company_id}", response_model=MeRead)
+def update_my_company_request(
+    me: MeDep, session: SessionDep, company_id: UUID, payload: CompanyUpdate
+) -> MeRead:
+    return MemberService(session).update_company(me.id, payload, company_id)
 
 
 @router.post("/me/company", response_model=MeRead, status_code=status.HTTP_201_CREATED)
