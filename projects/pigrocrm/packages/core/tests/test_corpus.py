@@ -7,7 +7,7 @@ measurement of nothing.
 # has an `__init__.py`, so a relative import has no parent package to resolve against.
 # `orologio.py` and `periodo_fiscale.py` are the shipped precedent for a shared test
 # helper module, and `corpus` is likewise unique across all three roots.
-from corpus import KNOWN_PARTITA_IVA, KNOWN_RAGIONE_SOCIALE, REFERENCE, build_corpus
+from corpus import KNOWN_PARTITA_IVA, KNOWN_RAGIONE_SOCIALE, REFERENCE, CorpusScale, build_corpus
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,12 @@ from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.people.models import Person
+
+# Determinism is a property of the generator, not of the scale: the two tests below compare
+# twenty sorted names either way, and the generator draws its first fifty customers
+# identically at any scale. The reference scale is built and read by every dashboard test;
+# here it cost 8 to 12s per test for two builds of 9,300 rows (REB-590).
+_SMALL = CorpusScale(customers=50, people=80, deals=200, documents=100, invoices=500)
 
 
 def test_build_corpus_produces_exactly_the_row_counts_it_claims(db_session: Session) -> None:
@@ -60,7 +66,7 @@ def test_build_corpus_is_deterministic_for_a_given_seed(db_session: Session) -> 
     scope means the test keeps working if that fixture detail ever changes.
     """
     savepoint = db_session.begin_nested()
-    build_corpus(db_session, REFERENCE, seed=7)
+    build_corpus(db_session, _SMALL, seed=7)
     first = list(
         db_session.scalars(
             select(Customer.ragione_sociale).order_by(Customer.ragione_sociale).limit(20)
@@ -68,7 +74,7 @@ def test_build_corpus_is_deterministic_for_a_given_seed(db_session: Session) -> 
     )
     savepoint.rollback()
 
-    build_corpus(db_session, REFERENCE, seed=7)
+    build_corpus(db_session, _SMALL, seed=7)
     second = list(
         db_session.scalars(
             select(Customer.ragione_sociale).order_by(Customer.ragione_sociale).limit(20)
@@ -86,7 +92,7 @@ def test_build_corpus_varies_with_the_seed(db_session: Session) -> None:
     `build_corpus` that ignored its argument entirely would satisfy the test above.
     """
     savepoint = db_session.begin_nested()
-    build_corpus(db_session, REFERENCE, seed=7)
+    build_corpus(db_session, _SMALL, seed=7)
     first = list(
         db_session.scalars(
             select(Customer.ragione_sociale).order_by(Customer.ragione_sociale).limit(20)
@@ -94,7 +100,7 @@ def test_build_corpus_varies_with_the_seed(db_session: Session) -> None:
     )
     savepoint.rollback()
 
-    build_corpus(db_session, REFERENCE, seed=8)
+    build_corpus(db_session, _SMALL, seed=8)
     second = list(
         db_session.scalars(
             select(Customer.ragione_sociale).order_by(Customer.ragione_sociale).limit(20)
