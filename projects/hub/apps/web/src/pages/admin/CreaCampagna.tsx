@@ -96,6 +96,13 @@ function Editor({ initial }: { initial: Campaign | null }) {
   const { campaign } = save
   const dirty = key !== save.savedKey
   const saveError = linkError ? new ApiError(422, linkError, ['bottone_url']) : save.error
+  // What the server refused about the address of the draft on screen, said under the
+  // field too: a rule the editor lacks is still explained where the admin types, and
+  // the other fields go on saving as soon as the address changes (REB-530).
+  const linkRefused =
+    key !== null && key === save.failedKey && save.error instanceof ApiError && save.error.fields.includes('bottone_url')
+      ? save.error.message
+      : null
 
   const audience = useQuery({
     queryKey: ['campaignAudience', campaign?.id, campaign ? audienceSource(campaign) : null],
@@ -224,7 +231,7 @@ function Editor({ initial }: { initial: Campaign | null }) {
             segue={segue}
             segueError={segueError}
           />
-          <Messaggio form={form} onChange={changeMail} onMeta={changeMeta} onLink={changeLink} />
+          <Messaggio form={form} onChange={changeMail} onMeta={changeMeta} onLink={changeLink} linkRefused={linkRefused} />
         </div>
         <aside className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:self-start">
           <Anteprima

@@ -411,8 +411,73 @@ export function linkProblem(form: Pick<CampaignForm, 'bottoneMeta' | 'bottoneUrl
     const name = authority.replace(/:[^:]*$/, '').replace(/\.$/, '').toLowerCase()
     const last = name.split('.').at(-1) ?? ''
     if (/^(?:\d+|0x[0-9a-f]*)$/.test(last) && !IPV4.test(name)) return LINK_URL_INVALID
+    if (!name.split('.').every(punycodeOk)) return LINK_URL_INVALID
   }
   return null
+}
+
+/** The server's `_punycode_ok`: an `xn--` label must decode to printable text, as a
+ *  browser requires, whatever this browser's own `new URL` lets through. */
+function punycodeOk(label: string): boolean {
+  if (!label.startsWith('xn--')) return true
+  const decoded = punycodeDecode(label.slice(4))
+  return decoded !== null && decoded !== '' && ![...decoded].some((ch) => ch !== ' ' && /[\p{C}\p{Z}]/u.test(ch))
+}
+
+/** RFC 3492's decoding, step for step as Python's `punycode` codec runs it in strict
+ *  mode (`encodings/punycode.py`), so both sides refuse the same labels: `null` where
+ *  Python raises. */
+export function punycodeDecode(text: string): string | null {
+  // ASCII only, as Python's `text.encode("ascii")` before it decodes.
+  if ([...text].some((ch) => ch.charCodeAt(0) > 0x7f)) return null
+  const pos = text.lastIndexOf('-')
+  const basic = pos === -1 ? '' : text.slice(0, pos)
+  const extended = (pos === -1 ? text : text.slice(pos + 1)).toUpperCase()
+  const output = [...basic].map((ch) => ch.codePointAt(0)!)
+  let char = 0x80
+  let index = -1
+  let bias = 72
+  let at = 0
+  while (at < extended.length) {
+    // One generalized variable-length integer.
+    let delta = 0
+    let weight = 1
+    let j = 0
+    let next = at
+    for (;;) {
+      if (next >= extended.length) return null
+      const code = extended.charCodeAt(next)
+      next += 1
+      let digit: number
+      if (code >= 0x41 && code <= 0x5a) digit = code - 0x41
+      else if (code >= 0x30 && code <= 0x39) digit = code - 22
+      else return null
+      const threshold = Math.min(26, Math.max(1, 36 * (j + 1) - bias))
+      delta += digit * weight
+      if (digit < threshold) break
+      weight *= 36 - threshold
+      j += 1
+    }
+    index += delta + 1
+    char += Math.floor(index / (output.length + 1))
+    if (char > 0x10ffff) return null
+    index %= output.length + 1
+    output.splice(index, 0, char)
+    bias = adapt(delta, at === 0, output.length)
+    at = next
+  }
+  return String.fromCodePoint(...output)
+}
+
+function adapt(delta: number, first: boolean, count: number): number {
+  let d = first ? Math.floor(delta / 700) : Math.floor(delta / 2)
+  d += Math.floor(d / count)
+  let divisions = 0
+  while (d > 455) {
+    d = Math.floor(d / 35)
+    divisions += 36
+  }
+  return divisions + Math.floor((36 * d) / (d + 38))
 }
 
 /** The destinations «Dove porta» offers. A `lista` keeps what its campaign measures

@@ -9,6 +9,7 @@ import {
   formFromCampaign,
   linkProblem,
   metaOptions,
+  punycodeDecode,
   payloadOf,
   withMeta,
   withTemplate,
@@ -60,6 +61,8 @@ describe('the address «Un link» carries (REB-530)', () => {
       ['https://999.1.1.1/', LINK_URL_INVALID],
       ['https://127.1/', LINK_URL_INVALID],
       ['https://xn--a.com/', LINK_URL_INVALID],
+      ['https://www.xn--a.com/', LINK_URL_INVALID],
+      ['https://xn--mnchen-3ya.de/', null],
       ['https://lu.ma:443/rebase-house', null],
       ['https://[::1]:8443/x', null],
       ['https://1.2.3.4/', null],
@@ -68,6 +71,19 @@ describe('the address «Un link» carries (REB-530)', () => {
     for (const [bottoneUrl, expected] of cases) {
       expect([bottoneUrl, linkProblem({ bottoneMeta: 'link', bottoneUrl })]).toEqual([bottoneUrl, expected])
     }
+  })
+})
+
+describe('an `xn--` label, decoded as the server decodes it (Greptile on #476)', () => {
+  it('reads what Python\'s punycode codec reads, and nothing where it raises', () => {
+    expect(punycodeDecode('mnchen-3ya')).toBe('münchen')
+    expect(punycodeDecode('bcher-kva')).toBe('bücher')
+    expect(punycodeDecode('zz-')).toBe('zz')
+    expect(punycodeDecode('')).toBe('')
+    // `xn--a` decodes, but to U+0080, a control character: no browser opens that host.
+    expect(punycodeDecode('a')).toBe('\u0080')
+    expect(punycodeDecode('ab-cd9')).toBeNull()
+    expect(punycodeDecode('ab!')).toBeNull()
   })
 })
 

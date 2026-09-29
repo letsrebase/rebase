@@ -176,6 +176,56 @@ describe('«Un link» (REB-530)', () => {
     })
   })
 
+  it('says under the field why an `xn--` host that does not decode is refused (Greptile on #476)', async () => {
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+      'PATCH /api/hub/campaigns/c1': () => json(DRAFT),
+    })
+    mountAt('/admin/campaigns/new', '/admin/campaigns/new')
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await screen.findByText('riceverà la mail', { exact: false }, SAVED)
+    await pick('Dove porta', 'Un link')
+    await userEvent.type(screen.getByLabelText('Indirizzo del link'), 'https://xn--a.com/')
+    expect(screen.getByLabelText('Indirizzo del link')).toHaveAccessibleDescription('Il link del bottone non è un indirizzo valido.')
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    expect(patches(calls, 'c1')).toEqual([])
+  })
+
+  it('says a refusal of the address from the server under the field, and saves again once it changes', async () => {
+    const REFUSED = 'https://lu.ma/rifiutato'
+    const SENTENCE = 'Il link del bottone non è un indirizzo valido.'
+    const calls = api({
+      'GET /api/hub/me': () => json(ME),
+      'GET /api/hub/campaigns/templates': () => json([TEMPLATE]),
+      'GET /api/hub/campaigns/c1/audience': () => json(AUDIENCE),
+      'POST /api/hub/campaigns': () => json(DRAFT, 201),
+      'PATCH /api/hub/campaigns/c1': (init) => {
+        const body = JSON.parse(String(init!.body)) as Record<string, unknown>
+        return body.bottone_url === REFUSED
+          ? json({ detail: [{ loc: ['body', 'bottone_url'], msg: SENTENCE, type: 'value_error' }] }, 422)
+          : json({ ...DRAFT, ...body })
+      },
+    })
+    mountAt('/admin/campaigns/new', '/admin/campaigns/new')
+    await pick('Stato del percorso', 'Manca solo il CV')
+    await screen.findByText('riceverà la mail', { exact: false }, SAVED)
+    await pick('Dove porta', 'Un link')
+    const field = screen.getByLabelText('Indirizzo del link')
+    await userEvent.type(field, REFUSED)
+    // The editor has no rule against it; the server has, and the field says so.
+    await vi.waitFor(() => expect(field).toHaveAccessibleDescription(SENTENCE), SAVED)
+    expect(field).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText(`Non salvata: ${SENTENCE}`)).toBeInTheDocument()
+    await userEvent.clear(field)
+    await userEvent.type(field, LUMA)
+    expect(await screen.findByText(/Bozza salvata alle/, {}, SAVED)).toBeInTheDocument()
+    expect(field).not.toHaveAccessibleDescription(SENTENCE)
+    expect(patches(calls, 'c1').at(-1)).toMatchObject({ bottone_meta: 'link', bottone_url: LUMA })
+  })
+
   it('takes the menu of actions away from a filtered list while it leads to a link', async () => {
     api({
       'GET /api/hub/me': () => json(ME),

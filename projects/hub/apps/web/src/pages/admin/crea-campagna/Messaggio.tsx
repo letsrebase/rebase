@@ -15,16 +15,19 @@ export function Messaggio({
   onChange,
   onMeta,
   onLink,
+  linkRefused = null,
 }: {
   form: CampaignForm
   onChange: (patch: Partial<CampaignForm>) => void
   onMeta: (meta: CampaignMeta) => void
   onLink: (url: string) => void
+  /** The server's sentence when it refused this very address (a 422 on `bottone_url`). */
+  linkRefused?: string | null
 }) {
   const link = form.bottoneMeta === 'link'
   // Said while typing, but not before anything is typed: an empty field shows what to
   // write in it, and the header says the draft waits for it.
-  const problem = link && form.bottoneUrl.trim() !== '' ? linkProblem(form) : null
+  const problem = link ? ((form.bottoneUrl.trim() !== '' ? linkProblem(form) : null) ?? linkRefused) : null
   return (
     <section aria-labelledby="campagna-messaggio" className="space-y-4">
       <h2 id="campagna-messaggio" className="text-lg font-semibold">

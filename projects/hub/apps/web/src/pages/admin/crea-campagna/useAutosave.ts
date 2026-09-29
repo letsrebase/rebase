@@ -14,6 +14,9 @@ export interface Autosave {
   error: unknown
   /** When the server last stored the draft, for «Bozza salvata alle …». */
   savedAt: string | null
+  /** The key of the draft the server last refused, while `error` is its answer: a
+   *  refusal names a field only for the draft it was about (REB-530). */
+  failedKey: string | null
   /** Stores the draft with this key, unless it is the one already stored, then runs
    *  `action` on the stored campaign and keeps the campaign it answers. The test and
    *  «Invia» go through it, so neither acts on a campaign older than the page, and no
@@ -112,5 +115,5 @@ export function useAutosave(key: string | null, initial: Campaign | null): Autos
     enqueue(() => save(settled)).catch(() => undefined)
   }, [settled, key, failedKey, enqueue, save])
 
-  return { campaign, savedKey, saving, error, savedAt, run }
+  return { campaign, savedKey, saving, error, savedAt, failedKey, run }
 }
