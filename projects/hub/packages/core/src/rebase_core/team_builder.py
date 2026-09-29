@@ -20,10 +20,13 @@ Claude was writing. What was dropped is logged by position, never by anything th
 wrote. Where a person works is not a check but the model's judgement (REB-598): on a need
 on site it prefers whoever is hybrid or on site and near the place, and when nobody such
 fits the skills it proposes the best fits anyway and says in the summary that they work
-remotely or from elsewhere, so the company decides; the member's work mode is on every
-read for the same reason. When the checks drop everyone the model chose, its summary
-describes a team that is not there, and the hub's own sentence (`NO_FIT_SENTENCE`) takes
-its place; an empty catalogue asks nobody and answers that sentence at once, for free.
+remotely, from elsewhere or have not said, so the company decides; the member's work
+mode is on every read for the same reason. That sentence names no place of a person: the
+public read withholds a summary that names a member's card place the description itself
+does not (`_public_riassunto`), the way it withholds such a motivazione. When the checks
+drop everyone the model chose, its summary describes a team that is not there, and the
+hub's own sentence (`NO_FIT_SENTENCE`) takes its place; an empty catalogue asks nobody
+and answers that sentence at once, for free.
 
 **The economics are the hub's.** Each member's band comes from their own rate
 (`bands.py`), read when the proposal is read, and the team's bands are their sum; the
@@ -89,6 +92,9 @@ _POSITION = re.compile(r"t([0-9]{1,6})")
 PLACE_WITHHELD_REASON = "Profilo adatto al ruolo."
 # And in place of a card's summary that names that place (`_public_card`).
 PLACE_WITHHELD_SUMMARY = "La sintesi di questo profilo non è pubblica."
+# And in place of a proposal's summary that names the place on a member's card when the
+# description does not (`_public_riassunto`).
+PLACE_WITHHELD_RIASSUNTO = "Il riassunto di questa proposta non è pubblico."
 # Words of a card's `luogo` that say what kind of place it is rather than which one:
 # «provincia di Bergamo» is Bergamo, and a reason that says «in provincia» names nothing
 # (a word under four letters is never read: «sud», «est»).
@@ -233,9 +239,12 @@ Answer in the JSON schema you are given:
 - riassunto: an anonymous summary of the project, two to four sentences: what is to \
 be done, for how long, with which technologies, and where when the description says \
 so. When the description asks for people on site and the people you propose do not \
-work on site there, say so here in one plain sentence (for example: nobody with these \
-skills works on site in the place named, so the people proposed work remotely). When \
-nobody in the catalogue fits the skills, one sentence saying why, and an empty team.
+work on site there, say so here in one plain sentence, as the catalogue has it: that \
+they work remotely, from another city, or have not said how they work (for example: \
+nobody with these skills works on site in the place named, so the person proposed works \
+remotely). Name no place of a person: the only place here is the one the description \
+names. When nobody in the catalogue fits the skills, one sentence saying why, and an \
+empty team.
 - luogo: what the description says about place. locale is true when it asks for \
 people on site, at the client's or the project's premises, for all or part of the \
 week, and false when the work can be remote or the description does not say; dove is \
@@ -262,11 +271,13 @@ skills fit.
 true and prefer people whose modalita is "ibrido" or "in_sede" and, when it names where \
 the client or the work is, whose luogo is there or nearby. Skills come first all the \
 same: when nobody who works on site fits the skills, propose the people who do fit, \
-whatever their modalita or luogo, and say in the riassunto that they work remotely or \
-from another city. A description that only names a place, without asking for people on \
-site, prefers people nearby and excludes nobody.
+whatever their modalita or luogo, and say in the riassunto that they work remotely, from \
+another city, or have not said how they work, as their modalita has it: a null modalita \
+is unknown, never remote. A description that only names a place, without asking for \
+people on site, prefers people nearby and excludes nobody.
 - The riassunto names no company, product or person from the description: describe \
-them by their kind instead ("un'azienda di logistica", "un'app per le prenotazioni").
+them by their kind instead ("un'azienda di logistica", "un'app per le prenotazioni"), \
+and no place of a person from the catalogue.
 - A motivazione names no place.
 - Write every text in Italian, except the names of technologies and methods, which \
 stay as they are.
@@ -586,8 +597,9 @@ class TeamBuilder:
         since the proposal is left out, and so is one whose stored card no longer
         validates, logged by position; the row keeps them all. The cloud's and the
         admin's read name each member (§ 4.2); the public read names nobody, and it
-        withholds the card's `luogo`, and with it any field of the card and a motivazione
-        that names that place (`_public_card`, `_public_reason`)."""
+        withholds the card's `luogo`, and with it any field of the card, a motivazione
+        and the summary that name that place (`_public_card`, `_public_reason`,
+        `_public_riassunto`)."""
         ids = [UUID(member["freelancer_id"]) for member in row.team]
         found: dict[UUID, tuple[str | None, Decimal | None, Any, str, str]] = {}
         if ids:
@@ -608,6 +620,7 @@ class TeamBuilder:
                 for freelancer_id, remoto, tariffa, card, nome, cognome in rows
             }
         members: list[TeamMemberRead] = []
+        cards: list[Card] = []
         for stored in row.team:
             freelancer_id = UUID(stored["freelancer_id"])
             if freelancer_id not in found:
@@ -627,6 +640,7 @@ class TeamBuilder:
                     stored["posizione"],
                 )
                 continue
+            cards.append(scheda)
             members.append(
                 TeamMemberRead(
                     posizione=stored["posizione"],
@@ -648,7 +662,11 @@ class TeamBuilder:
         day, month = team_bands([member.fascia for member in members])
         return TeamProposalRead(
             id=row.id,
-            riassunto=row.riassunto,
+            riassunto=(
+                _public_riassunto(row.id, row.riassunto, row.descrizione, cards)
+                if public
+                else row.riassunto
+            ),
             luogo=row.luogo,
             team=members,
             economia=_economia(day, month),
@@ -664,18 +682,46 @@ def _names_place(text: str, luogo: str | None) -> bool:
     capital, in any case but all lower case, as the card writer reads a surname
     (`cards._names`): «Alto Adige» and «BERGAMO» are the place, «di alto livello» is
     not."""
+    return _names_any(text, _place_words(luogo))
+
+
+def _place_words(luogo: str | None) -> set[str]:
+    """The words of a card's `luogo` that name the place, case folded."""
     if not luogo:
-        return False
-    words = {
+        return set()
+    return {
         word.casefold()
         for word in re.findall(r"[^\W\d_]{4,}", luogo)
         if word.casefold() not in _PLACE_GENERIC
     }
+
+
+def _names_any(text: str, words: set[str]) -> bool:
     return any(
         not found.group().islower()
         for word in words
         for found in re.finditer(rf"\b{re.escape(word)}\b", text, re.IGNORECASE)
     )
+
+
+def _public_riassunto(
+    proposal_id: UUID, riassunto: str, descrizione: str, cards: Sequence[Card]
+) -> str:
+    """The summary a public page reads. The prompt lets it name the place the visitor
+    wrote and no place of a person; one that names the place on a member's card anyway
+    would give back what the public read withholds, so it reads as the hub's own sentence
+    instead (REB-598, the same test as `_public_reason`). A place the description itself
+    names, in any case, is the visitor's own word and no secret to them, so a member who
+    is there does not withhold the summary. The row, the admin's and the cloud's reads
+    keep the model's words."""
+    words = {word for card in cards for word in _place_words(card.luogo)}
+    written = {
+        word for word in words if re.search(rf"\b{re.escape(word)}\b", descrizione, re.IGNORECASE)
+    }
+    if _names_any(riassunto, words - written):
+        logger.warning("team proposal %s: the summary names a member's place", proposal_id)
+        return PLACE_WITHHELD_RIASSUNTO
+    return riassunto
 
 
 def _public_reason(motivazione: str, scheda: Card) -> str:

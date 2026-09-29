@@ -31,6 +31,7 @@ from rebase_core.models import Freelancer, FreelancerCard, TeamProposal, User
 from rebase_core.team_builder import (
     NO_FIT_SENTENCE,
     PLACE_WITHHELD_REASON,
+    PLACE_WITHHELD_RIASSUNTO,
     PLACE_WITHHELD_SUMMARY,
     PROPOSAL_MAX_TOKENS,
     PROPOSAL_SCHEMA,
@@ -455,7 +456,8 @@ def test_engine_keeps_remote_members_on_a_local_need(
     team = [_member(ids[who]) for who in (remote, unknown, hybrid, on_site)]
     sentence = (
         "Un'azienda cerca un backend developer in sede a Torino: nessuno con queste "
-        "competenze lavora in sede, quindi le persone proposte lavorano da remoto."
+        "competenze lavora in sede, quindi le persone proposte lavorano da remoto o non "
+        "hanno indicato come lavorano."
     )
     llm = RecordingCall([proposal_response(team, riassunto=sentence, locale=True, dove="Torino")])
 
@@ -890,6 +892,41 @@ def test_a_public_reason_that_names_the_cards_place_is_withheld(clean: Session) 
     assert [member.motivazione for member in admin.team] == reasons
 
 
+def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session) -> None:
+    """The prompt lets the summary name the place the description names and no place of
+    a person; a summary that names a member's card place anyway would give back what the
+    public read withholds, unless the visitor wrote that place themselves. The row and
+    the admin's read keep the model's words."""
+    torino = _talent(clean, 1, card={**CARD, "luogo": "Torino"})
+    verona = _talent(clean, 2, card={**CARD, "luogo": "Provincia di Verona"})
+    positions = _positions(clean)
+    kept = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa lavora da remoto."
+    leaked = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a VERONA."
+    llm = RecordingCall(
+        [
+            proposal_response([_member(positions[torino])], riassunto=kept, locale=True),
+            proposal_response([_member(positions[verona])], riassunto=leaked, locale=True),
+        ]
+    )
+    builder = _builder(clean, llm)
+    descrizione = "Cerchiamo un backend developer in sede a torino due giorni a settimana."
+
+    named = builder.propose(
+        TeamProposalCreate(descrizione=descrizione), origine="pubblico", user_id=None
+    )
+    withheld = builder.propose(
+        TeamProposalCreate(descrizione=descrizione), origine="pubblico", user_id=None
+    )
+
+    # «Torino» is the visitor's own word, in any case; «Verona» is the catalogue's alone.
+    assert named.riassunto == kept
+    assert withheld.riassunto == PLACE_WITHHELD_RIASSUNTO
+    assert PLACE_WITHHELD_RIASSUNTO == "Il riassunto di questa proposta non è pubblico."
+    assert "VERONA" not in withheld.model_dump_json()
+    assert builder.get(withheld.id, public=False).riassunto == leaked
+    assert builder.get(withheld.id, public=True).riassunto == PLACE_WITHHELD_RIASSUNTO
+
+
 def test_a_public_card_names_its_place_nowhere(clean: Session) -> None:
     """The public read withholds `luogo`, so a card that names the place anywhere else
     (one written against the prompt, or before its rule) gives none of it back: the
@@ -1105,6 +1142,7 @@ def test_the_number_of_people_reaches_the_prompt_only_when_asked(clean: Session)
     # words, and the old sentence is gone.
     rules = llm.requests[0].system[0]["text"]
     assert "excludes nobody" in rules and "propose nobody" not in rules
+    assert "a null modalita is unknown, never remote" in rules
     # The event tells the asked number from the proposed one, since the row keeps neither.
     assert [(p["persone"], p["persone_richieste"]) for _, _, p in capture.calls] == [
         (1, None),
