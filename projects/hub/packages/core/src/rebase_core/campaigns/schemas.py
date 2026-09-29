@@ -96,9 +96,15 @@ CampaignName = Annotated[
 ]
 
 Azione = Literal[
-    "entrato", "cv", "scheda_completa", "profilo_creato", "richiesta_aggiornata", "pigro_cliente"
+    "entrato",
+    "cv",
+    "scheda_completa",
+    "profilo_creato",
+    "richiesta_aggiornata",
+    "pigro_cliente",
+    "clic",
 ]
-Meta = Literal["area", "wizard", "pigro", "richiesta"]
+Meta = Literal["area", "wizard", "pigro", "richiesta", "link"]
 
 
 class CampaignDraft(BaseModel):
@@ -110,6 +116,9 @@ class CampaignDraft(BaseModel):
     testo: str = Field(default="", max_length=CAMPAIGN_TEXT_MAX_LENGTH)
     bottone_testo: str = Field(default="", max_length=CAMPAIGN_BUTTON_MAX_LENGTH)
     bottone_meta: Meta
+    # With «Un link» only (REB-530). The service checks it with the destination and the
+    # action, in Italian, since whether it may be there depends on both.
+    bottone_url: str | None = None
     azione: Azione
 
 
@@ -132,6 +141,9 @@ class CampaignPatch(BaseModel):
     testo: str | None = Field(default=None, max_length=CAMPAIGN_TEXT_MAX_LENGTH)
     bottone_testo: str | None = Field(default=None, max_length=CAMPAIGN_BUTTON_MAX_LENGTH)
     bottone_meta: Meta | None = None
+    # `null` is a value here, not «no change»: the address of a button that no longer
+    # leads to a link. Left out, it follows the destination (`CampaignService.update`).
+    bottone_url: str | None = None
     azione: Azione | None = None
 
     @field_validator(*_NOT_NULLABLE, mode="after")
@@ -198,6 +210,7 @@ class CampaignRead(BaseModel):
     testo: str
     bottone_testo: str
     bottone_meta: str
+    bottone_url: str | None = None
     azione: str
     stato: str
     contenuto_at: datetime

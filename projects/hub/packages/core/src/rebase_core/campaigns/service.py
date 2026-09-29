@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from rebase_core.admin_tokens import AdminRead
 from rebase_core.campaigns.actions import snapshot
 from rebase_core.campaigns.audience import REASON_CANCELLED, build_audience, waiting_rows
+from rebase_core.campaigns.links import LINK, button_problem
 from rebase_core.campaigns.render import RenderTarget, person_code, render
 from rebase_core.campaigns.schemas import (
     AudiencePreview,
@@ -74,8 +75,14 @@ _CONTENT_FIELDS = (
     "testo",
     "bottone_testo",
     "bottone_meta",
+    "bottone_url",
     "azione",
 )
+
+
+def _stripped(url: str | None) -> str | None:
+    """A button's address as it is stored: trimmed, and `None` rather than blank."""
+    return (url or "").strip() or None
 
 
 def _slugify(value: str) -> str:
@@ -100,6 +107,8 @@ class CampaignService:
         self._validate(
             data.fonte, data.stato_percorso, data.filtri is not None, data.bottone_meta, data.azione
         )
+        bottone_url = _stripped(data.bottone_url)
+        self._check_button(data.bottone_meta, bottone_url, data.azione)
         now = self.clock()
         # `Campaign.filtri` is `JSONB(none_as_null=True)` (models.py), so an explicit
         # `None` here binds as a true SQL NULL, matching the check constraint
@@ -117,6 +126,7 @@ class CampaignService:
             testo=data.testo,
             bottone_testo=data.bottone_testo,
             bottone_meta=data.bottone_meta,
+            bottone_url=bottone_url,
             azione=data.azione,
             stato="bozza",
             contenuto_at=now,
@@ -167,6 +177,13 @@ class CampaignService:
             campaign.bottone_meta,
             campaign.azione,
         )
+        # A button that leaves «Un link» takes its address with it unless the request
+        # says otherwise, so the editor's «Dove porta» alone is a valid change.
+        if "bottone_url" in changes:
+            campaign.bottone_url = _stripped(campaign.bottone_url)
+        elif campaign.bottone_meta != LINK:
+            campaign.bottone_url = None
+        self._check_button(campaign.bottone_meta, campaign.bottone_url, campaign.azione)
         if any(getattr(campaign, field) != before[field] for field in _CONTENT_FIELDS):
             campaign.contenuto_at = self.clock()
         self.session.commit()
@@ -418,6 +435,7 @@ class CampaignService:
             testo=parent.testo,
             bottone_testo=parent.bottone_testo,
             bottone_meta=parent.bottone_meta,
+            bottone_url=parent.bottone_url,
             azione=parent.azione,
             stato="bozza",
             contenuto_at=now,
@@ -460,6 +478,14 @@ class CampaignService:
             raise ValidationFailed(ENTITY, "bottone_meta", PIGRO_LATER)
         if azione == "pigro_cliente":
             raise ValidationFailed(ENTITY, "azione", PIGRO_LATER)
+
+    @staticmethod
+    def _check_button(meta: str, url: str | None, azione: str) -> None:
+        """«Un link» carries an https address and measures the click; any other
+        destination carries neither (REB-530, `campaigns/links.py`)."""
+        problem = button_problem(meta, url, azione)
+        if problem is not None:
+            raise ValidationFailed(ENTITY, *problem)
 
     def _unique_slug(self, base: str, *, exclude: UUID | None = None) -> str:
         """`base`, or `base-2`, `base-3`… if another campaign holds it. `exclude` is

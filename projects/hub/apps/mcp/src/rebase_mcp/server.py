@@ -984,10 +984,12 @@ def build_server(
         - se l'invio è fermo, da quando e perché (`fermo_at`, `fermo_motivo`), finché
           non parte la prossima mail;
         - l'azione che misura: entrato, cv, scheda_completa, profilo_creato o
-          richiesta_aggiornata;
+          richiesta_aggiornata, oppure clic quando il bottone porta a un link;
         - in `conteggi` quante sono state inviate, saltate, fallite, consegnate,
           rimbalzate e cliccate, quante persone sono entrate nella loro area dopo la mail
-          (`entrate`) e quante hanno fatto l'azione (`azioni`).
+          (`entrate`) e quante hanno fatto l'azione (`azioni`);
+        - dove porta il bottone (`bottone_meta`: area, wizard, richiesta o link) e, per
+          un link, il suo indirizzo (`bottone_url`), `null` altrimenti.
 
         Solo lettura: una campagna si prepara e si invia dall'area admin."""
         return _run(lambda s: CampaignService(s, campaign_settings).list_all())
@@ -1004,7 +1006,8 @@ def build_server(
         - quando ha fatto l'azione (`azione_dalla_mail` per un profilo creato dal link).
 
         `campagna.segue_id` è la campagna da cui viene una «Riscrivi a chi non ha fatto
-        niente». Solo lettura."""
+        niente»; `campagna.bottone_meta` e `campagna.bottone_url` dicono dove porta il
+        bottone, come in `list_campagne`. Solo lettura."""
         return _run(lambda s: CampaignService(s, campaign_settings).detail(UUID(campagna_id)))
 
     hub = urlsplit(settings.hub_url) if settings is not None else None

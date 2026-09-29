@@ -1,5 +1,6 @@
 import { amountFilter } from '@/lib/amount'
 import type { AudiencePreview, Campaign, CampaignAzione, CampaignDraft, CampaignMeta, CampaignTemplate } from '@/lib/api'
+import { CAMPAIGN_MAX_LENGTH, META_LABELS } from '@/lib/campaigns'
 
 export type Fonte = 'stato' | 'filtri' | 'lista'
 export type Lista = 'talenti' | 'aziende'
@@ -102,6 +103,9 @@ export interface CampaignForm {
   testo: string
   bottoneTesto: string
   bottoneMeta: CampaignMeta
+  /** The address «Un link» leads to, as typed (REB-530); kept while another destination
+   *  is picked, so going back to «Un link» finds it, and never sent with that one. */
+  bottoneUrl: string
   azione: CampaignAzione
   /** The campaign a `lista` draft follows (`Campaign.segue_id`): `null` for a `stato`
    *  or `filtri` form, which picks its own audience instead. */
@@ -119,6 +123,7 @@ export const EMPTY_FORM: CampaignForm = {
   testo: '',
   bottoneTesto: '',
   bottoneMeta: 'area',
+  bottoneUrl: '',
   azione: 'entrato',
   segueId: null,
 }
@@ -196,7 +201,14 @@ function filtriOf(form: CampaignForm): Record<string, unknown> | null {
 
 /** What a `lista` saves: the mail alone. Whom it reaches and what it measures come from
  *  the campaign it follows, and the API refuses a change to either (`LIST_IS_FIXED`). */
-export type ListaPatch = Pick<CampaignDraft, 'nome' | 'oggetto' | 'testo' | 'bottone_testo' | 'bottone_meta'>
+export type ListaPatch = Pick<CampaignDraft, 'nome' | 'oggetto' | 'testo' | 'bottone_testo' | 'bottone_meta' | 'bottone_url'>
+
+/** The address the button carries: «Un link»'s own, trimmed, and nothing at all for any
+ *  other destination, so the request of a hub button stays what it always was and the
+ *  server drops a stored address with the link (`CampaignService.update`). */
+function linkOf(form: CampaignForm): string | undefined {
+  return form.bottoneMeta === 'link' ? form.bottoneUrl.trim() : undefined
+}
 
 /** The draft the page saves, or `null` while there is nothing to save yet: a state
  *  source with no state picked has no list and no template behind it. A `lista` is
@@ -211,6 +223,7 @@ export function payloadOf(form: CampaignForm): CampaignDraft | ListaPatch | null
       testo: form.testo,
       bottone_testo: form.bottoneTesto,
       bottone_meta: form.bottoneMeta,
+      bottone_url: linkOf(form),
     }
   }
   if (form.fonte === 'stato' && form.statoPercorso === null) return null
@@ -223,6 +236,7 @@ export function payloadOf(form: CampaignForm): CampaignDraft | ListaPatch | null
     testo: form.testo,
     bottone_testo: form.bottoneTesto,
     bottone_meta: form.bottoneMeta,
+    bottone_url: linkOf(form),
     azione: form.azione,
   }
 }
@@ -247,6 +261,7 @@ export function formFromCampaign(c: Campaign): CampaignForm {
     testo: c.testo,
     bottoneTesto: c.bottone_testo,
     bottoneMeta: c.bottone_meta,
+    bottoneUrl: c.bottone_url ?? '',
     azione: c.azione,
     segueId: c.segue_id,
   }
@@ -293,24 +308,29 @@ export function formFromCampaign(c: Campaign): CampaignForm {
  *  since it is not the admin's to set for a state (fix 4, REB-472 round 1); the mail
  *  follows it only until the admin has written into it (spec § 1), and the name only
  *  until the admin has typed one: the name is not the mail, so typing the title first
- *  must not stop the template from filling the mail. */
+ *  must not stop the template from filling the mail. The destination is the same: a
+ *  «Dove porta» picked first keeps the template out of it, and out of nothing else, so
+ *  a link chosen before the state is never replaced and keeps measuring the click,
+ *  while the subject, the text and the button's words still come from the template
+ *  (REB-530, CodeRabbit on #476). */
 export function withTemplate(
   form: CampaignForm,
   template: CampaignTemplate | undefined,
   value: string,
-  touched: { mail: boolean; nome: boolean },
+  touched: { mail: boolean; nome: boolean; meta?: boolean },
 ): CampaignForm {
   const next = { ...form, statoPercorso: value }
   if (!template) return next
-  next.azione = template.azione
+  const keepMeta = touched.mail || touched.meta === true
+  next.azione = keepMeta && form.bottoneMeta === 'link' ? 'clic' : template.azione
   if (!touched.nome) next.nome = template.etichetta
+  if (!keepMeta) next.bottoneMeta = template.bottone_meta
   if (touched.mail) return next
   return {
     ...next,
     oggetto: template.oggetto,
     testo: template.testo,
     bottoneTesto: template.bottone_testo,
-    bottoneMeta: template.bottone_meta,
   }
 }
 
@@ -346,6 +366,138 @@ export function countAudience(audience: AudiencePreview, esclusi: readonly strin
     tolte: tolte.length,
     esclusi: tolte,
   }
+}
+
+// «Un link» (REB-530), the server's own sentences (`rebase_core/campaigns/links.py`),
+// so the field says at once what a save would be refused for.
+export const LINK_URL_MISSING = 'Scrivi il link a cui porta il bottone.'
+export const LINK_URL_TOO_LONG = `Il link del bottone è troppo lungo: al massimo ${CAMPAIGN_MAX_LENGTH.bottone_url} caratteri.`
+export const LINK_URL_NOT_HTTPS = 'Il link del bottone deve iniziare con https://.'
+export const LINK_URL_INVALID = 'Il link del bottone non è un indirizzo valido.'
+
+const OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)'
+const IPV4 = new RegExp(`^${OCTET}(?:\\.${OCTET}){3}$`)
+
+/** Why the address «Un link» carries cannot be saved, or `null`: always `null` for any
+ *  other destination. The server's rules (`link_problem`), in the same order, so the
+ *  field refuses exactly what a save would be refused for. */
+export function linkProblem(form: Pick<CampaignForm, 'bottoneMeta' | 'bottoneUrl'>): string | null {
+  if (form.bottoneMeta !== 'link') return null
+  const url = form.bottoneUrl.trim()
+  if (url === '') return LINK_URL_MISSING
+  if (url.length > CAMPAIGN_MAX_LENGTH.bottone_url) return LINK_URL_TOO_LONG
+  // A backslash (a browser reads it as `/`), a space, a control or format character:
+  // Python's `isspace() or not isprintable()` on the server.
+  if (/[\\\p{C}\p{Z}]/u.test(url)) return LINK_URL_INVALID
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url)?.[1]
+  if (scheme?.toLowerCase() !== 'https') return LINK_URL_NOT_HTTPS
+  // `new URL('https:lu.ma')` would find a host there; `urlsplit` on the server does not.
+  if (!/^https:\/\//i.test(url)) return LINK_URL_INVALID
+  const authority = url.slice('https://'.length).split(/[/?#]/, 1)[0] ?? ''
+  // No host right after `https://` (`new URL` skips extra slashes, `urlsplit` does
+  // not), credentials in front of the host, and a percent-encoded host, which `new
+  // URL` decodes and `urlsplit` does not: none belongs in a campaign link.
+  if (authority === '' || /[@%]/.test(authority)) return LINK_URL_INVALID
+  let parsed: URL
+  try {
+    parsed = new URL(url) // throws on a broken host or a port out of range
+  } catch {
+    return LINK_URL_INVALID
+  }
+  if (!parsed.hostname) return LINK_URL_INVALID
+  if (!authority.startsWith('[')) {
+    // A last label that is a number makes the host an IPv4 address: only four numbers
+    // up to 255 pass, on both sides (`new URL` alone would turn `127.1` into one).
+    const name = authority.replace(/:[^:]*$/, '').replace(/\.$/, '').toLowerCase()
+    const last = name.split('.').at(-1) ?? ''
+    if (/^(?:\d+|0x[0-9a-f]*)$/.test(last) && !IPV4.test(name)) return LINK_URL_INVALID
+    if (!name.split('.').every(punycodeOk)) return LINK_URL_INVALID
+  }
+  return null
+}
+
+/** The server's `_punycode_ok`: an `xn--` label must decode to printable text, as a
+ *  browser requires, whatever this browser's own `new URL` lets through. */
+function punycodeOk(label: string): boolean {
+  if (!label.startsWith('xn--')) return true
+  const decoded = punycodeDecode(label.slice(4))
+  return decoded !== null && decoded !== '' && ![...decoded].some((ch) => ch !== ' ' && /[\p{C}\p{Z}]/u.test(ch))
+}
+
+/** RFC 3492's decoding, step for step as Python's `punycode` codec runs it in strict
+ *  mode (`encodings/punycode.py`), so both sides refuse the same labels: `null` where
+ *  Python raises. */
+export function punycodeDecode(text: string): string | null {
+  // ASCII only, as Python's `text.encode("ascii")` before it decodes.
+  if ([...text].some((ch) => ch.charCodeAt(0) > 0x7f)) return null
+  const pos = text.lastIndexOf('-')
+  const basic = pos === -1 ? '' : text.slice(0, pos)
+  const extended = (pos === -1 ? text : text.slice(pos + 1)).toUpperCase()
+  const output = [...basic].map((ch) => ch.codePointAt(0)!)
+  let char = 0x80
+  let index = -1
+  let bias = 72
+  let at = 0
+  while (at < extended.length) {
+    // One generalized variable-length integer.
+    let delta = 0
+    let weight = 1
+    let j = 0
+    let next = at
+    for (;;) {
+      if (next >= extended.length) return null
+      const code = extended.charCodeAt(next)
+      next += 1
+      let digit: number
+      if (code >= 0x41 && code <= 0x5a) digit = code - 0x41
+      else if (code >= 0x30 && code <= 0x39) digit = code - 22
+      else return null
+      const threshold = Math.min(26, Math.max(1, 36 * (j + 1) - bias))
+      delta += digit * weight
+      if (digit < threshold) break
+      weight *= 36 - threshold
+      j += 1
+    }
+    index += delta + 1
+    char += Math.floor(index / (output.length + 1))
+    if (char > 0x10ffff) return null
+    index %= output.length + 1
+    output.splice(index, 0, char)
+    bias = adapt(delta, at === 0, output.length)
+    at = next
+  }
+  return String.fromCodePoint(...output)
+}
+
+function adapt(delta: number, first: boolean, count: number): number {
+  let d = first ? Math.floor(delta / 700) : Math.floor(delta / 2)
+  d += Math.floor(d / count)
+  let divisions = 0
+  while (d > 455) {
+    d = Math.floor(d / 35)
+    divisions += 36
+  }
+  return divisions + Math.floor((36 * d) / (d + 38))
+}
+
+/** The destinations «Dove porta» offers. A `lista` keeps what its campaign measures
+ *  (`LIST_IS_FIXED`), and «Un link» measures the click (REB-530), so a «Riscrivi» of a
+ *  link stays a link and any other stays off it. */
+export function metaOptions(form: Pick<CampaignForm, 'fonte' | 'azione'>): [CampaignMeta, string][] {
+  const all = Object.entries(META_LABELS) as [CampaignMeta, string][]
+  if (form.fonte !== 'lista') return all
+  return all.filter(([value]) => (value === 'link') === (form.azione === 'clic'))
+}
+
+/** «Dove porta» picked. «Un link» measures the click (REB-530), so the action follows
+ *  it there, and back from it to the state's own action (`fallback`, the template's)
+ *  or to «È entrato nell’area» for a filtered list, whose menu comes back with it. A
+ *  `lista` keeps its action whatever the button does (`metaOptions` keeps it valid). */
+export function withMeta(form: CampaignForm, meta: CampaignMeta, fallback: CampaignAzione | undefined): CampaignForm {
+  if (form.fonte === 'lista') return { ...form, bottoneMeta: meta }
+  if (meta === 'link') return { ...form, bottoneMeta: meta, azione: 'clic' }
+  const azione = form.azione === 'clic' ? (form.fonte === 'stato' ? (fallback ?? 'entrato') : 'entrato') : form.azione
+  return { ...form, bottoneMeta: meta, azione }
 }
 
 export function contentReady(form: CampaignForm): boolean {
