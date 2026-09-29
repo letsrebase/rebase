@@ -5,6 +5,14 @@ The predicate the shipped repositories emit is `col ILIKE :p ESCAPE '\'`. Postgr
 both arguments constant, constant folding should produce a constant pattern that the
 trigram index can serve. "Should" is not a measurement, so this file is the measurement.
 
+Two tests that used to close this file asserted the *free* planner's choice at REFERENCE
+scale, a `Seq Scan on customers` and its disappearance once the choice was taken away: the
+planner corpus's family, removed here as its last members (REB-597, after
+REB-580). Every plan below is
+forced with `enable_seqscan = off` and asks whether the repositories' own SQL *can* use an
+index, which constant folding decides and the scale does not; the corpus is SMALL since the
+same card, `ANALYZE`d so the estimates are drawn from statistics rather than defaults.
+
 VERDICT: **the `ESCAPE` clause stays.** It costs nothing. The Global Constraint is
 unchanged, `escape_like` keeps its `escape="\\"` at every call site, and nothing was
 removed anywhere.
@@ -72,21 +80,17 @@ change no semantics. It would then have had to go from **every** call site in th
 commit, never from one.
 """
 
-from collections.abc import Iterator
 from typing import Any
 
-import pytest
-from corpus import REFERENCE, build_corpus
-from sqlalchemy import ColumnElement, Engine, delete, or_, select, text
+from corpus import SMALL, build_corpus
+from sqlalchemy import ColumnElement, or_, select, text
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.db import escape_like, session_factory
+from pigrocrm.core.db import escape_like
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
-from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.people.models import Person
-from pigrocrm.core.pipeline.models import PipelineStage
 
 # The nine indexes this slice declares. Named here rather than derived from the models,
 # so that deleting one from `__table_args__` fails this file instead of quietly agreeing
@@ -142,7 +146,7 @@ _SIBLINGS: dict[str, tuple[str, ...]] = {
 def _corpus_with_statistics(session: Session) -> None:
     """The corpus, plus the `ANALYZE` without which every plan below is drawn from
     Postgres's default guesses rather than from this data."""
-    build_corpus(session, REFERENCE)
+    build_corpus(session, SMALL)
     for table, _columns, _indexes in _SEARCHED:
         session.execute(text(f"ANALYZE {table}"))
 
@@ -168,15 +172,6 @@ def _isolated_plan(session: Session, index_name: str, predicate: str, table: str
     finally:
         session.execute(text("SET LOCAL enable_seqscan = on"))
         savepoint.rollback()
-
-
-def _free_plan(session: Session, predicate: str, table: str) -> str:
-    """The same `EXPLAIN` with nothing taken away and nothing disabled -- the plan the
-    planner reaches for on its own."""
-    rows = session.execute(
-        text(f"EXPLAIN SELECT id FROM {table} WHERE deleted_at IS NULL AND {predicate}")
-    ).all()
-    return "\n".join(str(row[0]) for row in rows)
 
 
 def test_the_trigram_extension_and_the_nine_indexes_exist(db_session: Session) -> None:
@@ -360,145 +355,6 @@ def test_a_two_character_pattern_degrades_the_index_to_a_full_scan(db_session: S
         f"eight-character one ({eight_characters}); the three-character floor rests on "
         "the difference between them"
     )
-
-
-@pytest.fixture(scope="module")
-def customers_at_reference_scale(db_engine: Engine) -> Iterator[Engine]:
-    """REFERENCE-scale corpus, committed, `VACUUM (ANALYZE)`d for real, removed and
-    re-vacuumed afterwards -- ORB-9's fix for the one test below that needs it.
-
-    Every other fixture in this file runs `build_corpus` inside `db_session`'s savepoint,
-    which is right for a test that asks whether an index *can* serve a predicate: `ANALYZE`
-    works fine on an uncommitted table. It is wrong for the test below, which asks what the
-    free planner does when nothing forces its hand, because `relpages` reflects the table's
-    real physical size and a savepoint's rollback never shrinks a heap file back down.
-    `test_search_plan.py`'s `inflated` fixture (gone with REB-580) named the consequence
-    on its own way out: "`test_trgm_escape.py`'s 500-row seq scan is costed on a heap of
-    dead pages" left behind by however many of this file's own earlier tests happened to
-    insert and roll
-    back the same 500 rows into `customers` first. Measured 2026-09-10, running this file's
-    tests in file order left `customers` at 52 pages instead of a fresh build's 11, and
-    priced the free planner's own `Seq Scan` at 58.25 instead of 17.25 -- margin enough that
-    a different runner, holding a different amount of leftover bloat, picks the other plan
-    with no line of code in between (ORB-9).
-
-    Committed and vacuumed for real, on a connection outside any transaction -- `VACUUM`
-    cannot run inside `db_session`'s savepoint at all -- so `customers`'s statistics
-    describe this corpus alone, not however many prior tests' debris the session
-    accumulated. Cleaned up and re-vacuumed on the way out for the reason `inflated` gives
-    for the same step: leaving `customers` bloated here would be exactly the noise this
-    fixture exists to remove, for whichever test runs next.
-    """
-    # `customers` should be empty of live rows here -- nothing before this fixture in the
-    # session commits into it and survives its own teardown -- but that is a claim about
-    # every other file sharing this container, not something this fixture controls, so it
-    # is checked rather than assumed: the failure this file exists to prevent is exactly a
-    # plan silently costed on a corpus that turned out not to be REFERENCE-scale. A plain
-    # `VACUUM` before the insert, not only `VACUUM (ANALYZE)` after it, is what actually
-    # discards whatever dead pages earlier tests' rollbacks left behind: at REFERENCE scale
-    # the leftover bloat is not a rounding error next to the corpus itself the way it is for
-    # `inflated`'s fifty thousand rows, so inserting into it first and only vacuuming
-    # afterwards still costs a `Seq Scan` on however many dead pages happened to precede it.
-    # Truncating the trailing empty pages before this corpus exists is what makes
-    # `customers`'s physical size a property of this fixture alone.
-    with db_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
-        live = connection.execute(text("SELECT count(*) FROM customers")).scalar_one()
-        assert live == 0, (
-            f"{live} committed customers survived an earlier test; this fixture's plan "
-            "would not be measured at REFERENCE scale"
-        )
-        connection.execute(text("VACUUM customers"))
-    factory = session_factory(db_engine)
-    with factory() as session:
-        pre_existing_stages = set(session.scalars(select(PipelineStage.id)).all())
-        build_corpus(session, REFERENCE)
-        session.commit()
-    with db_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
-        connection.execute(text("VACUUM (ANALYZE) customers"))
-    try:
-        yield db_engine
-    finally:
-        with factory() as session:
-            # Children first, `inflated`'s own order: invoices and documents reference
-            # customers and deals, people and deals reference customers, deals references
-            # a stage.
-            session.execute(delete(Invoice))
-            session.execute(delete(Document))
-            session.execute(delete(Deal))
-            session.execute(delete(Person))
-            session.execute(delete(Customer))
-            session.execute(
-                delete(PipelineStage).where(PipelineStage.id.notin_(pre_existing_stages))
-            )
-            session.commit()
-        # All five tables this fixture committed into, not only `customers`: `inflated`
-        # re-vacuums every table it dirtied for the same reason, and a plan assertion
-        # added to this file later against `people`, `deals`, `documents` or `invoices`
-        # deserves the same clean slate this test needed.
-        with db_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
-            for table in ("customers", "people", "deals", "documents", "invoices"):
-                connection.execute(text(f"VACUUM (ANALYZE) {table}"))
-
-
-@pytest.fixture
-def customers_session(customers_at_reference_scale: Engine) -> Iterator[Session]:
-    """A plain session on the committed, vacuumed corpus above.
-
-    Not `db_session`: that fixture opens a savepoint this corpus was deliberately built
-    outside of, and a `SET` here should affect the whole session rather than roll back with
-    one."""
-    with session_factory(customers_at_reference_scale)() as session:
-        yield session
-
-
-def test_the_planner_left_alone_still_prefers_a_sequential_scan_at_this_scale(
-    customers_session: Session,
-) -> None:
-    """The free planner's own choice on a genuinely REFERENCE-scale `customers`: the
-    `Seq Scan` the forced plans above never show, with `Filter` doing the excluding here
-    and `Index Cond` doing it above. 500 narrow rows are cheaper to read whole, and it is
-    right not to use the trigram index -- this is what makes `enable_seqscan = off`
-    necessary in `_isolated_plan` above, and it is pinned here so a future reader does not
-    take those forced plans for a claim about what production does on a small table.
-
-    No longer `@pytest.mark.planner`: that marker meant the plan depended on which machine
-    ran it, and `customers_at_reference_scale` is what removes the dependency, so this
-    runs in the ordinary gate instead of the single-machine preflight lane the marker used
-    to earn -- `pigrocrm-py-planner`, retired by REB-90 once `test_sort_plan.py` was the
-    last test anywhere in the repository still carrying it.
-
-    `customers_at_reference_scale` is what makes this a property of the data instead of a
-    property of which tests happened to run first: see its own docstring for the table-bloat
-    mechanism that used to flip this same assertion on a hosted runner while it passed on a
-    devbox minutes earlier (ORB-9). The falsifier right below shows the identical query on
-    the identical corpus losing this `Seq Scan` the moment the choice is taken away from the
-    planner, so this is not an assertion that happens to hold for every plan Postgres could
-    produce.
-
-    If this ever starts failing with the planner genuinely preferring the index on its own,
-    that is good news and the assertion inverts; it is not a regression.
-    """
-    plan = _free_plan(
-        customers_session, rf"ragione_sociale ILIKE '%{_NEEDLE}%' ESCAPE '\'", "customers"
-    )
-    assert "Seq Scan on customers" in plan, f"plan was:\n{plan}"
-
-
-def test_the_seq_scan_above_stops_appearing_once_the_planner_loses_the_choice(
-    customers_session: Session,
-) -> None:
-    """The falsifier the test above names: on the identical corpus and the identical query,
-    taking `enable_seqscan` away leaves no `Seq Scan on customers` in the plan at all. The
-    assertion above is measuring a real, losable choice, not one that happens to hold no
-    matter which plan Postgres produces."""
-    customers_session.execute(text("SET enable_seqscan = off"))
-    try:
-        plan = _free_plan(
-            customers_session, rf"ragione_sociale ILIKE '%{_NEEDLE}%' ESCAPE '\'", "customers"
-        )
-    finally:
-        customers_session.execute(text("SET enable_seqscan = on"))
-    assert "Seq Scan on customers" not in plan, f"plan was:\n{plan}"
 
 
 def test_similarity_needs_no_lower_in_the_index_expression(db_session: Session) -> None:

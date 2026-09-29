@@ -6,7 +6,7 @@ fifty thousand rows per table, together with which index the planner picked. The
 every space its own database, so a space's tables hold hundreds of rows, where the planner
 never reaches for those indexes because a sequential scan is cheaper; the plan assertions
 measured a property no user of this product meets, and went. What is not about scale stays
-here, on the reference corpus: the §8.5 score is what the database orders by, the page is
+here, over empty tables: the §8.5 score is what the database orders by, the page is
 the database's own `LIMIT`, and the count stops at its ceiling. The statements are captured
 off the engine, exactly as the repository sends them, so a repository that stopped using
 its `LIMIT` or moved the ranking into Python cannot pass by having a test that never saw the
@@ -19,10 +19,10 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from corpus import REFERENCE, build_corpus
-from sqlalchemy import event
+from sqlalchemy import event, insert
 from sqlalchemy.orm import Session
 
+from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.search.repository import SearchRepository
 from pigrocrm.core.search.schemas import COUNT_CEILING, PER_CLASS_LIMIT, SearchGroup
 
@@ -30,10 +30,8 @@ from pigrocrm.core.search.schemas import COUNT_CEILING, PER_CLASS_LIMIT, SearchG
 # they find, so the term only has to be one the branches accept. `invoices` reads a purely
 # numeric term as a fiscal number and takes another path; a word keeps it on this one.
 _TERM = "Ross"
-# A term that more customers of the reference corpus carry than the ceiling admits: the
-# generator gives most of them a legal form, so the bounded count saturates on it (measured:
-# 200 with the minimum flag, against 32 for `_TERM`). What the ceiling does when it is
-# reached is asserted on this one.
+# A term the saturation test plants on one row more than the ceiling admits, so what the
+# ceiling does when it is reached is asserted on rows the test can count.
 _TERM_PAST_THE_CEILING = "Srl"
 
 _BRANCHES: dict[str, Callable[[SearchRepository], Callable[[str, int], SearchGroup]]] = {
@@ -79,12 +77,13 @@ def _bound_limits(statement: str, parameters: Any) -> list[int]:
 
 @pytest.fixture
 def captures(db_session: Session) -> dict[str, tuple[SearchGroup, list[tuple[str, Any]]]]:
-    """Every branch's result and its captured statements, off one reference corpus.
+    """Every branch's result and its captured statements, over empty tables.
 
-    One build per test rather than one per branch: the corpus is seconds to build and the
-    assertions are milliseconds, so this is what keeps the file about the SQL.
+    No corpus: what is asserted is the shape of the statements the repository sends, which
+    is the same whether the tables hold nine thousand rows or none, and the tables here
+    hold none. A REFERENCE build per test was 4 to 6s of the file's 12s for nothing it
+    looked at (REB-597).
     """
-    build_corpus(db_session, REFERENCE)
     repo = SearchRepository(db_session)
     out: dict[str, tuple[SearchGroup, list[tuple[str, Any]]]] = {}
     for name, pick in _BRANCHES.items():
@@ -180,10 +179,14 @@ def test_the_count_stops_at_its_ceiling(
 
 
 def test_a_count_past_the_ceiling_is_the_ceiling_and_says_so(db_session: Session) -> None:
-    """The saturated case, on a term the reference corpus really has more than the ceiling
-    of: the server stops at the ceiling and the result is declared a minimum, so a client
-    reads "at least 200" and not a number nobody counted."""
-    build_corpus(db_session, REFERENCE)
+    """The saturated case, on one row more than the ceiling planted for it: the server stops
+    at the ceiling and the result is declared a minimum, so a client reads "at least 200"
+    and not a number nobody counted."""
+    db_session.execute(
+        insert(Customer),
+        [{"ragione_sociale": f"Cliente {n} Srl"} for n in range(COUNT_CEILING + 1)],
+    )
+    db_session.flush()
     repo = SearchRepository(db_session)
     group, captured = _run(db_session, repo.customers, _TERM_PAST_THE_CEILING)
     statement, parameters = _count(captured)

@@ -1,13 +1,16 @@
 """The corpus is a test fixture, so it gets a test: a generator that silently produces
 400 rows instead of what its scale says turns every dashboard assertion on it into a
 measurement of nothing.
+
+REFERENCE is built once, for the row counts that are its definition; everything else the
+generator promises holds at any scale and is checked on SMALL (REB-597).
 """
 
 # Top-level, not `from .corpus import ...`: none of this repository's three test roots
 # has an `__init__.py`, so a relative import has no parent package to resolve against.
 # `orologio.py` and `periodo_fiscale.py` are the shipped precedent for a shared test
 # helper module, and `corpus` is likewise unique across all three roots.
-from corpus import KNOWN_PARTITA_IVA, KNOWN_RAGIONE_SOCIALE, REFERENCE, CorpusScale, build_corpus
+from corpus import KNOWN_PARTITA_IVA, KNOWN_RAGIONE_SOCIALE, REFERENCE, SMALL, build_corpus
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -16,12 +19,6 @@ from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.people.models import Person
-
-# Determinism is a property of the generator, not of the scale: the two tests below compare
-# twenty sorted names either way, and the generator draws its first fifty customers
-# identically at any scale. The reference scale is built and read by every dashboard test;
-# here it cost 8 to 12s per test for two builds of 9,300 rows (REB-590).
-_SMALL = CorpusScale(customers=50, people=80, deals=200, documents=100, invoices=500)
 
 
 def test_build_corpus_produces_exactly_the_row_counts_it_claims(db_session: Session) -> None:
@@ -47,7 +44,7 @@ def test_build_corpus_produces_exactly_the_row_counts_it_claims(db_session: Sess
 def test_build_corpus_plants_the_one_customer_every_search_test_looks_for(
     db_session: Session,
 ) -> None:
-    build_corpus(db_session, REFERENCE)
+    build_corpus(db_session, SMALL)
 
     row = db_session.scalar(select(Customer).where(Customer.partita_iva == KNOWN_PARTITA_IVA))
     assert row is not None
@@ -66,7 +63,7 @@ def test_build_corpus_is_deterministic_for_a_given_seed(db_session: Session) -> 
     scope means the test keeps working if that fixture detail ever changes.
     """
     savepoint = db_session.begin_nested()
-    build_corpus(db_session, _SMALL, seed=7)
+    build_corpus(db_session, SMALL, seed=7)
     first = list(
         db_session.scalars(
             select(Customer.ragione_sociale).order_by(Customer.ragione_sociale).limit(20)
@@ -74,7 +71,7 @@ def test_build_corpus_is_deterministic_for_a_given_seed(db_session: Session) -> 
     )
     savepoint.rollback()
 
-    build_corpus(db_session, _SMALL, seed=7)
+    build_corpus(db_session, SMALL, seed=7)
     second = list(
         db_session.scalars(
             select(Customer.ragione_sociale).order_by(Customer.ragione_sociale).limit(20)
@@ -92,7 +89,7 @@ def test_build_corpus_varies_with_the_seed(db_session: Session) -> None:
     `build_corpus` that ignored its argument entirely would satisfy the test above.
     """
     savepoint = db_session.begin_nested()
-    build_corpus(db_session, _SMALL, seed=7)
+    build_corpus(db_session, SMALL, seed=7)
     first = list(
         db_session.scalars(
             select(Customer.ragione_sociale).order_by(Customer.ragione_sociale).limit(20)
@@ -100,7 +97,7 @@ def test_build_corpus_varies_with_the_seed(db_session: Session) -> None:
     )
     savepoint.rollback()
 
-    build_corpus(db_session, _SMALL, seed=8)
+    build_corpus(db_session, SMALL, seed=8)
     second = list(
         db_session.scalars(
             select(Customer.ragione_sociale).order_by(Customer.ragione_sociale).limit(20)
@@ -113,7 +110,7 @@ def test_build_corpus_varies_with_the_seed(db_session: Session) -> None:
 def test_build_corpus_leaves_some_deals_without_a_value(db_session: Session) -> None:
     """Task B9 counts those rows separately and never sums them as zero; the corpus has
     to contain some or that branch is never executed."""
-    build_corpus(db_session, REFERENCE)
+    build_corpus(db_session, SMALL)
     without = db_session.scalar(
         select(func.count()).select_from(Deal).where(Deal.valore_previsto.is_(None))
     )
@@ -122,7 +119,7 @@ def test_build_corpus_leaves_some_deals_without_a_value(db_session: Session) -> 
 
 def test_build_corpus_leaves_some_people_without_a_surname(db_session: Session) -> None:
     """Task A3's `NULLS LAST` cursor has no exerciser without rows in the null tail."""
-    build_corpus(db_session, REFERENCE)
+    build_corpus(db_session, SMALL)
     without = db_session.scalar(
         select(func.count()).select_from(Person).where(Person.cognome.is_(None))
     )
@@ -133,10 +130,10 @@ def test_build_corpus_returns_the_ids_its_callers_need(db_session: Session) -> N
     """`CorpusIds` is the only handle a search test has on the rows it just created;
     a build that returned empty lists would leave every downstream test filtering on
     nothing."""
-    ids = build_corpus(db_session, REFERENCE)
+    ids = build_corpus(db_session, SMALL)
 
-    assert len(ids.customer_ids) == REFERENCE.customers
-    assert len(ids.deal_ids) == REFERENCE.deals
+    assert len(ids.customer_ids) == SMALL.customers
+    assert len(ids.deal_ids) == SMALL.deals
     assert len({ids.stage_open_id, ids.stage_won_id, ids.stage_lost_id}) == 3
     assert db_session.get(Customer, ids.customer_ids[0]) is not None
     assert db_session.get(Deal, ids.deal_ids[-1]) is not None

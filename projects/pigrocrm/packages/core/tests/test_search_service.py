@@ -21,7 +21,7 @@ import pytest
 # Top-level, not `from .corpus import ...`: none of this repository's three test roots has
 # an `__init__.py`, so a relative import has no parent package to resolve against. See
 # `test_corpus.py`, which is the shipped precedent.
-from corpus import KNOWN_PARTITA_IVA, KNOWN_RAGIONE_SOCIALE, REFERENCE, build_corpus
+from corpus import KNOWN_PARTITA_IVA, KNOWN_RAGIONE_SOCIALE, SMALL, build_corpus
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -57,14 +57,14 @@ def _search(session: Session, termine: str, limite: int = 5) -> dict[str, Search
 
 def test_a_vat_fragment_finds_the_customer(db_session: Session) -> None:
     """The use case §17 names as 6A's reason to exist on its own."""
-    build_corpus(db_session, REFERENCE)
+    build_corpus(db_session, SMALL)
     customers = _search(db_session, "34567")["customer"]
     assert KNOWN_RAGIONE_SOCIALE in [hit.etichetta for hit in customers.hits]
 
 
 def test_an_exact_vat_number_ranks_the_customer_first(db_session: Session) -> None:
     """§16 criterion 4, first sentence."""
-    build_corpus(db_session, REFERENCE)
+    build_corpus(db_session, SMALL)
     customers = _search(db_session, KNOWN_PARTITA_IVA)["customer"]
     assert customers.hits[0].etichetta == KNOWN_RAGIONE_SOCIALE
     assert customers.hits[0].campo == "partita_iva"
@@ -171,7 +171,7 @@ def test_beyond_the_ceiling_the_count_is_declared_as_a_minimum(
 def test_every_returned_hit_is_above_the_floor(db_session: Session) -> None:
     """The tail of a trigram match is noise, and showing noise in a palette teaches the
     user to ignore the palette."""
-    build_corpus(db_session, REFERENCE)
+    build_corpus(db_session, SMALL)
     results = SearchService(db_session).search_everything(
         SearchQuery(termine="ingegneria", limite=20), READONLY
     )
@@ -276,7 +276,7 @@ def test_a_person_without_a_surname_has_a_label_and_no_trailing_space(
 def test_a_deal_hit_carries_its_customer_as_the_subtitle(db_session: Session) -> None:
     """A palette row reading "Rifacimento impianti 42" with no client is not an answer.
     The subtitle is built by the repository, never by the browser concatenating fields."""
-    ids = build_corpus(db_session, REFERENCE)
+    ids = build_corpus(db_session, SMALL)
     customer = db_session.get(Customer, ids.customer_ids[0])
     assert customer is not None
     db_session.add(
@@ -296,7 +296,7 @@ def test_a_deal_hit_carries_its_customer_as_the_subtitle(db_session: Session) ->
 
 
 def test_a_document_hit_carries_its_type_as_the_subtitle(db_session: Session) -> None:
-    ids = build_corpus(db_session, REFERENCE)
+    ids = build_corpus(db_session, SMALL)
     db_session.add(
         Document(
             customer_id=ids.customer_ids[0],
@@ -338,7 +338,7 @@ def test_the_term_is_stripped_before_it_is_matched(db_session: Session) -> None:
 def test_a_readonly_actor_can_search(db_session: Session) -> None:
     """Search is a read, and slice 4 §11 gives every dashboard read to every role. There
     is no new authorisation rule in this slice (§13)."""
-    build_corpus(db_session, REFERENCE)
+    build_corpus(db_session, SMALL)
     results = SearchService(db_session).search_everything(SearchQuery(termine="Rossi"), READONLY)
     assert results.termine == "Rossi"
     assert _groups(results)["customer"].totale > 0

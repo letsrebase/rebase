@@ -47,7 +47,7 @@ from collections import Counter
 from typing import Any
 
 import pytest
-from corpus import KNOWN_PARTITA_IVA, KNOWN_RAGIONE_SOCIALE, REFERENCE, build_corpus
+from corpus import KNOWN_PARTITA_IVA, KNOWN_RAGIONE_SOCIALE, SMALL, build_corpus
 from sqlalchemy import insert, select, text
 from sqlalchemy.orm import Session
 
@@ -204,7 +204,7 @@ def _assert_the_response_is_worth_comparing(rendering: bytes) -> None:
 def test_repeated_runs_under_four_access_paths_produce_one_byte_identical_response(
     db_session: Session,
 ) -> None:
-    build_corpus(db_session, REFERENCE)
+    build_corpus(db_session, SMALL)
 
     seen = _renderings(db_session, "Ingegneria")
 
@@ -261,7 +261,7 @@ def test_the_first_two_ordering_keys_really_do_tie(db_session: Session) -> None:
     `transaction_timestamp()`, which is one value for the whole build. Both halves are
     asserted here -- collisions exist, and adding `id` removes them all.
     """
-    build_corpus(db_session, REFERENCE)
+    build_corpus(db_session, SMALL)
     repo = SearchRepository(db_session)
 
     keys = db_session.execute(
@@ -382,7 +382,7 @@ def test_an_exact_vat_number_puts_that_customer_first(db_session: Session) -> No
     than one hit and "first" is a claim about ranking rather than about there being only one
     row. Without it the assertion would pass against any ordering whatsoever.
     """
-    build_corpus(db_session, REFERENCE)
+    build_corpus(db_session, SMALL)
     db_session.add(
         Customer(
             ragione_sociale=f"Studio {KNOWN_PARTITA_IVA} Srl",
@@ -437,7 +437,7 @@ def test_the_group_order_is_fixed_and_not_by_count(db_session: Session) -> None:
     inequality is asserted too, because on a term where the two coincide this test would
     pass against a service that sorted its groups by size.
     """
-    build_corpus(db_session, REFERENCE)
+    build_corpus(db_session, SMALL)
     results = SearchService(db_session).search_everything(
         SearchQuery(termine="Ingegneria"), READONLY
     )
