@@ -113,11 +113,13 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
  *  (REB-602), and «Richiedi una nuova figura» as the section's action.
  *
  *  From `lg` the page is two columns of its own, each stacking independently so a tall
- *  neighbour leaves no gap: with a card, the card and «Contratti» on the left, the
- *  requests, the perks and the referral link on the right; without one, the requests
- *  (or the role, for a person with neither) take the left and the perks and the link
- *  the right, so no column is ever empty. Under `lg` the columns collapse in reading
- *  order: card, contracts, requests, perks, referral.
+ *  neighbour leaves no gap. The referral link is the feature to highlight (REB-610), so
+ *  it opens the left column, above the card, and «Contratti» follows the card there; the
+ *  requests, the role (for a person with neither a card nor a request) and the perks
+ *  take the right. Every combination of roles leaves both columns filled: the left
+ *  always holds the referral, the right holds the requests, the role or the perks, at
+ *  least one of which every person has. Under `lg` the columns collapse in reading
+ *  order: referral, card, contracts, requests, role, perks.
  *
  *  The `negato` flag is set by `AdminGuard` when a signed-in non-admin is bounced off
  *  `/admin/*`: this is where they land, with a sentence saying why instead of a blank
@@ -277,19 +279,18 @@ export function Area() {
 
       <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-x-8">
         <div className="min-w-0 space-y-8">
-          {value ? (
+          <MemberReferral />
+          {value && (
             <>
               {cardSection}
               <MemberContratti />
             </>
-          ) : (
-            (requestsSection || roleSection)
           )}
         </div>
         <div className="min-w-0 space-y-8">
-          {value && requestsSection}
+          {requestsSection}
+          {roleSection}
           {perksSection}
-          <MemberReferral />
         </div>
       </div>
     </div>

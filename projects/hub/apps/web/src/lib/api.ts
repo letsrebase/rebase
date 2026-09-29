@@ -1625,9 +1625,8 @@ export interface CompanyUpdate {
 
 // ---- referrals (P-REB-44) --------------------------------------------------------------
 
-/** `GET /api/hub/me/referral`'s own list: who a member's code brought in. Never the
- *  euro figures -- those are rebase's own margin, an admin-only number the member
- *  area never shows. */
+/** `GET /api/hub/me/referral`'s own list: who a member's code brought in. Never a euro
+ *  figure of a real engagement -- rebase's own margin is an admin-only number. */
 export interface MemberReferralItem {
   kind: 'freelancer' | 'company'
   nome: string
@@ -1635,8 +1634,13 @@ export interface MemberReferralItem {
   stato: string | null
 }
 
+/** The member's code, who it brought in, and the two rates in force now (REB-610), as
+ *  fractions with four decimals (`"0.1000"`), read live from the admin's settings on
+ *  every call: they are percentages of rebase's margin, never a euro figure. */
 export interface MemberReferral {
   code: string
+  rate_freelancer: string
+  rate_company: string
   referred: MemberReferralItem[]
 }
 

@@ -239,9 +239,10 @@ def my_signed_contract(me: MeDep, session: SessionDep, document_id: UUID) -> Res
 @router.get("/me/referral", response_model=MemberReferral)
 def my_referral(me: MeDep, session: SessionDep) -> MemberReferral:
     """The member's own link, issued the first time this route is asked for one
-    (P-REB-44): the code and who has signed up under it so far. Never the euro
-    figures -- those are rebase's own margin, an admin-only number the member area
-    never shows, the same isolation `budget_giornaliero` already keeps."""
+    (P-REB-44): the code, who has signed up under it so far, and the two rates in
+    force now (REB-610), read live on every call. Never a euro figure of a real
+    engagement -- rebase's own margin is an admin-only number the member area never
+    shows, the same isolation `budget_giornaliero` already keeps."""
     return ReferralService(session).for_user(me.id)
 
 

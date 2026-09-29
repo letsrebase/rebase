@@ -3,8 +3,10 @@ import { Check, Copy } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { Input } from '@rebase/ui/input'
-import { member } from '@/lib/api'
-import { formatDate } from '@/lib/format'
+import { Popover, PopoverContent, PopoverTrigger } from '@rebase/ui/popover'
+import { member, type MemberReferral as MemberReferralData } from '@/lib/api'
+import { formatDate, formatEuro } from '@/lib/format'
+import { EXAMPLE, formatRate, rateWithArticle, referralExample } from '@/lib/referral'
 
 const KIND_LABELS: Record<string, string> = { freelancer: 'Freelance', company: 'Azienda' }
 
@@ -34,10 +36,89 @@ function CopyLinkButton({ link }: { link: string }) {
   )
 }
 
+/** What each referral earns, in the two live rates, and «Come si calcola?» beside it
+ *  (REB-610). Both come from the API on every load, never from the copy: an admin edits
+ *  them on the ledger. A rate the API answered in a shape this page cannot read is left
+ *  out, so the sentence never says a number that is wrong; with neither, nothing at all
+ *  is said and the link below still works. */
+function Earnings({ rates }: { rates: Pick<MemberReferralData, 'rate_freelancer' | 'rate_company'> }) {
+  const freelancer = formatRate(rates.rate_freelancer)
+  const company = formatRate(rates.rate_company)
+  if (freelancer === null && company === null) return null
+  const example = referralExample(rates)
+  const said =
+    freelancer && company
+      ? `Se segnali un freelance ricevi ${rateWithArticle(rates.rate_freelancer)} del margine di rebase, se segnali un'azienda ${rateWithArticle(rates.rate_company)}.`
+      : freelancer
+        ? `Se segnali un freelance ricevi ${rateWithArticle(rates.rate_freelancer)} del margine di rebase.`
+        : `Se segnali un'azienda ricevi ${rateWithArticle(rates.rate_company)} del margine di rebase.`
+  return (
+    <p className="text-sm">
+      {said}{' '}
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="whitespace-nowrap font-medium underline underline-offset-2 hover:text-muted-foreground"
+          >
+            Come si calcola?
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          aria-label="Come si calcola il compenso di una segnalazione"
+          className="w-80 max-w-(--radix-popover-content-available-width) max-h-(--radix-popover-content-available-height) gap-3 overflow-y-auto p-4 sm:w-96"
+        >
+          <p>
+            Il compenso matura una volta sola, quando la persona o l&apos;azienda che hai portato firma
+            la sua prima lettera d&apos;incarico.
+          </p>
+          <p>
+            È una percentuale del margine di rebase su quell&apos;incarico, cioè di quello che paga il
+            cliente meno quello che guadagna il freelance, non del prezzo del cliente.
+          </p>
+          <p>
+            Vale la percentuale in vigore alla firma. rebase conferma il compenso e poi te lo paga. Per
+            un incarico a corpo senza una stima dei giorni, l&apos;importo lo stabilisce rebase caso per
+            caso.
+          </p>
+          <div className="space-y-1 border-t pt-3">
+            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              Esempio con numeri inventati
+            </p>
+            <p className="text-muted-foreground">
+              Un incarico a giornata: il cliente paga {EXAMPLE.budget} € al giorno, il freelance ne
+              guadagna {EXAMPLE.compenso}, per {EXAMPLE.giorni} giorni.
+            </p>
+            <p>
+              Margine: ({EXAMPLE.budget} - {EXAMPLE.compenso}) × {EXAMPLE.giorni} ={' '}
+              <span className="font-medium tabular-nums">{formatEuro(example.margin)}</span>
+            </p>
+            {freelancer && example.freelancer && (
+              <p>
+                Segnali un freelance: {freelancer} di {formatEuro(example.margin)} ={' '}
+                <span className="font-medium tabular-nums">{formatEuro(example.freelancer)}</span>
+              </p>
+            )}
+            {company && example.company && (
+              <p>
+                Segnali un&apos;azienda: {company} di {formatEuro(example.margin)} ={' '}
+                <span className="font-medium tabular-nums">{formatEuro(example.company)}</span>
+              </p>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </p>
+  )
+}
+
 /** «Il tuo link di segnalazione» in the member area (P-REB-44): a member's own code,
- *  issued the first time this section reads it, and who has signed up under it so
- *  far. Never a euro figure -- rebase's own margin on a referred engagement is an
- *  admin-only number, computed and shown only on the admin's ledger. */
+ *  issued the first time this section reads it, what a referral earns (the two live
+ *  rates and a popover with an invented worked example, REB-610), and who has signed up
+ *  under it so far. Percentages are shown; a euro figure of a real engagement never is
+ *  -- rebase's own margin on it is an admin-only number, computed and shown only on the
+ *  admin's ledger. */
 export function MemberReferral() {
   const referral = useQuery({ queryKey: ['me', 'referral'], queryFn: () => member.referral() })
   const data = referral.data
@@ -53,6 +134,7 @@ export function MemberReferral() {
         <p className="text-sm text-muted-foreground">Caricamento…</p>
       ) : (
         <div className="space-y-3 border bg-card p-4">
+          <Earnings rates={data} />
           <p className="text-sm text-muted-foreground">
             Segnala rebase a un freelance o a un&apos;azienda con questo link: lo vedi qui sotto appena
             si iscrive.

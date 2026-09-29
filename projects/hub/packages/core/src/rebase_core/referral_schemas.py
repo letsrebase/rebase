@@ -17,8 +17,8 @@ RATE_MAX = Decimal("1")
 
 class MemberReferralItem(BaseModel):
     """One person or company the member's own code brought in: enough to recognise
-    who it was and whether it has turned into anything yet, never the euro figures --
-    those are rebase's own margin, an admin-only number nowhere in the member area."""
+    who it was and whether it has turned into anything yet. Never a euro figure of a
+    real engagement: rebase's own margin on it is an admin-only number."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -30,9 +30,15 @@ class MemberReferralItem(BaseModel):
 
 class MemberReferral(BaseModel):
     """`GET /api/hub/me/referral`: the member's own code, issued the first time this
-    route is asked for one, and who it has brought in so far."""
+    route is asked for one, who it has brought in so far, and the two rates a referral
+    earns (REB-610). The rates are read from the admin's settings on every call, so the
+    member area states what is in force now; they are percentages of rebase's margin,
+    which the member area may show, unlike any euro figure of a real engagement, which
+    it never does (the panel's own worked example uses invented numbers)."""
 
     code: str
+    rate_freelancer: Decimal
+    rate_company: Decimal
     referred: list[MemberReferralItem]
 
 
