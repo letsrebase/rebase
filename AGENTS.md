@@ -121,8 +121,8 @@ template built once (REB-579: a new test root clones, it never starts a containe
 a migration test asks that fixture for an empty database); `loadfile` is what keeps a
 file's tests on one worker, as the module-scoped fixtures require. A test that only passes in
 alphabetical order fails here, which is the point: four did, and they were fixed
-rather than pinned. And on CI the suite is three jobs, not one: `ci.yml` calls the
-gate in a three-way matrix and each job runs every third file of the sorted list
+rather than pinned. And on CI the suite is four jobs, not one: `ci.yml` calls the
+gate in a four-way matrix and each job runs every fourth file of the sorted list
 (`_python-gate.yml`'s `shard` input), because one job was 355s of a run whose next
 longest job was 174s (REB-561). The `slow` and `planner` markers are deselected on
 every tier and no test carries them since REB-580: the fifty-thousand-row planner corpus
