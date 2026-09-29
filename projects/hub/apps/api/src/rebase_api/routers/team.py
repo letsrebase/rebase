@@ -137,18 +137,21 @@ def _refuse(
     if not _refusal_waiters.acquire(blocking=False):
         _log.warning("team builder: refused ask not kept, every refusal write is busy")
         raise busy
+    # The waiting place is held only while waiting: a writer gives it back, so the
+    # eight places are eight waiters and never six.
     try:
-        if not _refusal_slots.acquire(timeout=REFUSAL_WAIT_SECONDS):
-            _log.warning("team builder: refused ask not kept, every refusal write is busy")
-            raise busy
-        try:
-            builder.record_refusal(data, origine=origine, user_id=user_id, error=busy, now=now)
-        except Exception:
-            _log.exception("team builder: the refused ask was not kept")
-        finally:
-            _refusal_slots.release()
+        writing = _refusal_slots.acquire(timeout=REFUSAL_WAIT_SECONDS)
     finally:
         _refusal_waiters.release()
+    if not writing:
+        _log.warning("team builder: refused ask not kept, every refusal write is busy")
+        raise busy
+    try:
+        builder.record_refusal(data, origine=origine, user_id=user_id, error=busy, now=now)
+    except Exception:
+        _log.exception("team builder: the refused ask was not kept")
+    finally:
+        _refusal_slots.release()
     raise busy
 
 
