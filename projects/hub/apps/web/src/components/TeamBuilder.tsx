@@ -4,6 +4,7 @@ import { Button } from '@rebase/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rebase/ui/card'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@rebase/ui/select'
 import { Textarea } from '@rebase/ui/textarea'
 import {
   ApiError,
@@ -23,26 +24,40 @@ import { REMOTO_LABELS, SENIORITY_LABELS, formatDaysPerWeek, formatExperience } 
 const DESCRIZIONE_MIN = 40
 const DESCRIZIONE_MAX = 4000
 const NOTA_MAX = 500
+/** The number of people a company can ask for (`PERSONE_MAX` in `team_schemas.py`):
+ *  one by default, since most requests are for one person (REB-591). */
+const PERSONE = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const
+const PERSONE_DEFAULT = 1
+
+function personeLabel(persone: number): string {
+  return persone === 1 ? '1 persona' : `${persone} persone`
+}
 
 /** Four projects a visitor can start from, each a description the API takes as it
  *  stands: remote, on site with a city, a team that is not only developers, and a
- *  software house that needs one forward-deployed engineer to place at its own client. */
+ *  software house that needs one forward-deployed engineer to place at its own client.
+ *  Each carries the number of people its own text implies, so the selector agrees with
+ *  the box. */
 const EXAMPLES = [
   {
     label: 'Web app per una fintech',
     text: 'Siamo una fintech e ci serve una web app per i nostri clienti: dashboard dei conti, pagamenti e collegamento alle API di open banking. React e TypeScript davanti, Python dietro. Sei mesi, da remoto.',
+    persone: 3,
   },
   {
     label: 'Pipeline dati in sede a Milano',
     text: 'Dobbiamo portare gli ordini di tre gestionali in un data warehouse su Google Cloud, con una pipeline affidabile e i report per la direzione. Quattro mesi, in sede a Milano tre giorni a settimana.',
+    persone: 2,
   },
   {
     label: 'App mobile con un designer',
     text: 'Vogliamo lanciare un’app per prenotare le lezioni in palestra, su iOS e Android: serve chi la sviluppa, in React Native o Flutter, e un designer che ne curi l’esperienza e l’interfaccia. Tre mesi, da remoto.',
+    persone: 2,
   },
   {
     label: 'Un FDE nel team di un cliente',
     text: 'Siamo una software house e cerchiamo un forward deployed engineer da inserire da un nostro cliente: lavora nel loro team, capisce i processi e porta in produzione le integrazioni con i loro sistemi. Python, Postgres e API dei gestionali. Sei mesi, in sede a Torino due giorni a settimana.',
+    persone: 1,
   },
 ]
 
@@ -90,11 +105,13 @@ export function TeamBuilder(props: TeamBuilderProps) {
   const ids = useId()
   const [descrizione, setDescrizione] = useState('')
   const [descrizioneError, setDescrizioneError] = useState<string | null>(null)
-  // The description the proposal on screen came from: «Rigenera» asks again about that
-  // one, with the note, whatever the box says by then.
+  const [persone, setPersone] = useState<number>(PERSONE_DEFAULT)
+  // The description and the number the proposal on screen came from: «Rigenera» asks
+  // again about those, with the note, whatever the box and the selector say by then.
   const [result, setResult] = useState<{
     proposal: TeamProposal | CloudTeamProposal
     descrizione: string
+    persone: number
   } | null>(null)
   const [nota, setNota] = useState('')
   const [running, setRunning] = useState<Run | null>(null)
@@ -110,19 +127,22 @@ export function TeamBuilder(props: TeamBuilderProps) {
   }, [proposalId])
 
   async function run(from: Run) {
-    let body: TeamProposalCreate
+    // The page always says how many: the API sizes from the description only when
+    // the field is absent, which is the MCP tool's case, not this one.
+    let body: TeamProposalCreate & { persone: number }
     if (from === 'proponi') {
       const text = descrizione.trim()
       if (text.length < DESCRIZIONE_MIN) {
         setDescrizioneError(`Raccontaci qualcosa in più: servono almeno ${DESCRIZIONE_MIN} caratteri.`)
         return
       }
-      body = { descrizione: text }
+      body = { descrizione: text, persone }
     } else {
       if (!result) return
       const note = nota.trim()
       body = {
         descrizione: result.descrizione,
+        persone: result.persone,
         ...(note ? { nota: note } : {}),
         previous_id: result.proposal.id,
       }
@@ -132,7 +152,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
     setRunning(from)
     try {
       const proposal = await (props.mode === 'cloud' ? props.propose(body) : team.propose(body))
-      setResult({ proposal, descrizione: body.descrizione })
+      setResult({ proposal, descrizione: body.descrizione, persone: body.persone })
       setNota('')
     } catch (error) {
       setRunError({ from, message: sentence(error, 'Non siamo riusciti a proporre un team. Riprova.') })
@@ -168,6 +188,7 @@ export function TeamBuilder(props: TeamBuilderProps) {
                 size="sm"
                 onClick={() => {
                   setDescrizione(example.text)
+                  setPersone(example.persone)
                   setDescrizioneError(null)
                 }}
               >
@@ -199,9 +220,26 @@ export function TeamBuilder(props: TeamBuilderProps) {
             {runError.message}
           </p>
         )}
-        <Button type="submit" disabled={busy}>
-          {running === 'proponi' ? PENDING : 'Proponi il team'}
-        </Button>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-2">
+            <Label htmlFor={`${ids}-persone`}>Quante persone</Label>
+            <Select value={String(persone)} onValueChange={(value) => setPersone(Number(value))}>
+              <SelectTrigger id={`${ids}-persone`} className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PERSONE.map((count) => (
+                  <SelectItem key={count} value={String(count)}>
+                    {personeLabel(count)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button type="submit" disabled={busy}>
+            {running === 'proponi' ? PENDING : 'Proponi il team'}
+          </Button>
+        </div>
       </form>
 
       {proposal && (

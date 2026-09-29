@@ -208,6 +208,10 @@ export interface TeamProposal {
 /** A description, and on «Rigenera» the proposal it replaces and a note on it. */
 export interface TeamProposalCreate {
   descrizione: string
+  /** How many people the company wants, 1 to 10 (REB-591). The page always sends it,
+   *  1 unless the visitor picks more; the API sizes the team from the description
+   *  alone when it is left out, which is what the MCP tool does. */
+  persone?: number
   nota?: string
   previous_id?: string
 }
