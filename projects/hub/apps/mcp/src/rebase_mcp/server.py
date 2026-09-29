@@ -821,8 +821,10 @@ def build_server(
         """«Proposte»: ogni «Proponi il team» chiesto dalla pagina pubblica, dal talent
         cloud o da un admin, dalla più recente, anche quando nessuna richiesta è poi
         stata inviata: la descrizione del progetto, quante persone sono state chieste,
-        la nota di un «Rigenera», chi l'ha chiesto, il riassunto e quanti membri aveva
-        la proposta, e `request_id` della richiesta «Assumi team» se c'è. `errore` è vuoto su una
+        la nota di un «Rigenera», chi l'ha chiesto, il riassunto, quanti membri aveva
+        la proposta e chi erano (`team`: posizione, `freelancer_id`, ruolo proposto,
+        nome e cognome, vuoti per un talento nel frattempo eliminato), e `request_id`
+        della richiesta «Assumi team» se c'è. `errore` è vuoto su una
         proposta che ha risposto e il codice del rifiuto (`llm_unavailable`,
         `team_builder_busy`) su un tentativo senza proposta. `origine` (`pubblico`,
         `cloud`, `admin`) ed `esito` (`ok`, `errore`) filtrano; una parola che non è

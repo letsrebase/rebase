@@ -90,6 +90,7 @@ from rebase_core.team_schemas import (
     TeamProposalCreate,
     TeamProposalList,
     TeamProposalListItem,
+    TeamProposalListMember,
     TeamProposalRead,
 )
 from rebase_core.validation import SafeStr
@@ -557,7 +558,10 @@ class TeamBuilder:
         and `esito` by whether it answered (`ok`) or not (`errore`); a word that is not
         one of theirs is a 422 naming the field. The rows are read as written, never
         through `_read`: the list is about what was asked, not about who is still in
-        the catalogue."""
+        the catalogue. Each member is named all the same (REB-607), with one query for
+        the page's talents: a name is what the admin follows to the profile, and a
+        talent removed with «Elimina» since, whose page no longer opens, stays in the
+        row by id, unnamed."""
         if origine is not None and origine not in TEAM_PROPOSAL_ORIGINS:
             raise ValidationFailed(ENTITY, "origine", f"uno fra {', '.join(TEAM_PROPOSAL_ORIGINS)}")
         if esito is not None and esito not in LIST_OUTCOMES:
@@ -585,6 +589,9 @@ class TeamBuilder:
         if len(rows) > limit and page:
             last = page[-1][0]
             next_cursor = encode_cursor(_SORT, last.created_at, last.id)
+        names = self._names(
+            [UUID(member["freelancer_id"]) for row, _ in page for member in row.team]
+        )
         return TeamProposalList(
             items=[
                 TeamProposalListItem(
@@ -598,6 +605,7 @@ class TeamBuilder:
                     errore=row.errore,
                     riassunto=row.riassunto if row.errore is None else None,
                     membri=len(row.team),
+                    team=[_list_member(member, names) for member in row.team],
                     request_id=request_id,
                     created_at=row.created_at,
                 )
@@ -605,6 +613,20 @@ class TeamBuilder:
             ],
             next_cursor=next_cursor,
         )
+
+    def _names(self, ids: list[UUID]) -> dict[UUID, tuple[str, str]]:
+        """The name of each talent still on file, in one query for a page of the list.
+        One removed with «Elimina» (`deleted_at` set, the product's only delete) is
+        absent on purpose: the admin's page answers 404 for them, so a name would be a
+        link to nowhere, and the caller names nobody for them."""
+        if not ids:
+            return {}
+        rows = self.session.execute(
+            select(Freelancer.id, User.nome, User.cognome)
+            .join(User, User.id == Freelancer.user_id)
+            .where(Freelancer.id.in_(list(set(ids))), Freelancer.deleted_at.is_(None))
+        ).all()
+        return {freelancer_id: (nome, cognome) for freelancer_id, nome, cognome in rows}
 
     # ---- helpers -----------------------------------------------------------------------
 
@@ -985,3 +1007,19 @@ def _economia(day: Band | None, month: Band | None, *, dump: bool = False) -> di
             "giorni_mese": DAYS_PER_MONTH,
         }
     return {"giorno": day, "mese": month, "giorni_mese": DAYS_PER_MONTH}
+
+
+def _list_member(
+    stored: dict[str, Any], names: dict[UUID, tuple[str, str]]
+) -> TeamProposalListMember:
+    """A stored member as «Proposte» lists it: named when still on file, by id alone
+    once removed."""
+    freelancer_id = UUID(stored["freelancer_id"])
+    nome, cognome = names.get(freelancer_id, (None, None))
+    return TeamProposalListMember(
+        posizione=stored["posizione"],
+        freelancer_id=freelancer_id,
+        ruolo=stored["ruolo"],
+        nome=nome,
+        cognome=cognome,
+    )
