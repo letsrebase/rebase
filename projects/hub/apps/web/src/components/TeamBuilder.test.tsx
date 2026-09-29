@@ -105,7 +105,7 @@ async function proposed(fetchSpy: MockInstance<typeof fetch>, proposal: unknown 
 afterEach(() => vi.restoreAllMocks())
 
 describe('TeamBuilder, the box', () => {
-  it('fills the box with each of the three examples', async () => {
+  it('fills the box with each of the four examples', async () => {
     const user = userEvent.setup()
     render(<TeamBuilder mode="public" />)
     const box = screen.getByLabelText('Descrizione del progetto')
@@ -121,6 +121,12 @@ describe('TeamBuilder, the box', () => {
     expect(value().length).toBeGreaterThanOrEqual(40)
     await user.click(screen.getByRole('button', { name: 'App mobile con un designer' }))
     expect(value()).toContain('designer')
+    expect(value().length).toBeGreaterThanOrEqual(40)
+    // The fourth asks for one person, placed at the company's own client.
+    await user.click(screen.getByRole('button', { name: 'Un FDE nel team di un cliente' }))
+    expect(value()).toContain('forward deployed engineer')
+    expect(value()).toContain('cliente')
+    expect(value()).not.toContain('designer')
     expect(value().length).toBeGreaterThanOrEqual(40)
   })
 
