@@ -17,7 +17,7 @@ Determinism is by seed, not by luck. `random.Random(seed)` is instantiated local
 never the module-level `random` functions, so a concurrent test that seeds the global
 generator cannot change what this one produces.
 
-A module rather than a fixture: three sub-plans and six test files need it, and a
+A module rather than a fixture: three sub-plans and four test files need it, and a
 function they call inside their own session is the shape that lets each choose its
 scope.
 """
@@ -130,6 +130,15 @@ class CorpusScale:
 
 
 REFERENCE = CorpusScale(customers=500, people=800, deals=2000, documents=1000, invoices=5000)
+# What a behaviour test builds (REB-597): a search that finds
+# a VAT fragment, ranks an exact match first or keeps its order byte-identical does the
+# same over 120 customers as over 500,
+# and a REFERENCE build is 3.5 to 5s on the runner with the nine trigram indexes maintained
+# on every insert. 120 customers so a term like «Ingegneria» still matches more than ten of
+# them, which the determinism tests need for their ties to be real, and every table above
+# the forty rows the reshuffle between runs rewrites. REFERENCE stays for the one test
+# whose expected numbers are the reference corpus's own: its row counts.
+SMALL = CorpusScale(customers=120, people=80, deals=200, documents=100, invoices=500)
 
 # Ten years of a register, whatever the scale. `(anno, numero)` is unique
 # (`uq_invoices_anno_numero`), so the two cannot be derived from the same modulus: the
