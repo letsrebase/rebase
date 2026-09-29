@@ -45,7 +45,7 @@
     </header>
 
     <main class="wrap section">
-      <p class="kicker">Ultimo aggiornamento <time datetime="2026-09-28">28 settembre 2026</time></p>
+      <p class="kicker">Ultimo aggiornamento <time datetime="2026-09-29">29 settembre 2026</time></p>
       <h1 class="measure">Informativa sulla privacy</h1>
 
       <div class="measure" style="display: grid; gap: 1.25rem; margin-top: 2rem">
@@ -237,6 +237,80 @@
             >Google API Services User Data Policy</a
           >, compresi i requisiti di <em>Limited Use</em>.
         </p>
+
+        <h2>Come proteggiamo i dati di Google</h2>
+        <p>
+          Questa sezione elenca, uno per uno, i meccanismi con cui PigroCRM protegge quello che
+          riceve da Gmail e da Google Drive. I meccanismi corrispondono a come il software è
+          scritto, e il software è open source: puoi verificarli. Dove si tratta di un impegno
+          nostro e non di un meccanismo, lo diciamo.
+        </p>
+        <ul style="display: grid; gap: 0.75rem">
+          <li>
+            <strong>Il token di Google è cifrato a riposo.</strong> Il refresh token che Google ci
+            consegna al consenso è salvato nel database solo cifrato con
+            <code>AES-256-GCM</code>, con una chiave che sta fuori dal database, nella
+            configurazione del server: un dump o un backup del database, da soli, non lo
+            rivelano, e con una chiave sbagliata nessuna riga si legge, nemmeno a metà. Il token
+            di accesso, quello che vale un'ora, non viene mai scritto da nessuna parte: vive solo
+            in memoria, al massimo per l'ora in cui vale, e viene dimenticato quando scolleghi la
+            casella. Né i token né i corpi dei messaggi finiscono nei log.
+          </li>
+          <li>
+            <strong>In transito tutto è cifrato.</strong> Ogni chiamata alle API di Google e ogni
+            pagina del CRM viaggiano su HTTPS (TLS), con HSTS. Nessun dato di Google passa in
+            chiaro fuori dal server.
+          </li>
+          <li>
+            <strong>Le conversazioni sono in chiaro nel tuo database, e solo lì.</strong> Cifriamo
+            il token, non il testo dei messaggi: il testo semplice di ogni conversazione sta nel
+            database del tuo spazio, separato da quello di ogni altro spazio, e i documenti
+            importati sul disco del server nella cartella del tuo spazio, o sul tuo Drive se lo
+            hai scelto. A proteggerli è il controllo degli accessi del punto che segue. I server
+            sono di Hetzner a Helsinki, in Unione Europea, e noi non ne mandiamo copia in altri
+            paesi; quello che il tuo assistente legge con il suo token va dove sta il tuo
+            assistente.
+          </li>
+          <li>
+            <strong>Chi può leggere.</strong> Solo chi entra nel tuo spazio con le sue credenziali:
+            la password è conservata come hash (Argon2), il link di accesso via email vale una volta
+            sola e dura quindici minuti nella configurazione standard, e il riuso di un token di
+            sessione già rinnovato, fuori dalla breve finestra di tolleranza del rinnovo, chiude
+            tutte le sessioni di quell'account. Un assistente AI legge le conversazioni solo attraverso un
+            token personale che crei tu, che agisce a tuo nome e che puoi revocare in ogni momento;
+            gli strumenti che leggono un allegato o interrogano la casella restano spenti finché
+            non attivi l'accesso completo. Noi non leggiamo i tuoi dati di Google se non per
+            assistenza, su tua richiesta: questo è un impegno.
+          </li>
+          <li>
+            <strong>Salviamo il minimo.</strong> Di ogni messaggio salviamo intestazioni, oggetto
+            e corpo in testo semplice, mai l'HTML e mai i byte degli allegati; puoi disattivare il
+            salvataggio dei corpi, e da quel momento dei nuovi messaggi resta solo l'anteprima di
+            poche righe che Gmail stesso fornisce, mentre i corpi già salvati restano finché non
+            cancelli i messaggi. Da Google Drive leggiamo solo dentro le cartelle che hai indicato:
+            prima di leggere un file PigroCRM verifica che stia sotto una di quelle cartelle e, se
+            non ci sta, lo rifiuta. Il contenuto di un file fuori da quelle cartelle non viene mai
+            scaricato.
+          </li>
+          <li>
+            <strong>Per quanto, e come si cancella.</strong> I dati di Google restano finché resta
+            lo spazio. Quando scolleghi Gmail o Google Drive, il token viene cancellato subito dal
+            database e, per Gmail, ti chiediamo se cancellare anche i messaggi già salvati; il
+            token resta cifrato nei backup già presi finché i successivi non li sostituiscono (ne
+            teniamo trenta), e da lì non si legge senza la chiave. Il consenso lato Google lo revochi tu dalla pagina delle
+            autorizzazioni del tuo account, come dice la sezione qui sotto. Se chiudi lo spazio,
+            cancelliamo il suo database e i suoi documenti entro trenta giorni, backup compresi al
+            loro ciclo naturale: questo è un impegno.
+          </li>
+          <li>
+            <strong>Se qualcosa va storto.</strong> Per i dati del tuo spazio sei tu il titolare e
+            noi il responsabile del trattamento: in caso di violazione te lo comunichiamo senza
+            ingiustificato ritardo, con quello che serve per la notifica al Garante che il GDPR
+            chiede al titolare entro settantadue ore quando la violazione può comportare un
+            rischio per le persone (articoli 33 e 34), e ti aiutiamo a farla. Per i dati di cui siamo noi titolari, il tuo account, la notifica al Garante la
+            facciamo noi, negli stessi termini. Anche questo è un impegno.
+          </li>
+        </ul>
 
         <h2>Cosa non chiediamo</h2>
         <p>
