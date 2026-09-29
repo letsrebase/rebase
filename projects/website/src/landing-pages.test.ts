@@ -177,12 +177,14 @@ describe('index.html', () => {
     // The hub (projects/hub) is where somebody signs up since 2026-09-09: the freelancer
     // wizard and the company wizard. Same origin, different deployable; the paths are
     // relative so the page has one origin in every environment.
-    expect(page).toMatch(/<a class="cta" href="\/hub\/freelance">Entra come talento<\/a>/)
-    expect(page).toMatch(/<a class="cta secondary" href="\/hub\/aziende">[^<]+<\/a>/)
-    // The third door (REB-608) is the public team builder, drawn like the company's door
-    // and inside the hero's own `.actions` paragraph, so utm.js decorates all three. The
-    // page has other `.actions` paragraphs further down: anchor on the hero, not on order.
+    // All three are read inside the hero's own `.actions` paragraph: the services band
+    // further down carries the same wizard and team builder doors, so a page-wide match
+    // would still pass with a hero door missing. Anchor on the hero, not on order.
     const actions = page.match(/<section class="hero">[\s\S]*?<p class="actions">([\s\S]*?)<\/p>/)?.[1] ?? ''
+    expect(actions).toMatch(/<a class="cta" href="\/hub\/freelance">Entra come talento<\/a>/)
+    expect(actions).toMatch(/<a class="cta secondary" href="\/hub\/aziende">[^<]+<\/a>/)
+    // The third door (REB-608) is the public team builder, drawn like the company's door
+    // and inside the same paragraph, so utm.js decorates all three.
     expect(actions).toMatch(/<a class="cta secondary" href="\/hub\/team">Prova il team builder<\/a>/)
     expect(actions.match(/<a class="cta[^"]*" href="\/hub\//g)).toHaveLength(3)
     // The old door, the email form on `/`, is not what this page sells any more.
