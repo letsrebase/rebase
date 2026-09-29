@@ -338,7 +338,7 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
     expect(screen.getByText('Ibrido · 3 giorni in sede')).toBeInTheDocument()
     expect(screen.getByText('2 persone')).toBeInTheDocument()
     expect(screen.getByText(/^Inviata il 20 set 2026$/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /^Modifica la richiesta: Backend developer, del 20 set 2026/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Modifica la richiesta 1 di 1: Backend developer' })).toHaveAttribute(
       'href',
       '/me/edit-company/r1',
     )
@@ -381,18 +381,17 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
     expect(screen.getAllByRole('link', { name: /Richiedi una nuova figura/ })).toHaveLength(1)
   })
 
-  it('names the edit links apart when two requests ask for the same role on the same day', async () => {
-    meFetch({
-      ...COMPANY_ONLY,
-      richieste: [
-        { ...OLDER_REQUEST, id: 'r3', created_at: '2026-09-20T10:30:00Z' },
-        OLDER_REQUEST,
-      ],
-    })
+  it('names the edit links apart when two requests are identical down to the minute they were filed', async () => {
+    meFetch({ ...COMPANY_ONLY, richieste: [{ ...OLDER_REQUEST, id: 'r3' }, OLDER_REQUEST] })
     mount()
     await screen.findByRole('heading', { name: 'Le tue richieste' })
-    const names = screen.getAllByRole('link', { name: /^Modifica la richiesta/ }).map((link) => link.getAttribute('aria-label'))
-    expect(new Set(names).size).toBe(2)
+    const names = screen
+      .getAllByRole('link', { name: /^Modifica la richiesta/ })
+      .map((link) => link.getAttribute('aria-label'))
+    expect(names).toEqual([
+      'Modifica la richiesta 1 di 2: Backend developer',
+      'Modifica la richiesta 2 di 2: Backend developer',
+    ])
   })
 
   it('renders alongside the freelancer card when a person has both (REB-314)', async () => {

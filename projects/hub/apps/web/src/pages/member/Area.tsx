@@ -4,7 +4,7 @@ import { ArrowUpRight, Download, Pencil, Plus } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Button } from '@rebase/ui/button'
 import { member, type MemberRequest } from '@/lib/api'
-import { formatBytes, formatDate, formatDateTime, formatDay, formatEuro } from '@/lib/format'
+import { formatBytes, formatDate, formatDay, formatEuro } from '@/lib/format'
 import { toApplication, toCompanyApplication, useMe } from '@/lib/me'
 import { GUIDE } from '@/lib/perks'
 import { COMPANY_FIELDS } from '@/pages/CompanyWizard'
@@ -55,7 +55,7 @@ function Cell({ label, children }: { label: string; children: ReactNode }) {
 /** One request, compact: the role and when it was filed, its own «Modifica», the project
  *  clipped to two lines, then the four answers that tell requests apart in a hairline
  *  grid. The whole text is on the edit page. */
-function RequestCard({ request }: { request: MemberRequest }) {
+function RequestCard({ request, position, total }: { request: MemberRequest; position: number; total: number }) {
   return (
     <li className="border bg-card">
       <div className="flex items-start justify-between gap-3 px-4 pt-3">
@@ -67,7 +67,7 @@ function RequestCard({ request }: { request: MemberRequest }) {
           <Link
             to="/me/edit-company/$id"
             params={{ id: request.id }}
-            aria-label={`Modifica la richiesta: ${request.figura_richiesta}, del ${formatDateTime(request.created_at)}`}
+            aria-label={`Modifica la richiesta ${position} di ${total}: ${request.figura_richiesta}`}
           >
             <Pencil className="mr-2 size-4" />
             Modifica
@@ -188,8 +188,8 @@ export function Area() {
         </Button>
       </div>
       <ul className="space-y-3">
-        {requests.map((request) => (
-          <RequestCard key={request.id} request={request} />
+        {requests.map((request, index) => (
+          <RequestCard key={request.id} request={request} position={index + 1} total={requests.length} />
         ))}
       </ul>
     </section>
