@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
@@ -395,6 +396,18 @@ def test_a_failing_count_or_record_never_keeps_a_slot_or_hides_the_refusal(
     finally:
         routes._refusal_slots.release()
     assert skipped.status_code == 503 and skipped.json() == {"detail": BUSY}
+    team.expire_all()
+    assert team.scalar(select(func.count()).select_from(TeamProposal)) == before
+    # And with every waiter taken the row is skipped at once, with no wait at all.
+    monkeypatch.setattr(routes, "_refusal_waiters", threading.BoundedSemaphore(1))
+    routes._refusal_waiters.acquire()
+    try:
+        started = time.monotonic()
+        skipped = _propose(client)
+        waited = time.monotonic() - started
+    finally:
+        routes._refusal_waiters.release()
+    assert skipped.status_code == 503 and waited < routes.REFUSAL_WAIT_SECONDS
     team.expire_all()
     assert team.scalar(select(func.count()).select_from(TeamProposal)) == before
 

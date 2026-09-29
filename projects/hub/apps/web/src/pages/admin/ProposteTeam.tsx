@@ -50,16 +50,16 @@ function membriLabel(membri: number): string {
   return membri === 1 ? '1 persona proposta' : `${membri} persone proposte`
 }
 
-/** The description as it was typed, cut at `PREVIEW_LENGTH` until the admin asks for
- *  the whole of it: a 4,000-character project in a table cell is a column nobody can
- *  scan. */
-function Descrizione({ text }: { text: string }) {
+/** A text as it was written, cut at `PREVIEW_LENGTH` until the admin asks for the
+ *  whole of it: a 4,000-character description, or a 1,500-character summary, in a
+ *  table cell is a column nobody can scan. */
+function Clamped({ text, className }: { text: string; className?: string }) {
   const [whole, setWhole] = useState(false)
   const long = text.length > PREVIEW_LENGTH
   const shown = whole || !long ? text : `${text.slice(0, PREVIEW_LENGTH).trimEnd()}…`
   return (
-    <div className="max-w-xl space-y-1">
-      <p className="whitespace-pre-wrap">{shown}</p>
+    <div className="space-y-1">
+      <p className={`whitespace-pre-wrap ${className ?? ''}`}>{shown}</p>
       {long && (
         <Button type="button" variant="link" size="sm" className="h-auto p-0" onClick={() => setWhole((v) => !v)}>
           {whole ? 'Mostra meno' : 'Mostra tutto'}
@@ -79,7 +79,7 @@ function Esito({ item }: { item: TeamProposalListItem }) {
   return (
     <div className="max-w-md space-y-1">
       <p>{item.membri === 0 ? 'Nessun profilo corrispondente' : membriLabel(item.membri)}</p>
-      {item.riassunto && <p className="text-muted-foreground">{item.riassunto}</p>}
+      {item.riassunto && <Clamped text={item.riassunto} className="text-muted-foreground" />}
       {item.request_id ? (
         <Link to="/admin/team/$id" params={{ id: item.request_id }} className="font-medium hover:underline">
           Richiesta inviata
@@ -96,8 +96,8 @@ function ProposalRow({ item }: { item: TeamProposalListItem }) {
     <TableRow>
       <TableCell className="whitespace-nowrap align-top text-muted-foreground">{formatDateTime(item.created_at)}</TableCell>
       <TableCell className="align-top">{TEAM_ORIGIN_LABELS[item.origine] ?? item.origine}</TableCell>
-      <TableCell className="align-top">
-        <Descrizione text={item.descrizione} />
+      <TableCell className="max-w-xl align-top">
+        <Clamped text={item.descrizione} />
         {item.nota && (
           <p className="mt-1 text-muted-foreground">
             {item.previous_id ? 'Rigenera: ' : 'Nota: '}

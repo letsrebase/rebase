@@ -142,18 +142,24 @@ describe('«Proposte» (0028): every «Proponi il team», filed or not', () => {
     expect(screen.getByRole('link', { name: 'Tutte le richieste' }).getAttribute('href')).toMatch(/\/admin\/team$/)
   })
 
-  it('cuts a long description and shows it whole on «Mostra tutto»', async () => {
+  it('cuts a long description and a long summary, each shown whole on its own «Mostra tutto»', async () => {
     const long = `${'Un progetto lungo. '.repeat(20)}FINE`
+    const summary = `${'Un riassunto lungo. '.repeat(20)}FINE`
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      answer(200, { items: [{ ...FILED, descrizione: long }], next_cursor: null }),
+      answer(200, { items: [{ ...FILED, descrizione: long, riassunto: summary }], next_cursor: null }),
     )
     mount('/admin/team/proposte')
 
-    const more = await screen.findByRole('button', { name: 'Mostra tutto' })
+    const more = await screen.findAllByRole('button', { name: 'Mostra tutto' })
+    expect(more).toHaveLength(2)
     expect(screen.queryByText(long)).toBeNull()
-    await userEvent.click(more)
+    expect(screen.queryByText(summary)).toBeNull()
+    await userEvent.click(more[0]!)
     expect(screen.getByText(long)).toBeInTheDocument()
+    expect(screen.queryByText(summary)).toBeNull()
     expect(screen.getByRole('button', { name: 'Mostra meno' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Mostra tutto' }))
+    expect(screen.getByText(summary)).toBeInTheDocument()
   })
 
   it('filters by outcome through the pills, carried in the URL and sent to the API', async () => {

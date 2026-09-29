@@ -380,8 +380,8 @@ over MCP read them all, newest first, each with the «Assumi team» filed on it 
 there is one. That is where the usage of the builder is read; PostHog's
 `team_proposta_generata` counts only the proposals that answered. One bound: a
 refusal's row holds no proposal slot, so `routers/team.py` writes at most
-`REFUSAL_WRITES` (2) of them at once and one more waits `REFUSAL_WAIT_SECONDS` (0.5)
-for its turn; past that, which only a flood reaches, the 503 is answered, the row is
+`REFUSAL_WRITES` (2) of them at once, and at most `REFUSAL_WAITERS` (8) more wait
+`REFUSAL_WAIT_SECONDS` (0.5) for a turn; past that, which only a flood reaches, the 503 is answered, the row is
 not written and the log says «refused ask not kept».
 
 **Two caps.** `REBASE_TEAM_BUILDER_CONCURRENCY` (4) is how many proposals run at once

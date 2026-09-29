@@ -278,8 +278,8 @@ count it; its id is never answered, `get` is a 404 on it, and «Rigenera» and �
 team» refuse it as they refuse a proposal that does not exist. A switch that is off or
 a description the schema refuses (a 422) never reaches the engine and leaves no row,
 and nor does a refusal that finds both refusal-write slots of the process busy for
-longer than half a second (`REFUSAL_WRITES`, `REFUSAL_WAIT_SECONDS` in
-`routers/team.py`): the write holds no proposal slot, so it is bounded on its own,
+longer than half a second, or every waiting place taken (`REFUSAL_WRITES`,
+`REFUSAL_WAITERS`, `REFUSAL_WAIT_SECONDS` in `routers/team.py`): the write holds no proposal slot, so it is bounded on its own,
 and under a flood the 503 is answered without the row, with a line in the log.
 No PostHog event for an attempt: `team_proposta_generata` counts proposals. The admin
 reads all of it in «Proposte» (`/admin/team/proposte`, linked from «Richieste team»):
