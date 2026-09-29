@@ -7,6 +7,11 @@ import { cn } from "./cn"
 import { Button } from "./button"
 import { XIcon } from "lucide-react"
 
+/** What the corner X says to a screen reader (REB-593). Every rebase product speaks
+ *  Italian to its users, so the package's default is the product's word rather than
+ *  shadcn's «Close»; a page with a better one passes `closeLabel`. */
+const CLOSE_LABEL = "Chiudi"
+
 function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
 }
@@ -50,10 +55,13 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  closeLabel = CLOSE_LABEL,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
+  /** The close control's label: «Chiudi» unless the page has a better word. */
+  closeLabel?: string
 }) {
   return (
     <SheetPortal>
@@ -77,7 +85,7 @@ function SheetContent({
             >
               <XIcon
               />
-              <span className="sr-only">Close</span>
+              <span className="sr-only">{closeLabel}</span>
             </Button>
           </SheetPrimitive.Close>
         )}
