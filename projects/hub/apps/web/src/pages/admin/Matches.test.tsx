@@ -42,6 +42,8 @@ function settle(): Promise<void> {
 const MATCH_A = {
   id: 'm1',
   freelancer_id: 'f1',
+  company_id: 'c1',
+  company_deleted: false,
   freelancer_nome: 'Ada',
   freelancer_cognome: 'Lovelace',
   freelancer_email: 'ada@studio.it',
@@ -52,6 +54,8 @@ const MATCH_A = {
   lettera_stato: 'in_attesa',
   lettera_data_inizio: '1° ottobre 2026',
   lettera_data_fine: null,
+  lettera_compenso: '450.00',
+  lettera_unita: 'a giornata',
   created_at: '2026-09-20T10:00:00Z',
   created_by_nome: 'Ivan',
   created_by_email: 'ivan@rebase.it',
@@ -59,11 +63,13 @@ const MATCH_A = {
   giorni_previsti: null,
   pigro_stato: null,
   pigro_url: null,
+  referrals: [],
 }
 
 const MATCH_B = {
   ...MATCH_A,
   id: 'm2',
+  company_id: 'c2',
   freelancer_nome: 'Grace',
   freelancer_cognome: 'Hopper',
   freelancer_email: 'grace@studio.it',
@@ -96,6 +102,16 @@ function mount(path: string) {
     path: '/admin/freelance/$id/contracts',
     component: () => <p>contratti</p>,
   })
+  const talent = createRoute({
+    getParentRoute: () => signedIn,
+    path: '/admin/freelance/$id',
+    component: () => <p>scheda</p>,
+  })
+  const company = createRoute({
+    getParentRoute: () => signedIn,
+    path: '/admin/companies/$id',
+    component: () => <p>azienda</p>,
+  })
   const report = createRoute({
     getParentRoute: () => signedIn,
     path: '/admin/matches/$id/report',
@@ -105,7 +121,7 @@ function mount(path: string) {
     },
   })
   const router = createRouter({
-    routeTree: root.addChildren([signedIn.addChildren([matches, contratti, report])]),
+    routeTree: root.addChildren([signedIn.addChildren([matches, contratti, talent, company, report])]),
     history: createMemoryHistory({ initialEntries: [path] }),
   })
   render(
@@ -136,7 +152,7 @@ describe('the Match list (REB-413)', () => {
     expect(within(cellUnder(ada, 'Azienda')).getByText('ACME Srl')).toBeInTheDocument()
     expect(within(cellUnder(ada, 'Stato')).getByText('Da inviare')).toBeInTheDocument()
     expect(cellUnder(ada, 'Lettera')).toHaveTextContent('2026-001')
-    expect(cellUnder(ada, 'Periodo')).toHaveTextContent('1° ottobre 2026')
+    expect(cellUnder(ada, 'Lettera')).toHaveTextContent('1° ottobre 2026')
     const link = within(ada).getByRole('link', { name: /Ada Lovelace/ })
     expect(link.getAttribute('href')).toMatch(/\/admin\/freelance\/f1\/contracts$/)
   })
@@ -152,8 +168,8 @@ describe('the Match list (REB-413)', () => {
     const grace = screen.getByText('grace@studio.it').closest('tr')!
     expect(within(cellUnder(grace, 'Stato')).getByText('Attivo')).toBeInTheDocument()
     expect(within(cellUnder(grace, 'Stato')).getByText(MATCH_B.situazione)).toBeInTheDocument()
-    // The letter's column keeps its number; where the letter stands is the sentence's.
-    expect(cellUnder(ada, 'Lettera')).toHaveTextContent(/^n\. 2026-001$/)
+    // The letter's column keeps its number and period; where the letter stands is the sentence's.
+    expect(cellUnder(ada, 'Lettera')).toHaveTextContent(/^n\. 2026-001\s*1° ottobre 2026$/)
   })
 
   it('shows nothing, no em dash, when a match has no letter', async () => {
@@ -168,9 +184,130 @@ describe('the Match list (REB-413)', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 1, items: [noLetter] }))
     mount('/admin/matches')
     const row = (await screen.findByText('ada@studio.it')).closest('tr')!
-    // The letter's two cells alone: «Pigro» has its own em dash for a match not active.
+    // The letter's cell alone: «Pigro» has its own em dash for a match not active.
     expect(cellUnder(row, 'Lettera').textContent).toBe('')
-    expect(cellUnder(row, 'Periodo').textContent).toBe('')
+  })
+
+  it('links the company to its page and «Dettaglio» to the match’s card on its freelancer’s contracts (REB-609)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 2, items: [MATCH_A, MATCH_B] }))
+    mount('/admin/matches')
+
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    expect(within(ada).getByRole('link', { name: 'ACME Srl' }).getAttribute('href')).toMatch(
+      /\/admin\/companies\/c1$/,
+    )
+    expect(
+      within(ada)
+        .getByRole('link', { name: 'Dettaglio del match con ACME Srl come Backend developer' })
+        .getAttribute('href'),
+    ).toMatch(/\/admin\/freelance\/f1\/contracts#match-m1$/)
+    const grace = screen.getByText('grace@studio.it').closest('tr')!
+    expect(within(grace).getByRole('link', { name: 'Bianchi Srl' }).getAttribute('href')).toMatch(
+      /\/admin\/companies\/c2$/,
+    )
+  })
+
+  it('leaves a deleted request’s name unlinked and says so, since its page answers not found (REB-609)', async () => {
+    const deleted = { ...MATCH_B, company_deleted: true }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 2, items: [MATCH_A, deleted] }))
+    mount('/admin/matches')
+
+    const grace = (await screen.findByText('grace@studio.it')).closest('tr')!
+    expect(within(grace).queryByRole('link', { name: 'Bianchi Srl' })).toBeNull()
+    expect(cellUnder(grace, 'Azienda')).toHaveTextContent('Bianchi Srl')
+    expect(cellUnder(grace, 'Azienda')).toHaveTextContent('richiesta eliminata')
+    const ada = screen.getByText('ada@studio.it').closest('tr')!
+    expect(within(ada).getByRole('link', { name: 'ACME Srl' })).toBeInTheDocument()
+  })
+
+  it('shows the letter’s fee, right-aligned, with its unit and the estimated days (REB-609)', async () => {
+    const lump = { ...MATCH_B, lettera_compenso: '12000.00', lettera_unita: 'a corpo', giorni_previsti: 40 }
+    const none = { ...MATCH_A, id: 'm9', freelancer_email: 'none@studio.it', lettera_compenso: null, lettera_unita: null }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 3, items: [MATCH_A, lump, none] }))
+    mount('/admin/matches')
+
+    const ada = (await screen.findByText('ada@studio.it')).closest('tr')!
+    expect(cellUnder(ada, 'Compenso')).toHaveTextContent('450,00 €a giornata')
+    expect(cellUnder(ada, 'Compenso').className).toMatch(/text-right/)
+    const grace = screen.getByText('grace@studio.it').closest('tr')!
+    expect(cellUnder(grace, 'Compenso')).toHaveTextContent('12.000,00 €a corpo · 40 gg')
+    const empty = screen.getByText('none@studio.it').closest('tr')!
+    expect(cellUnder(empty, 'Compenso')).toHaveTextContent(/^—$/)
+  })
+
+  it('says per referred side who referred it, at which rate and for how much, and says so when nobody did (REB-609)', async () => {
+    const projected = {
+      ...MATCH_A,
+      referrals: [
+        {
+          kind: 'freelancer',
+          referrer_nome: 'Mario Rossi',
+          referrer_freelancer_id: 'f9',
+          rate: '0.1000',
+          amount: '700.00',
+          stato: 'previsto',
+          reward_id: null,
+        },
+        {
+          kind: 'company',
+          referrer_nome: 'Lia Neri',
+          referrer_freelancer_id: null,
+          rate: '0.3000',
+          amount: null,
+          stato: 'previsto',
+          reward_id: null,
+        },
+      ],
+    }
+    const real = {
+      ...MATCH_B,
+      referrals: [
+        {
+          kind: 'company',
+          referrer_nome: 'Mario Rossi',
+          referrer_freelancer_id: 'f9',
+          rate: '0.3000',
+          amount: '2100.00',
+          stato: 'confermato',
+          reward_id: 'r1',
+        },
+        {
+          kind: 'freelancer',
+          referrer_nome: 'Lia Neri',
+          referrer_freelancer_id: null,
+          rate: null,
+          amount: null,
+          stato: 'gia_maturato',
+          reward_id: null,
+        },
+      ],
+    }
+    const plain = { ...MATCH_A, id: 'm7', freelancer_email: 'plain@studio.it' }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 3, items: [projected, real, plain] }))
+    mount('/admin/matches')
+
+    const first = (await screen.findByText('ada@studio.it')).closest('tr')!
+    const cell = cellUnder(first, 'Referral')
+    expect(cell).toHaveTextContent('Referral freelance: Mario Rossi · 10% · 700,00 €')
+    expect(within(cell).getByRole('link', { name: 'Mario Rossi' }).getAttribute('href')).toMatch(
+      /\/admin\/freelance\/f9$/,
+    )
+    // A referrer with no card of his own is text, and an amount that cannot be projected is «-».
+    expect(cell).toHaveTextContent('Referral azienda: Lia Neri · 30% · -')
+    expect(within(cell).queryByRole('link', { name: 'Lia Neri' })).toBeNull()
+    expect(within(cell).getAllByText('Previsto')).toHaveLength(2)
+
+    const second = screen.getByText('grace@studio.it').closest('tr')!
+    const paid = cellUnder(second, 'Referral')
+    expect(paid).toHaveTextContent('Referral azienda: Mario Rossi · 30% · 2.100,00 €')
+    expect(within(paid).getByText('Confermato')).toBeInTheDocument()
+    // A referral pays once: no rate or figure on the match that came after the payment.
+    expect(paid).toHaveTextContent('Referral freelance: Lia Neri')
+    expect(paid).not.toHaveTextContent('Lia Neri ·')
+    expect(within(paid).getByText('Già maturato')).toBeInTheDocument()
+
+    const none = screen.getByText('plain@studio.it').closest('tr')!
+    expect(cellUnder(none, 'Referral')).toHaveTextContent(/^Nessun referral$/)
   })
 
   it('says in «Pigro» where each match’s link stands, and opens a linked one’s «Consuntivo» (REB-502, REB-503)', async () => {

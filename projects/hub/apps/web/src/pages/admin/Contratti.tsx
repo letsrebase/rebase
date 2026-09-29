@@ -107,6 +107,16 @@ export function AdminContratti() {
   // arrival, as the last action's sentence, so the next action replaces it.
   const notice = useLocation({ select: (location) => location.state.notice })
   const [message, setMessage] = useState<string | null>(notice ?? null)
+  // «Dettaglio» on the «Match» list links to `#match-<id>` (REB-609): the cards only exist
+  // once the contracts have loaded, so the browser's own anchor jump has nothing to land on.
+  const hash = useLocation({ select: (location) => location.hash })
+  useEffect(() => {
+    if (!contracts.isSuccess || !hash.startsWith('match-')) return
+    const card = document.getElementById(hash)
+    if (card === null) return
+    card.scrollIntoView({ block: 'start' })
+    card.focus({ preventScroll: true })
+  }, [contracts.isSuccess, hash])
   useEffect(() => {
     if (notice === undefined) return
     // Taken off the entry once read, so a reload or a return to it does not say it again.

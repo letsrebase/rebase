@@ -9,7 +9,7 @@ import {
 } from '@tanstack/react-router'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { formatDate } from '@/lib/format'
 import { AdminContratti } from './Contratti'
 
@@ -546,6 +546,34 @@ describe('«Match e contratti» as cards (REB-477)', () => {
     expect(screen.getByRole('button', { name: 'Invia per la firma il match con Rossi Studio come Backend developer' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Altre azioni del match con Rossi Studio come Designer' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Altre azioni del match con Rossi Studio come Backend developer' })).toBeInTheDocument()
+  })
+
+  it('lands on the match card a #match-<id> link names, once the contracts have loaded (REB-609)', async () => {
+    const second = {
+      ...MATCH,
+      id: 'm2',
+      figura_richiesta: 'Designer',
+      lettera: { ...LETTERA, id: 'd3', match_id: 'm2', numero: '2026-002' },
+    }
+    routeFetch({
+      'GET /api/hub/freelancers/f1': PERSON,
+      'GET /api/hub/freelancers/f1/matches': { ...PAGE, matches: [MATCH, second] },
+    })
+    const scrolled = vi.fn()
+    vi.stubGlobal('scrollTo', vi.fn())
+    const original = Element.prototype.scrollIntoView
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled(this.id)
+    }
+    onTestFinished(() => {
+      Element.prototype.scrollIntoView = original
+    })
+    mount('/admin/freelance/f1/contracts#match-m2')
+
+    const heading = await screen.findByRole('heading', { name: 'Rossi Studio · Designer' })
+    await waitFor(() => expect(heading).toHaveFocus())
+    expect(scrolled).toHaveBeenCalledWith('match-m2')
+    expect(screen.getByRole('heading', { name: 'Rossi Studio · Backend developer' })).not.toHaveFocus()
   })
 
   it('leaves out, without failing, an action the card has no call for and one it does not know', async () => {

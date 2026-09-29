@@ -35,6 +35,7 @@ from rebase_core.models import (
     POSIZIONE_MAX_LENGTH,
     SEDE_MAX_LENGTH,
 )
+from rebase_core.referral_schemas import MatchReferral
 from rebase_core.schemas import PROGETTO_MAX_LENGTH, TARIFFA_MAX, TARIFFA_MIN, clean_multiline
 from rebase_core.validation import SafeStr
 
@@ -465,10 +466,17 @@ class MatchListItem(BaseModel):
     writes one, so this is the list staying honest about a shape `get` does not need
     to allow for. `situazione` is the match's sentence, the same `MatchRead` carries
     (REB-477). `giorni_previsti`, `pigro_stato` and `pigro_url` are `Match`'s own
-    (REB-497), the row's narrower share of what `MatchRead` carries in full."""
+    (REB-497), the row's narrower share of what `MatchRead` carries in full. REB-609
+    adds `company_id` (a link, unless `company_deleted`: a deleted request's page
+    answers not found), the letter's fee as it printed it (`lettera_compenso`
+    and `lettera_unita`, the letter's `modalita`/`unita`; a fee is not a tax field) and
+    `referrals`, one entry per referred side of the match: what it earns, projected or
+    real, never the client's budget itself."""
 
     id: UUID
     freelancer_id: UUID
+    company_id: UUID
+    company_deleted: bool
     freelancer_nome: str
     freelancer_cognome: str
     freelancer_email: str
@@ -479,6 +487,8 @@ class MatchListItem(BaseModel):
     lettera_stato: str | None
     lettera_data_inizio: str | None
     lettera_data_fine: str | None
+    lettera_compenso: Decimal | None
+    lettera_unita: str | None
     created_at: datetime
     created_by_nome: str
     created_by_email: str
@@ -486,6 +496,7 @@ class MatchListItem(BaseModel):
     giorni_previsti: int | None
     pigro_stato: str | None
     pigro_url: str | None
+    referrals: list[MatchReferral]
 
 
 class MatchList(BaseModel):

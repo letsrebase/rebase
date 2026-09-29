@@ -1,4 +1,5 @@
 import { Link, useLocation } from '@tanstack/react-router'
+import { Fragment } from 'react'
 import {
   BookOpen,
   Boxes,
@@ -21,28 +22,32 @@ import { cn } from '@rebase/ui/cn'
 import type { Me } from '@/lib/api'
 import { useLogout } from '@/lib/me'
 
-/** The admin pages (ORB-123 onward): «Developer e CTO» and «Iscrizioni», two
- *  overlapping views of the same people, are one entry, «Talenti», over the read
- *  model that merges them (REB-283); the rest keep their label, icon and path. «Match»
- *  (REB-413) lists every match the milestone's other four admin pages create, between
- *  the two lists it draws its rows from. «Campagne» (P-REB-41) lists the mails an
- *  admin sends the community, one state and one outcome at a time. «Richieste team»
- *  (REB-514) sits right after «Match», before «Aziende» as the spec places it: the
- *  requests the team builder files, the step before a match. «Referral» (P-REB-44)
- *  is the ledger every signed-letter reward lands on, and the two rates that decide
- *  how much. */
+/** The admin pages, in the order an admin reaches for them (REB-609), in four groups a
+ *  hairline apart: what is worked every day, in the order a piece of work travels
+ *  (a person, the company that asks, the team it asks for, the match that joins them, the
+ *  referral that match may earn); the mails sent to the community; what is set up or
+ *  watched now and then (the Pigro instances, the guide); and who may get in (accesses,
+ *  administrators, agents). «Talenti» is the merge of the old «Developer e CTO» and
+ *  «Iscrizioni» (REB-283); a page renamed or moved keeps its route through a redirect in
+ *  `router.tsx`, so this list is the only place the order lives. */
 const ADMIN_NAV = [
-  { to: '/admin/talent', label: 'Talenti', icon: UserRound },
-  { to: '/admin/matches', label: 'Match', icon: Handshake },
-  { to: '/admin/team', label: 'Richieste team', icon: Users },
-  { to: '/admin/campaigns', label: 'Campagne', icon: Send },
-  { to: '/admin/companies', label: 'Aziende', icon: Briefcase },
-  { to: '/admin/referrals', label: 'Referral', icon: Share2 },
-  { to: '/admin/pigro', label: 'Istanze Pigro', icon: Boxes },
-  { to: '/admin/guide', label: 'La guida', icon: BookOpen },
-  { to: '/admin/access', label: 'Accessi', icon: LogIn },
-  { to: '/admin/admins', label: 'Amministratori', icon: ShieldCheck },
-  { to: '/admin/agents', label: 'Agenti', icon: Plug },
+  [
+    { to: '/admin/talent', label: 'Talenti', icon: UserRound },
+    { to: '/admin/companies', label: 'Aziende', icon: Briefcase },
+    { to: '/admin/team', label: 'Richieste team', icon: Users },
+    { to: '/admin/matches', label: 'Match', icon: Handshake },
+    { to: '/admin/referrals', label: 'Referral', icon: Share2 },
+  ],
+  [{ to: '/admin/campaigns', label: 'Campagne', icon: Send }],
+  [
+    { to: '/admin/pigro', label: 'Istanze Pigro', icon: Boxes },
+    { to: '/admin/guide', label: 'La guida', icon: BookOpen },
+  ],
+  [
+    { to: '/admin/access', label: 'Accessi', icon: LogIn },
+    { to: '/admin/admins', label: 'Amministratori', icon: ShieldCheck },
+    { to: '/admin/agents', label: 'Agenti', icon: Plug },
+  ],
 ] as const
 
 /* The record of 2026-09-18, as #228 drew it in the CRM's AppShell: the active item is
@@ -127,16 +132,21 @@ export function SidebarNav({
               Amministrazione
             </p>
             <div role="separator" className="my-2 border-t border-sidebar-border" />
-            {ADMIN_NAV.map(({ to, label, icon: Icon }) => (
-              <Link
-                key={to}
-                to={to}
-                onClick={onNavigate}
-                className={cn(NAV_LINK, drawer && 'min-h-11')}
-              >
-                <Icon className="size-4" aria-hidden="true" />
-                {label}
-              </Link>
+            {ADMIN_NAV.map((group, index) => (
+              <Fragment key={group[0].to}>
+                {index > 0 && <div role="separator" className="my-1 border-t border-sidebar-border" />}
+                {group.map(({ to, label, icon: Icon }) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    onClick={onNavigate}
+                    className={cn(NAV_LINK, drawer && 'min-h-11')}
+                  >
+                    <Icon className="size-4" aria-hidden="true" />
+                    {label}
+                  </Link>
+                ))}
+              </Fragment>
             ))}
           </>
         )}

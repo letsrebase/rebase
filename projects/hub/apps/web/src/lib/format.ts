@@ -37,6 +37,11 @@ const calendarWeekday = new Intl.DateTimeFormat('it-IT', {
 const calendarMonth = new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric', timeZone: 'UTC' })
 const quantity = new Intl.NumberFormat('it-IT', { maximumFractionDigits: 2 })
 
+/** A rate as the API sends it, `"0.1000"`, as `10%`: what a referral reward is a share of. */
+export function formatRate(value: string): string {
+  return `${quantity.format(Number(value) * 100)}%`
+}
+
 /** `"2026-10-01"` as `1 ott 2026`, or `gio 1 ott 2026` with its weekday: a row of hours. */
 export function formatDay(value: string, weekday = false): string {
   return (weekday ? calendarWeekday : calendarDay).format(new Date(`${value}T00:00:00Z`))
@@ -167,6 +172,19 @@ export const PIGRO_STATE_LABELS: Record<PigroStato, string> = {
   errore: 'Errore',
   rifiutato: 'Rifiutato',
 }
+
+/** A referral's state on the «Match» list and on the ledger: the reward's own three (the
+ *  ledger's `STATE_LABELS` read the same), `previsto` while its first letter is not signed
+ *  (an estimate), and `gia_maturato` when it already paid on another match (REB-609). */
+export const REFERRAL_STATE_LABELS: Record<string, string> = {
+  previsto: 'Previsto',
+  da_confermare: 'Da confermare',
+  confermato: 'Confermato',
+  pagato: 'Pagato',
+  gia_maturato: 'Già maturato',
+}
+/** Which side of a match a referral brought in. */
+export const REFERRAL_KIND_LABELS: Record<string, string> = { freelancer: 'freelance', company: 'azienda' }
 
 /** An invoice the hours of «Consuntivo» sit on (REB-503), in the words PigroCRM's own
  *  invoice list uses for its state and its payment: the CRM's vocabulary, copied, since

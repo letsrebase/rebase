@@ -864,6 +864,10 @@ export interface Match {
 export interface MatchListItem {
   id: string
   freelancer_id: string
+  /** The company request's id (REB-609), for the link to its page, unless it was
+   *  deleted: a deleted request's page answers not found. */
+  company_id: string
+  company_deleted: boolean
   freelancer_nome: string
   freelancer_cognome: string
   freelancer_email: string
@@ -874,6 +878,9 @@ export interface MatchListItem {
   lettera_stato: DocumentStato | null
   lettera_data_inizio: string | null
   lettera_data_fine: string | null
+  /** The letter's fee as it printed it (REB-609) and its unit, `a giornata` or `a corpo`. */
+  lettera_compenso: string | null
+  lettera_unita: string | null
   created_at: string
   created_by_nome: string
   created_by_email: string
@@ -883,6 +890,27 @@ export interface MatchListItem {
   giorni_previsti: number | null
   pigro_stato: PigroStato | null
   pigro_url: string | null
+  /** One entry per referred side, freelancer first (REB-609); `[]` when neither side of
+   *  the match was referred. */
+  referrals: MatchReferral[]
+}
+
+/** `previsto` while the first letter is not signed (a projection), the reward's own
+ *  state after, `gia_maturato` when the referral already paid on another match. */
+export type MatchReferralStato = 'previsto' | 'gia_maturato' | RewardStato
+
+/** One referred side of a match (REB-609). `rate` and `amount` are the projection for
+ *  `previsto` (`amount` `null` when there is nothing to project) and the reward's own
+ *  figures otherwise; both `null` for `gia_maturato`. `referrer_freelancer_id` is the
+ *  referrer's own card, when he has one. */
+export interface MatchReferral {
+  kind: 'freelancer' | 'company'
+  referrer_nome: string
+  referrer_freelancer_id: string | null
+  rate: string | null
+  amount: string | null
+  stato: MatchReferralStato
+  reward_id: string | null
 }
 
 /** `GET /api/hub/matches`'s shape (REB-413): newest first, `totale` counting every
@@ -1623,10 +1651,26 @@ export interface ReferralLedgerItem {
   referral_id: string
   reward_id: string | null
   kind: 'freelancer' | 'company'
+  /** The freelancer card's or the company's id, by `kind` (REB-609); `referred_deleted`
+   *  when an admin deleted it, and its page answers not found. */
+  referred_id: string
   referrer_nome: string
   referrer_email: string
+  /** The referrer's own card, when he has one. */
+  referrer_freelancer_id: string | null
   referred_nome: string
+  referred_deleted: boolean
+  /** The match that earned the reward, or for a referral with none yet the referred
+   *  side's newest match that can still earn; `null` when there is neither. */
   match_id: string | null
+  match_freelancer_id: string | null
+  match_freelancer_nome: string | null
+  match_freelancer_deleted: boolean
+  match_nome_azienda: string | null
+  match_figura_richiesta: string | null
+  /** An estimate for a referral without a reward, from that match; `null` otherwise. */
+  projected_rate: string | null
+  projected_amount: string | null
   rate: string | null
   base_amount: string | null
   reward_amount: string | null

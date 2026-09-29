@@ -4,9 +4,19 @@ import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Input } from '@rebase/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
-import { admin, type MatchesFilters, type MatchListItem } from '@/lib/api'
+import { admin, type MatchesFilters, type MatchListItem, type MatchReferral } from '@/lib/api'
 import { SEARCH_DEBOUNCE_MS, isFilterActive, useDebounce } from '@/lib/adminList'
-import { MATCH_STATES, MATCH_STATE_LABELS, PIGRO_STATE_LABELS, formatDate } from '@/lib/format'
+import { matchHeadingId } from '@/lib/contracts'
+import {
+  MATCH_STATES,
+  MATCH_STATE_LABELS,
+  PIGRO_STATE_LABELS,
+  REFERRAL_KIND_LABELS,
+  REFERRAL_STATE_LABELS,
+  formatDate,
+  formatEuro,
+  formatRate,
+} from '@/lib/format'
 import { Empty, FilterField, Header, LoadMore, StateFilter } from './lists'
 
 // The server's own default page size (`LIST_LIMIT_DEFAULT`, `rebase_core.matches`):
@@ -33,11 +43,79 @@ function PigroState({ item }: { item: MatchListItem }) {
   )
 }
 
+/** A referral's amount, projected or real, in euros; `-` where there is nothing to say. */
+function ReferralAmount({ amount }: { amount: string | null }) {
+  return <span className="tabular-nums">{amount === null ? '-' : formatEuro(amount)}</span>
+}
+
+/** Who referred which side of a match, at which rate, and what it earns (REB-609):
+ *  a hairline `Previsto` while the first letter is not signed (an estimate), the reward's
+ *  own filled state after it, and `Già maturato` when the referral already paid on another
+ *  match -- a referral pays once, so there is no figure to show. */
+function MatchReferrals({ referrals }: { referrals: MatchReferral[] }) {
+  if (referrals.length === 0) return <span className="text-muted-foreground">Nessun referral</span>
+  return (
+    <ul className="space-y-2">
+      {referrals.map((referral) => (
+        <li key={referral.kind} className="space-y-0.5">
+          <p>
+            <span className="text-muted-foreground">{`Referral ${REFERRAL_KIND_LABELS[referral.kind]}: `}</span>
+            <ReferrerName referral={referral} />
+            {referral.stato !== 'gia_maturato' && (
+              // One unit, so a narrow cell breaks before the rate, never inside a figure.
+              <span className="whitespace-nowrap">
+                {' · '}
+                {referral.rate !== null ? formatRate(referral.rate) : '-'}
+                {' · '}
+                <ReferralAmount amount={referral.amount} />
+              </span>
+            )}
+          </p>
+          <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+            <Badge variant={referral.stato === 'previsto' ? 'outline' : 'pill'}>
+              {REFERRAL_STATE_LABELS[referral.stato] ?? referral.stato}
+            </Badge>
+            {referral.stato === 'gia_maturato' && 'Ha già maturato su un altro match.'}
+          </p>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** The referrer, a link to his talent page when he has a card of his own. */
+function ReferrerName({ referral }: { referral: Pick<MatchReferral, 'referrer_nome' | 'referrer_freelancer_id'> }) {
+  if (referral.referrer_freelancer_id === null) return <span className="font-medium">{referral.referrer_nome}</span>
+  return (
+    <Link
+      to="/admin/freelance/$id"
+      params={{ id: referral.referrer_freelancer_id }}
+      className="font-medium hover:underline"
+    >
+      {referral.referrer_nome}
+    </Link>
+  )
+}
+
+/** The letter's fee and what it is priced by, with the estimated days under it. */
+function Compenso({ item }: { item: MatchListItem }) {
+  if (item.lettera_compenso === null) return <span className="text-muted-foreground">—</span>
+  const detail = [item.lettera_unita, item.giorni_previsti !== null ? `${item.giorni_previsti} gg` : null]
+    .filter(Boolean)
+    .join(' · ')
+  return (
+    <>
+      <p className="font-medium tabular-nums">{formatEuro(item.lettera_compenso)}</p>
+      {detail && <p className="text-xs text-muted-foreground">{detail}</p>}
+    </>
+  )
+}
+
 function MatchRow({ item }: { item: MatchListItem }) {
   const name = `${item.freelancer_nome} ${item.freelancer_cognome}`.trim()
   return (
     <TableRow>
-      <TableCell>
+      <TableCell className="align-top">
         <Link
           to="/admin/freelance/$id/contracts"
           params={{ id: item.freelancer_id }}
@@ -47,27 +125,58 @@ function MatchRow({ item }: { item: MatchListItem }) {
         </Link>
         <p className="text-xs text-muted-foreground">{item.freelancer_email}</p>
       </TableCell>
-      <TableCell>
-        <p className="font-medium">{item.nome_azienda}</p>
-        <p className="text-xs text-muted-foreground">{item.figura_richiesta}</p>
+      <TableCell className="align-top">
+        {/* A deleted request's page answers not found: its name stays, unlinked, and says so. */}
+        {item.company_deleted ? (
+          <p className="font-medium">{item.nome_azienda}</p>
+        ) : (
+          <Link to="/admin/companies/$id" params={{ id: item.company_id }} className="font-medium hover:underline">
+            {item.nome_azienda}
+          </Link>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {item.figura_richiesta}
+          {item.company_deleted && ' · richiesta eliminata'}
+        </p>
       </TableCell>
-      <TableCell className="min-w-64 space-y-1 whitespace-normal">
+      <TableCell className="min-w-48 space-y-1 align-top whitespace-normal">
         <Badge variant="pill">{MATCH_STATE_LABELS[item.stato] ?? item.stato}</Badge>
         {/* Where the match stands, in the words «Match e contratti» uses (REB-477): it
             names the letter's state too, so the «Lettera» column keeps just the number. */}
         <p className="text-xs text-muted-foreground">{item.situazione}</p>
       </TableCell>
-      <TableCell>{item.lettera_numero && <p className="text-sm">{`n. ${item.lettera_numero}`}</p>}</TableCell>
-      <TableCell className="text-muted-foreground">
-        {item.lettera_data_inizio}
-        {item.lettera_data_fine && ` · ${item.lettera_data_fine}`}
+      <TableCell className="align-top">
+        {item.lettera_numero && <p className="text-sm">{`n. ${item.lettera_numero}`}</p>}
+        <p className="text-xs text-muted-foreground">
+          {item.lettera_data_inizio}
+          {item.lettera_data_fine && ` · ${item.lettera_data_fine}`}
+        </p>
       </TableCell>
-      <TableCell>
+      <TableCell className="text-right align-top">
+        <Compenso item={item} />
+      </TableCell>
+      <TableCell className="min-w-80 align-top whitespace-normal">
+        <MatchReferrals referrals={item.referrals} />
+      </TableCell>
+      <TableCell className="align-top">
         <PigroState item={item} />
       </TableCell>
-      <TableCell className="text-right text-muted-foreground">
+      <TableCell className="text-right align-top text-muted-foreground">
         <p>{formatDate(item.created_at)}</p>
         <p className="text-xs">{item.created_by_nome || item.created_by_email}</p>
+      </TableCell>
+      <TableCell className="text-right align-top">
+        {/* No page of its own: a match lives on its freelancer's «Match e contratti», which
+            opens on this match's card (`matchHeadingId`). */}
+        <Link
+          to="/admin/freelance/$id/contracts"
+          params={{ id: item.freelancer_id }}
+          hash={matchHeadingId(item.id)}
+          aria-label={`Dettaglio del match con ${item.nome_azienda} come ${item.figura_richiesta}`}
+          className="text-sm underline-offset-2 hover:underline"
+        >
+          Dettaglio
+        </Link>
       </TableCell>
     </TableRow>
   )
@@ -166,9 +275,13 @@ export function AdminMatches() {
                     <TableHead>Azienda</TableHead>
                     <TableHead>Stato</TableHead>
                     <TableHead>Lettera</TableHead>
-                    <TableHead>Periodo</TableHead>
+                    <TableHead className="text-right">Compenso</TableHead>
+                    <TableHead>Referral</TableHead>
                     <TableHead>Pigro</TableHead>
                     <TableHead className="text-right">Creato</TableHead>
+                    <TableHead>
+                      <span className="sr-only">Azioni</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

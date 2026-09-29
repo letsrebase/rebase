@@ -22,17 +22,19 @@ question the P-REB-44 spike raised is answered, grounded in `Match.giorni_previs
 """
 
 import secrets
+from collections.abc import Iterable, Mapping, Sequence
 from decimal import Decimal
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import Select, select
+from sqlalchemy import Row, Select, and_, literal, or_, select, union_all
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from rebase_core.audit import utcnow
 from rebase_core.errors import NotFound, ValidationFailed
+from rebase_core.match_words import LETTERA
 from rebase_core.models import (
     REFERRAL_CODE_LENGTH,
     Company,
@@ -46,6 +48,7 @@ from rebase_core.models import (
 )
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
 from rebase_core.referral_schemas import (
+    MatchReferral,
     MemberReferral,
     MemberReferralItem,
     ReferralLedgerItem,
@@ -89,6 +92,41 @@ def reward_base(
     if giorni_previsti is None:
         return None
     return max(Decimal("0"), budget_giornaliero * giorni_previsti - compenso)
+
+
+# A match whose letter is not signed yet: the only states in which a first signature can
+# still land and mature a reward. `attivo` and `concluso` already had one (a reward is
+# written in the transaction that turns the letter `firmato`), `annullato` never will.
+EARNING_MATCH_STATES = ("bozza", "in_firma")
+PREVISTO = "previsto"
+GIA_MATURATO = "gia_maturato"
+
+
+def letter_unit(data: Mapping[str, Any]) -> str:
+    """How a letter prices its fee, `a giornata` or `a corpo`, as it printed it: the
+    `modalita` the reward's base is decided on. The one reading of that field, shared by
+    the reward at signing, its projection, and the lists that show the letter's fee."""
+    return str(data.get("modalita") or data.get("unita") or "")
+
+
+def match_reward_base(match: Match, modalita: str) -> Decimal | None:
+    """`reward_base` on a match's own snapshots (`lettera_compenso`,
+    `company_budget_giornaliero`, `giorni_previsti`); `None` when either snapshot is
+    missing, exactly as the reward at signing leaves its figure blank."""
+    compenso, budget = match.lettera_compenso, match.company_budget_giornaliero
+    if compenso is None or budget is None:
+        return None
+    return reward_base(budget, compenso, modalita, match.giorni_previsti)
+
+
+class _MatchFacts(NamedTuple):
+    match: Match
+    nome_azienda: str
+    figura_richiesta: str
+    freelancer_id: UUID
+    freelancer_nome: str
+    freelancer_deleted: bool
+    letter: ContractDocument | None
 
 
 class ReferralService:
@@ -183,9 +221,8 @@ class ReferralService:
         edited weeks after the match, and the reward this match already promised must
         never move because of it."""
         settings = self.get_settings()
-        modalita = str(document.data.get("modalita") or document.data.get("unita") or "")
-        compenso = match.lettera_compenso
-        budget = match.company_budget_giornaliero
+        modalita = letter_unit(document.data)
+        base = match_reward_base(match, modalita)
         for kind, entity_id, rate in (
             ("freelancer", match.freelancer_id, settings.rate_freelancer),
             ("company", match.company_id, settings.rate_company),
@@ -195,11 +232,6 @@ class ReferralService:
             )
             if referral_id is None:
                 continue
-            base = (
-                None
-                if compenso is None or budget is None
-                else reward_base(budget, compenso, modalita, match.giorni_previsti)
-            )
             reward = None if base is None else (base * rate).quantize(_CENT)
             self.session.execute(
                 pg_insert(ReferralReward)
@@ -276,62 +308,289 @@ class ReferralService:
         self.session.commit()
         return row
 
+    # ---- what a match would earn -----------------------------------------------------
+
+    @staticmethod
+    def project_reward(match: Match, modalita: str, rate: Decimal) -> Decimal | None:
+        """What a referral would earn on this match if its letter were signed now: the
+        same `match_reward_base` the reward at signing uses, times `rate`, quantized the
+        same way. `None` when there is nothing to project -- the match is cancelled or
+        past the point a first signature can land (`EARNING_MATCH_STATES`), or the base
+        is unknown (an `a corpo` letter with no `giorni_previsti`, or a snapshot never
+        taken). The one projection, read by the «Match» list and by the ledger."""
+        if match.cancelled_at is not None or match.stato not in EARNING_MATCH_STATES:
+            return None
+        base = match_reward_base(match, modalita)
+        return None if base is None else (base * rate).quantize(_CENT)
+
+    def for_matches(
+        self, rows: Sequence[tuple[Match, ContractDocument | None]]
+    ) -> dict[UUID, list[MatchReferral]]:
+        """The referred sides of every match of a page, freelancer first then company,
+        keyed by match id (a match with none is absent): three queries for the whole
+        page whatever its size -- referrals with their referrer and his card, their
+        rewards with the match each one's letter belongs to, and the rates. `rows` pairs
+        each match with its current letter, the one whose `modalita` a projection reads.
+        A reward on this match shows its real figures and state; one already earned on
+        another match is `gia_maturato`, since a referral pays once; none yet is
+        `previsto`, projected at the current rate."""
+        if not rows:
+            return {}
+        freelancer_ids = {match.freelancer_id for match, _ in rows}
+        company_ids = {match.company_id for match, _ in rows}
+        referrer = aliased(User)
+        card = aliased(Freelancer)
+        referrals = {
+            (row.Referral.kind, row.Referral.entity_id): row
+            for row in self.session.execute(
+                select(
+                    Referral,
+                    referrer.nome.label("nome"),
+                    referrer.cognome.label("cognome"),
+                    card.id.label("card_id"),
+                )
+                .join(referrer, referrer.id == Referral.referrer_user_id)
+                .outerjoin(card, and_(card.user_id == referrer.id, card.deleted_at.is_(None)))
+                .where(
+                    or_(
+                        and_(Referral.kind == "freelancer", Referral.entity_id.in_(freelancer_ids)),
+                        and_(Referral.kind == "company", Referral.entity_id.in_(company_ids)),
+                    )
+                )
+            )
+        }
+        if not referrals:
+            return {}
+        rewards = {
+            reward.referral_id: (reward, match_id)
+            for reward, match_id in self.session.execute(
+                select(ReferralReward, ContractDocument.match_id)
+                .join(ContractDocument, ContractDocument.id == ReferralReward.document_id)
+                .where(ReferralReward.referral_id.in_([r.Referral.id for r in referrals.values()]))
+            )
+        }
+        settings = self.get_settings()
+        out: dict[UUID, list[MatchReferral]] = {}
+        for match, letter in rows:
+            sides = (
+                ("freelancer", match.freelancer_id, settings.rate_freelancer),
+                ("company", match.company_id, settings.rate_company),
+            )
+            for kind, entity_id, rate in sides:
+                found = referrals.get((kind, entity_id))
+                if found is None:
+                    continue
+                earned = rewards.get(found.Referral.id)
+                rate_shown: Decimal | None = None
+                amount: Decimal | None = None
+                reward_id: UUID | None = None
+                if earned is None:
+                    stato = PREVISTO
+                    rate_shown = rate
+                    unit = letter_unit(letter.data) if letter is not None else ""
+                    amount = self.project_reward(match, unit, rate)
+                elif earned[1] == match.id:
+                    reward = earned[0]
+                    stato, rate_shown, amount = reward.stato, reward.rate, reward.reward_amount
+                    reward_id = reward.id
+                else:
+                    stato = GIA_MATURATO
+                out.setdefault(match.id, []).append(
+                    MatchReferral(
+                        kind=kind,
+                        referrer_nome=f"{found.nome} {found.cognome}".strip(),
+                        referrer_freelancer_id=found.card_id,
+                        rate=rate_shown,
+                        amount=amount,
+                        stato=stato,
+                        reward_id=reward_id,
+                    )
+                )
+        return out
+
     # ---- the admin's ledger ----------------------------------------------------------
 
-    def _to_ledger_item(
-        self,
-        referral: Referral,
-        reward: ReferralReward | None,
-        referrer_nome: str,
-        referrer_email: str,
-    ) -> ReferralLedgerItem:
-        if referral.kind == "freelancer":
-            fname = self.session.execute(
-                select(User.nome, User.cognome)
-                .select_from(Freelancer)
-                .join(User, User.id == Freelancer.user_id)
-                .where(Freelancer.id == referral.entity_id)
-            ).first()
-            referred_nome = f"{fname.nome} {fname.cognome}".strip() if fname else "-"
-        else:
-            company = self.session.get(Company, referral.entity_id)
-            referred_nome = company.nome_azienda if company is not None else "-"
-        match_id = None
-        if reward is not None:
-            document = self.session.get(ContractDocument, reward.document_id)
-            match_id = document.match_id if document is not None else None
-        return ReferralLedgerItem(
-            referral_id=referral.id,
-            reward_id=reward.id if reward is not None else None,
-            kind=referral.kind,
-            referrer_nome=referrer_nome,
-            referrer_email=referrer_email,
-            referred_nome=referred_nome,
-            match_id=match_id,
-            rate=reward.rate if reward is not None else None,
-            base_amount=reward.base_amount if reward is not None else None,
-            reward_amount=reward.reward_amount if reward is not None else None,
-            stato=reward.stato if reward is not None else None,
-            note=reward.note if reward is not None else None,
-            created_at=referral.created_at,
-            confirmed_at=reward.confirmed_at if reward is not None else None,
-            paid_at=reward.paid_at if reward is not None else None,
+    def _live_matches(self, pending: set[tuple[str, UUID]]) -> dict[tuple[str, UUID], UUID]:
+        """For each referred side without a reward (`kind`, `entity_id`), its newest
+        match that can still earn (not cancelled, letter not signed yet): the one the
+        first signature would mature the reward on. One query for all of them, one row
+        per side (`DISTINCT ON`), never a row per match the side ever had."""
+        freelancer_ids = {entity for kind, entity in pending if kind == "freelancer"}
+        company_ids = {entity for kind, entity in pending if kind == "company"}
+        newest = []
+        for kind, column, ids in (
+            ("freelancer", Match.freelancer_id, freelancer_ids),
+            ("company", Match.company_id, company_ids),
+        ):
+            if ids:
+                newest.append(
+                    select(literal(kind).label("kind"), column.label("entity_id"), Match.id)
+                    .where(
+                        Match.cancelled_at.is_(None),
+                        Match.stato.in_(EARNING_MATCH_STATES),
+                        column.in_(ids),
+                    )
+                    .distinct(column)
+                    .order_by(column, Match.created_at.desc(), Match.id.desc())
+                    .subquery()
+                )
+        if not newest:
+            return {}
+        rows = self.session.execute(union_all(*(select(sub) for sub in newest)))
+        return {(kind, entity_id): match_id for kind, entity_id, match_id in rows}
+
+    def _match_facts(self, match_ids: Iterable[UUID]) -> dict[UUID, _MatchFacts]:
+        ids = set(match_ids)
+        if not ids:
+            return {}
+        freelancer_user = aliased(User)
+        newer = aliased(ContractDocument)
+        current_letter = (
+            select(newer.id)
+            .where(newer.match_id == Match.id, newer.kind == LETTERA)
+            .order_by(newer.created_at.desc(), newer.id.desc())
+            .limit(1)
+            .correlate(Match)
+            .scalar_subquery()
         )
+        rows = self.session.execute(
+            select(Match, Company, freelancer_user, Freelancer.deleted_at, ContractDocument)
+            .join(Company, Company.id == Match.company_id)
+            .join(Freelancer, Freelancer.id == Match.freelancer_id)
+            .join(freelancer_user, freelancer_user.id == Freelancer.user_id)
+            .outerjoin(ContractDocument, ContractDocument.id == current_letter)
+            .where(Match.id.in_(ids))
+        ).all()
+        return {
+            match.id: _MatchFacts(
+                match,
+                company.nome_azienda,
+                company.figura_richiesta,
+                match.freelancer_id,
+                f"{user.nome} {user.cognome}".strip(),
+                freelancer_deleted_at is not None,
+                letter,
+            )
+            for match, company, user, freelancer_deleted_at, letter in rows
+        }
+
+    def _ledger_items(self, rows: Sequence[Row[Any]]) -> list[ReferralLedgerItem]:
+        """The page's rows as ledger items, every lookup batched over the whole page:
+        the referred names (two queries at most), the match each reward's letter belongs
+        to, the newest live match of each referral without a reward, those matches'
+        facts, and the rates -- a bounded handful of queries, never one per row."""
+        if not rows:
+            return []
+        settings = self.get_settings()
+        names: dict[tuple[str, UUID], str] = {}
+        deleted: set[tuple[str, UUID]] = set()
+        freelancer_ids = {r.Referral.entity_id for r in rows if r.Referral.kind == "freelancer"}
+        company_ids = {r.Referral.entity_id for r in rows if r.Referral.kind == "company"}
+        if freelancer_ids:
+            for entity_id, nome, cognome, deleted_at in self.session.execute(
+                select(Freelancer.id, User.nome, User.cognome, Freelancer.deleted_at)
+                .join(User, User.id == Freelancer.user_id)
+                .where(Freelancer.id.in_(freelancer_ids))
+            ):
+                names["freelancer", entity_id] = f"{nome} {cognome}".strip()
+                if deleted_at is not None:
+                    deleted.add(("freelancer", entity_id))
+        if company_ids:
+            for entity_id, nome_azienda, deleted_at in self.session.execute(
+                select(Company.id, Company.nome_azienda, Company.deleted_at).where(
+                    Company.id.in_(company_ids)
+                )
+            ):
+                names["company", entity_id] = nome_azienda
+                if deleted_at is not None:
+                    deleted.add(("company", entity_id))
+        reward_ids = [r.ReferralReward.id for r in rows if r.ReferralReward is not None]
+        reward_match: dict[UUID, UUID | None] = (
+            {
+                reward_id: match_id
+                for reward_id, match_id in self.session.execute(
+                    select(ReferralReward.id, ContractDocument.match_id)
+                    .join(ContractDocument, ContractDocument.id == ReferralReward.document_id)
+                    .where(ReferralReward.id.in_(reward_ids))
+                )
+            }
+            if reward_ids
+            else {}
+        )
+        live = self._live_matches(
+            {(r.Referral.kind, r.Referral.entity_id) for r in rows if r.ReferralReward is None}
+        )
+        facts = self._match_facts(
+            {m for m in reward_match.values() if m is not None} | set(live.values())
+        )
+        items = []
+        for row in rows:
+            referral, reward = row.Referral, row.ReferralReward
+            key = (referral.kind, referral.entity_id)
+            match_id = reward_match.get(reward.id) if reward is not None else live.get(key)
+            found = facts.get(match_id) if match_id is not None else None
+            projected_rate = projected_amount = None
+            if reward is None and found is not None:
+                projected_rate = (
+                    settings.rate_freelancer
+                    if referral.kind == "freelancer"
+                    else settings.rate_company
+                )
+                unit = letter_unit(found.letter.data) if found.letter is not None else ""
+                projected_amount = self.project_reward(found.match, unit, projected_rate)
+            items.append(
+                ReferralLedgerItem(
+                    referral_id=referral.id,
+                    reward_id=reward.id if reward is not None else None,
+                    kind=referral.kind,
+                    referred_id=referral.entity_id,
+                    referrer_nome=f"{row.referrer_nome} {row.referrer_cognome}".strip(),
+                    referrer_email=row.referrer_email,
+                    referrer_freelancer_id=row.referrer_freelancer_id,
+                    referred_nome=names.get(key, "-"),
+                    referred_deleted=key in deleted,
+                    match_id=match_id if found is not None else None,
+                    match_freelancer_id=found.freelancer_id if found is not None else None,
+                    match_freelancer_nome=found.freelancer_nome if found is not None else None,
+                    match_freelancer_deleted=found.freelancer_deleted
+                    if found is not None
+                    else False,
+                    match_nome_azienda=found.nome_azienda if found is not None else None,
+                    match_figura_richiesta=found.figura_richiesta if found is not None else None,
+                    projected_rate=projected_rate,
+                    projected_amount=projected_amount,
+                    rate=reward.rate if reward is not None else None,
+                    base_amount=reward.base_amount if reward is not None else None,
+                    reward_amount=reward.reward_amount if reward is not None else None,
+                    stato=reward.stato if reward is not None else None,
+                    note=reward.note if reward is not None else None,
+                    created_at=referral.created_at,
+                    confirmed_at=reward.confirmed_at if reward is not None else None,
+                    paid_at=reward.paid_at if reward is not None else None,
+                )
+            )
+        return items
 
     def _ledger_query(self) -> Select[Any]:
         """Starts from `Referral`, outer-joined to its reward, so a referral with no
         reward yet (the referred party has not signed a first letter) still has a row
-        on the ledger (P-REB-44) instead of being invisible until one exists."""
-        referrer = User.__table__.alias("referrer")
+        on the ledger (P-REB-44) instead of being invisible until one exists. The
+        referrer's own card, when he has one, comes in the same query (REB-609): a
+        person has at most one (`uq_freelancers_user_id`), so it never doubles a row."""
+        referrer = aliased(User)
+        card = aliased(Freelancer)
         return (
             select(
                 Referral,
                 ReferralReward,
-                referrer.c.nome.label("referrer_nome"),
-                referrer.c.email.label("referrer_email"),
+                referrer.nome.label("referrer_nome"),
+                referrer.cognome.label("referrer_cognome"),
+                referrer.email.label("referrer_email"),
+                card.id.label("referrer_freelancer_id"),
             )
             .select_from(Referral)
-            .join(referrer, referrer.c.id == Referral.referrer_user_id)
+            .join(referrer, referrer.id == Referral.referrer_user_id)
+            .outerjoin(card, and_(card.user_id == referrer.id, card.deleted_at.is_(None)))
             .outerjoin(ReferralReward, ReferralReward.referral_id == Referral.id)
         )
 
@@ -357,13 +616,7 @@ class ReferralService:
         if len(rows) > limit and page_rows:
             last = page_rows[-1]
             next_cursor = encode_cursor(_SORT, last.Referral.created_at, last.Referral.id)
-        items = [
-            self._to_ledger_item(
-                row.Referral, row.ReferralReward, row.referrer_nome, row.referrer_email
-            )
-            for row in page_rows
-        ]
-        return ReferralLedgerList(items=items, next_cursor=next_cursor)
+        return ReferralLedgerList(items=self._ledger_items(page_rows), next_cursor=next_cursor)
 
     def get_ledger_item(self, reward_id: UUID) -> ReferralLedgerItem:
         row = self.session.execute(
@@ -371,9 +624,7 @@ class ReferralService:
         ).first()
         if row is None:
             raise NotFound(ENTITY, reward_id)
-        return self._to_ledger_item(
-            row.Referral, row.ReferralReward, row.referrer_nome, row.referrer_email
-        )
+        return self._ledger_items([row])[0]
 
     def _require_reward(self, reward_id: UUID) -> ReferralReward:
         row = self.session.get(ReferralReward, reward_id)

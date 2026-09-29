@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -6,18 +7,14 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, type ReferralLedgerItem, type ReferralSettings, type RewardStato } from '@/lib/api'
-import { formatDate, formatEuro } from '@/lib/format'
+import { matchHeadingId } from '@/lib/contracts'
+import { REFERRAL_STATE_LABELS, formatDate, formatEuro, formatRate } from '@/lib/format'
 import { Empty, Header, StateFilter } from './lists'
 
 const LEDGER_KEY = ['referrals'] as const
 const SETTINGS_KEY = ['referral-settings'] as const
 const STATES: readonly RewardStato[] = ['da_confermare', 'confermato', 'pagato']
-const STATE_LABELS: Record<string, string> = {
-  da_confermare: 'Da confermare',
-  confermato: 'Confermato',
-  pagato: 'Pagato',
-  in_attesa: 'In attesa',
-}
+const STATE_LABELS: Record<string, string> = { ...REFERRAL_STATE_LABELS, in_attesa: 'In attesa' }
 const KIND_LABELS: Record<string, string> = { freelancer: 'Freelance', company: 'Azienda' }
 const NEXT_STATE: Record<RewardStato, RewardStato | null> = {
   da_confermare: 'confermato',
@@ -154,6 +151,86 @@ function PriceForm({ rewardId, onPriced }: { rewardId: string; onPriced: () => v
   )
 }
 
+/** The referred person or company, a link to its own page by `kind`, unless an admin
+ *  deleted it: that page answers not found, so the name stays, unlinked, and says so. */
+function ReferredName({ item }: { item: ReferralLedgerItem }) {
+  const className = 'font-medium hover:underline'
+  if (item.referred_deleted) return <p className="font-medium">{item.referred_nome}</p>
+  return item.kind === 'freelancer' ? (
+    <Link to="/admin/freelance/$id" params={{ id: item.referred_id }} className={className}>
+      {item.referred_nome}
+    </Link>
+  ) : (
+    <Link to="/admin/companies/$id" params={{ id: item.referred_id }} className={className}>
+      {item.referred_nome}
+    </Link>
+  )
+}
+
+/** The match the reward came from or, for a referral with none yet, the referred side's
+ *  live one, on its freelancer's «Match e contratti» (REB-609). */
+function MatchCell({ item }: { item: ReferralLedgerItem }) {
+  if (item.match_id === null || item.match_freelancer_id === null) {
+    return <span className="text-muted-foreground">—</span>
+  }
+  return (
+    <>
+      {item.match_freelancer_deleted ? (
+        <p className="font-medium">{item.match_nome_azienda}</p>
+      ) : (
+        <Link
+          to="/admin/freelance/$id/contracts"
+          params={{ id: item.match_freelancer_id }}
+          hash={matchHeadingId(item.match_id)}
+          aria-label={`Dettaglio del match con ${item.match_nome_azienda} come ${item.match_figura_richiesta}`}
+          className="font-medium hover:underline"
+        >
+          {item.match_nome_azienda}
+        </Link>
+      )}
+      <p className="text-xs text-muted-foreground">
+        {item.match_figura_richiesta} · {item.match_freelancer_nome}
+      </p>
+    </>
+  )
+}
+
+/** What the referral is worth: the reward as computed or priced, else the estimate the
+ *  referred side's live match gives (`projected_*`), marked as one. A real figure is
+ *  never replaced by the estimate. */
+function RewardCell({ item, onPriced }: { item: ReferralLedgerItem; onPriced: () => void }) {
+  if (item.reward_id === null) {
+    if (item.projected_amount !== null && item.projected_rate !== null) {
+      return (
+        <>
+          <p className="font-medium text-muted-foreground tabular-nums">{formatEuro(item.projected_amount)}</p>
+          <p className="text-xs text-muted-foreground">{`Stima al ${formatRate(item.projected_rate)}, se il match firma`}</p>
+        </>
+      )
+    }
+    return (
+      <p className="text-sm text-muted-foreground">
+        {item.match_id === null ? 'In attesa del primo contratto firmato' : 'Nessuna stima per il match'}
+      </p>
+    )
+  }
+  if (item.base_amount === null || item.reward_amount === null) {
+    return (
+      <div className="flex justify-end">
+        <PriceForm rewardId={item.reward_id} onPriced={onPriced} />
+      </div>
+    )
+  }
+  return (
+    <>
+      <p className="font-medium tabular-nums">{formatEuro(item.reward_amount)}</p>
+      <p className="text-xs text-muted-foreground tabular-nums">
+        {formatEuro(item.base_amount)} · {item.rate !== null ? formatRate(item.rate) : '-'}
+      </p>
+    </>
+  )
+}
+
 function ReferralRow({ item }: { item: ReferralLedgerItem }) {
   const client = useQueryClient()
   const move = useMutation({
@@ -162,36 +239,45 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
   })
   const rewardId = item.reward_id
   const next = item.stato ? NEXT_STATE[item.stato] : null
+  const estimated = rewardId === null && item.projected_amount !== null
 
   return (
     <TableRow>
-      <TableCell>
-        <p className="font-medium">{item.referred_nome}</p>
-        <p className="text-xs text-muted-foreground">{KIND_LABELS[item.kind] ?? item.kind}</p>
+      <TableCell className="align-top">
+        <ReferredName item={item} />
+        <p className="text-xs text-muted-foreground">
+          {KIND_LABELS[item.kind] ?? item.kind}
+          {item.referred_deleted && (item.kind === 'freelancer' ? ' · eliminato' : ' · eliminata')}
+        </p>
       </TableCell>
-      <TableCell>
-        <p className="font-medium">{item.referrer_nome}</p>
+      <TableCell className="align-top">
+        {item.referrer_freelancer_id !== null ? (
+          <Link
+            to="/admin/freelance/$id"
+            params={{ id: item.referrer_freelancer_id }}
+            className="font-medium hover:underline"
+          >
+            {item.referrer_nome}
+          </Link>
+        ) : (
+          <p className="font-medium">{item.referrer_nome}</p>
+        )}
         <p className="text-xs text-muted-foreground">{item.referrer_email}</p>
       </TableCell>
-      <TableCell>
-        {rewardId === null ? (
-          <p className="text-sm text-muted-foreground">In attesa del primo contratto firmato</p>
-        ) : item.base_amount === null || item.reward_amount === null ? (
-          <PriceForm rewardId={rewardId} onPriced={() => void client.invalidateQueries({ queryKey: LEDGER_KEY })} />
-        ) : (
-          <>
-            <p className="font-medium">{formatEuro(item.reward_amount)}</p>
-            <p className="text-xs text-muted-foreground">
-              {formatEuro(item.base_amount)} · {item.rate !== null ? (Number(item.rate) * 100).toFixed(2) : '-'}%
-            </p>
-          </>
-        )}
+      <TableCell className="align-top">
+        <MatchCell item={item} />
       </TableCell>
-      <TableCell>
-        <Badge variant="pill">{STATE_LABELS[item.stato ?? 'in_attesa'] ?? item.stato}</Badge>
+      <TableCell className="text-right align-top">
+        <RewardCell item={item} onPriced={() => void client.invalidateQueries({ queryKey: LEDGER_KEY })} />
       </TableCell>
-      <TableCell className="text-right text-muted-foreground">{formatDate(item.created_at)}</TableCell>
-      <TableCell className="text-right">
+      <TableCell className="align-top">
+        {/* A hairline pill for an estimate, a filled one for a state a reward is really in. */}
+        <Badge variant={estimated ? 'outline' : 'pill'}>
+          {STATE_LABELS[item.stato ?? (estimated ? 'previsto' : 'in_attesa')] ?? item.stato}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-right align-top text-muted-foreground">{formatDate(item.created_at)}</TableCell>
+      <TableCell className="text-right align-top">
         {rewardId !== null && next && (item.stato === 'da_confermare' ? item.reward_amount !== null : true) && (
           <Button
             type="button"
@@ -269,7 +355,8 @@ export function AdminReferrals() {
                   <TableRow>
                     <TableHead>Segnalato</TableHead>
                     <TableHead>Segnalato da</TableHead>
-                    <TableHead>Reward</TableHead>
+                    <TableHead>Match</TableHead>
+                    <TableHead className="text-right">Reward</TableHead>
                     <TableHead>Stato</TableHead>
                     <TableHead className="text-right">Da quando</TableHead>
                     <TableHead>
