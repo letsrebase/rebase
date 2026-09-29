@@ -125,6 +125,7 @@ class _MatchFacts(NamedTuple):
     figura_richiesta: str
     freelancer_id: UUID
     freelancer_nome: str
+    freelancer_deleted: bool
     letter: ContractDocument | None
 
 
@@ -411,9 +412,9 @@ class ReferralService:
 
     def _live_matches(self, pending: set[tuple[str, UUID]]) -> dict[tuple[str, UUID], UUID]:
         """For each referred side without a reward (`kind`, `entity_id`), its newest
-        match that is not cancelled: the one a first signature would mature the reward
-        on. One query for all of them, one row per side (`DISTINCT ON`), never a row
-        per match the side ever had."""
+        match that can still earn (not cancelled, letter not signed yet): the one the
+        first signature would mature the reward on. One query for all of them, one row
+        per side (`DISTINCT ON`), never a row per match the side ever had."""
         freelancer_ids = {entity for kind, entity in pending if kind == "freelancer"}
         company_ids = {entity for kind, entity in pending if kind == "company"}
         newest = []
@@ -424,7 +425,11 @@ class ReferralService:
             if ids:
                 newest.append(
                     select(literal(kind).label("kind"), column.label("entity_id"), Match.id)
-                    .where(Match.cancelled_at.is_(None), column.in_(ids))
+                    .where(
+                        Match.cancelled_at.is_(None),
+                        Match.stato.in_(EARNING_MATCH_STATES),
+                        column.in_(ids),
+                    )
                     .distinct(column)
                     .order_by(column, Match.created_at.desc(), Match.id.desc())
                     .subquery()
@@ -449,7 +454,7 @@ class ReferralService:
             .scalar_subquery()
         )
         rows = self.session.execute(
-            select(Match, Company, freelancer_user, ContractDocument)
+            select(Match, Company, freelancer_user, Freelancer.deleted_at, ContractDocument)
             .join(Company, Company.id == Match.company_id)
             .join(Freelancer, Freelancer.id == Match.freelancer_id)
             .join(freelancer_user, freelancer_user.id == Freelancer.user_id)
@@ -463,9 +468,10 @@ class ReferralService:
                 company.figura_richiesta,
                 match.freelancer_id,
                 f"{user.nome} {user.cognome}".strip(),
+                freelancer_deleted_at is not None,
                 letter,
             )
-            for match, company, user, letter in rows
+            for match, company, user, freelancer_deleted_at, letter in rows
         }
 
     def _ledger_items(self, rows: Sequence[Row[Any]]) -> list[ReferralLedgerItem]:
@@ -477,20 +483,27 @@ class ReferralService:
             return []
         settings = self.get_settings()
         names: dict[tuple[str, UUID], str] = {}
+        deleted: set[tuple[str, UUID]] = set()
         freelancer_ids = {r.Referral.entity_id for r in rows if r.Referral.kind == "freelancer"}
         company_ids = {r.Referral.entity_id for r in rows if r.Referral.kind == "company"}
         if freelancer_ids:
-            for entity_id, nome, cognome in self.session.execute(
-                select(Freelancer.id, User.nome, User.cognome)
+            for entity_id, nome, cognome, deleted_at in self.session.execute(
+                select(Freelancer.id, User.nome, User.cognome, Freelancer.deleted_at)
                 .join(User, User.id == Freelancer.user_id)
                 .where(Freelancer.id.in_(freelancer_ids))
             ):
                 names["freelancer", entity_id] = f"{nome} {cognome}".strip()
+                if deleted_at is not None:
+                    deleted.add(("freelancer", entity_id))
         if company_ids:
-            for entity_id, nome_azienda in self.session.execute(
-                select(Company.id, Company.nome_azienda).where(Company.id.in_(company_ids))
+            for entity_id, nome_azienda, deleted_at in self.session.execute(
+                select(Company.id, Company.nome_azienda, Company.deleted_at).where(
+                    Company.id.in_(company_ids)
+                )
             ):
                 names["company", entity_id] = nome_azienda
+                if deleted_at is not None:
+                    deleted.add(("company", entity_id))
         reward_ids = [r.ReferralReward.id for r in rows if r.ReferralReward is not None]
         reward_match: dict[UUID, UUID | None] = (
             {
@@ -535,9 +548,13 @@ class ReferralService:
                     referrer_email=row.referrer_email,
                     referrer_freelancer_id=row.referrer_freelancer_id,
                     referred_nome=names.get(key, "-"),
+                    referred_deleted=key in deleted,
                     match_id=match_id if found is not None else None,
                     match_freelancer_id=found.freelancer_id if found is not None else None,
                     match_freelancer_nome=found.freelancer_nome if found is not None else None,
+                    match_freelancer_deleted=found.freelancer_deleted
+                    if found is not None
+                    else False,
                     match_nome_azienda=found.nome_azienda if found is not None else None,
                     match_figura_richiesta=found.figura_richiesta if found is not None else None,
                     projected_rate=projected_rate,

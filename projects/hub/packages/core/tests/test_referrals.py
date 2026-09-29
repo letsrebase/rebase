@@ -784,14 +784,18 @@ def test_the_ledger_projects_a_pending_referral_from_its_live_match_and_keeps_re
     cancelled = service.create(freelancer_id, _match_body(company_id), admin_id)
     service.cancel(cancelled.id, admin_id)
     live = service.create(freelancer_id, _match_body(company_id, giorni_previsti=10), admin_id)
+    # A newer match whose letter is already out of the running cannot mature the reward.
+    past = service.create(freelancer_id, _match_body(company_id, giorni_previsti=1), admin_id)
+    clean.get(Match, past.id).stato = "attivo"  # type: ignore[union-attr]
+    clean.commit()
 
     pending = {item.kind: item for item in ReferralService(clean).list_rewards().items}
 
     freelancer, company = pending["freelancer"], pending["company"]
     assert (freelancer.referred_id, company.referred_id) == (freelancer_id, company_id)
     assert freelancer.reward_id is None and freelancer.reward_amount is None
-    # The newest match that is not cancelled (not the older live one, not the cancelled
-    # one in between), projected on its own days: 350 * 10.
+    # The newest match that can still earn (not the older one, not the cancelled one in
+    # between, not the newer one already active), projected on its own days: 350 * 10.
     assert (freelancer.match_id, company.match_id) == (live.id, live.id)
     assert (freelancer.projected_rate, freelancer.projected_amount) == (
         Decimal("0.1000"),
@@ -843,3 +847,32 @@ def test_the_ledger_reads_a_page_in_a_row_independent_number_of_queries(clean: S
         ("company", Decimal("2100.00")),
     }
     assert for_many == for_two
+
+
+def test_a_deleted_request_or_card_is_flagged_so_no_page_links_to_it(clean: Session) -> None:
+    """A deleted card or request answers not found on its own page: both lists say so
+    instead of leaving a name that opens nothing."""
+    _, admin_id, freelancer_id, company_id = _referred_pair(clean)
+    other = _card(
+        clean,
+        email="grace@studio.it",
+        rif=ReferralService(clean).code_for(_member(clean, "lia@community.it")),
+    )
+    service = MatchService(clean, FakeRenderer(draft=False), SIGNER, today=lambda: TODAY)
+    service.create(freelancer_id, _match_body(company_id), admin_id)
+    CompanyService(clean).soft_delete(company_id, admin_id)
+    FreelancerService(clean).soft_delete(other, admin_id)
+
+    (row,) = _match_list(clean)
+    ledger = {item.referred_id: item for item in ReferralService(clean).list_rewards().items}
+
+    assert row.company_deleted is True
+    assert ledger[company_id].referred_deleted is True
+    assert ledger[other].referred_deleted is True
+    assert ledger[freelancer_id].referred_deleted is False
+    assert ledger[freelancer_id].match_freelancer_deleted is False
+
+    FreelancerService(clean).soft_delete(freelancer_id, admin_id)
+    after = {item.referred_id: item for item in ReferralService(clean).list_rewards().items}
+    assert after[freelancer_id].referred_deleted is True
+    assert after[company_id].match_freelancer_deleted is True

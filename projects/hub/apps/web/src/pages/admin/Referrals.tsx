@@ -151,9 +151,11 @@ function PriceForm({ rewardId, onPriced }: { rewardId: string; onPriced: () => v
   )
 }
 
-/** The referred person or company, a link to its own page by `kind`. */
+/** The referred person or company, a link to its own page by `kind`, unless an admin
+ *  deleted it: that page answers not found, so the name stays, unlinked, and says so. */
 function ReferredName({ item }: { item: ReferralLedgerItem }) {
   const className = 'font-medium hover:underline'
+  if (item.referred_deleted) return <p className="font-medium">{item.referred_nome}</p>
   return item.kind === 'freelancer' ? (
     <Link to="/admin/freelance/$id" params={{ id: item.referred_id }} className={className}>
       {item.referred_nome}
@@ -173,15 +175,19 @@ function MatchCell({ item }: { item: ReferralLedgerItem }) {
   }
   return (
     <>
-      <Link
-        to="/admin/freelance/$id/contracts"
-        params={{ id: item.match_freelancer_id }}
-        hash={matchHeadingId(item.match_id)}
-        aria-label={`Dettaglio del match con ${item.match_nome_azienda} come ${item.match_figura_richiesta}`}
-        className="font-medium hover:underline"
-      >
-        {item.match_nome_azienda}
-      </Link>
+      {item.match_freelancer_deleted ? (
+        <p className="font-medium">{item.match_nome_azienda}</p>
+      ) : (
+        <Link
+          to="/admin/freelance/$id/contracts"
+          params={{ id: item.match_freelancer_id }}
+          hash={matchHeadingId(item.match_id)}
+          aria-label={`Dettaglio del match con ${item.match_nome_azienda} come ${item.match_figura_richiesta}`}
+          className="font-medium hover:underline"
+        >
+          {item.match_nome_azienda}
+        </Link>
+      )}
       <p className="text-xs text-muted-foreground">
         {item.match_figura_richiesta} · {item.match_freelancer_nome}
       </p>
@@ -239,7 +245,10 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
     <TableRow>
       <TableCell className="align-top">
         <ReferredName item={item} />
-        <p className="text-xs text-muted-foreground">{KIND_LABELS[item.kind] ?? item.kind}</p>
+        <p className="text-xs text-muted-foreground">
+          {KIND_LABELS[item.kind] ?? item.kind}
+          {item.referred_deleted && (item.kind === 'freelancer' ? ' · eliminato' : ' · eliminata')}
+        </p>
       </TableCell>
       <TableCell className="align-top">
         {item.referrer_freelancer_id !== null ? (

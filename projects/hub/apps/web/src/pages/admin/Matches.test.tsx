@@ -43,6 +43,7 @@ const MATCH_A = {
   id: 'm1',
   freelancer_id: 'f1',
   company_id: 'c1',
+  company_deleted: false,
   freelancer_nome: 'Ada',
   freelancer_cognome: 'Lovelace',
   freelancer_email: 'ada@studio.it',
@@ -204,6 +205,19 @@ describe('the Match list (REB-413)', () => {
     expect(within(grace).getByRole('link', { name: 'Bianchi Srl' }).getAttribute('href')).toMatch(
       /\/admin\/companies\/c2$/,
     )
+  })
+
+  it('leaves a deleted request’s name unlinked and says so, since its page answers not found (REB-609)', async () => {
+    const deleted = { ...MATCH_B, company_deleted: true }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 2, items: [MATCH_A, deleted] }))
+    mount('/admin/matches')
+
+    const grace = (await screen.findByText('grace@studio.it')).closest('tr')!
+    expect(within(grace).queryByRole('link', { name: 'Bianchi Srl' })).toBeNull()
+    expect(cellUnder(grace, 'Azienda')).toHaveTextContent('Bianchi Srl')
+    expect(cellUnder(grace, 'Azienda')).toHaveTextContent('richiesta eliminata')
+    const ada = screen.getByText('ada@studio.it').closest('tr')!
+    expect(within(ada).getByRole('link', { name: 'ACME Srl' })).toBeInTheDocument()
   })
 
   it('shows the letter’s fee, right-aligned, with its unit and the estimated days (REB-609)', async () => {

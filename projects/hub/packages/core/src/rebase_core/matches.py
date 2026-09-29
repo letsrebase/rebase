@@ -1001,6 +1001,7 @@ class MatchService:
             id=match.id,
             freelancer_id=match.freelancer_id,
             company_id=match.company_id,
+            company_deleted=company.deleted_at is not None,
             freelancer_nome=freelancer_user.nome,
             freelancer_cognome=freelancer_user.cognome,
             freelancer_email=freelancer_user.email,

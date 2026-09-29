@@ -23,6 +23,7 @@ const CONFIRMED_REWARD = {
   reward_id: 'r1',
   kind: 'freelancer',
   referred_id: 'f1',
+  referred_deleted: false,
   referrer_nome: 'Mario Rossi',
   referrer_email: 'mario@community.it',
   referrer_freelancer_id: null,
@@ -30,6 +31,7 @@ const CONFIRMED_REWARD = {
   match_id: 'm1',
   match_freelancer_id: 'f1',
   match_freelancer_nome: 'Ada Lovelace',
+  match_freelancer_deleted: false,
   match_nome_azienda: 'ACME Srl',
   match_figura_richiesta: 'Backend developer',
   projected_rate: null,
@@ -270,6 +272,21 @@ describe('the Referral admin page (P-REB-44)', () => {
     expect(within(rows[1]!).getByRole('link', { name: /Dettaglio del match/ }).getAttribute('href')).toMatch(
       /\/admin\/freelance\/f2\/contracts#match-m2$/,
     )
+  })
+
+  it('leaves a deleted person, request or freelancer unlinked, since their pages answer not found (REB-609)', async () => {
+    const person = { ...CONFIRMED_REWARD, referred_deleted: true, match_freelancer_deleted: true }
+    const company = { ...UNPRICED_REWARD, referred_deleted: true }
+    mount([person, company])
+    await screen.findByText('Ada Lovelace')
+
+    const rows = screen.getAllByRole('row').slice(1)
+    expect(within(rows[0]!).queryByRole('link', { name: 'Ada Lovelace' })).toBeNull()
+    expect(within(rows[0]!).queryByRole('link', { name: /Dettaglio del match/ })).toBeNull()
+    expect(rows[0]).toHaveTextContent('Freelance · eliminato')
+    expect(rows[0]).toHaveTextContent('ACME Srl')
+    expect(within(rows[1]!).queryByRole('link', { name: 'ACME S.r.l.' })).toBeNull()
+    expect(rows[1]).toHaveTextContent('Azienda · eliminata')
   })
 
   it('shows a pending referral’s estimate from its live match, marked as an estimate (REB-609)', async () => {

@@ -126,10 +126,18 @@ function MatchRow({ item }: { item: MatchListItem }) {
         <p className="text-xs text-muted-foreground">{item.freelancer_email}</p>
       </TableCell>
       <TableCell className="align-top">
-        <Link to="/admin/companies/$id" params={{ id: item.company_id }} className="font-medium hover:underline">
-          {item.nome_azienda}
-        </Link>
-        <p className="text-xs text-muted-foreground">{item.figura_richiesta}</p>
+        {/* A deleted request's page answers not found: its name stays, unlinked, and says so. */}
+        {item.company_deleted ? (
+          <p className="font-medium">{item.nome_azienda}</p>
+        ) : (
+          <Link to="/admin/companies/$id" params={{ id: item.company_id }} className="font-medium hover:underline">
+            {item.nome_azienda}
+          </Link>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {item.figura_richiesta}
+          {item.company_deleted && ' · richiesta eliminata'}
+        </p>
       </TableCell>
       <TableCell className="min-w-48 space-y-1 align-top whitespace-normal">
         <Badge variant="pill">{MATCH_STATE_LABELS[item.stato] ?? item.stato}</Badge>

@@ -74,7 +74,10 @@ class ReferralLedgerItem(BaseModel):
     there is neither. `projected_rate` and `projected_amount` are that match's
     projection for a referral without a reward: an estimate, never replacing a real
     figure, and `None` when there is nothing to project. `referrer_nome` is the
-    referrer's whole name, first and last."""
+    referrer's whole name, first and last. `referred_deleted` and
+    `match_freelancer_deleted` say the referred card or request, or the match's
+    freelancer, was deleted by an admin: its page answers not found, so a page must not
+    link to it."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -86,9 +89,11 @@ class ReferralLedgerItem(BaseModel):
     referrer_email: str
     referrer_freelancer_id: UUID | None
     referred_nome: str
+    referred_deleted: bool
     match_id: UUID | None
     match_freelancer_id: UUID | None
     match_freelancer_nome: str | None
+    match_freelancer_deleted: bool
     match_nome_azienda: str | None
     match_figura_richiesta: str | None
     projected_rate: Decimal | None

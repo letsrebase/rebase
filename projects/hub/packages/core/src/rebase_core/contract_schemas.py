@@ -467,7 +467,8 @@ class MatchListItem(BaseModel):
     to allow for. `situazione` is the match's sentence, the same `MatchRead` carries
     (REB-477). `giorni_previsti`, `pigro_stato` and `pigro_url` are `Match`'s own
     (REB-497), the row's narrower share of what `MatchRead` carries in full. REB-609
-    adds `company_id` (a link), the letter's fee as it printed it (`lettera_compenso`
+    adds `company_id` (a link, unless `company_deleted`: a deleted request's page
+    answers not found), the letter's fee as it printed it (`lettera_compenso`
     and `lettera_unita`, the letter's `modalita`/`unita`; a fee is not a tax field) and
     `referrals`, one entry per referred side of the match: what it earns, projected or
     real, never the client's budget itself."""
@@ -475,6 +476,7 @@ class MatchListItem(BaseModel):
     id: UUID
     freelancer_id: UUID
     company_id: UUID
+    company_deleted: bool
     freelancer_nome: str
     freelancer_cognome: str
     freelancer_email: str
