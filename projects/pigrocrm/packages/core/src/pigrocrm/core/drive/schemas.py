@@ -11,6 +11,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from pigrocrm.core.drive.query import OUTSIDE_ID_PATTERN
+from pigrocrm.core.gmail.schemas import SCOPE_EMAIL
 from pigrocrm.core.validation import SafeStr
 
 # A Drive file id, never a query nor free text: Google mints these as URL-safe base64
@@ -32,15 +33,16 @@ _DriveId = Annotated[SafeStr, Field(pattern=OUTSIDE_ID_PATTERN)]
 
 DRIVE_SCOPE_READONLY = "https://www.googleapis.com/auth/drive.readonly"
 DRIVE_SCOPE_FILE = "https://www.googleapis.com/auth/drive.file"
-# `openid` + `email` identify *which* Google identity was connected, the same reason
-# `gmail/schemas.py`'s `REQUESTED_SCOPES` carries them: without the stable `sub` there is
-# no way to refuse a reconnection that points at a different account by mistake.
+# `openid` + the email scope identify *which* Google identity was connected, the same
+# reason `gmail/schemas.py`'s `REQUESTED_SCOPES` carries them, and spelled the same way,
+# by the full URI the Console lists (REB-606): without the stable `sub` there is no way
+# to refuse a reconnection that points at a different account by mistake.
 # `drive.readonly` is what lets the CRM read the configured root folders;
 # `drive.file` is the narrower grant that lets it write only what it itself created,
 # which is what `storage_folder_id` writes into.
 DRIVE_REQUESTED_SCOPES: tuple[str, ...] = (
     "openid",
-    "email",
+    SCOPE_EMAIL,
     DRIVE_SCOPE_READONLY,
     DRIVE_SCOPE_FILE,
 )

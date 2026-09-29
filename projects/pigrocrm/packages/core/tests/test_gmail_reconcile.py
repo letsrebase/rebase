@@ -42,7 +42,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, GoogleAccount
-from pigrocrm.core.gmail.schemas import SCOPE_SEND, EmailDraftCreate, EmailDraftRead
+from pigrocrm.core.gmail.schemas import SCOPE_EMAIL, SCOPE_SEND, EmailDraftCreate, EmailDraftRead
 from pigrocrm.core.people.models import Person
 
 BODY = "Gentile Ada, in allegato la fattura."
@@ -563,7 +563,7 @@ def test_verification_needs_the_read_scope_and_says_so(db_session: Session) -> N
     l'autorizzazione» into a 403 from Google that nobody can act on."""
     from pigrocrm.core.gmail.errors import ScopeMissing
 
-    account = connected_account(db_session, scopes=("openid", "email", SCOPE_SEND))
+    account = connected_account(db_session, scopes=("openid", SCOPE_EMAIL, SCOPE_SEND))
     draft = _draft(db_session, account)
     db_session.commit()
     row = db_session.get(EmailDraft, draft.id)

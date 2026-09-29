@@ -15,6 +15,7 @@ from pigrocrm.core.db import session_factory
 from pigrocrm.core.gmail.models import GoogleAccount, GoogleOAuthState
 from pigrocrm.core.gmail.schemas import (
     REQUESTED_SCOPES,
+    SCOPE_EMAIL,
     SCOPE_READONLY,
     SCOPE_SEND,
     GoogleAccountRead,
@@ -64,7 +65,7 @@ def test_status_and_granted_scopes_are_two_separate_facts(db_session: Session) -
     trip unchanged -- so a narrower grant never quietly downgrades the credential.
     """
     user = _user(db_session, "partial@example.it")
-    account = _account(db_session, user, scopes_granted=["openid", "email", SCOPE_SEND])
+    account = _account(db_session, user, scopes_granted=["openid", SCOPE_EMAIL, SCOPE_SEND])
     db_session.expire(account)
 
     assert account.status == "active"

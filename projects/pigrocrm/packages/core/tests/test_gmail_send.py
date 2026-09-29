@@ -47,6 +47,7 @@ from pigrocrm.core.gmail.parse import parse_message
 from pigrocrm.core.gmail.query import message_get_url
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.schemas import (
+    SCOPE_EMAIL,
     SCOPE_READONLY,
     EmailDraftCreate,
     EmailDraftRead,
@@ -311,7 +312,7 @@ def test_a_revoked_credential_fails_before_composing_and_makes_no_http_call(
 
 
 def test_a_grant_without_gmail_send_refuses_by_naming_the_scope(db_session: Session) -> None:
-    account = connected_account(db_session, scopes=("openid", "email", SCOPE_READONLY))
+    account = connected_account(db_session, scopes=("openid", SCOPE_EMAIL, SCOPE_READONLY))
     draft = _draft(db_session, account)
     db_session.commit()
     fake = FakeGmail()

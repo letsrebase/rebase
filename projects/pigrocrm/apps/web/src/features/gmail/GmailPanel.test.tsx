@@ -28,7 +28,7 @@ const SEND = 'https://www.googleapis.com/auth/gmail.send'
 const ACCOUNT = {
   id: '00000000-0000-7000-8000-000000000001',
   email_address: 'ada@acme.it',
-  scopes_granted: ['openid', 'email', READONLY, SEND],
+  scopes_granted: ['openid', 'https://www.googleapis.com/auth/userinfo.email', READONLY, SEND],
   status: 'active' as const,
   consent_expires_at: null,
   last_error: null,
@@ -152,7 +152,7 @@ describe('GmailPanel', () => {
     vi.mocked(api.GET).mockResolvedValue(
       ok({
         ...CONNECTED,
-        account: { ...ACCOUNT, scopes_granted: ['openid', 'email', SEND] },
+        account: { ...ACCOUNT, scopes_granted: ['openid', 'https://www.googleapis.com/auth/userinfo.email', SEND] },
         banner: 'scope_missing',
         banner_text: `Il sync è spento: manca l'autorizzazione ${READONLY}.`,
         missing_scopes: [READONLY],
