@@ -1519,16 +1519,31 @@ export const matches = {
 
 // ---- whoever is signed in --------------------------------------------------------------
 
+/** One request of a company contact as they read it (REB-602): its own id, so the member
+ *  area can open that very request for editing, the eight answers and when it was filed.
+ *  Never `stato`, `note` or the company's name: what the admin wrote stays the admin's. */
+export interface MemberRequest {
+  id: string
+  figura_richiesta: string
+  progetto: string
+  periodo_da: string
+  durata: string
+  budget_giornaliero: string
+  remoto: Remoto
+  giorni_presenza: number | null
+  numero_risorse: number
+  created_at: string
+}
+
 /** Whoever `orbiters_user` resolves to, member or admin (REB-278/279, replacing
  *  `MemberProfile`): a `users` row is not necessarily an applicant with a card any
  *  more, so `ha_scheda` says whether one exists, and the seven card fields answer
  *  blank -- `null`, `false`, `[]` -- when it does not, the shape a signed-in admin
- *  with no card gets. `ha_azienda` and the eight request fields mirror `ha_scheda`'s
- *  own shape for a company contact's most recent request (REB-314; REB-380 adds the
- *  last four, `azienda_`-prefixed since `Company` and `Freelancer` both have a
- *  `remoto` and this shape flattens both onto one row): a person can carry both,
- *  one, or neither. `telefono` (REB-380) is a top-level identity field, never blank
- *  because of `ha_scheda`/`ha_azienda`. */
+ *  with no card gets. `richieste` is every request a company contact filed that an
+ *  admin has not deleted, newest first (REB-602), and `ha_azienda` is true when it is
+ *  not empty: a person can carry a card, requests, both or neither. `telefono`
+ *  (REB-380) is a top-level identity field, never blank because of
+ *  `ha_scheda`/`ha_azienda`. */
 export interface Me {
   id: string
   nome: string
@@ -1547,14 +1562,7 @@ export interface Me {
   remoto: Remoto | null
   links: string[]
   ha_azienda: boolean
-  progetto: string | null
-  periodo_da: string | null
-  durata: string | null
-  budget_giornaliero: string | null
-  azienda_remoto: Remoto | null
-  azienda_giorni_presenza: number | null
-  azienda_numero_risorse: number | null
-  azienda_figura_richiesta: string | null
+  richieste: MemberRequest[]
   /** CV, rate, position and remote preference all present. Always `false` without a
    *  card (`ha_scheda`). */
   completa: boolean
@@ -1573,7 +1581,7 @@ export interface MemberUpdate {
   links: string[]
 }
 
-/** The eight answers a company contact may change about their most recent request
+/** The eight answers a company contact may change about one of their requests
  *  (REB-314; REB-380 adds the last four): never `stato`, `note`, `telefono` or the
  *  company's own identity. */
 export interface CompanyUpdate {
@@ -1663,8 +1671,12 @@ export const member = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }),
-  updateCompany: (data: CompanyUpdate) =>
-    request<Me>('/api/hub/me/company', {
+  /** One of the caller's own requests by its id (REB-602): the edit page always names the
+   *  request it shows, so a new request filed in another tab never changes which one it
+   *  saves. The id-less `PATCH /me/company` stays on the API for older links and is not
+   *  called from here. */
+  updateCompany: (id: string, data: CompanyUpdate) =>
+    request<Me>(`/api/hub/me/company/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),

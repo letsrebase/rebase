@@ -467,44 +467,65 @@ def test_a_member_never_sees_another_members_row(
 # ---- a company contact's own request (REB-314) -----------------------------------------
 
 
+def _company_answers(**extra: object) -> dict[str, object]:
+    answers: dict[str, object] = {
+        "progetto": "Serve un backend developer per tre mesi, da ottobre.",
+        "periodo_da": "2026-10-01",
+        "durata": "4 mesi",
+        "budget_giornaliero": "600",
+        "remoto": "remoto",
+        "numero_risorse": 1,
+        "figura_richiesta": "Backend developer",
+    }
+    answers.update(extra)
+    return answers
+
+
+def test_the_member_area_lists_every_request_newest_first_without_the_admins_words(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    _request_company(client, durata="1 mese", figura_richiesta="Data engineer")
+    _request_company(client, durata="3 mesi")
+    api_session.execute(text("UPDATE companies SET stato = 'in_corso', note = 'da richiamare'"))
+    api_session.commit()
+    profile, _ = _enter(client, sender, "wile@acme.it")
+
+    assert profile["ha_azienda"] is True
+    assert [item["durata"] for item in profile["richieste"]] == ["3 mesi", "1 mese"]  # type: ignore[index, union-attr]
+    older = profile["richieste"][1]  # type: ignore[index]
+    assert older["figura_richiesta"] == "Data engineer" and older["budget_giornaliero"] == "500.00"
+    assert set(older) == {
+        "id",
+        "figura_richiesta",
+        "progetto",
+        "periodo_da",
+        "durata",
+        "budget_giornaliero",
+        "remoto",
+        "giorni_presenza",
+        "numero_risorse",
+        "created_at",
+    }
+    # The flattened latest-row fields are gone for good.
+    assert "progetto" not in profile and "azienda_remoto" not in profile
+
+
 def test_a_company_contact_edits_their_most_recent_request(
     client: TestClient, sender: RecordingSender, api_session: Session, clean: None
 ) -> None:
     _request_company(client, durata="1 mese")
     _request_company(client, durata="3 mesi")
     profile, _ = _enter(client, sender, "wile@acme.it")
-    assert profile["ha_azienda"] is True and profile["durata"] == "3 mesi"
+    assert profile["ha_azienda"] is True
+    assert profile["richieste"][0]["durata"] == "3 mesi"  # type: ignore[index]
 
-    refused = client.patch(
-        "/api/hub/me/company",
-        json={
-            "progetto": "Serve un backend developer per tre mesi, da ottobre.",
-            "periodo_da": "2026-10-01",
-            "durata": "4 mesi",
-            "budget_giornaliero": "600",
-            "remoto": "remoto",
-            "numero_risorse": 1,
-            "figura_richiesta": "Backend developer",
-            "stato": "chiuso",
-        },
-    )
+    refused = client.patch("/api/hub/me/company", json=_company_answers(stato="chiuso"))
     assert refused.status_code == 422
     assert refused.json()["detail"][0]["loc"][-1] == "stato"
 
-    changed = client.patch(
-        "/api/hub/me/company",
-        json={
-            "progetto": "Serve un backend developer per tre mesi, da ottobre.",
-            "periodo_da": "2026-10-01",
-            "durata": "4 mesi",
-            "budget_giornaliero": "600",
-            "remoto": "remoto",
-            "numero_risorse": 1,
-            "figura_richiesta": "Backend developer",
-        },
-    )
+    changed = client.patch("/api/hub/me/company", json=_company_answers())
     assert changed.status_code == 200, changed.text
-    assert changed.json()["durata"] == "4 mesi"
+    assert [item["durata"] for item in changed.json()["richieste"]] == ["4 mesi", "1 mese"]
 
     # The admin reads the comment the referente left, and the older request stands.
     # `POST /auth/link` and `POST /auth/enter` both spend from the public bucket this
@@ -527,13 +548,82 @@ def test_a_company_contact_edits_their_most_recent_request(
     assert older["budget_giornaliero"] == "500.00"
 
 
+def test_a_company_contact_edits_an_older_request_by_its_id(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    _request_company(client, durata="1 mese")
+    _request_company(client, durata="3 mesi")
+    profile, _ = _enter(client, sender, "wile@acme.it")
+    newest, older = profile["richieste"]  # type: ignore[misc]
+
+    refused = client.patch(
+        f"/api/hub/me/company/{older['id']}", json=_company_answers(note="scritta da me")
+    )
+    assert refused.status_code == 422
+
+    changed = client.patch(
+        f"/api/hub/me/company/{older['id']}", json=_company_answers(durata="8 mesi")
+    )
+    assert changed.status_code == 200, changed.text
+    assert [(item["id"], item["durata"]) for item in changed.json()["richieste"]] == [
+        (newest["id"], "3 mesi"),
+        (older["id"], "8 mesi"),
+    ]
+
+    reset_rate_limit()
+    api_session.add(User(email=ADMIN_EMAIL, nome="Ivan", cognome="", role="admin"))
+    api_session.commit()
+    assert client.post("/api/hub/me/logout").status_code == 204
+    _enter(client, sender, ADMIN_EMAIL)
+    thread = client.get(f"/api/hub/companies/{older['id']}/comments").json()
+    assert [comment["testo"] for comment in thread] == [
+        "Richiesta aggiornata dal referente: durata, budget giornaliero"
+    ]
+    assert client.get(f"/api/hub/companies/{newest['id']}/comments").json() == []
+
+
+def test_a_request_by_id_is_a_404_for_somebody_elses_and_for_a_deleted_one(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    _request_company(client, email="road@runner.it", durata="7 mesi")
+    _request_company(client, email="wile@acme.it", durata="1 mese")
+    _request_company(client, email="wile@acme.it", durata="3 mesi")
+    theirs = api_session.execute(
+        text(
+            "SELECT c.id FROM companies c JOIN users u ON u.id = c.user_id "
+            "WHERE u.email = 'road@runner.it'"
+        )
+    ).scalar_one()
+    profile, _ = _enter(client, sender, "wile@acme.it")
+    newest, older = profile["richieste"]  # type: ignore[misc]
+
+    stranger = client.patch(f"/api/hub/me/company/{theirs}", json=_company_answers())
+    assert stranger.status_code == 404
+    unknown = client.patch(
+        "/api/hub/me/company/00000000-0000-7000-8000-000000000000", json=_company_answers()
+    )
+    assert unknown.status_code == 404
+
+    api_session.execute(
+        text("UPDATE companies SET deleted_at = now() WHERE id = :id"), {"id": newest["id"]}
+    )
+    api_session.commit()
+    deleted = client.patch(f"/api/hub/me/company/{newest['id']}", json=_company_answers())
+    assert deleted.status_code == 404
+    assert [item["id"] for item in client.get("/api/hub/me").json()["richieste"]] == [older["id"]]
+
+    untouched = api_session.execute(
+        text("SELECT durata FROM companies WHERE id = :id"), {"id": theirs}
+    ).scalar_one()
+    assert untouched == "7 mesi"
+
+
 def test_a_member_with_no_company_gets_ha_azienda_false_and_a_404_on_edit(
     client: TestClient, sender: RecordingSender, clean: None
 ) -> None:
     _apply(client, "ada@studio.it")
     profile, _ = _enter(client, sender, "ada@studio.it")
-    assert profile["ha_azienda"] is False
-    assert profile["progetto"] is None and profile["budget_giornaliero"] is None
+    assert profile["ha_azienda"] is False and profile["richieste"] == []
 
     refused = client.patch(
         "/api/hub/me/company",
@@ -558,7 +648,7 @@ def test_a_company_contact_files_an_additional_request(
 ) -> None:
     _request_company(client, durata="1 mese")
     profile, _ = _enter(client, sender, "wile@acme.it")
-    assert profile["ha_azienda"] is True and profile["durata"] == "1 mese"
+    assert profile["ha_azienda"] is True and profile["richieste"][0]["durata"] == "1 mese"  # type: ignore[index]
 
     created = client.post(
         "/api/hub/me/company",
@@ -576,7 +666,8 @@ def test_a_company_contact_files_an_additional_request(
     assert created.status_code == 201, created.text
     body = created.json()
     assert body["ha_azienda"] is True
-    assert body["durata"] == "6 mesi" and body["azienda_figura_richiesta"] == "Data engineer"
+    assert [item["durata"] for item in body["richieste"]] == ["6 mesi", "1 mese"]
+    assert body["richieste"][0]["figura_richiesta"] == "Data engineer"
 
     # An admin sees two rows, the same company's name on both, the older untouched.
     reset_rate_limit()

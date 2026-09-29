@@ -459,27 +459,40 @@ def test_a_deleted_company_request_is_invisible_to_its_own_member_area(clean: Se
     assert member.me_read(user_id).ha_azienda is False
 
 
-def test_deleting_the_newest_company_request_never_exposes_an_older_one_to_self_edit(
+def test_deleting_one_company_request_leaves_the_others_listed_and_editable(
     clean: Session,
 ) -> None:
-    """Greptile, PR #280: an older request must stay admin-editable-only even once
-    the newest one is deleted -- `company_for_user` must not silently fall back to
-    it."""
+    """REB-602 reverses Greptile's PR #280 rule, that an older request stays
+    admin-editable-only once the newest is deleted: the member area lists every live
+    request now and edits any of them by id, so a delete takes away that one request
+    and no other. The deleted one is a 404 by id, and comes back on restore."""
     from rebase_core.members import MemberService
+    from rebase_core.schemas import CompanyUpdate
 
     service = CompanyService(clean)
     older, _ = service.request(_company_request())
     newest, _ = service.request(_company_request())
     admin_id = _an_admin(clean)
     user_id = clean.get(Company, older.id).user_id
+    update = CompanyUpdate(
+        progetto="Un progetto",
+        periodo_da=date(2026, 10, 1),
+        durata="2 mesi",
+        budget_giornaliero=Decimal("500"),
+        remoto="remoto",
+        numero_risorse=1,
+        figura_richiesta="Backend developer",
+    )
 
     service.soft_delete(newest.id, admin_id)
 
     member = MemberService(clean)
-    assert member.company_for_user(user_id) is None
+    assert [item.id for item in member.me_read(user_id).richieste] == [older.id]
+    live = member.company_for_user(user_id)
+    assert live is not None and live.id == older.id
     with pytest.raises(NotFound):
-        member.require_company(user_id)
+        member.update_company(user_id, update, newest.id)
+    member.update_company(user_id, update, older.id)
 
     service.restore(newest.id, admin_id)
-    restored_current = member.company_for_user(user_id)
-    assert restored_current is not None and restored_current.id == newest.id
+    assert [item.id for item in member.me_read(user_id).richieste] == [newest.id, older.id]

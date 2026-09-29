@@ -1,4 +1,4 @@
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Button } from '@rebase/ui/button'
 import { ApiError, type CompanyRequest } from '@/lib/api'
@@ -11,7 +11,7 @@ import type { Field } from '@/wizard/Wizard'
  * from three to seven): the same `COMPANY_FIELDS` entries `CompanyWizard` renders,
  * filtered to the ones a company contact may change once signed in. `nome_azienda`,
  * `referente_*`/`email` and `telefono` are left out on purpose -- self-edit reaches
- * only the signed-in person's most recent request's project answers, never the
+ * only one of the signed-in person's own requests' project answers, never the
  * company's own identity or who its referente is. `giorni_presenza` has no field of
  * its own; it travels with `remoto`, whose render already carries it.
  */
@@ -27,31 +27,47 @@ export function editCompanyFields(): Field<CompanyRequest>[] {
   )
 }
 
-/** Reachable only when `ha_azienda` is true -- `Area.tsx`'s own CTA is the only door
- *  here, but a direct visit with no company yet would otherwise let the whole form be
- *  built from `toCompanyApplication(me.data)`'s blank fields before `PATCH /me/company`
- *  refuses it with a 404 (the same shape of bug Greptile found on `NuovaRichiestaAzienda.tsx`,
- *  PR #313; REB-383 is this page's own fix): the same mount-time redirect `AdminGuard`
- *  uses for its own access rule bounces it back to `/me` before the form ever renders. */
+/** One of the signed-in person's own requests, by the `$id` of `/me/edit-company/$id`
+ *  (REB-602), or their newest one on `/me/edit-company` with no id, the address older
+ *  links still use. The request shown is the one saved: its id is resolved once (the
+ *  address's, or the newest at the first read of the list) and travels with the `PATCH`,
+ *  so a request filed in another tab in the meantime never changes which one this saves.
+ *
+ *  An id that is not in the person's list (somebody else's, deleted by an admin, made
+ *  up) or a person with no request at all would otherwise let the whole form be built
+ *  from blank fields before the `PATCH` refuses it with a 404 (the same shape of bug
+ *  Greptile found on `NuovaRichiestaAzienda.tsx`, PR #313; REB-383 is this page's own
+ *  fix): the same mount-time redirect `AdminGuard` uses for its own access rule bounces
+ *  it back to `/me` before the form ever renders. */
 export function ModificaAzienda() {
   const me = useMe()
+  const { id } = useParams({ strict: false }) as { id?: string }
   const navigate = useNavigate()
   const update = useUpdateCompany()
   const [draft, setDraft] = useState<CompanyRequest | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [failure, setFailure] = useState<string | null>(null)
-  const hasCompany = me.data?.ha_azienda ?? true
+  const [newestId, setNewestId] = useState<string | undefined>(undefined)
+  const requests = me.data?.richieste
+  // With no id in the address the newest request is pinned the first time the list is
+  // known, like the draft below: a list refetched after a request filed in another tab
+  // has a new newest, and the draft on screen still belongs to the one pinned here.
+  if (id === undefined && newestId === undefined && requests?.[0]) setNewestId(requests[0].id)
+  const wanted = id ?? newestId
+  const target = requests?.find((item) => item.id === wanted)
+  const missing =
+    requests !== undefined && target === undefined && (wanted !== undefined || requests.length === 0)
 
   useEffect(() => {
-    if (me.data && !me.data.ha_azienda) void navigate({ to: '/me', replace: true })
-  }, [me.data, navigate])
+    if (missing) void navigate({ to: '/me', replace: true })
+  }, [missing, navigate])
 
-  if (!hasCompany) return null
+  if (missing) return null
 
   // State that follows a prop, adjusted during render: the draft starts from the
-  // profile the first time it is known, and never again while the person is typing.
-  if (draft === null && me.data) setDraft(toCompanyApplication(me.data))
-  if (!me.data || draft === null) {
+  // request the first time it is known, and never again while the person is typing.
+  if (draft === null && target) setDraft(toCompanyApplication(target))
+  if (!target || draft === null) {
     return <p className="text-sm text-muted-foreground">Caricamento…</p>
   }
   const value = draft
@@ -59,6 +75,7 @@ export function ModificaAzienda() {
   const set = (patch: Partial<CompanyRequest>) =>
     setDraft((current) => (current ? { ...current, ...patch } : current))
   const saving = update.isPending
+  const requestId = target.id
 
   async function save() {
     setFailure(null)
@@ -70,7 +87,7 @@ export function ModificaAzienda() {
     setErrors(problems)
     if (Object.keys(problems).length) return
     try {
-      await update.mutateAsync(toCompanyUpdate(value))
+      await update.mutateAsync({ id: requestId, data: toCompanyUpdate(value) })
       void navigate({ to: '/me' })
     } catch (error) {
       const refusal = error instanceof ApiError ? error : null
@@ -96,7 +113,7 @@ export function ModificaAzienda() {
         <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">La tua area</p>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight">Correggi la tua richiesta</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Progetto, periodo e budget della tua richiesta più recente.
+          Progetto, periodo e budget della richiesta «{target.figura_richiesta}».
         </p>
       </div>
 
