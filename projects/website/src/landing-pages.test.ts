@@ -348,6 +348,9 @@ describe('company.html', () => {
     expect(slide).toContain('>Gratis</div>')
     expect(slide).toContain('La proposta, ora in beta. Il team ha la sua tariffa.')
     expect(slide).toContain('<h3 style="font-size: 56px; white-space: nowrap;">Talent cloud</h3>')
+    // The heading said «Private» until REB-586 renamed it after slide 12's kicker; the
+    // restriction now lives in the description and this line is what keeps it there.
+    expect(slide).toContain('Per le aziende che ammettiamo:')
     expect(slide).toContain('<span data-count="3000">3.000</span><small>&nbsp;€</small>')
     expect(slide).toContain('Al mese: accesso e supporto alla ricerca di freelance.')
   })
