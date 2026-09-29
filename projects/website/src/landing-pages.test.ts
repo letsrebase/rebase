@@ -327,6 +327,38 @@ describe('index.html', () => {
   })
 })
 
+describe('company.html', () => {
+  const page = readFileSync(join(__dirname, 'company.html'), 'utf-8')
+  const slides = page.split('<section class="slide').slice(1)
+
+  it('prices each of the three services on the slide right after the day rates', () => {
+    // REB-586: the one slide a company reads the price of every service on, and the
+    // three figures Ivan set on 2026-09-29. A change to any of them is a change to the
+    // 2026-09-29 row of docs/design/DECISIONS.md as well, which is why they are pinned
+    // here rather than read off the page.
+    const rates = slides.findIndex((s) => s.includes('>Le tariffe<'))
+    const services = slides.findIndex((s) => s.includes('>I nostri servizi<'))
+    expect(rates).toBeGreaterThan(0)
+    expect(services).toBe(rates + 1)
+    const slide = slides[services] ?? ''
+    expect(slide).toContain('<h3 style="font-size: 56px; white-space: nowrap;">Ricerca</h3>')
+    expect(slide).toContain('<span data-count="400">400</span>–<span data-count="1000">1.000</span><small>&nbsp;€</small>')
+    expect(slide).toContain("Una tariffa a giornata, chiara dall'inizio.")
+    expect(slide).toContain('<h3 style="font-size: 56px; white-space: nowrap;">Hire a team</h3>')
+    expect(slide).toContain('>Gratis</div>')
+    expect(slide).toContain('La proposta, ora in beta. Il team ha la sua tariffa.')
+    expect(slide).toContain('<h3 style="font-size: 56px; white-space: nowrap;">Private talent cloud</h3>')
+    expect(slide).toContain('<span data-count="3000">3.000</span><small>&nbsp;€</small>')
+    expect(slide).toContain('Al mese: accesso e supporto alla ricerca di freelance.')
+  })
+
+  it('names no presenter on its cover, since more than one person shows it', () => {
+    const cover = slides[0] ?? ''
+    expect(cover).toContain('>letsrebase.com</p>')
+    expect(cover).not.toContain('Ivan Sala')
+  })
+})
+
 describe('privacy.html', () => {
   const page = html['privacy.html']
 
