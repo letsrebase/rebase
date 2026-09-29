@@ -68,6 +68,8 @@ describe('«Richieste team» in the admin area', () => {
     for (const [path, leaf] of [
       ['/admin/team', '/signedIn/admin/team'],
       ['/admin/team/r1', '/signedIn/admin/team/$id'],
+      // 0028: the static segment wins over `$id`.
+      ['/admin/team/proposte', '/signedIn/admin/team/proposte'],
     ] as const) {
       const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) })
       await router.load()

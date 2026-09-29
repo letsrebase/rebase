@@ -23,6 +23,8 @@ behind the same speed bump as the wizards all the same.
 
 import logging
 import threading
+from datetime import datetime
+from typing import NoReturn
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Request, status
@@ -56,6 +58,20 @@ router = APIRouter(prefix="/api/hub/team", tags=["hub"])
 
 _log = logging.getLogger(__name__)
 
+# How many refused asks may be written at once, how many more may wait for a turn,
+# and for how long (PR #495): a refusal holds no proposal slot, so under a flood from
+# many clients the rows would be the one thing left unbounded. Two writes at a time
+# serve hundreds of refusals a second, since each is one insert; a few waiters keep a
+# burst from losing a row; and the two ceilings together keep a flood from holding
+# more than ten of the worker threads the member area and the webhooks share. Past
+# them, the refusal is answered, the row is not written, and the log says so: a
+# metric lost under a flood is cheaper than a pool held by the flood.
+REFUSAL_WRITES = 2
+REFUSAL_WAITERS = 8
+REFUSAL_WAIT_SECONDS = 0.5
+_refusal_slots = threading.BoundedSemaphore(REFUSAL_WRITES)
+_refusal_waiters = threading.BoundedSemaphore(REFUSAL_WAITERS)
+
 
 def send_request_mail(sender: EmailSender, mail: Mail, request_id: UUID) -> None:
     """Runs after the response: a refusal is logged by the request's id alone, never
@@ -85,15 +101,58 @@ def propose_in_a_slot(
     # richieste», whatever the day's count.
     if not settings.team_builder_enabled or builder.llm is None:
         raise TeamBuilderOff(OFF_SENTENCE)
+    now = builder.now()
     if not slots.acquire(blocking=False):
         _log.info("team builder: every proposal slot is taken")
-        raise TeamBuilderBusy(BUSY_SENTENCE)
+        _refuse(data, TeamBuilderBusy(BUSY_SENTENCE), origine, user_id, builder, now)
+    # One release site for the slot, whatever the count or the call raises: a query that
+    # fails here with the slot still held would, four times over, close the builder
+    # until the process restarts.
     try:
-        now = builder.now()
-        require_daily_room(session, settings, now=now)
-        return builder.propose(data, origine=origine, user_id=user_id, now=now)
+        try:
+            require_daily_room(session, settings, now=now)
+        except TeamBuilderBusy as busy:
+            refused = busy
+        else:
+            return builder.propose(data, origine=origine, user_id=user_id, now=now)
     finally:
         slots.release()
+    _refuse(data, refused, origine, user_id, builder, now)
+
+
+def _refuse(
+    data: TeamProposalCreate,
+    busy: TeamBuilderBusy,
+    origine: str,
+    user_id: UUID | None,
+    builder: TeamBuilder,
+    now: datetime,
+) -> NoReturn:
+    """A «Troppe richieste» is kept as an attempt row before it is answered (0028):
+    what was asked is a measure of use whether the hub had room for it or not. The
+    write holds no proposal slot, only one of `REFUSAL_WRITES`, waited for up to
+    `REFUSAL_WAIT_SECONDS` by at most `REFUSAL_WAITERS` at once; past either the row
+    is skipped, and a database that refuses it is logged. Neither is ever a 500 in
+    place of the 503 the visitor gets either way."""
+    if not _refusal_waiters.acquire(blocking=False):
+        _log.warning("team builder: refused ask not kept, every refusal write is busy")
+        raise busy
+    # The waiting place is held only while waiting: a writer gives it back, so the
+    # eight places are eight waiters and never six.
+    try:
+        writing = _refusal_slots.acquire(timeout=REFUSAL_WAIT_SECONDS)
+    finally:
+        _refusal_waiters.release()
+    if not writing:
+        _log.warning("team builder: refused ask not kept, every refusal write is busy")
+        raise busy
+    try:
+        builder.record_refusal(data, origine=origine, user_id=user_id, error=busy, now=now)
+    except Exception:
+        _log.exception("team builder: the refused ask was not kept")
+    finally:
+        _refusal_slots.release()
+    raise busy
 
 
 @router.post("/proposals", response_model=TeamProposalRead)

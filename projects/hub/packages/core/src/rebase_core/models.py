@@ -993,6 +993,10 @@ class CampaignOptout(Base):
 CARD_SENIORITIES = ("junior", "mid", "senior", "lead")
 TEAM_REQUEST_STATES = ("nuova", "contattata", "chiusa")
 TEAM_PROPOSAL_ORIGINS = ("pubblico", "cloud", "admin")
+# The refusals an attempt row keeps in `errore` (0028): the domain codes of
+# `LlmUnavailable` and `TeamBuilderBusy`, and nothing else, since a switch that is off
+# or a description the schema refuses never reaches the engine.
+TEAM_PROPOSAL_ERRORS = ("llm_unavailable", "team_builder_busy")
 TEAM_REQUEST_ORIGINS = ("pubblico", "cloud")
 TALENT_ANSWERS = ("si", "no")
 # An Anthropic model id, `claude-opus-5` today: short, but the SDK's own ids run longer
@@ -1034,11 +1038,16 @@ class TeamProposal(Base, PrimaryKeyMixin):
     `TimestampMixin`: a «Rigenera» writes a new row with `previous_id` pointing at the
     one it replaces, never edits this one. `luogo`, `team` and `economia` are the JSONB
     the engine and § 3.3 describe; `model` and the three token counts are `usage` from
-    the call that produced this row, always present since a row is written only once a
-    proposal actually succeeds -- a failed attempt raises `LlmUnavailable` and writes
-    nothing here. `origine` says who asked (`TEAM_PROPOSAL_ORIGINS`): the public page, a
-    signed-in cloud user, or an admin from the talent cloud; `user_id` is that person,
-    `NULL` for a public visitor with no account at all."""
+    the call that produced this row. `origine` says who asked (`TEAM_PROPOSAL_ORIGINS`):
+    the public page, a signed-in cloud user, or an admin from the talent cloud;
+    `user_id` is that person, `NULL` for a public visitor with no account at all.
+    `persone` is the headcount the visitor picked (REB-591), `NULL` when the description
+    alone sized the team, as the MCP tool asks. Since 0028 every «Proponi il team» that
+    reached the hub is a row, so the asks a company never files are still counted (Ivan,
+    2026-09-29, DECISIONS.md): `errore` is `NULL` on a proposal that answered, and the
+    domain code (`TEAM_PROPOSAL_ERRORS`) on an attempt Claude did not answer or the caps
+    refused, whose summary is empty, whose team is nobody, and whose id never left the
+    hub -- `get`, «Rigenera» and «Assumi team» all refuse it."""
 
     __tablename__ = "team_proposals"
 
@@ -1056,14 +1065,31 @@ class TeamProposal(Base, PrimaryKeyMixin):
     cache_read_tokens: Mapped[int] = mapped_column(Integer, nullable=False)
     origine: Mapped[str] = mapped_column(String(10), nullable=False)
     user_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), default=None)
+    persone: Mapped[int | None] = mapped_column(Integer, default=None)
+    errore: Mapped[str | None] = mapped_column(String(30), default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     __table_args__ = (
         Index("ix_team_proposals_created_at", "created_at"),
+        # «Fallite» in «Proposte» (0028): the attempts alone, newest first, without a
+        # scan of every proposal that answered.
+        Index(
+            "ix_team_proposals_errore_created_at",
+            "created_at",
+            postgresql_where=text("errore IS NOT NULL"),
+        ),
         CheckConstraint(
             "origine IN ('pubblico', 'cloud', 'admin')", name="ck_team_proposals_origine"
+        ),
+        CheckConstraint(
+            "persone IS NULL OR (persone >= 1 AND persone <= 10)",
+            name="ck_team_proposals_persone",
+        ),
+        CheckConstraint(
+            "errore IN ('llm_unavailable', 'team_builder_busy')",
+            name="ck_team_proposals_errore",
         ),
     )
 

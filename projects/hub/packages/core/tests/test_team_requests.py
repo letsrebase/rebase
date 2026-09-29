@@ -341,6 +341,21 @@ def test_request_refuses_a_proposal_of_another_origin_or_none(clean: Session) ->
     assert clean.scalars(select(TeamRequest)).all() == []
 
 
+def test_request_refuses_an_attempt_that_got_no_proposal(clean: Session) -> None:
+    """0028: a row with `errore` is an ask Claude never answered; its id never left the
+    hub, and «Assumi team» on it is refused as on a proposal that does not exist."""
+    attempt = _proposal(clean, [_talent(clean, 1)], model="", riassunto="")
+    clean.execute(
+        update(TeamProposal).where(TeamProposal.id == attempt).values(errore="llm_unavailable")
+    )
+    clean.commit()
+    with pytest.raises(ValidationFailed) as refused:
+        _public(_service(clean), attempt)
+
+    assert refused.value.details["reason"] == PROPOSAL_REFUSED
+    assert clean.scalars(select(TeamRequest)).all() == []
+
+
 def test_request_refuses_a_proposal_with_nobody(clean: Session) -> None:
     empty = _proposal(clean, [], model="", riassunto="Al momento nessun profilo corrisponde.")
     with pytest.raises(ValidationFailed) as refused:

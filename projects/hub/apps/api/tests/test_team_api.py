@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
@@ -16,7 +17,8 @@ from uuid import UUID
 import pytest
 from fakes_cards import CARD, MODEL
 from fastapi.testclient import TestClient
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_clock, get_llm, get_sender, get_session_opener
@@ -34,6 +36,7 @@ from rebase_core.models import (
     TeamRequestTalent,
     User,
 )
+from rebase_core.team_builder import TeamBuilder
 
 ADMIN_EMAIL = "ivan@rebase.it"
 MISSING = "00000000-0000-7000-8000-000000000000"
@@ -298,6 +301,12 @@ def test_public_proposal_is_503_when_the_cap_is_full(client: TestClient, team: S
     assert second.headers["Retry-After"] == "60"
     assert answers["first"].status_code == 200, answers["first"].text
     assert len(blocking.requests) == 1
+    # The ask that found no slot is kept too (0028), beside the proposal that answered.
+    team.expire_all()
+    assert sorted(row.errore or "ok" for row in team.scalars(select(TeamProposal))) == [
+        "ok",
+        "team_builder_busy",
+    ]
     # The slot is given back once the first answers.
     _llm(client, RecordingCall([proposal_response()]))
     assert _propose(client).status_code == 200
@@ -320,11 +329,87 @@ def test_public_proposal_is_503_when_the_daily_cap_is_reached(
     _proposal_row(team, [member], created_at=now)  # the second paid proposal of the day
     recording = RecordingCall([proposal_response()])
     _llm(client, recording)
-    refused = _propose(client)
+    refused = client.post(
+        "/api/hub/team/proposals", json={"descrizione": DESCRIZIONE, "persone": 4}
+    )
 
     assert refused.status_code == 503
     assert refused.json() == {"detail": BUSY}
     assert recording.requests == []
+    # The refused ask is kept (0028), stamped with the same instant, costing the day
+    # nothing: a second ask is refused by the same count, not one higher.
+    team.expire_all()
+    [attempt] = team.scalars(select(TeamProposal).where(TeamProposal.errore.is_not(None))).all()
+    assert (attempt.errore, attempt.persone, attempt.model, attempt.created_at) == (
+        "team_builder_busy",
+        4,
+        "",
+        now,
+    )
+    assert _propose(client).status_code == 503
+    failed = TeamProposal.errore.is_not(None)
+    assert team.scalar(select(func.count()).select_from(TeamProposal).where(failed)) == 2
+
+
+def test_a_failing_count_or_record_never_keeps_a_slot_or_hides_the_refusal(
+    client: TestClient, team: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of 0028: the slot is given back whatever the day's count raises, so a
+    database blip does not close the builder for good; and a record of the refusal
+    that cannot be written is logged, never a 500 in place of the 503."""
+    from rebase_api.routers import team as routes
+
+    _talent(team)
+    _settings(client, team_builder_concurrency=1)
+    _llm(client, RecordingCall([proposal_response(), proposal_response()]))
+
+    def broken_count(*args: Any, **kwargs: Any) -> None:
+        raise OperationalError("SELECT count(*)", {}, Exception("connection dropped"))
+
+    monkeypatch.setattr(routes, "require_daily_room", broken_count)
+    with pytest.raises(OperationalError):
+        _propose(client)
+    monkeypatch.undo()
+    # The one slot is free again: the next ask is answered.
+    assert _propose(client).status_code == 200
+
+    def broken_record(*args: Any, **kwargs: Any) -> None:
+        raise OperationalError("INSERT", {}, Exception("connection dropped"))
+
+    monkeypatch.setattr(TeamBuilder, "record_refusal", broken_record)
+    _settings(client, team_builder_concurrency=1, team_builder_daily_cap=1)
+    refused = _propose(client)
+    assert refused.status_code == 503
+    assert refused.json() == {"detail": BUSY}
+    monkeypatch.undo()
+
+    # With every refusal write busy for longer than the wait (PR #495) the row is
+    # skipped: the answer is the same 503 and the table does not grow.
+    from rebase_api.routers import team as routes
+
+    _settings(client, team_builder_concurrency=1, team_builder_daily_cap=1)
+    before = team.scalar(select(func.count()).select_from(TeamProposal))
+    monkeypatch.setattr(routes, "_refusal_slots", threading.BoundedSemaphore(1))
+    routes._refusal_slots.acquire()
+    try:
+        skipped = _propose(client)
+    finally:
+        routes._refusal_slots.release()
+    assert skipped.status_code == 503 and skipped.json() == {"detail": BUSY}
+    team.expire_all()
+    assert team.scalar(select(func.count()).select_from(TeamProposal)) == before
+    # And with every waiter taken the row is skipped at once, with no wait at all.
+    monkeypatch.setattr(routes, "_refusal_waiters", threading.BoundedSemaphore(1))
+    routes._refusal_waiters.acquire()
+    try:
+        started = time.monotonic()
+        skipped = _propose(client)
+        waited = time.monotonic() - started
+    finally:
+        routes._refusal_waiters.release()
+    assert skipped.status_code == 503 and waited < routes.REFUSAL_WAIT_SECONDS
+    team.expire_all()
+    assert team.scalar(select(func.count()).select_from(TeamProposal)) == before
 
 
 class _CrossingMidnight:
@@ -370,7 +455,13 @@ def test_public_proposal_is_502_when_claude_is_down(client: TestClient, team: Se
 
     assert refused.status_code == 502
     assert refused.json() == {"detail": "Non riesco a proporre un team adesso: riprova tra poco."}
-    assert team.scalars(select(TeamProposal)).all() == []
+    # The ask is kept as an attempt (0028), a row the visitor was never handed.
+    [attempt] = team.scalars(select(TeamProposal)).all()
+    assert (attempt.errore, attempt.descrizione, attempt.riassunto) == (
+        "llm_unavailable",
+        DESCRIZIONE,
+        "",
+    )
     # The one slot came back through the failure.
     _llm(client, RecordingCall([proposal_response()]))
     assert _propose(client).status_code == 200
@@ -521,6 +612,7 @@ def _admin_routes() -> list[tuple[str, str, dict[str, Any] | None]]:
     base = f"/api/hub/team/requests/{MISSING}"
     return [
         ("GET", "/api/hub/team/requests", None),
+        ("GET", "/api/hub/team/proposals", None),
         ("GET", base, None),
         ("POST", f"{base}/status", {"stato": "chiusa"}),
         ("PATCH", f"{base}/note", {"note": "x"}),
@@ -580,6 +672,26 @@ def test_an_admin_reads_and_works_a_request(
     [talento] = body["talenti"]
     assert (talento["nome"], talento["cognome"]) == ("Ada1", "Lovelace1")
     assert talento["tariffa_giornaliera"] == "450.00"
+
+    # «Proposte» (0028): the three asks, newest first, each naming its request.
+    proposals = client.get("/api/hub/team/proposals", params={"limit": 2})
+    assert proposals.status_code == 200, proposals.text
+    assert [item["request_id"] for item in proposals.json()["items"]] == [ids[2], ids[1]]
+    rest = client.get(
+        "/api/hub/team/proposals", params={"limit": 2, "cursor": proposals.json()["next_cursor"]}
+    ).json()
+    [oldest] = rest["items"]
+    assert (oldest["request_id"], oldest["origine"], oldest["errore"], oldest["membri"]) == (
+        ids[0],
+        "pubblico",
+        None,
+        1,
+    )
+    assert oldest["descrizione"] == DESCRIZIONE and oldest["persone"] is None
+    assert rest["next_cursor"] is None
+    assert client.get("/api/hub/team/proposals", params={"esito": "errore"}).json()["items"] == []
+    assert client.get("/api/hub/team/proposals", params={"esito": "boh"}).status_code == 422
+    assert client.get("/api/hub/team/proposals", params={"origine": "sito"}).status_code == 422
 
     moved = client.post(f"/api/hub/team/requests/{ids[0]}/status", json={"stato": "contattata"})
     assert moved.status_code == 200, moved.text

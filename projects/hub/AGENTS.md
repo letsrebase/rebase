@@ -80,6 +80,7 @@ The team builder and the talent cloud are twelve tools more (REB-520, spec § 8 
 running the core service the admin area runs, with the calling admin as the actor:
 
 - `list_team_requests`, `get_team_request`: «Richieste team» and a request's page.
+- `list_team_proposals`: «Proposte», every «Proponi il team» asked, filed or not.
 - `set_team_request_summary`: «Salva il riassunto», refused while it names the company.
 - `contact_team_talents`: «Contatta i talenti», or with `only_silent` «Rimanda a chi non ha risposto».
 - `set_team_request_status`: «Segna come contattata», «Chiudi», with an optional note.
@@ -366,6 +367,22 @@ the talent's page asks again for one. A card whose Italian gives the person's ge
 more and then written whatever the answer, never parked: one still gendered adds «N con
 avviso di genere» to the run's line and `written with a gender warning` to the log; an
 outage on the rewrite writes the first card and still stops the batch (REB-574).
+
+**Every «Proponi il team» is a row, answered or not** (migration 0028, Ivan 2026-09-29:
+«salvare tutte le richieste dopo il click proponi team anche se non ancora
+finalizzate/inviate così raccogliamo metriche di uso»). `team_proposals` keeps the
+description, the headcount picked (`persone`) and the note of every ask, and an ask
+Claude did not answer or the caps refused is a row with `errore` set
+(`llm_unavailable`, `team_builder_busy`), an empty summary and nobody in it: never
+handed out, never regenerated or filed, never counted by the daily cap. «Proposte»
+(`/hub/admin/team/proposte`, linked from «Richieste team») and `list_team_proposals`
+over MCP read them all, newest first, each with the «Assumi team» filed on it when
+there is one. That is where the usage of the builder is read; PostHog's
+`team_proposta_generata` counts only the proposals that answered. One bound: a
+refusal's row holds no proposal slot, so `routers/team.py` writes at most
+`REFUSAL_WRITES` (2) of them at once, and at most `REFUSAL_WAITERS` (8) more wait
+`REFUSAL_WAIT_SECONDS` (0.5) for a turn; past that, which only a flood reaches, the 503 is answered, the row is
+not written and the log says «refused ask not kept».
 
 **Two caps.** `REBASE_TEAM_BUILDER_CONCURRENCY` (4) is how many proposals run at once
 in the API process: the next one answers 503 «Troppe richieste in questo momento:

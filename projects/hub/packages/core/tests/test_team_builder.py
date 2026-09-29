@@ -25,11 +25,18 @@ from rebase_core.analytics import TEAM_PROPOSAL_GENERATED, Tracker
 from rebase_core.bands import Band
 from rebase_core.config import Settings
 from rebase_core.db import uuid7
-from rebase_core.errors import LlmUnavailable, NotFound, TeamBuilderOff, ValidationFailed
+from rebase_core.errors import (
+    LlmUnavailable,
+    NotFound,
+    TeamBuilderBusy,
+    TeamBuilderOff,
+    ValidationFailed,
+)
 from rebase_core.llm import UNAVAILABLE_SENTENCE, LlmRequest, LlmResponse, RecordingCall
-from rebase_core.models import Freelancer, FreelancerCard, TeamProposal, User
+from rebase_core.models import Freelancer, FreelancerCard, TeamProposal, TeamRequest, User
 from rebase_core.team_builder import (
     NO_FIT_SENTENCE,
+    OFF_SENTENCE,
     PLACE_WITHHELD_REASON,
     PLACE_WITHHELD_RIASSUNTO,
     PLACE_WITHHELD_SUMMARY,
@@ -39,6 +46,7 @@ from rebase_core.team_builder import (
     catalogue_lines,
     cloud_visible,
 )
+from rebase_core.team_caps import BUSY_SENTENCE
 from rebase_core.team_schemas import Card, TeamProposalCreate
 
 NOW = datetime(2026, 9, 26, 9, 30, tzinfo=UTC)
@@ -210,6 +218,7 @@ def _rows(session: Session) -> list[TeamProposal]:
 def clean(hub_session: Session) -> Iterator[Session]:
     yield hub_session
     hub_session.rollback()
+    hub_session.execute(text("DELETE FROM team_requests"))
     hub_session.execute(text("DELETE FROM team_proposals"))
     hub_session.execute(text("DELETE FROM freelancers"))
     hub_session.execute(text("DELETE FROM users"))
@@ -649,22 +658,227 @@ def test_engine_turns_a_refusal_and_max_tokens_and_bad_json_into_unavailable(
         )
 
     assert failed.value.message == UNAVAILABLE_SENTENCE
-    assert _rows(clean) == []
+    # No proposal, but the ask itself is kept (0028), and nothing the model wrote with it.
+    [attempt] = _rows(clean)
+    assert (attempt.errore, attempt.riassunto, attempt.team, attempt.model) == (
+        "llm_unavailable",
+        "",
+        [],
+        "",
+    )
     assert logged in logs.text
     for secret in (DESCRIZIONE, "togli il designer", "Ecco il team", "Un'azienda"):
         assert secret not in logs.text
 
 
-def test_an_outage_reaches_the_caller_and_writes_nothing(clean: Session) -> None:
+def test_an_outage_reaches_the_caller_and_keeps_the_ask(clean: Session) -> None:
+    """0028: the refusal still reaches the caller, and the ask is kept as an attempt
+    row, with the refusal's code, an empty summary, nobody in it and no call counted;
+    no proposal was made, so no event is sent either. Its id never left the hub: `get`
+    answers `NotFound` and «Rigenera» refuses it as it refuses a proposal that does not
+    exist."""
     _talent(clean, 1)
     llm = _Scripted([LlmUnavailable(UNAVAILABLE_SENTENCE)])
+    capture = FakeCapture()
+    builder = _builder(clean, llm, tracker=Tracker(capture))
 
     with pytest.raises(LlmUnavailable):
-        _builder(clean, llm).propose(
+        builder.propose(
+            TeamProposalCreate(descrizione=DESCRIZIONE, persone=2, nota="più backend"),
+            origine="pubblico",
+            user_id=None,
+        )
+
+    [row] = _rows(clean)
+    assert (row.errore, row.descrizione, row.persone, row.nota) == (
+        "llm_unavailable",
+        DESCRIZIONE,
+        2,
+        "più backend",
+    )
+    assert (row.riassunto, row.team, row.model, row.input_tokens, row.origine) == (
+        "",
+        [],
+        "",
+        0,
+        "pubblico",
+    )
+    assert row.created_at == NOW
+    assert capture.calls == []
+    with pytest.raises(NotFound):
+        builder.get(row.id, public=True)
+    with pytest.raises(ValidationFailed) as refused:
+        builder.propose(
+            TeamProposalCreate(descrizione=DESCRIZIONE, previous_id=row.id),
+            origine="pubblico",
+            user_id=None,
+        )
+    assert refused.value.details["field"] == "previous_id"
+
+
+def test_an_attempt_that_cannot_be_written_still_answers_the_outage(
+    clean: Session, logs: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review of 0028: the record is a metric and the refusal is the product, so a
+    database that refuses the attempt row is logged and the caller still gets
+    `LlmUnavailable`, never the database's own error."""
+    _talent(clean, 1)
+    builder = _builder(clean, _Scripted([LlmUnavailable(UNAVAILABLE_SENTENCE)]))
+
+    def broken(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("il database non risponde")
+
+    monkeypatch.setattr(builder, "_write_attempt", broken)
+    with pytest.raises(LlmUnavailable):
+        builder.propose(
             TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
         )
 
+    assert "team proposal attempt not kept" in logs.text
     assert _rows(clean) == []
+
+
+def test_a_refusal_of_the_caps_is_kept_as_an_attempt(clean: Session) -> None:
+    """0028: the route keeps a «Troppe richieste» through `record_refusal`. A
+    `previous_id` that names the caller's own proposal is linked; one that names
+    nothing, or somebody else's, is left `NULL` rather than refused, since the caller
+    already has the refusal to answer."""
+    first = _talent(clean, 1)
+    ids = _positions(clean)
+    builder = _builder(clean, RecordingCall([proposal_response([_member(ids[first])])]))
+    own = builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE), origine="pubblico", user_id=None
+    )
+    busy = TeamBuilderBusy(BUSY_SENTENCE)
+
+    builder.record_refusal(
+        TeamProposalCreate(descrizione=DESCRIZIONE, persone=3, previous_id=own.id),
+        origine="pubblico",
+        user_id=None,
+        error=busy,
+    )
+    builder.record_refusal(
+        TeamProposalCreate(descrizione=DESCRIZIONE, previous_id=own.id),
+        origine="cloud",
+        user_id=_user(clean, "referente@acme.it"),
+        error=busy,
+    )
+
+    _proposal, linked, unlinked = _rows(clean)
+    assert (linked.errore, linked.persone, linked.previous_id) == ("team_builder_busy", 3, own.id)
+    assert (unlinked.errore, unlinked.origine, unlinked.previous_id) == (
+        "team_builder_busy",
+        "cloud",
+        None,
+    )
+    # An attempt is not a proposal to regenerate: a refusal that names one links nothing.
+    builder.record_refusal(
+        TeamProposalCreate(descrizione=DESCRIZIONE, previous_id=linked.id),
+        origine="pubblico",
+        user_id=None,
+        error=busy,
+    )
+    assert _rows(clean)[-1].previous_id is None
+    # Neither attempt costs the day anything (`team_caps` counts `model`).
+    assert {row.model for row in (linked, unlinked)} == {""}
+    # A refusal the table does not take is the caller's bug, not a row.
+    with pytest.raises(ValueError):
+        builder.record_refusal(
+            TeamProposalCreate(descrizione=DESCRIZIONE),
+            origine="pubblico",
+            user_id=None,
+            error=TeamBuilderOff(OFF_SENTENCE),
+        )
+
+
+def test_list_recent_pages_filters_and_names_the_request(clean: Session) -> None:
+    """«Proposte» (0028): newest first by cursor, every origin and outcome together
+    unless filtered, each row with how many it held and the request filed on it."""
+    first = _talent(clean, 1)
+    ids = _positions(clean)
+    owner = _user(clean, "referente@acme.it")
+    builder = _builder(
+        clean,
+        _Scripted(
+            [
+                proposal_response([_member(ids[first])]),
+                proposal_response([]),
+                LlmUnavailable(UNAVAILABLE_SENTENCE),
+            ]
+        ),
+    )
+    public = builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE, persone=1), origine="pubblico", user_id=None
+    )
+    cloud = builder.propose(
+        TeamProposalCreate(descrizione=DESCRIZIONE, persone=2, nota="senza designer"),
+        origine="cloud",
+        user_id=owner,
+        now=NOW + timedelta(minutes=1),
+    )
+    with pytest.raises(LlmUnavailable):
+        builder.propose(
+            TeamProposalCreate(descrizione=DESCRIZIONE),
+            origine="admin",
+            user_id=owner,
+            now=NOW + timedelta(minutes=2),
+        )
+    request_id = uuid7()
+    clean.add(
+        TeamRequest(
+            id=request_id,
+            proposal_id=public.id,
+            origine="pubblico",
+            azienda="Acme S.r.l.",
+            email="wile@acme.it",
+            telefono="+39 345 1234567",
+        )
+    )
+    clean.commit()
+
+    page = builder.list_recent(limit=2)
+    assert [item.origine for item in page.items] == ["admin", "cloud"]
+    assert page.next_cursor is not None
+    attempt, regenerated = page.items
+    assert (attempt.errore, attempt.membri, attempt.request_id, attempt.persone) == (
+        "llm_unavailable",
+        0,
+        None,
+        None,
+    )
+    assert (regenerated.errore, regenerated.membri, regenerated.nota, regenerated.user_id) == (
+        None,
+        0,
+        "senza designer",
+        owner,
+    )
+    assert (attempt.riassunto, regenerated.riassunto) == (None, RIASSUNTO)
+    rest = builder.list_recent(limit=2, cursor=page.next_cursor)
+    assert rest.next_cursor is None
+    [filed] = rest.items
+    assert (filed.id, filed.descrizione, filed.persone, filed.membri, filed.request_id) == (
+        public.id,
+        DESCRIZIONE,
+        1,
+        1,
+        request_id,
+    )
+    assert filed.created_at == NOW
+
+    # The limit is clamped, never refused: the MCP tool passes it through unchecked.
+    assert len(builder.list_recent(limit=0).items) == 1
+    assert len(builder.list_recent(limit=500).items) == 3
+    assert [item.id for item in builder.list_recent(esito="errore").items] == [attempt.id]
+    assert [item.id for item in builder.list_recent(esito="ok").items] == [cloud.id, public.id]
+    assert [item.id for item in builder.list_recent(origine="cloud").items] == [cloud.id]
+    for field, kwargs in (
+        ("origine", {"origine": "sito"}),
+        ("esito", {"esito": "forse"}),
+        ("cursor", {"cursor": "non-un-cursore"}),
+    ):
+        with pytest.raises(ValidationFailed) as refused:
+            builder.list_recent(**kwargs)
+        assert refused.value.details["field"] == field
 
 
 def test_the_database_is_released_during_the_call(clean: Session) -> None:
@@ -1201,9 +1415,11 @@ def test_the_number_of_people_reaches_the_prompt_only_when_asked(clean: Session)
     rules = llm.requests[0].system[0]["text"]
     assert "excludes nobody" in rules and "propose nobody" not in rules
     assert "a null modalita is unknown, never remote" in rules
-    # The event tells the asked number from the proposed one, since the row keeps neither.
+    # The event tells the asked number from the proposed one, and the row keeps the
+    # asked one (0028), `NULL` when nobody asked.
     assert [(p["persone"], p["persone_richieste"]) for _, _, p in capture.calls] == [
         (1, None),
         (1, 1),
         (1, 3),
     ]
+    assert [row.persone for row in _rows(clean)] == [None, 1, 3]
