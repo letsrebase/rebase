@@ -4,7 +4,7 @@ import { ArrowUpRight, Download, Pencil, Plus } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Button } from '@rebase/ui/button'
 import { member, type MemberRequest } from '@/lib/api'
-import { formatBytes, formatDate, formatDay, formatEuro } from '@/lib/format'
+import { formatBytes, formatDate, formatDateTime, formatDay, formatEuro } from '@/lib/format'
 import { toApplication, toCompanyApplication, useMe } from '@/lib/me'
 import { GUIDE } from '@/lib/perks'
 import { COMPANY_FIELDS } from '@/pages/CompanyWizard'
@@ -67,7 +67,7 @@ function RequestCard({ request }: { request: MemberRequest }) {
           <Link
             to="/me/edit-company/$id"
             params={{ id: request.id }}
-            aria-label={`Modifica la richiesta: ${request.figura_richiesta}, del ${formatDate(request.created_at)}`}
+            aria-label={`Modifica la richiesta: ${request.figura_richiesta}, del ${formatDateTime(request.created_at)}`}
           >
             <Pencil className="mr-2 size-4" />
             Modifica

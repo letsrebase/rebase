@@ -15,7 +15,7 @@ older ones are none the wiser about.
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from rebase_core.cloud import TalentCloudService
@@ -111,26 +111,28 @@ class MemberService:
 
     # ---- the identity behind a company request -----------------------------------------
 
+    @staticmethod
+    def _live_requests(user_id: UUID) -> Select[tuple[Company]]:
+        return (
+            select(Company)
+            .where(Company.user_id == user_id, Company.deleted_at.is_(None))
+            # `id` (UUIDv7, time-ordered) breaks a tie on `created_at`, the same tiebreak
+            # `_list_stmt`'s own ordering uses (`companies.py`): two requests a
+            # `func.now()` transaction start could otherwise date identically.
+            .order_by(Company.created_at.desc(), Company.id.desc())
+        )
+
     def requests_for_user(self, user_id: UUID) -> list[Company]:
         """Every request the signed-in person filed that an admin has not soft-deleted
         (REB-347), newest first: the list the member area shows (REB-602). A deleted
         request is gone from it, and its older siblings stay, each one editable."""
-        return list(
-            self.session.scalars(
-                select(Company)
-                .where(Company.user_id == user_id, Company.deleted_at.is_(None))
-                # `id` (UUIDv7, time-ordered) breaks a tie on `created_at`, the same
-                # tiebreak `_list_stmt`'s own ordering uses (`companies.py`): two requests
-                # a `func.now()` transaction start could otherwise date identically.
-                .order_by(Company.created_at.desc(), Company.id.desc())
-            )
-        )
+        return list(self.session.scalars(self._live_requests(user_id)))
 
     def company_for_user(self, user_id: UUID) -> Company | None:
         """The signed-in person's newest live request, or `None` when they have none:
         what the request-less `PATCH /me/company` edits and what a new request carries
         the company's name forward from."""
-        return next(iter(self.requests_for_user(user_id)), None)
+        return self.session.scalar(self._live_requests(user_id).limit(1))
 
     def require_company(self, user_id: UUID) -> Company:
         """The signed-in person's newest live request, or a 404 named "azienda": a

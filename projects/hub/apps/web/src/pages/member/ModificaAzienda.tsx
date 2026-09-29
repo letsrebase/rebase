@@ -40,8 +40,15 @@ export function editCompanyFields(): Field<CompanyRequest>[] {
  *  fix): the same mount-time redirect `AdminGuard` uses for its own access rule bounces
  *  it back to `/me` before the form ever renders. */
 export function ModificaAzienda() {
-  const me = useMe()
   const { id } = useParams({ strict: false }) as { id?: string }
+  // Keyed by the address: a jump from one request's page straight to another's (the
+  // router keeps the component mounted across a change of `$id`) starts the form over,
+  // instead of saving the first request's draft under the second one's id.
+  return <EditRequest key={id ?? 'newest'} id={id} />
+}
+
+function EditRequest({ id }: { id: string | undefined }) {
+  const me = useMe()
   const navigate = useNavigate()
   const update = useUpdateCompany()
   const [draft, setDraft] = useState<CompanyRequest | null>(null)

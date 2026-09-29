@@ -8,7 +8,7 @@ import {
   createRouter,
   useNavigate,
 } from '@tanstack/react-router'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { CompanyRequest } from '@/lib/api'
@@ -102,7 +102,7 @@ function mount(path = '/me/edit-company') {
       <RouterProvider router={router} />
     </QueryClientProvider>,
   )
-  return client
+  return { client, router }
 }
 
 afterEach(() => vi.restoreAllMocks())
@@ -192,7 +192,7 @@ describe('/me/edit-company', () => {
       .mockImplementation(async (_url, init) =>
         init?.method === 'PATCH' ? answer(200, PROFILE) : answer(200, profile),
       )
-    const client = mount()
+    const { client } = mount()
     const user = userEvent.setup()
     expect(await screen.findByLabelText('Per quanto')).toHaveValue('2 mesi')
 
@@ -208,6 +208,21 @@ describe('/me/edit-company', () => {
     const patch = fetchSpy.mock.calls.find(([, init]) => init?.method === 'PATCH')!
     expect(patch[0]).toBe('/api/hub/me/company/r2')
     expect(JSON.parse(patch[1]!.body as string).durata).toBe('2 mesi')
+  })
+
+  it('starts the form over when the address jumps from one request to another (REB-602)', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => answer(200, PROFILE))
+    const { router } = mount('/me/edit-company/r1')
+    const user = userEvent.setup()
+    expect(await screen.findByLabelText('Per quanto')).toHaveValue('3 mesi')
+
+    await act(() => router.navigate({ to: '/me/edit-company/$id', params: { id: 'r2' } }))
+    await waitFor(() => expect(screen.getByLabelText('Per quanto')).toHaveValue('2 mesi'))
+    await user.click(screen.getByRole('button', { name: 'Salva' }))
+    await screen.findByRole('heading', { name: 'La tua area' })
+    const patch = fetchSpy.mock.calls.find(([, init]) => init?.method === 'PATCH')!
+    expect(patch[0]).toBe('/api/hub/me/company/r2')
+    expect(JSON.parse(patch[1]!.body as string).progetto).toBe(NEWEST.progetto)
   })
 
   it('opens an older request by its id and saves that one, not the newest (REB-602)', async () => {
