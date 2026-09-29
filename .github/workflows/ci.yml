@@ -407,7 +407,9 @@ jobs:
   # four cores, so the next unit of parallelism is another runner: hosted larger
   # runners are billed even on a public repository and the self-hosted pool is closed
   # to this repository (`docs/ci-runner-pool.md`), while two more free jobs cost
-  # nothing but their slots. Each shard is every third file of the sorted list
+  # nothing but their slots. Four shards since REB-589, three before: at three they
+  # ran 112 to 160s apiece, about 1,900 tests each, and were the CRM's critical path
+  # with the web. Each shard is every fourth file of the sorted list
   # (`_python-gate.yml`'s `shard` input) with its own `-n auto` inside; lint and mypy
   # run once, in `pigrocrm-py-lint` below (REB-572). `ci` reads one aggregate result
   # for the matrix, so
@@ -421,7 +423,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ['1/3', '2/3', '3/3']
+        shard: ['1/4', '2/4', '3/4', '4/4']
     uses: ./.github/workflows/_python-gate.yml
     with:
       shard: ${{ matrix.shard }}
@@ -464,7 +466,7 @@ jobs:
       renderer: true
 
   # ruff and mypy, once, in a job of their own (REB-572): about 30s including the
-  # setup, beside the three shards rather than in front of the first one's tests.
+  # setup, beside the shards rather than in front of the first one's tests.
   pigrocrm-py-lint:
     name: pigrocrm · python lint
     needs: changes

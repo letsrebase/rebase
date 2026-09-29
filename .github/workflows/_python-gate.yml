@@ -77,6 +77,14 @@ jobs:
     name: ${{ inputs.job-name }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # The renderer pair, pinned once for the download and the install below: the same
+    # pair projects/pigrocrm/Dockerfile.api installs and that the renderer was verified
+    # against. Typst's diagnostic format and the auto-typography workaround were both
+    # confirmed against 0.14.2 specifically, so a runner on some other version proves
+    # less than nothing.
+    env:
+      PANDOC_VERSION: 3.8.2.1
+      TYPST_VERSION: 0.14.2
     steps:
       - uses: actions/checkout@v7
 
@@ -105,6 +113,30 @@ jobs:
               || echo "FAILED to pull ${image}"; } >> "${log}" 2>&1 &
           done
 
+      # The renderer's two binaries and poppler, fetched while the toolchain installs
+      # (REB-589), the same shape as the image pulls above: 13s of downloads that used
+      # to sit in a step of their own in front of the tests now overlap `uv sync` and
+      # the shard selection. Unlike a pull, this one is needed: the install step below
+      # waits for the `done` marker and reads the log if it never comes, so a failed
+      # download fails the job there, with its reason, rather than at the first test
+      # that shells out to nothing. poppler is installed from the image's own package
+      # lists first, since `apt-get update` was most of the 13s and the lists on a
+      # hosted image are days old at most; a stale index fails that install, and only
+      # then is the update paid. Measured on the first run of REB-589: the install step
+      # still waited 7 to 14s for the marker, which is the update, not the fetches.
+      - name: Download the document renderer in the background
+        if: inputs.renderer && inputs.test
+        run: |
+          dir="$RUNNER_TEMP/renderer"
+          mkdir -p "${dir}"
+          {
+            curl -fsSL "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" | tar -xz -C "${dir}" \
+            && curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" | tar -xJ -C "${dir}" \
+            && { sudo apt-get install -y -qq --no-install-recommends poppler-utils \
+                 || { sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends poppler-utils; }; } \
+            && touch "${dir}/done"
+          } > "${dir}/log" 2>&1 &
+
       - uses: astral-sh/setup-uv@v7
         with:
           version: '0.9.24'
@@ -127,39 +159,14 @@ jobs:
         if: inputs.typecheck
         run: uv run mypy ${{ inputs.sources }}
 
-      - name: Install the document renderer
-        if: inputs.renderer && inputs.test
-        # Pinned to the same pair projects/pigrocrm/Dockerfile.api installs and that
-        # the renderer was verified against. Typst's diagnostic format and the
-        # auto-typography workaround were both confirmed against 0.14.2 specifically,
-        # so a runner on some other version proves less than nothing.
-        #
-        # poppler-utils is not in that image and belongs only here: `pdftotext` is how
-        # the suite reads a rendered PDF back to assert on its text, so it is test
-        # equipment rather than part of the product. Distribution version is fine --
-        # nothing is asserted about its output beyond the words the renderer put in.
-        env:
-          PANDOC_VERSION: 3.8.2.1
-          TYPST_VERSION: 0.14.2
-        run: |
-          set -euo pipefail
-          curl -fL "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" | tar -xz -C /tmp
-          sudo mv "/tmp/pandoc-${PANDOC_VERSION}/bin/pandoc" /usr/local/bin/pandoc
-          curl -fL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" | tar -xJ -C /tmp
-          sudo mv /tmp/typst-x86_64-unknown-linux-musl/typst /usr/local/bin/typst
-          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends poppler-utils
-          pandoc --version | head -1
-          typst --version
-          pdftotext -v 2>&1 | head -1
-
       # Whole files, never single tests, so `--dist loadfile` and the module-scoped
       # fixtures behind it hold inside a shard exactly as they do in a full run. The
       # list is printed so a red shard's log says what it selected without a second
       # run. Slicing by position rather than by a recorded duration keeps this a shell
       # line with no plugin, no durations file to refresh and no cache to miss; the
       # cost is that a shard can be heavier than its siblings by whatever the biggest
-      # files weigh: roughly the difference between a third of the suite and somewhat
-      # more, never the difference between three jobs and one.
+      # files weigh: roughly the difference between one n-th of the suite and somewhat
+      # more, never the difference between n jobs and one.
       - name: Select this shard's files
         id: shard
         if: inputs.shard != '' && inputs.test
@@ -169,8 +176,8 @@ jobs:
         run: |
           set -euo pipefail
           k=${SHARD%/*}; n=${SHARD#*/}
-          # `4/3` would silently rerun shard 1 and `0/3` shard 3, and a bare `3` parses
-          # as k=n=3: each a green run that skipped a third of the suite.
+          # `5/4` would silently rerun shard 1 and `0/4` shard 4, and a bare `4` parses
+          # as k=n=4: each a green run that skipped a slice of the suite.
           if ! [[ "$SHARD" =~ ^[1-9][0-9]*/[1-9][0-9]*$ ]] || [ "$k" -gt "$n" ]; then
             echo "::error::shard must be k/n with 1 <= k <= n, got '${SHARD}'"
             exit 1
@@ -203,6 +210,36 @@ jobs:
           if grep -q FAILED "${log}" 2>/dev/null; then
             echo "::warning::a background image pull failed; the workers pull at test time instead"
           fi
+
+      - name: Install the document renderer
+        if: inputs.renderer && inputs.test
+        # Waits for the download the step after the checkout started (REB-589), last
+      # before the tests so the shard selection above overlaps it too.
+        # poppler-utils is not in that image and belongs only here: `pdftotext` is how
+        # the suite reads a rendered PDF back to assert on its text, so it is test
+        # equipment rather than part of the product. Distribution version is fine --
+        # nothing is asserted about its output beyond the words the renderer put in.
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/renderer"
+          # Up to ten minutes for the background download above, a quarter of the job's
+          # own limit: on the runner it is done long before `uv sync` is, so this
+          # normally reads the marker at once, and a slow mirror gets the time the old
+          # foreground install would have taken anyway.
+          for _ in $(seq 600); do
+            [ -f "${dir}/done" ] && break
+            sleep 1
+          done
+          if [ ! -f "${dir}/done" ]; then
+            echo "::error::the renderer download did not finish; its log follows"
+            cat "${dir}/log" 2>/dev/null || true
+            exit 1
+          fi
+          sudo mv "${dir}/pandoc-${PANDOC_VERSION}/bin/pandoc" /usr/local/bin/pandoc
+          sudo mv "${dir}/typst-x86_64-unknown-linux-musl/typst" /usr/local/bin/typst
+          pandoc --version | head -1
+          typst --version
+          pdftotext -v 2>&1 | head -1
 
       - name: Test
         if: inputs.test
