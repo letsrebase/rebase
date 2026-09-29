@@ -895,19 +895,28 @@ def test_a_public_reason_that_names_the_cards_place_is_withheld(clean: Session) 
 def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session) -> None:
     """The prompt lets the summary name the place the description names and no place of
     a person; a summary that names a member's card place anyway would give back what the
-    public read withholds, unless the visitor wrote that place themselves. The row and
-    the admin's read keep the model's words."""
+    public read withholds, unless that place is the one the description names as the
+    client's (`luogo.dove`). The row and the admin's read keep the model's words."""
     torino = _talent(clean, 1, card={**CARD, "luogo": "Torino"})
     verona = _talent(clean, 2, card={**CARD, "luogo": "Provincia di Verona"})
+    alba = _talent(clean, 3, card={**CARD, "luogo": "Alba"})
     positions = _positions(clean)
     kept = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa lavora da remoto."
     leaked = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a VERONA."
     lowered = "Un'azienda cerca un backend developer in sede a Torino: chi lo fa vive a verona."
+    dawn = "Un'azienda cerca un backend developer per un turno all'alba: chi lo fa vive ad Alba."
     llm = RecordingCall(
         [
-            proposal_response([_member(positions[torino])], riassunto=kept, locale=True),
-            proposal_response([_member(positions[verona])], riassunto=leaked, locale=True),
-            proposal_response([_member(positions[verona])], riassunto=lowered, locale=True),
+            proposal_response(
+                [_member(positions[torino])], riassunto=kept, locale=True, dove="Torino"
+            ),
+            proposal_response(
+                [_member(positions[verona])], riassunto=leaked, locale=True, dove="Torino"
+            ),
+            proposal_response(
+                [_member(positions[verona])], riassunto=lowered, locale=True, dove="Torino"
+            ),
+            proposal_response([_member(positions[alba])], riassunto=dawn, locale=False, dove=None),
         ]
     )
     builder = _builder(clean, llm)
@@ -922,14 +931,27 @@ def test_a_public_summary_that_names_a_members_place_is_withheld(clean: Session)
     withheld_lower = builder.propose(
         TeamProposalCreate(descrizione=descrizione), origine="pubblico", user_id=None
     )
+    withheld_dawn = builder.propose(
+        TeamProposalCreate(
+            descrizione="Cerchiamo un backend developer per le integrazioni che partono all'alba."
+        ),
+        origine="pubblico",
+        user_id=None,
+    )
 
-    # «Torino» is the visitor's own word, in any case; «Verona» is the catalogue's alone,
-    # and the summary is read in any case, unlike a card's field.
+    # «Torino» is the place the description names as the client's, whatever case the
+    # visitor typed it in; «Verona» is the catalogue's alone, and the summary is read in
+    # any case, unlike a card's field; «all'alba» in a description is no pass for Alba.
     assert named.riassunto == kept
     assert withheld.riassunto == PLACE_WITHHELD_RIASSUNTO
     assert withheld_lower.riassunto == PLACE_WITHHELD_RIASSUNTO
-    assert PLACE_WITHHELD_RIASSUNTO == "Il riassunto di questa proposta non è pubblico."
+    assert withheld_dawn.riassunto == PLACE_WITHHELD_RIASSUNTO
+    assert PLACE_WITHHELD_RIASSUNTO == (
+        "Il riassunto di questa proposta non è pubblico: la modalità di lavoro di ogni "
+        "persona proposta è sulla sua scheda."
+    )
     assert "VERONA" not in withheld.model_dump_json()
+    assert "Alba" not in withheld_dawn.model_dump_json()
     assert builder.get(withheld.id, public=False).riassunto == leaked
     assert builder.get(withheld.id, public=True).riassunto == PLACE_WITHHELD_RIASSUNTO
 
