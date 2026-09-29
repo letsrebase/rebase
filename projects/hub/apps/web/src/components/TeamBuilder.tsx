@@ -2,6 +2,15 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rebase/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@rebase/ui/dialog'
 import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { Textarea } from '@rebase/ui/textarea'
@@ -370,8 +379,11 @@ function check(value: Record<Contact, string>): Partial<Record<Contact, string>>
   return problems
 }
 
-/** «Assumi team» on the public page: the three contacts, then the thanks. No account
- *  and no mail to the visitor (spec § 1): the admin writes. */
+/** «Assumi team» on the public page: the three contacts in a dialog over the proposal
+ *  (REB-592), then the thanks where the button was. No account and no mail to the
+ *  visitor (spec § 1): the admin writes. Closing the dialog keeps what was typed, so a
+ *  visitor who goes back to read the team once more does not start over; the `Dialog`
+ *  stays mounted across opens for the same reason. */
 function PublicHire({ proposalId }: { proposalId: string }) {
   const ids = useId()
   const [open, setOpen] = useState(false)
@@ -381,6 +393,13 @@ function PublicHire({ proposalId }: { proposalId: string }) {
   const [sending, setSending] = useState(false)
   const [done, setDone] = useState(false)
   const inputs = useRef<Partial<Record<Contact, HTMLInputElement | null>>>({})
+  const thanks = useRef<HTMLParagraphElement>(null)
+
+  // The dialog and the button it would hand focus back to both go with `done`: the
+  // thanks line takes the focus, so a keyboard or a screen reader lands on the answer.
+  useEffect(() => {
+    if (done) thanks.current?.focus()
+  }, [done])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -420,75 +439,85 @@ function PublicHire({ proposalId }: { proposalId: string }) {
 
   if (done) {
     return (
-      <p role="status" className="border-l-4 border-(--landing-ink) bg-card py-2 pl-4 pr-2 font-medium">
+      <p
+        role="status"
+        ref={thanks}
+        tabIndex={-1}
+        className="border-l-4 border-(--landing-ink) bg-card py-2 pl-4 pr-2 font-medium outline-none"
+      >
         {THANKS}
       </p>
     )
   }
 
-  if (!open) {
-    return (
-      <Button type="button" size="lg" onClick={() => setOpen(true)}>
-        Assumi team
-      </Button>
-    )
-  }
-
   return (
-    <form
-      noValidate
-      aria-labelledby={`${ids}-assumi`}
-      className="space-y-4 border-(length:--landing-border-width) bg-card p-4 sm:p-6"
-      onSubmit={(event) => void submit(event)}
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // A request on its way is not abandoned by a click outside the dialog.
+        if (next || !sending) setOpen(next)
+      }}
     >
-      <div>
-        <h3 id={`${ids}-assumi`} className="text-lg font-semibold">
+      <DialogTrigger asChild>
+        <Button type="button" size="lg">
           Assumi team
-        </h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Tre contatti e ti scriviamo noi. Nessun account da creare.
-        </p>
-      </div>
-      {CONTACTS.map((contact) => {
-        const id = `${ids}-${contact.key}`
-        const error = errors[contact.key]
-        return (
-          <div key={contact.key} className="space-y-2">
-            <Label htmlFor={id}>{contact.label}</Label>
-            <Input
-              id={id}
-              ref={(element) => {
-                inputs.current[contact.key] = element
-              }}
-              type={contact.type}
-              autoComplete={contact.autoComplete}
-              placeholder={contact.placeholder}
-              maxLength={contact.maxLength}
-              aria-invalid={error !== undefined}
-              aria-describedby={error ? `${id}-error` : undefined}
-              value={value[contact.key]}
-              onChange={(event) => {
-                const next = event.target.value
-                setValue((current) => ({ ...current, [contact.key]: next }))
-              }}
-            />
-            {error && (
-              <p role="alert" id={`${id}-error`} className="text-sm text-destructive">
-                {error}
-              </p>
-            )}
-          </div>
-        )
-      })}
-      {formError && (
-        <p role="alert" className="text-sm text-destructive">
-          {formError}
-        </p>
-      )}
-      <Button type="submit" disabled={sending}>
-        {sending ? 'Invio…' : 'Invia la richiesta'}
-      </Button>
-    </form>
+        </Button>
+      </DialogTrigger>
+      {/* The primitive's own close button says «Close» in English: «Annulla» in the
+          footer closes instead, in the page's language, and Escape still works. */}
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md" showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Assumi team</DialogTitle>
+          <DialogDescription>Tre contatti e ti scriviamo noi. Nessun account da creare.</DialogDescription>
+        </DialogHeader>
+        <form noValidate className="space-y-4" onSubmit={(event) => void submit(event)}>
+          {CONTACTS.map((contact) => {
+            const id = `${ids}-${contact.key}`
+            const error = errors[contact.key]
+            return (
+              <div key={contact.key} className="space-y-2">
+                <Label htmlFor={id}>{contact.label}</Label>
+                <Input
+                  id={id}
+                  ref={(element) => {
+                    inputs.current[contact.key] = element
+                  }}
+                  type={contact.type}
+                  autoComplete={contact.autoComplete}
+                  placeholder={contact.placeholder}
+                  maxLength={contact.maxLength}
+                  aria-invalid={error !== undefined}
+                  aria-describedby={error ? `${id}-error` : undefined}
+                  value={value[contact.key]}
+                  onChange={(event) => {
+                    const next = event.target.value
+                    setValue((current) => ({ ...current, [contact.key]: next }))
+                  }}
+                />
+                {error && (
+                  <p role="alert" id={`${id}-error`} className="text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
+              </div>
+            )
+          })}
+          {formError && (
+            <p role="alert" className="text-sm text-destructive">
+              {formError}
+            </p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={sending} onClick={() => setOpen(false)}>
+              Annulla
+            </Button>
+            <Button type="submit" disabled={sending}>
+              {sending ? 'Invio…' : 'Invia la richiesta'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

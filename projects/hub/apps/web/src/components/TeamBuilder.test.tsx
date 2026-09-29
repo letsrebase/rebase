@@ -280,6 +280,9 @@ describe('TeamBuilder, «Assumi team» on the public page', () => {
     expect(screen.queryByLabelText('Azienda')).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Assumi team' }))
+    // The three contacts open in a dialog over the proposal (REB-592), not under it.
+    const dialog = await screen.findByRole('dialog', { name: 'Assumi team' })
+    expect(within(dialog).getByLabelText('Azienda')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Invia la richiesta' }))
     expect(screen.getByText('Serve il nome dell’azienda.')).toBeInTheDocument()
     expect(screen.getByText('Serve un indirizzo email valido.')).toBeInTheDocument()
@@ -294,6 +297,9 @@ describe('TeamBuilder, «Assumi team» on the public page', () => {
     await user.type(screen.getByLabelText('Telefono'), '+39 345 1234567')
     await user.click(screen.getByRole('button', { name: 'Invia la richiesta' }))
     expect(await screen.findByRole('button', { name: 'Invio…' })).toBeDisabled()
+    // A request on its way is not abandoned: Escape leaves the dialog where it is.
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('dialog', { name: 'Assumi team' })).toBeInTheDocument()
     expect(sent(fetchSpy, 1)).toEqual({
       url: '/api/hub/team/requests',
       method: 'POST',
@@ -306,11 +312,30 @@ describe('TeamBuilder, «Assumi team» on the public page', () => {
     })
 
     resolve(answer(201, { id: 'a1b2c3d4-0000-4000-8000-000000000001' }))
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Grazie: ti scriviamo entro due giorni lavorativi.',
-    )
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent('Grazie: ti scriviamo entro due giorni lavorativi.')
+    expect(status).toHaveFocus()
     expect(screen.queryByLabelText('Azienda')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Assumi team' })).toBeNull()
+  })
+
+  it('keeps what was typed when the dialog is closed, with Escape or «Annulla», and opened again', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    const user = await proposed(fetchSpy)
+    await user.click(screen.getByRole('button', { name: 'Assumi team' }))
+    await user.type(await screen.findByLabelText('Azienda'), 'ACME Srl')
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await user.click(screen.getByRole('button', { name: 'Assumi team' }))
+    expect(await screen.findByLabelText('Azienda')).toHaveValue('ACME Srl')
+    await user.type(screen.getByLabelText('Email'), 'ada@acme.it')
+    await user.click(screen.getByRole('button', { name: 'Annulla' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+
+    await user.click(screen.getByRole('button', { name: 'Assumi team' }))
+    expect(await screen.findByLabelText('Email')).toHaveValue('ada@acme.it')
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
   })
 })
 
