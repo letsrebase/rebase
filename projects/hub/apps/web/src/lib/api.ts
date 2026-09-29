@@ -334,9 +334,10 @@ export interface TeamRequestsFilters {
 export type TeamProposalErrore = 'llm_unavailable' | 'team_builder_busy'
 
 /** One «Proponi il team» as «Proposte» reads it (0028): what was asked, by whom, when,
- *  and what came of it. `errore` is `null` on a proposal that answered; `membri` is how
- *  many people it held, 0 on an attempt and on a team nobody fit; `request_id` is the
- *  «Assumi team» filed on it, `null` while there is none. */
+ *  and what came of it. `errore` is `null` on a proposal that answered and `riassunto`
+ *  what it said, `null` on an attempt; `membri` is how many people it held, 0 on an
+ *  attempt and on a team nobody fit; `request_id` is the «Assumi team» filed on it,
+ *  `null` while there is none. */
 export interface TeamProposalListItem {
   id: string
   descrizione: string
@@ -346,6 +347,7 @@ export interface TeamProposalListItem {
   origine: 'pubblico' | 'cloud' | 'admin'
   user_id: string | null
   errore: TeamProposalErrore | null
+  riassunto: string | null
   membri: number
   request_id: string | null
   created_at: string

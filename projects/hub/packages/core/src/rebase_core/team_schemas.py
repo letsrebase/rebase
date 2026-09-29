@@ -198,10 +198,10 @@ class TeamProposalListItem(BaseModel):
     2026-09-29): what was asked (`descrizione`, `persone`, `nota`, `previous_id` on a
     «Rigenera»), who asked (`origine`, `user_id`), when, and what came of it. `errore`
     is `None` on a proposal that answered and the refusal's code
-    (`TEAM_PROPOSAL_ERRORS`) on an attempt that did not; `membri` is how many people the
-    proposal held, 0 on an attempt and on a team nobody fit; `request_id` is the «Assumi
-    team» filed on it, `None` while there is none, which is the case the list exists
-    to count."""
+    (`TEAM_PROPOSAL_ERRORS`) on an attempt that did not; `riassunto` is what the
+    proposal said, `None` on an attempt; `membri` is how many people the proposal held,
+    0 on an attempt and on a team nobody fit; `request_id` is the «Assumi team» filed on
+    it, `None` while there is none, which is the case the list exists to count."""
 
     id: UUID
     descrizione: str
@@ -211,6 +211,7 @@ class TeamProposalListItem(BaseModel):
     origine: str
     user_id: UUID | None
     errore: str | None
+    riassunto: str | None
     membri: int
     request_id: UUID | None
     created_at: datetime

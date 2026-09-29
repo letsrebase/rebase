@@ -70,15 +70,16 @@ function Descrizione({ text }: { text: string }) {
 }
 
 /** What came of the ask: the refusal on an attempt, otherwise how many people the
- *  proposal held, and the request filed on it, which is the step the list is there to
- *  count the absence of. */
+ *  proposal held, what it said, and the request filed on it, which is the step the
+ *  list is there to count the absence of. */
 function Esito({ item }: { item: TeamProposalListItem }) {
   if (item.errore) {
     return <Badge variant="pill">{`Fallita: ${ERROR_LABELS[item.errore] ?? item.errore}`}</Badge>
   }
   return (
-    <div className="space-y-1">
+    <div className="max-w-md space-y-1">
       <p>{item.membri === 0 ? 'Nessun profilo corrispondente' : membriLabel(item.membri)}</p>
+      {item.riassunto && <p className="text-muted-foreground">{item.riassunto}</p>}
       {item.request_id ? (
         <Link to="/admin/team/$id" params={{ id: item.request_id }} className="font-medium hover:underline">
           Richiesta inviata

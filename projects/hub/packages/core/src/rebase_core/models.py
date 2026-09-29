@@ -1073,6 +1073,13 @@ class TeamProposal(Base, PrimaryKeyMixin):
 
     __table_args__ = (
         Index("ix_team_proposals_created_at", "created_at"),
+        # «Fallite» in «Proposte» (0028): the attempts alone, newest first, without a
+        # scan of every proposal that answered.
+        Index(
+            "ix_team_proposals_errore_created_at",
+            "created_at",
+            postgresql_where=text("errore IS NOT NULL"),
+        ),
         CheckConstraint(
             "origine IN ('pubblico', 'cloud', 'admin')", name="ck_team_proposals_origine"
         ),

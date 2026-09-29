@@ -596,6 +596,7 @@ class TeamBuilder:
                     origine=row.origine,
                     user_id=row.user_id,
                     errore=row.errore,
+                    riassunto=row.riassunto if row.errore is None else None,
                     membri=len(row.team),
                     request_id=request_id,
                     created_at=row.created_at,

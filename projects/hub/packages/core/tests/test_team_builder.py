@@ -852,6 +852,7 @@ def test_list_recent_pages_filters_and_names_the_request(clean: Session) -> None
         "senza designer",
         owner,
     )
+    assert (attempt.riassunto, regenerated.riassunto) == (None, RIASSUNTO)
     rest = builder.list_recent(limit=2, cursor=page.next_cursor)
     assert rest.next_cursor is None
     [filed] = rest.items

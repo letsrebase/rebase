@@ -27,6 +27,7 @@ const FILED = {
   origine: 'pubblico',
   user_id: null,
   errore: null,
+  riassunto: 'Una fintech vuole una web app per i clienti: dashboard, pagamenti e open banking.',
   membri: 2,
   request_id: 'r1',
   created_at: '2026-09-29T10:00:00Z',
@@ -53,6 +54,7 @@ const FAILED = {
   persone: null,
   origine: 'admin',
   errore: 'llm_unavailable',
+  riassunto: null,
   membri: 0,
   request_id: null,
   created_at: '2026-09-27T10:00:00Z',
@@ -120,6 +122,7 @@ describe('«Proposte» (0028): every «Proponi il team», filed or not', () => {
     expect(cellUnder(filed, 'Origine')).toHaveTextContent('Pubblico')
     expect(cellUnder(filed, 'Persone')).toHaveTextContent('2')
     expect(cellUnder(filed, 'Esito')).toHaveTextContent('2 persone proposte')
+    expect(cellUnder(filed, 'Esito')).toHaveTextContent(FILED.riassunto)
     const link = within(cellUnder(filed, 'Esito')).getByRole('link', { name: 'Richiesta inviata' })
     expect(link.getAttribute('href')).toMatch(/\/admin\/team\/r1$/)
 

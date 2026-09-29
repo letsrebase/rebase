@@ -10,8 +10,9 @@ PostHog event, and an ask that ended in «Claude non disponibile» or «Troppe r
 left nothing at all. Two nullable columns: `persone`, the headcount the visitor picked
 (REB-591), and `errore`, the domain code of the refusal (`llm_unavailable`,
 `team_builder_busy`) on a row that is an attempt and not a proposal, `NULL` on every
-proposal that answered. Both `ADD COLUMN IF NOT EXISTS`, and each check dropped `IF
-EXISTS` before it is added, so a retried deploy adds the same two again. Every row
+proposal that answered. Both `ADD COLUMN IF NOT EXISTS`, each check dropped `IF EXISTS`
+before it is added, and the partial index that serves «Fallite» in «Proposte» (the
+attempts alone, newest first) `IF NOT EXISTS`, so a retried deploy adds the same again. Every row
 already there is a proposal that answered, with no headcount kept, so both stay `NULL`
 on them and the checks hold. `team_proposals` is not read by PostHog's warehouse
 (`test_warehouse_contract.py`).
@@ -38,12 +39,17 @@ def upgrade() -> None:
     for name, condition in _CHECKS:
         op.execute(f"ALTER TABLE team_proposals DROP CONSTRAINT IF EXISTS {name}")
         op.execute(f"ALTER TABLE team_proposals ADD CONSTRAINT {name} CHECK ({condition})")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_team_proposals_errore_created_at "
+        "ON team_proposals (created_at) WHERE errore IS NOT NULL"
+    )
 
 
 def downgrade() -> None:
     """Back to 0027's shape. The attempts that failed go with the column: they were
     never proposals, and nothing but the admin's list read them."""
     op.execute("DELETE FROM team_proposals WHERE errore IS NOT NULL")
+    op.execute("DROP INDEX IF EXISTS ix_team_proposals_errore_created_at")
     for name, _ in _CHECKS:
         op.execute(f"ALTER TABLE team_proposals DROP CONSTRAINT IF EXISTS {name}")
     op.execute("ALTER TABLE team_proposals DROP COLUMN IF EXISTS errore")

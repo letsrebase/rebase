@@ -380,6 +380,23 @@ def test_a_failing_count_or_record_never_keeps_a_slot_or_hides_the_refusal(
     refused = _propose(client)
     assert refused.status_code == 503
     assert refused.json() == {"detail": BUSY}
+    monkeypatch.undo()
+
+    # With every refusal write busy (PR #495, Greptile) the row is skipped, never waited
+    # for: the answer is the same 503 and the table does not grow.
+    from rebase_api.routers import team as routes
+
+    _settings(client, team_builder_concurrency=1, team_builder_daily_cap=1)
+    before = team.scalar(select(func.count()).select_from(TeamProposal))
+    monkeypatch.setattr(routes, "_refusal_slots", threading.BoundedSemaphore(1))
+    routes._refusal_slots.acquire()
+    try:
+        skipped = _propose(client)
+    finally:
+        routes._refusal_slots.release()
+    assert skipped.status_code == 503 and skipped.json() == {"detail": BUSY}
+    team.expire_all()
+    assert team.scalar(select(func.count()).select_from(TeamProposal)) == before
 
 
 class _CrossingMidnight:
