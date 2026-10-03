@@ -46,7 +46,7 @@ const EVENTS: ReadonlyArray<readonly [string, string]> = [
   ['POST /api/time-entries', 'ore_registrate'],
   ['POST /api/invoices/{invoice_id}/issue', 'fattura_emessa'],
   ['POST /api/tokens', 'assistente_collegato'],
-  ['PUT /api/emitter', 'profilo_emittente_salvato'],
+  ['PUT /api/aziende/{azienda_id}', 'profilo_emittente_salvato'],
 ]
 
 /**

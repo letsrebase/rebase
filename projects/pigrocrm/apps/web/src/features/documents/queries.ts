@@ -11,7 +11,7 @@ export type Template = components['schemas']['TemplateRead']
 export type TemplatePage = components['schemas']['TemplatePage']
 export type TemplateDescription = components['schemas']['TemplateDescription']
 export type TemplateVariable = components['schemas']['TemplateVariable']
-export type EmitterProfile = components['schemas']['EmitterProfileRead']
+export type Azienda = components['schemas']['AziendaRead']
 
 export type OfferState = 'bozza' | 'inviata' | 'accettata' | 'rifiutata'
 

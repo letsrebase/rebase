@@ -19,7 +19,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
   return { ...actual, api: { GET: vi.fn(), POST: vi.fn(), PUT: vi.fn(), DELETE: vi.fn() } }
 })
 
-// The tabs link out (the fiscal card points at Impostazioni → Fiscale when a parameter is
+// The tabs link out (the fiscal card points at Impostazioni → Aziende when a parameter is
 // missing), and a `<Link>` outside a router throws. What those destinations are is asserted
 // in each tab's own file; here the only question is which tab got mounted.
 vi.mock('@tanstack/react-router', () => ({

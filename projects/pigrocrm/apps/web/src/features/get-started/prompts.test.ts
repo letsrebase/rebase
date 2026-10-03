@@ -12,7 +12,7 @@ describe('the ready prompts', () => {
   })
 
   it('ask the assistant to set both the emitter and the fiscal profile, in one imperative voice', () => {
-    // `update_emitter_profile` and `update_fiscal_profile` are on the default MCP surface
+    // `update_azienda` and `update_fiscal_profile` are on the default MCP surface
     // (ORB-188): the prompt says «imposta» and names both halves, nothing is left to type.
     expect(STEP_PROMPTS.fiscali).toMatch(/^Imposta su PigroCRM/)
     expect(STEP_PROMPTS.fiscali).toContain('Emittente:')
