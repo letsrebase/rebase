@@ -198,10 +198,13 @@ and headroom read that azienda's invoices alone, and `revenue_by_customer`,
 parameter because a share of revenue is a share of one azienda's revenue. The
 operational dashboard (`GET /api/dashboard/operational`), which carries that signal,
 takes the optional `azienda_id` like the other three: with one, the share is computed
-on that azienda; omitted, the share is computed per azienda and the signal reports the
-customers over the threshold in any of them, each named with its azienda, never a
-space-wide share that would hide a customer who is a third of the SRL and a tenth of
-the whole. In «tutte»
+on that azienda; omitted, the share is computed per azienda and the signal's count is
+the number of customers over the threshold in any of them, never a space-wide share
+that would hide a customer who is a third of the SRL and a tenth of the whole. The
+signal stays a count and its `Signal` shape does not change; the names are where they
+already are, the «Concentrazione clienti» section of the economic tab, which in
+«tutte» lists them per azienda from `revenue_by_customer(anno, azienda_id)` called
+once per visible azienda. In «tutte»
 the economic tab renders one «Stima fiscale» card per azienda whose profile carries
 coefficients, and nothing for the others. The P&L stays per deal and does not change.
 
