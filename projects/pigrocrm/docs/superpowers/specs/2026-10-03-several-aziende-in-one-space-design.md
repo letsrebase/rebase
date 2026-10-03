@@ -205,8 +205,10 @@ azienda exists, which is the condition for shipping it to every space.
 **1.11 An invitation may be scoped to one azienda, and the database keeps the scope.**
 `POST /api/users/invites` gains `aziende: [uuid]` (omitted or `null`: every azienda, as
 today; an empty list is refused with 422, since «nessuna azienda» is a deactivation and
-not a scope); accepting it sets `users.ambito_limitato = true` and writes the rows of
-`user_aziende`. The same field, with the same refusal of an empty list, goes on the
+not a scope). Accepting an invitation whose `aziende` is `null` leaves
+`users.ambito_limitato` at `false` and writes no row, as today; accepting one that
+carries a list sets the flag to `true` and writes a `user_aziende` row for each id that
+still names an active azienda. The same field, with the same refusal of an empty list, goes on the
 admin's role update of a member, and clearing it sets the flag back to `false`. The
 flag, not the absence of rows, is what says "unscoped": a user with `ambito_limitato =
 false` sees the space as today; a user with the flag and rows sees, and writes, only the
@@ -236,7 +238,10 @@ One Alembic revision per milestone that changes the schema, `0045` to `0048` aft
 `0044_proposals`, each a transaction of its own, cut along the steps below as §9 says.
 Each reaches every space at the first boot after its deploy through `pigrocrm
 ensure-space-defaults` (`projects/pigrocrm/AGENTS.md` § Migrations), as every migration
-does. The steps, in order:
+does. One prerequisite before `0045`, written into that release's runbook: a `pg_dump`
+of the root database and of every space, because the step that drops `singleton` has
+no downgrade once a second azienda exists and no deploy here takes a dump today. The
+steps, in order:
 
 1. `ALTER TABLE emitter_profile RENAME TO aziende`; drop the `singleton` unique
    constraint and column; add `nome VARCHAR(80) NOT NULL` backfilled with
@@ -244,9 +249,13 @@ does. The steps, in order:
    and the full name stays where it is), `predefinita BOOLEAN NOT NULL DEFAULT false`, `attiva BOOLEAN NOT
    NULL DEFAULT true`; `UPDATE aziende SET predefinita = true` (there is at most one
    row); partial unique index `uq_aziende_predefinita ON aziende (predefinita) WHERE
-   predefinita`; partial unique indexes `uq_aziende_partita_iva ON aziende (partita_iva)
+   predefinita`; partial unique indexes `uq_aziende_partita_iva ON aziende (upper(partita_iva))
    WHERE partita_iva IS NOT NULL` and `uq_aziende_codice_fiscale ON aziende
-   (codice_fiscale) WHERE codice_fiscale IS NOT NULL`. A space with no emitter row yet (possible only
+   (upper(codice_fiscale)) WHERE codice_fiscale IS NOT NULL`, on the same shape the
+   classifier compares (`normalise_fiscal_id`, `invoices/fatturapa.py:218`: punctuation
+   stripped, upper case, no `IT` prefix); `AziendaService` stores both ids through that
+   function on every write, and this step rewrites the one existing row through it,
+   so two spellings of one code cannot sit on two rows. A space with no emitter row yet (possible only
    between signup and the first save, since `TenantService` writes one at provisioning,
    `tenants/service.py:165-175`) gets one inserted from the space's slug, so the `NOT
    NULL` columns below have a value to point at.
@@ -356,7 +365,8 @@ when it is true; set by `get_actor` and `callback_actor` (`deps.py`), by
 `PatService.resolve` from the owner's row, and `None` for `Actor.system()` and
 `Actor.rebase()`. `None` binds `*`; an empty tuple binds the empty string, which the
 predicate reads as nothing, so a scoped user with no azienda left sees exactly what an
-unbound connection sees. A second setting, `pigrocrm.user_id`, carries the actor's own
+unbound connection sees on every azienda-scoped table; the one exception is their own
+mailbox on `gmail_messages`, below, which the next setting is for. A second setting, `pigrocrm.user_id`, carries the actor's own
 user id (empty for `system` and `rebase`) and exists for the one policy that needs to
 know whose mailbox a row belongs to (`gmail_messages`, below). Both are bound in one
 place, `bind_scope(session, actor)`, called by `get_actor` the moment the actor is
