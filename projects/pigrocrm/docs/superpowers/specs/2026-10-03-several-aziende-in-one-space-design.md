@@ -187,7 +187,14 @@ what «tutte» shows: incassato, da incassare, scaduto, pipeline and projection 
 `GET /api/analytics/fiscal`, `/ceilings` and `/ceilings/simulate` take a required
 `azienda_id` when the space has more than one azienda (a 400 names the parameter) and
 resolve to the only one the caller may see otherwise; the coefficients of a forfettario and the arithmetic
-of an SRL do not add, and the ceiling exists only on a pack that declares one. In «tutte»
+of an SRL do not add, and the ceiling exists only on a pack that declares one. The two
+sums behind them take the azienda as a predicate and nothing else changes in their
+arithmetic: `AnalyticsRepository.annual_revenue` (`analytics/repository.py:465-476`)
+and `paid_revenue_for_calendar_year` (`fiscal/ceiling.py:87-97`) gain `azienda_id`
+and add `Invoice.azienda_id == :azienda_id` to their filters, so an azienda's estimate
+and headroom read that azienda's invoices alone, and `revenue_by_customer` and the
+concentration cap take the same parameter because a share of revenue is a share of one
+azienda's revenue. In «tutte»
 the economic tab renders one «Stima fiscale» card per azienda whose profile carries
 coefficients, and nothing for the others. The P&L stays per deal and does not change.
 
