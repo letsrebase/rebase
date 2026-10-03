@@ -17,8 +17,8 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-from pigrocrm.core.emitter.service import EmitterProfileService
+from pigrocrm.core.emitter.schemas import AziendaUpsert
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, ImmutableField, PermissionDenied, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -45,8 +45,8 @@ TODAY = oggi_in_italia()
 @pytest.fixture
 def service(db_session: Session, tmp_path) -> InvoiceService:  # type: ignore[no-untyped-def]
     FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
-    EmitterProfileService(db_session).upsert(
-        EmitterProfileUpsert(
+    AziendaService(db_session).upsert_default(
+        AziendaUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="01234567890",
             codice_fiscale="HMCRFT00A01H501K",

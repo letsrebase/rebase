@@ -6,7 +6,7 @@ model (design record `2026-09-23-mastro-invoice-import-onto-pigrocrm-design.md` 
 mastro reads a fixed `accountHolderTaxId` from its own deployment's config file,
 because mastro is one deployment for one consultant. PigroCRM has no equivalent
 config, and needs none: whichever space's database a request opened is the only
-`EmitterProfile` row this classifier can even see, so "the account holder's own tax
+`Azienda` row this classifier can even see, so "the account holder's own tax
 id" is simply that row (design §3) -- no tenant-aware plumbing.
 
 Reads only the supplier (`fornitore`), never `trasmissione`: an invoicing agent
@@ -18,7 +18,7 @@ ParsedInvoiceTransmission`'s own docstring restates it on this side.
 
 from typing import Literal
 
-from pigrocrm.core.emitter.models import EmitterProfile
+from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id
 from pigrocrm.core.invoices.import_schemas import ParsedInvoice, ParsedInvoiceParty
@@ -32,7 +32,7 @@ PigroCRM has no representation for today, parsed and reported but never written
 (design §3)."""
 
 
-def classify_direction(fornitore: ParsedInvoiceParty, emitter: EmitterProfile) -> InvoiceDirection:
+def classify_direction(fornitore: ParsedInvoiceParty, emitter: Azienda) -> InvoiceDirection:
     """Whether `fornitore` -- the party the parsed document names as having issued
     it -- *is* the account holder, compared by fiscal identifier, case- and
     punctuation-insensitively (mirrors mastro's `classifyDirection`,
@@ -40,7 +40,7 @@ def classify_direction(fornitore: ParsedInvoiceParty, emitter: EmitterProfile) -
 
     Two independent channels, not one: mastro's own `taxId` is a single string
     because mastro's source document always carries one identifier; PigroCRM's
-    `ParsedInvoiceParty`/`EmitterProfile` both carry `partita_iva` and
+    `ParsedInvoiceParty`/`Azienda` both carry `partita_iva` and
     `codice_fiscale` as separate, independently optional fields (mirrors
     `import_schemas.ParsedInvoiceParty`'s own docstring). A match on *either*
     channel means the fornitore is the account holder: a document can carry only
@@ -51,7 +51,7 @@ def classify_direction(fornitore: ParsedInvoiceParty, emitter: EmitterProfile) -
     written and tested for the export path -- strips the `IT` prefix and
     punctuation, upper-cases, and validates the two shapes FPR12 recognises --
     reused here rather than re-implemented, so a VAT number stored as
-    `"01234567890"` on `EmitterProfile` and read as `"IT01234567890"` off a
+    `"01234567890"` on `Azienda` and read as `"IT01234567890"` off a
     document's `IdFiscaleIVA` compare equal.
 
     Raises `ValidationFailed` if `emitter` itself carries neither identifier in a
@@ -82,7 +82,7 @@ def classify_direction(fornitore: ParsedInvoiceParty, emitter: EmitterProfile) -
     return "outgoing" if is_account_holder else "incoming"
 
 
-def classify_invoice_direction(invoice: ParsedInvoice, emitter: EmitterProfile) -> InvoiceDirection:
+def classify_invoice_direction(invoice: ParsedInvoice, emitter: Azienda) -> InvoiceDirection:
     """`classify_direction` against a full `ParsedInvoice`'s own `fornitore` --
     never `invoice.trasmissione` (module docstring above). Mirrors mastro's own
     wrapper (`direction.ts:63-71`)."""

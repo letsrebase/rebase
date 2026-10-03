@@ -13,7 +13,7 @@ customer yet.
 
 from typing import Literal
 
-from pigrocrm.core.emitter.models import EmitterProfile
+from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.invoices.import_dedup import check_invoice_duplicate
 from pigrocrm.core.invoices.import_direction import classify_invoice_direction
 from pigrocrm.core.invoices.import_schemas import ParsedInvoice
@@ -31,7 +31,7 @@ REB-365; the actual write, REB-366)."""
 
 def classify_parsed_invoice(
     invoice: ParsedInvoice,
-    emitter: EmitterProfile,
+    emitter: Azienda,
     *,
     existing: Invoice | None,
     content: bytes,

@@ -35,7 +35,7 @@ from pigrocrm.core.documents.schemas import (
     DocumentVersionRead,
     OfferState,
 )
-from pigrocrm.core.emitter.service import EmitterProfileService
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -104,7 +104,7 @@ class DocumentService:
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
         self.templates = TemplateService(session)
-        self.emitter = EmitterProfileService(session)
+        self.emitter = AziendaService(session)
 
     # ---- owner resolution ---------------------------------------------------
 
@@ -300,7 +300,7 @@ class DocumentService:
         (below) has exactly one thing to be provably correct about, and so a test can
         force a collision deterministically -- the same technique
         `test_upsert_converts_a_true_insert_race_into_a_clean_conflict` in
-        `test_emitter.py` uses on `EmitterProfileRepository.get` -- without needing
+        `test_emitter.py` uses on `AziendaRepository.get` -- without needing
         real threads against a single savepoint-backed test session.
         """
         return document.versione_corrente + 1

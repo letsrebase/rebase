@@ -20,8 +20,8 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-from pigrocrm.core.emitter.service import EmitterProfileService
+from pigrocrm.core.emitter.schemas import AziendaUpsert
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
@@ -42,8 +42,8 @@ def storage(tmp_path) -> LocalFileStorage:  # type: ignore[no-untyped-def]
 @pytest.fixture
 def configured(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
     FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), HUMAN)
-    EmitterProfileService(db_session).upsert(
-        EmitterProfileUpsert(
+    AziendaService(db_session).upsert_default(
+        AziendaUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="12345678901",
             codice_fiscale="RSSMRA80A01H501U",

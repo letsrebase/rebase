@@ -1,11 +1,13 @@
 from decimal import Decimal
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.regime import resolve_regime
@@ -20,16 +22,21 @@ class FiscalProfileService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repo = FiscalProfileRepository(session)
+        self.aziende = AziendaService(session)
         self.activities = ActivityService(session)
 
-    def get(self, actor: Actor) -> FiscalProfileRead:
-        return FiscalProfileRead.model_validate(self._require())
+    # Every read takes an optional `azienda_id`; `None` is the default azienda, which
+    # on a space with one azienda is the only one, so every caller written for the
+    # single profile keeps working unchanged (REB-615, spec 2026-10-03 §1.2).
 
-    def snapshot(self) -> FiscalSnapshot:
+    def get(self, actor: Actor, azienda_id: UUID | None = None) -> FiscalProfileRead:
+        return FiscalProfileRead.model_validate(self._require(azienda_id))
+
+    def snapshot(self, azienda_id: UUID | None = None) -> FiscalSnapshot:
         """The parameters as a frozen value object, ready to be written into
         `invoices.snapshot`. No `actor`: it takes no decision and returns no identity,
         it is the read `InvoiceService.issue` performs on the caller's behalf."""
-        profile = self._require()
+        profile = self._require(azienda_id)
         return FiscalSnapshot(
             codice_regime=profile.codice_regime,
             aliquota_iva_default=profile.aliquota_iva_default,
@@ -44,30 +51,35 @@ class FiscalProfileService:
             iban=profile.iban,
         )
 
-    def describe(self, actor: Actor) -> dict[str, Any]:
+    def describe(self, actor: Actor, azienda_id: UUID | None = None) -> dict[str, Any]:
         """What `describe_fiscal_profile` returns over MCP: the parameters an agent
         needs to compose a proforma the human will actually be able to issue, with no
         identity or timestamps in it."""
-        profile = self.get(actor)
-        return profile.model_dump(mode="json", exclude={"id", "created_at", "updated_at"})
+        profile = self.get(actor, azienda_id)
+        return profile.model_dump(
+            mode="json", exclude={"id", "azienda_id", "created_at", "updated_at"}
+        )
 
-    def upsert(self, data: FiscalProfileUpsert, actor: Actor) -> FiscalProfileRead:
-        """Create-or-update the one row, admin only.
+    def upsert(
+        self, data: FiscalProfileUpsert, actor: Actor, azienda_id: UUID | None = None
+    ) -> FiscalProfileRead:
+        """Create-or-update the one row of an azienda, admin only.
 
         `repo.add` sits **inside** the `try`, not before it: it is the only statement
-        that can violate the `singleton` constraint, and leaving it outside would let
-        two concurrent first-time saves poison the session with a raw `IntegrityError`
-        instead of surfacing a clean `Conflict`. Same shape, same reason, as
-        `EmitterProfileService.upsert`.
+        that can violate the unique key on `azienda_id`, and leaving it outside would
+        let two concurrent first-time saves poison the session with a raw
+        `IntegrityError` instead of surfacing a clean `Conflict`. Same shape, same
+        reason, as `AziendaService.upsert_default`.
         """
         actor.require_admin("update_fiscal_profile")
         payload = data.model_dump()
         self._check(payload)
+        azienda = self.aziende.resolve(azienda_id)
 
-        profile = self.repo.get()
+        profile = self.repo.get(azienda.id)
         try:
             if profile is None:
-                profile = self.repo.add(FiscalProfile(**payload))
+                profile = self.repo.add(FiscalProfile(**payload, azienda_id=azienda.id))
             else:
                 for key, value in payload.items():
                     setattr(profile, key, value)
@@ -114,10 +126,11 @@ class FiscalProfileService:
                 expected="un importo maggiore di zero",
             )
 
-    def _require(self) -> FiscalProfile:
-        profile = self.repo.get()
+    def _require(self, azienda_id: UUID | None = None) -> FiscalProfile:
+        azienda = self.aziende.resolve(azienda_id)
+        profile = self.repo.get(azienda.id)
         if profile is None:
-            raise NotFound(ENTITY, "singleton")
+            raise NotFound(ENTITY, str(azienda.id))
         return profile
 
 

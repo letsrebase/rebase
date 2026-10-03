@@ -178,7 +178,7 @@ def test_rate_card_create_turns_an_overlap_into_a_clean_conflict_not_a_raw_db_er
         )
 
     # The session must still be usable after the rollback -- the same guarantee
-    # EmitterProfileService.upsert/FiscalProfileService.upsert already give their
+    # AziendaService.upsert/FiscalProfileService.upsert already give their
     # own callers -- and only the first, non-overlapping card actually exists.
     surviving = rate_cards.list_for_contract(contract.id, ADMIN)
     assert [c.valido_a for c in surviving] == [date(2026, 6, 30)]

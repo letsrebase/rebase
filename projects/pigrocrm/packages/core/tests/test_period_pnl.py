@@ -320,8 +320,8 @@ def _won_deal_with_period_invoice(
     work; with `tipo="proforma"` the document is a dated, confirmed proforma instead,
     which is not revenue under any reading (slice 3 §5: it never touches the register)."""
     from pigrocrm.core.customers.models import Customer
-    from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-    from pigrocrm.core.emitter.service import EmitterProfileService
+    from pigrocrm.core.emitter.schemas import AziendaUpsert
+    from pigrocrm.core.emitter.service import AziendaService
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
     from pigrocrm.core.fiscal.service import FiscalProfileService
     from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
@@ -330,8 +330,8 @@ def _won_deal_with_period_invoice(
 
     admin = Actor(id=None, type="system", role="admin")
     FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), admin)
-    EmitterProfileService(session).upsert(
-        EmitterProfileUpsert(
+    AziendaService(session).upsert_default(
+        AziendaUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="01234567890",
             indirizzo="Via Vittorio Veneto 12",

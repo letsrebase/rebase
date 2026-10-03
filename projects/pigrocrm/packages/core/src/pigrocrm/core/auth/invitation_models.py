@@ -2,7 +2,9 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, func, text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import Uuid
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
 
@@ -33,6 +35,12 @@ class Invitation(Base, PrimaryKeyMixin, TimestampMixin):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    # The scope the invitee will get (spec 2026-10-03 §1.11): `None` is unscoped, as
+    # every invitation is until milestone 6 writes a list. An array and not a join
+    # table, because an invitation is spent once and its rows would be orphans the
+    # moment it is accepted or revoked; it carries no foreign key, so accepting drops
+    # any id that no longer names an active azienda.
+    aziende: Mapped[list[UUID] | None] = mapped_column(ARRAY(Uuid()), default=None)
 
     __table_args__ = (
         # Same functional-index shape as `uq_users_email_lower`, with a partial

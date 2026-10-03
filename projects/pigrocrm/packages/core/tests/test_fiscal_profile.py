@@ -30,6 +30,17 @@ ADMIN = Actor(id=None, type="system", role="admin")
 COLLABORATORE = Actor(id=None, type="user", role="collaboratore")
 
 
+@pytest.fixture(autouse=True)
+def _default_azienda(db_session: Session) -> None:
+    """Since REB-615 a fiscal profile belongs to an azienda, and every read and write
+    here that names none resolves to the default one, so the space needs it first,
+    exactly as a real space has it from provisioning."""
+    from pigrocrm.core.emitter.schemas import AziendaUpsert
+    from pigrocrm.core.emitter.service import AziendaService
+
+    AziendaService(db_session).upsert_default(AziendaUpsert(ragione_sociale="Studio Rossi"), ADMIN)
+
+
 def _payload(**overrides: object) -> FiscalProfileUpsert:
     base: dict[str, object] = {
         "codice_regime": "RF19",
@@ -154,22 +165,26 @@ def test_upsert_turns_a_true_insert_race_into_a_clean_conflict(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The `repo.get()` pre-check cannot cover two concurrent first-time saves: both
-    see no row, both insert, and only the `singleton` unique constraint stops the
+    see no row, both insert, and only the unique key on `azienda_id` stops the
     second. Forced deterministically -- a savepoint-backed test session cannot produce
     real thread concurrency -- the same technique `test_emitter.py` already uses."""
     service = FiscalProfileService(db_session)
     service.upsert(_payload(), ADMIN)
-    monkeypatch.setattr(FiscalProfileRepository, "get", lambda self: None)
+    monkeypatch.setattr(FiscalProfileRepository, "get", lambda self, azienda_id: None)
     with pytest.raises(Conflict):
         service.upsert(_payload(), ADMIN)
 
 
-def test_the_singleton_column_is_the_database_guarantee(db_session: Session) -> None:
+def test_one_profile_per_azienda_is_the_database_guarantee(db_session: Session) -> None:
     from sqlalchemy.exc import IntegrityError
 
-    db_session.add(FiscalProfile(codice_regime="RF19"))
+    from pigrocrm.core.emitter.repository import AziendaRepository
+
+    azienda = AziendaRepository(db_session).default()
+    assert azienda is not None
+    db_session.add(FiscalProfile(codice_regime="RF19", azienda_id=azienda.id))
     db_session.flush()
-    db_session.add(FiscalProfile(codice_regime="RF01"))
+    db_session.add(FiscalProfile(codice_regime="RF01", azienda_id=azienda.id))
     with pytest.raises(IntegrityError):
         db_session.flush()
     db_session.rollback()

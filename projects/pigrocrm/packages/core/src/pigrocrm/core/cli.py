@@ -198,7 +198,7 @@ def ensure_space_defaults() -> int:
                 print(f"{slug}: schema migrato da {before or 'zero'} a {after}")
             try:
                 with session_factory(engine)() as space:
-                    report = ensure_defaults(space)
+                    report = ensure_defaults(space, nome=slug)
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 print(f"{slug}: non arredato ({type(exc).__name__})", file=sys.stderr)
                 continue
@@ -207,7 +207,7 @@ def ensure_space_defaults() -> int:
         if report.seeded:
             print(
                 f"{slug}: stati {report.stages}, template {report.templates}, "
-                f"categorie {report.categories}"
+                f"categorie {report.categories}, aziende {report.aziende}"
             )
         else:
             print(f"{slug}: già a posto")
