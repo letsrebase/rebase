@@ -144,9 +144,13 @@ nothing is written.
 
 **1.6 The azienda is assigned on the customer and proposed by its nation.** `customers`
 gets `azienda_id NOT NULL`. On creation the API proposes one when the caller gives
-none: the active azienda whose `nazione` equals the customer's, else the only active
-azienda whose `nazione` is not `IT` when the customer's is not `IT`, else the
-`predefinita`; the SPA shows the proposal
+none: the active azienda whose `nazione` equals the customer's when exactly one does,
+else the only active azienda whose `nazione` is not `IT` when the customer's is not
+`IT` and exactly one such azienda exists, else the `predefinita`. The nation never
+decides between two aziende that share it: an Italian customer in a space with a
+forfettario and an SRL, both `IT`, gets the `predefinita` proposed and the person picks
+(the humancraft case, where the two Italian aziende split the Italian customers by
+hand); the SPA shows the proposal
 in the form and the person may change it. The field stays editable on the customer
 afterwards. Changing it moves nothing that already exists (next paragraph).
 
