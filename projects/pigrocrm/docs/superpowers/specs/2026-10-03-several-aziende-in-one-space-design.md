@@ -193,9 +193,15 @@ sums behind them take the azienda as a predicate and nothing else changes in the
 arithmetic: `AnalyticsRepository.annual_revenue` (`analytics/repository.py:465-476`)
 and `paid_revenue_for_calendar_year` (`fiscal/ceiling.py:87-97`) gain `azienda_id`
 and add `Invoice.azienda_id == :azienda_id` to their filters, so an azienda's estimate
-and headroom read that azienda's invoices alone, and `revenue_by_customer` and the
-concentration cap take the same parameter because a share of revenue is a share of one
-azienda's revenue. In «tutte»
+and headroom read that azienda's invoices alone, and `revenue_by_customer`,
+`count_over_concentration_threshold` and the contract concentration cap take the same
+parameter because a share of revenue is a share of one azienda's revenue. The
+operational dashboard (`GET /api/dashboard/operational`), which carries that signal,
+takes the optional `azienda_id` like the other three: with one, the share is computed
+on that azienda; omitted, the share is computed per azienda and the signal reports the
+customers over the threshold in any of them, each named with its azienda, never a
+space-wide share that would hide a customer who is a third of the SRL and a tenth of
+the whole. In «tutte»
 the economic tab renders one «Stima fiscale» card per azienda whose profile carries
 coefficients, and nothing for the others. The P&L stays per deal and does not change.
 
