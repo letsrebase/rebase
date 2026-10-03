@@ -128,7 +128,8 @@ key stored on their row and are never moved. The proforma sequence stays one per
 sharing it costs nothing.
 
 **1.5 An import lands on the azienda whose P.IVA issued it.** `classify_direction` takes
-the active aziende instead of one profile: a `fornitore` matching azienda X's P.IVA or
+the active aziende whose `nazione` is `IT` instead of one profile, since only those can
+be the `CedentePrestatore` of a file the SdI carried: a `fornitore` matching azienda X's P.IVA or
 codice fiscale is `outgoing` on X; one matching none is `incoming` and skipped as today
 (`import_classification.py:32-56`). `review_import` shows the azienda in its answer, and
 `confirm_import` and `import_issued` lock X's counter and build the snapshot from X's
@@ -260,9 +261,14 @@ steps, in order:
    WHERE partita_iva IS NOT NULL` and `uq_aziende_codice_fiscale ON aziende
    (upper(codice_fiscale)) WHERE codice_fiscale IS NOT NULL`, on the same shape the
    classifier compares (`normalise_fiscal_id`, `invoices/fatturapa.py:218`: punctuation
-   stripped, upper case, no `IT` prefix); `AziendaService` stores both ids through that
-   function on every write, and this step rewrites the one existing row through it,
-   so two spellings of one code cannot sit on two rows. A space with no emitter row yet (possible only
+   stripped, upper case, no `IT` prefix). `AziendaService` stores both ids through
+   `normalise_fiscal_id` when the azienda's `nazione` is `IT`, and through
+   `normalise_foreign_fiscal_id` (`fatturapa.py:242`: the same stripping and upper
+   case, no Italian shape imposed) otherwise, since the first returns `None` for a
+   nine-digit British VAT number and a foreign azienda must keep its identifier; it
+   refuses a value either function empties instead of saving `NULL` in its place. This
+   step rewrites the one existing row through the function its `nazione` selects, so
+   two spellings of one code cannot sit on two rows. A space with no emitter row yet (possible only
    between signup and the first save, since `TenantService` writes one at provisioning,
    `tenants/service.py:165-175`) gets one inserted from the space's slug, so the `NOT
    NULL` columns below have a value to point at.
