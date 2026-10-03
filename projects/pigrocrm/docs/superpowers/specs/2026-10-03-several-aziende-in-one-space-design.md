@@ -1,6 +1,6 @@
 # Several aziende in one space: one register per azienda, one team per space
 
-Date: 2026-10-03. Status: **proposed, awaiting Lorenzo's sign-off** (§10 lists what is
+Date: 2026-10-03. Status: **proposed, awaiting the sign-off of Ivan, the project's lead** (§10 lists what is
 his to decide). Tracker: REB-614, project "Let one space run several aziende",
 milestone "Design how one space holds several aziende". The six milestones after it are
 the implementation order (§9). Written in English, per the repository's rule; the
@@ -638,7 +638,7 @@ status line of this document: one for «a visibility boundary inside a space is 
 Postgres policy, never an application filter», one for «the API connects as a
 non-owner role; the owner runs migrations and provisioning».
 
-## 10. Decisions for Lorenzo
+## 10. Decisions for the lead
 
 1. **Two database URLs, or one role made less powerful.** §4 proposes `pigrocrm_app`
    for requests and the owner for migrations and provisioning, which is two URLs in
