@@ -258,14 +258,16 @@ export function useInvoiceTimeline(invoiceId: string) {
   })
 }
 
-export function useFiscalProfile() {
+export function useFiscalProfile(aziendaId: string) {
   return useQuery({
-    queryKey: queryKeys.fiscalProfile,
+    queryKey: queryKeys.fiscalProfile(aziendaId),
     queryFn: async (): Promise<FiscalProfile | null> => {
       // A 404 here means "not configured yet", which is a legitimate state and not an
-      // error -- the same treatment `useEmitter` in features/settings/queries.ts gives
-      // its own singleton row.
-      const { data, error, response } = await api.GET('/api/fiscal-profile')
+      // error: the azienda exists, its fiscal profile is saved from this screen once
+      // (REB-615: the profile belongs to the azienda, `GET /api/aziende/{id}/fiscal-profile`).
+      const { data, error, response } = await api.GET('/api/aziende/{azienda_id}/fiscal-profile', {
+        params: { path: { azienda_id: aziendaId } },
+      })
       if (response.status === 404) return null
       if (error !== undefined) throw toProblem(error, response.status)
       return data ?? null
@@ -475,13 +477,18 @@ export function useDeleteInvoice() {
   })
 }
 
-export function useSaveFiscalProfile() {
+export function useSaveFiscalProfile(aziendaId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.PUT('/api/fiscal-profile', { body: body as never })),
+      unwrap(
+        api.PUT('/api/aziende/{azienda_id}/fiscal-profile', {
+          params: { path: { azienda_id: aziendaId } },
+          body: body as never,
+        }),
+      ),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.fiscalProfile })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.fiscalProfile(aziendaId) })
     },
   })
 }

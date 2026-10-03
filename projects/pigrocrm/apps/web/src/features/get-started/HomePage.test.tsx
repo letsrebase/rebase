@@ -65,8 +65,8 @@ function answers(overrides: Record<string, unknown> = {}, failing: Record<string
           ? { error: { detail: 'boom' }, response: new Response(null, { status: failing[path] }) }
           : path in overrides
             ? { data: overrides[path], response: new Response(null, { status: 200 }) }
-            : path === '/api/emitter'
-              ? { error: { detail: 'Not Found' }, response: new Response(null, { status: 404 }) }
+            : path === '/api/aziende'
+              ? { data: [], response: new Response(null, { status: 200 }) }
               : { data: EMPTY[path], response: new Response(null, { status: 200 }) },
       )) as never,
   )
@@ -105,7 +105,7 @@ describe('the Home', () => {
   })
 
   it('stays the start page with the fiscal data saved and a token: those are steps, not work', async () => {
-    answers({ '/api/emitter': EMITTER, '/api/tokens': [{ id: 'k1' }] })
+    answers({ '/api/aziende': [EMITTER], '/api/tokens': [{ id: 'k1' }] })
     renderHome()
     expect(await screen.findByRole('heading', { name: 'Porta dentro il tuo lavoro' })).toBeInTheDocument()
     expect(screen.queryByTestId('dashboard')).toBeNull()
@@ -138,7 +138,7 @@ describe('the Home', () => {
 
   it('is the dashboard alone once every step is done', async () => {
     answers({
-      '/api/emitter': EMITTER,
+      '/api/aziende': [EMITTER],
       '/api/customers': ONE('c1'),
       '/api/deals': ONE('d1'),
       '/api/documents': ONE('o1'),

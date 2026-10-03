@@ -3,7 +3,7 @@
  * for the first conversation, one per first step. Written the way a person talks to
  * their assistant, with every value to fill in marked as «…», and naming only what the
  * MCP can do: since ORB-188 that includes the fiscal profile and the emitter
- * (`update_fiscal_profile`, `update_emitter_profile`, admin-only), so the fiscal step
+ * (`update_fiscal_profile`, `update_azienda`, admin-only), so the fiscal step
  * is one imperative voice, «imposta», like the others. Every prompt asks for a summary
  * and the person's ok before anything is written.
  */

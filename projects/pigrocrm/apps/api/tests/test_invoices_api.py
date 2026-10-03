@@ -6,6 +6,7 @@ not a router-level dependency that does not exist in this codebase.
 from typing import Any
 
 import pytest
+from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -57,7 +58,9 @@ def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
 
 @pytest.fixture
 def fiscal_profile(logged_in: TestClient) -> dict[str, Any]:
-    response = logged_in.put("/api/fiscal-profile", json={"codice_regime": "RF19"})
+    response = logged_in.put(
+        azienda_url(logged_in, "/fiscal-profile"), json={"codice_regime": "RF19"}
+    )
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -65,7 +68,7 @@ def fiscal_profile(logged_in: TestClient) -> dict[str, Any]:
 @pytest.fixture
 def emitter(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.put(
-        "/api/emitter",
+        azienda_url(logged_in),
         json={
             "ragione_sociale": "Studio Rossi",
             "partita_iva": "01234567890",
@@ -119,20 +122,24 @@ def test_the_fiscal_profile_round_trips(
 ) -> None:
     assert fiscal_profile["codice_regime"] == "RF19"
     assert fiscal_profile["soglia_bollo"] == "77.47"
-    assert logged_in.get("/api/fiscal-profile").json()["codice_regime"] == "RF19"
+    assert (
+        logged_in.get(azienda_url(logged_in, "/fiscal-profile")).json()["codice_regime"] == "RF19"
+    )
 
 
 def test_reading_a_missing_fiscal_profile_is_a_problem_document(
     logged_in: TestClient,
 ) -> None:
-    response = logged_in.get("/api/fiscal-profile")
+    response = logged_in.get(azienda_url(logged_in, "/fiscal-profile"))
     if response.status_code == 404:
         assert response.headers["content-type"].startswith("application/problem+json")
         assert response.json()["code"] == "not_found"
 
 
 def test_only_an_admin_may_write_the_fiscal_profile(collaborator_client: TestClient) -> None:
-    response = collaborator_client.put("/api/fiscal-profile", json={"codice_regime": "RF19"})
+    response = collaborator_client.put(
+        azienda_url(collaborator_client, "/fiscal-profile"), json={"codice_regime": "RF19"}
+    )
     assert response.status_code == 403
     assert response.json()["code"] == "permission_denied"
 

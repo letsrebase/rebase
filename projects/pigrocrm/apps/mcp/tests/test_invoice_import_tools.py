@@ -19,9 +19,9 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.repository import EmitterProfileRepository
-from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-from pigrocrm.core.emitter.service import EmitterProfileService
+from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.schemas import AziendaUpsert
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -46,23 +46,26 @@ def _seed_fiscal_and_emitter_profiles(session: Session) -> None:
     root has its own `conftest.py` and does not see the core suite's.
     """
     admin = Actor(id=None, type="system", role="admin")
-    if FiscalProfileRepository(session).get() is None:
+    # The azienda first, always (REB-615: a bare default is already seeded and this
+    # fills in its identity), then its fiscal profile when it has none.
+    AziendaService(session).upsert_default(
+        AziendaUpsert(
+            ragione_sociale="Studio Rossi di Mario Rossi",
+            partita_iva="01234567890",
+            codice_fiscale="HMCRFT00A01H501K",
+            indirizzo="Via Vittorio Veneto 12",
+            cap="20124",
+            comune="Milano",
+            provincia="MI",
+            nazione="IT",
+            email="mario@example.com",
+        ),
+        admin,
+    )
+    azienda = AziendaRepository(session).default()
+    assert azienda is not None
+    if FiscalProfileRepository(session).get(azienda.id) is None:
         FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), admin)
-    if EmitterProfileRepository(session).get() is None:
-        EmitterProfileService(session).upsert(
-            EmitterProfileUpsert(
-                ragione_sociale="Studio Rossi di Mario Rossi",
-                partita_iva="01234567890",
-                codice_fiscale="HMCRFT00A01H501K",
-                indirizzo="Via Vittorio Veneto 12",
-                cap="20124",
-                comune="Milano",
-                provincia="MI",
-                nazione="IT",
-                email="mario@example.com",
-            ),
-            admin,
-        )
 
 
 def _server(session: Session, tmp_path: Path, *, full_access: bool) -> Any:

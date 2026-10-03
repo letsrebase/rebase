@@ -25,6 +25,18 @@ def mcp_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
     engine.dispose()
 
 
+def _seed_default_azienda(session: Session) -> None:
+    """Every provisioned space has its default azienda (REB-615); the MCP tests start
+    from the same place, so a tool that resolves «the» azienda finds one. By row, with
+    no timeline entry and no commit of its own."""
+    from pigrocrm.core.emitter.models import Azienda
+
+    session.add(
+        Azienda(nome="Studio di prova", ragione_sociale="Studio di prova", predefinita=True)
+    )
+    session.flush()
+
+
 @pytest.fixture
 def mcp_session(mcp_engine: Engine) -> Iterator[Session]:
     connection = mcp_engine.connect()
@@ -43,6 +55,7 @@ def mcp_session(mcp_engine: Engine) -> Iterator[Session]:
     # committed rows disappear after an unrelated later rollback.
     session = session_factory(mcp_engine)(bind=connection, join_transaction_mode="create_savepoint")
     try:
+        _seed_default_azienda(session)
         yield session
     finally:
         session.close()
@@ -100,13 +113,13 @@ def seeded_template_id(mcp_session: Session) -> str:
     template with a single declared variable, `oggetto`, so
     `test_describe_template_reports_the_variables_before_anyone_is_asked` has
     exactly one name to check for."""
-    from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-    from pigrocrm.core.emitter.service import EmitterProfileService
+    from pigrocrm.core.emitter.schemas import AziendaUpsert
+    from pigrocrm.core.emitter.service import AziendaService
     from pigrocrm.core.templates.schemas import TemplateCreate, TemplateVariable
     from pigrocrm.core.templates.service import TemplateService
 
-    EmitterProfileService(mcp_session).upsert(
-        EmitterProfileUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
+    AziendaService(mcp_session).upsert_default(
+        AziendaUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
         ADMIN,
     )
     template = TemplateService(mcp_session).create(

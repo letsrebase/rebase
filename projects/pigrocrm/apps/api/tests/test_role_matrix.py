@@ -302,9 +302,18 @@ ROWS: list[Row] = [
         google=True,
         body={"updated_at": "2026-01-01T00:00:00+00:00"},
     ),
-    # --- the two fiscal profiles and the emitter: admin (fiscal/, emitter/) ----------
-    Row("PUT", "/api/emitter", admin_only=True, body={"ragione_sociale": "Matrice Srl"}),
-    Row("PUT", "/api/fiscal-profile", admin_only=True, body={"codice_regime": "RF19"}),
+    # --- the aziende and their fiscal profiles: admin (aziende/) ----------------------
+    Row(
+        "PUT", "/api/aziende/{azienda_id}", admin_only=True, body={"ragione_sociale": "Matrice Srl"}
+    ),
+    Row("POST", "/api/aziende/{azienda_id}/predefinita", admin_only=True),
+    Row("DELETE", "/api/aziende/{azienda_id}", admin_only=True),
+    Row(
+        "PUT",
+        "/api/aziende/{azienda_id}/fiscal-profile",
+        admin_only=True,
+        body={"codice_regime": "RF19"},
+    ),
     # --- field definitions: admin, they reshape every entity's stored data -----------
     Row(
         "POST",

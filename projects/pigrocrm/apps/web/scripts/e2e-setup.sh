@@ -59,8 +59,8 @@ from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import get_settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
-from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-from pigrocrm.core.emitter.service import EmitterProfileService
+from pigrocrm.core.emitter.schemas import AziendaUpsert
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.pipeline.service import PipelineService
@@ -98,8 +98,8 @@ with session_factory(engine)() as session:
     # Emittente» screen before anyone presses Scarica. Synthetic values: nothing here
     # is a real company and the P.IVA is only shaped like one (11 digits is what
     # `_check_fiscal` requires).
-    EmitterProfileService(session).upsert(
-        EmitterProfileUpsert(
+    AziendaService(session).upsert_default(
+        AziendaUpsert(
             ragione_sociale="Studio E2E",
             partita_iva="12345678903",
             indirizzo="Via di Prova 1",

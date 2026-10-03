@@ -1,7 +1,8 @@
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Index, Numeric, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Numeric, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
@@ -44,4 +45,28 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     tariffa_oraria_default: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
     costo_orario_default: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), default=None)
 
+    # REB-615, spec 2026-10-03 §1.11: the flag, not the presence of `user_aziende`
+    # rows, is what says «scoped». False for everyone until milestone 6 writes it;
+    # `server_default` so every row that exists is unscoped without an ORM pass.
+    ambito_limitato: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+
     __table_args__ = (Index("uq_users_email_lower", func.lower(email), unique=True),)
+
+
+class UserAzienda(Base):
+    """One row per azienda a scoped member may see (spec 2026-10-03 §1.11, §2 step
+    6). Empty until milestone 6: the table exists now so the migration that gives
+    every later table its `azienda_id` finds it, and so `users.ambito_limitato` has
+    the rows it will point at. `ON DELETE CASCADE` both ways: a scope dies with its
+    user and with its azienda, and nothing else references it."""
+
+    __tablename__ = "user_aziende"
+
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    azienda_id: Mapped[UUID] = mapped_column(
+        ForeignKey("emitter_profile.id", ondelete="CASCADE"), primary_key=True
+    )

@@ -34,7 +34,7 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import DocumentVersion
-from pigrocrm.core.emitter.models import EmitterProfile
+from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.attach import describe_attachments
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage
@@ -134,7 +134,9 @@ class EmailDraftService:
         return _FALLBACK_DOMAIN
 
     def _emitter_site(self) -> str:
-        site = self.session.execute(select(EmitterProfile.sito_web).limit(1)).scalar_one_or_none()
+        site = self.session.execute(
+            select(Azienda.sito_web).where(Azienda.predefinita.is_(True))
+        ).scalar_one_or_none()
         return site or ""
 
     def _get(self, draft_id: UUID) -> EmailDraft:

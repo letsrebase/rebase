@@ -23,6 +23,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -40,7 +41,9 @@ IBAN = "IT60X0542811101000000123456"
 def fiscal_profile(logged_in: TestClient) -> dict[str, Any]:
     """With an IBAN: a reminder with nowhere to pay is a reminder nobody can act on, and
     `SollecitiService` refuses to prepare one."""
-    response = logged_in.put("/api/fiscal-profile", json={"codice_regime": "RF19", "iban": IBAN})
+    response = logged_in.put(
+        azienda_url(logged_in, "/fiscal-profile"), json={"codice_regime": "RF19", "iban": IBAN}
+    )
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -48,7 +51,7 @@ def fiscal_profile(logged_in: TestClient) -> dict[str, Any]:
 @pytest.fixture
 def emitter(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.put(
-        "/api/emitter",
+        azienda_url(logged_in),
         json={
             "ragione_sociale": "Studio Rossi",
             "partita_iva": "01234567890",

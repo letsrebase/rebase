@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
-from pigrocrm.core.emitter.models import EmitterProfile
+from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.schema_registry import ENTITY_TYPES, native_fields
 from pigrocrm.core.templates.models import Template
 
@@ -119,9 +119,11 @@ def test_two_versions_cannot_share_a_number(db_session: Session) -> None:
         db_session.flush()
 
 
-def test_only_one_emitter_profile_row_can_exist(db_session: Session) -> None:
-    for _ in range(2):
-        db_session.add(EmitterProfile(ragione_sociale="X", partita_iva="12345678901"))
+def test_only_one_azienda_can_be_the_default(db_session: Session) -> None:
+    # REB-615: the table holds one row per azienda now; what stays unique is the
+    # default, by a partial index, and a fiscal id, by two more.
+    for i in range(2):
+        db_session.add(Azienda(ragione_sociale="X", partita_iva=f"1234567890{i}", predefinita=True))
     with pytest.raises(IntegrityError):
         db_session.flush()
 

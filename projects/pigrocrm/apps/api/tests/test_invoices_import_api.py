@@ -3,6 +3,7 @@
 from typing import Any
 
 import pytest
+from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
 
 COLLABORATORE_PASSWORD = "supersegreta1"
@@ -36,7 +37,9 @@ def _second_actor(admin_client: TestClient, ruolo: str) -> TestClient:
 
 @pytest.fixture
 def fiscal_profile(logged_in: TestClient) -> dict[str, Any]:
-    response = logged_in.put("/api/fiscal-profile", json={"codice_regime": "RF19"})
+    response = logged_in.put(
+        azienda_url(logged_in, "/fiscal-profile"), json={"codice_regime": "RF19"}
+    )
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -44,7 +47,7 @@ def fiscal_profile(logged_in: TestClient) -> dict[str, Any]:
 @pytest.fixture
 def emitter(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.put(
-        "/api/emitter",
+        azienda_url(logged_in),
         json={
             "ragione_sociale": "Studio Rossi",
             "partita_iva": "01234567890",

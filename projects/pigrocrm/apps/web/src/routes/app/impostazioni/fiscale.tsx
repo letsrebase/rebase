@@ -1,9 +1,9 @@
 import { createFileRoute, redirect } from '@tanstack/react-router'
 
 // Old path support (Italian route names retired 2026-09-21, see
-// docs/design/DECISIONS.md): `settings/fiscal.tsx` is the real page now.
+// docs/design/DECISIONS.md): `settings/aziende.tsx` is the real page now.
 export const Route = createFileRoute('/app/impostazioni/fiscale')({
   beforeLoad: () => {
-    throw redirect({ to: '/app/settings/fiscal' })
+    throw redirect({ to: '/app/settings/aziende' })
   },
 })

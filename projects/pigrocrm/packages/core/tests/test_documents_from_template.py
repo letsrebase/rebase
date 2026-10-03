@@ -14,8 +14,8 @@ from pigrocrm.core.documents.schemas import (
     DocumentListQuery,
 )
 from pigrocrm.core.documents.service import OFFER_TRANSITIONS, DocumentService
-from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-from pigrocrm.core.emitter.service import EmitterProfileService
+from pigrocrm.core.emitter.schemas import AziendaUpsert
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.templates.escaping import escape_markdown, escape_typst
@@ -48,8 +48,8 @@ Oggetto: {{offerta.oggetto}}
 
 @pytest.fixture
 def setup(db_session: Session, tmp_path: Path) -> tuple[DocumentService, Customer, object]:
-    EmitterProfileService(db_session).upsert(
-        EmitterProfileUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
+    AziendaService(db_session).upsert_default(
+        AziendaUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
         ADMIN,
     )
     template = TemplateService(db_session).create(
@@ -166,10 +166,10 @@ def test_an_unknown_template_raises_not_found(setup: tuple) -> None:
 def test_without_an_emitter_profile_the_render_fails_with_a_clear_error(
     setup: tuple, db_session: Session
 ) -> None:
-    from pigrocrm.core.emitter.models import EmitterProfile
+    from pigrocrm.core.emitter.models import Azienda
 
     service, customer, template = setup
-    db_session.query(EmitterProfile).delete()
+    db_session.query(Azienda).delete()
     db_session.flush()
     with pytest.raises(NotFound) as excinfo:
         service.create_from_template(_payload(customer, template), ADMIN)
@@ -329,8 +329,8 @@ def test_oggi_defaults_to_italys_own_day_not_the_processs(
     why the assertion is on the compiled source rather than on which function was
     called.
     """
-    EmitterProfileService(db_session).upsert(
-        EmitterProfileUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
+    AziendaService(db_session).upsert_default(
+        AziendaUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
         ADMIN,
     )
     template = TemplateService(db_session).create(

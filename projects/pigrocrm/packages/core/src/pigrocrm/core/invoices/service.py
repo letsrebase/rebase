@@ -29,7 +29,7 @@ from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import ENTITY as DOCUMENT_ENTITY
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.drive.reader import ALREADY_AUTHORIZED, DriveReader, drive_reader_for
-from pigrocrm.core.emitter.service import EmitterProfileService
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, ImmutableField, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -169,7 +169,7 @@ class InvoiceService:
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
         self.fiscal = FiscalProfileService(session)
-        self.emitter = EmitterProfileService(session)
+        self.emitter = AziendaService(session)
         self.documents = DocumentService(session, storage, self.settings)
         # REB-367 (design §7 item 5): the same session as everything else here, so a
         # customer `confirm_import` creates for a brand-new counterparty lands in the
@@ -1096,9 +1096,9 @@ class InvoiceService:
         for a second call to have changed.
         """
         actor.require_admin(REVIEW_ACTION)
-        emitter = self.emitter.repo.get()
+        emitter = self.emitter.repo.default()
         if emitter is None:
-            raise NotFound("emitter_profile", "singleton")
+            raise NotFound("emitter_profile", "predefinita")
         rows: list[ReviewedInvoiceRead] = []
         for document_id in document_ids:
             content, _content_type, _filename = self.documents.download(document_id, None, actor)
@@ -1168,9 +1168,9 @@ class InvoiceService:
         invoices takes ownership of it.
         """
         actor.require_admin(CONFIRM_ACTION)
-        emitter = self.emitter.repo.get()
+        emitter = self.emitter.repo.default()
         if emitter is None:
-            raise NotFound("emitter_profile", "singleton")
+            raise NotFound("emitter_profile", "predefinita")
         content, _content_type, _filename = self.documents.download(document_id, None, actor)
         adapter = detect_adapter(content)
         if adapter is None:

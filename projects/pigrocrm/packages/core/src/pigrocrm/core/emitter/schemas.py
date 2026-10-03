@@ -5,9 +5,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from pigrocrm.core.validation import SafeStr
 
-# Mirror EmitterProfile's column widths exactly (emitter/models.py). Without these an
+# Mirror Azienda's column widths exactly (emitter/models.py). Without these an
 # over-long value reaches Postgres and raises sqlalchemy.exc.DataError, which is not
 # an IntegrityError subclass, so no handler catches it and the session is poisoned.
+NOME_MAX_LENGTH = 80
 RAGIONE_SOCIALE_MAX_LENGTH = 255
 CODICE_FISCALE_MAX_LENGTH = 16
 INDIRIZZO_MAX_LENGTH = 255
@@ -29,19 +30,24 @@ REGIME_FISCALE_MAX_LENGTH = 200
 FIRMA_EMAIL_MAX_LENGTH = 2_000
 
 
-class EmitterProfileUpsert(BaseModel):
-    """One shape for create and update: there is only ever one row, so "create" and
-    "update" are the same operation with the same required fields.
+class AziendaUpsert(BaseModel):
+    """One shape for the first save and for every update: the fields are the same and
+    all of them are required or defaulted, so a write is always a whole row.
 
-    `partita_iva` and `codice_sdi` carry no `max_length`, exactly as
-    `CustomerCreate` does: the service's `_check_fiscal` already requires an exact
-    11-digit / 7-character match, which is stricter, and adding a Pydantic bound would
-    make a 12-digit input raise pydantic's own `ValidationError` instead of this
-    project's `ValidationFailed` -- a regression, not a fix.
+    `nome` is optional on purpose: a space with one azienda never typed one, and the
+    service derives it from `ragione_sociale` (cut to the column width) when it is
+    missing, which is also what the migration did for the row every space already had.
+
+    `partita_iva` and `codice_sdi` carry no `max_length`, exactly as `CustomerCreate`
+    does: the service's `_check_fiscal` already requires an exact 11-digit / 7-character
+    match, which is stricter, and adding a Pydantic bound would make a 12-digit input
+    raise pydantic's own `ValidationError` instead of this project's `ValidationFailed`
+    -- a regression, not a fix.
     """
 
     model_config = ConfigDict(extra="forbid")
 
+    nome: SafeStr | None = Field(default=None, max_length=NOME_MAX_LENGTH)
     ragione_sociale: SafeStr = Field(max_length=RAGIONE_SOCIALE_MAX_LENGTH)
     partita_iva: SafeStr | None = None
     codice_fiscale: SafeStr | None = Field(default=None, max_length=CODICE_FISCALE_MAX_LENGTH)
@@ -61,10 +67,13 @@ class EmitterProfileUpsert(BaseModel):
     regime_fiscale: SafeStr | None = Field(default=None, max_length=REGIME_FISCALE_MAX_LENGTH)
 
 
-class EmitterProfileRead(BaseModel):
+class AziendaRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    nome: str
+    predefinita: bool
+    attiva: bool
     ragione_sociale: str
     partita_iva: str | None
     codice_fiscale: str | None
@@ -84,3 +93,10 @@ class EmitterProfileRead(BaseModel):
     regime_fiscale: str | None
     created_at: datetime
     updated_at: datetime
+
+
+# The fields `as_template_values` and the MCP `describe` leave out: identity, state and
+# timestamps are facts about the row, not about the business a template prints.
+TEMPLATE_EXCLUDED_FIELDS: frozenset[str] = frozenset(
+    {"id", "predefinita", "attiva", "created_at", "updated_at"}
+)

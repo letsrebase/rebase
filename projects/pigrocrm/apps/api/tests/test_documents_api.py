@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 # duplicated into a second pair of fakes that would be a second place for the two to
 # disagree about what Google does.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
+from aziende_helpers import azienda_url
 from fakes.fake_drive import FOLDER_MIME, FakeDrive  # noqa: E402
 from fakes.fake_gmail import FakeGmail  # noqa: E402
 from fakes.gmail_fixtures import TOKEN_KEY, gmail_settings  # noqa: E402
@@ -220,18 +221,24 @@ def test_template_list_hides_inactive_ones_by_default(logged_in: TestClient) -> 
     assert template_id in [t["id"] for t in shown.json()["items"]]
 
 
-def test_emitter_profile_is_404_before_it_is_saved_then_readable(logged_in: TestClient) -> None:
-    assert logged_in.get("/api/emitter").status_code == 404
+def test_an_unknown_azienda_is_404_and_the_default_is_writable_then_readable(
+    logged_in: TestClient,
+) -> None:
+    from uuid import uuid4
+
+    assert logged_in.get(f"/api/aziende/{uuid4()}").status_code == 404
     saved = logged_in.put(
-        "/api/emitter",
+        azienda_url(logged_in),
         json={"ragione_sociale": "Studio Rossi", "partita_iva": "01234567890"},
     )
     assert saved.status_code == 200, saved.text
-    assert logged_in.get("/api/emitter").json()["partita_iva"] == "01234567890"
+    assert logged_in.get(azienda_url(logged_in)).json()["partita_iva"] == "01234567890"
 
 
 def test_a_non_admin_cannot_write_the_emitter_profile(collaborator_client: TestClient) -> None:
-    response = collaborator_client.put("/api/emitter", json={"ragione_sociale": "X"})
+    response = collaborator_client.put(
+        azienda_url(collaborator_client), json={"ragione_sociale": "X"}
+    )
     assert response.status_code == 403
 
 
@@ -276,7 +283,7 @@ def test_the_openapi_document_declares_the_new_routes(logged_in: TestClient) -> 
         "/api/documents/{document_id}/download",
         "/api/documents/{document_id}/text",
         "/api/templates/{template_id}/describe",
-        "/api/emitter",
+        "/api/aziende",
     ):
         assert path in paths, path
 

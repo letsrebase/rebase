@@ -661,3 +661,18 @@ migrations and provisioning».
 4. **One line about the law, or none.** None. Whether a forfettario may also control an
    SRL is the person's and their accountant's question; the product records the aziende
    it is given and asserts nothing about the combination.
+
+## 11. Implementation notes
+
+Added as the milestones land, dated, never rewriting the sections above.
+
+- **2026-10-03, milestone «Turn the emitter profile into the azienda row» (REB-615).**
+  Two steps of §2 moved by one milestone. `codice_regime` stays `NOT NULL` until the
+  `non-it` pack lands with the per-azienda register (milestone 2): widening the column
+  without the strategy that reads `None` would have left a value no code could handle.
+  And the row a space without an emitter gets is written by `ensure_defaults`, with the
+  space's name at provisioning and its slug from `pigrocrm ensure-space-defaults`, not
+  by the migration, which cannot know the slug of the database it runs in; the
+  migration inserts nothing and binds the one fiscal profile to the one azienda. The
+  sanity test on a space that has neither row is `test_tenants.py`'s provisioning tests
+  and `test_emitter.py`'s `_bare` fixture.

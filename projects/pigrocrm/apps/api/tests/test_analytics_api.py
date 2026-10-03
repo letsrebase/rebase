@@ -15,6 +15,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
 
 from pigrocrm.core.clock import oggi_in_italia
@@ -53,7 +54,7 @@ def emitter(logged_in: TestClient) -> dict[str, Any]:
     """Required by `issue`, not by anything analytics does -- only the two tests that
     take an invoice all the way to `emessa` need it."""
     response = logged_in.put(
-        "/api/emitter",
+        azienda_url(logged_in),
         json={
             "ragione_sociale": "Studio Rossi",
             "partita_iva": "01234567890",
@@ -75,7 +76,7 @@ def fiscal_profile(logged_in: TestClient) -> dict[str, Any]:
     """The forfettario rates slice 1 §2.2 found hard-coded in `App.jsx`, now configured
     per installation. `get_fiscal_estimate` reads all three from here."""
     response = logged_in.put(
-        "/api/fiscal-profile",
+        azienda_url(logged_in, "/fiscal-profile"),
         json={
             "codice_regime": "RF19",
             "coefficiente_redditivita": "67.00",
@@ -644,7 +645,12 @@ def test_the_period_report_takes_a_base_and_defaults_to_emission(
     and an omitted one is the recorded default. The arithmetic of the two readings is
     proven in `packages/core/tests/test_period_pnl.py`; this asserts the wire, with one
     invoice issued today for last month's work so the two readings visibly differ."""
-    assert logged_in.put("/api/fiscal-profile", json={"codice_regime": "RF19"}).status_code == 200
+    assert (
+        logged_in.put(
+            azienda_url(logged_in, "/fiscal-profile"), json={"codice_regime": "RF19"}
+        ).status_code
+        == 200
+    )
     deal_id, _ = _seed_deal_and_user(logged_in)
     customer_id = logged_in.get(f"/api/deals/{deal_id}").json()["customer_id"]
     primo = OGGI.replace(day=1)

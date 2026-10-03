@@ -124,32 +124,35 @@ def _svc(session: Session, tmp_path, *, settings=None, drive_reader_factory=None
     reason `_fiscal_customer_id` above is copied and not imported: `conftest` is an
     ambiguous top-level module name across this repository's three test roots.
     """
-    from pigrocrm.core.emitter.repository import EmitterProfileRepository
-    from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-    from pigrocrm.core.emitter.service import EmitterProfileService
+    from pigrocrm.core.emitter.repository import AziendaRepository
+    from pigrocrm.core.emitter.schemas import AziendaUpsert
+    from pigrocrm.core.emitter.service import AziendaService
     from pigrocrm.core.fiscal.repository import FiscalProfileRepository
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
     from pigrocrm.core.fiscal.service import FiscalProfileService
     from pigrocrm.core.invoices.service import InvoiceService
     from pigrocrm.core.storage.local import LocalFileStorage
 
-    if FiscalProfileRepository(session).get() is None:
+    # The azienda first, always (REB-615: a bare default is already seeded and this
+    # fills in its identity), then its fiscal profile when it has none.
+    AziendaService(session).upsert_default(
+        AziendaUpsert(
+            ragione_sociale="Studio Rossi",
+            partita_iva="01234567890",
+            codice_fiscale="HMCRFT00A01H501K",
+            indirizzo="Via Vittorio Veneto 12",
+            cap="20124",
+            comune="Milano",
+            provincia="MI",
+            nazione="IT",
+            email="mario@example.com",
+        ),
+        ADMIN,
+    )
+    azienda = AziendaRepository(session).default()
+    assert azienda is not None
+    if FiscalProfileRepository(session).get(azienda.id) is None:
         FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
-    if EmitterProfileRepository(session).get() is None:
-        EmitterProfileService(session).upsert(
-            EmitterProfileUpsert(
-                ragione_sociale="Studio Rossi",
-                partita_iva="01234567890",
-                codice_fiscale="HMCRFT00A01H501K",
-                indirizzo="Via Vittorio Veneto 12",
-                cap="20124",
-                comune="Milano",
-                provincia="MI",
-                nazione="IT",
-                email="mario@example.com",
-            ),
-            ADMIN,
-        )
     return InvoiceService(
         session,
         LocalFileStorage(tmp_path),
@@ -441,18 +444,20 @@ def test_a_missing_emitter_profile_is_refused_before_any_row_is_flushed(
     invoice and its lines, and nothing rolled back, because only `IntegrityError` was
     caught. The caller was told the import failed and the register carried it anyway.
     """
-    from pigrocrm.core.emitter.repository import EmitterProfileRepository
+    # No azienda at all, and therefore no fiscal profile either: since REB-615 a profile
+    # belongs to an azienda, so the first thing the import can miss is the azienda.
+    from sqlalchemy import delete
+
+    from pigrocrm.core.emitter.models import Azienda
+    from pigrocrm.core.emitter.repository import AziendaRepository
     from pigrocrm.core.errors import NotFound
-    from pigrocrm.core.fiscal.repository import FiscalProfileRepository
-    from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
-    from pigrocrm.core.fiscal.service import FiscalProfileService
     from pigrocrm.core.invoices.models import InvoiceCounter
     from pigrocrm.core.invoices.service import InvoiceService
     from pigrocrm.core.storage.local import LocalFileStorage
 
-    if FiscalProfileRepository(db_session).get() is None:
-        FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
-    assert EmitterProfileRepository(db_session).get() is None, "this test needs no emitter profile"
+    db_session.execute(delete(Azienda))
+    db_session.flush()
+    assert AziendaRepository(db_session).default() is None
     service = InvoiceService(db_session, LocalFileStorage(tmp_path))
     cid = _fiscal_customer_id(db_session)
 
