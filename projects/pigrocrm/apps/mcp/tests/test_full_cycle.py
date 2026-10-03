@@ -52,8 +52,8 @@ from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
-from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-from pigrocrm.core.emitter.service import EmitterProfileService
+from pigrocrm.core.emitter.schemas import AziendaUpsert
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import ImmutableField
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -100,8 +100,8 @@ def cycle(mcp_session: Session, tmp_path: Path) -> dict[str, Any]:
     FiscalProfileService(mcp_session).upsert(
         FiscalProfileUpsert(codice_regime="RF19"), Actor.system()
     )
-    EmitterProfileService(mcp_session).upsert(
-        EmitterProfileUpsert(
+    AziendaService(mcp_session).upsert_default(
+        AziendaUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="01234567890",
             indirizzo="Via Vittorio Veneto 12",

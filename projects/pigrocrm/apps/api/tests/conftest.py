@@ -60,6 +60,18 @@ def api_session(api_engine: Engine) -> Iterator[Session]:
 
 
 @pytest.fixture(autouse=True)
+def _default_azienda(api_session: Session) -> None:
+    """Every real space has one azienda from provisioning (REB-615), and the API
+    addresses it by id, so every API test starts from the same place a space does."""
+    from pigrocrm.core.emitter.models import Azienda
+
+    api_session.add(
+        Azienda(nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True)
+    )
+    api_session.flush()
+
+
+@pytest.fixture(autouse=True)
 def _fresh_rate_limit() -> None:
     # The limiter's bucket is a module-level dict, so it outlives any one test's own
     # fixtures: without this, a test that spends its budget on `/api/auth/link` or

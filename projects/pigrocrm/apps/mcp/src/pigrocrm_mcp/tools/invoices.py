@@ -11,8 +11,8 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-from pigrocrm.core.emitter.service import EmitterProfileService
+from pigrocrm.core.emitter.schemas import TEMPLATE_EXCLUDED_FIELDS, AziendaUpsert
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -41,7 +41,7 @@ from pigrocrm_mcp.context import McpContext
 #
 # The `update_fiscal_profile` disagreement was first settled in the ban's favour (slice
 # 3 §11's four names include it, banned as the `(FiscalProfileService, upsert)` pair
-# because `EmitterProfileService` has an `upsert` too), then reopened by ORB-188
+# because `AziendaService` has an `upsert` too), then reopened by ORB-188
 # (2026-09-12): the profile is a total replacement that can be replaced again, an issued
 # invoice keeps its own copy, and in a space born empty «imposta il mio profilo fiscale»
 # is the first thing a person asks their assistant. So the write is on the default
@@ -249,46 +249,88 @@ def set_payment_state(
     )
 
 
-def describe_fiscal_profile(context: McpContext) -> dict[str, Any]:
-    return FiscalProfileService(context.session).describe(context.actor)
+def _azienda_id(value: str | None) -> UUID | None:
+    return UUID(value) if value else None
 
 
-def update_fiscal_profile(context: McpContext, dati: dict[str, Any]) -> dict[str, Any]:
+def describe_fiscal_profile(context: McpContext, azienda_id: str | None = None) -> dict[str, Any]:
+    """The fiscal parameters of one azienda; none means the default, which on a space
+    with one azienda is the only one (REB-616, spec 2026-10-03 §7)."""
+    return FiscalProfileService(context.session).describe(context.actor, _azienda_id(azienda_id))
+
+
+def update_fiscal_profile(
+    context: McpContext, dati: dict[str, Any], azienda_id: str | None = None
+) -> dict[str, Any]:
     """The whole profile, replaced (ORB-188). `require_admin` inside the service is the
     only gate, and it is enough: the row is rewritable, issued invoices keep their copy."""
     return (
         FiscalProfileService(context.session)
-        .upsert(FiscalProfileUpsert.model_validate(dati), context.actor)
+        .upsert(FiscalProfileUpsert.model_validate(dati), context.actor, _azienda_id(azienda_id))
         .model_dump(mode="json")
     )
 
 
-def update_emitter_profile(context: McpContext, dati: dict[str, Any]) -> dict[str, Any]:
-    """The one emitter row, replaced (ORB-188): ragione sociale, partita IVA or codice
-    fiscale, address, PEC, codice SDI, contacts. Admin-only through the service, which
-    also checks the partita IVA and the codice SDI by shape."""
-    return (
-        EmitterProfileService(context.session)
-        .upsert(EmitterProfileUpsert.model_validate(dati), context.actor)
-        .model_dump(mode="json")
-    )
+def list_aziende(context: McpContext) -> list[dict[str, Any]]:
+    """Every active azienda of the space, the default first: id, short name, ragione
+    sociale, nazione and the two flags, which is what an agent needs to pick one."""
+    return [
+        a.model_dump(
+            mode="json",
+            include={
+                "id",
+                "nome",
+                "ragione_sociale",
+                "partita_iva",
+                "nazione",
+                "predefinita",
+                "attiva",
+            },
+        )
+        for a in AziendaService(context.session).list(context.actor)
+    ]
 
 
-def describe_emitter_profile(context: McpContext) -> dict[str, Any]:
+def describe_azienda(context: McpContext, azienda_id: str | None = None) -> dict[str, Any]:
     """Who the invoices and the documents say they come from.
 
-    `EmitterProfileService.get` is one of the two reads in this product deliberately
-    left un-role-gated at the service layer, because the PDF header needs it for every
+    `AziendaService.get` is one of the two reads in this product deliberately left
+    un-role-gated at the service layer, because the PDF header needs it for every
     role -- so there is no role for which this is agent-only knowledge. `logo_key` and
     `firma_key` are storage keys, not bytes, exactly like every other identifier this
-    surface returns; the write on the same row is `update_emitter_profile` (ORB-188).
-    Without `id` and the timestamps, so that what this returns can be handed back to
-    the write unchanged: `EmitterProfileUpsert` forbids extra keys, and the round trip
+    surface returns; the write on the same row is `update_azienda` (ORB-188). Without
+    `id`, the two flags and the timestamps, so that what this returns can be handed
+    back to the write unchanged: `AziendaUpsert` forbids extra keys, and the round trip
     the write's docstring prescribes («leggi prima, rimanda indietro l'oggetto») has to
-    be possible. Same exclusion `as_template_values` and the fiscal `describe` apply.
+    be possible. The same exclusion `as_template_values` applies.
     """
     return (
-        EmitterProfileService(context.session)
-        .get(context.actor)
-        .model_dump(mode="json", exclude={"id", "created_at", "updated_at"})
+        AziendaService(context.session)
+        .get(context.actor, _azienda_id(azienda_id))
+        .model_dump(mode="json", exclude=set(TEMPLATE_EXCLUDED_FIELDS))
+    )
+
+
+def update_azienda(
+    context: McpContext, dati: dict[str, Any], azienda_id: str | None = None
+) -> dict[str, Any]:
+    """One azienda's row, replaced (ORB-188): ragione sociale, partita IVA or codice
+    fiscale, address, PEC, codice SDI, contacts. Admin-only through the service, which
+    also checks the partita IVA and the codice SDI by shape. With no `azienda_id` it is
+    the default azienda, created on the spot when the space has none yet: the first
+    thing a person asks the assistant they just connected is to set it (REB-188), and
+    a prompt written for a one-azienda space keeps working."""
+    # Spelled as `AziendaService(...)` on each call rather than bound to a local:
+    # `test_mcp_surface_coverage.py` resolves receivers by name across the whole
+    # module, and `service` is the name this file binds to `InvoiceService`.
+    data = AziendaUpsert.model_validate(dati)
+    target = _azienda_id(azienda_id)
+    if target is None:
+        return (
+            AziendaService(context.session)
+            .upsert_default(data, context.actor)
+            .model_dump(mode="json")
+        )
+    return (
+        AziendaService(context.session).update(target, data, context.actor).model_dump(mode="json")
     )
