@@ -1,7 +1,7 @@
 # Several aziende in one space: one register per azienda, one team per space
 
-Date: 2026-10-03. Status: **proposed, awaiting the sign-off of Ivan, the project's lead** (§10 lists what is
-his to decide). Tracker: REB-614, project "Let one space run several aziende",
+Date: 2026-10-03. Status: **signed off by Ivan, the project's lead, 2026-10-03** (§10 records the four
+decisions he took). Tracker: REB-614, project "Let one space run several aziende",
 milestone "Design how one space holds several aziende". The six milestones after it are
 the implementation order (§9). Written in English, per the repository's rule; the
 specs it reads, `2026-08-20-slice-3-fatturazione-design.md`,
@@ -75,15 +75,16 @@ a record type (`activities.entity_type`).
 
 ## 1. The decisions, one paragraph each
 
-**1.1 The azienda is the emitter row, freed of its singleton.** `emitter_profile` becomes
-`aziende`, one row per azienda, same columns minus `singleton`, plus `nome` (the short
+**1.1 The azienda is the emitter row, freed of its singleton.** `emitter_profile` keeps its
+table name and holds one row per azienda, same columns minus `singleton`, plus `nome` (the short
 name the selector shows, «humancraft», distinct from `ragione_sociale`), `predefinita`
 (exactly one `True` per space, a partial unique index) and `attiva`. The ORM class is
 `Azienda`; `EmitterProfileService` becomes `AziendaService` with `list`, `get(id)`,
 `create`, `update`, `set_default`, `deactivate`. Not a second table beside the old one:
 two tables that both say who issues a document is the duplication rule broken in the one
-place it matters most. The timeline rows already written with `entity = "emitter_profile"`
-stay as they are; history is not rewritten.
+place it matters most. The table name stays `emitter_profile` (§10): the routes and the product
+say «azienda», the storage keeps the name every error label and timeline row already
+carries, and history is not rewritten.
 
 **1.2 The fiscal profile belongs to an azienda.** `fiscal_profile` keeps its name and its
 columns, loses `singleton`, and gains `azienda_id` (`NOT NULL`, `UNIQUE`, FK). At most
@@ -138,7 +139,7 @@ is a configuration error, and two partial unique indexes in §2, on `partita_iva
 `codice_fiscale`, make it impossible to save in the first place, since the classifier
 matches on either. The classifier still checks: a `fornitore` that matches one azienda
 by P.IVA and another by codice fiscale, which the indexes cannot rule out, is refused
-with `ValidationFailed("aziende", "codice_fiscale", «corrisponde a due aziende»)` and
+with `ValidationFailed("emitter_profile", "codice_fiscale", «corrisponde a due aziende»)` and
 nothing is written.
 
 **1.6 The azienda is assigned on the customer and proposed by its nation.** `customers`
@@ -260,14 +261,14 @@ of the root database and of every space, because the step that drops `singleton`
 no downgrade once a second azienda exists and no deploy here takes a dump today. The
 steps, in order:
 
-1. `ALTER TABLE emitter_profile RENAME TO aziende`; drop the `singleton` unique
+1. `emitter_profile` keeps its name; drop the `singleton` unique
    constraint and column; add `nome VARCHAR(80) NOT NULL` backfilled with
    `left(ragione_sociale, 80)` (the source column is 255 wide, `emitter/schemas.py:11`,
    and the full name stays where it is), `predefinita BOOLEAN NOT NULL DEFAULT false`, `attiva BOOLEAN NOT
-   NULL DEFAULT true`; `UPDATE aziende SET predefinita = true` (there is at most one
-   row); partial unique index `uq_aziende_predefinita ON aziende (predefinita) WHERE
-   predefinita`; partial unique indexes `uq_aziende_partita_iva ON aziende (upper(partita_iva))
-   WHERE partita_iva IS NOT NULL` and `uq_aziende_codice_fiscale ON aziende
+   NULL DEFAULT true`; `UPDATE emitter_profile SET predefinita = true` (there is at most one
+   row); partial unique index `uq_emitter_profile_predefinita ON emitter_profile (predefinita) WHERE
+   predefinita`; partial unique indexes `uq_emitter_profile_partita_iva ON emitter_profile (upper(partita_iva))
+   WHERE partita_iva IS NOT NULL` and `uq_emitter_profile_codice_fiscale ON emitter_profile
    (upper(codice_fiscale)) WHERE codice_fiscale IS NOT NULL`, on the same shape the
    classifier compares (`normalise_fiscal_id`, `invoices/fatturapa.py:218`: punctuation
    stripped, upper case, no `IT` prefix). `AziendaService` stores both ids through
@@ -281,7 +282,7 @@ steps, in order:
    between signup and the first save, since `TenantService` writes one at provisioning,
    `tenants/service.py:165-175`) gets one inserted from the space's slug, so the `NOT
    NULL` columns below have a value to point at.
-2. `fiscal_profile`: add `azienda_id UUID REFERENCES aziende(id)`, backfill the row
+2. `fiscal_profile`: add `azienda_id UUID REFERENCES emitter_profile(id)`, backfill the row
    where there is one from the one azienda, set `NOT NULL`, `UNIQUE`; drop `singleton`;
    `codice_regime` to nullable. No row is invented where the space never saved one
    (1.2).
@@ -289,14 +290,14 @@ steps, in order:
    `(azienda_id, anno)`. `invoice_register_gaps`: the same, unique `(azienda_id, anno,
    numero)`.
 4. `customers`, `deals`, `contracts`, `documents`, `invoices`: add `azienda_id UUID
-   REFERENCES aziende(id)`, backfill from the one azienda, set `NOT NULL`, index each.
+   REFERENCES emitter_profile(id)`, backfill from the one azienda, set `NOT NULL`, index each.
    `invoices`: drop `uq_invoices_anno_numero`, create `uq_invoices_azienda_anno_numero
    ON invoices (azienda_id, anno, numero) WHERE numero IS NOT NULL`.
 5. `costs`: add `azienda_id` nullable, backfill from the deal's where `deal_id IS NOT
    NULL`, leave `NULL` otherwise, index.
 6. `users`: add `ambito_limitato BOOLEAN NOT NULL DEFAULT false`, with `server_default`
    so every row that exists is unscoped. `user_aziende (user_id UUID REFERENCES
-   users(id) ON DELETE CASCADE, azienda_id UUID REFERENCES aziende(id) ON DELETE
+   users(id) ON DELETE CASCADE, azienda_id UUID REFERENCES emitter_profile(id) ON DELETE
    CASCADE, PRIMARY KEY (user_id, azienda_id))`. Empty after the migration: nobody is
    scoped until an admin scopes them.
 7. `invitations`: add `aziende UUID[] NULL` (the scope the invitee will get; `NULL` is
@@ -308,7 +309,7 @@ steps, in order:
 
 `compare_metadata` in the migration test must come back empty after each revision.
 Each `downgrade` reverses its own steps; the one thing `0045` cannot give back is a
-second azienda's rows, so it refuses when `aziende` holds more than one row.
+second azienda's rows, so it refuses when `emitter_profile` holds more than one row.
 
 Nothing in the registry database changes. `identities`, `tenants` and the chooser know
 nothing of aziende: a scope is a fact inside one space, like a role (`2026-09-23…` §1,
@@ -350,7 +351,7 @@ Routes changed:
 - `POST /api/invoices/import` and the review step answer the azienda the file landed on
   (1.5).
 
-Errors keep the project's shapes: `NotFound("azienda", id)`, `ValidationFailed("aziende",
+Errors keep the project's shapes: `NotFound("emitter_profile", id)`, `ValidationFailed("emitter_profile",
 "partita_iva", …)`, `PermissionDenied` with the action name. A scoped user asking for a
 record outside their scope gets a 404, never a 403: the row does not exist for them,
 which is what the database says and what the API should repeat, so the existence of
@@ -473,7 +474,7 @@ parent is `NULL` is visible, and insertable, only when the setting is `*`. By ta
 | `email_drafts` | the same `CASE` on its own `entity_type` / `entity_id` (`gmail/models.py:259-267`) |
 | `gmail_messages` | the message's `google_account_id` is the mailbox of `pigrocrm.user_id` (one mailbox per user, `gmail/models.py:59`), or a visible link exists, or no link exists and the setting is `*`; the same on both sides. The first branch is what lets the sync and the send write a message before its links exist (`gmail/sync.py:847, 877`, `gmail/send.py:602, 646`): the flush is an `INSERT … RETURNING` for the server-generated timestamps (`db/base.py:22-30`), Postgres applies the `SELECT` policy to the rows an `INSERT` returns, and a `WITH CHECK (true)` alone would not save it. A person always reads and writes their own mailbox; what the scope hides is other people's mail about other aziende's customers |
 | `activities` | a `CASE` on `entity_type` over the types above; space-level entities visible to all |
-| `aziende`, `fiscal_profile` | `azienda_visibile(id)` / `azienda_visibile(azienda_id)` |
+| `emitter_profile`, `fiscal_profile` | `azienda_visibile(id)` / `azienda_visibile(azienda_id)` |
 
 Space-level tables carry no policy: `users`, `invitations`, `user_aziende` (it carries an
 `azienda_id` and is the one declared exception of the introspection test below), the
@@ -581,7 +582,7 @@ scope is its owner's (§4), so no tool needs to check it.
 ## 8. Tests, by milestone
 
 - **Azienda row.** Migration round-trip on a space with and without an emitter row;
-  `uq_aziende_predefinita`; create, default move, deactivate refusals; the two settings
+  `uq_emitter_profile_predefinita`; create, default move, deactivate refusals; the two settings
   panels unchanged by snapshot test with one azienda; MCP tool renames covered.
 - **Register.** Two aziende issue in the same year and both get `1`; the lock of one
   does not block the other (two sessions); `import_issued` with a number taken on the
@@ -633,30 +634,26 @@ Impostazioni, each with its fiscal profile; move the foreign customers to the fo
 azienda by hand; from then on new deals follow. After milestone 6: invite B scoped to
 rebase. Nothing that exists is touched at any step.
 
-The decision rows for `docs/design/DECISIONS.md` go in the sign-off commit, with the
-status line of this document: one for «a visibility boundary inside a space is a
-Postgres policy, never an application filter», one for «the API connects as a
-non-owner role; the owner runs migrations and provisioning».
+The two decision rows are in `docs/design/DECISIONS.md` under 2026-10-03, added with
+the sign-off: «a visibility boundary inside a space is a Postgres policy, never an
+application filter», and «the API connects as a non-owner role; the owner runs
+migrations and provisioning».
 
-## 10. Decisions for the lead
+## 10. Decisions, taken by the lead on 2026-10-03
 
-1. **Two database URLs, or one role made less powerful.** §4 proposes `pigrocrm_app`
-   for requests and the owner for migrations and provisioning, which is two URLs in
-   every `.env`. The alternative keeps one URL and makes that role `NOSUPERUSER` after
-   bootstrap, relying on `FORCE ROW LEVEL SECURITY` to cover the owner. It is one
-   setting fewer and one `ALTER ROLE` that has to run on every environment by hand,
-   which is the kind of step this repository has ruled out of a release. I recommend
-   the two URLs.
-2. **A policy on `activities`, or no timeline for a scoped user.** The polymorphic
-   `entity_type`/`entity_id` makes its policy the only `CASE` in the set and the only one
-   whose cost is not a plain index lookup. The alternative hides the timeline from a
-   scoped user altogether. I recommend the policy, measured, with the hide as the
-   fallback if the measurement is bad.
-3. **Rename `emitter_profile` to `aziende`, or keep the table name.** A rename touches
-   the entity label of every error and timeline row written from now on; keeping it
-   leaves a table whose name says one row when it holds three. I recommend the rename.
-4. **One line about the law, or none.** A forfettario who controls an SRL in the same
-   line of business is excluded from the regime (L. 190/2014, art. 1, c. 57, lett. d).
-   The product does not check it and should not read as asserting the combination is
-   fine; I recommend one sentence in the azienda form's help text and nothing in the
-   code.
+1. **Two database URLs, or one role made less powerful.** Two URLs: `pigrocrm_app` on
+   `PIGROCRM_DATABASE_URL` for requests, the owner on `PIGROCRM_ADMIN_DATABASE_URL` for
+   migrations and provisioning (§4). The alternative, one URL and an `ALTER ROLE` after
+   bootstrap, was a hand-run step on every environment, which this repository keeps out
+   of a release.
+2. **A policy on `activities`, or no timeline for a scoped user.** The policy, measured
+   before the last milestone closes, with hiding the timeline as the fallback if the
+   measurement is bad. Its `CASE` on `entity_type` is the one predicate in §4 that is not
+   a plain index lookup.
+3. **Rename `emitter_profile` to `aziende`, or keep the table name.** Keep it. The routes
+   (`/api/aziende`), the ORM class, the service and every word the product says use
+   «azienda»; the table, the error label and the timeline rows keep the name they have.
+   A rename would have touched every label written from now on for a name nobody reads.
+4. **One line about the law, or none.** None. Whether a forfettario may also control an
+   SRL is the person's and their accountant's question; the product records the aziende
+   it is given and asserts nothing about the combination.
