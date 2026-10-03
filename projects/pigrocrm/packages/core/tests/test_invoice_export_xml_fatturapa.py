@@ -16,7 +16,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.models import EmitterProfile
+from pigrocrm.core.emitter.repository import AziendaRepository
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.invoices.models import Invoice
@@ -38,15 +38,22 @@ def _fixture(name: str) -> bytes:
 
 
 def _svc(session: Session, storage: LocalFileStorage) -> InvoiceService:
-    session.add(FiscalProfile(codice_regime="RF19"))
-    session.add(
-        EmitterProfile(
+    from pigrocrm.core.actor import Actor
+    from pigrocrm.core.emitter.schemas import AziendaUpsert
+    from pigrocrm.core.emitter.service import AziendaService
+
+    AziendaService(session).upsert_default(
+        AziendaUpsert(
             ragione_sociale="Chiara Bianchi",
             partita_iva=FORNITORE_PIVA,
             codice_fiscale=FORNITORE_CF,
             nazione="IT",
-        )
+        ),
+        Actor(id=None, type="system", role="admin"),
     )
+    azienda = AziendaRepository(session).default()
+    assert azienda is not None
+    session.add(FiscalProfile(codice_regime="RF19", azienda_id=azienda.id))
     session.flush()
     return InvoiceService(session, storage)
 

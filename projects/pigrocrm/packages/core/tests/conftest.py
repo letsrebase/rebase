@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from periodo_fiscale import OGGI
-from sqlalchemy import Engine, text
+from sqlalchemy import Connection, Engine, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -39,6 +39,11 @@ def db_session(db_engine: Engine) -> Iterator[Session]:
     """Each test runs in a transaction that is rolled back, so tests never see each other."""
     connection = db_engine.connect()
     transaction = connection.begin()
+    # The space starts with its default azienda, as every provisioned space does
+    # (REB-615): the fiscal profile belongs to an azienda, so a test that saves one or
+    # issues anything needs the row first; the few tests about a space with no azienda
+    # at all delete it (`test_emitter.py`'s `_bare` fixture).
+    _seed_default_azienda(connection)
     session = session_factory(db_engine)(bind=connection, join_transaction_mode="create_savepoint")
     try:
         yield session
@@ -225,25 +230,43 @@ def extract_pdf_text() -> Callable[[LocalFileStorage, Session, UUID], str]:
 # the emitter with it.
 
 
+def _seed_default_azienda(connection: Connection) -> None:
+    """On the test's outer connection, not in the session: a service that rolls back
+    (every `Conflict`, every refused write) rolls back the session's savepoint, and a
+    row seeded there would vanish with it. By row and not through the service: no
+    timeline entry (tests count those), only the one default every provisioned space
+    has. The outer transaction is rolled back at the end of the test like everything
+    else."""
+    from pigrocrm.core.emitter.models import Azienda
+
+    connection.execute(
+        Azienda.__table__.insert().values(
+            nome="Studio di prova", ragione_sociale="Studio di prova", predefinita=True
+        )
+    )
+
+
 def _invoice_service(session: Session, storage: LocalFileStorage) -> Any:
     """`InvoiceService` with the two profiles `issue()` reads already in place."""
-    from pigrocrm.core.emitter.repository import EmitterProfileRepository
-    from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-    from pigrocrm.core.emitter.service import EmitterProfileService
+    from pigrocrm.core.emitter.repository import AziendaRepository
+    from pigrocrm.core.emitter.schemas import AziendaUpsert
+    from pigrocrm.core.emitter.service import AziendaService
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
     from pigrocrm.core.fiscal.service import FiscalProfileService
     from pigrocrm.core.invoices.service import InvoiceService
 
     admin = Actor(id=None, type="system", role="admin")
-    if FiscalProfileRepository(session).get() is None:
-        FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), admin)
-    # Guarded on its own row and not on the fiscal profile's. The two used to share one
-    # `if`, which meant that a test installing a different regime first -- `rf01_fiscal_profile`
-    # does exactly that -- left the emitter profile uncreated, and `issue()` then failed
-    # on a missing emitter for a reason with no visible connection to the regime.
-    if EmitterProfileRepository(session).get() is None:
-        EmitterProfileService(session).upsert(
-            EmitterProfileUpsert(
+    # The azienda first, since REB-615 a fiscal profile belongs to one. The session
+    # seeds a bare default («Studio di prova», nothing fiscal) and `upsert_default`
+    # fills in the identity the issue, export and import paths need, but only when no
+    # test has already given the default an identity of its own: a fixture must not
+    # overwrite what the test set. The fiscal profile is guarded on its own row, so a
+    # test installing a different regime first -- `rf01_fiscal_profile` does exactly
+    # that -- keeps it.
+    seeded = AziendaRepository(session).default()
+    if seeded is None or not seeded.partita_iva:
+        AziendaService(session).upsert_default(
+            AziendaUpsert(
                 ragione_sociale="Studio Rossi",
                 partita_iva="01234567890",
                 codice_fiscale="HMCRFT00A01H501K",
@@ -256,6 +279,10 @@ def _invoice_service(session: Session, storage: LocalFileStorage) -> Any:
             ),
             admin,
         )
+    azienda = AziendaRepository(session).default()
+    assert azienda is not None
+    if FiscalProfileRepository(session).get(azienda.id) is None:
+        FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), admin)
     return InvoiceService(session, storage)
 
 

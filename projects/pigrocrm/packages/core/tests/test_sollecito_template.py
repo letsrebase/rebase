@@ -208,7 +208,7 @@ def test_the_declared_variables_match_the_paths_the_body_actually_reads() -> Non
     root = {path[0] for path in declared_paths(parse_template(SOLLECITO_TEMPLATE_SOURCE)).root}
     declared = {variable.nome for variable in SOLLECITO_DECLARED_VARIABLES}
     assert declared <= root, f"declared but never used: {sorted(declared - root)}"
-    # `emittente` is supplied whole by `EmitterProfileService.as_template_values`, never
+    # `emittente` is supplied whole by `AziendaService.as_template_values`, never
     # typed into a form, so it is deliberately not declared -- the same decision
     # `TIME_REPORT_TEMPLATE_VARIABLES` made about `voci`.
     assert root - declared == {"emittente"}

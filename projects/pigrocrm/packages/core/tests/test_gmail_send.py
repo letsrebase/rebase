@@ -38,7 +38,7 @@ from pigrocrm.core.auth.models import User
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.documents.models import Document, DocumentVersion
-from pigrocrm.core.emitter.models import EmitterProfile
+from pigrocrm.core.emitter.repository import AziendaRepository
 from pigrocrm.core.errors import Conflict, PermissionDenied, ValidationFailed
 from pigrocrm.core.gmail.drafts import EmailDraftService
 from pigrocrm.core.gmail.errors import CredentialRevoked, ScopeMissing
@@ -211,14 +211,13 @@ def test_the_from_header_is_the_issuer_s_name_and_a_comma_in_it_adds_no_recipien
     from email.policy import default as default_policy
     from email.utils import getaddresses
 
-    db_session.add(
-        EmitterProfile(
-            ragione_sociale="Bianchi, Rossi e Associati",
-            partita_iva="12345678901",
-            codice_fiscale="BNCRSS80A01H501U",
-            regime_fiscale="RF19",
-        )
-    )
+    azienda = AziendaRepository(db_session).default()
+    assert azienda is not None
+    azienda.ragione_sociale = "Bianchi, Rossi e Associati"
+    azienda.partita_iva = "12345678901"
+    azienda.codice_fiscale = "BNCRSS80A01H501U"
+    azienda.regime_fiscale = "RF19"
+    db_session.flush()
     account = connected_account(db_session)
     draft = _draft(db_session, account)
     db_session.commit()

@@ -1,6 +1,6 @@
 """Confirming a reviewed invoice import onto the register (REB-366):
 `InvoiceService.confirm_import`, exercised end to end with a real
-`EmitterProfile` row, a real `FiscalProfile` row, a real `documents` row and
+`Azienda` row, a real `FiscalProfile` row, a real `documents` row and
 the FPR12 fixtures REB-363/364/365 already use.
 
 The issue's own "Done when" is what every scenario below serves: confirming an
@@ -25,9 +25,11 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.models import EmitterProfile
-from pigrocrm.core.errors import AgentForbidden, NotFound, PermissionDenied
+from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.errors import AgentForbidden, PermissionDenied, ValidationFailed
 from pigrocrm.core.fiscal.models import FiscalProfile
+from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.invoices.import_confirm import map_parsed_invoice_to_import
 from pigrocrm.core.invoices.import_schemas import (
     ParsedInvoice,
@@ -47,7 +49,7 @@ LOTTO = "fpr12-lotto-due-fatture.xml"
 ADMIN = Actor(id=None, type="user", role="admin")
 
 # The FPR12 fixtures' own `CedentePrestatore` (fornitore): matching this on an
-# `EmitterProfile` is what makes them "outgoing" for the account holder.
+# `Azienda` is what makes them "outgoing" for the account holder.
 FORNITORE_PIVA = "01234567890"
 FORNITORE_CF = "BNCCHR85M41H501Z"
 # Their `CessionarioCommittente` (cliente).
@@ -59,21 +61,34 @@ def _fixture(name: str) -> bytes:
 
 
 def _fiscal_profile(session: Session) -> FiscalProfile:
-    profile = FiscalProfile(codice_regime="RF19")
+    # A fiscal profile belongs to an azienda since REB-615: the default one, created
+    # here when a test asks for the profile before the emitter.
+    azienda = AziendaRepository(session).default() or _emitter(session)
+    existing = FiscalProfileRepository(session).get(azienda.id)
+    if existing is not None:
+        return existing
+    profile = FiscalProfile(codice_regime="RF19", azienda_id=azienda.id)
     session.add(profile)
     session.flush()
     return profile
 
 
-def _emitter(session: Session, **overrides: object) -> EmitterProfile:
+def _emitter(session: Session, **overrides: object) -> Azienda:
     base: dict[str, object] = {
         "ragione_sociale": "Chiara Bianchi",
         "partita_iva": FORNITORE_PIVA,
         "codice_fiscale": FORNITORE_CF,
         "nazione": "IT",
+        "predefinita": True,
     }
     base.update(overrides)
-    profile = EmitterProfile(**base)
+    existing = AziendaRepository(session).default()
+    if existing is not None:
+        for key, value in base.items():
+            setattr(existing, key, value)
+        session.flush()
+        return existing
+    profile = Azienda(**base)
     session.add(profile)
     session.flush()
     return profile
@@ -476,9 +491,14 @@ def test_an_agent_credential_without_full_access_is_forbidden(
 def test_no_emitter_profile_configured_refuses_rather_than_guesses(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
+    # Since REB-615 every space has its azienda from the first boot, so «not configured»
+    # is an azienda with neither fiscal id, and the refusal names that field rather
+    # than a missing row: the import never guesses which P.IVA is ours.
     document_id = _document(db_session, local_storage, _fixture(CONSULENZA))
-    with pytest.raises(NotFound):
+    with pytest.raises(ValidationFailed) as caught:
         InvoiceService(db_session, local_storage).confirm_import(document_id, ADMIN)
+    assert caught.value.details["entity"] == "emitter_profile"
+    assert caught.value.details["field"] == "partita_iva"
 
 
 def test_natura_is_read_from_the_line_itself_never_reconstructed_by_rate_alone() -> None:

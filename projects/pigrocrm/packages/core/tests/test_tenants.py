@@ -444,7 +444,7 @@ def test_a_failing_seed_undoes_the_space_and_frees_the_name(
 ) -> None:
     import pigrocrm.core.tenants.service as tenants_service
 
-    def boom(session: Session) -> None:
+    def boom(session: Session, **kwargs: object) -> None:
         raise RuntimeError("seed rotto")
 
     monkeypatch.setattr(tenants_service, "ensure_defaults", boom)

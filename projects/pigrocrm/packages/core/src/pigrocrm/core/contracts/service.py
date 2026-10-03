@@ -208,7 +208,7 @@ class RateCardService:
             # ck_rate_cards_no_overlap is the real authority here (Done-when: "refused
             # by the database, not by a service-level check") -- this only turns the
             # raw exclusion violation into this project's own clean error, the same
-            # way EmitterProfileService.upsert/FiscalProfileService.upsert already do
+            # way AziendaService.upsert/FiscalProfileService.upsert already do
             # for their own singleton race.
             self.session.rollback()
             raise Conflict(
