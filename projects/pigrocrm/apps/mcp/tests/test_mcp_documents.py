@@ -315,16 +315,16 @@ async def test_a_document_archived_by_an_agent_can_be_restored_by_one(
         ).is_error
 
 
-async def test_describe_emitter_profile_reads_the_issuer_every_header_prints(
+async def test_describe_azienda_reads_the_issuer_every_header_prints(
     server, seeded_template_id: str
 ) -> None:
     """`seeded_template_id` is the fixture that seeds the emitter profile, because
     rendering a document needs one -- which is the same reason
-    `EmitterProfileService.get` is un-role-gated at the service layer: the PDF header
+    `AziendaService.get` is un-role-gated at the service layer: the PDF header
     needs it for every role, so there is no role for which this read is privileged. The
-    write on that row is `update_emitter_profile`, admin-only (ORB-188)."""
+    write on that row is `update_azienda`, admin-only (ORB-188)."""
     async with Client(server) as client:
-        profile = _payload(await client.call_tool("describe_emitter_profile", {}))
+        profile = _payload(await client.call_tool("describe_azienda", {}))
 
     assert profile["ragione_sociale"] == "Studio Rossi"
     assert profile["partita_iva"] == "01234567890"

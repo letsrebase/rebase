@@ -76,7 +76,7 @@ Method = tuple[str, str]
 #    a test below asserts this block names exactly the same methods that file bans. If
 #    the two ever disagree, one of them is out of date and neither can be trusted.
 #    A ban expressed as a `(service, method)` pair rather than by bare name (as
-#    `FiscalProfileService.upsert` was until ORB-188: `EmitterProfileService` has an
+#    `FiscalProfileService.upsert` was until ORB-188: `AziendaService` has an
 #    `upsert` too) is the shape this table has used all along, and the reason the
 #    comparison test below compares the qualified bans as pairs and the rest as names.
 _VIETATE: dict[Method, str] = {
@@ -206,7 +206,11 @@ _INTERNE: dict[Method, str] = {
         "che autorizza, registra e committa"
     ),
     ("DocumentService", "storage_key_for"): "costruisce una chiave di storage",
-    ("EmitterProfileService", "as_template_values"): "alimenta il renderer dei template",
+    ("AziendaService", "as_template_values"): "alimenta il renderer dei template",
+    ("AziendaService", "resolve"): (
+        "lettura interna: la riga che un `azienda_id` nomina, o la predefinita quando e' "
+        "`None`; e' cio' che ogni servizio chiama per se', e `describe_azienda` la espone"
+    ),
     ("FieldDefinitionService", "specs_for"): "alimenta la validazione dei campi custom",
     ("FiscalProfileService", "snapshot"): "lettura interna del regime, senza actor",
     ("InvoiceService", "undeclared_gaps"): (
@@ -459,6 +463,15 @@ _CREDENZIALI: dict[Method, str] = {
 #    the configuration is. Exposing them would also mean an agent could rewrite the field
 #    definitions its own `describe_schema` output is derived from.
 _CONFIGURAZIONE: dict[Method, str] = {
+    ("AziendaService", "set_default"): (
+        "Impostazioni → Aziende: quale azienda e' la predefinita decide a chi vanno le "
+        "letture implicite di tutto lo spazio (REB-616, spec 2026-10-03 §3); una scelta "
+        "dell'amministratore dal pannello, non di un agente"
+    ),
+    ("AziendaService", "deactivate"): (
+        "Impostazioni → Aziende: spegnere un'azienda la toglie da ogni selettore; stessa "
+        "ragione di `set_default`"
+    ),
     ("SpaceSettingsService", "read"): (
         "Impostazioni → Spazio: le variabili che uno spazio decide per se' (client Google, "
         "storage, accesso completo dell'agente, soglie dei solleciti). Configurazione "
@@ -929,7 +942,7 @@ def test_the_forbidden_block_names_exactly_what_the_ban_test_bans() -> None:
     re-stating a list is how lists diverge. Compared the way each half of the ban is
     written: the bare-name bans on names, and the qualified ones as the `(service,
     method)` pairs they are -- comparing those on the name alone would accept
-    `EmitterProfileService.upsert` standing in for `FiscalProfileService.upsert`, which
+    `AziendaService.upsert` standing in for `FiscalProfileService.upsert`, which
     is the exact confusion the qualified list exists to prevent.
 
     `_FUORI_DAL_SETACCIO` counts on the same side of the equality as `_VIETATE`, which

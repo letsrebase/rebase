@@ -32,6 +32,7 @@ from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
+from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.space_settings import SpaceSettingsService, SpaceSettingsUpdate
@@ -564,7 +565,7 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
     """An admin in the root database and a PAT of theirs, plus a second active admin:
     REB-292 refuses to take a space's last one, and these tests exercise what happens
     AFTER the deactivation, not that guard. Removed after, along with the timeline,
-    the token rows, and the singleton fiscal profile the demotion test writes."""
+    the token rows, the fiscal profile the demotion test writes and the azienda it belongs to."""
     with session_factory(mcp_engine)() as session:
         users = UserService(session)
         admin = users.create(
@@ -583,6 +584,10 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
         _, raw = PatService(session, settings=Settings(_env_file=None)).create(  # type: ignore[call-arg]
             "prova", Actor(id=admin.id, type="user", role="admin")
         )
+        # The root database has no azienda of its own here (it is not provisioned the
+        # way a space is), and the fiscal profile the demotion test writes belongs to
+        # one since REB-615: seeded by row, removed below after the profile.
+        session.add(Azienda(nome="Radice", ragione_sociale="Radice", predefinita=True))
         session.commit()
         admin_id = admin.id
     try:
@@ -595,6 +600,7 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
             )
             session.execute(delete(PersonalAccessToken).where(PersonalAccessToken.user_id.in_(ids)))
             session.execute(delete(FiscalProfile))
+            session.execute(delete(Azienda))
             session.execute(delete(User).where(User.id.in_(ids)))
             session.commit()
 

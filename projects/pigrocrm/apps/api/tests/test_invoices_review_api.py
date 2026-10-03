@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
 
 FIXTURES = (
@@ -28,7 +29,7 @@ def _fixture(name: str) -> bytes:
 @pytest.fixture
 def emitter(logged_in: TestClient) -> dict[str, Any]:
     response = logged_in.put(
-        "/api/emitter",
+        azienda_url(logged_in),
         json={
             "ragione_sociale": "Chiara Bianchi",
             "partita_iva": FORNITORE_PIVA,
