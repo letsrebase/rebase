@@ -34,7 +34,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.db import month_bounds, session_factory, today_local
+from pigrocrm.core.db import clock, month_bounds, session_factory, today_local
 from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.digest.schemas import WeeklyDigest
@@ -94,8 +94,26 @@ def _require_empty(session: Session) -> None:
         )
 
 
+@pytest.fixture(params=[date(2026, 9, 30), date(2026, 10, 4)], ids=["wednesday", "sunday"])
+def frozen_day(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> date:
+    """Freeze the project's one clock at midday UTC on a Wednesday and on a Sunday, the
+    day that *is* the last day of the «in scadenza» window (REB-618), so both readings
+    of that window run on every pull request and not only on the weekday CI happens to
+    pick. Midday and not midnight, for the reason `test_week_hours.py::_frozen` gives:
+    at 00:30 UTC it is already the next day in Rome. The corpus's dates stay derived from
+    the clock, as this file's own header asks; what is fixed is the clock, not a date.
+    """
+    frozen: date = request.param
+    monkeypatch.setattr(
+        clock,
+        "_now",
+        lambda: datetime(frozen.year, frozen.month, frozen.day, 12, 0, tzinfo=UTC),
+    )
+    return frozen
+
+
 @pytest.fixture
-def corpus(db_engine: Engine) -> Iterator[Corpus]:
+def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
     """One week with something in every section, plus the rows each section must exclude.
 
     Every date is an offset from the week itself, and the two that must not drift are
@@ -103,9 +121,9 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
 
       * the overdue invoice is due thirty days before today, comfortably past
         `solleciti_grace_days` (7), so it is a reminder candidate whatever day this runs;
-      * the one due `a + 7` is the last day of the «in scadenza» window and, because the
-        window opens the day after the closed week, can never also be overdue -- the two
-        halves of «Da incassare» must not name the same invoice twice.
+      * the one due `a + 7` is the last day of the «in scadenza» window, or the day after
+        on the Sunday that *is* `a + 7`, so it is never also in `scadute` -- the two
+        halves of «Da incassare» must not name the same invoice twice (REB-618).
     """
     factory = session_factory(db_engine)
     da, a = _settimana_scorsa()
@@ -204,12 +222,15 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
             data_emissione=oggi - timedelta(days=90),
             data_scadenza=oggi - timedelta(days=30),
         )
-        # Due on the last day of the «in scadenza» window, which is never in the past.
+        # Due on the last day of the «in scadenza» window, pushed to tomorrow when that
+        # day is today: the window's last day is the Sunday of the current week, and on
+        # a Sunday in Europe/Rome `scadute` («due on or before today») would count it as
+        # overdue by zero days (REB-618).
         _invoice(
             4,
             totale="600.00",
             data_emissione=da - timedelta(days=10),
-            data_scadenza=a + timedelta(days=7),
+            data_scadenza=max(a + timedelta(days=7), oggi + timedelta(days=1)),
         )
 
         session.add(
@@ -239,7 +260,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
             )
         )
 
-        def _stage_changed(giorno: date) -> Activity:
+        def _stage_changed(day: date) -> Activity:
             return Activity(
                 entity_type="deal",
                 entity_id=deal_mosso.id,
@@ -250,7 +271,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
                 # Midday, so the instant lands on the same calendar day in Rome as in UTC
                 # and the test is not asserting the timezone conversion by accident --
                 # `test_the_week_lists_...` is about the week filter.
-                occurred_at=datetime.combine(giorno, datetime.min.time(), tzinfo=UTC)
+                occurred_at=datetime.combine(day, datetime.min.time(), tzinfo=UTC)
                 + timedelta(hours=12),
             )
 
@@ -358,8 +379,14 @@ def test_the_week_lists_issued_collected_overdue_and_due(corpus: Corpus) -> None
 
     # The window opens the day after the closed week and runs seven days, so the invoice
     # due on `a + 7` is in it and the overdue one is not.
-    assert [i.importo for i in digest.in_scadenza] == [Decimal("600.00")]
-    assert [i.data for i in digest.in_scadenza] == [corpus.a + timedelta(days=7)]
+    # The window is `a + 1` to `a + 7`, minus whatever `scadute` already names (due on
+    # or before today). On the Sunday that is `a + 7` nothing in it is still to come,
+    # and the corpus's invoice sits on `a + 8` (REB-618): both readings are asserted.
+    if corpus.a + timedelta(days=7) > today_local(SETTINGS):
+        assert [i.importo for i in digest.in_scadenza] == [Decimal("600.00")]
+        assert [i.data for i in digest.in_scadenza] == [corpus.a + timedelta(days=7)]
+    else:
+        assert digest.in_scadenza == []
 
     assert digest.ore is not None
     assert digest.ore.ore_totali == Decimal("6.00")
@@ -391,7 +418,7 @@ def test_the_months_are_the_register_sums_and_not_a_second_count(corpus: Corpus)
 
     def _somma(primo: date, ultimo: date) -> Decimal:
         return sum(
-            (importo for giorno, importo in corpus.emissioni if primo <= giorno <= ultimo),
+            (importo for day, importo in corpus.emissioni if primo <= day <= ultimo),
             Decimal("0.00"),
         )
 
