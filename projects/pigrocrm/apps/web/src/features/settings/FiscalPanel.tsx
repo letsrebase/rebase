@@ -118,8 +118,8 @@ function valuesFrom(profile: FiscalProfile): Values {
   return values
 }
 
-export function FiscalPanel() {
-  const profile = useFiscalProfile()
+export function FiscalPanel({ aziendaId }: { aziendaId: string }) {
+  const profile = useFiscalProfile(aziendaId)
 
   return (
     <div className="space-y-4">
@@ -151,14 +151,18 @@ export function FiscalPanel() {
         // Keyed on identity so the form seeds at mount rather than in an effect: one
         // render with the right values, and a later refetch cannot overwrite what the
         // user is typing.
-        <FiscalForm key={profile.data?.id ?? 'nuovo'} profile={profile.data ?? null} />
+        <FiscalForm
+          key={profile.data?.id ?? 'nuovo'}
+          aziendaId={aziendaId}
+          profile={profile.data ?? null}
+        />
       )}
     </div>
   )
 }
 
-function FiscalForm({ profile }: { profile: FiscalProfile | null }) {
-  const save = useSaveFiscalProfile()
+function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: FiscalProfile | null }) {
+  const save = useSaveFiscalProfile(aziendaId)
   const [values, setValues] = useState<Values>(() =>
     profile ? valuesFrom(profile) : emptyValues(),
   )

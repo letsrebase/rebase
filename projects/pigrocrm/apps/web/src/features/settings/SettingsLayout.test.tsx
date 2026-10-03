@@ -121,7 +121,7 @@ describe('SettingsLayout (the /app/settings route guard)', () => {
     render(<SettingsLayout />)
     expect(screen.getByTestId('outlet-content')).toBeInTheDocument()
     expect(screen.queryByRole('status')).toBeNull()
-    expect(screen.getAllByRole('tab')).toHaveLength(14)
+    expect(screen.getAllByRole('tab')).toHaveLength(13)
     expect(screen.getByRole('tab', { name: 'Google Drive' })).toBeInTheDocument()
   })
 

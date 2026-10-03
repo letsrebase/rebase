@@ -1,4 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { FiscalPanel } from '@/features/settings/FiscalPanel'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-export const Route = createFileRoute('/app/settings/fiscal')({ component: FiscalPanel })
+// «Emittente» and «Fiscale» became one page, Impostazioni → Aziende, when the emitter
+// profile became one row per azienda (REB-617, spec 2026-10-03 §5). The old path keeps
+// answering, the way the Italian ones retired on 2026-09-21 still do.
+export const Route = createFileRoute('/app/settings/fiscal')({
+  beforeLoad: () => {
+    throw redirect({ to: '/app/settings/aziende' })
+  },
+})

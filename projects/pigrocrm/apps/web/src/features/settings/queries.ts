@@ -338,39 +338,38 @@ export function useActivateTemplate() {
   })
 }
 
-// -- Emitter profile ----------------------------------------------------------
+// -- Aziende ------------------------------------------------------------------
 
-export type EmitterRecord = components['schemas']['EmitterProfileRead']
-type EmitterUpsertBody = components['schemas']['EmitterProfileUpsert']
+export type AziendaRecord = components['schemas']['AziendaRead']
+type AziendaUpsertBody = components['schemas']['AziendaUpsert']
 
 /**
- * One row, or none at all on a fresh install. `GET /api/emitter` answers 404
- * until it is first saved, and that 404 is not an error the user needs to see --
- * it means "not configured yet", which is this panel's empty state. Every other
- * failure still surfaces, which is why this keys on the status rather than
- * swallowing everything.
+ * The aziende of the space, the default first (REB-617, spec 2026-10-03 §5). Every
+ * provisioned space has one, so an empty list is a space between signup and its first
+ * boot and not a state the page designs for; a second azienda cannot be created before
+ * milestone 5, which is why there is no create hook here.
  */
-export function useEmitter() {
+export function useAziende() {
   return useQuery({
-    queryKey: queryKeys.emitter,
-    queryFn: async () => {
-      const { data, error, response } = await api.GET('/api/emitter')
-      if (response.status === 404) return null
-      if (error) throw error
-      return data ?? null
-    },
+    queryKey: queryKeys.aziende,
+    queryFn: () => unwrap(api.GET('/api/aziende')),
   })
 }
 
-/** `PUT`, not `PATCH`: `EmitterProfileUpsert` is one shape for create and
- *  update, because there is only ever one row and both need the same fields.
- *  Slice 3 builds FatturaPA on this row, so a partial save leaving
- *  `partita_iva` empty would surface much later as an invalid invoice. */
-export function useSaveEmitter() {
+/** `PUT`, not `PATCH`: `AziendaUpsert` is one shape for every write, because a
+ *  write is always a whole row. Slice 3 builds FatturaPA on this row, so a partial
+ *  save leaving `partita_iva` empty would surface much later as an invalid invoice.
+ *  Invalidates the list, which is where every reader of this azienda gets it from. */
+export function useSaveAzienda(aziendaId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.PUT('/api/emitter', { body: body as unknown as EmitterUpsertBody })),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.emitter }),
+      unwrap(
+        api.PUT('/api/aziende/{azienda_id}', {
+          params: { path: { azienda_id: aziendaId } },
+          body: body as unknown as AziendaUpsertBody,
+        }),
+      ),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.aziende }),
   })
 }
