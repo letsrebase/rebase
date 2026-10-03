@@ -290,7 +290,7 @@ Routes added, in `apps/api/src/pigrocrm_api/routers/aziende.py`:
 | Route | Who | What |
 |---|---|---|
 | `GET /api/aziende` | any member | The aziende the caller may see, `predefinita` first. A scoped user gets their scope only. |
-| `POST /api/aziende` | unscoped admin | Creates one, from milestone 3 on (§9); `AziendaCreate` is `EmitterProfileUpsert` plus `nome` and a required `fiscal_profile` body, so an azienda created here never exists without its profile (1.2). |
+| `POST /api/aziende` | unscoped admin | Creates one, from milestone 5 on (§9); `AziendaCreate` is `EmitterProfileUpsert` plus `nome` and a required `fiscal_profile` body, so an azienda created here never exists without its profile (1.2). |
 | `GET /api/aziende/{id}`, `PUT /api/aziende/{id}` | admin whose scope includes it | Read and replace, the old `/api/emitter` shape. |
 | `POST /api/aziende/{id}/predefinita` | unscoped admin | Moves the default. |
 | `DELETE /api/aziende/{id}` | unscoped admin | Deactivates (`attiva = false`); refused on the default. Never a row delete: an azienda that issued an invoice stays readable forever. The answer says how many customers still point at it, and creating a deal, a document or a proforma under such a customer is refused («sposta prima il cliente su un'azienda attiva»). |
@@ -534,7 +534,7 @@ the invoice for a reminder and through the customer for a draft.
 Tools renamed and added, every description in Italian as the product's own:
 `describe_emitter_profile` → `list_aziende` and `describe_azienda(azienda_id?)`;
 `update_emitter_profile` → `update_azienda(azienda_id?, …)`, and `create_azienda(…)`
-from milestone 3 on (§9), both admin and agent-allowed like `update_fiscal_profile`
+from milestone 5 on (§9), both admin and agent-allowed like `update_fiscal_profile`
 since ORB-188 (setup, not history);
 `describe_fiscal_profile` and `update_fiscal_profile` take `azienda_id?`. Every optional
 `azienda_id` resolves to the only azienda when there is one, so a prompt written for a
@@ -579,18 +579,24 @@ scope is its owner's (§4), so no tool needs to check it.
    the register per azienda; the import; the `non-it` pack. Still invisible with one
    azienda, and still no creation.
 3. **Assign customers to an azienda and inherit it down the chain.** The rest of
-   step 4 and step 5; the proposal; the selector; the filters; and only now `POST
-   /api/aziende`, `create_azienda` and «Nuova azienda», because an azienda created
-   before this point would have had invoices it could not number and customers it
-   could not own. The first visible piece, and only from the second azienda on.
-4. **Render every document and email from its azienda.** §6 and the uploads.
-5. **Sum the cash across aziende and keep the taxes apart.** 1.9 end to end.
+   step 4 and step 5; the proposal; the selector; the filters. Still no creation: with
+   one azienda the selector does not render and the column is invisible.
+4. **Render every document and email from its azienda.** §6 and the uploads. Still no
+   creation.
+5. **Sum the cash across aziende and keep the taxes apart.** 1.9 end to end, and only
+   now `POST /api/aziende`, `create_azienda` and «Nuova azienda». Creation opens in the
+   last milestone that something issued or computed for a second azienda depends on:
+   before 2 its invoices could not be numbered, before 3 it could own no customer,
+   before 4 an invoice issued for it would have frozen the first azienda's identity and
+   IBAN in a snapshot that no later milestone rewrites, and before 5 its receipts would
+   have counted toward the forfettario's ceiling and estimate. The first visible piece,
+   and only from the second azienda on.
 6. **Scope an invitation to one azienda with row-level security.** §4: the role, the
    policies, the binding, the invitation field, the Team panel, the tests. Last because
    every column it guards must exist first, and because it is the one milestone that
    changes how the API connects to the database.
 
-Humancraft's cut-over, after milestone 3: create the SRL and the foreign azienda in
+Humancraft's cut-over, after milestone 5: create the SRL and the foreign azienda in
 Impostazioni, each with its fiscal profile; move the foreign customers to the foreign
 azienda by hand; from then on new deals follow. After milestone 6: invite B scoped to
 rebase. Nothing that exists is touched at any step.
