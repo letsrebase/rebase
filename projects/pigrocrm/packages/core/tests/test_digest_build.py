@@ -204,12 +204,15 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
             data_emissione=oggi - timedelta(days=90),
             data_scadenza=oggi - timedelta(days=30),
         )
-        # Due on the last day of the «in scadenza» window, which is never in the past.
+        # Due on the last day of the «in scadenza» window, pushed to tomorrow when that
+        # day is today: the window's last day is the Sunday of the current week, and on
+        # a Sunday in Europe/Rome `scadute` («due on or before today») would count it as
+        # overdue by zero days (REB-618, seen on 2026-10-04 at 00:05 Rome time).
         _invoice(
             4,
             totale="600.00",
             data_emissione=da - timedelta(days=10),
-            data_scadenza=a + timedelta(days=7),
+            data_scadenza=max(a + timedelta(days=7), oggi + timedelta(days=1)),
         )
 
         session.add(
@@ -358,8 +361,14 @@ def test_the_week_lists_issued_collected_overdue_and_due(corpus: Corpus) -> None
 
     # The window opens the day after the closed week and runs seven days, so the invoice
     # due on `a + 7` is in it and the overdue one is not.
-    assert [i.importo for i in digest.in_scadenza] == [Decimal("600.00")]
-    assert [i.data for i in digest.in_scadenza] == [corpus.a + timedelta(days=7)]
+    # The «in scadenza» window is «due after today, up to a + 7»: on the Sunday that
+    # *is* a + 7 the window is already empty, and the corpus's own invoice sits one day
+    # past it (REB-618). Both readings are what the digest should say on that day.
+    if corpus.a + timedelta(days=7) > today_local(SETTINGS):
+        assert [i.importo for i in digest.in_scadenza] == [Decimal("600.00")]
+        assert [i.data for i in digest.in_scadenza] == [corpus.a + timedelta(days=7)]
+    else:
+        assert digest.in_scadenza == []
 
     assert digest.ore is not None
     assert digest.ore.ore_totali == Decimal("6.00")
