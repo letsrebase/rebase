@@ -86,9 +86,14 @@ place it matters most. The timeline rows already written with `entity = "emitter
 stay as they are; history is not rewritten.
 
 **1.2 The fiscal profile belongs to an azienda.** `fiscal_profile` keeps its name and its
-columns, loses `singleton`, and gains `azienda_id` (`NOT NULL`, `UNIQUE`, FK). One fiscal
-profile per azienda, exactly one, which is the same guarantee as today multiplied by the
-number of aziende. The snapshot taken at issue (`FiscalSnapshot`, `fiscal/service.py:28-45`)
+columns, loses `singleton`, and gains `azienda_id` (`NOT NULL`, `UNIQUE`, FK). At most
+one fiscal profile per azienda, and an azienda cannot issue without one, which is
+exactly today's guarantee multiplied by the number of aziende: provisioning writes the
+emitter and not the fiscal profile (`tenants/service.py:165-175`), so a space whose
+owner never opened Impostazioni → Fiscale has no row today and still has none after the
+migration, and `issue` keeps answering `NotFound("fiscal_profile")` there. The one
+exception is that default azienda; an azienda created through the API is born with its
+profile (§3). The snapshot taken at issue (`FiscalSnapshot`, `fiscal/service.py:28-45`)
 keeps its fields, one of which widens (`codice_regime` becomes `str | None`, 1.3): it
 already freezes what an invoice needs, and an issued invoice keeps reading its own copy
 (`invoices/pdf.py:195-232`, `invoices/fatturapa.py:649-659`).
@@ -128,9 +133,12 @@ codice fiscale is `outgoing` on X; one matching none is `incoming` and skipped a
 (`import_classification.py:32-56`). `review_import` shows the azienda in its answer, and
 `confirm_import` and `import_issued` lock X's counter and build the snapshot from X's
 profiles (`invoices/service.py:1394-1395`). An XML whose `fornitore` matches two aziende
-is a configuration error (`ValidationFailed` on `aziende.partita_iva`), and the unique
-index on `(partita_iva) WHERE partita_iva IS NOT NULL` in §2 makes it impossible to
-save in the first place.
+is a configuration error, and two partial unique indexes in §2, on `partita_iva` and on
+`codice_fiscale`, make it impossible to save in the first place, since the classifier
+matches on either. The classifier still checks: a `fornitore` that matches one azienda
+by P.IVA and another by codice fiscale, which the indexes cannot rule out, is refused
+with `ValidationFailed("aziende", "codice_fiscale", «corrisponde a due aziende»)` and
+nothing is written.
 
 **1.6 The azienda is assigned on the customer and proposed by its nation.** `customers`
 gets `azienda_id NOT NULL`. On creation the API proposes one when the caller gives
@@ -195,10 +203,17 @@ any form and the same Impostazioni it has today: the feature is invisible until 
 azienda exists, which is the condition for shipping it to every space.
 
 **1.11 An invitation may be scoped to one azienda, and the database keeps the scope.**
-`POST /api/users/invites` gains `aziende: [uuid]` (omitted: every azienda, as today);
-accepting it writes the rows of `user_aziende`. The same field goes on the admin's role
-update of a member. A user with no rows is unscoped and sees the space as today; a user
-with rows sees, and writes, only the records of those aziende, on every route, in the
+`POST /api/users/invites` gains `aziende: [uuid]` (omitted or `null`: every azienda, as
+today; an empty list is refused with 422, since «nessuna azienda» is a deactivation and
+not a scope); accepting it sets `users.ambito_limitato = true` and writes the rows of
+`user_aziende`. The same field, with the same refusal of an empty list, goes on the
+admin's role update of a member, and clearing it sets the flag back to `false`. The
+flag, not the absence of rows, is what says "unscoped": a user with `ambito_limitato =
+false` sees the space as today; a user with the flag and rows sees, and writes, only the
+records of those aziende; a user with the flag and no rows, which happens when every
+azienda of an invitation was deactivated before the click, sees nothing and the Team
+panel says so («nessuna azienda attiva»). Nothing can turn an empty scope into «tutte».
+The scope holds on every route, in the
 search, in the digest and over MCP, because the rows are hidden by Postgres row-level
 security and not by a `WHERE` someone remembered to add (§4). Roles do not change:
 `admin`, `collaboratore`, `readonly` stay per space (`2026-09-17…` §1, «The three roles
@@ -224,17 +239,21 @@ ensure-space-defaults` (`projects/pigrocrm/AGENTS.md` § Migrations), as every m
 does. The steps, in order:
 
 1. `ALTER TABLE emitter_profile RENAME TO aziende`; drop the `singleton` unique
-   constraint and column; add `nome VARCHAR(80) NOT NULL` backfilled from
-   `ragione_sociale`, `predefinita BOOLEAN NOT NULL DEFAULT false`, `attiva BOOLEAN NOT
+   constraint and column; add `nome VARCHAR(80) NOT NULL` backfilled with
+   `left(ragione_sociale, 80)` (the source column is 255 wide, `emitter/schemas.py:11`,
+   and the full name stays where it is), `predefinita BOOLEAN NOT NULL DEFAULT false`, `attiva BOOLEAN NOT
    NULL DEFAULT true`; `UPDATE aziende SET predefinita = true` (there is at most one
    row); partial unique index `uq_aziende_predefinita ON aziende (predefinita) WHERE
-   predefinita`; partial unique index `uq_aziende_partita_iva ON aziende (partita_iva)
-   WHERE partita_iva IS NOT NULL`. A space with no emitter row yet (possible only
+   predefinita`; partial unique indexes `uq_aziende_partita_iva ON aziende (partita_iva)
+   WHERE partita_iva IS NOT NULL` and `uq_aziende_codice_fiscale ON aziende
+   (codice_fiscale) WHERE codice_fiscale IS NOT NULL`. A space with no emitter row yet (possible only
    between signup and the first save, since `TenantService` writes one at provisioning,
    `tenants/service.py:165-175`) gets one inserted from the space's slug, so the `NOT
    NULL` columns below have a value to point at.
-2. `fiscal_profile`: add `azienda_id UUID REFERENCES aziende(id)`, backfill from the one
-   azienda, set `NOT NULL`, `UNIQUE`; drop `singleton`; `codice_regime` to nullable.
+2. `fiscal_profile`: add `azienda_id UUID REFERENCES aziende(id)`, backfill the row
+   where there is one from the one azienda, set `NOT NULL`, `UNIQUE`; drop `singleton`;
+   `codice_regime` to nullable. No row is invented where the space never saved one
+   (1.2).
 3. `invoice_counters`: add `azienda_id`, backfill, `NOT NULL`; primary key becomes
    `(azienda_id, anno)`. `invoice_register_gaps`: the same, unique `(azienda_id, anno,
    numero)`.
@@ -244,9 +263,11 @@ does. The steps, in order:
    ON invoices (azienda_id, anno, numero) WHERE numero IS NOT NULL`.
 5. `costs`: add `azienda_id` nullable, backfill from the deal's where `deal_id IS NOT
    NULL`, leave `NULL` otherwise, index.
-6. `user_aziende (user_id UUID REFERENCES users(id) ON DELETE CASCADE, azienda_id UUID
-   REFERENCES aziende(id) ON DELETE CASCADE, PRIMARY KEY (user_id, azienda_id))`. Empty
-   after the migration: nobody is scoped until an admin scopes them.
+6. `users`: add `ambito_limitato BOOLEAN NOT NULL DEFAULT false`, with `server_default`
+   so every row that exists is unscoped. `user_aziende (user_id UUID REFERENCES
+   users(id) ON DELETE CASCADE, azienda_id UUID REFERENCES aziende(id) ON DELETE
+   CASCADE, PRIMARY KEY (user_id, azienda_id))`. Empty after the migration: nobody is
+   scoped until an admin scopes them.
 7. `invitations`: add `aziende UUID[] NULL` (the scope the invitee will get; `NULL` is
    unscoped). An array and not a join table, because an invitation is spent once and
    its rows would be orphans the moment it is accepted or revoked; it carries no foreign
@@ -269,7 +290,7 @@ Routes added, in `apps/api/src/pigrocrm_api/routers/aziende.py`:
 | Route | Who | What |
 |---|---|---|
 | `GET /api/aziende` | any member | The aziende the caller may see, `predefinita` first. A scoped user gets their scope only. |
-| `POST /api/aziende` | unscoped admin | Creates one; `AziendaCreate` is `EmitterProfileUpsert` plus `nome` and a required `fiscal_profile` body, so an azienda never exists without its profile (1.2). |
+| `POST /api/aziende` | unscoped admin | Creates one, from milestone 3 on (§9); `AziendaCreate` is `EmitterProfileUpsert` plus `nome` and a required `fiscal_profile` body, so an azienda created here never exists without its profile (1.2). |
 | `GET /api/aziende/{id}`, `PUT /api/aziende/{id}` | admin whose scope includes it | Read and replace, the old `/api/emitter` shape. |
 | `POST /api/aziende/{id}/predefinita` | unscoped admin | Moves the default. |
 | `DELETE /api/aziende/{id}` | unscoped admin | Deactivates (`attiva = false`); refused on the default. Never a row delete: an azienda that issued an invoice stays readable forever. The answer says how many customers still point at it, and creating a deal, a document or a proforma under such a customer is refused («sposta prima il cliente su un'azienda attiva»). |
@@ -329,20 +350,31 @@ or the comma-joined UUIDs of the actor's scope. A connection with no value set r
 `NULL` on its first use and the empty string once a transaction-local value has
 expired on a pooled connection (measured on Postgres 17); `string_to_array('', ',')` is
 `{}`, so the predicate below is false for both: the default is closed. The scope rides
-on the actor: `Actor` gains `aziende: tuple[UUID, ...] | None`, set by `get_actor` and
-`callback_actor` (`deps.py`) from `user_aziende`, by `PatService.resolve` from the
-owner's rows, and `None` for `Actor.system()` and `Actor.rebase()`. It is bound in one
+on the actor: `Actor` gains `aziende: tuple[UUID, ...] | None`, `None` when
+`users.ambito_limitato` is false and the tuple of `user_aziende` rows, possibly empty,
+when it is true; set by `get_actor` and `callback_actor` (`deps.py`), by
+`PatService.resolve` from the owner's row, and `None` for `Actor.system()` and
+`Actor.rebase()`. `None` binds `*`; an empty tuple binds the empty string, which the
+predicate reads as nothing, so a scoped user with no azienda left sees exactly what an
+unbound connection sees. A second setting, `pigrocrm.user_id`, carries the actor's own
+user id (empty for `system` and `rebase`) and exists for the one policy that needs to
+know whose mailbox a row belongs to (`gmail_messages`, below). Both are bound in one
 place, `bind_scope(session, actor)`, called by `get_actor` the moment the actor is
-known, by the MCP guard for the PAT's owner, and by the CLI and the jobs. Because
-`set_config(..., true)` dies with the transaction and a service commits in the middle
-of a request, `bind_scope` registers an `after_begin` listener on the session, which
-runs the `set_config` on the connection it is handed at the start of every
-transaction (measured: it fires again after each commit or rollback, and the call is
-accepted inside a `REPEATABLE READ READ ONLY` transaction). On the dashboards' second
-session (`get_snapshot_session`) `bind_scope` registers the listener and executes
-nothing itself, because `DashboardService._open_snapshot` refuses a session anything
-has already touched (`dashboard/service.py:108-124`). Nothing else in the application
-ever reads the setting.
+known, by the MCP guard for the PAT's owner, and by the CLI and the jobs. It does two
+things, in this order. First it runs the `set_config` calls on the transaction that is
+already open, because `get_actor` has already read `users` on this session and that
+read began the request's first transaction (`deps.py:117-119, 337-342`); a listener
+registered now would not fire for it, and the first protected query of every request
+would run closed, for an unscoped admin too. Then, because `set_config(..., true)`
+dies with the transaction and a service commits in the middle of a request, it
+registers an `after_begin` listener on the session, which runs the same calls on the
+connection it is handed at the start of every later transaction (measured: it fires
+again after each commit or rollback, and the call is accepted inside a `REPEATABLE
+READ READ ONLY` transaction). On the dashboards' second session
+(`get_snapshot_session`) `bind_scope` registers the listener only and executes nothing,
+because that session has not begun yet and `DashboardService._open_snapshot` refuses
+one anything has already touched (`dashboard/service.py:108-124`). Nothing else in the
+application ever reads either setting.
 
 **The role.** A table owner is not subject to its own policies unless the table says
 `FORCE ROW LEVEL SECURITY`, and a superuser is never subject to them. Today one URL does
@@ -374,11 +406,17 @@ missing the admin URL fails the boot the way a missing `PIGROCRM_DATA_DIR` does
 RETURNS boolean` marked `STABLE`:
 
 ```sql
-current_setting('pigrocrm.aziende', true) = '*'
-OR $1 = ANY (string_to_array(current_setting('pigrocrm.aziende', true), ',')::uuid[])
+CASE current_setting('pigrocrm.aziende', true)
+  WHEN '*' THEN true
+  ELSE $1 = ANY (string_to_array(coalesce(current_setting('pigrocrm.aziende', true), ''), ',')::uuid[])
+END
 ```
 
-(the column side uncast, so `ix_*_azienda_id` stays usable) and one policy per table,
+A `CASE` and not an `OR`, because Postgres does not promise to evaluate the left operand
+of an `OR` first, and `string_to_array('*', ',')::uuid[]` is a cast error the moment it
+is evaluated; the `coalesce` keeps the `NULL` of a fresh connection on the same path as
+the empty string. The column side is uncast, so `ix_*_azienda_id` stays usable. One
+policy per table,
 `FOR ALL … USING (…) WITH CHECK (…)`, with the same expression on both sides except
 where the table below says otherwise, so a scoped user can neither read nor insert nor
 move a row across the line. A nullable parent follows the `costs` shape: a row whose
@@ -399,9 +437,9 @@ parent is `NULL` is visible, and insertable, only when the setting is `*`. By ta
 | `proposals` | `EXISTS` on its document (`document_id` is `NOT NULL`, `contract_id` is not) |
 | `invoice_counters`, `invoice_register_gaps` | `azienda_visibile(azienda_id)`, so a scoped admin declares gaps on their own register only |
 | `attivita` | every non-null parent among customer, deal, invoice, person visible; all four `NULL` only for `*` |
-| `gmail_message_links` | a `CASE` on `entity_type` (customer, person, deal) to the row `entity_id` names |
+| `gmail_message_links` | `USING`: a `CASE` on `entity_type` (customer, person, deal) to the row `entity_id` names. `WITH CHECK (true)`: a link is written after the mail has already left (`gmail/send.py:602`), and recording a delivered mail must never fail on the scope. A scoped sender cannot reach an out-of-scope contact anyway, since `people` hides it from the recipient resolution, and a link it never sees is a link it cannot read back |
 | `email_drafts` | the same `CASE` on its own `entity_type` / `entity_id` (`gmail/models.py:259-267`) |
-| `gmail_messages` | `USING`: a visible link exists, or no link exists and the setting is `*`. `WITH CHECK (true)`: the sync and the send insert the message before its links (`gmail/sync.py:847, 877`, `gmail/send.py:602, 646`), so the symmetric check would refuse every insert by a scoped sender |
+| `gmail_messages` | the message's `google_account_id` is the mailbox of `pigrocrm.user_id` (one mailbox per user, `gmail/models.py:59`), or a visible link exists, or no link exists and the setting is `*`; the same on both sides. The first branch is what lets the sync and the send write a message before its links exist (`gmail/sync.py:847, 877`, `gmail/send.py:602, 646`): the flush is an `INSERT … RETURNING` for the server-generated timestamps (`db/base.py:22-30`), Postgres applies the `SELECT` policy to the rows an `INSERT` returns, and a `WITH CHECK (true)` alone would not save it. A person always reads and writes their own mailbox; what the scope hides is other people's mail about other aziende's customers |
 | `activities` | a `CASE` on `entity_type` over the types above; space-level entities visible to all |
 | `aziende`, `fiscal_profile` | `azienda_visibile(id)` / `azienda_visibile(azienda_id)` |
 
@@ -427,10 +465,13 @@ sums rebase alone. The global search goes through the same tables and needs no c
 the `pg_trgm` queries return what the policies let through. The MCP server binds the
 PAT owner's scope, so B's agent sees rebase alone. The engagements door
 (`Actor.rebase()`) is unscoped. The Gmail sync runs as the mailbox's owner
-(`cli.py:732` builds the actor from the user, not from `Actor.system()`) and binds `*`
-whoever that owner is: it reads one person's mailbox, it links messages to customers of
-every azienda, and a scoped owner then sees of their own mailbox only what is linked
-inside their scope.
+(`cli.py:732` builds the actor from the user, not from `Actor.system()`) and binds that
+owner's own scope, never `*`: a scoped owner's mailbox is matched only against the
+customers and people their scope can see, so the sync writes no link, and no timeline
+row, on another azienda's customer, which a read filter applied afterwards could not
+have prevented. An unscoped owner's sync behaves as today. The price is honest and
+small: a mail from a customer outside the owner's scope stays unlinked in that mailbox,
+which is what the owner would see anyway.
 
 **How it is proven.** `packages/core/tests/test_azienda_scope.py` opens the test database
 through a `pigrocrm_app` role the fixture creates, binds B's scope, and for every
@@ -492,8 +533,9 @@ the invoice for a reminder and through the customer for a draft.
 
 Tools renamed and added, every description in Italian as the product's own:
 `describe_emitter_profile` → `list_aziende` and `describe_azienda(azienda_id?)`;
-`update_emitter_profile` → `update_azienda(azienda_id?, …)` and `create_azienda(…)`
-(admin, agent-allowed like `update_fiscal_profile` since ORB-188: setup, not history);
+`update_emitter_profile` → `update_azienda(azienda_id?, …)`, and `create_azienda(…)`
+from milestone 3 on (§9), both admin and agent-allowed like `update_fiscal_profile`
+since ORB-188 (setup, not history);
 `describe_fiscal_profile` and `update_fiscal_profile` take `azienda_id?`. Every optional
 `azienda_id` resolves to the only azienda when there is one, so a prompt written for a
 one-azienda space keeps working. `create_customer` takes `azienda_id?` with the same
@@ -528,15 +570,19 @@ scope is its owner's (§4), so no tool needs to check it.
 ## 9. Rollout: the order the milestones land in
 
 1. **Turn the emitter profile into the azienda row.** Migration steps 1, 2, 6 and 7 of
-   §2 without the `NOT NULL` children yet; `AziendaService`; the routes of §3 for
-   aziende; Impostazioni → Aziende; the MCP renames. Ships invisible: one azienda, no
-   selector.
+   §2 without the `NOT NULL` children yet; `AziendaService`; the read and update routes
+   of §3 and the MCP renames, **without any way to create a second azienda**: `POST
+   /api/aziende`, `create_azienda` and «Nuova azienda» do not exist yet, so a space
+   stays at one azienda by construction and not by a hidden button, and a test asserts
+   the route is absent. Ships invisible: one azienda, no selector.
 2. **Number and import invoices per azienda.** Steps 3 and the `invoices` part of 4;
    the register per azienda; the import; the `non-it` pack. Still invisible with one
-   azienda.
+   azienda, and still no creation.
 3. **Assign customers to an azienda and inherit it down the chain.** The rest of
-   step 4 and step 5; the proposal; the selector; the filters. The first visible piece,
-   and only from the second azienda on.
+   step 4 and step 5; the proposal; the selector; the filters; and only now `POST
+   /api/aziende`, `create_azienda` and «Nuova azienda», because an azienda created
+   before this point would have had invoices it could not number and customers it
+   could not own. The first visible piece, and only from the second azienda on.
 4. **Render every document and email from its azienda.** §6 and the uploads.
 5. **Sum the cash across aziende and keep the taxes apart.** 1.9 end to end.
 6. **Scope an invitation to one azienda with row-level security.** §4: the role, the
