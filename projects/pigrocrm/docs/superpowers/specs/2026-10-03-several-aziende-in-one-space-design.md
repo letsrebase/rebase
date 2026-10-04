@@ -793,3 +793,8 @@ Added as the milestones land, dated, never rewriting the sections above.
   to the write. The invoice PDF's header keeps the frozen snapshot's identity and takes the
   azienda's live logo, as `regenerate` re-reads a live profile: a logo is not a fiscal
   fact. A mail about a contact with no customer signs as the default azienda.
+  Every upload writes a fresh key (`aziende/{id}/logo-<uuid>.png`) and the previous
+  file is deleted after the commit, best effort: two admins replacing the same image at
+  once each delete only the file they found, and a storage that refuses the delete leaves
+  an orphan and a logged warning, never a failed request over a committed change. A
+  payment reminder's draft speaks for the invoice's azienda, not the customer's of today.

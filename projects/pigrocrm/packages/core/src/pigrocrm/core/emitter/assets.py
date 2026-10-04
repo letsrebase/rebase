@@ -14,7 +14,9 @@ can neither clear them nor point them at somebody else's file. The only writes a
 four here, admin-only like every other write on the row.
 """
 
+import logging
 import re
+import zlib
 from typing import Final, Literal
 from uuid import UUID
 
@@ -23,11 +25,14 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.emitter.repository import AziendaRepository
 from pigrocrm.core.emitter.schemas import AziendaRead
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.storage.base import DocumentStorage
+
+logger = logging.getLogger(__name__)
 
 ENTITY: Final = "emitter_profile"
 DEFAULT_LABEL: Final = "predefinita"
@@ -48,9 +53,6 @@ LOGO_FILES: Final[dict[ImageKind, str]] = {"png": "logo.png", "svg": "logo.svg"}
 FIRMA_FILE: Final = "sign_is.png"
 
 _PNG_SIGNATURE: Final = b"\x89PNG\r\n\x1a\n"
-# The last chunk of every complete PNG: a file cut short under the size limit would
-# otherwise be stored and fail every later render instead of this upload.
-_PNG_TRAILER: Final = b"IEND\xaeB`\x82"
 # What an SVG served back to a browser must not carry: a script, an event handler, a
 # `javascript:` link or an embedded HTML document. Typst ignores all of them, but the
 # API serves the file to the admin's own browser. Refused at upload rather than
@@ -69,12 +71,43 @@ def sniff_image(data: bytes) -> ImageKind | None:
     content type, and only a whole image: a PNG carries its header chunk and ends on
     its trailer, an SVG parses and its root is `svg`. `None` for anything else."""
     if data.startswith(_PNG_SIGNATURE):
-        complete = data[12:16] == b"IHDR" and data.rstrip().endswith(_PNG_TRAILER)
-        return "png" if complete else None
+        return "png" if _png_is_well_formed(data) else None
     head = data[:4096].decode("utf-8", "ignore").lstrip("\ufeff").lstrip().lower()
     if head.startswith(("<?xml", "<svg", "<!doctype svg", "<!--")) and "<svg" in head:
         return "svg" if _parses_as_svg(data) else None
     return None
+
+
+def _png_is_well_formed(data: bytes) -> bool:
+    """Every chunk in place with its CRC: an `IHDR` of thirteen bytes first with a
+    non-zero size, at least one `IDAT`, an empty `IEND` last and nothing after it. A
+    file that only wears the signature and the trailer would be stored under the size
+    limit and fail every later render instead of this upload (CodeRabbit, PR #510)."""
+    offset, first, idat, ended = len(_PNG_SIGNATURE), True, False, False
+    while offset + 12 <= len(data):
+        length = int.from_bytes(data[offset : offset + 4], "big")
+        kind = data[offset + 4 : offset + 8]
+        body_start, body_end = offset + 8, offset + 8 + length
+        if body_end + 4 > len(data):
+            return False
+        declared = int.from_bytes(data[body_end : body_end + 4], "big")
+        if zlib.crc32(data[offset + 4 : body_end]) & 0xFFFFFFFF != declared:
+            return False
+        if first:
+            if kind != b"IHDR" or length != 13:
+                return False
+            width = int.from_bytes(data[body_start : body_start + 4], "big")
+            height = int.from_bytes(data[body_start + 4 : body_start + 8], "big")
+            if width == 0 or height == 0:
+                return False
+            first = False
+        elif kind == b"IDAT":
+            idat = True
+        elif kind == b"IEND":
+            ended = length == 0 and body_end + 4 == len(data)
+            break
+        offset = body_end + 4
+    return not first and idat and ended
 
 
 def _parses_as_svg(data: bytes) -> bool:
@@ -203,18 +236,19 @@ class AziendaAssets:
         row = self._row(azienda_id)
         kind = self._check(data, slot=slot)
         attribute = f"{slot}_key"
-        key = f"aziende/{row.id}/{slot}.{kind}"
+        key = f"aziende/{row.id}/{slot}-{uuid7()}.{kind}"
         previous = getattr(row, attribute)
         self.storage.put(key, data, CONTENT_TYPES[kind])
         setattr(row, attribute, key)
         self.activities.record(ENTITY, row.id, "updated", actor, {"changed": [attribute]})
         self.session.commit()
-        if previous and previous != key:
-            # A PNG replaced by an SVG, or the other way round: the old file would
-            # otherwise outlive the row's memory of it. After the commit, never before
-            # (CodeRabbit, PR #510): a commit that fails must leave the row pointing at
-            # a file that still exists, and an orphaned old file costs nothing.
-            self.storage.delete(previous)
+        # The old file goes after the commit, never before: a commit that fails must
+        # leave the row pointing at a file that still exists. Every upload writes a
+        # fresh key, so two admins replacing the same image at once each delete only
+        # the file they found, never the one the other just committed; the loser's own
+        # file is an orphan, which costs nothing (CodeRabbit and Greptile, PR #510).
+        if previous:
+            self._forget(previous)
         return AziendaRead.model_validate(row)
 
     def _remove(self, azienda_id: UUID | None, actor: Actor, *, slot: Slot) -> AziendaRead:
@@ -227,8 +261,17 @@ class AziendaAssets:
             self.activities.record(ENTITY, row.id, "updated", actor, {"changed": [attribute]})
             self.session.commit()
             # The file goes last, for the same reason as in `_set`.
-            self.storage.delete(key)
+            self._forget(key)
         return AziendaRead.model_validate(row)
+
+    def _forget(self, key: str) -> None:
+        """Best effort after a commit: the row no longer names `key`, and a storage that
+        refuses the delete (Drive down) must not turn a committed change into an error
+        the admin would retry against a state that already moved. The orphan is logged."""
+        try:
+            self.storage.delete(key)
+        except Exception:  # noqa: BLE001  # whatever the backend raised, the row is right
+            logger.warning("azienda image %s was replaced or removed but its file stays", key)
 
     def set_logo(self, data: bytes, actor: Actor, azienda_id: UUID | None = None) -> AziendaRead:
         return self._set(azienda_id, data, actor, slot="logo")

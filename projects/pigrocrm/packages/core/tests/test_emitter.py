@@ -158,7 +158,7 @@ def test_firma_email_holds_a_text_block_and_firma_key_still_holds_an_image(
         _upsert(firma_email="Mario Rossi\nConsulente"), ADMIN
     )
     assert read.firma_email == "Mario Rossi\nConsulente"
-    assert read.firma_key is not None and read.firma_key.endswith("/firma.png")
+    assert read.firma_key is not None and read.firma_key.endswith(".png")
 
 
 def test_firma_email_reaches_a_template_scope_under_emittente(db_session: Session) -> None:

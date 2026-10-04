@@ -30,6 +30,7 @@ from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.gmail.drafts import EmailDraftService
 from pigrocrm.core.gmail.models import EmailDraft, PaymentReminder
 from pigrocrm.core.gmail.repository import GmailRepository
+from pigrocrm.core.gmail.schemas import EmailDraftCreate
 from pigrocrm.core.gmail.solleciti import SollecitiService
 from pigrocrm.core.invoices import pdf as invoice_pdf
 from pigrocrm.core.invoices import service as invoices_service_module
@@ -283,3 +284,17 @@ def test_a_reminder_s_draft_speaks_for_the_invoice_s_azienda_even_after_the_cust
     drafts = EmailDraftService(db_session, settings=SETTINGS)
     assert drafts._domain("customer", customer_id, default.id) == "studio.example"
     assert drafts._domain("customer", customer_id) == "rebase.example"
+    # And the draft a reminder creates, handed the invoice's azienda as the reminder
+    # does, stores a Message-ID under that azienda's domain.
+    created = drafts.create(
+        EmailDraftCreate(
+            entity_type="customer",
+            entity_id=customer_id,
+            to_addresses=["cliente@example.com"],
+            subject="Sollecito",
+            body_markdown="…",
+        ),
+        ADMIN,
+        azienda_id=default.id,
+    )
+    assert created.message_id_header.endswith("@studio.example>")

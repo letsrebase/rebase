@@ -9,7 +9,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.emitter.assets import MAX_IMAGE_BYTES, AziendaAssets, sniff_image
+from pigrocrm.core.emitter.assets import _PNG_SIGNATURE, MAX_IMAGE_BYTES, AziendaAssets, sniff_image
 from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.emitter.repository import AziendaRepository
 from pigrocrm.core.errors import NotFound, PermissionDenied, ValidationFailed
@@ -42,6 +42,10 @@ def test_the_bytes_decide_the_kind_never_a_name_and_only_a_whole_image() -> None
     # root is not an svg. Each would be stored under the size limit and fail every
     # later render instead of this upload.
     assert sniff_image(BLANK_PNG[:-12]) is None
+    # Wearing the signature and the trailer with nothing valid in between.
+    assert sniff_image(_PNG_SIGNATURE + b"\0\0\0\0IHDR\0\0\0\0" + BLANK_PNG[-12:]) is None
+    # A chunk whose CRC does not match its bytes.
+    assert sniff_image(BLANK_PNG[:-5] + b"\0" + BLANK_PNG[-4:]) is None
     assert sniff_image(b'<svg xmlns="x"><rect></svg>') is None
     assert sniff_image(b'<?xml version="1.0"?><not-svg><svg/></not-svg>') is None
 
@@ -52,17 +56,19 @@ def test_a_logo_is_stored_under_the_azienda_s_key_and_read_back_for_the_job(
     assets = AziendaAssets(db_session, local_storage)
     azienda = _default(db_session)
     read = assets.set_logo(BLANK_PNG, ADMIN)
-    assert read.logo_key == f"aziende/{azienda.id}/logo.png"
+    first_key = read.logo_key
+    assert first_key is not None
+    assert first_key.startswith(f"aziende/{azienda.id}/logo-") and first_key.endswith(".png")
     assert assets.logo() == (BLANK_PNG, "image/png")
     assert assets.media_for(azienda.id) == {"logo.png": BLANK_PNG}
 
-    # An SVG replaces it under its own name, and the PNG leaves the storage.
+    # An SVG replaces it under a key of its own, and the PNG leaves the storage.
     read = assets.set_logo(SVG, ADMIN, azienda.id)
-    assert read.logo_key == f"aziende/{azienda.id}/logo.svg"
+    assert read.logo_key != first_key and read.logo_key.endswith(".svg")  # type: ignore[union-attr]
     assert assets.logo(azienda.id) == (SVG, "image/svg+xml")
     assert assets.media_for(azienda.id) == {"logo.svg": SVG}
     with pytest.raises(NotFound):
-        local_storage.get(f"aziende/{azienda.id}/logo.png")
+        local_storage.get(first_key)
 
     removed = assets.remove_logo(ADMIN, azienda.id)
     assert removed.logo_key is None
@@ -78,7 +84,9 @@ def test_the_signature_is_a_png_under_the_name_the_offer_template_reads(
     assets = AziendaAssets(db_session, local_storage)
     azienda = _default(db_session)
     read = assets.set_firma(BLANK_PNG, ADMIN)
-    assert read.firma_key == f"aziende/{azienda.id}/firma.png"
+    assert read.firma_key is not None
+    assert read.firma_key.startswith(f"aziende/{azienda.id}/firma-")
+    assert read.firma_key.endswith(".png")
     assert assets.firma() == (BLANK_PNG, "image/png")
     assert assets.media_for() == {"sign_is.png": BLANK_PNG}
     with pytest.raises(ValidationFailed) as refused:
@@ -110,6 +118,23 @@ def test_what_is_refused_at_upload(db_session: Session, local_storage: LocalFile
         assets.remove_firma(COLLABORATOR)
     with pytest.raises(NotFound):
         assets.set_logo(BLANK_PNG, ADMIN, UUID(int=1))
+
+
+def test_a_storage_that_refuses_the_cleanup_does_not_fail_a_committed_change(
+    db_session: Session, local_storage: LocalFileStorage, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assets = AziendaAssets(db_session, local_storage)
+    first = assets.set_logo(BLANK_PNG, ADMIN).logo_key
+
+    def refuse(key: str) -> None:
+        raise RuntimeError("drive down")
+
+    monkeypatch.setattr(local_storage, "delete", refuse)
+    replaced = assets.set_logo(SVG, ADMIN)
+    assert replaced.logo_key != first and replaced.logo_key.endswith(".svg")  # type: ignore[union-attr]
+    assert assets.logo() == (SVG, "image/svg+xml")
+    assert assets.remove_logo(ADMIN).logo_key is None
+    assert assets.logo() is None
 
 
 def test_a_key_the_storage_no_longer_has_reads_as_no_image(

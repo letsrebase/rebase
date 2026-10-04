@@ -30,7 +30,7 @@ def test_an_admin_uploads_reads_and_removes_the_logo_and_the_signature(
 
     put = _put(logged_in, logo, SVG, "mark.svg")
     assert put.status_code == 200, put.text
-    assert put.json()["logo_key"].endswith("/logo.svg")
+    assert put.json()["logo_key"].endswith(".svg")
     served = logged_in.get(logo)
     assert served.status_code == 200
     assert served.headers["content-type"].startswith("image/svg+xml")
@@ -40,12 +40,12 @@ def test_an_admin_uploads_reads_and_removes_the_logo_and_the_signature(
     assert served.headers["content-disposition"] == 'inline; filename="logo.svg"'
 
     # A PNG replaces the SVG, under its own name.
-    assert _put(logged_in, logo, BLANK_PNG, "mark.png").json()["logo_key"].endswith("/logo.png")
+    assert _put(logged_in, logo, BLANK_PNG, "mark.png").json()["logo_key"].endswith(".png")
     assert logged_in.get(logo).headers["content-type"].startswith("image/png")
 
     put = _put(logged_in, firma, BLANK_PNG)
     assert put.status_code == 200, put.text
-    assert put.json()["firma_key"].endswith("/firma.png")
+    assert put.json()["firma_key"].endswith(".png")
     assert logged_in.get(firma).content == BLANK_PNG
 
     row = logged_in.get(azienda_url(logged_in)).json()
