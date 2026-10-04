@@ -32,6 +32,21 @@ def _default(session: Session) -> Azienda:
     return row
 
 
+def _chunk(kind: bytes, body: bytes) -> bytes:
+    return (
+        len(body).to_bytes(4, "big")
+        + kind
+        + body
+        + (zlib.crc32(kind + body) & 0xFFFFFFFF).to_bytes(4, "big")
+    )
+
+
+def _png(kind: bytes, body: bytes) -> bytes:
+    """A 1x1 PNG whose data chunk is `body` under `kind`, every CRC correct."""
+    ihdr = (1).to_bytes(4, "big") + (1).to_bytes(4, "big") + bytes([8, 6, 0, 0, 0])
+    return _PNG_SIGNATURE + _chunk(b"IHDR", ihdr) + _chunk(kind, body) + _chunk(b"IEND", b"")
+
+
 def test_the_bytes_decide_the_kind_never_a_name_and_only_a_whole_image() -> None:
     assert sniff_image(BLANK_PNG) == "png"
     assert sniff_image(SVG) == "svg"
@@ -51,21 +66,10 @@ def test_the_bytes_decide_the_kind_never_a_name_and_only_a_whole_image() -> None
     assert sniff_image(_png(b"IDAT", b"not a zlib stream")) is None
     # And the same shape with a real stream passes, so the check is about the stream.
     assert sniff_image(_png(b"IDAT", zlib.compress(b"\0\0\0\0\0"))) == "png"
-
-
-def _chunk(kind: bytes, body: bytes) -> bytes:
-    return (
-        len(body).to_bytes(4, "big")
-        + kind
-        + body
-        + (zlib.crc32(kind + body) & 0xFFFFFFFF).to_bytes(4, "big")
-    )
-
-
-def _png(kind: bytes, body: bytes) -> bytes:
-    """A 1x1 PNG whose data chunk is `body` under `kind`, every CRC correct."""
-    ihdr = (1).to_bytes(4, "big") + (1).to_bytes(4, "big") + bytes([8, 6, 0, 0, 0])
-    return _PNG_SIGNATURE + _chunk(b"IHDR", ihdr) + _chunk(kind, body) + _chunk(b"IEND", b"")
+    # A stream that would inflate past the budget: a 1 MiB file can hide a gigabyte.
+    assert sniff_image(_png(b"IDAT", zlib.compress(bytes(40 << 20)))) is None
+    assert sniff_image(_png(b"IDAT", zlib.compress(bytes(1 << 20)))) == "png"
+    # An SVG that does not parse, and an XML whose root is not an svg.
     assert sniff_image(b'<svg xmlns="x"><rect></svg>') is None
     assert sniff_image(b'<?xml version="1.0"?><not-svg><svg/></not-svg>') is None
 

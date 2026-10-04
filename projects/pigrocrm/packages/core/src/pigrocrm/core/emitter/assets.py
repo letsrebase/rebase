@@ -53,8 +53,12 @@ LOGO_FILES: Final[dict[ImageKind, str]] = {"png": "logo.png", "svg": "logo.svg"}
 FIRMA_FILE: Final = "sign_is.png"
 
 _PNG_SIGNATURE: Final = b"\x89PNG\r\n\x1a\n"
-# How much of the inflated image stream is held at a time while checking it.
+# How much of the inflated image stream is held at a time while checking it, and how
+# much of it a single upload may produce in all: a 1 MiB file can inflate to a gigabyte,
+# and this check runs on a request worker. 32 MiB is a 2900-pixel square in RGBA, far
+# past anything a 60pt logo or a signature needs (Greptile and CodeRabbit, PR #510).
 _INFLATE_PIECE: Final = 1 << 16
+_INFLATE_BUDGET: Final = 32 << 20
 # What an SVG served back to a browser must not carry: a script, an event handler, a
 # `javascript:` link or an embedded HTML document. Typst ignores all of them, but the
 # API serves the file to the admin's own browser. Refused at upload rather than
@@ -90,6 +94,7 @@ def _png_is_well_formed(data: bytes) -> bool:
     small file can inflate to a very large image, and this is a check, not a decode."""
     offset, first, idat, ended = len(_PNG_SIGNATURE), True, False, False
     stream = zlib.decompressobj()
+    budget = [_INFLATE_BUDGET]
     while offset + 12 <= len(data):
         length = int.from_bytes(data[offset : offset + 4], "big")
         kind = data[offset + 4 : offset + 8]
@@ -109,7 +114,7 @@ def _png_is_well_formed(data: bytes) -> bool:
             first = False
         elif kind == b"IDAT":
             idat = True
-            if not _inflates(stream, data[body_start:body_end]):
+            if not _inflates(stream, data[body_start:body_end], budget):
                 return False
         elif kind == b"IEND":
             ended = length == 0 and body_end + 4 == len(data)
@@ -118,15 +123,20 @@ def _png_is_well_formed(data: bytes) -> bool:
     return not first and idat and ended and stream.eof
 
 
-def _inflates(stream: Any, piece: bytes) -> bool:
-    # `Any`: the decompressor's class lives only in the type stubs, not in `zlib` at runtime.
+def _inflates(stream: Any, piece: bytes, budget: list[int]) -> bool:
+    """Feed one `IDAT` payload to the decompressor, discarding the output in bounded
+    pieces and charging each to `budget`; `False` when the stream is not zlib or the
+    image would inflate past the budget. `Any`: the decompressor's class lives only in
+    the type stubs, not in `zlib` at runtime."""
     try:
-        stream.decompress(piece, _INFLATE_PIECE)
-        while stream.unconsumed_tail:
-            stream.decompress(stream.unconsumed_tail, _INFLATE_PIECE)
+        out = stream.decompress(piece, _INFLATE_PIECE)
+        budget[0] -= len(out)
+        while stream.unconsumed_tail and budget[0] > 0:
+            out = stream.decompress(stream.unconsumed_tail, _INFLATE_PIECE)
+            budget[0] -= len(out)
     except zlib.error:
         return False
-    return True
+    return budget[0] > 0
 
 
 def _parses_as_svg(data: bytes) -> bool:
