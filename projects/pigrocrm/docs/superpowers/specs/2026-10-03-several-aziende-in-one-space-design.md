@@ -779,3 +779,22 @@ Added as the milestones land, dated, never rewriting the sections above.
   customer filter already says «Azienda» for the customer's company, which from the
   second azienda on sits under a sidebar that says «Tutte le aziende» for the issuing one;
   renaming that filter is a card of its own.
+- **2026-10-04, milestone «Render every document and email from its azienda» (REB-627).**
+  The signature is a PNG only: the offers draw it through a Markdown image whose name is
+  fixed in the template (`sign_is.png`, the name the bundled file had, kept so a template
+  a space already seeded compiles unchanged), and Typst reads an image's format from its
+  name. The logo is PNG or SVG, written into the job as `logo.png` or `logo.svg` with the
+  header branching on which; an SVG with a script, an event handler, a `javascript:` link
+  or embedded HTML is refused at upload rather than sanitised, since the API serves the
+  file back to the admin's own browser on the CRM's origin. The bundle has no `media/`
+  directory any more; a job handed no signature gets a transparent pixel under the
+  signature's name. `logo_key` and `firma_key` leave `AziendaUpsert` and `describe_azienda`
+  answers `ha_logo` and `ha_firma` in their place, so the read can still be handed back
+  to the write. The invoice PDF's header keeps the frozen snapshot's identity and takes the
+  azienda's live logo, as `regenerate` re-reads a live profile: a logo is not a fiscal
+  fact. A mail about a contact with no customer signs as the default azienda.
+  Every upload writes a fresh key (`aziende/{id}/logo-<uuid>.png`) and the previous
+  file is deleted after the commit, best effort: two admins replacing the same image at
+  once each delete only the file they found, and a storage that refuses the delete leaves
+  an orphan and a logged warning, never a failed request over a committed change. A
+  payment reminder's draft speaks for the invoice's azienda, not the customer's of today.

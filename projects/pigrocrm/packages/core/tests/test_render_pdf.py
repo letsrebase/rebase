@@ -5,7 +5,14 @@ import pytest
 
 from pigrocrm.core.config import Settings
 from pigrocrm.core.errors import ValidationFailed
-from pigrocrm.core.render.pdf import ASSETS_DIR, build_header, render_pdf
+from pigrocrm.core.render.pdf import (
+    ASSETS_DIR,
+    BLANK_PNG,
+    MEDIA_LOGO_PNG,
+    MEDIA_LOGO_SVG,
+    build_header,
+    render_pdf,
+)
 from pigrocrm.core.templates.renderer import render_template
 
 pytestmark = pytest.mark.skipif(
@@ -96,14 +103,46 @@ def test_the_render_directory_is_created_under_the_root_it_is_given(tmp_path: Pa
     assert list(tmp_path.iterdir()) == []
 
 
-def test_the_media_assets_are_reachable_from_the_rendered_document() -> None:
-    assert (ASSETS_DIR / "media" / "sign_is.png").is_file()
+def test_the_bundle_ships_nobody_s_logo_and_a_seeded_signature_reference_still_compiles() -> None:
+    """REB-48 called shipping one person's assets a defect; since REB-627 the bundle has
+    no `media/` at all, and a job that is handed no signature gets a transparent pixel
+    under the name the seeded offer template references."""
+    assert not (ASSETS_DIR / "media").exists()
     pdf = render_pdf(
         "![](./media/sign_is.png){ width=90pt }\n",
         header_typst=build_header(PROFILE),
         settings=SETTINGS,
     )
     assert pdf.startswith(b"%PDF")
+
+
+def test_the_header_draws_the_logo_the_job_carries_or_the_name_in_type() -> None:
+    without = build_header(PROFILE)
+    assert "#image(" not in without
+    assert 'weight: "bold")[Studio Rossi]' in without
+    with_png = build_header(PROFILE, logo=MEDIA_LOGO_PNG)
+    assert '#image("./media/logo.png"' in with_png and "bold" not in with_png
+    with_svg = build_header(PROFILE, logo=MEDIA_LOGO_SVG)
+    assert '#image("./media/logo.svg"' in with_svg
+    # And each of the three compiles, with the matching file in the job.
+    assert render_pdf("ok\n", header_typst=without, settings=SETTINGS).startswith(b"%PDF")
+    assert render_pdf(
+        "ok\n", header_typst=with_png, settings=SETTINGS, media={MEDIA_LOGO_PNG: BLANK_PNG}
+    ).startswith(b"%PDF")
+    svg = (
+        b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">'
+        b'<rect width="10" height="10"/></svg>'
+    )
+    assert render_pdf(
+        "ok\n", header_typst=with_svg, settings=SETTINGS, media={MEDIA_LOGO_SVG: svg}
+    ).startswith(b"%PDF")
+
+
+def test_a_render_takes_only_the_media_names_it_knows() -> None:
+    with pytest.raises(ValueError):
+        render_pdf(
+            "ok\n", header_typst=build_header(PROFILE), settings=SETTINGS, media={"x.png": b""}
+        )
 
 
 def test_a_value_that_looks_like_a_shell_argument_is_just_text() -> None:

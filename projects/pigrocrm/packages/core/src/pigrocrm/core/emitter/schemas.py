@@ -61,8 +61,9 @@ class AziendaUpsert(BaseModel):
     telefono: SafeStr | None = Field(default=None, max_length=TELEFONO_MAX_LENGTH)
     email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
     sito_web: SafeStr | None = Field(default=None, max_length=SITO_WEB_MAX_LENGTH)
-    logo_key: SafeStr | None = Field(default=None, max_length=STORAGE_KEY_MAX_LENGTH)
-    firma_key: SafeStr | None = Field(default=None, max_length=STORAGE_KEY_MAX_LENGTH)
+    # No `logo_key` and no `firma_key` since REB-627: the two images are written by
+    # `AziendaAssets` under keys the server chooses, so a whole-row `PUT` can neither
+    # clear them nor point them at somebody else's file. `update` leaves them as they are.
     firma_email: SafeStr | None = Field(default=None, max_length=FIRMA_EMAIL_MAX_LENGTH)
     regime_fiscale: SafeStr | None = Field(default=None, max_length=REGIME_FISCALE_MAX_LENGTH)
 

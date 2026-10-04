@@ -118,26 +118,32 @@ class EmailDraftService:
 
     # ---- the pieces the write paths share ------------------------------------------
 
-    def _domain(self) -> str:
+    def _domain(self, entity_type: str, entity_id: UUID, azienda_id: UUID | None = None) -> str:
         """The right-hand side of the `Message-ID`, from the installation's own identity.
 
         `public_url` first, because that is the origin this CRM answers on and the one
         Google already compares character by character for the OAuth redirect. The
-        issuer's website second, because an installation reachable only on a LAN still
-        has an identity its clients recognise. `localhost.invalid` last, and it is a
-        deliberate admission rather than a default that looks plausible.
+        website of the azienda the draft speaks for second (REB-627, spec §1.8), because
+        an installation reachable only on a LAN still has an identity its clients
+        recognise. `localhost.invalid` last, and it is a deliberate admission rather
+        than a default that looks plausible.
         """
-        for candidate in (self.settings.public_url, self._emitter_site()):
+        site = self._emitter_site(entity_type, entity_id, azienda_id)
+        for candidate in (self.settings.public_url, site):
             host = urlparse(candidate).hostname if "//" in candidate else candidate.strip()
             if host and "." in host:
                 return host.lower()
         return _FALLBACK_DOMAIN
 
-    def _emitter_site(self) -> str:
-        site = self.session.execute(
-            select(Azienda.sito_web).where(Azienda.predefinita.is_(True))
-        ).scalar_one_or_none()
-        return site or ""
+    def _emitter_site(
+        self, entity_type: str, entity_id: UUID, azienda_id: UUID | None = None
+    ) -> str:
+        azienda = (
+            self.session.get(Azienda, azienda_id)
+            if azienda_id is not None
+            else self.repo.azienda_for(entity_type, entity_id)
+        )
+        return (azienda.sito_web if azienda is not None else None) or ""
 
     def _get(self, draft_id: UUID) -> EmailDraft:
         draft = self.session.get(EmailDraft, draft_id)
@@ -187,7 +193,12 @@ class EmailDraftService:
 
     # ---- the surface ----------------------------------------------------------------
 
-    def create(self, data: EmailDraftCreate, actor: Actor) -> EmailDraftRead:
+    def create(
+        self, data: EmailDraftCreate, actor: Actor, *, azienda_id: UUID | None = None
+    ) -> EmailDraftRead:
+        """`azienda_id` names the azienda the draft speaks for when it is not the
+        record's own: a payment reminder is filed under the customer but signs as the
+        invoice's azienda, and its Message-ID domain follows (REB-627)."""
         actor.require_write("create_email_draft")
         self._check_entity(data.entity_type, data.entity_id)
         self._check_reply_target(data.in_reply_to_message_id)
@@ -202,7 +213,9 @@ class EmailDraftService:
             subject=data.subject,
             body_markdown=data.body_markdown,
             attachment_version_ids=attachments,
-            message_id_header=new_message_id(self._domain()),
+            message_id_header=new_message_id(
+                self._domain(data.entity_type, data.entity_id, azienda_id)
+            ),
             in_reply_to_message_id=data.in_reply_to_message_id,
             send_state="bozza",
         )

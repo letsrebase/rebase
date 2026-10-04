@@ -6,11 +6,14 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
+from pigrocrm.core.emitter.assets import AziendaAssets
 from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.emitter.repository import AziendaRepository
 from pigrocrm.core.emitter.schemas import FIRMA_EMAIL_MAX_LENGTH, AziendaUpsert
 from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from pigrocrm.core.render.pdf import BLANK_PNG as PNG_PIXEL
+from pigrocrm.core.storage.local import LocalFileStorage
 
 ADMIN = Actor(id=None, type="system", role="admin")
 READONLY = Actor(id=None, type="user", role="readonly")
@@ -142,16 +145,20 @@ def test_upsert_converts_a_true_insert_race_into_a_clean_conflict(
 
 
 def test_firma_email_holds_a_text_block_and_firma_key_still_holds_an_image(
-    db_session: Session,
+    db_session: Session, local_storage: LocalFileStorage
 ) -> None:
     """Spec 10: the shipped `firma_key` is the storage key of a signature *image*, and
     an email does not attach one -- it wants a text block. The two coexist; neither is
-    overloaded."""
+    overloaded. Since REB-627 the key is written by the upload, never by the row's
+    `PUT`, which leaves it as it is."""
+    AziendaService(db_session).upsert_default(_upsert(firma_email="Mario Rossi\nConsulente"), ADMIN)
+    AziendaAssets(db_session, local_storage).set_firma(PNG_PIXEL, ADMIN)
+    # A second whole-row save names no key and leaves the image where it is.
     read = AziendaService(db_session).upsert_default(
-        _upsert(firma_key="firme/rossi.png", firma_email="Mario Rossi\nConsulente"), ADMIN
+        _upsert(firma_email="Mario Rossi\nConsulente"), ADMIN
     )
     assert read.firma_email == "Mario Rossi\nConsulente"
-    assert read.firma_key == "firme/rossi.png"
+    assert read.firma_key is not None and read.firma_key.endswith(".png")
 
 
 def test_firma_email_reaches_a_template_scope_under_emittente(db_session: Session) -> None:

@@ -35,6 +35,7 @@ from pigrocrm.core.documents.schemas import (
     DocumentVersionRead,
     OfferState,
 )
+from pigrocrm.core.emitter.assets import AziendaAssets, logo_file_in
 from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
@@ -105,6 +106,7 @@ class DocumentService:
         self.activities = ActivityService(session)
         self.templates = TemplateService(session)
         self.emitter = AziendaService(session)
+        self.assets = AziendaAssets(session, storage)
 
     # ---- owner resolution ---------------------------------------------------
 
@@ -741,7 +743,12 @@ class DocumentService:
         """
         customer = self._customer_of(document)
         scope: dict[str, Any] = dict(variabili)
-        scope["emittente"] = self.emitter.as_template_values(actor)["emittente"]
+        # The document's own azienda (REB-627, spec §1.8), read live: `regenerate` re-reads
+        # it the way it re-read the one emitter before, so a corrected address reaches
+        # the next version and a customer moved since does not.
+        scope["emittente"] = self.emitter.as_template_values(actor, document.azienda_id)[
+            "emittente"
+        ]
         scope["cliente"] = (
             CustomerRead.model_validate(customer).model_dump(mode="json") if customer else {}
         )
@@ -757,11 +764,19 @@ class DocumentService:
         return scope
 
     def _render_to_pdf(
-        self, corpo: str, scope: dict[str, Any], declared: tuple[DeclaredVariable, ...]
+        self,
+        corpo: str,
+        scope: dict[str, Any],
+        declared: tuple[DeclaredVariable, ...],
+        *,
+        azienda_id: UUID,
     ) -> tuple[str, bytes]:
         markdown = render_template(corpo, scope, declared)
-        header = build_header(scope["emittente"])
-        return markdown, render_pdf(markdown, header_typst=header, settings=self.settings)
+        media = self.assets.media_for(azienda_id)
+        header = build_header(scope["emittente"], logo=logo_file_in(media))
+        return markdown, render_pdf(
+            markdown, header_typst=header, settings=self.settings, media=media
+        )
 
     def create_from_template(self, data: DocumentFromTemplate, actor: Actor) -> DocumentRead:
         """The call behind "Claude, prepara una nuova offerta usando il template
@@ -786,7 +801,10 @@ class DocumentService:
         try:
             scope = self._template_scope(document, data.variabili, actor)
             markdown, pdf = self._render_to_pdf(
-                template.corpo_markdown, scope, self.templates.declared_variables(template)
+                template.corpo_markdown,
+                scope,
+                self.templates.declared_variables(template),
+                azienda_id=document.azienda_id,
             )
         except Exception:
             # "a render failure leaves nothing behind": the `Document` row above was
@@ -865,7 +883,10 @@ class DocumentService:
         template = self._require_template(source.template_id)
         scope = self._template_scope(document, source.variabili, actor)
         markdown, pdf = self._render_to_pdf(
-            template.corpo_markdown, scope, self.templates.declared_variables(template)
+            template.corpo_markdown,
+            scope,
+            self.templates.declared_variables(template),
+            azienda_id=document.azienda_id,
         )
         return self.add_version(
             document_id,
