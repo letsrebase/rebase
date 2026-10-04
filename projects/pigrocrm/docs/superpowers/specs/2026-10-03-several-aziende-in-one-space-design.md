@@ -818,3 +818,15 @@ Added as the milestones land, dated, never rewriting the sections above.
   the headroom and the simulation name their azienda; the cash view, the overview and
   the four dashboards echo it, `None` for «tutte». The P&L and the economic dashboard
   take it too, through the same `PeriodoQuery`.
+- **2026-10-04, same milestone, the routes and the tools (REB-631).** `POST /api/aziende`
+  takes `AziendaCreate` and answers 201; `DELETE /api/aziende/{id}` answers
+  `AziendaDeactivated`, the row plus `clienti_collegati`. The four dashboard routes,
+  `/api/analytics/overview` and `/pnl` take `azienda_id` as a filter; `/fiscal`,
+  `/ceilings` and `/ceilings/simulate` take it as the azienda to compute for, and the
+  OpenAPI description says in Italian when it is required. Over MCP `create_azienda(dati,
+  profilo_fiscale)` is the one tool for the one transaction, on the default surface with
+  `update_azienda`; the four dashboard tools, `get_ceiling_headroom`, `simulate_ceiling`
+  and the privileged `get_fiscal_estimate` take `azienda_id?`, parsed inside the guard
+  so a malformed id is this project's own refusal. `FiscalProfileService.check` is public
+  for `AziendaService.create` and named internal in the coverage map with `single` and
+  `require_single`.

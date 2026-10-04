@@ -1,11 +1,11 @@
 """The aziende of a space, and each one's fiscal profile (REB-616, spec 2026-10-03 §3).
 
 These routes replace `GET/PUT /api/emitter` and `GET/PUT /api/fiscal-profile`, which
-addressed one row with no id. There is no `POST /api/aziende` here on purpose: creating
-a second azienda opens in milestone 5 (§9), after the register, the customer chain, the
-rendering and the per-azienda taxes can serve it, and a test asserts the route is
-absent until then. Everything an admin could do to the one profile before, they do to
-`/api/aziende/{id}` now; the SPA reads the id from `GET /api/aziende`.
+addressed one row with no id. `POST /api/aziende` arrived last, with milestone 5 (§9,
+REB-631): creating a second azienda waited until the register, the customer chain, the
+rendering and the per-azienda taxes could serve it, and it is born with its fiscal
+profile in the same request (§1.2). Everything an admin could do to the one profile
+before, they do to `/api/aziende/{id}` now; the SPA reads the id from `GET /api/aziende`.
 
 Admin-only writes are enforced by the services (`actor.require_admin`), not by a router
 dependency: there is no role dependency in this codebase, and adding one here would
@@ -19,7 +19,13 @@ from fastapi import APIRouter, File, Query, UploadFile, status
 from fastapi.responses import Response
 
 from pigrocrm.core.emitter.assets import MAX_IMAGE_BYTES, AziendaAssets
-from pigrocrm.core.emitter.schemas import NAZIONE_MAX_LENGTH, AziendaRead, AziendaUpsert
+from pigrocrm.core.emitter.schemas import (
+    NAZIONE_MAX_LENGTH,
+    AziendaCreate,
+    AziendaDeactivated,
+    AziendaRead,
+    AziendaUpsert,
+)
 from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import NotFound
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead, FiscalProfileUpsert
@@ -38,6 +44,15 @@ def list_aziende(
     """The default first. Deactivated aziende are left out unless asked for: a
     selector never offers one, Impostazioni may still show it."""
     return AziendaService(session).list(actor, only_active=not include_inactive)
+
+
+@router.post("", response_model=AziendaRead, status_code=status.HTTP_201_CREATED)
+def create_azienda(data: AziendaCreate, session: SessionDep, actor: ActorDep) -> AziendaRead:
+    """A second azienda, with its fiscal profile, in one transaction (REB-631, spec
+    2026-10-03 §3): active, not the default, and the first of a space when it had
+    none. A profile the fiscal rules would refuse refuses the whole request, so no
+    azienda exists that could not issue."""
+    return AziendaService(session).create(data, actor)
 
 
 # Before `/{azienda_id}`: a literal segment declared after the parameterised route would
@@ -80,10 +95,14 @@ def set_default_azienda(azienda_id: UUID, session: SessionDep, actor: ActorDep) 
     return AziendaService(session).set_default(azienda_id, actor)
 
 
-@router.delete("/{azienda_id}", response_model=AziendaRead)
-def deactivate_azienda(azienda_id: UUID, session: SessionDep, actor: ActorDep) -> AziendaRead:
+@router.delete("/{azienda_id}", response_model=AziendaDeactivated)
+def deactivate_azienda(
+    azienda_id: UUID, session: SessionDep, actor: ActorDep
+) -> AziendaDeactivated:
     """Deactivation, never a row delete: an azienda that issued an invoice stays
-    readable forever. Refused on the default; move the default first."""
+    readable forever. Refused on the default; move the default first. The answer says
+    how many customers still point at the row (`clienti_collegati`): nothing new is
+    born under them until they are moved to an active azienda."""
     return AziendaService(session).deactivate(azienda_id, actor)
 
 

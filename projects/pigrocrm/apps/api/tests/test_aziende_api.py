@@ -2,8 +2,8 @@
 and `/api/fiscal-profile` when the emitter profile became one row per azienda.
 
 Every test space has its default azienda from the session fixture, the way a provisioned
-space has it; a second one is written by row here, since no route creates one before
-milestone 5 (§9), which the first test pins.
+space has it; a second one is written by row in the older tests and created through
+`POST /api/aziende` in the newer ones, the route milestone 5 opened (§9, REB-631).
 """
 
 from typing import Any
@@ -30,11 +30,65 @@ def _second_azienda(session: Session, **overrides: Any) -> str:
     return str(row.id)
 
 
-def test_no_route_creates_a_second_azienda_yet(logged_in: TestClient) -> None:
-    # Spec §9: creation opens in milestone 5, after the register, the customer chain,
-    # the rendering and the per-azienda taxes can serve it. Until then the only way a
-    # space gets its azienda is provisioning, and the route does not exist.
-    assert logged_in.post("/api/aziende", json={"ragione_sociale": "X"}).status_code == 405
+LTD = {
+    "nome": "rebase ltd",
+    "ragione_sociale": "Rebase Ltd",
+    "partita_iva": "GB123456789",
+    "nazione": "GB",
+    "indirizzo": "1 Poultry",
+    "comune": "London",
+    "fiscal_profile": {"pack_id": "non-it", "aliquota_iva_default": "20.00"},
+}
+
+
+def test_post_creates_a_second_azienda_born_with_its_profile(logged_in: TestClient) -> None:
+    """Spec §3 and §9 (REB-631): one request, the row and its fiscal profile, so no
+    azienda ever exists that `issue` would refuse for want of a profile."""
+    created = logged_in.post("/api/aziende", json=LTD)
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert (body["nome"], body["predefinita"], body["attiva"]) == ("rebase ltd", False, True)
+    assert body["partita_iva"] == "GB123456789"
+    profile = logged_in.get(f"/api/aziende/{body['id']}/fiscal-profile")
+    assert profile.status_code == 200, profile.text
+    assert (profile.json()["pack_id"], profile.json()["codice_regime"]) == ("non-it", None)
+    listed = [a["nome"] for a in logged_in.get("/api/aziende").json()]
+    assert listed == ["Spazio di prova", "rebase ltd"]
+
+
+def test_a_refused_profile_leaves_no_azienda_behind(logged_in: TestClient) -> None:
+    refused = logged_in.post(
+        "/api/aziende",
+        json={**LTD, "fiscal_profile": {**LTD["fiscal_profile"], "applica_bollo": True}},
+    )
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["field"] == "applica_bollo"
+    assert len(logged_in.get("/api/aziende").json()) == 1
+    # And `nome` is required on creation, where the single profile derived it.
+    unnamed = logged_in.post("/api/aziende", json={k: v for k, v in LTD.items() if k != "nome"})
+    assert unnamed.status_code == 422, unnamed.text
+
+
+def test_only_an_admin_creates_an_azienda(readonly_client: TestClient) -> None:
+    refused = readonly_client.post("/api/aziende", json=LTD)
+    assert refused.status_code == 403, refused.text
+    assert len(readonly_client.get("/api/aziende").json()) == 1
+
+
+def test_a_deactivation_answers_how_many_customers_still_point_at_the_row(
+    logged_in: TestClient,
+) -> None:
+    second = logged_in.post("/api/aziende", json=LTD).json()["id"]
+    for nome in ("Uno Ltd", "Due Ltd"):
+        customer = logged_in.post(
+            "/api/customers",
+            json={"ragione_sociale": nome, "nazione": "GB", "azienda_id": second},
+        )
+        assert customer.status_code == 201, customer.text
+    gone = logged_in.delete(f"/api/aziende/{second}")
+    assert gone.status_code == 200, gone.text
+    assert gone.json()["attiva"] is False
+    assert gone.json()["clienti_collegati"] == 2
 
 
 def test_the_old_routes_are_gone_with_no_alias(logged_in: TestClient) -> None:

@@ -216,8 +216,23 @@ _INTERNE: dict[Method, str] = {
         "lettura interna: la riga che un `azienda_id` nomina, o la predefinita quando e' "
         "`None`; e' cio' che ogni servizio chiama per se', e `describe_azienda` la espone"
     ),
+    ("AziendaService", "single"): (
+        "lettura interna (REB-630): l'unica azienda attiva, o `None` quando lo spazio ne "
+        "ha piu' di una e il chiamante non l'ha indicata; la chiamano la stima fiscale e "
+        "le soglie per risolvere il proprio `azienda_id`, non e' un'azione a se'"
+    ),
+    ("AziendaService", "require_single"): (
+        "lettura interna (REB-630): `single`, o il rifiuto che nomina `azienda_id`; la "
+        "chiamano `get_fiscal_estimate`, `ceiling_headroom` e `simulate_ceiling`, i cui "
+        "tool espongono gia' il parametro"
+    ),
     ("FieldDefinitionService", "specs_for"): "alimenta la validazione dei campi custom",
     ("FiscalProfileService", "snapshot"): "lettura interna del regime, senza actor",
+    ("FiscalProfileService", "check"): (
+        "validazione interna, senza actor (REB-630): i rifiuti che un corpo di profilo "
+        "puo' meritare, chiamata da `upsert` e da `AziendaService.create` prima di "
+        "toccare una riga; non e' un'azione, e i due tool che scrivono la espongono gia'"
+    ),
     ("InvoiceService", "undeclared_gaps"): (
         "lettura interna, senza actor: `issue` la chiama per rifiutare l'emissione "
         "nativa finche' un buco del registro non e' stato importato o dichiarato "

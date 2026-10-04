@@ -243,23 +243,30 @@ def get_unbilled_backlog(context: McpContext) -> dict[str, Any]:
     return AnalyticsService(context.session).unbilled_backlog(context.actor).model_dump(mode="json")
 
 
-def get_ceiling_headroom(context: McpContext, anno: int | str) -> dict[str, Any]:
-    """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
-    configurato (REB-352 §1.4), sui ricavi incassati e reali dell'anno."""
+def get_ceiling_headroom(
+    context: McpContext, anno: int | str, azienda_id: UUID | None = None
+) -> dict[str, Any]:
+    """The headroom under every active ceiling of the configured pack (REB-352 §1.4),
+    on the year's real paid revenue. Of one azienda (REB-631): the only one when none
+    is named, required by name otherwise."""
     return (
         AnalyticsService(context.session)
-        .ceiling_headroom(_ANNO.validate_python(anno), context.actor)
+        .ceiling_headroom(_ANNO.validate_python(anno), context.actor, azienda_id)
         .model_dump(mode="json")
     )
 
 
 def simulate_ceiling(
-    context: McpContext, anno: int | str, query: CeilingSimulationQuery
+    context: McpContext,
+    anno: int | str,
+    query: CeilingSimulationQuery,
+    azienda_id: UUID | None = None,
 ) -> dict[str, Any]:
-    """Il simulatore "ci sta?" (REB-352 §1.4): la stessa aggiunta sintetica letta da
-    `query`, rivalutata su ogni soglia attiva senza salvare nulla."""
+    """The "would this fit?" simulator (REB-352 §1.4): the synthetic addition `query`
+    carries, re-evaluated against every active ceiling without saving anything. The
+    azienda resolves as in `get_ceiling_headroom` (REB-631)."""
     return (
         AnalyticsService(context.session)
-        .simulate_ceiling(_ANNO.validate_python(anno), query, context.actor)
+        .simulate_ceiling(_ANNO.validate_python(anno), query, context.actor, azienda_id)
         .model_dump(mode="json")
     )

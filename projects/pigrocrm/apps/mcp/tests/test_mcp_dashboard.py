@@ -33,6 +33,7 @@ from collections.abc import Iterator
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from mcp import Client
@@ -322,3 +323,36 @@ async def test_the_shared_session_fixture_is_refused_loudly(
     async with Client(server) as client:
         result = await client.call_tool("get_commercial_dashboard", {})
     assert result.is_error
+
+
+# -- the sidebar's azienda (REB-631, spec 2026-10-03 §7) ---------------------------------
+
+
+async def test_every_dashboard_tool_offers_the_azienda_and_echoes_it(
+    dashboard_server: Any,
+) -> None:
+    """The four tools take `azienda_id` as a filter, say so in their descriptions, and
+    echo it back; under an azienda nobody owns the corpus's own figures read empty and
+    the page keeps its shape, the same wire check `test_dashboard_api.py` makes."""
+    nobody = str(uuid4())
+    async with Client(dashboard_server) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+        for name in (
+            "get_commercial_dashboard",
+            "get_economic_dashboard",
+            "get_operational_dashboard",
+            "get_receivables_dashboard",
+        ):
+            assert "azienda_id" in tools[name].input_schema["properties"], name
+            assert "azienda_id" in (tools[name].description or ""), name
+            tutte = _payload(await client.call_tool(name, {}))
+            assert tutte["azienda_id"] is None, name
+            scoped = _payload(await client.call_tool(name, {"azienda_id": nobody}))
+            assert scoped["azienda_id"] == nobody, name
+        commerciale = _payload(
+            await client.call_tool("get_commercial_dashboard", {"azienda_id": nobody})
+        )
+        assert all(row["numero"] == 0 for row in commerciale["pipeline"])
+        malformed = await client.call_tool("get_commercial_dashboard", {"azienda_id": "non-id"})
+    assert malformed.is_error
+    assert "azienda_id" in malformed.content[0].text

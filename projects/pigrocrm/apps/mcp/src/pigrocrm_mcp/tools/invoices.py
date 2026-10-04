@@ -11,7 +11,12 @@ from datetime import date
 from typing import Any, Final
 from uuid import UUID
 
-from pigrocrm.core.emitter.schemas import TEMPLATE_EXCLUDED_FIELDS, AziendaRead, AziendaUpsert
+from pigrocrm.core.emitter.schemas import (
+    TEMPLATE_EXCLUDED_FIELDS,
+    AziendaCreate,
+    AziendaRead,
+    AziendaUpsert,
+)
 from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -344,6 +349,24 @@ def describe_azienda(context: McpContext, azienda_id: str | None = None) -> dict
         "ha_logo": profile.logo_key is not None,
         "ha_firma": profile.firma_key is not None,
     }
+
+
+def create_azienda(
+    context: McpContext, dati: dict[str, Any], profilo_fiscale: dict[str, Any]
+) -> dict[str, Any]:
+    """A second azienda with its fiscal profile, in one call (REB-631, spec 2026-10-03
+    §7): `dati` in `AziendaCreate`'s shape, `profilo_fiscale` in `FiscalProfileUpsert`'s,
+    the two bodies the REST route takes as one. Admin-only through the service, and
+    agent-allowed like `update_azienda` since ORB-188: setting a space up is not a
+    fiscal act. The two image flags are dropped as `update_azienda` drops them, so an
+    agent that copies `describe_azienda`'s answer as a starting point is not refused."""
+    data = AziendaCreate.model_validate(
+        {
+            **{key: value for key, value in dati.items() if key not in READ_ONLY_FLAGS},
+            "fiscal_profile": profilo_fiscale,
+        }
+    )
+    return AziendaService(context.session).create(data, context.actor).model_dump(mode="json")
 
 
 def update_azienda(
