@@ -308,6 +308,12 @@ ROWS: list[Row] = [
     ),
     Row("POST", "/api/aziende/{azienda_id}/predefinita", admin_only=True),
     Row("DELETE", "/api/aziende/{azienda_id}", admin_only=True),
+    # The logo and the signature (REB-628): admin writes, every role reads them, since
+    # the panel's preview and every PDF header need them.
+    Row("PUT", "/api/aziende/{azienda_id}/logo", admin_only=True, multipart=True),
+    Row("DELETE", "/api/aziende/{azienda_id}/logo", admin_only=True),
+    Row("PUT", "/api/aziende/{azienda_id}/firma", admin_only=True, multipart=True),
+    Row("DELETE", "/api/aziende/{azienda_id}/firma", admin_only=True),
     Row(
         "PUT",
         "/api/aziende/{azienda_id}/fiscal-profile",
