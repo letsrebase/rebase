@@ -152,6 +152,10 @@ export function CostForm({
   // while a general expense is shared («Condivisa», `null`) unless one azienda owns it.
   const azienda = useAzienda()
   const aziendaId = (values.native.azienda_id as string | null | undefined) ?? SHARED
+  // Kept out of the flattened values, like the customer form does: a custom field a
+  // tenant named `azienda_id` would otherwise display the picker's id as its own value.
+  const { azienda_id: _pickedElsewhere, ...nativeForForm } = values.native
+  void _pickedElsewhere
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -221,7 +225,7 @@ export function CostForm({
           // Flattened for rendering only -- one control per key is all a form can draw.
           // The state behind it stays split, so `toCostRequestBody` still knows which
           // namespace each value came from.
-          values={{ ...values.native, ...values.custom }}
+          values={{ ...nativeForForm, ...values.custom }}
           onChange={change}
           // Withheld when the server blamed `category_id`: that key has no control
           // inside `DynamicForm`, so it would render the message a second time as a

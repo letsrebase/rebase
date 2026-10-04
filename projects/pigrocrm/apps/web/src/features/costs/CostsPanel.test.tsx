@@ -218,3 +218,36 @@ describe('the «Azienda» picker of a general expense (REB-626)', () => {
     expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
   })
 })
+
+describe('a custom cost field that happens to be named azienda_id (CodeRabbit, PR #509)', () => {
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as AziendaRecord
+  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as AziendaRecord
+  const TWO: AziendaValue = {
+    aziende: [HUMANCRAFT, REBASE],
+    selected: null,
+    select: vi.fn(),
+    several: true,
+    byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
+  }
+
+  it('never shows the owning azienda\'s id as the custom field\'s value', async () => {
+    respond({
+      '/api/costs': () =>
+        ok({ items: [cost({ deal_id: null, azienda_id: 'a1', custom_fields: {} })], next_cursor: null }),
+      '/api/cost-categories': () => ok([CATEGORY]),
+      '/api/schema/{entity_type}': () =>
+        ok({
+          entity_type: 'cost',
+          native_fields: [],
+          custom_fields: [
+            { key: 'azienda_id', label: 'Codice interno', type: 'text', required: false, options: [] },
+          ],
+        }),
+    })
+    renderPanel(null, TWO)
+    await userEvent.click(await screen.findByText('Licenza'))
+    await screen.findByRole('dialog')
+    expect(screen.getByRole('combobox', { name: 'Azienda' })).toHaveTextContent('humancraft')
+    expect(screen.getByLabelText('Codice interno')).toHaveValue('')
+  })
+})
