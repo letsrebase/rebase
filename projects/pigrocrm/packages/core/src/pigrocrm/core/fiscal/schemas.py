@@ -9,11 +9,19 @@ without the row it came from still existing in its original shape.
 import re
 from datetime import datetime
 from decimal import Decimal
+from typing import Any, Literal, get_args
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, PACK_NON_IT
 from pigrocrm.core.validation import SafeStr
+
+# The packs a profile may point at (REB-619): `pack.py` owns them, this is the shape
+# the API and MCP accept. A `Literal` and not a free string, so a typo is refused by
+# the schema instead of reaching `resolve_pack`'s `KeyError` at the first emission.
+PackId = Literal["it-flat-rate", "non-it"]
+assert set(get_args(PackId)) == {PACK_IT_FLAT_RATE, PACK_NON_IT}  # noqa: S101
 
 # `RF01`..`RF19`, the codes FPR12's own `RegimeFiscaleType` enumerates. `.fullmatch`
 # is what the callers use, never `.match` with `$`: "RF19\n" is five characters and
@@ -102,7 +110,11 @@ class FiscalSnapshot(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    codice_regime: str = Field(max_length=CODICE_REGIME_MAX_LENGTH)
+    # `None` on a foreign azienda (REB-619): RF01..RF19 are FatturaPA values and mean
+    # nothing abroad. `pack_id` defaults to the Italian pack so every snapshot frozen
+    # before the column reached the snapshot still validates, and reads as what it was.
+    codice_regime: str | None = Field(default=None, max_length=CODICE_REGIME_MAX_LENGTH)
+    pack_id: str = PACK_IT_FLAT_RATE
     aliquota_iva_default: Decimal = Field(
         max_digits=RATE_MAX_DIGITS, decimal_places=RATE_DECIMAL_PLACES
     )
@@ -132,7 +144,34 @@ class FiscalProfileUpsert(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    codice_regime: SafeStr = Field(max_length=CODICE_REGIME_MAX_LENGTH)
+    @model_validator(mode="before")
+    @classmethod
+    def _foreign_defaults(cls, data: Any) -> Any:
+        """On the `non-it` pack a key the caller leaves out is empty, not the
+        forfettario's (REB-619): `natura_default` «N2.2», the bollo on and the three
+        income parameters are Italian facts, and a foreign profile saved with them would
+        be refused («una natura con un'aliquota diversa da zero») or, worse, would have
+        the fiscal estimate compute Italian taxes. The rule lives here, where the API
+        and MCP deserialise, and not only in the SPA's form."""
+        if isinstance(data, dict) and data.get("pack_id") == PACK_NON_IT:
+            data = dict(data)
+            for key, value in (
+                ("natura_default", None),
+                ("riferimento_normativo", None),
+                ("applica_bollo", False),
+                ("coefficiente_redditivita", None),
+                ("aliquota_imposta_sostitutiva", None),
+                ("aliquota_inps", None),
+            ):
+                data.setdefault(key, value)
+        return data
+
+    # Optional in the schema and required by the service on an Italian pack
+    # (`resolve_regime`): the same field is legitimately empty on `non-it`, and a
+    # schema cannot say «required unless that other field says otherwise» without
+    # the error losing the field's name. The service's refusal names `codice_regime`.
+    codice_regime: SafeStr | None = Field(default=None, max_length=CODICE_REGIME_MAX_LENGTH)
+    pack_id: PackId = PACK_IT_FLAT_RATE
     aliquota_iva_default: Decimal = Field(
         default=Decimal("0.00"), max_digits=RATE_MAX_DIGITS, decimal_places=RATE_DECIMAL_PLACES
     )
@@ -186,7 +225,7 @@ class FiscalProfileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    codice_regime: str
+    codice_regime: str | None
     aliquota_iva_default: Decimal
     natura_default: str | None
     riferimento_normativo: str | None
@@ -202,9 +241,9 @@ class FiscalProfileRead(BaseModel):
     coefficiente_redditivita: Decimal | None
     aliquota_imposta_sostitutiva: Decimal | None
     aliquota_inps: Decimal | None
-    # REB-361: the jurisdiction pack pointer -- read, never written through this
-    # schema (no field on `FiscalProfileUpsert`): a second pack is a later feature,
-    # and nothing here asks a caller to choose one yet.
+    # REB-361: the jurisdiction pack pointer. Written through `FiscalProfileUpsert`
+    # since REB-619 brought the second pack, `non-it`; the version is still the one
+    # each pack ships.
     pack_id: str
     pack_version: str
     created_at: datetime
@@ -213,6 +252,7 @@ class FiscalProfileRead(BaseModel):
 
 __all__ = [
     "CODICE_REGIME_RE",
+    "PackId",
     "DEFAULT_ALIQUOTA_IMPOSTA_SOSTITUTIVA",
     "DEFAULT_ALIQUOTA_INPS",
     "DEFAULT_COEFFICIENTE_REDDITIVITA",

@@ -36,8 +36,9 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     azienda_id: Mapped[UUID] = mapped_column(
         ForeignKey("emitter_profile.id"), nullable=False, unique=True
     )
-    # RF01..RF19, as FPR12's RegimeFiscaleType enumerates them.
-    codice_regime: Mapped[str] = mapped_column(String(4), nullable=False)
+    # RF01..RF19, as FPR12's RegimeFiscaleType enumerates them; `NULL` on a profile
+    # whose `pack_id` is `non-it` (REB-619), since the codes mean nothing abroad.
+    codice_regime: Mapped[str | None] = mapped_column(String(4), nullable=True)
     aliquota_iva_default: Mapped[Decimal] = mapped_column(
         Numeric(5, 2), nullable=False, default=Decimal("0.00")
     )
@@ -70,13 +71,14 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     # not the forfettario computes income by a different arithmetic entirely: for those
     # the honest value is "not applicable", which is NULL, and not a zero that a report
     # would quietly multiply by.
-    coefficiente_redditivita: Mapped[Decimal | None] = mapped_column(
-        Numeric(5, 2), default=Decimal("67.00")
-    )
-    aliquota_imposta_sostitutiva: Mapped[Decimal | None] = mapped_column(
-        Numeric(5, 2), default=Decimal("5.00")
-    )
-    aliquota_inps: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), default=Decimal("26.07"))
+    #
+    # No Python-side default on the three since REB-619: `FiscalProfileUpsert` owns the
+    # forfettario's values (67, 5, 26.07) and every write goes through it, while a
+    # foreign profile sets them to `None` on purpose, which an ORM default would
+    # silently turn back into the forfettario's on the insert.
+    coefficiente_redditivita: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    aliquota_imposta_sostitutiva: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
+    aliquota_inps: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     # REB-361: which jurisdiction pack governs the ceiling and rivalsa arithmetic
     # (`pigrocrm.core.fiscal.pack`) -- a pointer, not a duplication of the pack's own
     # data, and `NOT NULL` on purpose: every space this product has ever provisioned

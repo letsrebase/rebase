@@ -217,20 +217,22 @@ class InvoiceRepository:
             self.session.execute(text(f"SELECT nextval('{PROFORMA_SEQUENCE_NAME}')")).scalar_one()
         )
 
-    def lock_counter(self, anno: int) -> InvoiceCounter:
-        """The year's counter row, locked for the rest of this transaction.
+    def lock_counter(self, azienda_id: UUID, anno: int) -> InvoiceCounter:
+        """The azienda's counter row for the year, locked for the rest of this
+        transaction.
 
         Two statements, in this order and for these reasons:
 
-        1. `INSERT ... ON CONFLICT (anno) DO NOTHING` -- two concurrent
+        1. `INSERT ... ON CONFLICT (azienda_id, anno) DO NOTHING` -- two concurrent
            first-invoices-of-the-year: one inserts, the other does nothing, both carry
            on. Without `ON CONFLICT` the loser would take a `UniqueViolation` and have
            to be retried by the caller.
         2. `SELECT ... FOR UPDATE` -- from here on every other emission for the same
-           year waits. This is deliberately **the first row lock the emission
-           transaction takes**, and no later statement in that transaction takes a lock
-           a concurrent emission could already hold, so two emissions cannot deadlock
-           against each other.
+           azienda and year waits, and no other azienda's does (REB-619): the row is
+           the lock, and there is one per register. This is deliberately **the first
+           row lock the emission transaction takes**, and no later statement in that
+           transaction takes a lock a concurrent emission could already hold, so two
+           emissions cannot deadlock against each other.
 
         Not a `SEQUENCE`, and that is the whole design: `nextval()` is
         non-transactional by design and does not roll back, so a sequence guarantees
@@ -244,16 +246,20 @@ class InvoiceRepository:
         """
         self.session.execute(
             text(
-                "INSERT INTO invoice_counters (anno, ultimo_numero) "
-                "VALUES (:anno, 0) ON CONFLICT (anno) DO NOTHING"
+                "INSERT INTO invoice_counters (azienda_id, anno, ultimo_numero) "
+                "VALUES (:azienda_id, :anno, 0) ON CONFLICT (azienda_id, anno) DO NOTHING"
             ),
-            {"anno": anno},
+            {"azienda_id": azienda_id, "anno": anno},
         )
-        stmt = select(InvoiceCounter).where(InvoiceCounter.anno == anno).with_for_update()
+        stmt = (
+            select(InvoiceCounter)
+            .where(InvoiceCounter.azienda_id == azienda_id, InvoiceCounter.anno == anno)
+            .with_for_update()
+        )
         return self.session.execute(stmt).scalars().one()
 
-    def last_issued_date(self, anno: int) -> date | None:
-        """The `data_emissione` of the highest-numbered invoice of `anno`.
+    def last_issued_date(self, azienda_id: UUID, anno: int) -> date | None:
+        """The `data_emissione` of the azienda's highest-numbered invoice of `anno`.
 
         Safe to read only *after* `lock_counter` has run, which is the one place it is
         called from: without the lock, a concurrent emission could commit a later
@@ -264,31 +270,45 @@ class InvoiceRepository:
         """
         stmt = (
             select(Invoice.data_emissione)
-            .where(Invoice.anno == anno, Invoice.numero.is_not(None))
+            .where(*self._register(azienda_id, anno))
             .order_by(Invoice.numero.desc())
             .limit(1)
         )
         return self.session.execute(stmt).scalars().first()
 
+    @staticmethod
+    def _register(azienda_id: UUID, anno: int) -> tuple[ColumnElement[bool], ...]:
+        """The numbered rows of one register: one azienda, one year (REB-619). Every
+        read below starts from this, so none can forget the azienda and answer with
+        another register's numbers."""
+        return (
+            Invoice.azienda_id == azienda_id,
+            Invoice.anno == anno,
+            Invoice.numero.is_not(None),
+        )
+
     # --- slice 9's import queries -------------------------------------------------
 
-    def neighbour_dates(self, anno: int, numero: int) -> tuple[date | None, date | None]:
-        """The dates on either side of `numero` in the register of `anno`.
+    def neighbour_dates(
+        self, azienda_id: UUID, anno: int, numero: int
+    ) -> tuple[date | None, date | None]:
+        """The dates on either side of `numero` in the azienda's register of `anno`.
 
         `last_issued_date` answers "what came last"; an import inserts *between*
         existing numbers, so monotonicity has to be checked against the nearest lower
         and the nearest higher number, whatever their states -- an annulled row keeps
         its place in the order exactly as it does for `last_issued_date`.
         """
+        register = self._register(azienda_id, anno)
         before = (
             select(Invoice.data_emissione)
-            .where(Invoice.anno == anno, Invoice.numero.is_not(None), Invoice.numero < numero)
+            .where(*register, Invoice.numero < numero)
             .order_by(Invoice.numero.desc())
             .limit(1)
         )
         after = (
             select(Invoice.data_emissione)
-            .where(Invoice.anno == anno, Invoice.numero.is_not(None), Invoice.numero > numero)
+            .where(*register, Invoice.numero > numero)
             .order_by(Invoice.numero.asc())
             .limit(1)
         )
@@ -297,42 +317,47 @@ class InvoiceRepository:
             self.session.execute(after).scalars().first(),
         )
 
-    def numbers_present(self, anno: int) -> set[int]:
-        stmt = select(Invoice.numero).where(Invoice.anno == anno, Invoice.numero.is_not(None))
+    def numbers_present(self, azienda_id: UUID, anno: int) -> set[int]:
+        stmt = select(Invoice.numero).where(*self._register(azienda_id, anno))
         # `Invoice.numero` is `Mapped[int | None]` at the column-type level; the
         # `is_not(None)` clause above is what the database enforces, and this cast is
         # what tells mypy the same thing rather than re-filtering `None` at runtime.
         return cast(set[int], set(self.session.execute(stmt).scalars().all()))
 
-    def first_native_number(self, anno: int) -> int | None:
-        """The lowest number this CRM itself issued in `anno` (§3.2 rule 6)."""
+    def first_native_number(self, azienda_id: UUID, anno: int) -> int | None:
+        """The lowest number this CRM itself issued for the azienda in `anno` (§3.2
+        rule 6)."""
         stmt = select(func.min(Invoice.numero)).where(
-            Invoice.anno == anno, Invoice.numero.is_not(None), Invoice.importata_da.is_(None)
+            *self._register(azienda_id, anno), Invoice.importata_da.is_(None)
         )
         return self.session.execute(stmt).scalar_one()
 
-    def declared_gaps(self, anno: int) -> set[int]:
-        stmt = select(InvoiceRegisterGap.numero).where(InvoiceRegisterGap.anno == anno)
+    def declared_gaps(self, azienda_id: UUID, anno: int) -> set[int]:
+        stmt = select(InvoiceRegisterGap.numero).where(
+            InvoiceRegisterGap.azienda_id == azienda_id, InvoiceRegisterGap.anno == anno
+        )
         return set(self.session.execute(stmt).scalars().all())
 
-    def existing_by_number(self, anno: int, numero: int) -> Invoice | None:
-        """The invoice already on the register at `(anno, numero)`, if any -- the same
-        set `numbers_present` answers, read one row at a time for REB-364's
-        duplicate check, which needs the row itself (specifically its
+    def existing_by_number(self, azienda_id: UUID, anno: int, numero: int) -> Invoice | None:
+        """The invoice already on the azienda's register at `(anno, numero)`, if any
+        -- the same set `numbers_present` answers, read one row at a time for
+        REB-364's duplicate check, which needs the row itself (specifically its
         `xml_hash_sha256`), not merely whether the number is taken.
 
-        Not scoped by `importata_da`: `uq_invoices_anno_numero` allows exactly one
-        row per `(anno, numero)` regardless of provenance, so a re-import of a
-        natively-issued number is exactly as much a duplicate as a re-import of a
-        previously-imported one.
+        Not scoped by `importata_da`: `uq_invoices_azienda_anno_numero` allows exactly
+        one row per `(azienda_id, anno, numero)` regardless of provenance, so a
+        re-import of a natively-issued number is exactly as much a duplicate as a
+        re-import of a previously-imported one.
         """
-        stmt = select(Invoice).where(Invoice.anno == anno, Invoice.numero == numero)
+        stmt = select(Invoice).where(
+            Invoice.azienda_id == azienda_id, Invoice.anno == anno, Invoice.numero == numero
+        )
         return self.session.execute(stmt).scalars().first()
 
-    def gaps(self, anno: int) -> list[InvoiceRegisterGap]:
+    def gaps(self, azienda_id: UUID, anno: int) -> list[InvoiceRegisterGap]:
         stmt = (
             select(InvoiceRegisterGap)
-            .where(InvoiceRegisterGap.anno == anno)
+            .where(InvoiceRegisterGap.azienda_id == azienda_id, InvoiceRegisterGap.anno == anno)
             .order_by(InvoiceRegisterGap.numero)
         )
         return list(self.session.execute(stmt).scalars().all())

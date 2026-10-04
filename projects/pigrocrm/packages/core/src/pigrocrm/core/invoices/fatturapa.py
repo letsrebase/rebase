@@ -944,7 +944,18 @@ class FatturaPAExporter:
         self._anagrafica(anagrafici, emittente, "emitter_profile")
         regime = etree.SubElement(anagrafici, "RegimeFiscale")
         # From `fiscal_profile.codice_regime`, never a constant in the source: the
-        # whole point of the profile.
+        # whole point of the profile. `None` is a foreign azienda's profile (REB-619),
+        # which `InvoiceService.export_xml` refuses before this writer runs; refused
+        # again here, since a writer that emitted an empty `RegimeFiscale` would hand
+        # the SdI a file it rejects with a message nobody can act on.
+        if invoice.snapshot.fiscale.codice_regime is None:
+            raise ValidationFailed(
+                "fiscal_profile",
+                "codice_regime",
+                "questa azienda non emette fatture elettroniche: il suo profilo fiscale "
+                "non ha un codice regime",
+                expected="un codice da RF01 a RF19",
+            )
         regime.text = invoice.snapshot.fiscale.codice_regime
 
         self._sede(cedente, emittente, "emitter_profile")

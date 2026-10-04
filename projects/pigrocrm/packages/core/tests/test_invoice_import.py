@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.invoices.models import Invoice, InvoiceRegisterGap
+from pigrocrm.core.invoices.models import Invoice, InvoiceCounter, InvoiceRegisterGap
 
 ADMIN = Actor(id=None, type="system", role="admin")
 
@@ -70,6 +70,19 @@ def test_a_register_gap_is_unique_per_year_and_number(db_session: Session) -> No
     db_session.rollback()
 
 
+def _default_azienda_id(session: Session) -> UUID:
+    """The register every row below sits on (REB-619): the session's seeded default."""
+    from pigrocrm.core.emitter.repository import AziendaRepository
+
+    azienda = AziendaRepository(session).default()
+    assert azienda is not None
+    return azienda.id
+
+
+def _counter(session: Session, anno: int) -> InvoiceCounter | None:
+    return session.get(InvoiceCounter, (_default_azienda_id(session), anno))
+
+
 def _issued(
     session: Session, *, anno: int, numero: int, giorno: date, importata: bool = True
 ) -> Invoice:
@@ -97,24 +110,30 @@ def test_neighbour_dates_look_both_ways(db_session: Session) -> None:
     _issued(db_session, anno=2026, numero=7, giorno=date(2026, 5, 5))
     _issued(db_session, anno=2026, numero=11, giorno=date(2026, 7, 13))
     repo = InvoiceRepository(db_session)
-    assert repo.neighbour_dates(2026, 9) == (date(2026, 5, 5), date(2026, 7, 13))
-    assert repo.neighbour_dates(2026, 2) == (None, date(2026, 5, 5))
-    assert repo.neighbour_dates(2026, 12) == (date(2026, 7, 13), None)
-    assert repo.numbers_present(2026) == {7, 11}
-    assert repo.first_native_number(2026) is None
+    azienda_id = _default_azienda_id(db_session)
+    assert repo.neighbour_dates(azienda_id, 2026, 9) == (date(2026, 5, 5), date(2026, 7, 13))
+    assert repo.neighbour_dates(azienda_id, 2026, 2) == (None, date(2026, 5, 5))
+    assert repo.neighbour_dates(azienda_id, 2026, 12) == (date(2026, 7, 13), None)
+    assert repo.numbers_present(azienda_id, 2026) == {7, 11}
+    assert repo.first_native_number(azienda_id, 2026) is None
     _issued(db_session, anno=2026, numero=18, giorno=date(2026, 9, 10), importata=False)
-    assert repo.first_native_number(2026) == 18
+    assert repo.first_native_number(azienda_id, 2026) == 18
+    # Another azienda's register is empty: the reads are keyed, not merely filtered.
+    assert repo.numbers_present(uuid4(), 2026) == set()
+    assert repo.neighbour_dates(uuid4(), 2026, 9) == (None, None)
 
 
 def test_gaps_round_trip(db_session: Session) -> None:
     from pigrocrm.core.invoices.repository import InvoiceRepository
 
     repo = InvoiceRepository(db_session)
+    azienda_id = _default_azienda_id(db_session)
     repo.add_gap(InvoiceRegisterGap(anno=2026, numero=6, motivo="test"))
     repo.add_gap(InvoiceRegisterGap(anno=2026, numero=1, motivo="test"))
-    assert repo.declared_gaps(2026) == {1, 6}
-    assert [g.numero for g in repo.gaps(2026)] == [1, 6]
-    assert repo.declared_gaps(2025) == set()
+    assert repo.declared_gaps(azienda_id, 2026) == {1, 6}
+    assert [g.numero for g in repo.gaps(azienda_id, 2026)] == [1, 6]
+    assert repo.declared_gaps(azienda_id, 2025) == set()
+    assert repo.declared_gaps(uuid4(), 2026) == set()
 
 
 def _svc(session: Session, tmp_path, *, settings=None, drive_reader_factory=None):  # noqa: ANN001
@@ -199,7 +218,6 @@ def _payload(
 def test_an_imported_invoice_is_issued_numbered_and_moves_the_counter(
     db_session: Session, tmp_path
 ) -> None:  # noqa: ANN001
-    from pigrocrm.core.invoices.models import InvoiceCounter
 
     service = _svc(db_session, tmp_path)
     customer_id = _fiscal_customer_id(db_session)
@@ -210,7 +228,7 @@ def test_an_imported_invoice_is_issued_numbered_and_moves_the_counter(
     assert read.totale == Decimal("2700.00") and read.bollo == Decimal("2.00")
     assert read.stato_pagamento == "incassato" and read.data_incasso == date(2026, 5, 20)
     assert read.xml_hash_sha256 is None and read.pdf_document_id is None
-    assert db_session.get(InvoiceCounter, 2026).ultimo_numero == 7
+    assert _counter(db_session, 2026).ultimo_numero == 7
     lines = service.repo.lines(read.id)
     assert [(riga.numero_linea, riga.prezzo_totale, riga.natura) for riga in lines] == [
         (1, Decimal("2700.00"), "N2.2")
@@ -246,13 +264,12 @@ def test_import_issued_accepts_xml_document_id_and_hash_gated_by_the_caller(
 
 
 def test_the_counter_never_moves_backwards(db_session: Session, tmp_path) -> None:  # noqa: ANN001
-    from pigrocrm.core.invoices.models import InvoiceCounter
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
     service.import_issued(_payload(cid, numero=11, giorno=date(2026, 7, 13)), ADMIN)
     service.import_issued(_payload(cid, numero=9, giorno=date(2026, 6, 5)), ADMIN)
-    assert db_session.get(InvoiceCounter, 2026).ultimo_numero == 11
+    assert _counter(db_session, 2026).ultimo_numero == 11
 
 
 def test_a_duplicate_number_is_a_conflict(db_session: Session, tmp_path) -> None:  # noqa: ANN001
@@ -451,7 +468,6 @@ def test_a_missing_emitter_profile_is_refused_before_any_row_is_flushed(
     from pigrocrm.core.emitter.models import Azienda
     from pigrocrm.core.emitter.repository import AziendaRepository
     from pigrocrm.core.errors import NotFound
-    from pigrocrm.core.invoices.models import InvoiceCounter
     from pigrocrm.core.invoices.service import InvoiceService
     from pigrocrm.core.storage.local import LocalFileStorage
 
@@ -467,9 +483,10 @@ def test_a_missing_emitter_profile_is_refused_before_any_row_is_flushed(
     # No invoice, no lines, and not even the year's counter row: the refusal happened
     # above `lock_counter`, which is what inserts it.
     assert db_session.execute(select(Invoice)).first() is None
-    assert db_session.get(InvoiceCounter, 2026) is None
-    # And the session is still usable -- a query, not an exception, is what comes back.
-    assert service.undeclared_gaps(2026) == []
+    assert db_session.execute(select(InvoiceCounter)).first() is None
+    # And the session is still usable -- a query, not an exception, is what comes back
+    # (a register read by id, since with no azienda there is no default to resolve).
+    assert service.repo.numbers_present(uuid4(), 2026) == set()
 
 
 def test_a_number_beyond_the_register_is_refused_by_the_schema(
@@ -482,16 +499,15 @@ def test_a_number_beyond_the_register_is_refused_by_the_schema(
     """
     from pydantic import ValidationError
 
-    from pigrocrm.core.invoices.models import InvoiceCounter
     from pigrocrm.core.invoices.schemas import MAX_NUMERO
 
     service = _svc(db_session, tmp_path)
     cid = _fiscal_customer_id(db_session)
     with pytest.raises(ValidationError):
         service.import_issued(_payload(cid, numero=900142, giorno=date(2026, 5, 5)), ADMIN)
-    assert db_session.get(InvoiceCounter, 2026) is None
+    assert _counter(db_session, 2026) is None
     service.import_issued(_payload(cid, numero=MAX_NUMERO, giorno=date(2026, 5, 5)), ADMIN)
-    assert db_session.get(InvoiceCounter, 2026).ultimo_numero == MAX_NUMERO
+    assert _counter(db_session, 2026).ultimo_numero == MAX_NUMERO
 
 
 def test_a_declared_gap_refuses_the_import_of_that_number(db_session: Session, tmp_path) -> None:  # noqa: ANN001
@@ -1162,7 +1178,6 @@ def test_an_empty_pdf_on_drive_is_refused_among_the_pure_checks(
     """
     from pigrocrm.core.documents.models import Document
     from pigrocrm.core.errors import ValidationFailed
-    from pigrocrm.core.invoices.models import InvoiceCounter
     from pigrocrm.core.invoices.schemas import PdfSorgente
 
     drive = _drive()
@@ -1183,7 +1198,7 @@ def test_an_empty_pdf_on_drive_is_refused_among_the_pure_checks(
     assert caught.value.details["field"] == "pdf_sorgente.drive_file_id"
     assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
     assert db_session.execute(select(Document)).first() is None
-    assert db_session.get(InvoiceCounter, 2026) is None
+    assert _counter(db_session, 2026) is None
 
 
 def test_a_refusal_from_inside_import_bytes_still_leaves_nothing_flushed(
@@ -1206,7 +1221,6 @@ def test_a_refusal_from_inside_import_bytes_still_leaves_nothing_flushed(
     from pigrocrm.core.errors import ValidationFailed
     from pigrocrm.core.fields.schemas import FieldDefinitionCreate
     from pigrocrm.core.fields.service import FieldDefinitionService
-    from pigrocrm.core.invoices.models import InvoiceCounter
     from pigrocrm.core.invoices.schemas import PdfSorgente
 
     drive = _drive()
@@ -1236,6 +1250,6 @@ def test_a_refusal_from_inside_import_bytes_still_leaves_nothing_flushed(
 
     assert db_session.execute(select(Invoice).where(Invoice.numero == 7)).first() is None
     assert db_session.execute(select(Document)).first() is None
-    assert db_session.get(InvoiceCounter, 2026) is None
+    assert _counter(db_session, 2026) is None
     # And the session is still usable: a later read does not raise on a pending failure.
-    assert service.repo.numbers_present(2026) == set()
+    assert service.repo.numbers_present(_default_azienda_id(db_session), 2026) == set()

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import PARTITA_IVA_WIDTH, Azienda
 from pigrocrm.core.emitter.repository import AziendaRepository
 from pigrocrm.core.emitter.schemas import (
     NOME_MAX_LENGTH,
@@ -25,11 +25,10 @@ ENTITY = "emitter_profile"
 # a `.match()` check and reach flush() as a raw, session-poisoning DataError. The same
 # defect this project has already paid for once on `customers.partita_iva`.
 PARTITA_IVA_RE = re.compile(r"\d{11}")
-# The column's width (`String(11)`). A foreign VAT number keeps its own shape through
-# `normalise_foreign_fiscal_id`, but one longer than this (FR has 13 characters, NL 14)
-# would reach the flush as a session-poisoning DataError; it is refused here until the
-# `non-it` pack of milestone 2 widens the column (spec 2026-10-03 §11).
-PARTITA_IVA_MAX_LENGTH = 11
+# The column's width (`emitter/models.py`). A foreign VAT number keeps its own shape
+# through `normalise_foreign_fiscal_id`, and one longer than the column would reach the
+# flush as a session-poisoning DataError, so it is refused here in words.
+PARTITA_IVA_MAX_LENGTH = PARTITA_IVA_WIDTH
 CODICE_SDI_LENGTH = 7
 DEFAULT_LABEL = "predefinita"
 
@@ -88,8 +87,8 @@ def _check_fiscal(data: dict[str, Any]) -> None:
         raise ValidationFailed(
             ENTITY,
             "partita_iva",
-            "una partita IVA estera piu' lunga di 11 caratteri non e' ancora supportata",
-            expected="al massimo 11 caratteri",
+            f"una partita IVA estera non supera i {PARTITA_IVA_MAX_LENGTH} caratteri",
+            expected=f"al massimo {PARTITA_IVA_MAX_LENGTH} caratteri",
         )
     sdi = data.get("codice_sdi")
     if sdi and len(sdi) != CODICE_SDI_LENGTH:

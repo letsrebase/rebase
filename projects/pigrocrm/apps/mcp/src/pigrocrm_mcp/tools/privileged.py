@@ -72,6 +72,7 @@ from pigrocrm.core.timetracking.schemas import (
 )
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.context import McpContext
+from pigrocrm_mcp.tools.invoices import parse_azienda_id
 
 logger = logging.getLogger(__name__)
 
@@ -200,9 +201,11 @@ def register(
         `document_id`, come ogni altro strumento di questa superficie -- e per ciascuno
         prova ogni formato riconosciuto (oggi solo FatturaPA FPR12): se nessuno lo
         riconosce la riga e' `unclaimed`. Altrimenti classifica ogni fattura che il
-        documento contiene confrontando il fornitore con il profilo emittente di questo
-        spazio e il numero/anno dichiarati con il registro: `incoming_skipped` (una
-        fattura di un fornitore: PigroCRM non ha ancora un posto dove scriverla),
+        documento contiene confrontando il fornitore con le aziende italiane attive di
+        questo spazio e il numero/anno dichiarati con il registro dell'azienda
+        corrispondente, che la riga nomina in `azienda_id`: `incoming_skipped` (una
+        fattura di un fornitore, nessuna azienda: PigroCRM non ha ancora un posto dove
+        scriverla),
         `already_present` (stesso numero, stesso hash: e' quella che c'e' gia'),
         `conflict` (stesso numero ma un hash diverso, o nessun hash registrato con cui
         confrontare), oppure -- se e' un'uscita nuova -- `ready` quando il cliente
@@ -238,10 +241,13 @@ def register(
         chiamando la stessa `import_issued_invoice` di sotto usa: nessuna seconda via
         di scrittura, nessuna regola di registro duplicata.
 
-        Confermare un documento gia' `already_present` non duplica nulla: la riga
-        torna com'e' gia' sul registro. Una fattura di un fornitore (`incoming_
-        skipped`), un numero gia' occupato con un hash diverso o assente (`conflict`),
-        o un documento che nessun formato riconosce (`unclaimed`) non scrivono niente,
+        Ogni riga nomina in `azienda_id` l'azienda il cui numero di partita IVA o
+        codice fiscale e' quello del fornitore del file: e' sul suo registro che la
+        fattura viene scritta. Confermare un documento gia' `already_present` non
+        duplica nulla: la riga torna com'e' gia' sul registro. Una fattura di un
+        fornitore (`incoming_skipped`), un numero gia' occupato con un hash diverso o
+        assente (`conflict`), o un documento che nessun formato riconosce (`unclaimed`)
+        non scrivono niente,
         con lo stesso significato di `review_invoice_import`.
 
         `customer_id` e' la prima decisione umana che questo strumento aggiunge:
@@ -272,11 +278,14 @@ def register(
 
     @mcp.tool()
     @guard
-    def import_issued_invoice(dati: dict[str, Any]) -> dict[str, Any]:
+    def import_issued_invoice(
+        dati: dict[str, Any], azienda_id: str | None = None
+    ) -> dict[str, Any]:
         """Registra una fattura **gia' emessa da un sistema esterno** -- il gestionale
         precedente -- con il suo numero e la sua data: il contatore dell'anno sale fino a
         quel numero e non viene prodotto nessun XML, perche' quello e' gia' stato
-        trasmesso allo SdI.
+        trasmesso allo SdI. Sul registro di `azienda_id`; omesso, su quello
+        dell'azienda predefinita, che in uno spazio con una sola azienda e' l'unico.
 
         `dati` ha la forma di `InvoiceImport`, campo per campo: `anno`, `numero`,
         `data_emissione`, `data_scadenza` (opzionale, altrimenti calcolata dal regime),
@@ -312,26 +321,31 @@ def register(
         """
         service = InvoiceService(context.session, context.storage)
         payload = InvoiceImport.model_validate(dati)
-        fattura = service.import_issued(payload, context.actor)
+        azienda = parse_azienda_id(azienda_id)
+        fattura = service.import_issued(payload, context.actor, azienda_id=azienda)
         return {
             "fattura": fattura.model_dump(mode="json"),
-            "buchi_non_dichiarati": service.undeclared_gaps(payload.anno),
+            "buchi_non_dichiarati": service.undeclared_gaps(payload.anno, azienda),
         }
 
     @mcp.tool()
     @guard
     def declare_invoice_register_gaps(
-        anno: int, buchi: list[dict[str, Any]]
+        anno: int, buchi: list[dict[str, Any]], azienda_id: str | None = None
     ) -> list[dict[str, Any]]:
         """Dichiara i numeri che il registro di `anno` **non** portera' mai, con il
         motivo di ciascuno (es. annullata nel gestionale precedente prima della
         trasmissione). Un buco dichiarato resta tale: non si inventa una fattura per
         riempirlo. Finche' un numero mancante non e' dichiarato, l'emissione di nuove
-        fatture in quell'anno e' bloccata.
+        fatture in quell'anno e' bloccata. Il registro e' quello di `azienda_id`;
+        omesso, quello dell'azienda predefinita.
         """
         service = InvoiceService(context.session, context.storage)
         result = service.declare_gaps(
-            anno, RegisterGapsDeclare.model_validate({"buchi": buchi}), context.actor
+            anno,
+            RegisterGapsDeclare.model_validate({"buchi": buchi}),
+            context.actor,
+            parse_azienda_id(azienda_id),
         )
         return [g.model_dump(mode="json") for g in result]
 

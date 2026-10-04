@@ -128,3 +128,37 @@ def test_a_partita_iva_of_another_azienda_is_a_conflict(
         azienda_url(logged_in), json={"ragione_sociale": "Studio", "partita_iva": "01234567890"}
     )
     assert clash.status_code == 409, clash.text
+
+
+def test_a_foreign_fiscal_profile_has_no_regime_code_and_an_italian_one_requires_it(
+    logged_in: TestClient, api_session: Session
+) -> None:
+    """REB-620, spec §1.3: the `non-it` pack is saved with no RF code; the Italian pack
+    without one is refused naming the field, by the service and not by the schema."""
+    foreign = _second_azienda(api_session, nome="ltd", ragione_sociale="Rebase Ltd", nazione="GB")
+    saved = logged_in.put(
+        f"/api/aziende/{foreign}/fiscal-profile",
+        json={
+            "pack_id": "non-it",
+            "aliquota_iva_default": "20.00",
+            "natura_default": None,
+            "riferimento_normativo": None,
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert (saved.json()["pack_id"], saved.json()["codice_regime"]) == ("non-it", None)
+    assert logged_in.get(f"/api/aziende/{foreign}/fiscal-profile").json()["codice_regime"] is None
+
+    refused = logged_in.put(azienda_url(logged_in, "/fiscal-profile"), json={})
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["field"] == "codice_regime"
+    mixed = logged_in.put(
+        f"/api/aziende/{foreign}/fiscal-profile",
+        json={"pack_id": "non-it", "codice_regime": "RF19"},
+    )
+    assert mixed.status_code == 422, mixed.text
+    assert mixed.json()["field"] == "codice_regime"
+    unknown = logged_in.put(
+        azienda_url(logged_in, "/fiscal-profile"), json={"pack_id": "fr", "codice_regime": "RF19"}
+    )
+    assert unknown.status_code == 422, unknown.text

@@ -62,15 +62,17 @@ def search(context: McpContext, query: InvoiceListQuery) -> dict[str, Any]:
     }
 
 
-def list_register_gaps(context: McpContext, anno: int) -> list[dict[str, Any]]:
+def list_register_gaps(
+    context: McpContext, anno: int, azienda_id: str | None = None
+) -> list[dict[str, Any]]:
     """Every table row is a fact somebody already declared, never a computation: this
     reads `register_gaps` (the same query `GET /api/invoices/register/{anno}/gaps`
     answers), it writes nothing, and it needs nothing an installation has to open --
     unlike `import_issued_invoice`/`declare_invoice_register_gaps`, which write the
-    register and stay behind `mcp_full_access`."""
-    return [
-        g.model_dump(mode="json") for g in _invoices(context).register_gaps(anno, context.actor)
-    ]
+    register and stay behind `mcp_full_access`. One register per azienda (REB-619):
+    none named is the default's."""
+    gaps = _invoices(context).register_gaps(anno, context.actor, parse_azienda_id(azienda_id))
+    return [g.model_dump(mode="json") for g in gaps]
 
 
 def get(context: McpContext, invoice_id: str) -> dict[str, Any]:
@@ -249,7 +251,7 @@ def set_payment_state(
     )
 
 
-def _azienda_id(value: str | None) -> UUID | None:
+def parse_azienda_id(value: str | None) -> UUID | None:
     """Only an omitted id means the default azienda. A string that is given is an id
     or a refusal in words: an empty one, or one that is not a UUID, must not fall back
     to the default and write there in silence."""
@@ -266,7 +268,9 @@ def _azienda_id(value: str | None) -> UUID | None:
 def describe_fiscal_profile(context: McpContext, azienda_id: str | None = None) -> dict[str, Any]:
     """The fiscal parameters of one azienda; none means the default, which on a space
     with one azienda is the only one (REB-616, spec 2026-10-03 §7)."""
-    return FiscalProfileService(context.session).describe(context.actor, _azienda_id(azienda_id))
+    return FiscalProfileService(context.session).describe(
+        context.actor, parse_azienda_id(azienda_id)
+    )
 
 
 def update_fiscal_profile(
@@ -276,7 +280,9 @@ def update_fiscal_profile(
     only gate, and it is enough: the row is rewritable, issued invoices keep their copy."""
     return (
         FiscalProfileService(context.session)
-        .upsert(FiscalProfileUpsert.model_validate(dati), context.actor, _azienda_id(azienda_id))
+        .upsert(
+            FiscalProfileUpsert.model_validate(dati), context.actor, parse_azienda_id(azienda_id)
+        )
         .model_dump(mode="json")
     )
 
@@ -316,7 +322,7 @@ def describe_azienda(context: McpContext, azienda_id: str | None = None) -> dict
     """
     return (
         AziendaService(context.session)
-        .get(context.actor, _azienda_id(azienda_id))
+        .get(context.actor, parse_azienda_id(azienda_id))
         .model_dump(mode="json", exclude=set(TEMPLATE_EXCLUDED_FIELDS))
     )
 
@@ -334,7 +340,7 @@ def update_azienda(
     # `test_mcp_surface_coverage.py` resolves receivers by name across the whole
     # module, and `service` is the name this file binds to `InvoiceService`.
     data = AziendaUpsert.model_validate(dati)
-    target = _azienda_id(azienda_id)
+    target = parse_azienda_id(azienda_id)
     if target is None:
         return (
             AziendaService(context.session)

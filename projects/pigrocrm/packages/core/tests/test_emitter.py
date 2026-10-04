@@ -287,18 +287,23 @@ def test_a_missing_azienda_id_is_not_found_under_the_table_label(db_session: Ses
     assert excinfo.value.details["entity"] == "emitter_profile"
 
 
-def test_a_foreign_vat_number_longer_than_the_column_is_refused_not_a_500(
+def test_a_foreign_vat_number_fits_the_column_and_one_beyond_it_is_refused_not_a_500(
     db_session: Session,
 ) -> None:
-    # A French VAT number is 13 characters once normalised; until the `non-it` pack of
-    # milestone 2 widens the column it is refused in words, never as a DataError.
+    # A French VAT number is 13 characters once normalised and fits since REB-619
+    # widened the column; one longer than the column is still refused in words, never
+    # as a DataError.
+    read = AziendaService(db_session).upsert_default(
+        _upsert(nazione="FR", partita_iva="FR 12 345678901"), ADMIN
+    )
+    assert read.partita_iva == "FR12345678901"
     with pytest.raises(ValidationFailed) as excinfo:
         AziendaService(db_session).upsert_default(
-            _upsert(nazione="FR", partita_iva="FR 12 345678901"), ADMIN
+            _upsert(nazione="FR", partita_iva="FR" + "1" * 25), ADMIN
         )
     assert excinfo.value.details["field"] == "partita_iva"
     # The session is still usable: a refusal before the flush poisons nothing.
-    assert AziendaService(db_session).list(ADMIN) == []
+    assert [a.partita_iva for a in AziendaService(db_session).list(ADMIN)] == ["FR12345678901"]
 
 
 def test_the_database_refuses_an_inactive_default(db_session: Session) -> None:

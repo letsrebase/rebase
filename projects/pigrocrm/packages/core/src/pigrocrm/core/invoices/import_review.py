@@ -15,6 +15,7 @@ returns the same verdict, because nothing it touches changes between the two cal
 -- exactly the "Done when" the issue names.
 """
 
+from collections.abc import Callable, Sequence
 from datetime import date
 from typing import Literal
 from uuid import UUID
@@ -76,6 +77,10 @@ class ReviewedInvoiceRead(BaseModel):
     document_id: UUID
     outcome: InvoiceReviewOutcome
     invoice: ParsedInvoice | None = None
+    # The azienda the file's supplier matched (REB-619, spec §1.5): the register it
+    # was checked against and the one `confirm_invoice_import` writes it on. `None`
+    # on an `incoming_skipped` or `unclaimed` row, which lands nowhere.
+    azienda_id: UUID | None = None
     matched_customer_id: UUID | None = None
     # REB-369: one entry per `invoice.righe`, positionally aligned -- never merged
     # into `ParsedInvoiceLine` itself, which stays "exactly as the document states
@@ -141,28 +146,32 @@ def natural_key(invoice: ParsedInvoice) -> tuple[int, int] | None:
         return None
 
 
-def existing_for(session: Session, invoice: ParsedInvoice) -> Invoice | None:
+def existing_for(session: Session, invoice: ParsedInvoice, azienda_id: UUID) -> Invoice | None:
     """What `classify_parsed_invoice` should compare this invoice's bytes against:
-    the register row at its own natural key, or -- when that key cannot be derived
-    at all (`natural_key` above) -- a synthetic hashless row. `check_invoice_
-    duplicate`'s own NULL-hash rule then answers `"conflict"` for that row: there is
-    nothing to compare against, so nothing can be proven new, the same conservative
-    default `import_dedup` already applies to a `NULL`-hash register row.
+    the azienda's register row at the invoice's own natural key, or -- when that key
+    cannot be derived at all (`natural_key` above) -- a synthetic hashless row.
+    `check_invoice_duplicate`'s own NULL-hash rule then answers `"conflict"` for that
+    row: there is nothing to compare against, so nothing can be proven new, the same
+    conservative default `import_dedup` already applies to a `NULL`-hash register row.
 
-    Always runs one indexed lookup, whatever the invoice's direction turns out to
-    be: `existing`, a keyword argument, is evaluated before `classify_parsed_
-    invoice` is even called, so there is no way to defer it to after that
-    function's own direction check. Harmless on a read-only path -- the result is
-    simply unread for an `incoming` invoice, which `classify_parsed_invoice`
-    itself never touches `existing` for -- but real, and cheap enough (one
-    single-row lookup by the register's own unique `(anno, numero)` index) not to
-    be worth restructuring into a lazy call just to avoid it.
+    Called through `classify_parsed_invoice`'s `existing_for` callback, once the
+    azienda is known (REB-619): an incoming invoice never reaches it, and an outgoing
+    one is looked up on the register it would land on and no other.
     """
     key = natural_key(invoice)
     if key is None:
         return Invoice(xml_hash_sha256=None)
     anno, numero = key
-    return InvoiceRepository(session).existing_by_number(anno, numero)
+    return InvoiceRepository(session).existing_by_number(azienda_id, anno, numero)
+
+
+def register_lookup(
+    session: Session, invoice: ParsedInvoice
+) -> Callable[[Azienda], Invoice | None]:
+    """`existing_for` with the session and the invoice bound, in the shape
+    `classify_parsed_invoice` takes: the azienda is the one argument left, since it
+    is the one fact the classifier learns."""
+    return lambda azienda: existing_for(session, invoice, azienda.id)
 
 
 def match_customer(session: Session, cliente: ParsedInvoiceParty) -> UUID | None:
@@ -230,13 +239,13 @@ def _propose_day_mappings(
 def review_content(
     session: Session,
     content: bytes,
-    emitter: Azienda,
+    aziende: Sequence[Azienda],
     document_id: UUID,
 ) -> list[ReviewedInvoiceRead]:
     """The whole review step for one document's already-read bytes: `detect`,
-    `parse`, `classify_parsed_invoice` per invoice, and -- only for an otherwise-
-    `"ready"` one -- the customer match this issue adds on top of REB-364. Reads
-    through `session`; writes nothing.
+    `parse`, `classify_parsed_invoice` per invoice against the space's active Italian
+    aziende (REB-619), and -- only for an otherwise-`"ready"` one -- the customer
+    match this issue adds on top of REB-364. Reads through `session`; writes nothing.
     """
     adapter = detect_adapter(content)
     if adapter is None:
@@ -244,9 +253,10 @@ def review_content(
 
     rows: list[ReviewedInvoiceRead] = []
     for invoice in adapter.parse(content):
-        outcome: InvoiceReviewOutcome = classify_parsed_invoice(
-            invoice, emitter, existing=existing_for(session, invoice), content=content
+        classification, azienda = classify_parsed_invoice(
+            invoice, aziende, existing_for=register_lookup(session, invoice), content=content
         )
+        outcome: InvoiceReviewOutcome = classification
         matched_customer_id: UUID | None = None
         mappature_giorni: list[WorkUnitDayMappingProposal | None] | None = None
         if outcome == "ready":
@@ -260,6 +270,7 @@ def review_content(
                 document_id=document_id,
                 outcome=outcome,
                 invoice=invoice,
+                azienda_id=azienda.id if azienda is not None else None,
                 matched_customer_id=matched_customer_id,
                 mappature_giorni=mappature_giorni,
             )

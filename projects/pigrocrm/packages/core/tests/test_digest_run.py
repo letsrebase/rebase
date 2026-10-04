@@ -28,6 +28,7 @@ from typing import Any, NamedTuple
 from uuid import UUID
 
 import pytest
+from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
 from sqlalchemy import Engine, delete, func, select
 from sqlalchemy.orm import Session
 
@@ -145,6 +146,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
     da, a = _settimana_scorsa()
     with factory() as session:
         _require_empty(session)
+        azienda_id = committed_default_azienda(session)
         aperto = PipelineStage(
             nome=f"{_PREFIX} Aperto", posizione=0, probabilita_default=20, tipo="open"
         )
@@ -229,10 +231,10 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
     try:
         yield Corpus(db_engine, (da, a), iso_week(da), indirizzi[0], indirizzi[1], ids)
     finally:
-        _pulisci(factory, iso_week(da))
+        _pulisci(factory, iso_week(da), azienda_id)
 
 
-def _pulisci(factory: Any, iso: str) -> None:
+def _pulisci(factory: Any, iso: str, azienda_id: UUID | None = None) -> None:
     """The fixture's own rows *and* whatever the run committed on top of them.
 
     Scoped to what this file can have written: the prefix for the corpus, and the one ISO
@@ -257,6 +259,7 @@ def _pulisci(factory: Any, iso: str) -> None:
         session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
         session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
         session.execute(delete(User).where(User.nome.like(f"{_PREFIX} %")))
+        remove_azienda(session, azienda_id)
         session.commit()
 
 

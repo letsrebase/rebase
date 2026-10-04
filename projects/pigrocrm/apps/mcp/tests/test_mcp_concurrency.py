@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -70,6 +71,9 @@ from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.context import McpContext, ScopedSessionProvider
 from pigrocrm_mcp.server import build_server
 from pigrocrm_mcp.tools import dashboard as dashboard_tools
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
+from fakes.azienda_fixtures import committed_default_azienda, remove_azienda  # noqa: E402
 
 ADMIN = Actor(id=None, type="mcp", role="admin")
 
@@ -111,6 +115,7 @@ def committed_corpus(mcp_engine: Engine) -> Iterator[None]:
     """
     factory = session_factory(mcp_engine)
     with factory() as session:
+        azienda_id = committed_default_azienda(session)
         # `code=None`: a user-created stage as far as `seed_defaults` is concerned, so it
         # never collides with the seeded `lead`/`vinto` on the unique index. `posizione`
         # well past the defaults leaves any existing ordering alone.
@@ -168,6 +173,7 @@ def committed_corpus(mcp_engine: Engine) -> Iterator[None]:
             session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
             session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+            remove_azienda(session, azienda_id)
             session.commit()
 
 

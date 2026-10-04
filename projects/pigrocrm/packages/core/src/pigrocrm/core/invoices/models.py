@@ -39,6 +39,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
+from pigrocrm.core.emitter.models import default_azienda_id
 
 PROFORMA_SEQUENCE_NAME = "proforma_riferimento_seq"
 
@@ -60,6 +61,14 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         ForeignKey("customers.id"), nullable=False, index=True
     )
     deal_id: Mapped[UUID | None] = mapped_column(ForeignKey("deals.id"), default=None, index=True)
+    # The azienda that issues, or issued, this document (REB-619, spec 2026-10-03 §1.4):
+    # the register below is keyed by it, and so is the fiscal profile the snapshot is
+    # built from. The service names it on every row it writes (the default azienda
+    # until the customer chain of milestone 3 decides it); the column default is for a
+    # row built without one, see `default_azienda_id`.
+    azienda_id: Mapped[UUID] = mapped_column(
+        ForeignKey("emitter_profile.id"), nullable=False, index=True, default=default_azienda_id
+    )
     # `String(20)`, matching `documents.tipo`, not the 10 that would just fit the two
     # legal values. The point of this file is that the `CHECK` carries the invariant, and
     # at 10 a wrong `tipo` longer than that dies on the column width first: Postgres
@@ -187,12 +196,26 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # The net under the row lock, not the mechanism (spec 3): it turns any future
         # path that bypasses the lock -- a direct INSERT, an importer, a second service
         # -- into an error instead of a duplicate. Partial, because every unnumbered
-        # draft would otherwise be a duplicate of every other.
+        # draft would otherwise be a duplicate of every other. Per azienda since
+        # REB-619: two aziende of one space each keep a register of their own, so
+        # `2026/1` exists once per azienda and never twice for one.
         Index(
-            "uq_invoices_anno_numero",
+            "uq_invoices_azienda_anno_numero",
+            "azienda_id",
             "anno",
             "numero",
             unique=True,
+            postgresql_where=text("numero IS NOT NULL"),
+        ),
+        # The lookup path the unique index above no longer offers: a number searched
+        # across the space's aziende (`SearchRepository._invoices_by_number`, «2026/7»
+        # typed in the palette) filters on `(anno, numero)` with no azienda, and a
+        # B-tree led by `azienda_id` cannot serve it. Partial like its sibling, since an
+        # unnumbered draft is never what a number search looks for.
+        Index(
+            "ix_invoices_anno_numero",
+            "anno",
+            "numero",
             postgresql_where=text("numero IS NOT NULL"),
         ),
         Index("ix_invoices_custom_fields", "custom_fields", postgresql_using="gin"),
@@ -206,7 +229,7 @@ class Invoice(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
         # Partial on `deleted_at IS NULL` like the other nine: it is the condition every
         # search carries, so the index is smaller and residuo R7 closes for this table too.
         # The other half of the branch -- a fiscal number matched by equality -- needs no
-        # index of its own: `uq_invoices_anno_numero` above already serves it.
+        # index of its own: `ix_invoices_anno_numero` above already serves it.
         Index(
             "ix_invoices_causale_trgm",
             "causale",
@@ -266,8 +289,8 @@ class InvoiceLine(Base, PrimaryKeyMixin, TimestampMixin):
 
 
 class InvoiceCounter(Base):
-    """One row per year, locked with `SELECT ... FOR UPDATE` inside the emission
-    transaction (spec 3).
+    """One row per azienda and year, locked with `SELECT ... FOR UPDATE` inside the
+    emission transaction (spec 3).
 
     **Not a `SEQUENCE`**, and the reason is the property a sequence proudly does not
     have: `nextval()` in Postgres is deliberately non-transactional and does not roll
@@ -275,13 +298,18 @@ class InvoiceCounter(Base):
     what "progressive numbering with no gaps" forbids. A sequence guarantees uniqueness
     and prohibits the one property that is actually required here.
 
-    Keyed by `anno` rather than by a UUID: the year *is* the identity, and a surrogate
-    key would need a uniqueness constraint on `anno` anyway. No `TimestampMixin`
-    either -- this row is a lock target, not a record of anything.
+    Keyed by `(azienda_id, anno)` rather than by a UUID: the pair *is* the identity,
+    and a surrogate key would need a uniqueness constraint on it anyway. Per azienda
+    since REB-619 (spec 2026-10-03 §1.4): the lock is narrower, which is a property
+    and not a cost, since issuing for one azienda never waits on the other's lock. No
+    `TimestampMixin` either -- this row is a lock target, not a record of anything.
     """
 
     __tablename__ = "invoice_counters"
 
+    azienda_id: Mapped[UUID] = mapped_column(
+        ForeignKey("emitter_profile.id"), primary_key=True, default=default_azienda_id
+    )
     anno: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     ultimo_numero: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
@@ -303,6 +331,9 @@ class InvoiceRegisterGap(Base, PrimaryKeyMixin):
 
     __tablename__ = "invoice_register_gaps"
 
+    azienda_id: Mapped[UUID] = mapped_column(
+        ForeignKey("emitter_profile.id"), nullable=False, index=True, default=default_azienda_id
+    )
     anno: Mapped[int] = mapped_column(Integer, nullable=False)
     numero: Mapped[int] = mapped_column(Integer, nullable=False)
     motivo: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -312,7 +343,9 @@ class InvoiceRegisterGap(Base, PrimaryKeyMixin):
     )
 
     __table_args__ = (
-        UniqueConstraint("anno", "numero", name="uq_invoice_register_gaps_anno_numero"),
+        UniqueConstraint(
+            "azienda_id", "anno", "numero", name="uq_invoice_register_gaps_azienda_anno_numero"
+        ),
         CheckConstraint("numero >= 1", name="ck_invoice_register_gaps_numero_positive"),
     )
 

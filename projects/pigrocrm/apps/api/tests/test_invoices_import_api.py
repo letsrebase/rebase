@@ -5,6 +5,9 @@ from typing import Any
 import pytest
 from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from pigrocrm.core.emitter.models import Azienda
 
 COLLABORATORE_PASSWORD = "supersegreta1"
 
@@ -194,3 +197,70 @@ def test_a_number_beyond_the_register_is_a_422(
         "/api/invoices/import", json=_body(customer["id"], 900142, "2026-05-05")
     )
     assert response.status_code == 422, response.text
+
+
+def test_the_import_and_the_gaps_are_keyed_by_the_azienda_named(
+    logged_in: TestClient,
+    api_session: Session,
+    customer: dict[str, Any],
+    fiscal_profile: dict[str, Any],
+    emitter: dict[str, Any],
+) -> None:
+    """REB-620, spec §1.4: a second azienda, written by row since no route creates one
+    before milestone 5, has a register of its own. The same number lands on both, and
+    the gaps of one never show on the other's route."""
+    second = Azienda(
+        nome="rebase",
+        ragione_sociale="Rebase S.r.l.",
+        partita_iva="09876543210",
+        indirizzo="Via Po 1",
+        cap="10100",
+        comune="Torino",
+        provincia="TO",
+        nazione="IT",
+    )
+    api_session.add(second)
+    api_session.flush()
+    saved = logged_in.put(
+        f"/api/aziende/{second.id}/fiscal-profile", json={"codice_regime": "RF19"}
+    )
+    assert saved.status_code == 200, saved.text
+
+    default = logged_in.post("/api/invoices/import", json=_body(customer["id"], 1, "2026-05-05"))
+    assert default.status_code == 201, default.text
+    assert default.json()["fattura"]["azienda_id"] == emitter["id"]
+
+    other = logged_in.post(
+        "/api/invoices/import",
+        params={"azienda_id": str(second.id)},
+        json=_body(customer["id"], 1, "2026-05-05"),
+    )
+    assert other.status_code == 201, other.text
+    assert other.json()["fattura"]["azienda_id"] == str(second.id)
+    assert other.json()["fattura"]["numero"] == 1
+
+    third = logged_in.post(
+        "/api/invoices/import",
+        params={"azienda_id": str(second.id)},
+        json=_body(customer["id"], 3, "2026-06-05"),
+    )
+    assert third.status_code == 201, third.text
+    assert third.json()["buchi_non_dichiarati"] == [2]
+    declared = logged_in.post(
+        "/api/invoices/register/2026/gaps",
+        params={"azienda_id": str(second.id)},
+        json={"buchi": [{"numero": 2, "motivo": "annullata"}]},
+    )
+    assert declared.status_code == 200, declared.text
+    assert [g["numero"] for g in declared.json()] == [2]
+    assert logged_in.get("/api/invoices/register/2026/gaps").json() == []
+    listed = logged_in.get(
+        "/api/invoices/register/2026/gaps", params={"azienda_id": str(second.id)}
+    )
+    assert [g["numero"] for g in listed.json()] == [2]
+    # An azienda that does not exist is a 404, never the default's register in silence.
+    missing = logged_in.get(
+        "/api/invoices/register/2026/gaps",
+        params={"azienda_id": "00000000-0000-7000-8000-000000000bad"},
+    )
+    assert missing.status_code == 404, missing.text

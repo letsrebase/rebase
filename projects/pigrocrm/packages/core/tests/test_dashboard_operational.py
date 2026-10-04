@@ -29,6 +29,7 @@ from typing import NamedTuple
 from uuid import UUID
 
 import pytest
+from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
 from sqlalchemy import Engine, delete, func, select, text
 from sqlalchemy.orm import Session
 
@@ -100,6 +101,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
     oggi = today_local()
     with factory() as session:
         _require_empty(session)
+        azienda_id = committed_default_azienda(session)
         stages = {
             code: PipelineStage(
                 nome=f"{_PREFIX} {code}",
@@ -323,6 +325,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
             session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
             session.execute(delete(User).where(User.nome == "Operatore"))
+            remove_azienda(session, azienda_id)
             session.commit()
 
 

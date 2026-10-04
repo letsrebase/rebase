@@ -54,6 +54,7 @@ from typing import Any, NamedTuple
 from uuid import UUID
 
 import pytest
+from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
 from sqlalchemy import Engine, delete, select, text
 
 from pigrocrm.core.actor import Actor
@@ -100,6 +101,7 @@ class Seeded(NamedTuple):
 def seeded(db_engine: Engine) -> Iterator[Seeded]:
     factory = session_factory(db_engine)
     with factory() as session:
+        azienda_id = committed_default_azienda(session)
         stages = {s.code: s for s in PipelineService(session).seed_defaults(SEED) if s.code}
         customer = Customer(ragione_sociale=f"{_PREFIX} Cliente", nazione="IT", custom_fields={})
         session.add(customer)
@@ -136,6 +138,7 @@ def seeded(db_engine: Engine) -> Iterator[Seeded]:
             session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
             session.execute(delete(PipelineStage))
+            remove_azienda(session, azienda_id)
             session.commit()
 
 

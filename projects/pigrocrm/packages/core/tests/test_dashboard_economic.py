@@ -36,6 +36,7 @@ from typing import NamedTuple
 from uuid import UUID
 
 import pytest
+from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
 from sqlalchemy import Engine, Select, delete, func, select, text
 from sqlalchemy.orm import Session
 
@@ -94,6 +95,7 @@ def rf01_corpus(db_engine: Engine) -> Iterator[Corpus]:
     factory = session_factory(db_engine)
     with factory() as session:
         _require_an_empty_register(session)
+        azienda_id = committed_default_azienda(session)
         aperto = PipelineStage(
             nome=f"{_PREFIX} aperto", posizione=0, probabilita_default=20, tipo="open"
         )
@@ -175,6 +177,7 @@ def rf01_corpus(db_engine: Engine) -> Iterator[Corpus]:
             session.execute(delete(Deal).where(Deal.nome.like(f"{_PREFIX} %")))
             session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
             session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+            remove_azienda(session, azienda_id)
             session.commit()
 
 

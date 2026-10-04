@@ -132,13 +132,15 @@ def import_issued(
     storage: StorageDep,
     settings: SettingsDep,
     actor: ActorDep,
+    azienda_id: Annotated[UUID | None, Query()] = None,
 ) -> InvoiceImportResult:
     """Slice 9 §3: a fattura issued by the previous system. Admin only, enforced by the
-    service. No artefacts are produced: the PDF, if any, is the original."""
+    service. No artefacts are produced: the PDF, if any, is the original. On the
+    register of `azienda_id`, the default azienda when omitted (REB-620)."""
     service = _service(session, storage, settings)
-    fattura = service.import_issued(data, actor)
+    fattura = service.import_issued(data, actor, azienda_id=azienda_id)
     return InvoiceImportResult(
-        fattura=fattura, buchi_non_dichiarati=service.undeclared_gaps(data.anno)
+        fattura=fattura, buchi_non_dichiarati=service.undeclared_gaps(data.anno, azienda_id)
     )
 
 
@@ -184,11 +186,19 @@ def confirm_import(
     return InvoiceConfirmResult(righe=righe)
 
 
+# The register is per azienda (REB-619): both routes take the azienda as a query
+# parameter and read the default when it is omitted, so a space with one azienda calls
+# them exactly as before.
 @router.get("/register/{anno}/gaps", response_model=list[RegisterGapRead])
 def register_gaps(
-    anno: int, session: SessionDep, storage: StorageDep, settings: SettingsDep, actor: ActorDep
+    anno: int,
+    session: SessionDep,
+    storage: StorageDep,
+    settings: SettingsDep,
+    actor: ActorDep,
+    azienda_id: Annotated[UUID | None, Query()] = None,
 ) -> list[RegisterGapRead]:
-    return _service(session, storage, settings).register_gaps(anno, actor)
+    return _service(session, storage, settings).register_gaps(anno, actor, azienda_id)
 
 
 @router.post("/register/{anno}/gaps", response_model=list[RegisterGapRead])
@@ -199,8 +209,9 @@ def declare_register_gaps(
     storage: StorageDep,
     settings: SettingsDep,
     actor: ActorDep,
+    azienda_id: Annotated[UUID | None, Query()] = None,
 ) -> list[RegisterGapRead]:
-    return _service(session, storage, settings).declare_gaps(anno, data, actor)
+    return _service(session, storage, settings).declare_gaps(anno, data, actor, azienda_id)
 
 
 @router.get("/{invoice_id}", response_model=InvoiceRead)

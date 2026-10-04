@@ -29,11 +29,13 @@ from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import ENTITY as DOCUMENT_ENTITY
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.drive.reader import ALREADY_AUTHORIZED, DriveReader, drive_reader_for
+from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, ImmutableField, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
 from pigrocrm.core.fields.validator import validate_custom_fields
+from pigrocrm.core.fiscal.pack import PACK_NON_IT
 from pigrocrm.core.fiscal.regime import RegimeStrategy, resolve_regime
 from pigrocrm.core.fiscal.schemas import FiscalSnapshot
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -55,9 +57,9 @@ from pigrocrm.core.invoices.import_confirm import (
 from pigrocrm.core.invoices.import_review import (
     ReviewedInvoiceRead,
     detect_adapter,
-    existing_for,
     match_customer,
     natural_key,
+    register_lookup,
     review_content,
 )
 from pigrocrm.core.invoices.import_schemas import ParsedInvoiceParty
@@ -211,12 +213,34 @@ class InvoiceService:
             )
         return customer
 
-    def _regime(self) -> tuple[RegimeStrategy, FiscalSnapshot]:
-        """The strategy and the parameters, read together so a caller cannot pair a
-        profile with the wrong strategy. Raises `NotFound("fiscal_profile", ...)` when
-        nothing is configured, which tells the user which screen to go to."""
-        profile = self.fiscal.snapshot()
-        return resolve_regime(profile.codice_regime), profile
+    def _regime(self, azienda_id: UUID | None = None) -> tuple[RegimeStrategy, FiscalSnapshot]:
+        """The strategy and the parameters of one azienda, read together so a caller
+        cannot pair a profile with the wrong strategy; `None` is the default azienda
+        (REB-619). Raises `NotFound("fiscal_profile", ...)` when nothing is configured,
+        which tells the user which screen to go to."""
+        profile = self.fiscal.snapshot(azienda_id)
+        return resolve_regime(profile.codice_regime, profile.pack_id), profile
+
+    def _writing_azienda(self, azienda_id: UUID | None) -> Azienda:
+        """The azienda a register write goes on: the one named, the default when none,
+        and never an inactive one (REB-619). A read may still answer for a deactivated
+        azienda, since its history stays readable; a number consumed or a gap declared
+        on it would be a register nobody can see moving."""
+        azienda = self.emitter.resolve(azienda_id)
+        if not azienda.attiva:
+            raise Conflict(
+                ENTITY,
+                "l'azienda non e' attiva: riattivala prima di scrivere sul suo registro",
+                azienda_id=str(azienda.id),
+            )
+        return azienda
+
+    @staticmethod
+    def _issues_abroad(profile: FiscalSnapshot) -> bool:
+        """A foreign azienda (REB-619, spec §1.3): its documents are never FatturaPA,
+        so the SdI's own checks on parties and text do not apply to them and no XML is
+        ever produced; the PDF is the document."""
+        return profile.pack_id == PACK_NON_IT
 
     def _computed_lines(
         self, righe: Sequence[InvoiceLineIn], profile: FiscalSnapshot, *, nazione_cliente: str
@@ -231,7 +255,7 @@ class InvoiceService:
         decided when the lines are computed and copied unchanged by `issue`, so a
         proforma whose customer changed country is repaired by replacing its lines.
         """
-        strategy = resolve_regime(profile.codice_regime)
+        strategy = resolve_regime(profile.codice_regime, profile.pack_id)
         computed: list[ComputedLine] = []
         for index, riga in enumerate(righe, start=1):
             aliquota, natura, riferimento = strategy.resolve_line_vat(
@@ -282,7 +306,7 @@ class InvoiceService:
         """Compute and **store**. Never recomputed by a client: a total computed in
         the browser is the structural defect inherited from the previous system,
         and on an invoice it costs more."""
-        strategy = resolve_regime(profile.codice_regime)
+        strategy = resolve_regime(profile.codice_regime, profile.pack_id)
         riepilogo = build_riepilogo(computed)
         imponibile, imposta, totale = sum_totals(riepilogo)
         # The stamp duty is stored but does not enter the total: `DatiBollo` declares
@@ -411,7 +435,10 @@ class InvoiceService:
         burn until `issue` runs."""
         actor.require_write("create_invoice")
         customer = self._check_owner(data.customer_id, data.deal_id)
-        _, profile = self._regime()
+        # The default azienda, until the customer chain of milestone 3 names one
+        # (REB-619, spec §1.6): with one azienda it is the only answer there is.
+        azienda = self.emitter.resolve(None)
+        _, profile = self._regime(azienda.id)
         self._check_competenza(data.competenza_da, data.competenza_a)
         if data.tipo != "proforma" and data.data_emissione is not None:
             raise ValidationFailed(
@@ -425,6 +452,7 @@ class InvoiceService:
         invoice = Invoice(
             customer_id=data.customer_id,
             deal_id=data.deal_id,
+            azienda_id=azienda.id,
             tipo=data.tipo,
             stato="bozza",
             tipo_documento=TIPO_DOCUMENTO,
@@ -531,7 +559,7 @@ class InvoiceService:
         invoice = self._require(invoice_id)
         self._require_editable(invoice, "righe")
         customer = self._check_owner(invoice.customer_id, None)
-        _, profile = self._regime()
+        _, profile = self._regime(invoice.azienda_id)
         computed = self._computed_lines(righe, profile, nazione_cliente=customer.nazione)
         self._apply_totals(invoice, computed, profile)
         self._persist_lines(invoice, computed)
@@ -683,15 +711,16 @@ class InvoiceService:
             sito_web=customer.sito_web,
         )
 
-    def _party_from_emitter(self, actor: Actor) -> PartySnapshot:
-        """The issuer's identity from `emitter_profile` (slice 2).
+    def _party_from_emitter(self, actor: Actor, azienda_id: UUID) -> PartySnapshot:
+        """The issuer's identity from `emitter_profile` (slice 2): the azienda the
+        document belongs to, since REB-619.
 
         `emitter_profile.regime_fiscale` is deliberately not read here: it is a
         human-readable caption for the PDF header, `String(200)` of free text, and the
         machine value the SdI validates is `fiscal_profile.codice_regime`. Two columns,
         two jobs; conflating them is how a caption ends up inside `RegimeFiscale`.
         """
-        profile = self.emitter.get(actor)
+        profile = self.emitter.get(actor, azienda_id)
         return PartySnapshot(
             ragione_sociale=profile.ragione_sociale,
             partita_iva=profile.partita_iva,
@@ -709,9 +738,9 @@ class InvoiceService:
         )
 
     def _build_snapshot(
-        self, customer_id: UUID, profile: FiscalSnapshot, actor: Actor
+        self, customer_id: UUID, profile: FiscalSnapshot, actor: Actor, azienda_id: UUID
     ) -> InvoiceSnapshot:
-        """The frozen identities, from an id rather than from a row.
+        """The frozen identities, from an id rather than from a row, for one azienda.
 
         `customer_id` and not an `Invoice` on purpose: `_party_from_emitter` raises
         `NotFound("emitter_profile")` whenever the issuer's own profile is missing --
@@ -726,7 +755,7 @@ class InvoiceService:
             raise NotFound("customer", customer_id)
         return InvoiceSnapshot(
             versione=SNAPSHOT_VERSIONE,
-            emittente=self._party_from_emitter(actor),
+            emittente=self._party_from_emitter(actor, azienda_id),
             cliente=self._party_from_customer(customer),
             fiscale=profile,
         )
@@ -808,7 +837,7 @@ class InvoiceService:
         1. resolve the source row and the issue date, and check the date against
            "not in the future, not before 1 January of the current year". No lock yet:
            these are pure checks on the caller's own input;
-        2. `lock_counter(anno)` -- the **first** row lock this transaction takes;
+        2. `lock_counter(azienda_id, anno)` -- the **first** row lock this transaction takes;
         3. every fiscal validation, the totals, and the chronological-monotonicity
            check. All of it after the lock, so "the date of the previous number" is a
            safe thing to read, and all of it *before* the counter is touched, so a
@@ -835,7 +864,7 @@ class InvoiceService:
         `_require` without a lock, and a race there is an ordinary lost update: the
         second write wins and the row is consistent. Here the loser would consume a
         register number and then overwrite the winner's number on the very same row,
-        leaving the first number owned by no invoice. `uq_invoices_anno_numero` cannot
+        leaving the first number owned by no invoice. `uq_invoices_azienda_anno_numero` cannot
         see it, because the row simply carries a different number. That is a permanent
         gap in the register -- the single property this whole design exists to
         guarantee, and the reason it is a locked counter row rather than a `SEQUENCE`.
@@ -850,6 +879,7 @@ class InvoiceService:
         """
         actor.require_admin("issue_invoice")
         source = self._require(invoice_id)
+        self._writing_azienda(source.azienda_id)
         data_emissione = data.data_emissione or oggi_in_italia()
         anno = data_emissione.year
         self._check_issue_date(data_emissione, oggi_in_italia().year)
@@ -857,8 +887,9 @@ class InvoiceService:
         from_proforma = source.tipo == "proforma"
         self._check_issuable(source, from_proforma)
 
-        # Step 2. From here on, every other emission for this year waits.
-        counter = self.repo.lock_counter(anno)
+        # Step 2. From here on, every other emission of this azienda for this year
+        # waits; another azienda's register has a lock of its own (REB-619).
+        counter = self.repo.lock_counter(source.azienda_id, anno)
 
         # An imported register can arrive with numbers out of order -- the whole point
         # of slice 9 is that the history is not imported number-by-number in sequence.
@@ -868,7 +899,7 @@ class InvoiceService:
         # unexplained hole underneath it. Checked here, inside the same lock that
         # protects the increment below, so a concurrent import cannot close the gap
         # and let this call through on a stale read.
-        buchi = self.undeclared_gaps(anno)
+        buchi = self.undeclared_gaps(anno, source.azienda_id)
         if buchi:
             # Rendered short, reported whole: `details["numeri"]` carries every number,
             # and the message names the first `GAPS_SHOWN_IN_MESSAGE` plus a count. An
@@ -896,12 +927,17 @@ class InvoiceService:
         self._check_issuable(source, from_proforma)
 
         # Step 3. Validations and totals, after the lock and before the increment.
-        _, profile = self._regime()
-        snapshot = self._build_snapshot(source.customer_id, profile, actor)
-        check_party_exportable(snapshot.emittente, "emitter_profile")
-        check_party_exportable(snapshot.cliente, "customer")
-        check_recipient_routing(snapshot.cliente)
-        check_recipient_identity(snapshot.cliente)
+        _, profile = self._regime(source.azienda_id)
+        snapshot = self._build_snapshot(source.customer_id, profile, actor, source.azienda_id)
+        # The SdI's own rules on the two parties, and below on the text: what the XML
+        # writer would refuse after the number is spent. A foreign azienda issues no
+        # XML (REB-619), so none of them applies to its document.
+        abroad = self._issues_abroad(profile)
+        if not abroad:
+            check_party_exportable(snapshot.emittente, "emitter_profile")
+            check_party_exportable(snapshot.cliente, "customer")
+            check_recipient_routing(snapshot.cliente)
+            check_recipient_identity(snapshot.cliente)
 
         righe = self.repo.lines(source.id)
         if not righe:
@@ -921,7 +957,7 @@ class InvoiceService:
         # refuses, here, before the counter is touched; `replace_lines` is the remedy and
         # the message says so. `import_issued` is exempt by construction: it never reaches
         # this method, and its lines are declared, not computed.
-        strategy = resolve_regime(profile.codice_regime)
+        strategy = resolve_regime(profile.codice_regime, profile.pack_id)
         for r in righe:
             _, natura_attesa, riferimento_atteso = strategy.resolve_line_vat(
                 r.aliquota_iva, profile, nazione_cliente=snapshot.cliente.nazione
@@ -939,7 +975,8 @@ class InvoiceService:
         # parties have had this since ORB-56; the causale and the lines did not, and an
         # em dash in a causale spent a number whose XML was then refused on every export
         # (ORB-140). What the check accepts here is what `export_xml` will serialise.
-        check_document_text_exportable(source.causale, righe)
+        if not abroad:
+            check_document_text_exportable(source.causale, righe)
 
         computed = tuple(
             ComputedLine(
@@ -967,7 +1004,7 @@ class InvoiceService:
                 expected="un totale maggiore di zero",
             )
 
-        previous = self.repo.last_issued_date(anno)
+        previous = self.repo.last_issued_date(source.azienda_id, anno)
         if previous is not None and data_emissione < previous:
             raise ValidationFailed(
                 ENTITY,
@@ -987,6 +1024,7 @@ class InvoiceService:
                 Invoice(
                     customer_id=source.customer_id,
                     deal_id=source.deal_id,
+                    azienda_id=source.azienda_id,
                     tipo="fattura",
                     stato="bozza",
                     tipo_documento=TIPO_DOCUMENTO,
@@ -1043,7 +1081,7 @@ class InvoiceService:
         try:
             self.session.commit()
         except IntegrityError as exc:
-            # The partial unique index `uq_invoices_anno_numero` is the net under the
+            # The partial unique index `uq_invoices_azienda_anno_numero` is the net under the
             # row lock, not the mechanism (spec 3). Reaching it means something wrote
             # a number without taking the lock -- an importer, a direct INSERT, a
             # second service -- and this is what makes that failure observable instead
@@ -1067,7 +1105,7 @@ class InvoiceService:
         # `issue` called `produce_artifacts` itself, `issue` stopped being one
         # transaction: the artefact commit survived the test fixture's rollback, so an
         # issued invoice leaked across tests and the next first-invoice-of-2026 collided
-        # on `uq_invoices_anno_numero`. Eight tests failed that way, and three more on
+        # on `uq_invoices_azienda_anno_numero`. Eight tests failed that way, and three more on
         # the `documents` row pinning a customer that teardown then could not remove.
         #
         # A leak that only shows up as someone else's failing test is the cheap version
@@ -1096,14 +1134,21 @@ class InvoiceService:
         for a second call to have changed.
         """
         actor.require_admin(REVIEW_ACTION)
-        emitter = self.emitter.repo.default()
-        if emitter is None:
-            raise NotFound("emitter_profile", "predefinita")
+        aziende = self._importing_aziende()
         rows: list[ReviewedInvoiceRead] = []
         for document_id in document_ids:
             content, _content_type, _filename = self.documents.download(document_id, None, actor)
-            rows.extend(review_content(self.session, content, emitter, document_id))
+            rows.extend(review_content(self.session, content, aziende, document_id))
         return rows
+
+    def _importing_aziende(self) -> list[Azienda]:
+        """The aziende a FatturaPA file can have been issued by (REB-619, spec §1.5):
+        the active Italian ones. A space with none has nothing to classify against,
+        and the refusal names the screen to go to, as the one-azienda path did."""
+        aziende = self.emitter.repo.active_italian()
+        if not aziende:
+            raise NotFound("emitter_profile", "predefinita")
+        return aziende
 
     def confirm_import(
         self,
@@ -1168,9 +1213,7 @@ class InvoiceService:
         invoices takes ownership of it.
         """
         actor.require_admin(CONFIRM_ACTION)
-        emitter = self.emitter.repo.default()
-        if emitter is None:
-            raise NotFound("emitter_profile", "predefinita")
+        aziende = self._importing_aziende()
         content, _content_type, _filename = self.documents.download(document_id, None, actor)
         adapter = detect_adapter(content)
         if adapter is None:
@@ -1188,16 +1231,23 @@ class InvoiceService:
         # normalisation of its own to get wrong.
         created_customers: dict[ParsedInvoiceParty, UUID] = {}
         for invoice in invoices:
-            classification = classify_parsed_invoice(
-                invoice, emitter, existing=existing_for(self.session, invoice), content=content
+            classification, azienda = classify_parsed_invoice(
+                invoice,
+                aziende,
+                existing_for=register_lookup(self.session, invoice),
+                content=content,
             )
-            if classification == "incoming_skipped":
+            if classification == "incoming_skipped" or azienda is None:
                 rows.append(
                     ConfirmedInvoiceRead(document_id=document_id, outcome="incoming_skipped")
                 )
                 continue
             if classification == "conflict":
-                rows.append(ConfirmedInvoiceRead(document_id=document_id, outcome="conflict"))
+                rows.append(
+                    ConfirmedInvoiceRead(
+                        document_id=document_id, outcome="conflict", azienda_id=azienda.id
+                    )
+                )
                 continue
             # `existing_for` derives its own comparison row from the same `natural_key`
             # this re-derives: a `None` key always routes here through "conflict" above
@@ -1208,11 +1258,14 @@ class InvoiceService:
             assert key is not None, "already_present/ready both require a derivable natural key"
             anno, numero = key
             if classification == "already_present":
-                existing = self.repo.existing_by_number(anno, numero)
+                existing = self.repo.existing_by_number(azienda.id, anno, numero)
                 fattura = self.get(existing.id, actor) if existing is not None else None
                 rows.append(
                     ConfirmedInvoiceRead(
-                        document_id=document_id, outcome="already_present", fattura=fattura
+                        document_id=document_id,
+                        outcome="already_present",
+                        azienda_id=azienda.id,
+                        fattura=fattura,
                     )
                 )
                 continue
@@ -1237,7 +1290,9 @@ class InvoiceService:
             if resolved_customer_id is None:
                 rows.append(
                     ConfirmedInvoiceRead(
-                        document_id=document_id, outcome="needs_customer_confirmation"
+                        document_id=document_id,
+                        outcome="needs_customer_confirmation",
+                        azienda_id=azienda.id,
                     )
                 )
                 continue
@@ -1248,6 +1303,7 @@ class InvoiceService:
                 fattura = self.import_issued(
                     data,
                     actor,
+                    azienda_id=azienda.id,
                     xml_document_id=document_id if single_invoice_document else None,
                     xml_hash_sha256=digest if single_invoice_document else None,
                     importata_da="fatturapa",
@@ -1263,7 +1319,11 @@ class InvoiceService:
                 # cached above, so the next invoice tries its own fresh insert instead of
                 # reusing a now-dangling id.
                 self.session.rollback()
-                rows.append(ConfirmedInvoiceRead(document_id=document_id, outcome="conflict"))
+                rows.append(
+                    ConfirmedInvoiceRead(
+                        document_id=document_id, outcome="conflict", azienda_id=azienda.id
+                    )
+                )
                 continue
             if new_customer_id is not None:
                 created_customers[invoice.cliente] = new_customer_id
@@ -1271,8 +1331,9 @@ class InvoiceService:
                 ConfirmedInvoiceRead(
                     document_id=document_id,
                     outcome="imported",
+                    azienda_id=azienda.id,
                     fattura=fattura,
-                    buchi_non_dichiarati=self.undeclared_gaps(anno),
+                    buchi_non_dichiarati=self.undeclared_gaps(anno, azienda.id),
                 )
             )
         return rows
@@ -1282,11 +1343,13 @@ class InvoiceService:
         data: InvoiceImport,
         actor: Actor,
         *,
+        azienda_id: UUID | None = None,
         xml_document_id: UUID | None = None,
         xml_hash_sha256: str | None = None,
         importata_da: str | None = None,
     ) -> InvoiceRead:
-        """Register a fattura that another system issued (slice 9 §3).
+        """Register a fattura that another system issued (slice 9 §3), on the
+        register of `azienda_id`, the default azienda when `None` (REB-619).
 
         Same lock, same snapshot, same lines as `issue`; the two differences are the
         whole feature. The number is *declared*, so the counter follows it instead of
@@ -1294,7 +1357,7 @@ class InvoiceService:
         against the lines to the cent instead of recomputed (§3.3): the document the
         customer holds is the fact, and this method refuses to record a different one.
 
-        Order: pure checks on the input, then `lock_counter(anno)` -- the only lock on
+        Order: pure checks on the input, then `lock_counter(azienda_id, anno)` -- the only lock on
         the register, and the first row lock unless the original PDF is an existing
         document, whose own row `_validate_original_pdf` locks (REB-480) -- then every
         check that reads the register (duplicates, neighbours, gaps, native numbers),
@@ -1389,19 +1452,21 @@ class InvoiceService:
             if data.pdf_sorgente is not None
             else None
         )
-        # Both of these can refuse -- `_regime` when no fiscal profile is configured,
-        # `_build_snapshot` when no emitter profile is -- and neither writes anything.
-        _, profile = self._regime()
-        snapshot = self._build_snapshot(data.customer_id, profile, actor)
-        counter = self.repo.lock_counter(data.anno)
-        if data.numero in self.repo.numbers_present(data.anno):
+        # All of these can refuse -- `resolve` when the azienda does not exist,
+        # `_regime` when no fiscal profile is configured, `_build_snapshot` when no
+        # emitter profile is -- and none writes anything.
+        azienda = self._writing_azienda(azienda_id)
+        _, profile = self._regime(azienda.id)
+        snapshot = self._build_snapshot(data.customer_id, profile, actor, azienda.id)
+        counter = self.repo.lock_counter(azienda.id, data.anno)
+        if data.numero in self.repo.numbers_present(azienda.id, data.anno):
             raise Conflict(
                 ENTITY,
                 "il registro porta gia' questo numero",
                 anno=data.anno,
                 numero=data.numero,
             )
-        if data.numero in self.repo.declared_gaps(data.anno):
+        if data.numero in self.repo.declared_gaps(azienda.id, data.anno):
             raise Conflict(
                 ENTITY,
                 "questo numero e' dichiarato come buco del registro: togli la dichiarazione "
@@ -1409,7 +1474,7 @@ class InvoiceService:
                 anno=data.anno,
                 numero=data.numero,
             )
-        first_native = self.repo.first_native_number(data.anno)
+        first_native = self.repo.first_native_number(azienda.id, data.anno)
         if first_native is not None and data.numero > first_native:
             raise Conflict(
                 ENTITY,
@@ -1419,7 +1484,7 @@ class InvoiceService:
                 numero=data.numero,
                 prima_nativa=first_native,
             )
-        before, after = self.repo.neighbour_dates(data.anno, data.numero)
+        before, after = self.repo.neighbour_dates(azienda.id, data.anno, data.numero)
         if before is not None and data.data_emissione < before:
             raise ValidationFailed(
                 ENTITY,
@@ -1441,6 +1506,7 @@ class InvoiceService:
             Invoice(
                 customer_id=data.customer_id,
                 deal_id=data.deal_id,
+                azienda_id=azienda.id,
                 tipo="fattura",
                 stato="emessa",
                 anno=data.anno,
@@ -1849,16 +1915,21 @@ class InvoiceService:
             )
 
     def declare_gaps(
-        self, anno: int, data: RegisterGapsDeclare, actor: Actor
+        self,
+        anno: int,
+        data: RegisterGapsDeclare,
+        actor: Actor,
+        azienda_id: UUID | None = None,
     ) -> list[RegisterGapRead]:
-        """Name the numbers the register will never carry, and why (spec 9 §3.2 rule 4).
+        """Name the numbers the azienda's register will never carry, and why (spec 9
+        §3.2 rule 4); `None` is the default azienda (REB-619).
 
         A declared gap is the honest alternative to two dishonest ones: inventing a row
         to fill it, or leaving it silent so that it looks like a lost invoice. It is
         refused for a number that *is* an invoice, and the import refuses a number that
         is a declared gap: the two sets never overlap.
 
-        `lock_counter(anno)` first, for the same reason `import_issued` takes it before
+        `lock_counter(azienda_id, anno)` first, for the same reason `import_issued` takes it before
         reading `numbers_present`/`declared_gaps`: without it, a gap declared here and
         an import of the same number could each read the register before the other's
         write, and both would go through.
@@ -1880,9 +1951,10 @@ class InvoiceService:
         """
         actor.require_admin(GAPS_ACTION)
         self._check_register_year(anno)
-        self.repo.lock_counter(anno)
-        present = self.repo.numbers_present(anno)
-        already = self.repo.declared_gaps(anno)
+        azienda = self._writing_azienda(azienda_id)
+        self.repo.lock_counter(azienda.id, anno)
+        present = self.repo.numbers_present(azienda.id, anno)
+        already = self.repo.declared_gaps(azienda.id, anno)
         seen: set[int] = set()
         for buco in data.buchi:
             if buco.numero in present:
@@ -1899,6 +1971,7 @@ class InvoiceService:
             for buco in data.buchi:
                 self.repo.add_gap(
                     InvoiceRegisterGap(
+                        azienda_id=azienda.id,
                         anno=anno,
                         numero=buco.numero,
                         motivo=buco.motivo,
@@ -1906,16 +1979,21 @@ class InvoiceService:
                     )
                 )
                 # The register has no row of its own to hang a timeline entry on, so
-                # the entity id is derived deterministically from the year rather than
-                # left unrecorded: `ActivityService.record` accepts any `entity_type`
-                # string (it is not constrained to `EntityType`), and `uuid5` gives the
-                # same id every time this year's register is touched again.
+                # the entity id is derived deterministically from the azienda and the
+                # year rather than left unrecorded: `ActivityService.record` accepts
+                # any `entity_type` string (it is not constrained to `EntityType`), and
+                # `uuid5` gives the same id every time this register is touched again.
                 self.activities.record(
                     "invoice_register",
-                    uuid5(NAMESPACE_URL, f"pigrocrm:invoice_register:{anno}"),
+                    uuid5(NAMESPACE_URL, f"pigrocrm:invoice_register:{azienda.id}:{anno}"),
                     "gap_declared",
                     actor,
-                    {"anno": anno, "numero": buco.numero, "motivo": buco.motivo},
+                    {
+                        "azienda_id": str(azienda.id),
+                        "anno": anno,
+                        "numero": buco.numero,
+                        "motivo": buco.motivo,
+                    },
                 )
             self.session.commit()
         except IntegrityError as exc:
@@ -1928,17 +2006,21 @@ class InvoiceService:
             # re-raised unchanged, but never with the transaction left aborted.
             self.session.rollback()
             raise
-        return self.register_gaps(anno, actor)
+        return self.register_gaps(anno, actor, azienda.id)
 
-    def register_gaps(self, anno: int, actor: Actor) -> list[RegisterGapRead]:
+    def register_gaps(
+        self, anno: int, actor: Actor, azienda_id: UUID | None = None
+    ) -> list[RegisterGapRead]:
         self._check_register_year(anno)
-        return [RegisterGapRead.model_validate(g) for g in self.repo.gaps(anno)]
+        azienda = self.emitter.resolve(azienda_id)
+        return [RegisterGapRead.model_validate(g) for g in self.repo.gaps(azienda.id, anno)]
 
-    def undeclared_gaps(self, anno: int) -> list[int]:
-        """Numbers from 1 to the highest in the register that are neither an invoice nor
-        a declared gap. Empty is the only state in which native issuing may resume (spec
-        9 §3.2 rule 4): an import can arrive in any order, so a hole is expected until
-        the operator has looked at every one of them and either imported or declared it.
+    def undeclared_gaps(self, anno: int, azienda_id: UUID | None = None) -> list[int]:
+        """Numbers from 1 to the highest in the azienda's register that are neither an
+        invoice nor a declared gap; `None` is the default azienda (REB-619). Empty is
+        the only state in which native issuing may resume (spec 9 §3.2 rule 4): an
+        import can arrive in any order, so a hole is expected until the operator has
+        looked at every one of them and either imported or declared it.
 
         **From 1, not from the lowest number imported.** A year's register always starts
         at 1 -- that is what makes it a register -- so a missing 1 is exactly as much a
@@ -1951,10 +2033,11 @@ class InvoiceService:
         present are simply the future, and the counter hands them out next.
         """
         self._check_register_year(anno)
-        present = self.repo.numbers_present(anno)
+        azienda = self.emitter.resolve(azienda_id)
+        present = self.repo.numbers_present(azienda.id, anno)
         if not present:
             return []
-        declared = self.repo.declared_gaps(anno)
+        declared = self.repo.declared_gaps(azienda.id, anno)
         top = max(present)
         return [n for n in range(1, top) if n not in present and n not in declared]
 
@@ -2116,8 +2199,8 @@ class InvoiceService:
         non-nullable bounds; `build_scope` never reads them here because
         `riferimento is not None` skips the `numero_completo` branch entirely.
         """
-        _, profile = self._regime()
-        snapshot = self._build_snapshot(invoice.customer_id, profile, actor)
+        _, profile = self._regime(invoice.azienda_id)
+        snapshot = self._build_snapshot(invoice.customer_id, profile, actor, invoice.azienda_id)
         return InvoiceForExport(
             anno=invoice.created_at.year,
             numero=1,
@@ -2174,7 +2257,7 @@ class InvoiceService:
             return proforma_storage_prefix(invoice.id)
         if invoice.anno is None or invoice.numero is None:  # pragma: no cover
             raise Conflict(ENTITY, "un documento senza numero non ha un prefisso fiscale")
-        return invoice_storage_prefix(invoice.anno, invoice.numero)
+        return invoice_storage_prefix(invoice.azienda_id, invoice.anno, invoice.numero)
 
     def _xml_filename(self, export: InvoiceForExport) -> str:
         """`IT{cf_o_piva}_{progressivo}.xml`, from the **frozen** emitter identity.
@@ -2323,6 +2406,13 @@ class InvoiceService:
                 "una bozza non ha ancora un numero e non produce un file FatturaPA",
                 stato=invoice.stato,
             )
+        if self._frozen_abroad(invoice):
+            raise Conflict(
+                ENTITY,
+                "questa azienda non emette fatture elettroniche: il documento e' il PDF",
+                anno=invoice.anno,
+                numero=invoice.numero,
+            )
         if invoice.importata_da is not None:
             if invoice.importata_da == "fatturapa" and invoice.xml_document_id is not None:
                 return self._serve_stored_xml(invoice)
@@ -2359,6 +2449,17 @@ class InvoiceService:
             invoice.xml_hash_sha256 = artifact.hash_sha256
         self.session.commit()
         return artifact
+
+    @staticmethod
+    def _frozen_abroad(invoice: Invoice) -> bool:
+        """Whether the issued row's frozen profile is a foreign azienda's (REB-619):
+        read off the stored JSON rather than the live profile, since the azienda's pack
+        at issue time is the fact the document was built on, and off the row before
+        `_for_export` validates the whole snapshot, so the refusal is the specific one.
+        A row with no snapshot yet is not frozen anywhere, abroad included."""
+        snapshot = invoice.snapshot or {}
+        fiscale = snapshot.get("fiscale") or {}
+        return bool(fiscale.get("pack_id") == PACK_NON_IT)
 
     def _serve_stored_xml(self, invoice: Invoice) -> InvoiceArtifact:
         """The original FatturaPA file a `"fatturapa"` single-invoice import already
@@ -2482,7 +2583,13 @@ class InvoiceService:
         )
         self.session.commit()
         artifacts = [pdf_artifact]
-        if invoice.tipo == "fattura" and invoice.stato != "bozza":
+        # A foreign azienda's document is the PDF alone (REB-619): `export_xml` would
+        # refuse it, and a refusal is not an artefact.
+        if (
+            invoice.tipo == "fattura"
+            and invoice.stato != "bozza"
+            and not self._frozen_abroad(invoice)
+        ):
             artifacts.append(self.export_xml(invoice_id, actor))
         return artifacts
 

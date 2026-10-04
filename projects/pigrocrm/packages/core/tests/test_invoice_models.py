@@ -142,7 +142,7 @@ def test_the_same_year_and_number_cannot_exist_twice(
     _refuses(
         db_session,
         _draft(customer_id, stato="emessa", anno=2026, numero=1, data_emissione=date(2026, 1, 6)),
-        "uq_invoices_anno_numero",
+        "uq_invoices_azienda_anno_numero",
     )
 
 
