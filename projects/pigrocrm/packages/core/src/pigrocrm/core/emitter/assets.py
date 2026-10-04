@@ -84,17 +84,87 @@ def sniff_image(data: bytes) -> ImageKind | None:
     return None
 
 
+# Adam7: the x and y of each pass's first pixel and its steps.
+_ADAM7: Final = (
+    (0, 0, 8, 8),
+    (4, 0, 8, 8),
+    (0, 4, 4, 8),
+    (2, 0, 4, 4),
+    (0, 2, 2, 4),
+    (1, 0, 2, 2),
+    (0, 1, 1, 2),
+)
+_CHANNELS: Final = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
+
+
+def _png_rows(
+    width: int, height: int, depth: int, colour: int, interlace: int
+) -> list[tuple[int, int]]:
+    """The scanlines a PNG's inflated stream must hold, as `(rows, bytes per row)` runs:
+    one run for a plain image, up to seven for an interlaced one, each row one filter
+    byte plus its pixels. From this the exact inflated size follows, which is what
+    tells a complete image from framing around missing pixels (CodeRabbit, PR #510)."""
+    bits = depth * _CHANNELS[colour]
+    if not interlace:
+        return [(height, 1 + (width * bits + 7) // 8)]
+    runs = []
+    for x0, y0, dx, dy in _ADAM7:
+        columns = (width - x0 + dx - 1) // dx if width > x0 else 0
+        rows = (height - y0 + dy - 1) // dy if height > y0 else 0
+        if columns and rows:
+            runs.append((rows, 1 + (columns * bits + 7) // 8))
+    return runs
+
+
+class _Scanlines:
+    """Walks the inflated bytes row by row: every row must open with a filter byte of
+    0 to 4 and the stream must end exactly on the last row."""
+
+    def __init__(self, runs: list[tuple[int, int]]) -> None:
+        self.runs = runs
+        self.run = 0
+        self.rows_left = runs[0][0] if runs else 0
+        self.in_row = 0
+        self.ok = True
+
+    def feed(self, chunk: bytes) -> None:
+        position = 0
+        while position < len(chunk) and self.ok:
+            if self.run >= len(self.runs):
+                self.ok = False  # bytes past the last row
+                return
+            row_bytes = self.runs[self.run][1]
+            if self.in_row == 0 and chunk[position] > 4:
+                self.ok = False
+                return
+            take = min(row_bytes - self.in_row, len(chunk) - position)
+            self.in_row += take
+            position += take
+            if self.in_row == row_bytes:
+                self.in_row = 0
+                self.rows_left -= 1
+                if self.rows_left == 0:
+                    self.run += 1
+                    self.rows_left = self.runs[self.run][0] if self.run < len(self.runs) else 0
+
+    @property
+    def complete(self) -> bool:
+        return self.ok and self.run == len(self.runs) and self.in_row == 0
+
+
 def _png_is_well_formed(data: bytes) -> bool:
     """Every chunk in place with its CRC: an `IHDR` of thirteen bytes first with a
-    non-zero size, at least one `IDAT` whose stream inflates to its end, an empty
-    `IEND` last and nothing after it. A file that only wears the signature and the
-    trailer, or carries an image stream that does not inflate, would be stored under
-    the size limit and fail every later render instead of this upload (CodeRabbit,
-    PR #510). The inflated bytes are discarded as they come, in bounded pieces: a
-    small file can inflate to a very large image, and this is a check, not a decode."""
+    size, a depth, a colour type and an interlace the format defines, at least one
+    `IDAT` whose stream inflates to exactly the scanlines that header announces, each
+    opening with a legal filter byte, an empty `IEND` last and nothing after it. A file
+    that only wears the framing around missing or malformed pixels would be stored
+    under the size limit and fail every later render instead of this upload
+    (CodeRabbit and Greptile, PR #510). The inflated bytes are discarded as they are
+    checked, in bounded pieces, within a budget: a small file can inflate to a very
+    large image, and this is a check, not a decode."""
     offset, first, idat, ended = len(_PNG_SIGNATURE), True, False, False
     stream = zlib.decompressobj()
-    budget = [_INFLATE_BUDGET]
+    scanlines: _Scanlines | None = None
     while offset + 12 <= len(data):
         length = int.from_bytes(data[offset : offset + 4], "big")
         kind = data[offset + 4 : offset + 8]
@@ -109,34 +179,50 @@ def _png_is_well_formed(data: bytes) -> bool:
                 return False
             width = int.from_bytes(data[body_start : body_start + 4], "big")
             height = int.from_bytes(data[body_start + 4 : body_start + 8], "big")
-            if width == 0 or height == 0:
+            depth, colour, compression, filtering, interlace = data[
+                body_start + 8 : body_start + 13
+            ]
+            if (
+                width == 0
+                or height == 0
+                or depth not in (1, 2, 4, 8, 16)
+                or colour not in _CHANNELS
+                or compression != 0
+                or filtering != 0
+                or interlace not in (0, 1)
+            ):
                 return False
+            runs = _png_rows(width, height, depth, colour, interlace)
+            if sum(rows * row_bytes for rows, row_bytes in runs) > _INFLATE_BUDGET:
+                return False
+            scanlines = _Scanlines(runs)
             first = False
         elif kind == b"IDAT":
             idat = True
-            if not _inflates(stream, data[body_start:body_end], budget):
+            assert scanlines is not None
+            if not _inflates(stream, data[body_start:body_end], scanlines):
                 return False
         elif kind == b"IEND":
             ended = length == 0 and body_end + 4 == len(data)
             break
         offset = body_end + 4
-    return not first and idat and ended and stream.eof
+    return (
+        not first and idat and ended and stream.eof and scanlines is not None and scanlines.complete
+    )
 
 
-def _inflates(stream: Any, piece: bytes, budget: list[int]) -> bool:
-    """Feed one `IDAT` payload to the decompressor, discarding the output in bounded
-    pieces and charging each to `budget`; `False` when the stream is not zlib or the
-    image would inflate past the budget. `Any`: the decompressor's class lives only in
-    the type stubs, not in `zlib` at runtime."""
+def _inflates(stream: Any, piece: bytes, scanlines: _Scanlines) -> bool:
+    """Feed one `IDAT` payload to the decompressor, handing the output to the scanline
+    walk in bounded pieces; `False` when the stream is not zlib or the rows do not add
+    up. `Any`: the decompressor's class lives only in the type stubs, not in `zlib` at
+    runtime."""
     try:
-        out = stream.decompress(piece, _INFLATE_PIECE)
-        budget[0] -= len(out)
-        while stream.unconsumed_tail and budget[0] > 0:
-            out = stream.decompress(stream.unconsumed_tail, _INFLATE_PIECE)
-            budget[0] -= len(out)
+        scanlines.feed(stream.decompress(piece, _INFLATE_PIECE))
+        while stream.unconsumed_tail and scanlines.ok:
+            scanlines.feed(stream.decompress(stream.unconsumed_tail, _INFLATE_PIECE))
     except zlib.error:
         return False
-    return budget[0] > 0
+    return scanlines.ok
 
 
 def _parses_as_svg(data: bytes) -> bool:

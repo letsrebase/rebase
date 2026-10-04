@@ -11,11 +11,11 @@ value a user or an agent supplied is already inside `markdown`, already escaped 
 request-derived string becomes a command-line argument.
 """
 
-import base64
 import re
 import shutil
 import subprocess
 import tempfile
+import zlib
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -40,9 +40,26 @@ HEADER_TEMPLATE = ASSETS_DIR / "header.typ.template"
 MEDIA_LOGO_PNG = "logo.png"
 MEDIA_LOGO_SVG = "logo.svg"
 MEDIA_FIRMA = "sign_is.png"
-# A 1x1 fully transparent PNG, the smallest valid one.
-BLANK_PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+
+
+def _png_chunk(kind: bytes, body: bytes) -> bytes:
+    return (
+        len(body).to_bytes(4, "big")
+        + kind
+        + body
+        + (zlib.crc32(kind + body) & 0xFFFFFFFF).to_bytes(4, "big")
+    )
+
+
+# A 1x1 fully transparent PNG, built from its chunks rather than pasted as base64: a
+# pasted constant once turned out to be a half-opaque blue pixel (CodeRabbit, PR #510),
+# and a template that scales the signature would have drawn a blue square. One RGBA
+# pixel of zeros behind a zero filter byte; the test decodes it and reads the alpha.
+BLANK_PNG = (
+    b"\x89PNG\r\n\x1a\n"
+    + _png_chunk(b"IHDR", (1).to_bytes(4, "big") + (1).to_bytes(4, "big") + bytes([8, 6, 0, 0, 0]))
+    + _png_chunk(b"IDAT", zlib.compress(bytes(5)))
+    + _png_chunk(b"IEND", b"")
 )
 # The previous system's own reader extensions, carried over unchanged: `raw_attribute` is what makes
 # ```{=typst} a raw block rather than a code listing, and without it the whole

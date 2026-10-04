@@ -10,7 +10,13 @@ import pytest
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.emitter.assets import _PNG_SIGNATURE, MAX_IMAGE_BYTES, AziendaAssets, sniff_image
+from pigrocrm.core.emitter.assets import (
+    _PNG_SIGNATURE,
+    MAX_IMAGE_BYTES,
+    AziendaAssets,
+    _png_rows,
+    sniff_image,
+)
 from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.emitter.repository import AziendaRepository
 from pigrocrm.core.errors import NotFound, PermissionDenied, ValidationFailed
@@ -47,6 +53,27 @@ def _png(kind: bytes, body: bytes) -> bytes:
     return _PNG_SIGNATURE + _chunk(b"IHDR", ihdr) + _chunk(kind, body) + _chunk(b"IEND", b"")
 
 
+def _png_of(width: int, height: int, interlace: int, *idat: bytes) -> bytes:
+    """An RGBA PNG of `width` by `height` whose stream is split over `idat` chunks."""
+    ihdr = width.to_bytes(4, "big") + height.to_bytes(4, "big") + bytes([8, 6, 0, 0, interlace])
+    body = b"".join(_chunk(b"IDAT", piece) for piece in idat)
+    return _PNG_SIGNATURE + _chunk(b"IHDR", ihdr) + body + _chunk(b"IEND", b"")
+
+
+def test_the_signature_placeholder_is_a_transparent_pixel() -> None:
+    """The pixel every job gets under the signature's name when the azienda has none:
+    decoded, not merely compiled, since a pasted constant once was a blue square."""
+    assert sniff_image(BLANK_PNG) == "png"
+    offset, idat = 8, b""
+    while offset < len(BLANK_PNG):
+        length = int.from_bytes(BLANK_PNG[offset : offset + 4], "big")
+        if BLANK_PNG[offset + 4 : offset + 8] == b"IDAT":
+            idat += BLANK_PNG[offset + 8 : offset + 8 + length]
+        offset += length + 12
+    filter_byte, *rgba = zlib.decompress(idat)
+    assert (filter_byte, rgba) == (0, [0, 0, 0, 0])
+
+
 def test_the_bytes_decide_the_kind_never_a_name_and_only_a_whole_image() -> None:
     assert sniff_image(BLANK_PNG) == "png"
     assert sniff_image(SVG) == "svg"
@@ -68,7 +95,18 @@ def test_the_bytes_decide_the_kind_never_a_name_and_only_a_whole_image() -> None
     assert sniff_image(_png(b"IDAT", zlib.compress(b"\0\0\0\0\0"))) == "png"
     # A stream that would inflate past the budget: a 1 MiB file can hide a gigabyte.
     assert sniff_image(_png(b"IDAT", zlib.compress(bytes(40 << 20)))) is None
-    assert sniff_image(_png(b"IDAT", zlib.compress(bytes(1 << 20)))) == "png"
+    # And a real megabyte of pixels, 512 by 512 in RGBA, is within it.
+    assert sniff_image(_png_of(512, 512, 0, zlib.compress(bytes(512 * (1 + 512 * 4))))) == "png"
+    # Framing around missing or malformed pixels: a 1x1 RGBA needs five scanline bytes.
+    assert sniff_image(_png(b"IDAT", zlib.compress(b""))) is None
+    assert sniff_image(_png(b"IDAT", zlib.compress(b"\0"))) is None
+    assert sniff_image(_png(b"IDAT", zlib.compress(b"\0" * 6))) is None
+    assert sniff_image(_png(b"IDAT", zlib.compress(b"\5\0\0\0\0"))) is None  # filter 5
+    # A 2x2 image split over two IDAT chunks, and an interlaced 1x1, both whole.
+    two_rows = zlib.compress(b"\0" + b"\0" * 8 + b"\1" + b"\0" * 8)
+    assert sniff_image(_png_of(2, 2, 0, two_rows[:7], two_rows[7:])) == "png"
+    assert sniff_image(_png_of(1, 1, 1, zlib.compress(bytes(5)))) == "png"
+    assert _png_rows(3, 3, 8, 6, 1) == [(1, 5), (1, 5), (1, 9), (2, 5), (1, 13)]
     # An SVG that does not parse, and an XML whose root is not an svg.
     assert sniff_image(b'<svg xmlns="x"><rect></svg>') is None
     assert sniff_image(b'<?xml version="1.0"?><not-svg><svg/></not-svg>') is None
