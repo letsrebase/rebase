@@ -21,7 +21,10 @@ config = context.config
 _PLACEHOLDER_URL = "driver://user:pass@localhost/dbname"
 _configured_url = config.get_main_option("sqlalchemy.url", "")
 if not _configured_url or _configured_url == _PLACEHOLDER_URL:
-    config.set_main_option("sqlalchemy.url", get_settings().database_url)
+    # The owner's URL (REB-634): the application role may not alter a table it does
+    # not own, and `alembic upgrade head` in the image's CMD runs with the same
+    # environment as the API.
+    config.set_main_option("sqlalchemy.url", get_settings().owner_database_url)
 
 if config.config_file_name is not None:
     # `disable_existing_loggers` defaults to True, which is right for `alembic upgrade`

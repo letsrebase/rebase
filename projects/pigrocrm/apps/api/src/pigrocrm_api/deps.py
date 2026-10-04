@@ -6,12 +6,14 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session, sessionmaker
 
-from pigrocrm.core.actor import Actor, Role
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.pat_service import PAT_PREFIX, PatService
 from pigrocrm.core.auth.refresh_service import RefreshTokenService
 from pigrocrm.core.auth.repository import UserRepository
+from pigrocrm.core.auth.scope import actor_for
 from pigrocrm.core.auth.tokens import decode_token
 from pigrocrm.core.config import Settings, get_settings
+from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.errors import DomainError
 from pigrocrm.core.space_settings import apply_overrides
 from pigrocrm.core.storage import DocumentStorage, LocalFileStorage, storage_from_settings
@@ -100,39 +102,6 @@ def get_session(
 
 
 SessionDep = Annotated[Session, Depends(get_session)]
-
-
-def get_snapshot_session(
-    request: Request, settings: Annotated[Settings, Depends(get_settings)]
-) -> Iterator[Session]:
-    """A second session per request, untouched by anything else in the request.
-
-    Only the dashboards use it, and they need it. A dashboard is one transaction in
-    `REPEATABLE READ` so that every figure on the page was true at one instant (spec
-    §7.1), Postgres refuses to change the isolation level once a transaction has begun,
-    and `DashboardService._open_snapshot` raises rather than silently degrading to
-    `READ COMMITTED` -- where a card and its own drill-through can disagree and nothing
-    about re-reading the code would say so.
-
-    `get_actor` resolves the cookie by reading `users` **on `SessionDep`**, and that read
-    autobegins a transaction. So a dashboard route taking `SessionDep` would raise on
-    every single request: not a race, not a load-dependent bug, every request. Two
-    sessions is the fix, and it is the same one the MCP adapter has used since Task 4A-1 --
-    `__main__.py` resolves the PAT in its own short-lived session so the tool's session is
-    untouched when the tool body runs.
-
-    A distinct callable, therefore a distinct key in FastAPI's per-request dependency
-    cache: a route asking for both gets two sessions, deliberately. The cost is one extra
-    pooled connection for the life of the request, paid only by the routes that ask.
-    """
-    session = _factory_for(request, settings)()
-    try:
-        yield session
-    finally:
-        session.close()
-
-
-SnapshotSessionDep = Annotated[Session, Depends(get_snapshot_session)]
 
 
 def request_base_settings(
@@ -321,9 +290,14 @@ def get_actor(request: Request, session: SessionDep, settings: SettingsDep) -> A
         try:
             # `settings`, so a space's own `mcp_full_access` (Impostazioni → Spazio) is
             # what stamps `Actor.full_access`, not the process environment's.
-            return PatService(session, settings=settings).resolve(pat)
+            actor = PatService(session, settings=settings).resolve(pat)
         except DomainError as exc:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token non valido") from exc
+        # The scope the token's owner has, on the session every read of this request
+        # runs on (REB-634, spec 2026-10-03 §4): from here the database answers the
+        # rows this person may see and no other.
+        bind_scope(session, actor)
+        return actor
 
     token = first_cookie(request, ACCESS_COOKIE)
     if not token:
@@ -338,8 +312,9 @@ def get_actor(request: Request, session: SessionDep, settings: SettingsDep) -> A
     except DomainError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Utente non attivo") from exc
 
-    role: Role = user.ruolo  # type: ignore[assignment]
-    return Actor(id=user.id, type="user", role=role)
+    actor = actor_for(user, "user")
+    bind_scope(session, actor)
+    return actor
 
 
 def callback_actor(request: Request, session: Session, settings: Settings) -> Actor | None:
@@ -393,8 +368,49 @@ def callback_actor(request: Request, session: Session, settings: Settings) -> Ac
         user = UserRepository(session).get_active(payload.sub)
     except DomainError:
         return None
-    role: Role = user.ruolo  # type: ignore[assignment]
-    return Actor(id=user.id, type="user", role=role)
+    actor = actor_for(user, "user")
+    bind_scope(session, actor)
+    return actor
+
+
+def get_snapshot_session(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    actor: Annotated[Actor, Depends(get_actor)],
+) -> Iterator[Session]:
+    """A second session per request, untouched by anything else in the request.
+
+    Only the dashboards use it, and they need it. A dashboard is one transaction in
+    `REPEATABLE READ` so that every figure on the page was true at one instant (spec
+    §7.1), Postgres refuses to change the isolation level once a transaction has begun,
+    and `DashboardService._open_snapshot` raises rather than silently degrading to
+    `READ COMMITTED` -- where a card and its own drill-through can disagree and nothing
+    about re-reading the code would say so.
+
+    `get_actor` resolves the cookie by reading `users` **on `SessionDep`**, and that read
+    autobegins a transaction. So a dashboard route taking `SessionDep` would raise on
+    every single request: not a race, not a load-dependent bug, every request. Two
+    sessions is the fix, and it is the same one the MCP adapter has used since Task 4A-1 --
+    `__main__.py` resolves the PAT in its own short-lived session so the tool's session is
+    untouched when the tool body runs.
+
+    A distinct callable, therefore a distinct key in FastAPI's per-request dependency
+    cache: a route asking for both gets two sessions, deliberately. The cost is one extra
+    pooled connection for the life of the request, paid only by the routes that ask.
+
+    The actor's scope is bound here as on the request's own session (REB-634): on a
+    session nothing has touched, `bind_scope` only registers the listener, so the first
+    statement of the snapshot stays the service's own and runs inside the scope.
+    """
+    session = _factory_for(request, settings)()
+    bind_scope(session, actor)
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+SnapshotSessionDep = Annotated[Session, Depends(get_snapshot_session)]
 
 
 ActorDep = Annotated[Actor, Depends(get_actor)]

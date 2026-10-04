@@ -13,7 +13,14 @@
 # same tokens as bearers. It has no host port on purpose.
 
 x-api-environment: &api-environment
-  PIGROCRM_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-pigrocrm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pigrocrm}
+  # Two roles on the one database (REB-634, spec 2026-10-03 §4 «The role»). Requests run
+  # as `pigrocrm_app`, a role the API's own boot creates and grants, which Postgres keeps
+  # inside the row-level policies; the bootstrap superuser (`POSTGRES_USER`) stays the
+  # owner, for `alembic upgrade head`, `ensure-space-defaults` and `CREATE DATABASE`. The
+  # role's password has no default, so a `.env` that forgets it fails the stack here
+  # instead of booting an API that cannot log in.
+  PIGROCRM_DATABASE_URL: postgresql+psycopg://pigrocrm_app:${PIGROCRM_APP_PASSWORD:?set it in .env, the password of the application role the boot creates}@db:5432/${POSTGRES_DB:-pigrocrm}
+  PIGROCRM_ADMIN_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-pigrocrm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-pigrocrm}
   PIGROCRM_JWT_SECRET: ${PIGROCRM_JWT_SECRET:?serve un secret}
   # The installation's own choices, forwarded by name with the code's own defaults
   # (packages/core/src/pigrocrm/core/config.py) so an `.env` that leaves them out

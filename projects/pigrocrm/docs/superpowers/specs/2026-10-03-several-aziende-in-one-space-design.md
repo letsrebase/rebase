@@ -864,3 +864,28 @@ Added as the milestones land, dated, never rewriting the sections above.
   Gmail sync binds the mailbox owner's scope. The test database's user is a superuser,
   which bypasses RLS, so the proof runs through a `pigrocrm_app_test` role created by
   the test itself; the application's own role is REB-634's work.
+- **2026-10-04, same milestone, the role and the routes (REB-634).** Two URLs, as §10
+  decided: `PIGROCRM_DATABASE_URL` is the application role's, `PIGROCRM_ADMIN_DATABASE_URL`
+  the owner's, and `Settings.owner_database_url` falls back to the first when the second
+  is empty, which is what a checkout and the test suite run with. `db/role.py` creates
+  the role named by the application URL, sets the password that URL carries, and grants
+  it tables, sequences and default privileges on the database it is called for; the
+  boot (`ensure-space-defaults`) runs it on the root and on every space after each
+  migration, provisioning runs it on a new space, and a one-URL installation skips it.
+  The compose file builds the application URL from `PIGROCRM_APP_PASSWORD`, required
+  like `POSTGRES_PASSWORD`. Alembic, the registry's side database and `CREATE DATABASE`
+  read the owner's URL; the owner's sessions that write policied rows (provisioning,
+  the furnishing, the e2e seed) bind the system actor's scope, since `FORCE` binds the
+  owner too. `get_actor` and `callback_actor` build the actor with `actor_for` and bind
+  the scope on the request's session; the snapshot session takes the actor and binds it
+  before its first statement; a PAT carries its owner's scope and the MCP guard binds it
+  at every call. A write the policy refuses outright (`insufficient_privilege`, 42501)
+  is `OutOfScope`, code `not_found`, so the API answers 404 and a tool answers the same
+  sentence; a write the service refuses first (an azienda the policy hides cannot be
+  resolved) is the 404 it already was. `aziende` reached the routes with the schemas of
+  REB-633 and `api-types.ts` is regenerated; the HTTP boundary is
+  `apps/api/tests/test_azienda_scope_api.py` and the MCP one
+  `apps/mcp/tests/test_azienda_scope_mcp.py`, both through the role the boot makes. The
+  test template carries the policies of 0048 (`projects/pigrocrm/conftest.py`), so a
+  clone of it is what production is; the suite's own user stays a superuser and sees
+  everything. The e2e stack runs the two roles too.

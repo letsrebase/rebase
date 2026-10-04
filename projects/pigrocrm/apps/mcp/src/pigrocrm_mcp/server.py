@@ -11,9 +11,11 @@ from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.exceptions import MCPError
 from mcp.types import INVALID_PARAMS
+from sqlalchemy.exc import DBAPIError
 
 from pigrocrm.core.config import Settings, get_settings, gmail_configured
-from pigrocrm.core.errors import DomainError
+from pigrocrm.core.db.scope import bind_scope
+from pigrocrm.core.errors import DomainError, OutOfScope
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.storage import DocumentStorage, storage_from_settings
 from pigrocrm_mcp import analytics
@@ -84,6 +86,20 @@ def _as_protocol_error(exc: DomainError) -> MCPError:
     """
     code = INVALID_PARAMS if exc.code == "not_found" else DOMAIN_REFUSAL
     return MCPError(code=code, message=to_agent_message(exc))
+
+
+# SQLSTATE of `insufficient_privilege`, Postgres's answer when a row-level policy refuses
+# a write outright; the API maps it the same way (`pigrocrm_api.errors`).
+_INSUFFICIENT_PRIVILEGE = "42501"
+
+
+def _policy_refusal(exc: DBAPIError) -> DomainError:
+    """The one database error a tool translates (REB-634): a write the azienda scope
+    refused reads as a record that is not there, like the read of it would. Anything
+    else is re-raised as it was."""
+    if getattr(exc.orig, "sqlstate", None) != _INSUFFICIENT_PRIVILEGE:
+        raise exc
+    return OutOfScope()
 
 
 def build_server(
@@ -232,6 +248,7 @@ def build_server(
             @functools.wraps(fn)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 with _session_scope():
+                    bind_scope(context.session, context.actor)
                     try:
                         return await fn(*args, **kwargs)
                     except DomainError as exc:
@@ -240,6 +257,9 @@ def build_server(
                     except ValueError as exc:
                         context.session.rollback()
                         raise translate(to_domain_error(exc)) from exc
+                    except DBAPIError as exc:
+                        context.session.rollback()
+                        raise translate(_policy_refusal(exc)) from exc
                     except Exception:
                         context.session.rollback()
                         raise
@@ -249,6 +269,9 @@ def build_server(
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             with _session_scope():
+                # The actor's scope on this call's session (REB-634): a PAT carries its
+                # owner's aziende, and the database answers those rows and no other.
+                bind_scope(context.session, context.actor)
                 try:
                     return fn(*args, **kwargs)
                 except DomainError as exc:
@@ -257,6 +280,9 @@ def build_server(
                 except ValueError as exc:
                     context.session.rollback()
                     raise translate(to_domain_error(exc)) from exc
+                except DBAPIError as exc:
+                    context.session.rollback()
+                    raise translate(_policy_refusal(exc)) from exc
                 except Exception:
                     context.session.rollback()
                     raise

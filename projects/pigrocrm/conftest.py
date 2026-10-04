@@ -113,6 +113,22 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 _TEMPLATE = "pigrocrm_template"
 
 
+def _azienda_scope_statements() -> list[str]:
+    """`statements()` of migration 0048, loaded from the file: a revision is a script in
+    `versions/`, not a module on the path."""
+    import importlib.util
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parent / "packages/core/migrations/versions/0048_azienda_scope.py"
+    )
+    spec = importlib.util.spec_from_file_location("pigrocrm_migration_0048", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return list(module.statements())
+
+
 @pytest.fixture(scope="session")
 def pigrocrm_postgres(postgres_per_worker: Any) -> Any:
     """The CRM's template database, built once per worker, and clones of it on demand.
@@ -150,6 +166,13 @@ def pigrocrm_postgres(postgres_per_worker: Any) -> Any:
         with engine.begin() as connection:
             connection.execute(text(WORK_UNIT_TRIGGER_SQL))
             connection.execute(text(CONTRACT_EXPENSE_TRIGGER_SQL))
+            # The row-level policies of 0048 (REB-633), the other DDL `create_all` cannot
+            # express: read from the revision itself, so the template and production
+            # cannot disagree on a predicate. The suite's user is a superuser, which
+            # Postgres keeps outside every policy, so no existing test sees them; the
+            # scope tests connect as the application role the boot creates and do.
+            for statement in _azienda_scope_statements():
+                connection.execute(text(statement))
         # A template must have no session connected while it is copied.
         engine.dispose()
 

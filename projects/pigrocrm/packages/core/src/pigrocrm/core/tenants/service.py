@@ -25,10 +25,16 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
+from pigrocrm.core.db.role import ensure_application_role
+from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.db.session import session_factory
 from pigrocrm.core.db.sidecar import create_database_if_missing, drop_database
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
-from pigrocrm.core.tenants.database import tenant_database_name, tenant_database_url
+from pigrocrm.core.tenants.database import (
+    tenant_database_name,
+    tenant_database_url,
+    tenant_owner_database_url,
+)
 from pigrocrm.core.tenants.defaults import ensure_defaults
 from pigrocrm.core.tenants.models import Tenant
 from pigrocrm.core.tenants.schemas import (
@@ -146,13 +152,20 @@ class TenantService:
             self.session.rollback()
             raise Conflict("tenant", "questo nome è già in uso", slug=data.slug) from exc
 
-        url = tenant_database_url(self.settings, db_name)
+        url = tenant_owner_database_url(self.settings, db_name)
         try:
             create_database_if_missing(self.settings, url)
             migrate_to_head(self.settings, url.render_as_string(hide_password=False))
+            # The application role may read and write the new database from the first
+            # request (REB-634): granted here, by the owner, before anybody asks.
+            ensure_application_role(url, tenant_database_url(self.settings, db_name))
             engine = create_engine(url, future=True)
             try:
                 with session_factory(engine)() as space:
+                    # The owner is inside the policies too (`FORCE ROW LEVEL SECURITY`),
+                    # and the default azienda `ensure_defaults` writes is a policied
+                    # row: the system actor's scope, «tutte», is what lets it in.
+                    bind_scope(space, Actor.system())
                     UserService(space).create(
                         # No password: the admin enters with a link by mail, and the first
                         # link proves the address (spec 2026-09-12 §6.4).

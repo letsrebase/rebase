@@ -19,7 +19,13 @@
 # this file when it did -- there is no reason to, once a repo-root scripts/ is no
 # longer the merge hazard it was.
 
-export PIGROCRM_DATABASE_URL="postgresql+psycopg://pigrocrm:pigrocrm@localhost:55434/pigrocrm_e2e"
+# Two roles, as the compose stack runs (REB-634): the API as `pigrocrm_app`, which the
+# row-level policies bind, and the container's superuser as the owner for the migration
+# and the seed. `e2e-setup.sh` creates the role through `ensure-space-defaults`, the
+# same step the image's CMD runs, so a spec about a scoped member proves the real thing
+# and not a superuser that Postgres keeps outside every policy.
+export PIGROCRM_DATABASE_URL="postgresql+psycopg://pigrocrm_app:pigrocrm_app@localhost:55434/pigrocrm_e2e"
+export PIGROCRM_ADMIN_DATABASE_URL="postgresql+psycopg://pigrocrm:pigrocrm@localhost:55434/pigrocrm_e2e"
 # The brief's own literal value here ("e2e-secret-not-for-production") is 29
 # characters -- one short of `MIN_JWT_SECRET_LENGTH = 32`
 # (packages/core/src/pigrocrm/core/config.py). `Settings`' own field validator

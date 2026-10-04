@@ -237,16 +237,25 @@ FUNCTION_NAMES = [
 ]
 
 
-def upgrade() -> None:
-    for statement in FUNCTIONS:
-        op.execute(statement)
+def statements() -> list[str]:
+    """Every statement `upgrade` runs, in order: the functions, then per table the
+    policy, `ENABLE` and `FORCE`. Also what the test suite applies to the template
+    database it builds with `create_all` instead of Alembic (`projects/pigrocrm/
+    conftest.py`), so a test root's clone carries the same policies production has."""
+    out = list(FUNCTIONS)
     for table, (using, check) in POLICIES.items():
-        op.execute(
-            f"CREATE POLICY ambito_azienda ON {table} FOR ALL "  # noqa: S608
+        out.append(
+            f"CREATE POLICY ambito_azienda ON {table} FOR ALL "
             f"USING ({using}) WITH CHECK ({check or using})"
         )
-        op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
-        op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
+        out.append(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+        out.append(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
+    return out
+
+
+def upgrade() -> None:
+    for statement in statements():
+        op.execute(statement)
 
 
 def downgrade() -> None:

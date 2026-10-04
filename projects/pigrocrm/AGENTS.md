@@ -177,6 +177,20 @@ this file, and `uv run uvicorn`/`uv run pytest` read `.env` in the repository ro
 default in the compose file, so a `.env` that forgets it fails the stack instead of
 mounting an empty directory (REB-258).
 
+**Two database roles since REB-634** (spec 2026-10-03 §4 «The role»). Requests run as
+`pigrocrm_app`, `LOGIN NOSUPERUSER NOBYPASSRLS`, which is what keeps a scoped member
+inside their aziende: a superuser is never subject to a row-level policy. The compose
+file builds `PIGROCRM_DATABASE_URL` for that role from `PIGROCRM_APP_PASSWORD`, which
+has no default either, and `PIGROCRM_ADMIN_DATABASE_URL` for the bootstrap superuser,
+which keeps the owner's work: `alembic upgrade head`, `ensure-space-defaults`, `CREATE
+DATABASE`. Nothing is created by hand: the boot (`ensure-space-defaults`) creates the role
+if it is missing, sets the password it finds in the URL and applies the grants to the
+root and to every space, and provisioning does the same for a new space. The one
+by-hand step is the `.env`: each environment's gains `PIGROCRM_APP_PASSWORD=<openssl
+rand -hex 24>` before the first deploy that carries this, or `compose up` refuses to
+start and says which line is missing. A developer's checkout keeps one URL and the
+policies bypassed; `.env.example` says how to see the scope locally.
+
 Ports, loopback only, from the table in `docs/adding-a-project.md` §7: production web
 8080, Postgres 55432; preview web 8081, Postgres 55434.
 

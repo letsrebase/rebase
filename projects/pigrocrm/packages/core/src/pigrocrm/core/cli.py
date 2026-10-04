@@ -196,11 +196,24 @@ def ensure_space_defaults() -> int:
     installation is not in the registry and is not touched."""
     from sqlalchemy import create_engine, select
 
+    from pigrocrm.core.db.role import ensure_application_role
+    from pigrocrm.core.db.scope import bind_scope
     from pigrocrm.core.tenants import Tenant, ensure_defaults, ensure_tenants_database
-    from pigrocrm.core.tenants.database import tenant_database_url
+    from pigrocrm.core.tenants.database import tenant_database_url, tenant_owner_database_url
     from pigrocrm.core.tenants.service import migrate_to_head
 
     settings = get_settings()
+    # The application role first, on the root (REB-634, spec 2026-10-03 §4 «The role»):
+    # the CMD has just migrated the root as the owner, and every request from here on
+    # connects as the role `PIGROCRM_DATABASE_URL` names, which must exist and be
+    # granted before uvicorn answers. One URL means no role, and one line that says so.
+    try:
+        if ensure_application_role(settings.owner_database_url, settings.database_url):
+            print(f"{ROOT_LABEL}: ruolo applicativo pronto")
+        else:
+            print(f"{ROOT_LABEL}: un solo URL, nessun ruolo applicativo da creare")
+    except Exception as exc:  # noqa: BLE001 - the API's own first request will say more
+        print(f"{ROOT_LABEL}: ruolo applicativo non creato ({type(exc).__name__})", file=sys.stderr)
     try:
         registry = ensure_tenants_database(settings)
         try:
@@ -218,13 +231,17 @@ def ensure_space_defaults() -> int:
         print("nessuno spazio nel registro")
         return 0
     for slug, db_name in spaces:
-        url = tenant_database_url(settings, db_name)
+        # As the owner: the migration, the grants and the furnishing are the owner's
+        # work, and the furnished rows (`FORCE ROW LEVEL SECURITY` binds the owner too)
+        # go in under the system actor's scope.
+        url = tenant_owner_database_url(settings, db_name)
         engine = create_engine(url, future=True)
         try:
             try:
                 before = _schema_revision(engine)
                 migrate_to_head(settings, url.render_as_string(hide_password=False))
                 after = _schema_revision(engine)
+                ensure_application_role(url, tenant_database_url(settings, db_name))
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 print(f"{slug}: non migrato ({type(exc).__name__})", file=sys.stderr)
                 continue
@@ -234,6 +251,7 @@ def ensure_space_defaults() -> int:
                 print(f"{slug}: schema migrato da {before or 'zero'} a {after}")
             try:
                 with session_factory(engine)() as space:
+                    bind_scope(space, Actor.system())
                     report = ensure_defaults(space, nome=slug)
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 print(f"{slug}: non arredato ({type(exc).__name__})", file=sys.stderr)

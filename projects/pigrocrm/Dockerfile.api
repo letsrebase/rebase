@@ -60,6 +60,9 @@ EXPOSE 8000
 # `alembic upgrade head` here knows only the root database; every space's database is
 # migrated by `ensure-space-defaults` right after, before it is furnished (ORB-189:
 # 0.13.0 shipped a migration the login depends on to spaces that never received it).
+# Both run as the owner, PIGROCRM_ADMIN_DATABASE_URL; `ensure-space-defaults` also
+# creates and grants `pigrocrm_app`, the role PIGROCRM_DATABASE_URL names and uvicorn
+# then connects as, on the root and on every space (REB-634).
 #
 # `--no-sync` on both calls is load-bearing, not decoration: without it, `uv run`
 # re-evaluates the environment against pyproject.toml's *default* group selection --

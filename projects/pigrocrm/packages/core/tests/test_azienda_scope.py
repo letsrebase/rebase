@@ -14,11 +14,9 @@ of its own and sees only what was committed.
 
 from __future__ import annotations
 
-import importlib.util
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from pathlib import Path
 from typing import NamedTuple
 from uuid import UUID
 
@@ -37,6 +35,7 @@ from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.customers.schemas import CustomerListQuery
 from pigrocrm.core.db import Base, session_factory
 from pigrocrm.core.db.base import uuid7
+from pigrocrm.core.db.role import ensure_application_role
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
@@ -101,39 +100,6 @@ POLICIED = {
 DECLARED_EXCEPTIONS = {"user_aziende"}
 
 
-def _apply_policies(engine: Engine) -> None:
-    """The test databases are built from the models, not by Alembic (the root
-    `conftest.py` clones a template made with `create_all`), so the functions and the
-    policies of 0048 are not there: this applies the revision's own statements,
-    idempotently, on this worker's database. A superuser bypasses them, so every other
-    file in this tree is unaffected by their presence."""
-    spec = importlib.util.spec_from_file_location(
-        "m0048",
-        Path(__file__).resolve().parents[1] / "migrations" / "versions" / "0048_azienda_scope.py",
-    )
-    assert spec is not None and spec.loader is not None
-    m0048 = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(m0048)
-    with engine.begin() as connection:
-        for statement in m0048.FUNCTIONS:
-            connection.execute(text(statement))
-        for table, (using, check) in m0048.POLICIES.items():
-            connection.execute(text(f"DROP POLICY IF EXISTS ambito_azienda ON {table}"))
-            connection.execute(
-                text(
-                    f"CREATE POLICY ambito_azienda ON {table} FOR ALL "  # noqa: S608
-                    f"USING ({using}) WITH CHECK ({check or using})"
-                )
-            )
-            connection.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
-            connection.execute(text(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY"))
-
-
-@pytest.fixture(autouse=True)
-def _policies(db_engine: Engine) -> None:
-    _apply_policies(db_engine)
-
-
 class World(NamedTuple):
     engine: Engine  # the superuser's
     app: Engine  # the application role's, same database
@@ -151,25 +117,12 @@ def _require_empty(session: Session) -> None:
 
 
 def _application_role(engine: Engine) -> Engine:
-    """A `LOGIN NOSUPERUSER NOBYPASSRLS` role with the grants the API's own role gets
-    (spec §4 «The role»), on this worker's database. Cluster-wide, so created once and
-    reused; the grants are per database and applied every time."""
-    with engine.begin() as connection:
-        connection.execute(
-            text(
-                f"DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = "
-                f"'{APP_ROLE}') THEN CREATE ROLE {APP_ROLE} LOGIN PASSWORD '{APP_PASSWORD}' "
-                f"NOSUPERUSER NOBYPASSRLS NOCREATEDB; END IF; END $$"
-            )
-        )
-        for grant in (
-            f"GRANT USAGE ON SCHEMA public TO {APP_ROLE}",
-            f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {APP_ROLE}",
-            f"GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO {APP_ROLE}",
-        ):
-            connection.execute(text(grant))
-    url = engine.url.set(username=APP_ROLE, password=APP_PASSWORD)
-    return create_engine(url, future=True)
+    """The role the API connects as, made the way the boot makes it (`db/role.py`,
+    REB-634): `LOGIN NOSUPERUSER NOBYPASSRLS`, granted on this worker's database.
+    Cluster-wide, so the second file to ask finds it and only re-applies the grants."""
+    app_url = engine.url.set(username=APP_ROLE, password=APP_PASSWORD)
+    assert ensure_application_role(engine.url, app_url) is True
+    return create_engine(app_url, future=True)
 
 
 @pytest.fixture

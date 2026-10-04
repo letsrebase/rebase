@@ -262,7 +262,7 @@ class AziendaService:
         from pigrocrm.core.fiscal.service import ENTITY as FISCAL_ENTITY
         from pigrocrm.core.fiscal.service import FiscalProfileService
 
-        actor.require_admin("create_azienda")
+        actor.require_unscoped_admin("create_azienda")
         payload = data.model_dump(exclude={"fiscal_profile"})
         _check_fiscal(payload)
         profilo = data.fiscal_profile.model_dump()
@@ -311,7 +311,7 @@ class AziendaService:
         """Move the default. One transaction, old row off first, so the partial unique
         index never sees two defaults; an inactive azienda cannot become the default,
         because the default is what every implicit read resolves to."""
-        actor.require_admin("set_default_azienda")
+        actor.require_unscoped_admin("set_default_azienda")
         row = self.resolve(azienda_id)
         if not row.attiva:
             raise ValidationFailed(
@@ -343,7 +343,7 @@ class AziendaService:
         resolves to it; move the default first. The answer carries how many live
         customers still point at the row (spec §3): each of them refuses a new deal,
         document or proforma until it is moved, so the count is the work left."""
-        actor.require_admin("deactivate_azienda")
+        actor.require_unscoped_admin("deactivate_azienda")
         row = self.resolve(azienda_id)
         if row.predefinita:
             raise ValidationFailed(

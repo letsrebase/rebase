@@ -16,11 +16,13 @@ from pigrocrm.core.config import Settings
 
 
 def sidecar_url(settings: Settings, explicit: str, default_name: str) -> URL:
-    """`explicit` when set; otherwise the CRM's own URL with only the database name
-    swapped, so the compose stack needs no second variable."""
+    """`explicit` when set; otherwise the owner's URL with only the database name
+    swapped, so the compose stack needs no second variable. The owner's, not the
+    application role's (REB-634): a side database is created and given its tables by
+    whoever connects to it, and `create_all` is the owner's to run."""
     if explicit:
         return make_url(explicit)
-    return make_url(settings.database_url).set(database=default_name)
+    return make_url(settings.owner_database_url).set(database=default_name)
 
 
 def admin_url(settings: Settings, target: URL) -> URL:
@@ -31,7 +33,7 @@ def admin_url(settings: Settings, target: URL) -> URL:
     its credentials are known to work. An explicit URL pointing elsewhere falls back
     to Postgres's own maintenance database.
     """
-    main = make_url(settings.database_url)
+    main = make_url(settings.owner_database_url)
     same_server = (main.host, main.port, main.username) == (
         target.host,
         target.port,

@@ -52,13 +52,22 @@ until docker exec "$PIGROCRM_E2E_CONTAINER" pg_isready -U pigrocrm >/dev/null 2>
 echo "== pigrocrm e2e: running migrations =="
 (cd packages/core && uv run alembic upgrade head)
 
+echo "== pigrocrm e2e: creating the application role the API connects as =="
+# The same boot step the image's CMD runs after the migration (REB-634): it creates
+# `pigrocrm_app` with the password PIGROCRM_DATABASE_URL carries, grants it the root's
+# tables and sequences, and visits the registry of spaces, which is empty here.
+uv run python -m pigrocrm.core.cli ensure-space-defaults
+
 echo "== pigrocrm e2e: seeding the admin the specs log in as, the pipeline, the timesheet template, the cost categories and the fiscal profile =="
 uv run python - <<'PY'
+from sqlalchemy import create_engine
+
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.schemas import UserCreate
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import get_settings
-from pigrocrm.core.db import create_engine_from_settings, session_factory
+from pigrocrm.core.db import session_factory
+from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.emitter.schemas import AziendaUpsert
 from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -67,8 +76,11 @@ from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.templates.service import TemplateService
 from pigrocrm.core.timetracking.categories import CostCategoryService
 
-engine = create_engine_from_settings(get_settings())
+# As the owner, inside the system actor's scope (REB-634): the azienda below is a
+# policied row, and the owner is bound by `FORCE ROW LEVEL SECURITY` like everyone.
+engine = create_engine(get_settings().owner_database_url, future=True)
 with session_factory(engine)() as session:
+    bind_scope(session, Actor.system())
     UserService(session).create(
         UserCreate(email="e2e@pigro.it", password="supersegreta1", nome="E2E", ruolo="admin"),
         Actor.system(),
