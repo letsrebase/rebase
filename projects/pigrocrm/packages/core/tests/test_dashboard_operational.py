@@ -357,9 +357,12 @@ def _invoices(engine: Engine, query: InvoiceListQuery) -> list[Invoice]:
 
 def test_it_takes_no_period() -> None:
     """§6: the current week and a backlog are the two things that make no sense in the
-    past, so there is no period parameter to get wrong."""
+    past, so there is no period parameter to get wrong. The azienda (REB-630) is a
+    scope, not a period: it narrows the same week and the same backlog to one azienda's
+    rows, and «tutte» leaves it out."""
     signature = inspect.signature(DashboardService.get_operational_dashboard)
-    assert list(signature.parameters) == ["self", "actor"]
+    assert list(signature.parameters) == ["self", "actor", "azienda_id"]
+    assert "da" not in signature.parameters and "a" not in signature.parameters
 
 
 def test_the_week_is_the_current_one(seeded: Seeded) -> None:

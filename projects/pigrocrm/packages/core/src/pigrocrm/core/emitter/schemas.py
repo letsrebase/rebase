@@ -3,6 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.validation import SafeStr
 
 # Mirror Azienda's column widths exactly (emitter/models.py). Without these an
@@ -68,6 +69,21 @@ class AziendaUpsert(BaseModel):
     regime_fiscale: SafeStr | None = Field(default=None, max_length=REGIME_FISCALE_MAX_LENGTH)
 
 
+class AziendaCreate(AziendaUpsert):
+    """A second azienda, born with its fiscal profile (spec 2026-10-03 §1.2, §3, §9
+    milestone 5): the upsert's fields, a required short name, and the profile body
+    `PUT /api/aziende/{id}/fiscal-profile` takes. One request, one transaction, so no
+    azienda ever exists that `issue` would refuse with `NotFound("fiscal_profile")`.
+
+    `nome` is required here where `AziendaUpsert` derives it: the first azienda of a
+    space was never named, but the second is created to be told apart from the first,
+    in the sidebar and on every list, and a derived name is a ragione sociale cut to
+    eighty characters."""
+
+    nome: SafeStr = Field(max_length=NOME_MAX_LENGTH)
+    fiscal_profile: FiscalProfileUpsert
+
+
 class AziendaRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -94,6 +110,15 @@ class AziendaRead(BaseModel):
     regime_fiscale: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class AziendaDeactivated(AziendaRead):
+    """What `DELETE /api/aziende/{id}` answers (spec §3): the row, switched off, and
+    how many live customers still point at it. Nothing new is born under such a
+    customer until it is moved («sposta prima il cliente su un'azienda attiva»), so the
+    count is the work the person has left to do, said once, in the same answer."""
+
+    clienti_collegati: int
 
 
 # The fields `as_template_values` and the MCP `describe` leave out: identity, state and

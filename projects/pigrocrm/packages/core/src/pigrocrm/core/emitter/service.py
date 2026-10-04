@@ -12,6 +12,8 @@ from pigrocrm.core.emitter.repository import AziendaRepository
 from pigrocrm.core.emitter.schemas import (
     NOME_MAX_LENGTH,
     TEMPLATE_EXCLUDED_FIELDS,
+    AziendaCreate,
+    AziendaDeactivated,
     AziendaRead,
     AziendaUpsert,
 )
@@ -165,6 +167,37 @@ class AziendaService:
             raise NotFound(ENTITY, DEFAULT_LABEL if azienda_id is None else str(azienda_id))
         return row
 
+    def single(self, azienda_id: UUID | None = None) -> Azienda | None:
+        """The one azienda a per-azienda figure speaks for (REB-630, spec 2026-10-03
+        §1.9): the row `azienda_id` names, or the only active azienda when the caller
+        named none, which is what keeps every read written for a one-azienda space
+        working unchanged. `None` when the space has several and none was named: the
+        coefficients of a forfettario and the arithmetic of an SRL do not add, so there
+        is no figure to answer with. `NotFound` on a space with no azienda at all, under
+        the label every consumer already handles."""
+        if azienda_id is not None:
+            return self.resolve(azienda_id)
+        active = self.repo.list(only_active=True)
+        if len(active) == 1:
+            return active[0]
+        if not active:
+            return self.resolve(None)
+        return None
+
+    def require_single(self, azienda_id: UUID | None, *, entity: str) -> Azienda:
+        """`single`, or a refusal that names the parameter the caller has to add. The
+        label is the caller's own (`analytics` for the estimate and the ceilings), since
+        it is that request's field that is missing, not this table's."""
+        row = self.single(azienda_id)
+        if row is None:
+            raise ValidationFailed(
+                entity,
+                "azienda_id",
+                "lo spazio ha piu' di un'azienda: indica per quale calcolare",
+                expected="l'id di un'azienda attiva",
+            )
+        return row
+
     def get(self, actor: Actor, azienda_id: UUID | None = None) -> AziendaRead:
         return AziendaRead.model_validate(self.resolve(azienda_id))
 
@@ -206,6 +239,50 @@ class AziendaService:
             self.activities.record(ENTITY, row.id, "updated", actor, {"changed": sorted(payload)})
             self.session.commit()
         except IntegrityError as exc:
+            self.session.rollback()
+            raise Conflict(ENTITY, self._conflict_reason(exc)) from exc
+        return AziendaRead.model_validate(row)
+
+    def create(self, data: AziendaCreate, actor: Actor) -> AziendaRead:
+        """A second azienda, with its fiscal profile, in one transaction (REB-630, spec
+        2026-10-03 §1.2, §3, §9 milestone 5). Active, and the default only when the
+        space had none: the first azienda of a space is what every implicit read
+        resolves to, whichever route wrote it. Both payloads are checked before the
+        first `INSERT`, so a profile the fiscal service would refuse never leaves an
+        azienda behind that `issue` could not use; the two rows then flush under one
+        `try`, where the partial unique indexes on the P.IVA and the codice fiscale are
+        the only things that can refuse them, and a refusal is a clean `Conflict`.
+
+        `create_azienda` is the action's name for the agent gate, like
+        `update_fiscal_profile` since ORB-188: setting a space up is not a fiscal act.
+        The fiscal service is imported here, not at module level, because it imports
+        this one for `resolve`.
+        """
+        from pigrocrm.core.fiscal.models import FiscalProfile
+        from pigrocrm.core.fiscal.service import ENTITY as FISCAL_ENTITY
+        from pigrocrm.core.fiscal.service import FiscalProfileService
+
+        actor.require_admin("create_azienda")
+        payload = data.model_dump(exclude={"fiscal_profile"})
+        _check_fiscal(payload)
+        profilo = data.fiscal_profile.model_dump()
+        FiscalProfileService.check(profilo)
+        try:
+            row = self.repo.add(
+                Azienda(**payload, predefinita=self.repo.default() is None, attiva=True)
+            )
+            profile = FiscalProfile(**profilo, azienda_id=row.id)
+            self.session.add(profile)
+            self.session.flush()
+            self.activities.record(ENTITY, row.id, "created", actor, {"changed": sorted(payload)})
+            self.activities.record(
+                FISCAL_ENTITY, profile.id, "created", actor, {"changed": sorted(profilo)}
+            )
+            self.session.commit()
+        except IntegrityError as exc:
+            # The two fiscal indexes are named by `_conflict_reason`; what is left is
+            # the partial unique index on `predefinita`, two first creates on an empty
+            # space racing for the default, which the fallback names.
             self.session.rollback()
             raise Conflict(ENTITY, self._conflict_reason(exc)) from exc
         return AziendaRead.model_validate(row)
@@ -259,11 +336,13 @@ class AziendaService:
             raise Conflict(ENTITY, "la predefinita e' cambiata nel frattempo: ricarica") from exc
         return AziendaRead.model_validate(row)
 
-    def deactivate(self, azienda_id: UUID, actor: Actor) -> AziendaRead:
+    def deactivate(self, azienda_id: UUID, actor: Actor) -> AziendaDeactivated:
         """Switch an azienda off. Never a delete: an azienda that issued an invoice
         stays readable forever, and a row that is gone cannot be the `emittente` a
         snapshot was frozen from. The default is refused, since every implicit read
-        resolves to it; move the default first."""
+        resolves to it; move the default first. The answer carries how many live
+        customers still point at the row (spec §3): each of them refuses a new deal,
+        document or proforma until it is moved, so the count is the work left."""
         actor.require_admin("deactivate_azienda")
         row = self.resolve(azienda_id)
         if row.predefinita:
@@ -282,7 +361,10 @@ class AziendaService:
             # default after the check above read it.
             self.session.rollback()
             raise Conflict(ENTITY, "l'azienda e' diventata la predefinita nel frattempo") from exc
-        return AziendaRead.model_validate(row)
+        return AziendaDeactivated(
+            **AziendaRead.model_validate(row).model_dump(),
+            clienti_collegati=self.repo.count_customers(row.id),
+        )
 
     @staticmethod
     def _conflict_reason(

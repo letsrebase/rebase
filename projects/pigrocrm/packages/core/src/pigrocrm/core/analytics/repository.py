@@ -23,6 +23,7 @@ from pigrocrm.core.analytics.schemas import CashBase, RevenueBase
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
+from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.money import ZERO_MONEY, line_value, round_money, sum_hours, sum_money
 from pigrocrm.core.timetracking.models import Cost, TimeEntry
@@ -52,6 +53,13 @@ def _revenue_filter() -> tuple[ColumnElement[bool], ...]:
         Invoice.stato == "emessa",
         Invoice.deleted_at.is_(None),
     )
+
+
+def _invoice_azienda(azienda_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
+    """One azienda's invoices, or every azienda's (REB-630, spec 2026-10-03 §1.9):
+    the one extra predicate the sums below take, so an azienda's figure reads that
+    azienda's register alone and «tutte» stays the unfiltered sum."""
+    return () if azienda_id is None else (Invoice.azienda_id == azienda_id,)
 
 
 def _accrual_date() -> SQLColumnExpression[date | None]:
@@ -94,6 +102,9 @@ class RevenueByCustomerRow(NamedTuple):
     # different question ("who owes the most"). A concentration figure caps a share of
     # the total, so the denominator is `annual_revenue(anno)` itself.
     quota: float
+    # The azienda whose `annual_revenue` is the denominator (REB-630): with one azienda
+    # it is the same id on every row, in «tutte» it is what groups them.
+    azienda_id: UUID
 
 
 class AnalyticsRepository:
@@ -145,8 +156,26 @@ class AnalyticsRepository:
         scoped: _S = stmt.where(column.in_(select(Deal.id).where(Deal.customer_id == customer_id)))
         return scoped
 
+    def _azienda_scope(
+        self, stmt: _S, azienda_id: UUID | None, column: InstrumentedAttribute[Any]
+    ) -> _S:
+        """A deal-keyed table narrowed to one azienda through its deal (REB-630): an
+        hour's azienda is the deal's, so the predicate is the same subquery
+        `TimeEntryRepository.list` uses rather than a column that table would copy. A
+        cost has its own `azienda_id` (equal to its deal's by `CostService`, indexed)
+        and every cost read in this file uses that column instead."""
+        if azienda_id is None:
+            return stmt
+        scoped: _S = stmt.where(column.in_(select(Deal.id).where(Deal.azienda_id == azienda_id)))
+        return scoped
+
     def revenue_in_range(
-        self, da: date, a: date, customer_id: UUID | None, base: RevenueBase = "emissione"
+        self,
+        da: date,
+        a: date,
+        customer_id: UUID | None,
+        base: RevenueBase = "emissione",
+        azienda_id: UUID | None = None,
     ) -> dict[UUID, Decimal]:
         """Revenue is attributed to the period by **its own** date -- `data_emissione` --
         not by the deal's date, which does not exist, and not by one common date, which
@@ -161,17 +190,24 @@ class AnalyticsRepository:
             .group_by(Invoice.deal_id)
         )
         stmt = self._customer_scope(stmt, customer_id, Invoice.deal_id)
+        # Through the deal, not the invoice's own column: the period P&L is a report
+        # per deal, and `deals_in_range`, the costs and the hours all read the deal's
+        # azienda, so a deal and its revenue can never land on two sides of the line
+        # (an import may put an invoice on another azienda than its deal's).
+        stmt = self._azienda_scope(stmt, azienda_id, Invoice.deal_id)
         return {row[0]: Decimal(row[1]) for row in self.session.execute(stmt).all()}
 
     def costs_in_range(
-        self, da: date, a: date, customer_id: UUID | None
+        self, da: date, a: date, customer_id: UUID | None, azienda_id: UUID | None = None
     ) -> tuple[dict[UUID, Decimal], Decimal]:
         """`({deal_id: total}, general_expenses)`. Costs are attributed by `costs.data`.
 
         General expenses -- `deal_id IS NULL` -- come back separately and are never
         distributed: any apportionment key would make a deal's margin move when a
         different deal was invoiced (§7.4). A customer filter excludes them entirely,
-        because a general expense belongs to no customer by definition.
+        because a general expense belongs to no customer by definition. An azienda
+        filter keeps the ones written for that azienda and drops the shared ones
+        (`azienda_id IS NULL`), which appear only in «tutte» (REB-630, spec §1.7).
         """
         per_deal: dict[UUID, Decimal] = {}
         stmt = (
@@ -185,27 +221,26 @@ class AnalyticsRepository:
             .group_by(Cost.deal_id)
         )
         stmt = self._customer_scope(stmt, customer_id, Cost.deal_id)
+        if azienda_id is not None:
+            stmt = stmt.where(Cost.azienda_id == azienda_id)
         for deal_id, total in self.session.execute(stmt).all():
             per_deal[deal_id] = Decimal(total)
 
         if customer_id is not None:
             return per_deal, ZERO_MONEY
-        general = round_money(
-            Decimal(
-                self.session.execute(
-                    select(func.coalesce(func.sum(Cost.importo), 0)).where(
-                        Cost.deal_id.is_(None),
-                        Cost.data >= da,
-                        Cost.data <= a,
-                        Cost.deleted_at.is_(None),
-                    )
-                ).scalar_one()
-            )
+        generali = select(func.coalesce(func.sum(Cost.importo), 0)).where(
+            Cost.deal_id.is_(None),
+            Cost.data >= da,
+            Cost.data <= a,
+            Cost.deleted_at.is_(None),
         )
+        if azienda_id is not None:
+            generali = generali.where(Cost.azienda_id == azienda_id)
+        general = round_money(Decimal(self.session.execute(generali).scalar_one()))
         return per_deal, general
 
     def labour_cost_in_range(
-        self, da: date, a: date, customer_id: UUID | None
+        self, da: date, a: date, customer_id: UUID | None, azienda_id: UUID | None = None
     ) -> dict[UUID, Decimal]:
         """`Σ ROUND(ore × costo_applicato, 2)`, summed **per row** and then added -- never
         `ROUND(Σ ore × costo, 2)`.
@@ -222,22 +257,30 @@ class AnalyticsRepository:
             TimeEntry.costo_applicato.isnot(None),
         )
         stmt = self._customer_scope(stmt, customer_id, TimeEntry.deal_id)
+        stmt = self._azienda_scope(stmt, azienda_id, TimeEntry.deal_id)
         grouped: dict[UUID, list[Decimal | None]] = defaultdict(list)
         for deal_id, ore, costo in self.session.execute(stmt).all():
             grouped[deal_id].append(line_value(ore, costo))
         return {deal_id: sum_money(values) for deal_id, values in grouped.items()}
 
-    def hours_in_range(self, da: date, a: date, customer_id: UUID | None) -> dict[UUID, Decimal]:
+    def hours_in_range(
+        self, da: date, a: date, customer_id: UUID | None, azienda_id: UUID | None = None
+    ) -> dict[UUID, Decimal]:
         stmt = (
             select(TimeEntry.deal_id, func.coalesce(func.sum(TimeEntry.ore), 0))
             .where(TimeEntry.data >= da, TimeEntry.data <= a, TimeEntry.deleted_at.is_(None))
             .group_by(TimeEntry.deal_id)
         )
         stmt = self._customer_scope(stmt, customer_id, TimeEntry.deal_id)
+        stmt = self._azienda_scope(stmt, azienda_id, TimeEntry.deal_id)
         return {row[0]: Decimal(row[1]) for row in self.session.execute(stmt).all()}
 
     def _committed_work_units_backlog(
-        self, da: date | None, a: date | None, customer_id: UUID | None
+        self,
+        da: date | None,
+        a: date | None,
+        customer_id: UUID | None,
+        azienda_id: UUID | None = None,
     ) -> tuple[Decimal, int, int]:
         """`(valore, voci, voci_senza_tariffa)` -- `unbilled_backlog`'s REB-372
         contribution from `work_units`: every day in an approved-or-later state
@@ -262,10 +305,13 @@ class AnalyticsRepository:
             stmt = stmt.where(WorkUnit.data >= da)
         if a is not None:
             stmt = stmt.where(WorkUnit.data <= a)
+        if customer_id is not None or azienda_id is not None:
+            # A day's azienda is its contract's (REB-630), as its customer is.
+            stmt = stmt.join(Contract, Contract.id == WorkUnit.contract_id)
         if customer_id is not None:
-            stmt = stmt.join(Contract, Contract.id == WorkUnit.contract_id).where(
-                Contract.customer_id == customer_id
-            )
+            stmt = stmt.where(Contract.customer_id == customer_id)
+        if azienda_id is not None:
+            stmt = stmt.where(Contract.azienda_id == azienda_id)
         rows = self.session.execute(stmt).all()
         if not rows:
             return ZERO_MONEY, 0, 0
@@ -295,7 +341,11 @@ class AnalyticsRepository:
         )
 
     def unbilled_backlog(
-        self, da: date | None = None, a: date | None = None, customer_id: UUID | None = None
+        self,
+        da: date | None = None,
+        a: date | None = None,
+        customer_id: UUID | None = None,
+        azienda_id: UUID | None = None,
     ) -> tuple[Decimal, Decimal, int, int]:
         """`(ore, valore, voci_senza_tariffa, voci)` over billable work not yet invoiced.
 
@@ -349,10 +399,11 @@ class AnalyticsRepository:
         if a is not None:
             stmt = stmt.where(TimeEntry.data <= a)
         stmt = self._customer_scope(stmt, customer_id, TimeEntry.deal_id)
+        stmt = self._azienda_scope(stmt, azienda_id, TimeEntry.deal_id)
 
         rows = self.session.execute(stmt).all()
         wu_valore, wu_voci, wu_senza_tariffa = self._committed_work_units_backlog(
-            da, a, customer_id
+            da, a, customer_id, azienda_id
         )
         return (
             sum_hours([ore for ore, _ in rows]),
@@ -361,11 +412,13 @@ class AnalyticsRepository:
             len(rows) + wu_voci,
         )
 
-    def late_entry_count(self, da: date, a: date) -> int:
+    def late_entry_count(self, da: date, a: date, azienda_id: UUID | None = None) -> int:
         """How many rows dated inside the period were written **after** it ended
         (`created_at > a`). It is what tells a reader whether the figure can still move,
-        and it is free: a COUNT over two columns that already exist (§6.4)."""
-        entries = self.session.execute(
+        and it is free: a COUNT over two columns that already exist (§6.4). Under an
+        azienda the hours are its deals' and the costs the ones that carry its id
+        (REB-630): a cost with a deal copied the deal's, a shared one stays out."""
+        ore = (
             select(func.count())
             .select_from(TimeEntry)
             .where(
@@ -374,8 +427,9 @@ class AnalyticsRepository:
                 TimeEntry.deleted_at.is_(None),
                 func.date(TimeEntry.created_at) > a,
             )
-        ).scalar_one()
-        costs = self.session.execute(
+        )
+        ore = self._azienda_scope(ore, azienda_id, TimeEntry.deal_id)
+        spese = (
             select(func.count())
             .select_from(Cost)
             .where(
@@ -384,10 +438,16 @@ class AnalyticsRepository:
                 Cost.deleted_at.is_(None),
                 func.date(Cost.created_at) > a,
             )
-        ).scalar_one()
+        )
+        if azienda_id is not None:
+            spese = spese.where(Cost.azienda_id == azienda_id)
+        entries = self.session.execute(ore).scalar_one()
+        costs = self.session.execute(spese).scalar_one()
         return int(entries) + int(costs)
 
-    def monthly_incassato(self, anno: int, base: CashBase = "competenza") -> dict[int, Decimal]:
+    def monthly_incassato(
+        self, anno: int, base: CashBase = "competenza", azienda_id: UUID | None = None
+    ) -> dict[int, Decimal]:
         """`Σ totale` of revenue invoices paid, per month of `anno` -- money in the bank,
         so `totale`, as `sum_da_incassare` reasons. By the accrual period the invoice
         declares, or under `incasso` by `data_incasso`, where an invoice marked paid with
@@ -397,12 +457,19 @@ class AnalyticsRepository:
         year = func.extract("year", when)
         rows = self.session.execute(
             select(month, func.sum(Invoice.totale))
-            .where(*_revenue_filter(), Invoice.stato_pagamento == "incassato", year == anno)
+            .where(
+                *_revenue_filter(),
+                *_invoice_azienda(azienda_id),
+                Invoice.stato_pagamento == "incassato",
+                year == anno,
+            )
             .group_by(month)
         ).all()
         return {int(m): round_money(Decimal(total)) for m, total in rows}
 
-    def monthly_da_incassare(self, anno: int, base: CashBase = "competenza") -> dict[int, Decimal]:
+    def monthly_da_incassare(
+        self, anno: int, base: CashBase = "competenza", azienda_id: UUID | None = None
+    ) -> dict[int, Decimal]:
         """`Σ totale` of revenue invoices still unpaid, per month. By the accrual period
         the invoice declares, or under `incasso` by the month it falls due (issue date
         when no due date was set): the month the money is expected."""
@@ -411,12 +478,19 @@ class AnalyticsRepository:
         year = func.extract("year", when)
         rows = self.session.execute(
             select(month, func.sum(Invoice.totale))
-            .where(*_revenue_filter(), Invoice.stato_pagamento == "da_incassare", year == anno)
+            .where(
+                *_revenue_filter(),
+                *_invoice_azienda(azienda_id),
+                Invoice.stato_pagamento == "da_incassare",
+                year == anno,
+            )
             .group_by(month)
         ).all()
         return {int(m): round_money(Decimal(total)) for m, total in rows}
 
-    def monthly_bozze(self, anno: int, base: CashBase = "competenza") -> dict[int, Decimal]:
+    def monthly_bozze(
+        self, anno: int, base: CashBase = "competenza", azienda_id: UUID | None = None
+    ) -> dict[int, Decimal]:
         """`Σ totale` of what is written but not yet an issued invoice: draft invoices and
         live proformas (not the ones already turned into an invoice, which would count
         twice). By the accrual period the document declares; under `incasso`, by the
@@ -438,6 +512,7 @@ class AnalyticsRepository:
             select(month, func.sum(Invoice.totale))
             .where(
                 Invoice.deleted_at.is_(None),
+                *_invoice_azienda(azienda_id),
                 year == anno,
                 (
                     ((Invoice.tipo == "fattura") & (Invoice.stato == "bozza"))
@@ -451,31 +526,53 @@ class AnalyticsRepository:
         ).all()
         return {int(m): round_money(Decimal(total)) for m, total in rows}
 
-    def monthly_costi(self, anno: int) -> dict[int, Decimal]:
-        """`Σ importo` of costs by the month they were incurred, deal or no deal."""
+    def monthly_costi(self, anno: int, azienda_id: UUID | None = None) -> dict[int, Decimal]:
+        """`Σ importo` of costs by the month they were incurred, deal or no deal. Under
+        one azienda, the costs that carry its id: a cost with a deal copied the deal's,
+        a shared one (`NULL`) is nobody's and shows only in «tutte» (REB-630, §1.7)."""
         month = func.extract("month", Cost.data)
         year = func.extract("year", Cost.data)
-        rows = self.session.execute(
+        stmt = (
             select(month, func.sum(Cost.importo))
             .where(Cost.deleted_at.is_(None), year == anno)
             .group_by(month)
-        ).all()
+        )
+        if azienda_id is not None:
+            stmt = stmt.where(Cost.azienda_id == azienda_id)
+        rows = self.session.execute(stmt).all()
         return {int(m): round_money(Decimal(total)) for m, total in rows}
 
-    def annual_revenue(self, anno: int) -> Decimal:
+    def annual_revenue(self, anno: int, azienda_id: UUID | None = None) -> Decimal:
         """Every issued invoice of the year, deal or no deal: the fiscal estimate is
-        about the person's income, so an invoice with no `deal_id` counts too."""
+        about the person's income, so an invoice with no `deal_id` counts too. Of one
+        azienda when named (REB-630): the estimate is one azienda's, and its caller
+        always names one."""
         return round_money(
             Decimal(
                 self.session.execute(
                     select(func.coalesce(func.sum(Invoice.imponibile), 0)).where(
-                        Invoice.anno == anno, *_revenue_filter()
+                        Invoice.anno == anno, *_revenue_filter(), *_invoice_azienda(azienda_id)
                     )
                 ).scalar_one()
             )
         )
 
-    def revenue_by_customer(self, anno: int) -> list[RevenueByCustomerRow]:
+    def annual_revenue_by_azienda(
+        self, anno: int, azienda_id: UUID | None = None
+    ) -> dict[UUID, Decimal]:
+        """`annual_revenue`, grouped by the issuing azienda: the denominators of
+        `revenue_by_customer` in «tutte» (REB-630), one per azienda, since a share of
+        revenue is a share of one azienda's revenue."""
+        rows = self.session.execute(
+            select(Invoice.azienda_id, func.coalesce(func.sum(Invoice.imponibile), 0))
+            .where(Invoice.anno == anno, *_revenue_filter(), *_invoice_azienda(azienda_id))
+            .group_by(Invoice.azienda_id)
+        ).all()
+        return {azienda: round_money(Decimal(total)) for azienda, total in rows}
+
+    def revenue_by_customer(
+        self, anno: int, azienda_id: UUID | None = None
+    ) -> list[RevenueByCustomerRow]:
         """Each customer's own share of the year's invoiced revenue (§1.5, §5 item 1 of
         `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`):
         `Σ imponibile` grouped by `customer_id`, over the same `_revenue_filter()`
@@ -492,19 +589,48 @@ class AnalyticsRepository:
 
         A customer with no invoice this year is simply absent, the same way
         `receivables_by_customer` omits one with nothing outstanding.
+
+        Per azienda since REB-630 (spec 2026-10-03 §1.9): the denominator is the
+        issuing azienda's own `annual_revenue`, never the space's, because a customer
+        who is a third of the SRL and a tenth of the whole has to read as a third. With
+        `azienda_id` the rows are that azienda's; without, every azienda's, grouped in
+        the order the selector lists them (the default first) and ranked inside each
+        group, so a one-azienda space reads exactly what it read before.
         """
-        totale_anno = self.annual_revenue(anno)
+        totali = self.annual_revenue_by_azienda(anno, azienda_id)
         ricavi = func.coalesce(func.sum(Invoice.imponibile), 0)
         stmt = (
-            select(Customer.id, Customer.ragione_sociale, ricavi, func.count(Invoice.id))
+            select(
+                Invoice.azienda_id,
+                Customer.id,
+                Customer.ragione_sociale,
+                ricavi,
+                func.count(Invoice.id),
+            )
             .join(Customer, Customer.id == Invoice.customer_id)
-            .where(Invoice.anno == anno, *_revenue_filter())
-            .group_by(Customer.id, Customer.ragione_sociale)
-            .order_by(ricavi.desc(), Customer.ragione_sociale)
+            .join(Azienda, Azienda.id == Invoice.azienda_id)
+            .where(Invoice.anno == anno, *_revenue_filter(), *_invoice_azienda(azienda_id))
+            .group_by(
+                Invoice.azienda_id,
+                Azienda.predefinita,
+                Azienda.nome,
+                Customer.id,
+                Customer.ragione_sociale,
+            )
+            .order_by(
+                Azienda.predefinita.desc(),
+                Azienda.nome,
+                Invoice.azienda_id,
+                ricavi.desc(),
+                Customer.ragione_sociale,
+            )
         )
         righe: list[RevenueByCustomerRow] = []
-        for customer_id, ragione_sociale, importo, numero in self.session.execute(stmt).all():
+        for azienda, customer_id, ragione_sociale, importo, numero in self.session.execute(
+            stmt
+        ).all():
             valore = round_money(Decimal(importo))
+            totale_anno = totali.get(azienda, ZERO_MONEY)
             righe.append(
                 RevenueByCustomerRow(
                     customer_id=customer_id,
@@ -512,11 +638,14 @@ class AnalyticsRepository:
                     ricavi=valore,
                     fatture=int(numero),
                     quota=float(valore / totale_anno) if totale_anno > ZERO_MONEY else 0.0,
+                    azienda_id=azienda,
                 )
             )
         return righe
 
-    def count_over_concentration_threshold(self, anno: int, soglia: float) -> int:
+    def count_over_concentration_threshold(
+        self, anno: int, soglia: float, azienda_id: UUID | None = None
+    ) -> int:
         """How many customers cross `soglia`, a configured preferred-share threshold
         (`Settings.concentrazione_soglia_preferita`, §3 and §5 item 2 of
         `docs/superpowers/specs/2026-09-23-forecasting-and-analytics-from-mastro-design.md`):
@@ -528,11 +657,28 @@ class AnalyticsRepository:
         points to can never disagree on which customer this counts -- the same
         drill-through discipline `count_deals_invoiced_not_won` and its siblings apply
         with their own filtered lists.
+
+        In «tutte» (REB-630) the count is of distinct customers over the threshold in
+        any azienda, each share read against its own azienda's revenue: never a
+        space-wide share, which would hide the customer who is a third of one azienda
+        and a tenth of the whole, and never twice for a customer two aziende both
+        depend on, since the signal counts people to talk to.
         """
-        return sum(1 for row in self.revenue_by_customer(anno) if row.quota > soglia)
+        return len(
+            {
+                row.customer_id
+                for row in self.revenue_by_customer(anno, azienda_id)
+                if row.quota > soglia
+            }
+        )
 
     def deals_in_range(
-        self, da: date, a: date, customer_id: UUID | None, base: RevenueBase = "emissione"
+        self,
+        da: date,
+        a: date,
+        customer_id: UUID | None,
+        base: RevenueBase = "emissione",
+        azienda_id: UUID | None = None,
     ) -> list[Deal]:
         """Every deal with any activity in the window -- an issued invoice, a cost or an
         hour. Not "every deal": a period report listing deals with nothing in the period
@@ -562,17 +708,28 @@ class AnalyticsRepository:
         stmt = select(Deal).where(Deal.id.in_(select(active.c.deal_id)), Deal.deleted_at.is_(None))
         if customer_id is not None:
             stmt = stmt.where(Deal.customer_id == customer_id)
+        if azienda_id is not None:
+            # The deal's own column, not the invoice's: a deal keeps its azienda when its
+            # customer moves (spec §1.7), and this list is of deals.
+            stmt = stmt.where(Deal.azienda_id == azienda_id)
         return list(self.session.execute(stmt.order_by(Deal.nome, Deal.id)).scalars())
 
     def revenue_for_customer_in_window(
-        self, customer_id: UUID, da: date, a: date, base: RevenueBase = "emissione"
+        self,
+        customer_id: UUID,
+        da: date,
+        a: date,
+        base: RevenueBase = "emissione",
+        azienda_id: UUID | None = None,
     ) -> tuple[Decimal, Decimal]:
         """`(ricavi del cliente, ricavi totali)` over `[da, a]` -- the two figures a
         concentration cap divides (REB-352 §1.5), summed in one statement so the two
         sides of the ratio can never read a different snapshot. Same revenue
         definition `annual_revenue` uses (`_revenue_filter`), windowed by `da`/`a`
         rather than by `Invoice.anno`: a contract's own anniversary year rarely lines
-        up with the calendar one `anno` names.
+        up with the calendar one `anno` names. Within one azienda when named
+        (REB-630): the cap is the contract's azienda's, so both sides of the ratio
+        read that register alone.
         """
         when = _revenue_date(base)
         cliente = func.coalesce(
@@ -580,7 +737,9 @@ class AnalyticsRepository:
         )
         totale = func.coalesce(func.sum(Invoice.imponibile), 0)
         row = self.session.execute(
-            select(cliente, totale).where(when >= da, when <= a, *_revenue_filter())
+            select(cliente, totale).where(
+                when >= da, when <= a, *_revenue_filter(), *_invoice_azienda(azienda_id)
+            )
         ).one()
         return round_money(Decimal(row[0])), round_money(Decimal(row[1]))
 

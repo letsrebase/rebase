@@ -52,6 +52,13 @@ def _issued_filter() -> tuple[ColumnElement[bool], ...]:
     )
 
 
+def _azienda_filter(azienda_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
+    """One azienda's register, or every azienda's (REB-630, spec 2026-10-03 §1.9): the
+    one predicate the dashboard sums below add when the sidebar names an azienda, so
+    «tutte» stays their unfiltered sum by construction."""
+    return () if azienda_id is None else (Invoice.azienda_id == azienda_id,)
+
+
 def _receivable_filter() -> tuple[ColumnElement[bool], ...]:
     """An issued invoice nobody has paid. The base of both "Da incassare" and "Scaduto",
     which is what makes the second a subset of the first rather than a figure of its own
@@ -369,7 +376,7 @@ class InvoiceRepository:
 
     # --- slice 6's dashboard aggregates ------------------------------------------
 
-    def sum_da_incassare(self) -> Decimal:
+    def sum_da_incassare(self, azienda_id: UUID | None = None) -> Decimal:
         """`Σ totale` over issued, unpaid, non-deleted invoices.
 
         **`totale`, not `imponibile`, and that is not an inconsistency with the revenue
@@ -386,11 +393,13 @@ class InvoiceRepository:
         while every other money field reaches it as `"0.00"`.
         """
         total = self.session.execute(
-            select(func.coalesce(func.sum(Invoice.totale), 0)).where(*_receivable_filter())
+            select(func.coalesce(func.sum(Invoice.totale), 0)).where(
+                *_receivable_filter(), *_azienda_filter(azienda_id)
+            )
         ).scalar_one()
         return round_money(Decimal(total))
 
-    def sum_scaduto(self) -> Decimal:
+    def sum_scaduto(self, azienda_id: UUID | None = None) -> Decimal:
         """The subset of `sum_da_incassare` past its due date.
 
         A **subset**, and rendered as one -- indented beneath it, never as a second addable
@@ -398,11 +407,13 @@ class InvoiceRepository:
         the containment is structural rather than a property somebody has to remember.
         """
         total = self.session.execute(
-            select(func.coalesce(func.sum(Invoice.totale), 0)).where(*_overdue_predicate())
+            select(func.coalesce(func.sum(Invoice.totale), 0)).where(
+                *_overdue_predicate(), *_azienda_filter(azienda_id)
+            )
         ).scalar_one()
         return round_money(Decimal(total))
 
-    def count_emesse_in_periodo(self, da: date, a: date) -> int:
+    def count_emesse_in_periodo(self, da: date, a: date, azienda_id: UUID | None = None) -> int:
         """A `COUNT` on the same predicate the revenue figure uses, so the two cannot
         describe different sets -- "6 fatture emesse" beside a revenue total that included
         a seventh, or a proforma, is the shape of that defect.
@@ -414,6 +425,7 @@ class InvoiceRepository:
             self.session.execute(
                 select(func.count(Invoice.id)).where(
                     *_issued_filter(),
+                    *_azienda_filter(azienda_id),
                     Invoice.data_emissione.is_not(None),
                     Invoice.data_emissione >= da,
                     Invoice.data_emissione <= a,
@@ -529,7 +541,7 @@ class InvoiceRepository:
         ).scalar_one()
         return round_money(Decimal(total))
 
-    def count_deals_invoiced_not_won(self) -> int:
+    def count_deals_invoiced_not_won(self, azienda_id: UUID | None = None) -> int:
         """§6.2's second signal: how many deals have an issued invoice and an open stage.
 
         Counts **deals**, not invoices: the drill-through lists deals, so two invoices on
@@ -546,11 +558,19 @@ class InvoiceRepository:
                 .select_from(Invoice)
                 .join(Deal, Deal.id == Invoice.deal_id)
                 .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
-                .where(*invoiced_not_won_predicate())
+                # The deal's azienda, not the invoice's: this counts deals and its
+                # drill-through (`DealRepository.list`, `?fatturato_non_vinto=true`)
+                # narrows by `Deal.azienda_id`, so the card and the list must read the
+                # same column or an invoice imported onto another azienda than its
+                # deal's would make them disagree (criterion 2).
+                .where(
+                    *invoiced_not_won_predicate(),
+                    *(() if azienda_id is None else (Deal.azienda_id == azienda_id,)),
+                )
             ).scalar_one()
         )
 
-    def count_scadute_non_incassate(self) -> int:
+    def count_scadute_non_incassate(self, azienda_id: UUID | None = None) -> int:
         """§6.2's fourth signal: the candidate list of slice 5 §7.1's payment reminders,
         counted. The count **sends nothing** -- and saying so here is the point, because a
         count next to a list of overdue customers is exactly the place someone later adds a
@@ -561,7 +581,9 @@ class InvoiceRepository:
         """
         return int(
             self.session.execute(
-                select(func.count(Invoice.id)).where(*_overdue_predicate())
+                select(func.count(Invoice.id)).where(
+                    *_overdue_predicate(), *_azienda_filter(azienda_id)
+                )
             ).scalar_one()
         )
 
@@ -593,7 +615,7 @@ class InvoiceRepository:
             ).scalars()
         )
 
-    def ageing_receivables(self, oggi: date) -> list[FasciaRow]:
+    def ageing_receivables(self, oggi: date, azienda_id: UUID | None = None) -> list[FasciaRow]:
         """The receivables in the six buckets of slice 8 §2.1, each with its sum and count,
         in the page's order and always all six -- an empty bucket is a row at zero, since a
         bucket that vanishes when empty is a chart that changes shape.
@@ -619,7 +641,7 @@ class InvoiceRepository:
         ).label("fascia")
         rows = self.session.execute(
             select(fascia, func.coalesce(func.sum(Invoice.totale), 0), func.count(Invoice.id))
-            .where(*_receivable_filter())
+            .where(*_receivable_filter(), *_azienda_filter(azienda_id))
             .group_by(fascia)
         ).all()
         found = {row[0]: (round_money(Decimal(row[1])), int(row[2])) for row in rows}
@@ -634,7 +656,7 @@ class InvoiceRepository:
             out.append(FasciaRow(codice, da, a, importo, numero, _quota(importo, largest)))
         return out
 
-    def receivables_by_due_month(self) -> list[MeseRow]:
+    def receivables_by_due_month(self, azienda_id: UUID | None = None) -> list[MeseRow]:
         """What is owed, month by month of `data_scadenza`, oldest first: the cash a person
         can expect, told by when it is due rather than by when the work was done (the
         economic charts' reading). Rows without a due date are not here: they are the sixth
@@ -643,7 +665,11 @@ class InvoiceRepository:
         mese = func.date_trunc("month", Invoice.data_scadenza).label("mese")
         rows = self.session.execute(
             select(mese, func.coalesce(func.sum(Invoice.totale), 0), func.count(Invoice.id))
-            .where(*_receivable_filter(), Invoice.data_scadenza.is_not(None))
+            .where(
+                *_receivable_filter(),
+                *_azienda_filter(azienda_id),
+                Invoice.data_scadenza.is_not(None),
+            )
             .group_by(mese)
             .order_by(mese)
         ).all()
@@ -659,7 +685,9 @@ class InvoiceRepository:
             for row, importo in zip(rows, importi, strict=True)
         ]
 
-    def receivables_by_customer(self, oggi: date, limit: int) -> list[ClienteRow]:
+    def receivables_by_customer(
+        self, oggi: date, limit: int, azienda_id: UUID | None = None
+    ) -> list[ClienteRow]:
         """Who owes what, largest exposure first, with the overdue part of each: the
         `unpaid_for_customer` reading turned around, over the same predicate. `oggi`
         splits the overdue share the way `_overdue_predicate` does, strictly before."""
@@ -670,7 +698,7 @@ class InvoiceRepository:
         rows = self.session.execute(
             select(Customer.id, Customer.ragione_sociale, totale, func.count(Invoice.id), scaduto)
             .join(Customer, Customer.id == Invoice.customer_id)
-            .where(*_receivable_filter())
+            .where(*_receivable_filter(), *_azienda_filter(azienda_id))
             .group_by(Customer.id, Customer.ragione_sociale)
             .order_by(totale.desc(), Customer.ragione_sociale)
             .limit(limit)
@@ -689,7 +717,9 @@ class InvoiceRepository:
             for row, importo in zip(rows, importi, strict=True)
         ]
 
-    def overdue_with_reminders(self, oggi: date, limit: int) -> list[ScadutaRow]:
+    def overdue_with_reminders(
+        self, oggi: date, limit: int, azienda_id: UUID | None = None
+    ) -> list[ScadutaRow]:
         """The overdue rows worst first, each with how many reminders actually left and
         when the last one did. Sent reminders are rows with `sent_at` (a prepared draft
         is not a letter the customer received, `PaymentReminder`'s own docstring), counted
@@ -710,6 +740,7 @@ class InvoiceRepository:
             .join(Customer, Customer.id == Invoice.customer_id)
             .where(
                 *_receivable_filter(),
+                *_azienda_filter(azienda_id),
                 Invoice.data_scadenza.is_not(None),
                 Invoice.data_scadenza < oggi,
             )

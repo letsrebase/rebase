@@ -23,6 +23,7 @@ can be checked against a spreadsheet.
 """
 
 from decimal import Decimal
+from uuid import UUID
 
 from pigrocrm.core.analytics.schemas import FiscalEstimate
 from pigrocrm.core.money import round_money
@@ -43,6 +44,7 @@ _HUNDRED = Decimal(100)
 def estimate_income(
     *,
     anno: int,
+    azienda_id: UUID,
     ricavi: Decimal,
     coefficiente: Decimal | None,
     aliquota_sostitutiva: Decimal | None,
@@ -86,6 +88,7 @@ def estimate_income(
     )
     return FiscalEstimate(
         anno=anno,
+        azienda_id=azienda_id,
         avvertenza=AVVERTENZA,
         ricavi=ricavi,
         # The rates are echoed back beside the figures they produced. A reader looking at

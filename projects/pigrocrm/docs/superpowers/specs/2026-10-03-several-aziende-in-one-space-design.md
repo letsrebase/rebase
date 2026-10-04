@@ -798,3 +798,23 @@ Added as the milestones land, dated, never rewriting the sections above.
   once each delete only the file they found, and a storage that refuses the delete leaves
   an orphan and a logged warning, never a failed request over a committed change. A
   payment reminder's draft speaks for the invoice's azienda, not the customer's of today.
+- **2026-10-04, milestone «Sum the cash across aziende and keep the taxes apart»
+  (REB-630).** Every sum behind the four dashboards, the cash view, the period P&L, the
+  backlog, the estimate and the ceilings takes `azienda_id` as one more predicate and
+  nothing else changes in its arithmetic; «tutte» sends none and is the unfiltered sum
+  by construction, with a cost without a deal counted there alone (§1.7). The refusal
+  of an estimate or a ceiling on a space with several aziende is this project's
+  `ValidationFailed` on `azienda_id`, a 422 naming the field like every other parameter
+  a caller has to change (`PeriodoQuery`'s own refusals), where §1.9 wrote 400: it is
+  the shape the SPA's `fieldErrorFrom` already reads. The resolution counts active
+  aziende: a deactivated one no longer makes the choice ambiguous, since no selector
+  offers it, and its own estimate stays readable by id. In «tutte» `revenue_by_customer`
+  groups by azienda with each share against its own azienda's revenue, in the order the
+  selector lists them, and the concentration signal counts distinct customers over the
+  threshold in any azienda. The contract concentration cap reads the contract's own
+  azienda. `AziendaService.create` makes the first azienda of a space its default and
+  refuses the whole request when the profile would be refused, so no azienda is born
+  that `issue` could not use; `deactivate` answers `clienti_collegati`. The estimate,
+  the headroom and the simulation name their azienda; the cash view, the overview and
+  the four dashboards echo it, `None` for «tutte». The P&L and the economic dashboard
+  take it too, through the same `PeriodoQuery`.
