@@ -39,8 +39,24 @@ const PROFILE = {
   coefficiente_redditivita: '67.00',
   aliquota_imposta_sostitutiva: '5.00',
   aliquota_inps: '26.07',
+  pack_id: 'it-flat-rate',
+  pack_version: '1',
   created_at: '2026-08-20T09:00:00Z',
   updated_at: '2026-08-20T09:00:00Z',
+}
+
+const FOREIGN = {
+  ...PROFILE,
+  id: 'f-2',
+  pack_id: 'non-it',
+  codice_regime: null,
+  aliquota_iva_default: '20.00',
+  natura_default: null,
+  riferimento_normativo: null,
+  applica_bollo: false,
+  coefficiente_redditivita: null,
+  aliquota_imposta_sostitutiva: null,
+  aliquota_inps: null,
 }
 
 function renderPanel() {
@@ -70,7 +86,7 @@ describe('FiscalPanel', () => {
     vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
     renderPanel()
 
-    await waitFor(() => expect(screen.getByLabelText('Regime fiscale')).toHaveValue('RF19'))
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
     // The one numeric field on the wire still has to reach a text input as "30", not
     // as "[object Object]" and not as an empty box.
     expect(screen.getByLabelText('Giorni di scadenza')).toHaveValue('30')
@@ -119,7 +135,7 @@ describe('FiscalPanel', () => {
     vi.mocked(api.GET).mockImplementation(() => failed({ detail: 'not found' }, 404))
     renderPanel()
 
-    await waitFor(() => expect(screen.getByLabelText('Regime fiscale')).toHaveValue('RF19'))
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
     expect(screen.getByLabelText('Aliquota IVA predefinita')).toHaveValue('0.00')
     expect(screen.getByLabelText('Natura')).toHaveValue('N2.2')
     expect(screen.getByLabelText('Riferimento normativo')).toHaveValue(RIFERIMENTO)
@@ -249,9 +265,114 @@ describe('FiscalPanel', () => {
       'importo_bollo',
       'modalita_pagamento',
       'natura_default',
+      'pack_id',
       'riferimento_normativo',
       'soglia_bollo',
     ])
+    expect(body).toHaveProperty('pack_id', 'it-flat-rate')
+    expect(body).toHaveProperty('codice_regime', 'RF19')
+  })
+
+  it('declares a foreign azienda: no code, no bollo, the Italian fields gone and sent empty', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
+    vi.mocked(api.PUT).mockImplementation(() => ok(FOREIGN))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'estero')
+    expect(screen.getByLabelText('Regime')).toHaveValue('estero')
+    // The fields an Italian regime reads leave the form; the ones a foreign company
+    // still has stay, natura and riferimento included, emptied of the forfettario's.
+    expect(screen.getByLabelText('Natura')).toHaveValue('')
+    expect(screen.getByLabelText('Riferimento normativo')).toHaveValue('')
+    expect(screen.queryByLabelText('Soglia bollo')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Coefficiente di redditività')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Applica il bollo/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Aliquota IVA predefinita')).toBeInTheDocument()
+    expect(screen.getByLabelText('IBAN')).toBeInTheDocument()
+    expect(screen.getByText(/aliquota del paese/)).toBeInTheDocument()
+
+    await userEvent.clear(screen.getByLabelText('Aliquota IVA predefinita'))
+    await userEvent.type(screen.getByLabelText('Aliquota IVA predefinita'), '20.00')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+    const body = bodyOfSave()
+    expect(body).toMatchObject({
+      pack_id: 'non-it',
+      codice_regime: null,
+      aliquota_iva_default: '20.00',
+      natura_default: null,
+      riferimento_normativo: null,
+      applica_bollo: false,
+      coefficiente_redditivita: null,
+      aliquota_imposta_sostitutiva: null,
+      aliquota_inps: null,
+    })
+    // The same fifteen keys as an Italian save: a full replace leaves nothing to the
+    // server's defaults, which are the forfettario's.
+    expect(Object.keys(body)).toHaveLength(15)
+  })
+
+  it('reads a stored foreign profile back as «Estero» with the Italian fields hidden', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(FOREIGN))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('estero'))
+    expect(screen.getByLabelText('Aliquota IVA predefinita')).toHaveValue('20.00')
+    expect(screen.getByLabelText('Natura')).toHaveValue('')
+    expect(screen.queryByLabelText('Soglia bollo')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Applica il bollo/)).not.toBeInTheDocument()
+    // And back to an Italian regime: the hidden fields return with what the stored
+    // foreign profile had (the threshold it kept, the switch off, no coefficient),
+    // never the panel's defaults.
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF01')
+    expect(screen.getByLabelText('Soglia bollo')).toHaveValue('77.47')
+    expect(screen.getByLabelText('Coefficiente di redditività')).toHaveValue('')
+    expect(screen.getByLabelText(/Applica il bollo/)).not.toBeChecked()
+  })
+
+  it('shows a refusal that names a hidden field in the banner, never nowhere', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(FOREIGN))
+    vi.mocked(api.PUT).mockImplementation(() =>
+      failed(
+        {
+          code: 'validation_failed',
+          detail: 'il bollo e’ attivo ma il suo importo non e’ positivo',
+          entity: 'fiscal_profile',
+          field: 'importo_bollo',
+        },
+        422,
+      ),
+    )
+    renderPanel()
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('estero'))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(/importo non e’ positivo/)
+  })
+
+  it('keeps the Italian values across an unsaved trip through «Estero»', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'estero')
+    expect(screen.getByLabelText('Natura')).toHaveValue('')
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF19')
+    expect(screen.getByLabelText('Natura')).toHaveValue('N2.2')
+    expect(screen.getByLabelText('Riferimento normativo')).toHaveValue(RIFERIMENTO)
+    expect(screen.getByLabelText(/Applica il bollo/)).toBeChecked()
+  })
+
+  it('sends the Italian code the choice names', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
+    vi.mocked(api.PUT).mockImplementation(() => ok({ ...PROFILE, codice_regime: 'RF01' }))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF01')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+    expect(bodyOfSave()).toMatchObject({ pack_id: 'it-flat-rate', codice_regime: 'RF01' })
   })
 
   /**
@@ -288,7 +409,7 @@ describe('FiscalPanel', () => {
       await screen.findByText(`${reason} (atteso: una natura, per esempio N2.2)`),
     ).toBeInTheDocument()
     expect(screen.getByLabelText('Natura')).toHaveAttribute('aria-invalid', 'true')
-    expect(screen.getByLabelText('Regime fiscale')).not.toHaveAttribute('aria-invalid')
+    expect(screen.getByLabelText('Regime')).not.toHaveAttribute('aria-invalid')
     // The message is on the field, so the wide banner stays out of the way.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     // And the hint the message replaced is gone, rather than sitting under it
@@ -330,9 +451,8 @@ describe('FiscalPanel', () => {
     vi.mocked(api.PUT).mockImplementation(() => ok(PROFILE))
     renderPanel()
 
-    await waitFor(() => expect(screen.getByLabelText('Regime fiscale')).toHaveValue('RF19'))
-    await userEvent.clear(screen.getByLabelText('Regime fiscale'))
-    await userEvent.type(screen.getByLabelText('Regime fiscale'), 'RF01')
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
+    await userEvent.selectOptions(screen.getByLabelText('Regime'), 'RF01')
 
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
@@ -340,6 +460,6 @@ describe('FiscalPanel', () => {
     // still answers with the old document, `RF19` and all.
     await waitFor(() => expect(vi.mocked(api.GET).mock.calls.length).toBeGreaterThan(1))
 
-    expect(screen.getByLabelText('Regime fiscale')).toHaveValue('RF01')
+    expect(screen.getByLabelText('Regime')).toHaveValue('RF01')
   })
 })
