@@ -1366,3 +1366,144 @@ def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo
             head = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
         engine.dispose()
         assert head == "0046"
+
+
+def test_0047_binds_every_existing_row_to_the_one_azienda_and_a_cost_to_its_deals(
+    pigrocrm_postgres: Any,
+) -> None:
+    """The migration over real rows planted at 0046 (REB-623): a customer, a deal, a
+    contract, a document, a cost on the deal and a shared one. Every owned row is bound
+    to the default azienda, the cost on a deal to the deal's, the shared cost to none;
+    the downgrade drops the five columns and the indexes with them."""
+    azienda = "00000000-0000-7000-8000-0000000000a1"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0046")
+
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO emitter_profile (id, nome, predefinita, attiva, ragione_sociale, "
+                    "nazione, created_at, updated_at) VALUES (:id, 'Studio', true, true, "
+                    "'Studio Rossi', 'IT', now(), now())"
+                ),
+                {"id": azienda},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, ragione_sociale, nazione, custom_fields, "
+                    "created_at, updated_at) VALUES ('00000000-0000-7000-8000-0000000000c1', "
+                    "'Acme', 'IT', '{}', now(), now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO pipeline_stages (id, nome, posizione, probabilita_default, tipo, "
+                    "created_at, updated_at) VALUES ('00000000-0000-7000-8000-0000000000e1', "
+                    "'Lead', 0, 10, 'open', now(), now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO deals (id, nome, customer_id, pipeline_stage_id, probabilita, "
+                    "custom_fields, created_at, updated_at) VALUES "
+                    "('00000000-0000-7000-8000-0000000000d1', 'Deal', "
+                    "'00000000-0000-7000-8000-0000000000c1', "
+                    "'00000000-0000-7000-8000-0000000000e1', 10, '{}', now(), now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO contracts (id, customer_id, titolo, inizio, tipo_rinnovo, "
+                    "preavviso_disdetta_giorni, cadenza_fatturazione, divisa, stato, "
+                    "politica_spese, custom_fields, created_at, updated_at) VALUES "
+                    "('00000000-0000-7000-8000-00000000000c', "
+                    "'00000000-0000-7000-8000-0000000000c1', 'Consulenza', '2026-01-01', "
+                    "'nessuno', 30, 'mensile', 'EUR', 'bozza', '{\"tipo\": \"non_rimborsabile\"}', "
+                    "'{}', now(), now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO documents (id, customer_id, tipo, titolo, versione_corrente, "
+                    "custom_fields, created_at, updated_at) VALUES "
+                    "('00000000-0000-7000-8000-00000000000d', "
+                    "'00000000-0000-7000-8000-0000000000c1', 'documento', 'Brief', 0, '{}', "
+                    "now(), now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO cost_categories (id, nome, posizione, archiviata, created_at, "
+                    "updated_at) VALUES ('00000000-0000-7000-8000-00000000000a', 'Viaggi', 0, "
+                    "false, now(), now())"
+                )
+            )
+            for cost_id, deal in (
+                ("00000000-0000-7000-8000-0000000000f1", "'00000000-0000-7000-8000-0000000000d1'"),
+                ("00000000-0000-7000-8000-0000000000f2", "NULL"),
+            ):
+                connection.execute(
+                    text(
+                        "INSERT INTO costs (id, deal_id, category_id, data, importo, descrizione, "
+                        f"custom_fields, created_at, updated_at) VALUES (:id, {deal}, "
+                        "'00000000-0000-7000-8000-00000000000a', '2026-03-01', 10, 'x', '{}', "
+                        "now(), now())"
+                    ),
+                    {"id": cost_id},
+                )
+        engine.dispose()
+
+        upgrade(config, "0047")
+
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            owned = {
+                table: str(
+                    connection.execute(text(f"SELECT azienda_id FROM {table}")).scalar_one()  # noqa: S608
+                )
+                for table in ("customers", "deals", "contracts", "documents")
+            }
+            costs = dict(
+                connection.execute(
+                    text("SELECT id::text, azienda_id::text FROM costs ORDER BY id")
+                ).all()
+            )
+            indexes = set(
+                connection.execute(
+                    text("SELECT indexname FROM pg_indexes WHERE indexname LIKE 'ix_%_azienda_id'")
+                ).scalars()
+            )
+        engine.dispose()
+        assert set(owned.values()) == {azienda}
+        assert costs["00000000-0000-7000-8000-0000000000f1"] == azienda
+        assert costs["00000000-0000-7000-8000-0000000000f2"] is None
+        assert indexes >= {
+            "ix_customers_azienda_id",
+            "ix_deals_azienda_id",
+            "ix_contracts_azienda_id",
+            "ix_documents_azienda_id",
+            "ix_costs_azienda_id",
+        }
+
+        downgrade(config, "0046")
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            columns = set(
+                connection.execute(
+                    text(
+                        "SELECT table_name FROM information_schema.columns "
+                        "WHERE column_name = 'azienda_id'"
+                    )
+                ).scalars()
+            )
+        engine.dispose()
+        assert columns == {
+            "invoices",
+            "invoice_counters",
+            "invoice_register_gaps",
+            "fiscal_profile",
+            "user_aziende",
+        }

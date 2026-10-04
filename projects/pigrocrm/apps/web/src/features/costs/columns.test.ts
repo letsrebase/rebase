@@ -21,6 +21,7 @@ const CATEGORIES: CostCategory[] = [
 
 const COST: Cost = {
   id: 'k1',
+  azienda_id: null,
   deal_id: null,
   category_id: 'cat-1',
   data: '2026-03-05',

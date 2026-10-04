@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAziendaScope } from '@/lib/azienda'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -20,6 +21,7 @@ type CustomerUpdateBody = components['schemas']['CustomerUpdate']
 interface CustomersListParams {
   search?: string
   limit?: number
+  azienda_id?: string
 }
 
 /**
@@ -29,19 +31,27 @@ interface CustomersListParams {
  * the bare path 404s.
  */
 export function useCustomers(params: CustomersListParams = {}) {
+  // The sidebar's azienda, when one is selected (REB-625): on the list page and on
+  // every picker that offers the space's customers, which under azienda A are A's.
+  const scoped = useAziendaScope(params)
   return useQuery({
-    queryKey: queryKeys.customers(params),
+    queryKey: queryKeys.customers(scoped),
     queryFn: () =>
       unwrap(
         api.GET('/api/customers', {
-          params: { query: { search: params.search, limit: params.limit } },
+          params: {
+            query: { search: scoped.search, limit: scoped.limit, azienda_id: scoped.azienda_id },
+          },
         }),
       ),
   })
 }
 
-export function useCustomer(customerId: string) {
+export function useCustomer(customerId: string, options: { enabled?: boolean } = {}) {
   return useQuery({
+    // `enabled` for a caller that only sometimes needs the row (the proforma dialog's
+    // issuing azienda, REB-626); an empty id must never produce a request (residuo B1).
+    enabled: (options.enabled ?? true) && customerId !== '',
     queryKey: queryKeys.customer(customerId),
     queryFn: () =>
       unwrap(

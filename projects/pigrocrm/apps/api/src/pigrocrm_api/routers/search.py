@@ -12,6 +12,7 @@ a read-only surface, which is the place nobody looks for one.
 """
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Query
 
@@ -50,5 +51,10 @@ def search(
     # raw `DataError` with the session poisoned.
     q: Annotated[SafeStr, Query(min_length=MIN_TERM_LENGTH, max_length=MAX_TERM_LENGTH)],
     limit: Annotated[int, Query(ge=1, le=20)] = PER_CLASS_LIMIT,
+    azienda_id: Annotated[
+        UUID | None, Query(description="Solo i risultati di questa azienda; omesso, tutti")
+    ] = None,
 ) -> SearchResults:
-    return SearchService(session).search_everything(SearchQuery(termine=q, limite=limit), actor)
+    return SearchService(session).search_everything(
+        SearchQuery(termine=q, limite=limit, azienda_id=azienda_id), actor
+    )

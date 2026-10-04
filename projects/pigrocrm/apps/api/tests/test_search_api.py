@@ -192,7 +192,8 @@ def test_the_openapi_document_pins_the_bounds_the_generated_types_erase(
     operation = client.get("/openapi.json").json()["paths"]["/api/search"]["get"]
     parameters = {parameter["name"]: parameter for parameter in operation["parameters"]}
 
-    assert set(parameters) == {"q", "limit"}, parameters
+    # `azienda_id` joined with REB-624: the sidebar's azienda narrows the palette too.
+    assert set(parameters) == {"q", "limit", "azienda_id"}, parameters
     assert parameters["q"]["required"] is True
     assert parameters["q"]["schema"]["minLength"] == 3
     assert parameters["q"]["schema"]["maxLength"] == 100

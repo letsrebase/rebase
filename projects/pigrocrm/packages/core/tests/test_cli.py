@@ -67,8 +67,15 @@ def test_createadmin_gives_a_root_with_no_azienda_one_named_after_the_admin(
         )
         return cli.main()
 
-    # The CLI commits for real, so only what this test adds is removed afterwards: a
-    # row another test left committed stays, and the assertions below would name it.
+    # A root with no azienda is the case under test, and the worker's database carries
+    # the one committed default every other world shares (REB-623): it is set aside
+    # for the duration and put back at the end, with the identity it had.
+    with cli_engine.begin() as connection:
+        kept = connection.execute(
+            text("select id, nome, ragione_sociale, nazione from emitter_profile where predefinita")
+        ).all()
+        connection.execute(text("delete from fiscal_profile"))
+        connection.execute(text("delete from emitter_profile where predefinita"))
     with cli_engine.connect() as connection:
         before = set(connection.execute(text("select id from emitter_profile")).scalars())
     try:
@@ -97,6 +104,20 @@ def test_createadmin_gives_a_root_with_no_azienda_one_named_after_the_admin(
             for row_id in added:
                 connection.execute(
                     text("delete from emitter_profile where id = :id"), {"id": row_id}
+                )
+            for row in kept:
+                connection.execute(
+                    text(
+                        "insert into emitter_profile (id, nome, ragione_sociale, nazione, "
+                        "predefinita, attiva, created_at, updated_at) "
+                        "values (:id, :nome, :rs, :nazione, true, true, now(), now())"
+                    ),
+                    {
+                        "id": row.id,
+                        "nome": row.nome,
+                        "rs": row.ragione_sociale,
+                        "nazione": row.nazione,
+                    },
                 )
 
 

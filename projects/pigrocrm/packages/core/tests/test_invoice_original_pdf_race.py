@@ -138,7 +138,7 @@ def _cleanup(factory: sessionmaker[Session], customer_id: UUID | None) -> None:
         cleaner.execute(text("DELETE FROM documents WHERE customer_id = :customer"), params)
         cleaner.execute(text("DELETE FROM invoice_counters"))
         cleaner.execute(text("DELETE FROM fiscal_profile"))
-        cleaner.execute(text("DELETE FROM emitter_profile"))
+        cleaner.execute(text("DELETE FROM emitter_profile WHERE NOT predefinita"))
         cleaner.execute(text("DELETE FROM customers WHERE id = :customer"), params)
         cleaner.commit()
 

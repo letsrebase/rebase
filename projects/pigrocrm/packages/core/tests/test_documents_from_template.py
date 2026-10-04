@@ -163,19 +163,6 @@ def test_an_unknown_template_raises_not_found(setup: tuple) -> None:
         )
 
 
-def test_without_an_emitter_profile_the_render_fails_with_a_clear_error(
-    setup: tuple, db_session: Session
-) -> None:
-    from pigrocrm.core.emitter.models import Azienda
-
-    service, customer, template = setup
-    db_session.query(Azienda).delete()
-    db_session.flush()
-    with pytest.raises(NotFound) as excinfo:
-        service.create_from_template(_payload(customer, template), ADMIN)
-    assert excinfo.value.details["entity"] == "emitter_profile"
-
-
 @needs_binaries
 def test_regenerate_reproduces_an_old_version_as_a_new_one(setup: tuple) -> None:
     service, customer, template = setup

@@ -20,6 +20,11 @@ def month(
     # own. A boolean and not a `user_id`, because «somebody else's hours» is not a
     # question this screen asks: the register at /app/hours already filters by person.
     tutti: Annotated[bool, Query()] = False,
+    # The sidebar's azienda (REB-624): the hours through their deal, the invoices by
+    # their own column; the activities have no azienda and are always the space's.
+    azienda_id: Annotated[
+        UUID | None, Query(description="Solo le ore e le fatture di questa azienda; omesso, tutte")
+    ] = None,
 ) -> CalendarMonth:
     """One month: the hours by day, the activities falling due, the invoices falling due.
 
@@ -33,4 +38,4 @@ def month(
     an agent asking about the month gets that person's days and not the space's.
     """
     user_id: UUID | None = None if tutti else actor.id
-    return CalendarService(session).month(mese, actor, user_id=user_id)
+    return CalendarService(session).month(mese, actor, user_id=user_id, azienda_id=azienda_id)

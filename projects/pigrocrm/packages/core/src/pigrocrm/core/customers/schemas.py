@@ -60,6 +60,9 @@ class CustomerCreate(BaseModel):
     comune: SafeStr | None = Field(default=None, max_length=COMUNE_MAX_LENGTH)
     provincia: SafeStr | None = Field(default=None, max_length=PROVINCIA_MAX_LENGTH)
     nazione: SafeStr = Field(default="IT", max_length=NAZIONE_MAX_LENGTH)
+    # The azienda that bills this customer (REB-623, spec §1.6). `None` asks the
+    # service for the one `nazione` proposes; an id names one, which must be active.
+    azienda_id: UUID | None = None
     # Plain `str`, not `EmailStr`: unlike `UserCreate.email`, nothing in this codebase
     # validates a customer's email format today, and this fix wave does not add that.
     # `SafeStr` still closes the NUL-byte gap that a plain `str` would otherwise leave
@@ -98,6 +101,8 @@ class CustomerUpdate(BaseModel):
     comune: SafeStr | None = Field(default=None, max_length=COMUNE_MAX_LENGTH)
     provincia: SafeStr | None = Field(default=None, max_length=PROVINCIA_MAX_LENGTH)
     nazione: SafeStr | None = Field(default=None, max_length=NAZIONE_MAX_LENGTH)
+    # Editable afterwards (§1.6); moving it moves nothing already created (§1.7).
+    azienda_id: UUID | None = None
     email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
     telefono: SafeStr | None = Field(default=None, max_length=TELEFONO_MAX_LENGTH)
     sito_web: SafeStr | None = Field(default=None, max_length=SITO_WEB_MAX_LENGTH)
@@ -114,6 +119,7 @@ class CustomerRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    azienda_id: UUID
     ragione_sociale: str
     partita_iva: str | None
     codice_fiscale: str | None
@@ -161,6 +167,8 @@ class CustomerListQuery(BaseModel):
     # psycopg as query parameters, and a NUL byte there raises a raw `ValueError` out
     # of the driver rather than any exception this project handles.
     search: SafeStr | None = None
+    # One azienda's customers (REB-623); `None` is every azienda the caller may see.
+    azienda_id: UUID | None = None
     stato: SafeStr | None = None
     custom: dict[str, Any] | None = None
     # Upper-bounded so a caller (an MCP agent especially) cannot request an

@@ -35,6 +35,9 @@ def list_time_entries(
     session: SessionDep,
     actor: ActorDep,
     deal_id: Annotated[UUID | None, Query()] = None,
+    azienda_id: Annotated[
+        UUID | None, Query(description="Solo le ore sui deal di questa azienda; omesso, tutte")
+    ] = None,
     user_id: Annotated[UUID | None, Query()] = None,
     da: Annotated[date | None, Query(description="Data minima, YYYY-MM-DD")] = None,
     a: Annotated[date | None, Query(description="Data massima, YYYY-MM-DD")] = None,
@@ -53,6 +56,7 @@ def list_time_entries(
 ) -> TimeEntryPage:
     query = TimeEntryListQuery(
         deal_id=deal_id,
+        azienda_id=azienda_id,
         user_id=user_id,
         da=da,
         a=a,

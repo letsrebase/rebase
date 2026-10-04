@@ -41,10 +41,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@rebase/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@rebase/ui/select'
 import { toast } from '@rebase/ui/sonner'
 import { api, toProblem, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { useAuth, useIsAdmin } from '@/lib/auth'
+import { useAzienda } from '@/lib/azienda'
 import { canSeeSettingsTab } from '@/lib/permissions'
 import { writeRegisterHandoffEmail } from '@/lib/registerHandoff'
 import { roleLabel } from '@/lib/roles'
@@ -219,6 +227,10 @@ const ACTIVE =
   'data-[status=active]:before:bg-sidebar-primary data-[status=active]:bg-sidebar-accent data-[status=active]:text-sidebar-accent-foreground data-[status=active]:font-medium'
 const QUIET = 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
 
+/** The selector's value for «Tutte le aziende»: Radix refuses an empty string, and no
+ *  azienda id is this word. */
+const EVERY_AZIENDA = 'tutte'
+
 /** Below this the sidebar is a rail whose expanded form is an overlay, not a column. */
 const DESKTOP = '(min-width: 1024px)'
 
@@ -236,6 +248,9 @@ export function AppShell({
 }) {
   const { user, logout } = useAuth()
   const isAdmin = useIsAdmin()
+  // The azienda selector (REB-625): drawn from the second azienda on, between the search
+  // and the navigation, so the lists below it read as «of this azienda».
+  const azienda = useAzienda()
   const { location } = useRouterState()
   // Below `lg` a 272px sidebar leaves ~118px of page on a 390px phone, so there the
   // sidebar is the rail by default and its expanded form is an overlay over the content.
@@ -497,6 +512,37 @@ export function AppShell({
             </kbd>
           </button>
         </div>
+
+        {azienda.several ? (
+          <div className="px-3 pb-3">
+            <Select
+              value={azienda.selected ?? EVERY_AZIENDA}
+              onValueChange={(value) => azienda.select(value === EVERY_AZIENDA ? null : value)}
+            >
+              <SelectTrigger
+                aria-label="Azienda"
+                className={cn(
+                  'w-full rounded-none border-sidebar-border bg-sidebar-accent/50 text-sidebar-foreground/70 shadow-none hover:bg-sidebar-accent hover:text-sidebar-foreground [&_svg:not([class*=text-])]:text-sidebar-foreground/70',
+                  FOCUS,
+                  rail && 'justify-center px-0 [&>svg:last-child]:hidden',
+                )}
+              >
+                <Building2 className="size-4 shrink-0" aria-hidden="true" />
+                <span className={cn('flex-1 truncate text-left', rail && 'sr-only')}>
+                  <SelectValue />
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={EVERY_AZIENDA}>Tutte le aziende</SelectItem>
+                {azienda.aziende.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
 
         {/* Labelled because a page's own header may render a second <nav> landmark (a
             breadcrumb, a set of tabs), and two unlabelled ones are indistinguishable to a

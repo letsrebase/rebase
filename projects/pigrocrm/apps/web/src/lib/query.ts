@@ -52,6 +52,9 @@ export const queryKeys = {
   // The aziende of the space (REB-617): the list every selector and Impostazioni →
   // Aziende read; a single azienda is read from the list, so there is no per-id key.
   aziende: ['aziende'] as const,
+  // The azienda a nation proposes for a new customer (REB-626). Under the `aziende`
+  // prefix on purpose: a rename or a deactivation invalidates the proposal with the list.
+  aziendaProposta: (nazione: string) => ['aziende', 'proposta', nazione] as const,
   invoices: (params?: unknown) => ['invoices', params ?? {}] as const,
   // Distinct from `invoices` above: that key holds one `InvoicePage`, this one holds
   // an `useInfiniteQuery`'s own `{pages, pageParams}` shape (`useInvoicesPaged`,
@@ -75,7 +78,10 @@ export const queryKeys = {
   // One key per month, and the prefix `['calendario']` on purpose: a commitment whose
   // date moved is stale in two months at once, so every write invalidates the prefix
   // rather than the month the page happens to be showing.
-  calendarMonth: (mese: string) => ['calendario', mese] as const,
+  // The sidebar's azienda is part of the key since REB-625: the hours and the invoices
+  // of a month differ by it, and a switch is a new key rather than an invalidation.
+  calendarMonth: (mese: string, aziendaId: string | null = null) =>
+    ['calendario', mese, aziendaId] as const,
   attivita: (params?: unknown) => ['attivita', params ?? {}] as const,
   /** The caller's own running timer -- one row or null, so one key with no argument. */
   timer: ['timer'] as const,
@@ -96,7 +102,7 @@ export const queryKeys = {
   // The term is part of the key so an in-flight response for "ross" cannot overwrite the
   // rendering of "rossi": TanStack Query discards the stale entry rather than the
   // component having to compare what came back with what was typed.
-  search: (term: string) => ['search', term] as const,
+  search: (term: string, aziendaId: string | null = null) => ['search', term, aziendaId] as const,
   // The period is part of the key, so switching period is a different cache entry rather
   // than a refetch that briefly shows March's numbers under April's heading. Every
   // dashboard key starts with the literal 'dashboard' so a mutation that cannot know which

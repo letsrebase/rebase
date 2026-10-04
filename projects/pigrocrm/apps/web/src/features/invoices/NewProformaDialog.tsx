@@ -26,6 +26,7 @@ import { useCustomer, useCustomers } from '@/features/customers/queries'
 import { useDeal, useDeals } from '@/features/deals/queries'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
+import { useAzienda } from '@/lib/azienda'
 import { toIsoDate } from '@/lib/dates'
 import { AccrualPeriodFields } from './AccrualPeriodFields'
 import {
@@ -297,6 +298,15 @@ function NewProformaDialog({
   const [rows, setRows] = useState<DraftRow[]>(() => [firstRow(prefill)])
   const [errors, setErrors] = useState<Errors>({})
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
+  // Which azienda will issue (REB-626, spec §1.7): the deal's when one is chosen, the
+  // customer's otherwise, the same rule `InvoiceService.create` applies. Read only from
+  // the second azienda on; on the fixed variants both reads are the page's own cache hits.
+  const azienda = useAzienda()
+  const issuingCustomer = useCustomer(customerId, { enabled: azienda.several })
+  const issuingDeal = useDeal(dealId, { enabled: azienda.several })
+  const issuedBy = azienda.several
+    ? azienda.byId(dealId !== '' ? issuingDeal.data?.azienda_id : issuingCustomer.data?.azienda_id)
+    : undefined
 
   function update(index: number, field: keyof DraftRow, value: string) {
     setRows((previous) =>
@@ -420,6 +430,10 @@ function NewProformaDialog({
               onChange={(value) => setDealId(value === NO_DEAL ? '' : value)}
             />
           ) : null}
+
+          {/* Only once the read has answered: a `…` between choosing and knowing would
+              read as an azienda with no name. */}
+          {issuedBy !== undefined ? <FixedField label="Emessa da" value={issuedBy.nome} /> : null}
 
           <div className="space-y-2">
             <Label htmlFor="proforma-causale">

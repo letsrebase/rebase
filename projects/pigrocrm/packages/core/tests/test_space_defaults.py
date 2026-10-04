@@ -87,11 +87,18 @@ def test_a_space_that_has_its_azienda_keeps_it_whatever_the_name_says(
 ) -> None:
     from pigrocrm.core.emitter.repository import AziendaRepository
 
+    # The row, not its name: since REB-623 the default azienda is committed once per
+    # worker database, and the committed worlds (`test_invoice_issue_race.py` and its
+    # kin) rename it through `upsert_default` as they run, so a literal here depends on
+    # which file ran before this one. Identity is what the claim is about anyway.
+    before = AziendaRepository(db_session).default()
+    assert before is not None
     report = ensure_defaults(db_session, nome="Un altro nome")
     assert report.aziende == 0
     azienda = AziendaRepository(db_session).default()
     assert azienda is not None
-    assert azienda.ragione_sociale == "Studio di prova"
+    assert (azienda.id, azienda.ragione_sociale) == (before.id, before.ragione_sociale)
+    assert azienda.ragione_sociale != "Un altro nome"
 
 
 def test_without_a_name_no_azienda_is_invented(db_session: Session) -> None:

@@ -25,7 +25,7 @@ class CalendarRepository:
         self.session = session
 
     def hours_by_day_and_deal(
-        self, da: date, a: date, *, user_id: UUID | None = None
+        self, da: date, a: date, *, user_id: UUID | None = None, azienda_id: UUID | None = None
     ) -> list[tuple[date, UUID, Decimal]]:
         """`(day, deal, hours)` for every day of the window that has any, in one query.
 
@@ -50,6 +50,11 @@ class CalendarRepository:
         )
         if user_id is not None:
             stmt = stmt.where(TimeEntry.user_id == user_id)
+        if azienda_id is not None:
+            # Through the deal, as `TimeEntryRepository.list` does (REB-623).
+            stmt = stmt.where(
+                TimeEntry.deal_id.in_(select(Deal.id).where(Deal.azienda_id == azienda_id))
+            )
         return [
             # `func.sum` over a group is never null: a group exists because it has a
             # row. No `coalesce`, for the reason `TimeEntryRepository.week` records --
@@ -75,7 +80,9 @@ class CalendarRepository:
         ).all()
         return {row[0]: (row[1], row[2]) for row in rows}
 
-    def invoices_due(self, da: date, a: date) -> list[tuple[Invoice, str | None]]:
+    def invoices_due(
+        self, da: date, a: date, *, azienda_id: UUID | None = None
+    ) -> list[tuple[Invoice, str | None]]:
         """Issued, unpaid invoices whose due date falls in the window, with the client's
         name.
 
@@ -98,6 +105,7 @@ class CalendarRepository:
                 Invoice.data_scadenza.is_not(None),
                 Invoice.data_scadenza >= da,
                 Invoice.data_scadenza <= a,
+                *([Invoice.azienda_id == azienda_id] if azienda_id is not None else []),
             )
             .order_by(Invoice.data_scadenza, Invoice.numero)
         ).all()

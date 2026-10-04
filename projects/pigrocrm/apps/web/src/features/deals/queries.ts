@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from '@rebase/ui/sonner'
+import { useAziendaScope } from '@/lib/azienda'
 import { api, toProblem, unwrap } from '@/lib/api'
 import type { StatusTone } from '@/components/StatusPill'
 import type { components } from '@/lib/api-types'
@@ -55,6 +56,7 @@ export interface DealsListParams {
   search?: string
   customer_id?: string
   stage_id?: string
+  azienda_id?: string
   fatturato_non_vinto?: boolean
   da_fatturare?: boolean
 }
@@ -115,9 +117,12 @@ export async function fetchAllDeals(params: DealsListParams): Promise<DealsResul
 }
 
 export function useDeals(params: DealsListParams = {}) {
+  // The sidebar's azienda when one is selected and the list has no customer of its own
+  // (REB-625): a customer's deals are that customer's whatever the sidebar says.
+  const scoped = useAziendaScope(params)
   return useQuery({
-    queryKey: queryKeys.deals(params),
-    queryFn: () => fetchAllDeals(params),
+    queryKey: queryKeys.deals(scoped),
+    queryFn: () => fetchAllDeals(scoped),
   })
 }
 
@@ -128,8 +133,10 @@ export function useStages() {
   })
 }
 
-export function useDeal(dealId: string) {
+export function useDeal(dealId: string, options: { enabled?: boolean } = {}) {
   return useQuery({
+    // See `useCustomer`: the proforma dialog reads the deal's azienda only when it has to.
+    enabled: (options.enabled ?? true) && dealId !== '',
     queryKey: queryKeys.deal(dealId),
     queryFn: () =>
       unwrap(api.GET('/api/deals/{deal_id}', { params: { path: { deal_id: dealId } } })),

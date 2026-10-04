@@ -55,6 +55,9 @@ def list_customers(
     # byte in `search` now comes back 422, not 500, with no other change needed.
     search: Annotated[SafeStr | None, Query()] = None,
     stato: Annotated[SafeStr | None, Query()] = None,
+    azienda_id: Annotated[
+        UUID | None, Query(description="Solo le righe di questa azienda; omesso, tutte")
+    ] = None,
     custom: Annotated[list[SafeStr] | None, Query(description=CUSTOM_QUERY_DESCRIPTION)] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     # `str`, not `UUID`, since slice 6: the cursor encodes `(sort value, id)` so that a
@@ -77,6 +80,7 @@ def list_customers(
     query = CustomerListQuery(
         search=search,
         stato=stato,
+        azienda_id=azienda_id,
         custom=parse_custom_filter(custom),
         limit=limit,
         cursor=cursor,

@@ -26,6 +26,7 @@ function cellValue(column: ReturnType<typeof buildDealColumns>[number], deal: De
 
 const BASE_DEAL: Deal = {
   id: 'd1',
+  azienda_id: 'a-1',
   nome: 'Sito vetrina',
   customer_id: 'c1',
   pipeline_stage_id: 's1',

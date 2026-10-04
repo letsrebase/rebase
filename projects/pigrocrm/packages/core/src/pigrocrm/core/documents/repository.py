@@ -216,6 +216,8 @@ class DocumentRepository:
             stmt = stmt.where(Document.deal_id == query.deal_id)
         if query.contract_id:
             stmt = stmt.where(Document.contract_id == query.contract_id)
+        if query.azienda_id:
+            stmt = stmt.where(Document.azienda_id == query.azienda_id)
         if query.tipo:
             stmt = stmt.where(Document.tipo == query.tipo)
         if query.stato:

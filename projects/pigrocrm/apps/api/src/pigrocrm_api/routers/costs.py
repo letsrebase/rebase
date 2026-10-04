@@ -30,6 +30,10 @@ def list_costs(
     session: SessionDep,
     actor: ActorDep,
     deal_id: Annotated[UUID | None, Query()] = None,
+    azienda_id: Annotated[
+        UUID | None,
+        Query(description="Solo i costi di questa azienda; omesso, tutti, i generali compresi"),
+    ] = None,
     solo_generali: Annotated[
         bool, Query(description="Solo spese generali, cioè senza deal (§7.4)")
     ] = False,
@@ -42,6 +46,7 @@ def list_costs(
 ) -> CostPage:
     query = CostListQuery(
         deal_id=deal_id,
+        azienda_id=azienda_id,
         solo_generali=solo_generali,
         category_id=category_id,
         da=da,

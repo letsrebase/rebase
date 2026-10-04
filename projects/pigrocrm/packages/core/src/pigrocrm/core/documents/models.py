@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
+from pigrocrm.core.emitter.models import default_azienda_id
 
 
 class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
@@ -49,6 +50,11 @@ class Document(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # `document.ownerType` (`0011_approval_constraints.sql:50-57`).
     contract_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("contracts.id"), default=None, index=True
+    )
+    # The azienda of whichever owner the document hangs on at creation (REB-623, §1.7):
+    # the customer's, the deal's or the contract's, since exactly one is set.
+    azienda_id: Mapped[UUID] = mapped_column(
+        ForeignKey("emitter_profile.id"), nullable=False, index=True, default=default_azienda_id
     )
     tipo: Mapped[str] = mapped_column(String(20), nullable=False)
     titolo: Mapped[str] = mapped_column(String(200), nullable=False)

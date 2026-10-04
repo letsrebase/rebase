@@ -2149,6 +2149,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/aziende/proposta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Propose Azienda
+         * @description The azienda a new customer of `nazione` would be billed by when nobody picks one
+         *     (REB-624, spec 2026-10-03 §1.6). The form and an agent both ask here, so the rule
+         *     lives in `AziendaService.propose` once; `POST /api/customers` applies the same one
+         *     when `azienda_id` is left out.
+         */
+        get: operations["propose_azienda_api_aziende_proposta_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/aziende/{azienda_id}": {
         parameters: {
             query?: never;
@@ -4442,6 +4465,11 @@ export interface components {
              * Format: uuid
              */
             customer_id: string;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
             /** Titolo */
             titolo: string;
             /**
@@ -4541,6 +4569,8 @@ export interface components {
         CostCreate: {
             /** Deal Id */
             deal_id?: string | null;
+            /** Azienda Id */
+            azienda_id?: string | null;
             /**
              * Category Id
              * Format: uuid
@@ -4583,6 +4613,8 @@ export interface components {
             id: string;
             /** Deal Id */
             deal_id: string | null;
+            /** Azienda Id */
+            azienda_id: string | null;
             /**
              * Category Id
              * Format: uuid
@@ -4620,6 +4652,8 @@ export interface components {
         CostUpdate: {
             /** Deal Id */
             deal_id?: string | null;
+            /** Azienda Id */
+            azienda_id?: string | null;
             /** Category Id */
             category_id?: string | null;
             /** Data */
@@ -4694,6 +4728,8 @@ export interface components {
              * @default IT
              */
             nazione: string;
+            /** Azienda Id */
+            azienda_id?: string | null;
             /** Email */
             email?: string | null;
             /** Telefono */
@@ -4746,6 +4782,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
             /** Ragione Sociale */
             ragione_sociale: string;
             /** Partita Iva */
@@ -4817,6 +4858,8 @@ export interface components {
             provincia?: string | null;
             /** Nazione */
             nazione?: string | null;
+            /** Azienda Id */
+            azienda_id?: string | null;
             /** Email */
             email?: string | null;
             /** Telefono */
@@ -4978,6 +5021,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
             /** Nome */
             nome: string;
             /**
@@ -5161,6 +5209,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
             /** Customer Id */
             customer_id: string | null;
             /** Deal Id */
@@ -10227,6 +10280,8 @@ export interface operations {
             query?: {
                 search?: string | null;
                 stato?: string | null;
+                /** @description Solo le righe di questa azienda; omesso, tutte */
+                azienda_id?: string | null;
                 /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
                 custom?: string[] | null;
                 limit?: number;
@@ -12043,6 +12098,8 @@ export interface operations {
                 search?: string | null;
                 customer_id?: string | null;
                 stage_id?: string | null;
+                /** @description Solo le righe di questa azienda; omesso, tutte */
+                azienda_id?: string | null;
                 /** @description Filtro sui campi personalizzati (JSONB), ripetibile per più chiavi: ?custom=settore:IT&custom=priorita:alta restituisce solo le righe che soddisfano entrambe (stessa semantica di contenimento JSONB usata dal service). Ogni valore è confrontato come stringa esatta; un valore senza il separatore ':' vale come chiave con valore vuoto, non genera un errore. Chiama GET /api/schema/{entity_type} per conoscere le chiavi disponibili. */
                 custom?: string[] | null;
                 fatturato_non_vinto?: boolean;
@@ -17102,6 +17159,8 @@ export interface operations {
             query: {
                 q: string;
                 limit?: number;
+                /** @description Solo i risultati di questa azienda; omesso, tutti */
+                azienda_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -17223,6 +17282,8 @@ export interface operations {
                 customer_id?: string | null;
                 deal_id?: string | null;
                 contract_id?: string | null;
+                /** @description Solo le righe di questa azienda; omesso, tutte */
+                azienda_id?: string | null;
                 tipo?: ("offerta" | "contratto" | "verbale" | "documento" | "fattura" | "fattura_xml" | "proforma" | "rapporto_ore") | null;
                 stato?: ("bozza" | "inviata" | "accettata" | "rifiutata") | null;
                 search?: string | null;
@@ -19886,6 +19947,8 @@ export interface operations {
             query?: {
                 customer_id?: string | null;
                 deal_id?: string | null;
+                /** @description Solo le righe di questa azienda; omesso, tutte */
+                azienda_id?: string | null;
                 tipo?: ("fattura" | "proforma") | null;
                 stato?: ("bozza" | "emessa" | "annullata" | "confermata" | "consumata") | null;
                 anno?: number | null;
@@ -22436,6 +22499,8 @@ export interface operations {
         parameters: {
             query?: {
                 deal_id?: string | null;
+                /** @description Solo le ore sui deal di questa azienda; omesso, tutte */
+                azienda_id?: string | null;
                 user_id?: string | null;
                 /** @description Data minima, YYYY-MM-DD */
                 da?: string | null;
@@ -23761,6 +23826,8 @@ export interface operations {
         parameters: {
             query?: {
                 deal_id?: string | null;
+                /** @description Solo i costi di questa azienda; omesso, tutti, i generali compresi */
+                azienda_id?: string | null;
                 /** @description Solo spese generali, cioè senza deal (§7.4) */
                 solo_generali?: boolean;
                 category_id?: string | null;
@@ -26426,6 +26493,126 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AziendaRead"][];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_azienda_api_aziende_proposta_get: {
+        parameters: {
+            query?: {
+                /** @description Nazione del cliente, ISO 3166-1 alpha-2; omessa, IT */
+                nazione?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AziendaRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -33514,6 +33701,8 @@ export interface operations {
                 /** @description AAAA-MM */
                 mese: string;
                 tutti?: boolean;
+                /** @description Solo le ore e le fatture di questa azienda; omesso, tutte */
+                azienda_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -33634,6 +33823,8 @@ export interface operations {
             query?: {
                 customer_id?: string | null;
                 stato?: string | null;
+                /** @description Solo le righe di questa azienda; omesso, tutte */
+                azienda_id?: string | null;
                 limit?: number;
                 cursor?: string | null;
                 /** @description created_at | updated_at | titolo */

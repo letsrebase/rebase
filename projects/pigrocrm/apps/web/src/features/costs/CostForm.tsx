@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@rebase/ui/select'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
+import { useAzienda } from '@/lib/azienda'
 import type { FieldDefinition } from '@/lib/schema'
 import {
   NATIVE_FIELDS,
@@ -44,6 +45,10 @@ export interface CostFormProps {
   title: string
   onSaved?: () => void
 }
+
+/** The picker's value for a shared expense: the body carries no `azienda_id`, or `null`
+ *  when clearing one, and a `Select` needs a non-empty string for the option. */
+const SHARED = 'condivisa'
 
 /**
  * The one dialog behind both «Registra costo» and «Modifica costo».
@@ -142,6 +147,15 @@ export function CostForm({
   const busy = create.isPending || update.isPending || remove.isPending
   const fieldError = problem ? fieldErrorFrom(problem) : null
   const categoryId = (values.native.category_id as string | undefined) ?? ''
+  // «Azienda» only for a cost with no deal and from the second azienda on (REB-626, spec
+  // §1.7): a cost on a deal is that deal's azienda's and the server would refuse another,
+  // while a general expense is shared («Condivisa», `null`) unless one azienda owns it.
+  const azienda = useAzienda()
+  const aziendaId = (values.native.azienda_id as string | null | undefined) ?? SHARED
+  // Kept out of the flattened values, like the customer form does: a custom field a
+  // tenant named `azienda_id` would otherwise display the picker's id as its own value.
+  const { azienda_id: _pickedElsewhere, ...nativeForForm } = values.native
+  void _pickedElsewhere
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -174,17 +188,53 @@ export function CostForm({
           )}
         </div>
 
+        {dealId === undefined && azienda.several ? (
+          <div className="space-y-2">
+            <Label htmlFor="cost-azienda">Azienda</Label>
+            <Select
+              value={aziendaId}
+              // Straight into `native`, not through `change`, which would route a key a
+              // tenant happened to define as a custom field into `custom`.
+              onValueChange={(value) =>
+                setValues((previous) => ({
+                  ...previous,
+                  native: { ...previous.native, azienda_id: value === SHARED ? null : value },
+                }))
+              }
+            >
+              <SelectTrigger id="cost-azienda" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={SHARED}>Condivisa</SelectItem>
+                {azienda.aziende.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {fieldError?.field === 'azienda_id' && (
+              <p className="text-sm text-destructive">{fieldError.message}</p>
+            )}
+          </div>
+        ) : null}
+
         <DynamicForm
           fields={[...NATIVE_FIELDS, ...customFields]}
           // Flattened for rendering only -- one control per key is all a form can draw.
           // The state behind it stays split, so `toCostRequestBody` still knows which
           // namespace each value came from.
-          values={{ ...values.native, ...values.custom }}
+          values={{ ...nativeForForm, ...values.custom }}
           onChange={change}
           // Withheld when the server blamed `category_id`: that key has no control
           // inside `DynamicForm`, so it would render the message a second time as a
           // raw `category_id: ...` banner next to the line already shown above.
-          problem={fieldError?.field === 'category_id' ? null : problem}
+          problem={
+            fieldError?.field === 'category_id' || fieldError?.field === 'azienda_id'
+              ? null
+              : problem
+          }
           mode={isCreate ? 'create' : 'edit'}
         />
 

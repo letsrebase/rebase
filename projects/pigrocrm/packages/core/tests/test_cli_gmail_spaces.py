@@ -25,6 +25,7 @@ from collections.abc import Iterator
 from urllib.parse import parse_qs
 
 import pytest
+from fakes.azienda_fixtures import committed_default_azienda
 from fakes.fake_gmail import TOKEN_HOST, FakeGmail
 from fakes.gmail_fixtures import TOKEN_KEY, gmail_settings
 from sqlalchemy import Engine, create_engine, select, text
@@ -182,6 +183,9 @@ def _connect(settings: Settings, slug: str | None, *, status: str = "active") ->
                     status=status,
                 )
             )
+            # The azienda the customer is billed by (REB-623): a root seeded by hand has
+            # none until somebody writes it, as `createadmin` does on a real one.
+            committed_default_azienda(session, nome="Radice")
             session.add(Customer(ragione_sociale="CLI Acme", email="info@acme.it"))
             session.commit()
     finally:

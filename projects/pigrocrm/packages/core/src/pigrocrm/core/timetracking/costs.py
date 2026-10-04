@@ -9,6 +9,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.repository import DocumentRepository
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -52,6 +53,7 @@ class CostService:
         self.session = session
         self.repo = CostRepository(session)
         self.deals = DealRepository(session)
+        self.aziende = AziendaService(session)
         self.documents = DocumentRepository(session)
         self.categories = CostCategoryService(session)
         self.locks = PeriodLockService(session)
@@ -88,6 +90,46 @@ class CostService:
             raise NotFound("deal", deal_id)
         if document_id is not None and self.documents.get(document_id) is None:
             raise NotFound("document", document_id)
+
+    def _azienda_for(
+        self, deal_id: UUID | None, wanted: UUID | None, *, kept: UUID | None = None
+    ) -> UUID | None:
+        """A cost's azienda (REB-623, spec §1.7): the deal's when it has a deal, and a
+        different one named beside it is refused rather than overruled in silence;
+        without a deal, the one named, which must exist and be active, or `None`, a
+        shared cost. `kept` is the azienda the cost already has: an edit that leaves it
+        where it is passes even once that azienda is deactivated, so the history of a
+        closed azienda stays editable while nothing new is filed under it (spec §3)."""
+        if deal_id is not None:
+            # The deal a cost already hangs on may be archived since: its azienda still
+            # answers, and an update of such a cost is a domain error at worst, never
+            # an assertion.
+            deal = self.deals.get(deal_id, include_deleted=True)
+            if deal is None:
+                raise NotFound("deal", deal_id)
+            if wanted is not None and wanted != deal.azienda_id:
+                raise ValidationFailed(
+                    ENTITY,
+                    "azienda_id",
+                    "un costo su un deal prende l'azienda del deal",
+                    expected=f"nessuna azienda, oppure {deal.azienda_id}",
+                )
+            # The deal's azienda may be closed since the deal was created: a cost already
+            # there stays editable, a new one is refused like a deal or a document.
+            if deal.azienda_id == kept:
+                return deal.azienda_id
+            return self.aziende.inherited(deal.azienda_id, ENTITY)
+        if wanted is None:
+            return None
+        azienda = self.aziende.resolve(wanted)
+        if not azienda.attiva and wanted != kept:
+            raise ValidationFailed(
+                ENTITY,
+                "azienda_id",
+                "l'azienda non e' attiva: una spesa si assegna a un'azienda attiva",
+                expected="l'id di un'azienda attiva, oppure nessuna per una spesa condivisa",
+            )
+        return azienda.id
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         return validate_custom_fields(ENTITY, self.fields.specs_for(ENTITY), values)
@@ -129,6 +171,7 @@ class CostService:
         cost = self.repo.add(
             Cost(
                 deal_id=data.deal_id,
+                azienda_id=self._azienda_for(data.deal_id, data.azienda_id),
                 category_id=data.category_id,
                 data=data.data,
                 # The **total paid**, VAT included: under the flat-rate regime input VAT
@@ -168,6 +211,22 @@ class CostService:
         # `deal_id: null` -- now reachable -- passes through it as "clear it" instead of
         # becoming a lookup for `None`.
         self._check_refs(changes.get("deal_id"), changes.get("document_id"))
+        if "deal_id" in changes or "azienda_id" in changes:
+            # Moved to another deal, off a deal, or given an azienda of its own: the
+            # azienda follows the deal when there is one and the request otherwise.
+            deal_id = changes.get("deal_id", cost.deal_id)
+            # A move is a `deal_id` that differs from the cost's: one sent back unchanged,
+            # as a client echoing the row does, is no move, and neither is `null` echoed
+            # on a cost that had no deal (Greptile and CodeRabbit, PR #509).
+            moved = "deal_id" in changes and changes["deal_id"] != cost.deal_id
+            # Off a deal with no azienda named: shared, not the old deal's. Not moved and
+            # nothing named: the azienda it has.
+            wanted = changes.get("azienda_id", None if moved else cost.azienda_id)
+            # And the allowance for a closed azienda holds only while the cost stays where
+            # it is: a move is a new assignment, and a closed azienda takes none.
+            changes["azienda_id"] = self._azienda_for(
+                deal_id, wanted, kept=None if moved else cost.azienda_id
+            )
         if changes.get("category_id") is not None:
             self.categories.require_active(changes["category_id"])
         self.locks.assert_writable(ENTITY, "data", cost.data, changes.get("data"))

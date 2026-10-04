@@ -12,14 +12,16 @@ dependency: there is no role dependency in this codebase, and adding one here wo
 put the same rule in two places.
 """
 
+from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
-from pigrocrm.core.emitter.schemas import AziendaRead, AziendaUpsert
+from pigrocrm.core.emitter.schemas import NAZIONE_MAX_LENGTH, AziendaRead, AziendaUpsert
 from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead, FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
+from pigrocrm.core.validation import SafeStr
 from pigrocrm_api.deps import ActorDep, SessionDep
 from pigrocrm_api.errors import PROBLEM_RESPONSES
 
@@ -33,6 +35,27 @@ def list_aziende(
     """The default first. Deactivated aziende are left out unless asked for: a
     selector never offers one, Impostazioni may still show it."""
     return AziendaService(session).list(actor, only_active=not include_inactive)
+
+
+# Before `/{azienda_id}`: a literal segment declared after the parameterised route would
+# be read as an id and answer 422.
+@router.get("/proposta", response_model=AziendaRead)
+def propose_azienda(
+    session: SessionDep,
+    actor: ActorDep,
+    nazione: Annotated[
+        SafeStr | None,
+        Query(
+            max_length=NAZIONE_MAX_LENGTH,
+            description="Nazione del cliente, ISO 3166-1 alpha-2; omessa, IT",
+        ),
+    ] = None,
+) -> AziendaRead:
+    """The azienda a new customer of `nazione` would be billed by when nobody picks one
+    (REB-624, spec 2026-10-03 §1.6). The form and an agent both ask here, so the rule
+    lives in `AziendaService.propose` once; `POST /api/customers` applies the same one
+    when `azienda_id` is left out."""
+    return AziendaRead.model_validate(AziendaService(session).propose(nazione))
 
 
 @router.get("/{azienda_id}", response_model=AziendaRead)

@@ -8,10 +8,10 @@ administrative token would pass any check written here.
 """
 
 from datetime import date
-from typing import Any
+from typing import Any, Final
 from uuid import UUID
 
-from pigrocrm.core.emitter.schemas import TEMPLATE_EXCLUDED_FIELDS, AziendaUpsert
+from pigrocrm.core.emitter.schemas import TEMPLATE_EXCLUDED_FIELDS, AziendaRead, AziendaUpsert
 from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -287,22 +287,31 @@ def update_fiscal_profile(
     )
 
 
+# What an agent needs to pick an azienda, and nothing it does not: the two flags, the
+# nation and the three names (REB-616).
+AZIENDA_FIELDS: Final[set[str]] = {
+    "id",
+    "nome",
+    "ragione_sociale",
+    "partita_iva",
+    "nazione",
+    "predefinita",
+    "attiva",
+}
+
+
+def propose_azienda(context: McpContext, nazione: str | None) -> dict[str, Any]:
+    """The azienda `AziendaService.propose` picks for a customer of `nazione`
+    (REB-624, spec 2026-10-03 §1.6), in the shape `list_aziende` answers."""
+    row = AziendaService(context.session).propose(nazione)
+    return AziendaRead.model_validate(row).model_dump(mode="json", include=AZIENDA_FIELDS)
+
+
 def list_aziende(context: McpContext) -> list[dict[str, Any]]:
     """Every active azienda of the space, the default first: id, short name, ragione
     sociale, nazione and the two flags, which is what an agent needs to pick one."""
     return [
-        a.model_dump(
-            mode="json",
-            include={
-                "id",
-                "nome",
-                "ragione_sociale",
-                "partita_iva",
-                "nazione",
-                "predefinita",
-                "attiva",
-            },
-        )
+        a.model_dump(mode="json", include=AZIENDA_FIELDS)
         for a in AziendaService(context.session).list(context.actor)
     ]
 

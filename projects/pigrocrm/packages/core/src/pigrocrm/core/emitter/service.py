@@ -120,6 +120,42 @@ class AziendaService:
     def list(self, actor: Actor, *, only_active: bool = True) -> list[AziendaRead]:
         return [AziendaRead.model_validate(row) for row in self.repo.list(only_active=only_active)]
 
+    def propose(self, nazione: str | None) -> Azienda:
+        """The azienda a new customer of `nazione` is billed by when the caller names
+        none (REB-623, spec 2026-10-03 §1.6): the one active azienda of that nation when
+        exactly one has it; else, for a customer outside Italy, the one active azienda
+        outside Italy when exactly one exists; else the default. The nation never
+        decides between two aziende that share it: an Italian customer in a space with a
+        forfettario and an SRL, both Italian, gets the default proposed and the person
+        picks. `NotFound("emitter_profile", "predefinita")` on a space with no azienda.
+        """
+        paese = (nazione or "IT").strip().upper() or "IT"
+        active = self.repo.list(only_active=True)
+        same = [a for a in active if (a.nazione or "IT").upper() == paese]
+        if len(same) == 1:
+            return same[0]
+        if paese != "IT":
+            abroad = [a for a in active if (a.nazione or "IT").upper() != "IT"]
+            if len(abroad) == 1:
+                return abroad[0]
+        return self.resolve(None)
+
+    def inherited(self, azienda_id: UUID, entity: str) -> UUID:
+        """The azienda a new deal, contract, document or invoice takes from its parent
+        (REB-623, spec §1.7 and §3): the parent's, and never a deactivated one. The
+        history of a closed azienda stays readable, but nothing new is born on it; the
+        answer is to move the customer first, and the message says so. `entity` is the
+        thing being created, so the refusal names the field of that request."""
+        azienda = self.resolve(azienda_id)
+        if not azienda.attiva:
+            raise ValidationFailed(
+                entity,
+                "customer_id",
+                "l'azienda del cliente non e' attiva: sposta prima il cliente su un'azienda attiva",
+                expected="un cliente di un'azienda attiva",
+            )
+        return azienda.id
+
     def resolve(self, azienda_id: UUID | None = None) -> Azienda:
         """The row `azienda_id` names, or the default when it is `None`. `NotFound`
         either way when there is nothing to answer with, under the label every

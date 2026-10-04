@@ -1,6 +1,7 @@
 import type { ColumnDef } from '@tanstack/react-table'
 import { DateCell, MoneyCell } from '@/components/cells'
 import type { DataTableFeatures } from '@/components/DataTable'
+import type { AziendaRecord } from '@/lib/azienda'
 import { StatusPill } from '@/components/StatusPill'
 import { InvoiceStateBadge } from './InvoiceStateBadge'
 import { formatDate, formatInvoiceNumber, formatMoney, formatPeriod } from './format'
@@ -23,6 +24,14 @@ const EMPTY = '—'
  */
 export interface InvoiceColumnOptions {
   cliente?: boolean
+  /**
+   * The aziende to name beside the number (REB-625, spec 2026-10-03 §5 «Lists»). Given
+   * only under «Tutte le aziende» from the second azienda on (`useAziendeToName`): with one
+   * azienda, or with one selected, every row is that azienda's and the name would repeat
+   * the sidebar on each line. The accessor stays the bare number, so sorting and the
+   * export see one value; the name is drawn by the cell, muted, after a middle dot.
+   */
+  aziende?: AziendaRecord[]
 }
 
 /**
@@ -80,6 +89,8 @@ export function buildInvoiceColumns(
       ]
     : []
 
+  const aziendaName = new Map((options.aziende ?? []).map((a) => [a.id, a.nome]))
+
   return [
     {
       header: 'Numero',
@@ -88,6 +99,17 @@ export function buildInvoiceColumns(
       // different kinds of identity, not two spellings of one -- which is why
       // `formatInvoiceNumber` cannot derive a reference from a number.
       accessorFn: (row) => formatInvoiceNumber(row),
+      cell: ({ row }) => {
+        const numero = formatInvoiceNumber(row.original)
+        const nome = aziendaName.get(row.original.azienda_id)
+        if (nome === undefined) return numero
+        return (
+          <>
+            {numero}
+            <span className="text-muted-foreground"> · {nome}</span>
+          </>
+        )
+      },
     },
     ...cliente,
     {

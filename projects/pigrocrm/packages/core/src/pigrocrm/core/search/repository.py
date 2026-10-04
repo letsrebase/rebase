@@ -87,6 +87,15 @@ INVOICE_FIELDS: tuple[ScoredField, ...] = (ScoredField("causale", Invoice.causal
 _Model = Any
 
 
+# The clauses that narrow a search to one azienda (REB-623): empty for the search over
+# every azienda, the model's own `azienda_id` otherwise.
+Scope = tuple[ColumnElement[bool], ...]
+
+
+def _own(model: Any, azienda_id: UUID | None) -> Scope:
+    return () if azienda_id is None else (model.azienda_id == azienda_id,)
+
+
 class SearchRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -94,7 +103,11 @@ class SearchRepository:
     # -- shared plumbing -------------------------------------------------------
 
     def _predicate(
-        self, model: _Model, fields: Sequence[ScoredField], term: str
+        self,
+        model: _Model,
+        fields: Sequence[ScoredField],
+        term: str,
+        scope: Scope = (),
     ) -> tuple[ColumnElement[bool], ...]:
         """What a search result *is*, written once.
 
@@ -104,13 +117,18 @@ class SearchRepository:
         because the tail of a trigram match is noise, and a palette that shows noise
         teaches the user to ignore the palette.
         """
+        # `scope` is the azienda's own clause when a search is narrowed to one (REB-623):
+        # a fourth clause on the same predicate, so the page and the count agree on it.
         return (
             model.deleted_at.is_(None),
             matches_any(fields, term),
             row_score(fields, term) >= SCORE_FLOOR,
+            *scope,
         )
 
-    def _count(self, model: _Model, fields: Sequence[ScoredField], term: str) -> tuple[int, bool]:
+    def _count(
+        self, model: _Model, fields: Sequence[ScoredField], term: str, scope: Scope = ()
+    ) -> tuple[int, bool]:
         """Exact up to COUNT_CEILING, then declared as a minimum.
 
         `count(*)` over a subquery with `LIMIT ceiling + 1`: the database stops reading
@@ -120,7 +138,7 @@ class SearchRepository:
         inner = (
             select(literal(1))
             .select_from(model)
-            .where(*self._predicate(model, fields, term))
+            .where(*self._predicate(model, fields, term, scope))
             .limit(COUNT_CEILING + 1)
             .subquery()
         )
@@ -130,7 +148,12 @@ class SearchRepository:
         return found, False
 
     def _scored(
-        self, model: _Model, fields: Sequence[ScoredField], term: str, limit: int
+        self,
+        model: _Model,
+        fields: Sequence[ScoredField],
+        term: str,
+        limit: int,
+        scope: Scope = (),
     ) -> Select[Any]:
         """`punteggio DESC, updated_at DESC, id DESC`, limited.
 
@@ -141,7 +164,7 @@ class SearchRepository:
         """
         return (
             select(model, row_score(fields, term), best_field(fields, term))
-            .where(*self._predicate(model, fields, term))
+            .where(*self._predicate(model, fields, term, scope))
             .order_by(
                 row_score(fields, term).desc(),
                 model.updated_at.desc(),
@@ -159,9 +182,10 @@ class SearchRepository:
         limit: int,
         label: Callable[[Any], str],
         subtitle: Callable[[Any], str | None],
+        scope: Scope = (),
     ) -> SearchGroup:
-        rows = self.session.execute(self._scored(model, fields, term, limit)).all()
-        totale, is_minimum = self._count(model, fields, term)
+        rows = self.session.execute(self._scored(model, fields, term, limit, scope)).all()
+        totale, is_minimum = self._count(model, fields, term, scope)
         hits = [
             SearchHit(
                 entity=entity,
@@ -177,7 +201,7 @@ class SearchRepository:
 
     # -- one branch per entity -------------------------------------------------
 
-    def customers(self, term: str, limit: int) -> SearchGroup:
+    def customers(self, term: str, limit: int, azienda_id: UUID | None = None) -> SearchGroup:
         return self._group(
             "customer",
             Customer,
@@ -186,11 +210,21 @@ class SearchRepository:
             limit,
             label=lambda row: row.ragione_sociale,
             subtitle=lambda row: row.partita_iva,
+            scope=_own(Customer, azienda_id),
         )
 
-    def people(self, term: str, limit: int) -> SearchGroup:
+    def people(self, term: str, limit: int, azienda_id: UUID | None = None) -> SearchGroup:
         # `cognome` is nullable, so the label is joined from the parts that exist rather
         # than formatted with a placeholder: "Ludovica" and not "Ludovica None".
+        # A person has no azienda of their own: narrowed through their customer, so a
+        # contact with no customer answers only the search over every azienda.
+        scope: Scope = ()
+        if azienda_id is not None:
+            scope = (
+                Person.customer_id.in_(
+                    select(Customer.id).where(Customer.azienda_id == azienda_id)
+                ),
+            )
         return self._group(
             "person",
             Person,
@@ -199,9 +233,10 @@ class SearchRepository:
             limit,
             label=lambda row: " ".join(part for part in (row.nome, row.cognome) if part),
             subtitle=lambda row: row.email,
+            scope=scope,
         )
 
-    def deals(self, term: str, limit: int) -> SearchGroup:
+    def deals(self, term: str, limit: int, azienda_id: UUID | None = None) -> SearchGroup:
         group = self._group(
             "deal",
             Deal,
@@ -210,6 +245,7 @@ class SearchRepository:
             limit,
             label=lambda row: row.nome,
             subtitle=lambda row: None,
+            scope=_own(Deal, azienda_id),
         )
         return SearchGroup(
             entity=group.entity,
@@ -244,7 +280,7 @@ class SearchRepository:
         names: dict[UUID, str] = {row[0]: row[1] for row in pairs}
         return [hit.model_copy(update={"sottotitolo": names.get(hit.id)}) for hit in hits]
 
-    def documents(self, term: str, limit: int) -> SearchGroup:
+    def documents(self, term: str, limit: int, azienda_id: UUID | None = None) -> SearchGroup:
         return self._group(
             "document",
             Document,
@@ -253,9 +289,10 @@ class SearchRepository:
             limit,
             label=lambda row: row.titolo,
             subtitle=lambda row: row.tipo,
+            scope=_own(Document, azienda_id),
         )
 
-    def invoices(self, term: str, limit: int) -> SearchGroup:
+    def invoices(self, term: str, limit: int, azienda_id: UUID | None = None) -> SearchGroup:
         """§8.1's fifth branch: `causale` by trigram, `(anno, numero)` by equality.
 
         The branch `SearchEntity` has promised since Task A7 and nothing delivered until
@@ -271,8 +308,9 @@ class SearchRepository:
         of a list rather than the answer.
         """
         fiscal = parse_fiscal_number(term)
+        scope = _own(Invoice, azienda_id)
         if fiscal is not None:
-            return self._invoices_by_number(*fiscal, limit=limit)
+            return self._invoices_by_number(*fiscal, limit=limit, scope=scope)
         group = self._group(
             "invoice",
             Invoice,
@@ -281,6 +319,7 @@ class SearchRepository:
             limit,
             label=self._invoice_label,
             subtitle=lambda row: None,
+            scope=scope,
         )
         return SearchGroup(
             entity=group.entity,
@@ -306,7 +345,9 @@ class SearchRepository:
         )
         return f"{prefix} — {row.causale}" if row.causale else prefix
 
-    def _number_predicate(self, anno: int | None, numero: int) -> tuple[ColumnElement[bool], ...]:
+    def _number_predicate(
+        self, anno: int | None, numero: int, scope: Scope = ()
+    ) -> tuple[ColumnElement[bool], ...]:
         """What a fiscal-number match *is*, written once and used by both the page and the
         count -- the same discipline `_predicate` follows for the trigram branches, and for
         the same reason: a card and its drill-through are one calculation.
@@ -318,12 +359,15 @@ class SearchRepository:
         clauses: tuple[ColumnElement[bool], ...] = (
             Invoice.deleted_at.is_(None),
             Invoice.numero == numero,
+            *scope,
         )
         if anno is not None:
             clauses = (*clauses, Invoice.anno == anno)
         return clauses
 
-    def _invoices_by_number(self, anno: int | None, numero: int, *, limit: int) -> SearchGroup:
+    def _invoices_by_number(
+        self, anno: int | None, numero: int, *, limit: int, scope: Scope = ()
+    ) -> SearchGroup:
         """The equality half. At most one row per year and azienda (REB-619: two aziende
         of one space each have their own `2026/1`, listed one after the other and told
         apart by the azienda's name once milestone 3 shows it), so the ceiling is never
@@ -337,7 +381,7 @@ class SearchRepository:
         so it is what orders their rows, and it costs nothing to not depend on a
         constraint in another package for criterion 4's byte-identical guarantee.
         """
-        predicate = self._number_predicate(anno, numero)
+        predicate = self._number_predicate(anno, numero, scope)
         rows = (
             self.session.execute(
                 select(Invoice)

@@ -207,6 +207,11 @@ _INTERNE: dict[Method, str] = {
     ),
     ("DocumentService", "storage_key_for"): "costruisce una chiave di storage",
     ("AziendaService", "as_template_values"): "alimenta il renderer dei template",
+    ("AziendaService", "inherited"): (
+        "lettura interna: l'azienda che un deal, un contratto, un documento o una fattura "
+        "eredita dal genitore, rifiutata se disattivata; la chiamano i servizi che creano, "
+        "non e' un'azione a se'"
+    ),
     ("AziendaService", "resolve"): (
         "lettura interna: la riga che un `azienda_id` nomina, o la predefinita quando e' "
         "`None`; e' cio' che ogni servizio chiama per se', e `describe_azienda` la espone"

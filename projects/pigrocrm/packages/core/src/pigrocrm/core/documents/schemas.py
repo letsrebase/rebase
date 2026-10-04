@@ -82,6 +82,8 @@ class DocumentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    # The owner's azienda when the document was created (REB-623); read-only.
+    azienda_id: UUID
     customer_id: UUID | None
     deal_id: UUID | None
     contract_id: UUID | None
@@ -128,6 +130,7 @@ class DocumentListQuery(BaseModel):
     customer_id: UUID | None = None
     deal_id: UUID | None = None
     contract_id: UUID | None = None
+    azienda_id: UUID | None = None
     tipo: DocumentTipo | None = None
     stato: OfferState | None = None
     # New in slice 6: spec §8.1 makes `titolo` searchable, and task A13's "vedi tutti"

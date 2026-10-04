@@ -170,4 +170,5 @@ async def test_the_month_is_read_and_never_written(server) -> None:
         tools = {tool.name: tool for tool in (await client.list_tools()).tools}
 
     schema = tools["get_calendar_month"].input_schema
-    assert set(schema.get("properties", {})) == {"mese", "tutti"}
+    # `azienda_id` since REB-624 narrows the hours and the invoices; still no way to write.
+    assert set(schema.get("properties", {})) == {"mese", "tutti", "azienda_id"}

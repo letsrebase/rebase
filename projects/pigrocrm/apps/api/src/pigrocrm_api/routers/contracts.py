@@ -42,6 +42,9 @@ def list_contracts(
     actor: ActorDep,
     customer_id: Annotated[UUID | None, Query()] = None,
     stato: Annotated[str | None, Query()] = None,
+    azienda_id: Annotated[
+        UUID | None, Query(description="Solo le righe di questa azienda; omesso, tutte")
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query(max_length=CURSOR_MAX_LENGTH)] = None,
     sort: Annotated[SafeStr | None, Query(description="created_at | updated_at | titolo")] = None,
@@ -50,6 +53,7 @@ def list_contracts(
     query = ContractListQuery(
         customer_id=customer_id,
         stato=stato,
+        azienda_id=azienda_id,
         limit=limit,
         cursor=cursor,
         sort=sort,

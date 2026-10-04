@@ -51,17 +51,18 @@ class SearchService:
         # differ from what the user typed.
         term = query.termine.strip()
         limit = query.limite
+        azienda = query.azienda_id
         return SearchResults(
             termine=term,
             gruppi=[
-                self.repo.customers(term, limit),
-                self.repo.people(term, limit),
-                self.repo.deals(term, limit),
-                self.repo.documents(term, limit),
+                self.repo.customers(term, limit, azienda),
+                self.repo.people(term, limit, azienda),
+                self.repo.deals(term, limit, azienda),
+                self.repo.documents(term, limit, azienda),
                 # Fifth and last. Added by Task C12, which is also what made `SearchEntity`
                 # true: it declared five entities from the start and four were searched, so
                 # an invoice number answered "nothing found" when it had never been looked
                 # for.
-                self.repo.invoices(term, limit),
+                self.repo.invoices(term, limit, azienda),
             ],
         )

@@ -584,10 +584,12 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
         _, raw = PatService(session, settings=Settings(_env_file=None)).create(  # type: ignore[call-arg]
             "prova", Actor(id=admin.id, type="user", role="admin")
         )
-        # The root database has no azienda of its own here (it is not provisioned the
-        # way a space is), and the fiscal profile the demotion test writes belongs to
-        # one since REB-615: seeded by row, removed below after the profile.
-        session.add(Azienda(nome="Radice", ragione_sociale="Radice", predefinita=True))
+        # The fiscal profile the demotion test writes belongs to an azienda since
+        # REB-615. The worker's database carries one committed default since REB-623
+        # (`conftest.py`'s engine fixture); a database without one gets a row here,
+        # and the teardown below removes only what is not the default.
+        if session.execute(select(Azienda.id).where(Azienda.predefinita.is_(True))).first() is None:
+            session.add(Azienda(nome="Radice", ragione_sociale="Radice", predefinita=True))
         session.commit()
         admin_id = admin.id
     try:
@@ -600,7 +602,7 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
             )
             session.execute(delete(PersonalAccessToken).where(PersonalAccessToken.user_id.in_(ids)))
             session.execute(delete(FiscalProfile))
-            session.execute(delete(Azienda))
+            session.execute(delete(Azienda).where(Azienda.predefinita.is_(False)))
             session.execute(delete(User).where(User.id.in_(ids)))
             session.commit()
 

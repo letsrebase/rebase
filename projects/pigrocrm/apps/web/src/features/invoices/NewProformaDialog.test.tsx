@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
 import { api } from '@/lib/api'
 import { NewProformaButton } from './NewProformaDialog'
 
@@ -36,16 +37,16 @@ function failed(error: unknown, status: number) {
 }
 
 const CUSTOMERS = [
-  { id: 'cust-1', ragione_sociale: 'ACME Srl' },
-  { id: 'cust-2', ragione_sociale: 'Beta Snc' },
+  { id: 'cust-1', ragione_sociale: 'ACME Srl', azienda_id: 'a1' },
+  { id: 'cust-2', ragione_sociale: 'Beta Snc', azienda_id: 'a2' },
 ]
 
 // `customer_ragione_sociale` is on the wire shape (`DealRead`, denormalised there on
 // purpose), which is what lets the deal-fixed dialog name the customer without asking
 // for it.
 const DEALS = [
-  { id: 'deal-1', nome: 'Sito vetrina', customer_id: 'cust-1', customer_ragione_sociale: 'ACME Srl' },
-  { id: 'deal-2', nome: 'App interna', customer_id: 'cust-1', customer_ragione_sociale: 'ACME Srl' },
+  { id: 'deal-1', nome: 'Sito vetrina', customer_id: 'cust-1', customer_ragione_sociale: 'ACME Srl', azienda_id: 'a2' },
+  { id: 'deal-2', nome: 'App interna', customer_id: 'cust-1', customer_ragione_sociale: 'ACME Srl', azienda_id: 'a1' },
 ]
 
 /** Every GET this dialog can make, answered by path. `useDeals` walks a cursor, so its
@@ -74,6 +75,7 @@ beforeEach(() => {
   vi.mocked(api.POST).mockReset()
   vi.mocked(toast.success).mockReset()
   navigate.mockReset()
+  aziende = undefined
   mockGets()
 })
 
@@ -81,9 +83,17 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+/** The aziende the dialog runs under: none means the context's default, a one-azienda
+ *  space; a test about «Emessa da» sets two before opening. */
+let aziende: AziendaValue | undefined
+
 function renderWithClient(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+  return render(
+    <QueryClientProvider client={client}>
+      {aziende ? <AziendaContext value={aziende}>{ui}</AziendaContext> : ui}
+    </QueryClientProvider>,
+  )
 }
 
 type ButtonProps = Parameters<typeof NewProformaButton>[0]
@@ -475,5 +485,42 @@ describe('NewProformaButton, opened from a record that already answers the quest
 
     expect(screen.getByLabelText('Descrizione riga 1')).toHaveValue('Sito vetrina')
     expect(screen.getByLabelText('Prezzo unitario riga 1')).toHaveValue('')
+  })
+})
+
+describe('«Emessa da» (REB-626)', () => {
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as AziendaRecord
+  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as AziendaRecord
+
+  function twoAziende() {
+    aziende = {
+      aziende: [HUMANCRAFT, REBASE],
+      selected: null,
+      select: vi.fn(),
+      several: true,
+      byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
+    }
+  }
+
+  it('names the customer\'s azienda once a customer is chosen, and the deal\'s once a deal is', async () => {
+    twoAziende()
+    // `GET /api/customers/{customer_id}` answers the first customer, whose azienda is
+    // humancraft; the chosen deal below belongs to rebase, which then takes over.
+    await open()
+    expect(screen.queryByText('Emessa da')).not.toBeInTheDocument()
+    await chooseCustomer('ACME Srl')
+    expect(await screen.findByText('Emessa da')).toBeInTheDocument()
+    expect(await screen.findByText('humancraft')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByLabelText(/^Deal/))
+    await userEvent.click(await screen.findByRole('option', { name: 'Sito vetrina' }))
+    expect(await screen.findByText('rebase')).toBeInTheDocument()
+  })
+
+  it('says nothing in a one-azienda space', async () => {
+    await open()
+    await chooseCustomer('ACME Srl')
+    expect(screen.queryByText('Emessa da')).not.toBeInTheDocument()
+    expect(vi.mocked(api.GET)).not.toHaveBeenCalledWith('/api/customers/{customer_id}', expect.anything())
   })
 })

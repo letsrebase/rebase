@@ -191,6 +191,12 @@ class TimeEntryRepository:
         stmt = select(TimeEntry).where(TimeEntry.deleted_at.is_(None))
         if query.deal_id is not None:
             stmt = stmt.where(TimeEntry.deal_id == query.deal_id)
+        if query.azienda_id is not None:
+            # An entry's azienda is its deal's (REB-623): a subquery on `deals`, served
+            # by `ix_deals_azienda_id`, rather than a column this table would copy.
+            stmt = stmt.where(
+                TimeEntry.deal_id.in_(select(Deal.id).where(Deal.azienda_id == query.azienda_id))
+            )
         if query.user_id is not None:
             stmt = stmt.where(TimeEntry.user_id == query.user_id)
         if query.da is not None:
@@ -256,6 +262,10 @@ class CostRepository:
             stmt = stmt.where(Cost.deal_id.is_(None))
         elif query.deal_id is not None:
             stmt = stmt.where(Cost.deal_id == query.deal_id)
+        if query.azienda_id is not None:
+            # A shared cost (`NULL`) is nobody's in particular: it answers only the
+            # view over every azienda (REB-623, spec §1.7).
+            stmt = stmt.where(Cost.azienda_id == query.azienda_id)
         if query.category_id is not None:
             stmt = stmt.where(Cost.category_id == query.category_id)
         if query.da is not None:

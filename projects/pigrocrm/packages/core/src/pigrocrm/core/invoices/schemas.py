@@ -499,6 +499,7 @@ class InvoiceRead(BaseModel):
 class InvoiceListQuery(BaseModel):
     customer_id: UUID | None = None
     deal_id: UUID | None = None
+    azienda_id: UUID | None = None
     tipo: InvoiceTipo | None = None
     stato: InvoiceStato | None = None
     anno: int | None = Field(default=None, ge=ANNO_MIN, le=ANNO_MAX)

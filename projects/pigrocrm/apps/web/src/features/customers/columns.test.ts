@@ -13,6 +13,7 @@ import type { Customer } from './queries'
  */
 const BASE_CUSTOMER: Customer = {
   id: 'c1',
+  azienda_id: 'a-1',
   ragione_sociale: 'ACME Srl',
   partita_iva: null,
   codice_fiscale: null,
@@ -58,5 +59,32 @@ describe('the customer as an entity in the first cell', () => {
   it('keeps the chip to two letters however long the company name is', () => {
     renderName({ ...BASE_CUSTOMER, ragione_sociale: 'Prima Società Benefit Srl' })
     expect(screen.getByText('PS')).toBeInTheDocument()
+  })
+})
+
+describe('the «Azienda» column (REB-625)', () => {
+  const AZIENDE = [
+    { id: 'a-1', nome: 'humancraft' },
+    { id: 'a-2', nome: 'rebase' },
+  ] as NonNullable<Parameters<typeof buildCustomerColumns>[1]>['aziende']
+
+  it('is absent without the option, so a one-azienda space keeps its five columns', () => {
+    const headers = buildCustomerColumns([]).map((column) => column.header)
+    expect(headers).not.toContain('Azienda')
+  })
+
+  it('follows the name under «tutte» and reads each row\'s azienda by id', () => {
+    const columns = buildCustomerColumns([], { aziende: AZIENDE })
+    expect(columns.map((column) => column.header).slice(0, 3)).toEqual([
+      'Ragione sociale',
+      'Azienda',
+      'P.IVA',
+    ])
+    const azienda = columns[1]
+    if (azienda === undefined || !('accessorFn' in azienda) || azienda.accessorFn === undefined) {
+      throw new Error('the «Azienda» column has no accessorFn')
+    }
+    expect(azienda.accessorFn({ ...BASE_CUSTOMER, azienda_id: 'a-2' }, 0)).toBe('rebase')
+    expect(azienda.accessorFn({ ...BASE_CUSTOMER, azienda_id: 'gone' }, 0)).toBe('—')
   })
 })

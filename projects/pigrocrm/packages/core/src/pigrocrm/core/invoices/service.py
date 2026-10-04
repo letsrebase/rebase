@@ -221,6 +221,17 @@ class InvoiceService:
         profile = self.fiscal.snapshot(azienda_id)
         return resolve_regime(profile.codice_regime, profile.pack_id), profile
 
+    def _azienda_of_parent(self, customer: Customer, deal_id: UUID | None) -> UUID:
+        """The azienda a new document is born under (REB-623, spec §1.7): the deal's
+        when it hangs on one, the customer's otherwise. Copied now and kept, so a
+        customer moved later leaves this document where it was issued. Refused when
+        that azienda is deactivated (spec §3): a proforma born on it could never issue."""
+        if deal_id is not None:
+            deal = self.session.get(Deal, deal_id)
+            assert deal is not None  # `_check_owner` has already answered NotFound
+            return AziendaService(self.session).inherited(deal.azienda_id, ENTITY)
+        return AziendaService(self.session).inherited(customer.azienda_id, ENTITY)
+
     def _writing_azienda(self, azienda_id: UUID | None) -> Azienda:
         """The azienda a register write goes on: the one named, the default when none,
         and never an inactive one (REB-619). A read may still answer for a deactivated
@@ -435,10 +446,8 @@ class InvoiceService:
         burn until `issue` runs."""
         actor.require_write("create_invoice")
         customer = self._check_owner(data.customer_id, data.deal_id)
-        # The default azienda, until the customer chain of milestone 3 names one
-        # (REB-619, spec §1.6): with one azienda it is the only answer there is.
-        azienda = self.emitter.resolve(None)
-        _, profile = self._regime(azienda.id)
+        azienda_id = self._azienda_of_parent(customer, data.deal_id)
+        _, profile = self._regime(azienda_id)
         self._check_competenza(data.competenza_da, data.competenza_a)
         if data.tipo != "proforma" and data.data_emissione is not None:
             raise ValidationFailed(
@@ -452,7 +461,7 @@ class InvoiceService:
         invoice = Invoice(
             customer_id=data.customer_id,
             deal_id=data.deal_id,
-            azienda_id=azienda.id,
+            azienda_id=azienda_id,
             tipo=data.tipo,
             stato="bozza",
             tipo_documento=TIPO_DOCUMENTO,
@@ -1282,8 +1291,13 @@ class InvoiceService:
             if resolved_customer_id is None and create_customer:
                 resolved_customer_id = created_customers.get(invoice.cliente)
                 if resolved_customer_id is None:
+                    # On the azienda the file landed on (§1.5), not the one the nation
+                    # would propose: the customer was billed by this azienda already.
                     new_customer = self.customers._insert(
-                        map_parsed_party_to_customer(invoice.cliente), actor
+                        map_parsed_party_to_customer(invoice.cliente).model_copy(
+                            update={"azienda_id": azienda.id}
+                        ),
+                        actor,
                     )
                     resolved_customer_id = new_customer.id
                     new_customer_id = new_customer.id
@@ -1412,7 +1426,7 @@ class InvoiceService:
         to what a hand-declared import already guarantees.
         """
         actor.require_admin(IMPORT_ACTION)
-        self._check_owner(data.customer_id, data.deal_id)
+        customer = self._check_owner(data.customer_id, data.deal_id)
         self._check_import_date(data.data_emissione)
         self._check_competenza(data.competenza_da, data.competenza_a)
         self._check_declared_totals(data)
@@ -1455,7 +1469,13 @@ class InvoiceService:
         # All of these can refuse -- `resolve` when the azienda does not exist,
         # `_regime` when no fiscal profile is configured, `_build_snapshot` when no
         # emitter profile is -- and none writes anything.
-        azienda = self._writing_azienda(azienda_id)
+        # Named by the caller (`confirm_import`, the API's `azienda_id`), or the one
+        # the customer's chain gives, as `create` does (REB-623).
+        azienda = self._writing_azienda(
+            azienda_id
+            if azienda_id is not None
+            else self._azienda_of_parent(customer, data.deal_id)
+        )
         _, profile = self._regime(azienda.id)
         snapshot = self._build_snapshot(data.customer_id, profile, actor, azienda.id)
         counter = self.repo.lock_counter(azienda.id, data.anno)

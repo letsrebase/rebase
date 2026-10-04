@@ -24,12 +24,29 @@ names it on every row it inserts, since the column default only knows the defaul
 
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.emitter.models import Azienda
 
 NOME = "Spazio di prova"
+
+
+def ensure_committed_default(engine: Engine, *, nome: str = NOME) -> None:
+    """One committed default azienda in a worker's database, written once by the
+    root's engine fixture (REB-623): since the chain, a customer row and everything
+    under it need an azienda, and a world that commits for real sees only committed
+    rows. The per-test seed on the outer connection (`_seed_default_azienda` in each
+    root's conftest) then finds it and writes nothing; a test that deletes it inside its
+    savepoint sees it come back with the rollback."""
+    with engine.begin() as connection:
+        existing = connection.execute(
+            select(Azienda.id).where(Azienda.predefinita.is_(True))
+        ).scalar_one_or_none()
+        if existing is None:
+            connection.execute(
+                Azienda.__table__.insert().values(nome=nome, ragione_sociale=nome, predefinita=True)
+            )
 
 
 def committed_default_azienda(
@@ -54,4 +71,4 @@ def remove_azienda(session: Session, azienda_id: UUID | None) -> None:
         session.execute(delete(Azienda).where(Azienda.id == azienda_id))
 
 
-__all__ = ["NOME", "committed_default_azienda", "remove_azienda"]
+__all__ = ["NOME", "committed_default_azienda", "ensure_committed_default", "remove_azienda"]

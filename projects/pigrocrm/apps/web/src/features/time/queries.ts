@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAziendaScope } from '@/lib/azienda'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -25,6 +26,7 @@ type TimeEntryUpdateBody = components['schemas']['TimeEntryUpdate']
 
 export interface TimeEntriesListParams {
   deal_id?: string
+  azienda_id?: string
   user_id?: string
   da?: string
   a?: string
@@ -43,11 +45,14 @@ export function useTimeEntries(
   params: TimeEntriesListParams = {},
   options: { enabled?: boolean } = {},
 ) {
+  // The sidebar's azienda (REB-625), through the deal each entry hangs on; a deal's own
+  // tab passes `deal_id` and is left alone.
+  const scoped = useAziendaScope(params)
   return useQuery({
-    queryKey: queryKeys.timeEntries(params),
+    queryKey: queryKeys.timeEntries(scoped),
     enabled: options.enabled ?? true,
     queryFn: () =>
-      unwrap(api.GET('/api/time-entries', { params: { query: { ...params, limit: 200 } } })),
+      unwrap(api.GET('/api/time-entries', { params: { query: { ...scoped, limit: 200 } } })),
   })
 }
 
