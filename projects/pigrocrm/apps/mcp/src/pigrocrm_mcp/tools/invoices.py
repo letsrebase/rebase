@@ -300,6 +300,10 @@ AZIENDA_FIELDS: Final[set[str]] = {
 }
 
 
+# What `describe_azienda` adds beyond the row and `update_azienda` ignores on the way back.
+READ_ONLY_FLAGS: Final[frozenset[str]] = frozenset({"ha_logo", "ha_firma"})
+
+
 def propose_azienda(context: McpContext, nazione: str | None) -> dict[str, Any]:
     """The azienda `AziendaService.propose` picks for a customer of `nazione`
     (REB-624, spec 2026-10-03 §1.6), in the shape `list_aziende` answers."""
@@ -321,19 +325,25 @@ def describe_azienda(context: McpContext, azienda_id: str | None = None) -> dict
 
     `AziendaService.get` is one of the two reads in this product deliberately left
     un-role-gated at the service layer, because the PDF header needs it for every
-    role -- so there is no role for which this is agent-only knowledge. `logo_key` and
-    `firma_key` are storage keys, not bytes, exactly like every other identifier this
-    surface returns; the write on the same row is `update_azienda` (ORB-188). Without
-    `id`, the two flags and the timestamps, so that what this returns can be handed
-    back to the write unchanged: `AziendaUpsert` forbids extra keys, and the round trip
-    the write's docstring prescribes («leggi prima, rimanda indietro l'oggetto») has to
-    be possible. The same exclusion `as_template_values` applies.
+    role -- so there is no role for which this is agent-only knowledge. The logo and the
+    signature appear as `ha_logo` and `ha_firma`, since REB-627: the files are uploaded
+    over the REST API and their keys are the server's. The write on the same row is
+    `update_azienda` (ORB-188). Without `id`, the two state flags, the timestamps and the
+    two image flags, what this returns can be handed back to the write unchanged:
+    `AziendaUpsert` forbids extra keys, and the round trip the write's docstring
+    prescribes («leggi prima, rimanda indietro l'oggetto») has to be possible.
     """
-    return (
-        AziendaService(context.session)
-        .get(context.actor, parse_azienda_id(azienda_id))
-        .model_dump(mode="json", exclude=set(TEMPLATE_EXCLUDED_FIELDS))
-    )
+    profile = AziendaService(context.session).get(context.actor, parse_azienda_id(azienda_id))
+    # Whether the two images are set, never the storage keys (REB-627): the keys are
+    # the server's, `AziendaUpsert` no longer takes them, and an agent reading this to
+    # hand it back to `update_azienda` must get an object the write accepts.
+    return {
+        **profile.model_dump(
+            mode="json", exclude={*TEMPLATE_EXCLUDED_FIELDS, "logo_key", "firma_key"}
+        ),
+        "ha_logo": profile.logo_key is not None,
+        "ha_firma": profile.firma_key is not None,
+    }
 
 
 def update_azienda(
@@ -348,7 +358,12 @@ def update_azienda(
     # Spelled as `AziendaService(...)` on each call rather than bound to a local:
     # `test_mcp_surface_coverage.py` resolves receivers by name across the whole
     # module, and `service` is the name this file binds to `InvoiceService`.
-    data = AziendaUpsert.model_validate(dati)
+    # The two image flags `describe_azienda` answers are read-only facts, not columns:
+    # dropped here so the read can be handed back whole, as the tool's own docstring
+    # prescribes, without `AziendaUpsert` refusing them as extra keys.
+    data = AziendaUpsert.model_validate(
+        {key: value for key, value in dati.items() if key not in READ_ONLY_FLAGS}
+    )
     target = parse_azienda_id(azienda_id)
     if target is None:
         return (

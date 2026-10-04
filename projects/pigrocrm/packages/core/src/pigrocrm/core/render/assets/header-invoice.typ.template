@@ -8,7 +8,7 @@
       column-gutter: 0.6cm,
       [
         #box(inset: (top: 6pt))[
-          #image("./media/logo.png", width: 60pt)
+          {{#if logo.png}}#image("./media/logo.png", width: 60pt){{/if}}{{#if logo.svg}}#image("./media/logo.svg", width: 60pt){{/if}}{{#if logo.nessuno}}#text(size: 11pt, weight: "bold")[{{emittente.ragione_sociale}}]{{/if}}
         ]
       ],
       [

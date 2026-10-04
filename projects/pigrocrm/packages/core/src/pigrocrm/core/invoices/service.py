@@ -29,6 +29,7 @@ from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import ENTITY as DOCUMENT_ENTITY
 from pigrocrm.core.documents.service import DocumentService
 from pigrocrm.core.drive.reader import ALREADY_AUTHORIZED, DriveReader, drive_reader_for
+from pigrocrm.core.emitter.assets import AziendaAssets
 from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, ImmutableField, NotFound, ValidationFailed
@@ -2573,7 +2574,11 @@ class InvoiceService:
         riferimento = invoice.riferimento if invoice.tipo == "proforma" else None
 
         _, data = invoice_pdf.render_invoice_pdf(
-            export, riferimento=riferimento, settings=self.settings
+            export,
+            riferimento=riferimento,
+            settings=self.settings,
+            # The issuing azienda's logo (REB-627, spec §1.8), live like the document's.
+            media=AziendaAssets(self.session, self.storage).media_for(invoice.azienda_id),
         )
         # `fattura`/`proforma`, the names `DocumentTipo` actually declares -- the PDF is
         # *the* document of its kind, and `fattura_xml` is the one that needs qualifying

@@ -34,7 +34,6 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import DocumentVersion
-from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.attach import describe_attachments
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage
@@ -118,26 +117,25 @@ class EmailDraftService:
 
     # ---- the pieces the write paths share ------------------------------------------
 
-    def _domain(self) -> str:
+    def _domain(self, entity_type: str, entity_id: UUID) -> str:
         """The right-hand side of the `Message-ID`, from the installation's own identity.
 
         `public_url` first, because that is the origin this CRM answers on and the one
         Google already compares character by character for the OAuth redirect. The
-        issuer's website second, because an installation reachable only on a LAN still
-        has an identity its clients recognise. `localhost.invalid` last, and it is a
-        deliberate admission rather than a default that looks plausible.
+        website of the azienda the draft speaks for second (REB-627, spec §1.8), because
+        an installation reachable only on a LAN still has an identity its clients
+        recognise. `localhost.invalid` last, and it is a deliberate admission rather
+        than a default that looks plausible.
         """
-        for candidate in (self.settings.public_url, self._emitter_site()):
+        for candidate in (self.settings.public_url, self._emitter_site(entity_type, entity_id)):
             host = urlparse(candidate).hostname if "//" in candidate else candidate.strip()
             if host and "." in host:
                 return host.lower()
         return _FALLBACK_DOMAIN
 
-    def _emitter_site(self) -> str:
-        site = self.session.execute(
-            select(Azienda.sito_web).where(Azienda.predefinita.is_(True))
-        ).scalar_one_or_none()
-        return site or ""
+    def _emitter_site(self, entity_type: str, entity_id: UUID) -> str:
+        azienda = self.repo.azienda_for(entity_type, entity_id)
+        return (azienda.sito_web if azienda is not None else None) or ""
 
     def _get(self, draft_id: UUID) -> EmailDraft:
         draft = self.session.get(EmailDraft, draft_id)
@@ -202,7 +200,7 @@ class EmailDraftService:
             subject=data.subject,
             body_markdown=data.body_markdown,
             attachment_version_ids=attachments,
-            message_id_header=new_message_id(self._domain()),
+            message_id_header=new_message_id(self._domain(data.entity_type, data.entity_id)),
             in_reply_to_message_id=data.in_reply_to_message_id,
             send_state="bozza",
         )

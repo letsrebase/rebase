@@ -11,10 +11,12 @@ value a user or an agent supplied is already inside `markdown`, already escaped 
 request-derived string becomes a command-line argument.
 """
 
+import base64
 import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +30,20 @@ RENDER_TIMEOUT_SECONDS = 30
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 PANDOC_TEMPLATE = ASSETS_DIR / "pandoc-template.typst"
 HEADER_TEMPLATE = ASSETS_DIR / "header.typ.template"
+
+# The names a Typst job writes an azienda's images under, which are the names the
+# header templates and the seeded offer template reference (REB-627, spec 2026-10-03
+# §6). The bundle carries no logo and no signature any more: REB-48 called shipping
+# one person's assets a defect, and a per-azienda upload is what finally removed the
+# need. A job that is handed no signature still gets `sign_is.png`, a transparent
+# pixel, so an offer template seeded before the upload existed keeps compiling.
+MEDIA_LOGO_PNG = "logo.png"
+MEDIA_LOGO_SVG = "logo.svg"
+MEDIA_FIRMA = "sign_is.png"
+# A 1x1 fully transparent PNG, the smallest valid one.
+BLANK_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+)
 # The previous system's own reader extensions, carried over unchanged: `raw_attribute` is what makes
 # ```{=typst} a raw block rather than a code listing, and without it the whole
 # two-context escaping design has only one context.
@@ -93,8 +109,20 @@ def _defeat_typst_autotypography(typst_source: str) -> str:
     return _BARE_DOT_RUN.sub(lambda m: "\\." * len(m.group(0)), typst_source)
 
 
-def build_header(profile: dict[str, Any]) -> str:
-    """The Typst page header, filled from the emitter profile.
+def logo_flags(logo: str | None) -> dict[str, bool]:
+    """The three flags a header template branches on: which logo file the job carries,
+    or none, in which case the header sets the azienda's name in type instead."""
+    return {
+        "png": logo == MEDIA_LOGO_PNG,
+        "svg": logo == MEDIA_LOGO_SVG,
+        "nessuno": logo is None,
+    }
+
+
+def build_header(profile: dict[str, Any], *, logo: str | None = None) -> str:
+    """The Typst page header, filled from the emitter profile. `logo` is the media file
+    the job carries for this azienda (`MEDIA_LOGO_PNG`, `MEDIA_LOGO_SVG`) or `None`,
+    which draws the `ragione_sociale` in type where the image would be.
 
     Rendered through the same engine as the document body, so the issuer's own values
     get the same escaping -- an `@` in an email address is a Typst reference and would
@@ -110,7 +138,13 @@ def build_header(profile: dict[str, Any]) -> str:
     purpose would leave the fence delimiters themselves as literal, invalid text in
     the rendered header -- worse than the mismatch it would fix.
     """
-    return render_template(HEADER_TEMPLATE.read_text(encoding="utf-8"), {"emittente": profile})
+    return render_template(
+        HEADER_TEMPLATE.read_text(encoding="utf-8"),
+        {"emittente": profile, "logo": logo_flags(logo)},
+    )
+
+
+_MEDIA_NAMES = frozenset({MEDIA_LOGO_PNG, MEDIA_LOGO_SVG, MEDIA_FIRMA})
 
 
 def _run(argv: list[str], workdir: Path) -> subprocess.CompletedProcess[bytes]:
@@ -150,8 +184,14 @@ def render_pdf(
     header_typst: str,
     settings: Settings,
     temp_root: Path | None = None,
+    media: Mapping[str, bytes] | None = None,
 ) -> bytes:
     """Compiled Markdown in, PDF bytes out.
+
+    `media` is what the job's `media/` directory holds beyond the signature placeholder:
+    the azienda's logo under `MEDIA_LOGO_PNG` or `MEDIA_LOGO_SVG` and its signature under
+    `MEDIA_FIRMA`, as `AziendaAssets.media_for` builds it. The names are a fixed set
+    (`_MEDIA_NAMES`): a caller cannot write an arbitrary file into the compile root.
 
     The whole render happens inside one throwaway directory that is removed on every
     path, success or failure. `media/` is copied in rather than referenced in place,
@@ -170,7 +210,13 @@ def render_pdf(
     """
     workdir = Path(tempfile.mkdtemp(prefix="pigrocrm-render-", dir=temp_root))
     try:
-        shutil.copytree(ASSETS_DIR / "media", workdir / "media")
+        media_dir = workdir / "media"
+        media_dir.mkdir()
+        files = {MEDIA_FIRMA: BLANK_PNG, **(media or {})}
+        for name, data in files.items():
+            if name not in _MEDIA_NAMES:
+                raise ValueError(f"not a media file a render takes: {name!r}")
+            (media_dir / name).write_bytes(data)
         source = workdir / "source.md"
         header = workdir / "header.typ"
         intermediate = workdir / "intermediate.typ"

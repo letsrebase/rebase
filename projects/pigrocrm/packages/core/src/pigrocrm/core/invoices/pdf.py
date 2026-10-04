@@ -18,15 +18,17 @@ with its words, a rule, a «Thank you!» with the contacts, `1.760,00 €` and `
 Where this file departs from that layout it says so at the value that departs.
 """
 
+from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
 from typing import Any
 
 from pigrocrm.core.config import Settings
+from pigrocrm.core.emitter.assets import logo_file_in
 from pigrocrm.core.invoices.naming import numero_completo
 from pigrocrm.core.invoices.schemas import InvoiceForExport
 from pigrocrm.core.money import round_money
-from pigrocrm.core.render.pdf import ASSETS_DIR, render_pdf
+from pigrocrm.core.render.pdf import ASSETS_DIR, logo_flags, render_pdf
 from pigrocrm.core.templates.renderer import render_template
 
 # One template for the fattura and the proforma, with the declaration under a
@@ -337,19 +339,23 @@ def _dichiarazione_regime(export: InvoiceForExport) -> str:
     return export.snapshot.fiscale.riferimento_normativo or _EMPTY
 
 
-def build_invoice_header(scope: dict[str, Any]) -> str:
+def build_invoice_header(scope: dict[str, Any], *, logo: str | None = None) -> str:
     """The invoice's page header, from the same scope the body reads, through the same
     engine and therefore the same escaping (`@` in an email is a Typst reference; see
     `render/pdf.py::build_header`, whose reasoning this shares and whose template it
-    does not)."""
+    does not). `logo` is the media file the job carries, or `None` for the name in type."""
     return render_template(
         INVOICE_HEADER_TEMPLATE.read_text(encoding="utf-8"),
-        {"emittente": scope["emittente"], "fiscale": scope["fiscale"]},
+        {"emittente": scope["emittente"], "fiscale": scope["fiscale"], "logo": logo_flags(logo)},
     )
 
 
 def render_invoice_pdf(
-    export: InvoiceForExport, *, riferimento: str | None, settings: Settings
+    export: InvoiceForExport,
+    *,
+    riferimento: str | None,
+    settings: Settings,
+    media: Mapping[str, bytes] | None = None,
 ) -> tuple[str, bytes]:
     """`(compiled_markdown, pdf_bytes)`.
 
@@ -360,5 +366,8 @@ def render_invoice_pdf(
     """
     scope = build_scope(export, riferimento=riferimento)
     markdown = render_template(INVOICE_TEMPLATE.read_text(encoding="utf-8"), scope)
-    header = build_invoice_header(scope)
-    return markdown, render_pdf(markdown, header_typst=header, settings=settings)
+    # The identity in the header is the frozen snapshot's; the logo is the azienda's
+    # live one (REB-627, spec §1.8), the way `regenerate` re-reads a live profile: a logo
+    # is not a fiscal fact, and a re-render after a rebrand should carry the new mark.
+    header = build_invoice_header(scope, logo=logo_file_in(dict(media or {})))
+    return markdown, render_pdf(markdown, header_typst=header, settings=settings, media=media)

@@ -506,7 +506,7 @@ class EmailSendService:
         return to_base64url(
             build_rfc822(
                 from_address=account.email_address,
-                from_name=self._signature_name(),
+                from_name=self._signature_name(draft),
                 to=list(draft.to_addresses),
                 cc=list(draft.cc_addresses),
                 subject=draft.subject,
@@ -533,15 +533,17 @@ class EmailSendService:
         chain = " ".join(part for part in (parent.references, parent.message_id_header) if part)
         return parent.message_id_header, chain
 
-    def _signature_name(self) -> str:
-        """The display name on the `From` header, from `emitter_profile.ragione_sociale`.
+    def _signature_name(self, draft: EmailDraft) -> str:
+        """The display name on the `From` header: the `ragione_sociale` of the azienda
+        the draft's record belongs to (REB-627, spec §1.8), the default's for a record
+        with none.
 
         Never hardcoded, and never defaulted to something plausible: slice 2's whole
         point about `header.typ` was that a CRM for Italian freelancers cannot carry one
         freelancer's name in its source. An installation that has not filled the issuer
         in sends from a bare address, which is honest.
         """
-        profile = self.repo.emitter_profile()
+        profile = self.repo.azienda_for(draft.entity_type, draft.entity_id)
         return profile.ragione_sociale if profile else ""
 
     def _finish(

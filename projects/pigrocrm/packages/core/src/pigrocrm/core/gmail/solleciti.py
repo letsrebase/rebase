@@ -36,7 +36,6 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.repository import AziendaRepository
 from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
@@ -247,7 +246,9 @@ class SollecitiService:
         # Everything the body needs, resolved before anything is written: a reminder with
         # no IBAN is a reminder nobody can act on, and discovering that after the row
         # exists would burn a position in the sequence.
-        emittente = self._emitter_scope(actor)
+        # The invoice's azienda, not the default (REB-627, spec §1.8): the letter signs
+        # as whoever issued and names that azienda's IBAN.
+        emittente = self._emitter_scope(actor, invoice.azienda_id)
         # Resolved before the body is rendered, because the body's own wording depends on
         # it: `invoice_pdf_version_ids` legitimately answers `[]` for an invoice whose PDF
         # was never rendered or has since been removed, and a reminder that promises «in
@@ -263,7 +264,7 @@ class SollecitiService:
                 "data_fattura": _data_italiana(invoice.data_emissione),
                 "scadenza": _data_italiana(invoice.data_scadenza),
                 "importo": _euro(invoice.totale),
-                "iban": self._iban(),
+                "iban": self._iban(invoice.azienda_id),
                 # The free-text block. Read from the same scope rather than from a second
                 # query, and offered at the top level too because the template puts it
                 # above the company line -- one source, two names, no second copy to
@@ -421,7 +422,7 @@ class SollecitiService:
             raise Conflict(ENTITY, "si può sollecitare solo una fattura già emessa")
         return numero_completo(invoice.anno, invoice.numero)
 
-    def _emitter_scope(self, actor: Actor) -> dict[str, Any]:
+    def _emitter_scope(self, actor: Actor, azienda_id: UUID) -> dict[str, Any]:
         """`{"emittente": {...}}`, the same scope every other template in this project
         renders against.
 
@@ -436,14 +437,14 @@ class SollecitiService:
         non trovato» is a puzzle.
         """
         try:
-            return AziendaService(self.session).as_template_values(actor)
+            return AziendaService(self.session).as_template_values(actor, azienda_id)
         except NotFound as missing:
             raise Conflict(
                 ENTITY,
                 "manca il profilo dell'emittente: compilalo prima di sollecitare",
             ) from missing
 
-    def _iban(self) -> str:
+    def _iban(self, azienda_id: UUID) -> str:
         """Where the client is being asked to pay, from `fiscal_profile.iban`.
 
         Never a literal and never a placeholder: the previous system's `normalizeIban(iban) ||
@@ -455,12 +456,7 @@ class SollecitiService:
         `emitter_profile` holds the issuer's identity, `fiscal_profile` the numbers and
         codes, and the invoice's own XML already reads the IBAN from there.
         """
-        # The default azienda's, until milestone 4 of spec 2026-10-03 gives a reminder
-        # the azienda of the invoice it is about (§1.8).
-        azienda = AziendaRepository(self.session).default()
-        profile = (
-            FiscalProfileRepository(self.session).get(azienda.id) if azienda is not None else None
-        )
+        profile = FiscalProfileRepository(self.session).get(azienda_id)
         iban = (profile.iban or "").strip() if profile is not None else ""
         if not iban:
             raise Conflict(

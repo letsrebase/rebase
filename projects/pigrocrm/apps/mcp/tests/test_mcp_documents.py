@@ -328,9 +328,10 @@ async def test_describe_azienda_reads_the_issuer_every_header_prints(
 
     assert profile["ragione_sociale"] == "Studio Rossi"
     assert profile["partita_iva"] == "01234567890"
-    # Storage keys, never bytes (spec slice 2 §7): the logo travels as a key the REST
-    # API can serve, exactly like every other identifier on this surface.
-    assert "logo_key" in profile
+    # Whether a logo is set, never its storage key (REB-627): the keys are the server's,
+    # and an agent that reads this hands it back to `update_azienda` unchanged.
+    assert profile["ha_logo"] is False
+    assert "logo_key" not in profile
 
 
 class _Provider:
