@@ -20,6 +20,7 @@ from pigrocrm.core.customers.schemas import (
     CustomerUpdate,
 )
 from pigrocrm.core.db import encode_cursor
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -107,6 +108,7 @@ class CustomerService:
         self.repo = CustomerRepository(session)
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
+        self.aziende = AziendaService(session)
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         """Used by `create` only: `values` is the *complete* desired set of custom
@@ -195,12 +197,28 @@ class CustomerService:
         payload = data.model_dump()
         _check_fiscal(payload, payload.get("nazione") or "IT")
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
+        payload["azienda_id"] = self._azienda_for(payload.get("azienda_id"), payload.get("nazione"))
 
         customer = self.repo.add(Customer(**payload))
         self.activities.record(
             ENTITY, customer.id, "created", actor, {"ragione_sociale": customer.ragione_sociale}
         )
         return customer
+
+    def _azienda_for(self, azienda_id: UUID | None, nazione: str | None) -> UUID:
+        """The azienda a customer is billed by: the one named, which must exist and be
+        active, or the one its nation proposes (REB-623, spec §1.6)."""
+        if azienda_id is None:
+            return self.aziende.propose(nazione).id
+        azienda = self.aziende.resolve(azienda_id)
+        if not azienda.attiva:
+            raise ValidationFailed(
+                ENTITY,
+                "azienda_id",
+                "l'azienda non e' attiva: un cliente si assegna a un'azienda attiva",
+                expected="l'id di un'azienda attiva",
+            )
+        return azienda.id
 
     def create(self, data: CustomerCreate, actor: Actor) -> CustomerRead:
         customer = self._insert(data, actor)
@@ -300,6 +318,10 @@ class CustomerService:
         reject_cleared_columns(ENTITY, Customer, changes)
         # The country after this patch, not merely the one it mentions.
         _check_fiscal(changes, changes.get("nazione") or customer.nazione)
+        if changes.get("azienda_id") is not None:
+            # Named, so no proposal: a move is a decision, and it moves nothing already
+            # created under the customer (spec §1.7).
+            changes["azienda_id"] = self._azienda_for(changes["azienda_id"], None)
         if data.custom_fields is not None:
             changes["custom_fields"] = self._update_custom_fields(customer, data.custom_fields)
         for key, value in changes.items():

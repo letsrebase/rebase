@@ -46,6 +46,8 @@ class ContractRepository:
         stmt = select(Contract).where(Contract.deleted_at.is_(None))
         if query.customer_id:
             stmt = stmt.where(Contract.customer_id == query.customer_id)
+        if query.azienda_id:
+            stmt = stmt.where(Contract.azienda_id == query.azienda_id)
         if query.stato:
             stmt = stmt.where(Contract.stato == query.stato)
 

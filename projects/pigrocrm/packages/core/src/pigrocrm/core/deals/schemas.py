@@ -121,6 +121,8 @@ class DealRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    # The customer's azienda when the deal was created (REB-623); read-only.
+    azienda_id: UUID
     nome: str
     customer_id: UUID
     pipeline_stage_id: UUID
@@ -176,6 +178,7 @@ class DealListQuery(BaseModel):
     # `cursor` is an opaque bounded string rather than a UUID.
     search: SafeStr | None = None
     customer_id: UUID | None = None
+    azienda_id: UUID | None = None
     stage_id: UUID | None = None
     custom: dict[str, Any] | None = None
     # The two drill-throughs of the operational dashboard's signal cards (§6.2). Booleans

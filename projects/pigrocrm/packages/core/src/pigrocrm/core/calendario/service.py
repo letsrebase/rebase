@@ -55,7 +55,14 @@ class CalendarService:
         self.repo = CalendarRepository(session)
         self.attivita = AttivitaRepository(session)
 
-    def month(self, mese: str, actor: Actor, *, user_id: UUID | None = None) -> CalendarMonth:
+    def month(
+        self,
+        mese: str,
+        actor: Actor,
+        *,
+        user_id: UUID | None = None,
+        azienda_id: UUID | None = None,
+    ) -> CalendarMonth:
         """Every day of `mese` that has hours, activities or an invoice falling due.
 
         `user_id` scopes the hours to one person. The default is `actor.id`, which is
@@ -67,7 +74,8 @@ class CalendarService:
         da, a = month_bounds(mese)
         oggi = today_local()
 
-        ore = self.repo.hours_by_day_and_deal(da, a, user_id=user_id)
+        # `azienda_id` narrows both reads to one azienda's deals and invoices (REB-623).
+        ore = self.repo.hours_by_day_and_deal(da, a, user_id=user_id, azienda_id=azienda_id)
         etichette = self.repo.deal_labels({deal_id for _, deal_id, _ in ore})
 
         giorni: dict[date, CalendarDay] = {}
@@ -102,7 +110,7 @@ class CalendarService:
                 continue
             giorno(scadenza_attivita).attivita.append(AttivitaRead.model_validate(row))
 
-        for invoice, cliente in self.repo.invoices_due(da, a):
+        for invoice, cliente in self.repo.invoices_due(da, a, azienda_id=azienda_id):
             scadenza = invoice.data_scadenza
             if scadenza is None:  # pragma: no cover - excluded by the query itself
                 continue

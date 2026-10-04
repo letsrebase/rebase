@@ -9,6 +9,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.repository import DocumentRepository
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -52,6 +53,7 @@ class CostService:
         self.session = session
         self.repo = CostRepository(session)
         self.deals = DealRepository(session)
+        self.aziende = AziendaService(session)
         self.documents = DocumentRepository(session)
         self.categories = CostCategoryService(session)
         self.locks = PeriodLockService(session)
@@ -88,6 +90,29 @@ class CostService:
             raise NotFound("deal", deal_id)
         if document_id is not None and self.documents.get(document_id) is None:
             raise NotFound("document", document_id)
+
+    def _azienda_for(self, deal_id: UUID | None, wanted: UUID | None) -> UUID | None:
+        """A cost's azienda (REB-623, spec §1.7): the deal's when it has a deal, and a
+        different one named beside it is refused rather than overruled in silence;
+        without a deal, the one named, which must exist, or `None`, a shared cost."""
+        if deal_id is not None:
+            # The deal a cost already hangs on may be archived since: its azienda still
+            # answers, and an update of such a cost is a domain error at worst, never
+            # an assertion.
+            deal = self.deals.get(deal_id, include_deleted=True)
+            if deal is None:
+                raise NotFound("deal", deal_id)
+            if wanted is not None and wanted != deal.azienda_id:
+                raise ValidationFailed(
+                    ENTITY,
+                    "azienda_id",
+                    "un costo su un deal prende l'azienda del deal",
+                    expected=f"nessuna azienda, oppure {deal.azienda_id}",
+                )
+            return deal.azienda_id
+        if wanted is None:
+            return None
+        return self.aziende.resolve(wanted).id
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         return validate_custom_fields(ENTITY, self.fields.specs_for(ENTITY), values)
@@ -129,6 +154,7 @@ class CostService:
         cost = self.repo.add(
             Cost(
                 deal_id=data.deal_id,
+                azienda_id=self._azienda_for(data.deal_id, data.azienda_id),
                 category_id=data.category_id,
                 data=data.data,
                 # The **total paid**, VAT included: under the flat-rate regime input VAT
@@ -168,6 +194,14 @@ class CostService:
         # `deal_id: null` -- now reachable -- passes through it as "clear it" instead of
         # becoming a lookup for `None`.
         self._check_refs(changes.get("deal_id"), changes.get("document_id"))
+        if "deal_id" in changes or "azienda_id" in changes:
+            # Moved to another deal, off a deal, or given an azienda of its own: the
+            # azienda follows the deal when there is one and the request otherwise.
+            deal_id = changes.get("deal_id", cost.deal_id)
+            # Off a deal with no azienda named: shared, not the old deal's.
+            kept = None if "deal_id" in changes else cost.azienda_id
+            wanted = changes.get("azienda_id", kept)
+            changes["azienda_id"] = self._azienda_for(deal_id, wanted)
         if changes.get("category_id") is not None:
             self.categories.require_active(changes["category_id"])
         self.locks.assert_writable(ENTITY, "data", cost.data, changes.get("data"))

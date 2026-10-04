@@ -452,41 +452,36 @@ def test_anno_must_match_the_issue_dates_year(db_session: Session, tmp_path) -> 
     assert caught.value.details["field"] == "anno"
 
 
-def test_a_missing_emitter_profile_is_refused_before_any_row_is_flushed(
+def test_a_missing_fiscal_profile_is_refused_before_any_row_is_flushed(
     db_session: Session, tmp_path
 ) -> None:  # noqa: ANN001
-    """The state a fresh installation is in before §2.3 is done -- and the state the
-    live one was in when this was found. `_build_snapshot` reads `emitter_profile` and
-    raises `NotFound`; that used to happen *after* `repo.add`/`add_line` had flushed the
-    invoice and its lines, and nothing rolled back, because only `IntegrityError` was
-    caught. The caller was told the import failed and the register carried it anyway.
-    """
-    # No azienda at all, and therefore no fiscal profile either: since REB-615 a profile
-    # belongs to an azienda, so the first thing the import can miss is the azienda.
-    from sqlalchemy import delete
+    """The state a fresh space is in before its profile is saved. `_regime` reads
+    `fiscal_profile` and raises `NotFound`; that used to happen *after*
+    `repo.add`/`add_line` had flushed the invoice and its lines, and nothing rolled
+    back, because only `IntegrityError` was caught. The caller was told the import
+    failed and the register carried it anyway.
 
-    from pigrocrm.core.emitter.models import Azienda
-    from pigrocrm.core.emitter.repository import AziendaRepository
+    It used to be the emitter profile that was missing; since REB-623 a customer cannot
+    exist without an azienda, so the first thing an import can miss is the profile.
+    """
     from pigrocrm.core.errors import NotFound
+    from pigrocrm.core.fiscal.repository import FiscalProfileRepository
     from pigrocrm.core.invoices.service import InvoiceService
     from pigrocrm.core.storage.local import LocalFileStorage
 
-    db_session.execute(delete(Azienda))
-    db_session.flush()
-    assert AziendaRepository(db_session).default() is None
     service = InvoiceService(db_session, LocalFileStorage(tmp_path))
     cid = _fiscal_customer_id(db_session)
+    assert FiscalProfileRepository(db_session).get(_default_azienda_id(db_session)) is None
 
     with pytest.raises(NotFound) as caught:
         service.import_issued(_payload(cid, numero=7, giorno=date(2026, 5, 5)), ADMIN)
-    assert caught.value.details["entity"] == "emitter_profile"
+    assert caught.value.details["entity"] == "fiscal_profile"
     # No invoice, no lines, and not even the year's counter row: the refusal happened
     # above `lock_counter`, which is what inserts it.
     assert db_session.execute(select(Invoice)).first() is None
-    assert db_session.execute(select(InvoiceCounter)).first() is None
-    # And the session is still usable -- a query, not an exception, is what comes back
-    # (a register read by id, since with no azienda there is no default to resolve).
-    assert service.repo.numbers_present(uuid4(), 2026) == set()
+    assert _counter(db_session, 2026) is None
+    # And the session is still usable -- a query, not an exception, is what comes back.
+    assert service.undeclared_gaps(2026) == []
 
 
 def test_a_number_beyond_the_register_is_refused_by_the_schema(

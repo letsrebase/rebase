@@ -4442,6 +4442,11 @@ export interface components {
              * Format: uuid
              */
             customer_id: string;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
             /** Titolo */
             titolo: string;
             /**
@@ -4541,6 +4546,8 @@ export interface components {
         CostCreate: {
             /** Deal Id */
             deal_id?: string | null;
+            /** Azienda Id */
+            azienda_id?: string | null;
             /**
              * Category Id
              * Format: uuid
@@ -4583,6 +4590,8 @@ export interface components {
             id: string;
             /** Deal Id */
             deal_id: string | null;
+            /** Azienda Id */
+            azienda_id: string | null;
             /**
              * Category Id
              * Format: uuid
@@ -4620,6 +4629,8 @@ export interface components {
         CostUpdate: {
             /** Deal Id */
             deal_id?: string | null;
+            /** Azienda Id */
+            azienda_id?: string | null;
             /** Category Id */
             category_id?: string | null;
             /** Data */
@@ -4694,6 +4705,8 @@ export interface components {
              * @default IT
              */
             nazione: string;
+            /** Azienda Id */
+            azienda_id?: string | null;
             /** Email */
             email?: string | null;
             /** Telefono */
@@ -4746,6 +4759,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
             /** Ragione Sociale */
             ragione_sociale: string;
             /** Partita Iva */
@@ -4817,6 +4835,8 @@ export interface components {
             provincia?: string | null;
             /** Nazione */
             nazione?: string | null;
+            /** Azienda Id */
+            azienda_id?: string | null;
             /** Email */
             email?: string | null;
             /** Telefono */
@@ -4978,6 +4998,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
             /** Nome */
             nome: string;
             /**
@@ -5161,6 +5186,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
             /** Customer Id */
             customer_id: string | null;
             /** Deal Id */

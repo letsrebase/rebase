@@ -782,6 +782,8 @@ class InvoiceRepository:
             stmt = stmt.where(Invoice.customer_id == query.customer_id)
         if query.deal_id:
             stmt = stmt.where(Invoice.deal_id == query.deal_id)
+        if query.azienda_id:
+            stmt = stmt.where(Invoice.azienda_id == query.azienda_id)
         if query.tipo:
             stmt = stmt.where(Invoice.tipo == query.tipo)
         if query.stato:

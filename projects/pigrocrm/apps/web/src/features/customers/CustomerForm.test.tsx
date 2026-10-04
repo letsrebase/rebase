@@ -7,6 +7,7 @@ import type { FieldDefinition } from '@/lib/schema'
 
 const BASE_CUSTOMER: Customer = {
   id: 'c1',
+  azienda_id: 'a-1',
   ragione_sociale: 'ACME Srl',
   partita_iva: null,
   codice_fiscale: null,

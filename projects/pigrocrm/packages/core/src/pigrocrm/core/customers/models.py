@@ -1,10 +1,12 @@
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import Boolean, Index, Integer, String, Text, text
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
+from pigrocrm.core.emitter.models import default_azienda_id
 
 
 class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
@@ -82,6 +84,14 @@ class Customer(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     )
 
     ragione_sociale: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The azienda this customer is billed by (REB-623, spec 2026-10-03 §1.6): proposed
+    # from `nazione` at creation, editable afterwards, and copied onto every deal,
+    # contract, document and invoice born under the customer from then on; changing it
+    # moves nothing already created (§1.7). The column default is the space's default
+    # azienda, for a row built without one; the service always names it.
+    azienda_id: Mapped[UUID] = mapped_column(
+        ForeignKey("emitter_profile.id"), nullable=False, index=True, default=default_azienda_id
+    )
     partita_iva: Mapped[str | None] = mapped_column(String(11), default=None, index=True)
     codice_fiscale: Mapped[str | None] = mapped_column(String(16), default=None)
     codice_sdi: Mapped[str | None] = mapped_column(String(7), default=None)

@@ -719,3 +719,18 @@ Added as the milestones land, dated, never rewriting the sections above.
   the natura, the riferimento, the bollo and the three income parameters when the pack
   is foreign and the caller leaves them out, and the service refuses them when given,
   so the API and MCP agree with Impostazioni without each repeating the rule.
+
+- **2026-10-04, milestone «Assign customers to an azienda and inherit it down the chain»
+  (REB-623).** The four `NOT NULL` columns of §2 step 4 carry the same context default as
+  `invoices.azienda_id`, the space's default azienda, for the rows a test builds by hand;
+  the services copy the parent's on every row they write and the migration backfills the
+  one azienda every space has. The proposal (`AziendaService.propose`) reads the active
+  aziende only, so a deactivated one is never proposed, and a customer named onto an
+  inactive azienda is refused. A cost may name an azienda of its own only without a deal;
+  with one, a different azienda beside it is refused rather than overruled in silence, and
+  moving a cost off its deal with no azienda named makes it shared. An invoice born from a
+  deal takes the deal's azienda, as §1.7 says, even when its customer has since moved; so
+  does a document hung on a deal or a contract. The search narrows people through their
+  customer, so a contact with no customer answers only the search over every azienda.
+  Time entries and the calendar's hours narrow through their deal with a subquery served
+  by `ix_deals_azienda_id` rather than a column they would copy.

@@ -33,6 +33,7 @@ function renderWithClient(ui: ReactElement) {
 
 const BASE_DEAL: Deal = {
   id: 'd1',
+  azienda_id: 'a-1',
   nome: 'Sito vetrina',
   customer_id: 'cust-1',
   pipeline_stage_id: 's1',

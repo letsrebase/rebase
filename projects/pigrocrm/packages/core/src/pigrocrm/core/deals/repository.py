@@ -316,6 +316,8 @@ class DealRepository:
             stmt = stmt.where(Deal.nome.ilike(like, escape="\\"))
         if query.customer_id:
             stmt = stmt.where(Deal.customer_id == query.customer_id)
+        if query.azienda_id:
+            stmt = stmt.where(Deal.azienda_id == query.azienda_id)
         if query.stage_id:
             stmt = stmt.where(Deal.pipeline_stage_id == query.stage_id)
         if query.custom:

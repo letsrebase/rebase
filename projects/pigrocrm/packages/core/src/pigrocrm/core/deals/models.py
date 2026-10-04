@@ -8,6 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
+from pigrocrm.core.emitter.models import default_azienda_id
 
 
 class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
@@ -65,6 +66,12 @@ class Deal(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
     # Required: see the class docstring above.
     customer_id: Mapped[UUID] = mapped_column(
         ForeignKey("customers.id"), nullable=False, index=True
+    )
+    # The azienda the deal was born under: the customer's at creation (REB-623, §1.7),
+    # kept whatever the customer does afterwards. The column default serves a row built
+    # without one.
+    azienda_id: Mapped[UUID] = mapped_column(
+        ForeignKey("emitter_profile.id"), nullable=False, index=True, default=default_azienda_id
     )
     pipeline_stage_id: Mapped[UUID] = mapped_column(
         ForeignKey("pipeline_stages.id"), nullable=False, index=True

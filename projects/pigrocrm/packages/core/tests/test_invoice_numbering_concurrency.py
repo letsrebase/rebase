@@ -87,7 +87,7 @@ def world(db_engine: Engine, tmp_path):  # type: ignore[no-untyped-def]
             cleanup.execute(text("DELETE FROM invoices"))
             cleanup.execute(text("DELETE FROM invoice_counters"))
             cleanup.execute(text("DELETE FROM fiscal_profile"))
-            cleanup.execute(text("DELETE FROM emitter_profile"))
+            cleanup.execute(text("DELETE FROM emitter_profile WHERE NOT predefinita"))
             cleanup.execute(text("DELETE FROM customers WHERE id = :id"), {"id": customer_id})
             cleanup.commit()
 

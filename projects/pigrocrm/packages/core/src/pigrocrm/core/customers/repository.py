@@ -103,6 +103,8 @@ class CustomerRepository:
             )
         if query.stato:
             stmt = stmt.where(Customer.stato == query.stato)
+        if query.azienda_id:
+            stmt = stmt.where(Customer.azienda_id == query.azienda_id)
         if query.custom:
             # JSONB containment, served by the GIN index.
             stmt = stmt.where(Customer.custom_fields.contains(query.custom))

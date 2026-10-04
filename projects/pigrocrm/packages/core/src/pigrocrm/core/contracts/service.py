@@ -32,6 +32,7 @@ from pigrocrm.core.contracts.schemas import (
 )
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.db import encode_cursor, today_local
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -89,9 +90,14 @@ class ContractService:
         check_payment_terms_together(payload)
         check_renewal_notice(payload)
 
-        if self.customers.get(payload["customer_id"]) is None:
+        customer = self.customers.get(payload["customer_id"])
+        if customer is None:
             raise NotFound("customer", payload["customer_id"])
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
+        # The customer's azienda at this moment, kept from now on (REB-623, spec §1.7).
+        # The customer's azienda at this moment, kept from now on (REB-623, spec §1.7);
+        # refused when deactivated.
+        payload["azienda_id"] = AziendaService(self.session).inherited(customer.azienda_id, ENTITY)
 
         contract = self.repo.add(Contract(**payload))
         self.activities.record(ENTITY, contract.id, "created", actor, {"titolo": contract.titolo})

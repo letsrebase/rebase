@@ -34,6 +34,7 @@ from pigrocrm.core.contracts.service import (
 )
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.repository import DocumentRepository
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.proposals.repository import ProposalRepository
@@ -237,13 +238,18 @@ class ProposalService:
         re-points the originating document's ownership at it -- spec §10, §11's own
         "widen at accept time, not at archive time" ordering."""
         fields = self._parse_contratto_fields(campi)
-        if self.session.get(Customer, fields.contract.customer_id) is None:
+        customer = self.session.get(Customer, fields.contract.customer_id)
+        if customer is None:
             raise NotFound("customer", fields.contract.customer_id)
 
         contract_payload = fields.contract.model_dump()
         check_payment_terms_together(contract_payload)
         check_renewal_notice(contract_payload)
-        contract = Contract(**contract_payload)
+        # The customer's azienda at acceptance, as `ContractService.create` copies it.
+        contract = Contract(
+            **contract_payload,
+            azienda_id=AziendaService(self.session).inherited(customer.azienda_id, "contract"),
+        )
         self.session.add(contract)
         self.session.flush()
         self.activities.record(

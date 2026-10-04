@@ -9,6 +9,7 @@ import type { Document } from './queries'
 
 const OFFER: Document = {
   id: 'doc-1',
+  azienda_id: 'a-1',
   customer_id: 'c-1',
   deal_id: null,
   contract_id: null,

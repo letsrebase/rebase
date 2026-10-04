@@ -129,6 +129,8 @@ class TimeEntryRead(BaseModel):
 
 class TimeEntryListQuery(BaseModel):
     deal_id: UUID | None = None
+    # Through the deal: an entry's azienda is its deal's (REB-623).
+    azienda_id: UUID | None = None
     user_id: UUID | None = None
     da: date | None = None
     a: date | None = None
@@ -188,6 +190,10 @@ class TimerRead(BaseModel):
 
 class CostCreate(BaseModel):
     deal_id: UUID | None = None
+    # Read only for a cost without a deal (REB-623, spec §1.7): a cost with a deal takes
+    # the deal's azienda and refuses a different one; without a deal, `None` is a shared
+    # cost («condivisa») and an id ties it to one azienda.
+    azienda_id: UUID | None = None
     category_id: UUID
     data: date
     importo: Decimal = Field(max_digits=MONEY_MAX_DIGITS, decimal_places=MONEY_SCALE)
@@ -201,6 +207,7 @@ class CostUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     deal_id: UUID | None = None
+    azienda_id: UUID | None = None
     category_id: UUID | None = None
     data: date | None = None
     importo: Decimal | None = Field(
@@ -217,6 +224,7 @@ class CostRead(BaseModel):
 
     id: UUID
     deal_id: UUID | None
+    azienda_id: UUID | None
     category_id: UUID
     data: date
     importo: Decimal
@@ -230,6 +238,9 @@ class CostRead(BaseModel):
 
 class CostListQuery(BaseModel):
     deal_id: UUID | None = None
+    # One azienda's costs (REB-623): a shared cost, `NULL`, appears only when none is
+    # asked for, which is the view over every azienda.
+    azienda_id: UUID | None = None
     # `True` selects only general expenses (`deal_id IS NULL`). Needed because
     # `deal_id=None` already means "do not filter", and §7.4 gives general expenses a
     # row of their own that has to be selectable.

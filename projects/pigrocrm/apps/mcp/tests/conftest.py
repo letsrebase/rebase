@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
@@ -15,12 +15,31 @@ from pigrocrm_mcp.server import build_server
 ADMIN = Actor(id=None, type="mcp", role="admin")
 
 
+def _ensure_committed_default(engine: Engine) -> None:
+    """One committed default azienda in the worker's database (REB-623): since the
+    chain, a customer row and everything under it need an azienda, and a world that
+    commits for real sees only committed rows. The per-test seed below then finds it
+    and writes nothing. Inline rather than imported from the core suite's `fakes`,
+    which this root's conftest does not put on the path."""
+    from pigrocrm.core.emitter.models import Azienda
+
+    with engine.begin() as connection:
+        if connection.execute(select(Azienda.id).where(Azienda.predefinita.is_(True))).first():
+            return
+        connection.execute(
+            Azienda.__table__.insert().values(
+                nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
+            )
+        )
+
+
 @pytest.fixture(scope="session")
 def mcp_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
     """A clone of the worker's template database (`projects/pigrocrm/conftest.py`,
     REB-579): extensions, tables and the trigger DDL are built there once per worker,
     which is also where the reasons for their order live."""
     engine = create_engine_from_settings(Settings(database_url=pigrocrm_postgres.clone("mcp")))
+    _ensure_committed_default(engine)
     yield engine
     engine.dispose()
 
@@ -33,11 +52,14 @@ def mcp_session(mcp_engine: Engine) -> Iterator[Session]:
     # connection so a service's rollback inside the session cannot remove it.
     from pigrocrm.core.emitter.models import Azienda
 
-    connection.execute(
-        Azienda.__table__.insert().values(
-            nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
+    # Since REB-623 the engine fixture commits one, so this is the fallback for a
+    # database that has none. Not an early `return`: this is a generator fixture.
+    if not connection.execute(select(Azienda.id).where(Azienda.predefinita.is_(True))).first():
+        connection.execute(
+            Azienda.__table__.insert().values(
+                nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
+            )
         )
-    )
     # join_transaction_mode="create_savepoint" is load-bearing, not optional -- see
     # packages/core/tests/conftest.py's identical `db_session` fixture, established
     # in Task 2 specifically because its absence lets `session.rollback()` propagate

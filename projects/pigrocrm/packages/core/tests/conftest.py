@@ -30,6 +30,11 @@ def db_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
     per worker, and why.
     """
     engine = create_engine_from_settings(Settings(database_url=pigrocrm_postgres.clone("core")))
+    # The one committed default azienda every world on this engine shares (REB-623):
+    # the rows a committed test builds by hand take it through the column default.
+    from fakes.azienda_fixtures import ensure_committed_default
+
+    ensure_committed_default(engine, nome="Studio di prova")
     yield engine
     engine.dispose()
 
@@ -237,8 +242,14 @@ def _seed_default_azienda(connection: Connection) -> None:
     timeline entry (tests count those), only the one default every provisioned space
     has. The outer transaction is rolled back at the end of the test like everything
     else."""
+    from sqlalchemy import select
+
     from pigrocrm.core.emitter.models import Azienda
 
+    # Since REB-623 the engine fixture commits one, so this is the fallback for a
+    # database that has none (a test that removed it and left the worker without).
+    if connection.execute(select(Azienda.id).where(Azienda.predefinita.is_(True))).first():
+        return
     connection.execute(
         Azienda.__table__.insert().values(
             nome="Studio di prova", ragione_sociale="Studio di prova", predefinita=True

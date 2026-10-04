@@ -41,6 +41,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB, ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, SoftDeleteMixin, TimestampMixin
+from pigrocrm.core.emitter.models import default_azienda_id
 
 # Closed sets spelled `String(n)` + a CHECK, never a Postgres `ENUM` -- the same
 # convention `documents.tipo`/`invoices.tipo` already use, for the same reason: a
@@ -69,6 +70,10 @@ class Contract(Base, PrimaryKeyMixin, TimestampMixin, SoftDeleteMixin):
 
     customer_id: Mapped[UUID] = mapped_column(
         ForeignKey("customers.id"), nullable=False, index=True
+    )
+    # The customer's azienda at creation (REB-623, §1.7), kept from then on.
+    azienda_id: Mapped[UUID] = mapped_column(
+        ForeignKey("emitter_profile.id"), nullable=False, index=True, default=default_azienda_id
     )
     titolo: Mapped[str] = mapped_column(String(255), nullable=False)
     inizio: Mapped[date] = mapped_column(Date, nullable=False)

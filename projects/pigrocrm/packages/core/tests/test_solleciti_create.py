@@ -727,7 +727,7 @@ def _cleanup(
         # The fiscal profile first: since REB-615 it references its azienda, and a
         # delete in the old order fails on the foreign key and leaks the whole cleanup.
         session.execute(delete(FiscalProfile))
-        session.execute(delete(Azienda))
+        session.execute(delete(Azienda).where(Azienda.predefinita.is_(False)))
         if user_id is not None:
             session.execute(delete(User).where(User.id == user_id))
         session.commit()

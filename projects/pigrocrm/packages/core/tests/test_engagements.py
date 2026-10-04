@@ -172,7 +172,9 @@ def _half_provisioned(door: Door, slug: str, *, database: bool) -> UUID:
         create_database_if_missing(door.settings, url)
         migrate_to_head(door.settings, url.render_as_string(hide_password=False))
         with _space(door, slug) as space:
-            ensure_defaults(space)
+            # With the space's name, as provisioning passes it: that is what writes the
+            # azienda a customer needs since REB-623.
+            ensure_defaults(space, nome=slug)
     return tenant_id
 
 

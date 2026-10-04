@@ -142,6 +142,25 @@ class DocumentService:
         if contract_id is not None and self.session.get(Contract, contract_id) is None:
             raise NotFound("contract", contract_id)
 
+    def _azienda_of_owner(
+        self, customer_id: UUID | None, deal_id: UUID | None, contract_id: UUID | None
+    ) -> UUID:
+        """The azienda of whichever owner a new document hangs on (REB-623, spec §1.7):
+        exactly one is set and `_check_owner` has already found it, so one of the three
+        reads answers. Refused when that azienda is deactivated (spec §3)."""
+        aziende = AziendaService(self.session)
+        if customer_id is not None:
+            customer = self.session.get(Customer, customer_id)
+            assert customer is not None
+            return aziende.inherited(customer.azienda_id, ENTITY)
+        if deal_id is not None:
+            deal = self.session.get(Deal, deal_id)
+            assert deal is not None
+            return aziende.inherited(deal.azienda_id, ENTITY)
+        contract = self.session.get(Contract, contract_id)
+        assert contract is not None
+        return aziende.inherited(contract.azienda_id, ENTITY)
+
     def _customer_of(self, document: Document) -> Customer | None:
         if document.customer_id is not None:
             return self.session.get(Customer, document.customer_id)
@@ -235,6 +254,9 @@ class DocumentService:
         is_offer = payload["tipo"] == "offerta"
         payload["stato"] = (payload.get("stato") or "bozza") if is_offer else None
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
+        payload["azienda_id"] = self._azienda_of_owner(
+            payload["customer_id"], payload["deal_id"], payload["contract_id"]
+        )
 
         document = self.repo.add(Document(**payload))
         self.activities.record(
@@ -754,6 +776,7 @@ class DocumentService:
             Document(
                 customer_id=data.customer_id,
                 deal_id=data.deal_id,
+                azienda_id=self._azienda_of_owner(data.customer_id, data.deal_id, None),
                 tipo=template.tipo,
                 titolo=data.titolo,
                 stato="bozza" if template.tipo == "offerta" else None,

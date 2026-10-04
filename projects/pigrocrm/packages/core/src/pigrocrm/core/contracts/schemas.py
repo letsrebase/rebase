@@ -75,6 +75,8 @@ class ContractRead(BaseModel):
 
     id: UUID
     customer_id: UUID
+    # The customer's azienda when the contract was created (REB-623); read-only.
+    azienda_id: UUID
     titolo: str
     inizio: date
     fine: date | None
@@ -110,6 +112,7 @@ CONTRACT_SORTS = SortWhitelist(
 
 class ContractListQuery(BaseModel):
     customer_id: UUID | None = None
+    azienda_id: UUID | None = None
     stato: str | None = None
     limit: int = Field(default=50, ge=1, le=200)
     cursor: str | None = Field(default=None, max_length=CURSOR_MAX_LENGTH)

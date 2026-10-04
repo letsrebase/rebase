@@ -112,7 +112,7 @@ def _cleanup(factory, invoice_id: UUID | None, customer_id: UUID | None) -> None
             cleaner.execute(Invoice.__table__.delete().where(Invoice.__table__.c.id == invoice_id))
         cleaner.execute(text("DELETE FROM invoice_counters"))
         cleaner.execute(text("DELETE FROM fiscal_profile"))
-        cleaner.execute(text("DELETE FROM emitter_profile"))
+        cleaner.execute(text("DELETE FROM emitter_profile WHERE NOT predefinita"))
         if customer_id is not None:
             cleaner.execute(
                 Customer.__table__.delete().where(Customer.__table__.c.id == customer_id)
