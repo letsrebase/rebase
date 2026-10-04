@@ -3,6 +3,7 @@ sniffed by content, bounded, stored under the azienda's own key, read back for t
 Typst job and for the panel, removable; and the SVG hygiene the API's serving needs.
 """
 
+import zlib
 from uuid import UUID
 
 import pytest
@@ -46,6 +47,25 @@ def test_the_bytes_decide_the_kind_never_a_name_and_only_a_whole_image() -> None
     assert sniff_image(_PNG_SIGNATURE + b"\0\0\0\0IHDR\0\0\0\0" + BLANK_PNG[-12:]) is None
     # A chunk whose CRC does not match its bytes.
     assert sniff_image(BLANK_PNG[:-5] + b"\0" + BLANK_PNG[-4:]) is None
+    # Every CRC right and the image stream not zlib at all: a file no renderer opens.
+    assert sniff_image(_png(b"IDAT", b"not a zlib stream")) is None
+    # And the same shape with a real stream passes, so the check is about the stream.
+    assert sniff_image(_png(b"IDAT", zlib.compress(b"\0\0\0\0\0"))) == "png"
+
+
+def _chunk(kind: bytes, body: bytes) -> bytes:
+    return (
+        len(body).to_bytes(4, "big")
+        + kind
+        + body
+        + (zlib.crc32(kind + body) & 0xFFFFFFFF).to_bytes(4, "big")
+    )
+
+
+def _png(kind: bytes, body: bytes) -> bytes:
+    """A 1x1 PNG whose data chunk is `body` under `kind`, every CRC correct."""
+    ihdr = (1).to_bytes(4, "big") + (1).to_bytes(4, "big") + bytes([8, 6, 0, 0, 0])
+    return _PNG_SIGNATURE + _chunk(b"IHDR", ihdr) + _chunk(kind, body) + _chunk(b"IEND", b"")
     assert sniff_image(b'<svg xmlns="x"><rect></svg>') is None
     assert sniff_image(b'<?xml version="1.0"?><not-svg><svg/></not-svg>') is None
 

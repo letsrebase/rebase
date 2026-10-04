@@ -17,7 +17,7 @@ four here, admin-only like every other write on the row.
 import logging
 import re
 import zlib
-from typing import Final, Literal
+from typing import Any, Final, Literal
 from uuid import UUID
 
 from lxml import etree
@@ -53,6 +53,8 @@ LOGO_FILES: Final[dict[ImageKind, str]] = {"png": "logo.png", "svg": "logo.svg"}
 FIRMA_FILE: Final = "sign_is.png"
 
 _PNG_SIGNATURE: Final = b"\x89PNG\r\n\x1a\n"
+# How much of the inflated image stream is held at a time while checking it.
+_INFLATE_PIECE: Final = 1 << 16
 # What an SVG served back to a browser must not carry: a script, an event handler, a
 # `javascript:` link or an embedded HTML document. Typst ignores all of them, but the
 # API serves the file to the admin's own browser. Refused at upload rather than
@@ -80,10 +82,14 @@ def sniff_image(data: bytes) -> ImageKind | None:
 
 def _png_is_well_formed(data: bytes) -> bool:
     """Every chunk in place with its CRC: an `IHDR` of thirteen bytes first with a
-    non-zero size, at least one `IDAT`, an empty `IEND` last and nothing after it. A
-    file that only wears the signature and the trailer would be stored under the size
-    limit and fail every later render instead of this upload (CodeRabbit, PR #510)."""
+    non-zero size, at least one `IDAT` whose stream inflates to its end, an empty
+    `IEND` last and nothing after it. A file that only wears the signature and the
+    trailer, or carries an image stream that does not inflate, would be stored under
+    the size limit and fail every later render instead of this upload (CodeRabbit,
+    PR #510). The inflated bytes are discarded as they come, in bounded pieces: a
+    small file can inflate to a very large image, and this is a check, not a decode."""
     offset, first, idat, ended = len(_PNG_SIGNATURE), True, False, False
+    stream = zlib.decompressobj()
     while offset + 12 <= len(data):
         length = int.from_bytes(data[offset : offset + 4], "big")
         kind = data[offset + 4 : offset + 8]
@@ -103,11 +109,24 @@ def _png_is_well_formed(data: bytes) -> bool:
             first = False
         elif kind == b"IDAT":
             idat = True
+            if not _inflates(stream, data[body_start:body_end]):
+                return False
         elif kind == b"IEND":
             ended = length == 0 and body_end + 4 == len(data)
             break
         offset = body_end + 4
-    return not first and idat and ended
+    return not first and idat and ended and stream.eof
+
+
+def _inflates(stream: Any, piece: bytes) -> bool:
+    # `Any`: the decompressor's class lives only in the type stubs, not in `zlib` at runtime.
+    try:
+        stream.decompress(piece, _INFLATE_PIECE)
+        while stream.unconsumed_tail:
+            stream.decompress(stream.unconsumed_tail, _INFLATE_PIECE)
+    except zlib.error:
+        return False
+    return True
 
 
 def _parses_as_svg(data: bytes) -> bool:
