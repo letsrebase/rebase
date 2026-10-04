@@ -47,7 +47,7 @@ describe('the funnel table', () => {
     ['POST', '/api/time-entries', 'ore_registrate'],
     ['POST', '/api/invoices/inv-1/issue', 'fattura_emessa'],
     ['POST', '/api/tokens', 'assistente_collegato'],
-    ['PUT', '/api/emitter', 'profilo_emittente_salvato'],
+    ['PUT', '/api/aziende/01994c3e-0000-7000-8000-000000000001', 'profilo_emittente_salvato'],
   ])('%s %s on a 2xx is exactly one %s', async (method, path, event) => {
     await answered(method, path, 201)
     expect(capture).toHaveBeenCalledTimes(1)
@@ -69,7 +69,7 @@ describe('the funnel table', () => {
 
   it.each([400, 401, 409, 422, 500, 503])('a %i is not an event', async (status) => {
     await answered('POST', '/api/customers', status)
-    await answered('PUT', '/api/emitter', status)
+    await answered('PUT', '/api/aziende/01994c3e-0000-7000-8000-000000000001', status)
     expect(capture).not.toHaveBeenCalled()
   })
 
@@ -88,7 +88,7 @@ describe('the funnel table', () => {
     await answered('POST', '/api/invoices/inv-1/confirm', 200)
     await answered('POST', '/api/documents/doc-1/restore', 200)
     await answered('POST', '/api/documents/doc-1/versions', 201)
-    await answered('POST', '/api/emitter', 200)
+    await answered('POST', '/api/aziende/01994c3e-0000-7000-8000-000000000001', 200)
     await answered('POST', '/api/auth/login', 200)
     await answered('POST', '/api/auth/logout', 200)
     expect(capture).not.toHaveBeenCalled()

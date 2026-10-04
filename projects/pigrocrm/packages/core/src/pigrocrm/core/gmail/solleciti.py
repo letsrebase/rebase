@@ -36,7 +36,8 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.service import EmitterProfileService
+from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.gmail.drafts import EmailDraftService
@@ -424,7 +425,7 @@ class SollecitiService:
         """`{"emittente": {...}}`, the same scope every other template in this project
         renders against.
 
-        Through `EmitterProfileService.as_template_values` rather than by reading three
+        Through `AziendaService.as_template_values` rather than by reading three
         columns here: slice 2 built that method for exactly this, and a second assembly of
         the issuer's identity is how the phone number in a letter starts disagreeing with
         the one on the invoice.
@@ -435,7 +436,7 @@ class SollecitiService:
         non trovato» is a puzzle.
         """
         try:
-            return EmitterProfileService(self.session).as_template_values(actor)
+            return AziendaService(self.session).as_template_values(actor)
         except NotFound as missing:
             raise Conflict(
                 ENTITY,
@@ -454,7 +455,12 @@ class SollecitiService:
         `emitter_profile` holds the issuer's identity, `fiscal_profile` the numbers and
         codes, and the invoice's own XML already reads the IBAN from there.
         """
-        profile = FiscalProfileRepository(self.session).get()
+        # The default azienda's, until milestone 4 of spec 2026-10-03 gives a reminder
+        # the azienda of the invoice it is about (§1.8).
+        azienda = AziendaRepository(self.session).default()
+        profile = (
+            FiscalProfileRepository(self.session).get(azienda.id) if azienda is not None else None
+        )
         iban = (profile.iban or "").strip() if profile is not None else ""
         if not iban:
             raise Conflict(

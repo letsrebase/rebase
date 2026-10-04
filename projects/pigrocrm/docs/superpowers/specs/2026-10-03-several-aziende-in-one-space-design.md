@@ -661,3 +661,30 @@ migrations and provisioning».
 4. **One line about the law, or none.** None. Whether a forfettario may also control an
    SRL is the person's and their accountant's question; the product records the aziende
    it is given and asserts nothing about the combination.
+
+## 11. Implementation notes
+
+Added as the milestones land, dated, never rewriting the sections above.
+
+- **2026-10-03, milestone «Turn the emitter profile into the azienda row» (REB-615).**
+  Two steps of §2 moved by one milestone. `codice_regime` stays `NOT NULL` until the
+  `non-it` pack lands with the per-azienda register (milestone 2): widening the column
+  without the strategy that reads `None` would have left a value no code could handle.
+  And the row a space without an emitter gets is written by `ensure_defaults`, with the
+  space's name at provisioning and its slug from `pigrocrm ensure-space-defaults`, not
+  by the migration, which does not know the slug; the migration binds the one fiscal
+  profile to the one azienda, and on a database that already has a user and no emitter
+  row it inserts an azienda named after `current_database()`, which reaches the root
+  installation (not in the registry, so never furnished by `ensure_defaults`) and any
+  database this code has never seen, rather than leaving either without an issuer it
+  can configure or stuck on 0044. A database with no user is one being provisioned,
+  whose migrations run before its owner is written, and it gets nothing from the
+  migration so that `ensure_defaults` can name its azienda after the space; a root
+  installed from an empty database is the same case, and `pigrocrm createadmin` writes
+  its azienda, named after the first admin, when none exists. The sanity
+  tests are `test_tenants.py`'s provisioning tests, `test_space_defaults.py` and
+  `test_migrations.py`'s 0044 to 0045 run over real rows. Two more facts of this
+  milestone: a foreign VAT number longer than the eleven characters of the column is
+  refused in words until the `non-it` pack widens it; and the default azienda is kept
+  active by a check constraint (`ck_emitter_profile_default_active`), since
+  `set_default` and `deactivate` can race each other across two transactions.

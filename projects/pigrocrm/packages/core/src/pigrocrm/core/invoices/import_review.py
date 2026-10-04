@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.contracts.repository import ContractRepository, RateCardRepository
 from pigrocrm.core.customers.repository import CustomerRepository
-from pigrocrm.core.emitter.models import EmitterProfile
+from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id
 from pigrocrm.core.invoices.fatturapa_import import fattura_pa_fpr12_adapter
 from pigrocrm.core.invoices.import_adapter import InvoiceFormatAdapter
@@ -230,7 +230,7 @@ def _propose_day_mappings(
 def review_content(
     session: Session,
     content: bytes,
-    emitter: EmitterProfile,
+    emitter: Azienda,
     document_id: UUID,
 ) -> list[ReviewedInvoiceRead]:
     """The whole review step for one document's already-read bytes: `detect`,

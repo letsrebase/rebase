@@ -117,6 +117,10 @@ def test_headroom_marks_a_crossed_ceiling(db_session: Session) -> None:
 def test_headroom_without_a_fiscal_profile_says_so(db_session: Session) -> None:
     """`NotFound`, naming the screen to go to -- the same signal `get_fiscal_estimate`
     gives when nobody has configured a profile yet: there is no pack to resolve."""
+    from pigrocrm.core.emitter.schemas import AziendaUpsert
+    from pigrocrm.core.emitter.service import AziendaService
+
+    AziendaService(db_session).upsert_default(AziendaUpsert(ragione_sociale="Studio"), ADMIN)
     with pytest.raises(NotFound) as excinfo:
         AnalyticsService(db_session).ceiling_headroom(ANNO, READER)
     assert excinfo.value.details["entity"] == "fiscal_profile"

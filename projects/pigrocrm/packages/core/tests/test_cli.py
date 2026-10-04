@@ -53,6 +53,53 @@ def test_resetpassword_reads_the_new_password_from_stdin_when_there_is_no_tty(
     assert verify_password("nuova-password-2026", stored)
 
 
+def test_createadmin_gives_a_root_with_no_azienda_one_named_after_the_admin(
+    cli_engine: Engine, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """REB-615: the root installation is not in the registry, so `ensure_defaults`
+    never reaches it, and no route creates an azienda; the first admin brings the one
+    row Impostazioni → Aziende needs, and a later admin leaves it alone."""
+
+    def run(email: str, nome: str) -> int:
+        monkeypatch.setattr("sys.stdin", io.StringIO("una-password-lunga-1\n"))
+        monkeypatch.setattr(
+            "sys.argv", ["pigrocrm", "createadmin", "--email", email, "--nome", nome]
+        )
+        return cli.main()
+
+    # The CLI commits for real, so only what this test adds is removed afterwards: a
+    # row another test left committed stays, and the assertions below would name it.
+    with cli_engine.connect() as connection:
+        before = set(connection.execute(text("select id from emitter_profile")).scalars())
+    try:
+        assert run("cli-root@studio.it", "Ada Lovelace") == 0
+        out = capsys.readouterr().out
+        assert "Creato amministratore cli-root@studio.it" in out
+        assert "Creata l'azienda predefinita «Ada Lovelace»" in out
+        with cli_engine.connect() as connection:
+            rows = connection.execute(
+                text("select nome, ragione_sociale, predefinita, attiva from emitter_profile")
+            ).all()
+        assert rows == [("Ada Lovelace", "Ada Lovelace", True, True)]
+
+        assert run("cli-root-2@studio.it", "Grace Hopper") == 0
+        assert "azienda" not in capsys.readouterr().out
+        with cli_engine.connect() as connection:
+            names = connection.execute(text("select nome from emitter_profile")).scalars().all()
+        assert names == ["Ada Lovelace"]
+    finally:
+        with cli_engine.begin() as connection:
+            added = [
+                row_id
+                for row_id in connection.execute(text("select id from emitter_profile")).scalars()
+                if row_id not in before
+            ]
+            for row_id in added:
+                connection.execute(
+                    text("delete from emitter_profile where id = :id"), {"id": row_id}
+                )
+
+
 def test_resetpassword_reports_a_short_password_without_a_traceback(
     cli_engine: Engine, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

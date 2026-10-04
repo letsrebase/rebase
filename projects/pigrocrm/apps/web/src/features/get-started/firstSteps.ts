@@ -15,7 +15,7 @@ import { useAuth } from '@/lib/auth'
 import { queryKeys } from '@/lib/query'
 
 export type StepId = 'fiscali' | 'cliente' | 'lavoro' | 'documento'
-export type StepTarget = '/app/settings/issuer' | '/app/customers' | '/app/deal'
+export type StepTarget = '/app/settings/aziende' | '/app/customers' | '/app/deal'
 
 export interface FirstStep {
   id: StepId
@@ -98,8 +98,11 @@ async function hasOffers(): Promise<boolean> {
 }
 
 async function fiscalDataSaved(): Promise<boolean> {
-  // 404 until the emitter profile is saved once: not an error here, a step to do.
-  const profile = settled(await api.GET('/api/emitter'), [404])
+  // The default azienda is the first of the list (REB-617); a space has one from its
+  // first boot, with the name and nothing fiscal, so the step is done once either id
+  // is on it.
+  const aziende = settled(await api.GET('/api/aziende'))
+  const profile = aziende?.[0]
   return Boolean(profile?.partita_iva || profile?.codice_fiscale)
 }
 
@@ -123,7 +126,7 @@ export function useFirstSteps(): FirstStepsState {
     queryFn: hasToken,
     ...OPTIONS,
   })
-  const fiscali = useQuery({ queryKey: [...queryKeys.emitter, 'first-steps'], queryFn: fiscalDataSaved, ...OPTIONS })
+  const fiscali = useQuery({ queryKey: [...queryKeys.aziende, 'first-steps'], queryFn: fiscalDataSaved, ...OPTIONS })
   const cliente = useQuery({ queryKey: queryKeys.customers(SCOPE), queryFn: hasCustomers, ...WORK_OPTIONS })
   const deal = useQuery({ queryKey: queryKeys.deals(SCOPE), queryFn: hasDeals, ...WORK_OPTIONS })
   const ore = useQuery({ queryKey: queryKeys.timeEntries(SCOPE), queryFn: hasTimeEntries, ...WORK_OPTIONS })
@@ -145,8 +148,8 @@ export function useFirstSteps(): FirstStepsState {
       hint: isAdmin
         ? 'Partita IVA o codice fiscale, indirizzo, regime: finiscono su offerte e fatture.'
         : 'Li imposta l’amministratore dello spazio, in Impostazioni.',
-      to: '/app/settings/issuer',
-      screen: 'Impostazioni → Emittente',
+      to: '/app/settings/aziende',
+      screen: 'Impostazioni → Aziende',
       canDo: isAdmin,
       done: value(fiscali),
     },

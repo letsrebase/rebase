@@ -269,6 +269,12 @@ def test_a_deal_belonging_to_another_customer_is_refused(
 def test_creation_without_a_fiscal_profile_says_which_configuration_is_missing(
     db_session: Session, storage: LocalFileStorage, customer_id: UUID
 ) -> None:
+    # The azienda exists, as it does on every provisioned space; what is missing is
+    # its fiscal profile, which is the configuration the message has to name.
+    from pigrocrm.core.emitter.schemas import AziendaUpsert
+    from pigrocrm.core.emitter.service import AziendaService
+
+    AziendaService(db_session).upsert_default(AziendaUpsert(ragione_sociale="Studio"), ADMIN)
     with pytest.raises(NotFound) as caught:
         InvoiceService(db_session, storage).create(InvoiceCreate(customer_id=customer_id), ADMIN)
     assert caught.value.details["entity"] == "fiscal_profile"

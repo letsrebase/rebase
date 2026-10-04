@@ -290,6 +290,10 @@ def test_cleared_rates_reach_the_report_as_null(
 def test_with_no_fiscal_profile_at_all_it_says_so(db_session: Session) -> None:
     """`NotFound("fiscal_profile", ...)`, which names the screen to go to -- rather than
     an estimate of zero computed from three nulls, which reads as "you owe nothing"."""
+    from pigrocrm.core.emitter.schemas import AziendaUpsert
+    from pigrocrm.core.emitter.service import AziendaService
+
+    AziendaService(db_session).upsert_default(AziendaUpsert(ragione_sociale="Studio"), ADMIN)
     with pytest.raises(NotFound) as excinfo:
         AnalyticsService(db_session).get_fiscal_estimate(ANNO, ADMIN)
     assert excinfo.value.details["entity"] == "fiscal_profile"

@@ -19,8 +19,8 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
-from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-from pigrocrm.core.emitter.service import EmitterProfileService
+from pigrocrm.core.emitter.schemas import AziendaUpsert
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
@@ -60,9 +60,8 @@ def world(db_engine: Engine, tmp_path):  # type: ignore[no-untyped-def]
         setup.add(customer)
         setup.flush()
         customer_id = customer.id
-        FiscalProfileService(setup).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
-        EmitterProfileService(setup).upsert(
-            EmitterProfileUpsert(
+        AziendaService(setup).upsert_default(
+            AziendaUpsert(
                 ragione_sociale="Studio Rossi",
                 partita_iva="01234567890",
                 codice_fiscale="HMCRFT00A01H501K",
@@ -75,6 +74,8 @@ def world(db_engine: Engine, tmp_path):  # type: ignore[no-untyped-def]
             ),
             ADMIN,
         )
+        # After the azienda, which the profile belongs to since REB-615.
+        FiscalProfileService(setup).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
         setup.commit()
     try:
         yield factory, customer_id, tmp_path

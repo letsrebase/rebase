@@ -24,6 +24,12 @@ CORE_ROOT = Path(__file__).resolve().parents[1]
 # with the missing index's name instead of a generic metadata diff.
 HAND_MAINTAINED_INDEXES = {
     "uq_users_email_lower",
+    # REB-615, migration 0045: one default per space (partial, `WHERE predefinita`) and
+    # one azienda per fiscal id (partial, functional over `upper(...)`). Both are shapes
+    # `compare_metadata` cannot compare, so they are asserted on their definitions below.
+    "uq_emitter_profile_predefinita",
+    "uq_emitter_profile_partita_iva",
+    "uq_emitter_profile_codice_fiscale",
     "uq_pipeline_stage_code",
     "ix_customers_custom_fields",
     "ix_people_custom_fields",
@@ -222,6 +228,190 @@ def test_hand_maintained_indexes_survive_the_migration(pigrocrm_postgres: Any) -
         "uq_invoices_anno_numero lost its partial predicate, so every unnumbered draft "
         f"is now a duplicate of every other: {anno_numero_def}"
     )
+
+
+def test_0045_gives_a_used_database_with_no_emitter_row_its_azienda(
+    pigrocrm_postgres: Any,
+) -> None:
+    """The root installation is not in the registry, so `ensure_defaults` never reaches
+    it, and the API updates an azienda by id: a root with no emitter row would have no
+    issuer to configure at all. 0045 inserts one, named after the database, on a database
+    that already has a user (REB-615). A database with none is one being provisioned,
+    whose migrations run before its owner is written: it gets nothing here, so that
+    `ensure_defaults` can name its azienda after the space and not after the database."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        engine: Engine = create_engine(url)
+        upgrade(config, "0044")
+        upgrade(config, "0045")
+        with engine.connect() as connection:
+            empty = connection.execute(text("SELECT count(*) FROM emitter_profile")).scalar_one()
+        downgrade(config, "0044")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO users (id, email, nome, ruolo, attivo) "
+                    "VALUES (gen_random_uuid(), 'root@pigro.it', 'Root', 'admin', true)"
+                )
+            )
+        upgrade(config, "0045")
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text("SELECT nome, ragione_sociale, predefinita, attiva FROM emitter_profile")
+            ).all()
+            db_name = connection.execute(text("SELECT current_database()")).scalar_one()
+        engine.dispose()
+    assert empty == 0
+    assert len(rows) == 1
+    assert rows[0].ragione_sociale == db_name
+    assert rows[0].nome == db_name[:80]
+    assert rows[0].predefinita is True and rows[0].attiva is True
+
+
+def test_the_azienda_indexes_are_partial_and_the_fiscal_ones_functional(
+    pigrocrm_postgres: Any,
+) -> None:
+    """REB-615: `uq_emitter_profile_predefinita` is what makes «exactly one default»
+    a fact of the database, and the two fiscal-id indexes compare the upper-cased
+    column, the shape the import classifier compares. None of the three is visible to
+    `compare_metadata`."""
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        upgrade(_alembic_config(url), "head")
+        engine: Engine = create_engine(url)
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    "SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'emitter_profile'"
+                )
+            ).all()
+        engine.dispose()
+    indexes = {name: definition for name, definition in rows}
+    assert "UNIQUE" in indexes["uq_emitter_profile_predefinita"]
+    assert "WHERE predefinita" in indexes["uq_emitter_profile_predefinita"]
+    for name, column in (
+        ("uq_emitter_profile_partita_iva", "partita_iva"),
+        ("uq_emitter_profile_codice_fiscale", "codice_fiscale"),
+    ):
+        assert "UNIQUE" in indexes[name]
+        assert f"upper(({column})::text)" in indexes[name], indexes[name]
+        assert f"WHERE ({column} IS NOT NULL)" in indexes[name], indexes[name]
+
+
+def test_0045_binds_the_one_fiscal_row_to_the_one_azienda_and_refuses_to_undo_two(
+    pigrocrm_postgres: Any,
+) -> None:
+    """The migration over real rows planted at 0044, not read as text (REB-615).
+
+    A 120-character `ragione_sociale` proves the `nome` backfill cuts to the column's
+    width; the fiscal row proves the backfill of `azienda_id`; a lower-case codice
+    fiscale proves the row is brought to the classifier's shape (a P.IVA with an `IT`
+    prefix cannot be planted: the column is eleven wide); the downgrade
+    with one azienda succeeds, and with two it refuses before touching anything.
+    """
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0044")
+
+        engine: Engine = create_engine(url)
+        long_name = "S" * 120
+        with engine.begin() as connection:
+            # Two statements, two executes: psycopg prepares a parametrised statement
+            # and refuses more than one command in it.
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO emitter_profile (id, singleton, ragione_sociale, partita_iva,
+                                                 codice_fiscale, nazione, created_at, updated_at)
+                    VALUES ('00000000-0000-7000-8000-0000000000a1', true, :nome, '01234567890',
+                            'hmcrft00a01h501k', 'IT', now(), now())
+                    """
+                ),
+                {"nome": long_name},
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO fiscal_profile (id, singleton, codice_regime, aliquota_iva_default,
+                                                applica_bollo, soglia_bollo, importo_bollo,
+                                                condizioni_pagamento, modalita_pagamento,
+                                                giorni_scadenza, created_at, updated_at)
+                    VALUES ('00000000-0000-7000-8000-0000000000f1', true, 'RF19', 0, true, 77.47,
+                            2.00, 'TP02', 'MP05', 30, now(), now())
+                    """
+                )
+            )
+        engine.dispose()
+
+        upgrade(config, "0045")
+
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            azienda = connection.execute(
+                text(
+                    "SELECT nome, predefinita, attiva, partita_iva, codice_fiscale "
+                    "FROM emitter_profile"
+                )
+            ).one()
+            fiscal_azienda = connection.execute(
+                text("SELECT azienda_id FROM fiscal_profile")
+            ).scalar_one()
+            users_flag = connection.execute(
+                text(
+                    "SELECT column_default FROM information_schema.columns "
+                    "WHERE table_name = 'users' AND column_name = 'ambito_limitato'"
+                )
+            ).scalar_one()
+        engine.dispose()
+        assert azienda.nome == "S" * 80
+        assert azienda.predefinita is True and azienda.attiva is True
+        assert azienda.partita_iva == "01234567890"
+        assert azienda.codice_fiscale == "HMCRFT00A01H501K"
+        assert str(fiscal_azienda) == "00000000-0000-7000-8000-0000000000a1"
+        assert users_flag == "false"
+
+        # One azienda: the downgrade goes back to 0044 and the two singletons return.
+        downgrade(config, "0044")
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT singleton FROM emitter_profile")).scalar_one()
+            assert connection.execute(text("SELECT singleton FROM fiscal_profile")).scalar_one()
+        engine.dispose()
+
+        # Two aziende: the downgrade refuses before it drops anything.
+        upgrade(config, "0045")
+        engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO emitter_profile (id, nome, ragione_sociale, nazione, predefinita,
+                                                 attiva, created_at, updated_at)
+                    VALUES ('00000000-0000-7000-8000-0000000000a2', 'rebase', 'Rebase S.r.l.',
+                            'IT', false, true, now(), now());
+                    """
+                )
+            )
+        engine.dispose()
+        with pytest.raises(Exception, match="more than one azienda"):
+            downgrade(config, "0044")
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            assert (
+                connection.execute(text("SELECT count(*) FROM emitter_profile")).scalar_one() == 2
+            )
+            assert (
+                connection.execute(
+                    text(
+                        "SELECT count(*) FROM information_schema.columns "
+                        "WHERE table_name = 'emitter_profile' AND column_name = 'nome'"
+                    )
+                ).scalar_one()
+                == 1
+            )
+        engine.dispose()
 
 
 def test_every_trigram_index_is_a_partial_gin_index_over_gin_trgm_ops(

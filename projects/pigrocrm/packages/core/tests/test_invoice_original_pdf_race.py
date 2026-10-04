@@ -31,8 +31,8 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-from pigrocrm.core.emitter.service import EmitterProfileService
+from pigrocrm.core.emitter.schemas import AziendaUpsert
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -46,9 +46,8 @@ XHTML = b'<html xmlns="http://www.w3.org/1999/xhtml"><body>ciao</body></html>'
 
 
 def _configure(session: Session) -> UUID:
-    FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
-    EmitterProfileService(session).upsert(
-        EmitterProfileUpsert(
+    AziendaService(session).upsert_default(
+        AziendaUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="01234567890",
             codice_fiscale="HMCRFT00A01H501K",
@@ -61,6 +60,8 @@ def _configure(session: Session) -> UUID:
         ),
         ADMIN,
     )
+    # After the azienda, which the profile belongs to since REB-615.
+    FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
     customer = Customer(
         ragione_sociale="Acme S.r.l.",
         partita_iva="12345678901",

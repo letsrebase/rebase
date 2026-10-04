@@ -1334,7 +1334,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     # it is "what cannot be undone stays behind the switch". A profile or an emitter is
     # one rewritable row; an issued invoice keeps its own copy of both. A space is born
     # empty and the first thing a person asks the assistant they just connected is to
-    # set them, so `update_fiscal_profile` and `update_emitter_profile` sit next to
+    # set them, so `update_fiscal_profile` and `update_azienda` sit next to
     # their reads, admin-only through the services' own `require_admin`.
     #
     # `test_mcp_invoice_ban.py` reads this module's AST and fails if any of the four
@@ -1499,27 +1499,40 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
-    def describe_fiscal_profile() -> dict[str, Any]:
+    def list_aziende() -> list[dict[str, Any]]:
+        """Le aziende dello spazio, la predefinita per prima: id, nome breve, ragione
+        sociale, partita IVA, nazione. Uno spazio ne ha una sola finche' non ne apre
+        un'altra; con una sola, ogni tool che accetta `azienda_id` la usa da se'."""
+        return invoices.list_aziende(context)
+
+    @mcp.tool()
+    @guard
+    def describe_fiscal_profile(azienda_id: str | None = None) -> dict[str, Any]:
         """Il regime fiscale configurato e i parametri che decidono aliquote, natura
-        e bollo. Utile per capire perche' una riga ha una certa IVA."""
-        return invoices.describe_fiscal_profile(context)
+        e bollo di un'azienda; senza `azienda_id` e' la predefinita. Utile per capire
+        perche' una riga ha una certa IVA."""
+        return invoices.describe_fiscal_profile(context, azienda_id)
 
     @mcp.tool()
     @guard
-    def describe_emitter_profile() -> dict[str, Any]:
+    def describe_azienda(azienda_id: str | None = None) -> dict[str, Any]:
         """Chi emette: ragione sociale, partita IVA, indirizzo e recapiti che finiscono
-        nell'intestazione di ogni fattura e di ogni documento. Da leggere prima di
-        scrivere un testo che li ripete, invece di chiederli all'utente."""
-        return invoices.describe_emitter_profile(context)
+        nell'intestazione di ogni fattura e di ogni documento di quell'azienda; senza
+        `azienda_id` e' la predefinita. Da leggere prima di scrivere un testo che li
+        ripete, invece di chiederli all'utente."""
+        return invoices.describe_azienda(context, azienda_id)
 
     @mcp.tool()
     @guard
-    def update_fiscal_profile(dati: dict[str, Any]) -> dict[str, Any]:
-        """Riscrive il profilo fiscale: **sostituzione totale, non modifica parziale**.
+    def update_fiscal_profile(
+        dati: dict[str, Any], azienda_id: str | None = None
+    ) -> dict[str, Any]:
+        """Riscrive il profilo fiscale di un'azienda: **sostituzione totale, non
+        modifica parziale**. Senza `azienda_id` e' la predefinita.
 
         Ogni chiave assente torna al proprio default. Decide aliquota, natura, bollo e
-        riferimento normativo di **ogni riga di ogni fattura futura**; le fatture gia'
-        emesse conservano la propria copia e non si muovono. Leggi prima
+        riferimento normativo di **ogni riga di ogni fattura futura** di quell'azienda;
+        le fatture gia' emesse conservano la propria copia e non si muovono. Leggi prima
         `describe_fiscal_profile`, rimanda indietro l'oggetto intero con le modifiche,
         e mostra alla persona il riepilogo completo chiedendo conferma prima di salvare.
 
@@ -1529,26 +1542,29 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         bonifico), `giorni_scadenza`, `iban`, e i parametri IVA e bollo che per un
         forfettario restano ai default. Solo un admin.
         """
-        return invoices.update_fiscal_profile(context, dati)
+        return invoices.update_fiscal_profile(context, dati, azienda_id)
 
     @mcp.tool()
     @guard
-    def update_emitter_profile(dati: dict[str, Any]) -> dict[str, Any]:
-        """Scrive chi emette: l'intestazione di ogni offerta e di ogni fattura.
+    def update_azienda(dati: dict[str, Any], azienda_id: str | None = None) -> dict[str, Any]:
+        """Scrive chi emette: l'intestazione di ogni offerta e di ogni fattura di
+        un'azienda. Senza `azienda_id` e' la predefinita, creata al momento se lo
+        spazio non ne ha ancora una.
 
-        **Sostituzione totale** dell'unica riga: ogni chiave assente torna vuota
-        (`nazione` torna a `IT`, `ragione_sociale` e' obbligatoria). Per questo leggi
-        prima `describe_emitter_profile` e rimanda indietro l'oggetto letto con le sole
-        modifiche, cosi' non cancelli quello che non hai nominato. Le chiavi, nella forma
-        di `EmitterProfileUpsert`: `ragione_sociale`, `partita_iva` (11 cifre) o
+        **Sostituzione totale** della riga: ogni chiave assente torna vuota (`nazione`
+        torna a `IT`, `ragione_sociale` e' obbligatoria). Per questo leggi prima
+        `describe_azienda` e rimanda indietro l'oggetto letto con le sole modifiche,
+        cosi' non cancelli quello che non hai nominato. Le chiavi, nella forma di
+        `AziendaUpsert`: `nome` (il nome breve mostrato nelle liste; se manca e' la
+        ragione sociale), `ragione_sociale`, `partita_iva` (11 cifre) o
         `codice_fiscale`, `indirizzo`, `cap`, `comune`, `provincia`, `nazione`, `pec`,
-        `codice_sdi` (7 caratteri), `telefono`, `email`, `sito_web`, `regime_fiscale` (il
-        testo stampato in calce), `firma_email`, `logo_key` e `firma_key` (chiavi di
-        storage, non byte). Mostra alla persona il riepilogo intero e aspetta il suo ok
-        prima di salvare. Un dato fiscale che non ti e' stato dato non si inventa:
+        `codice_sdi` (7 caratteri), `telefono`, `email`, `sito_web`, `regime_fiscale`
+        (il testo stampato in calce), `firma_email`, `logo_key` e `firma_key` (chiavi
+        di storage, non byte). Mostra alla persona il riepilogo intero e aspetta il suo
+        ok prima di salvare. Un dato fiscale che non ti e' stato dato non si inventa:
         lascialo vuoto e dillo. Solo un admin.
         """
-        return invoices.update_emitter_profile(context, dati)
+        return invoices.update_azienda(context, dati, azienda_id)
 
     # ---- time tracking -----------------------------------------------------
     # An agent may record and read. It may not change what already-recorded numbers

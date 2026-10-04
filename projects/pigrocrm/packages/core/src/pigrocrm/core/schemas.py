@@ -49,7 +49,7 @@ def reject_cleared_columns(entity: str, model: type[Any], changes: dict[str, Any
     `setattr` and then `flush()`, and a `NOT NULL` violation does not merely fail the
     call -- it poisons the caller's `Session` for every statement after it, which is the
     failure mode this codebase already paid for on `customers.partita_iva` and guards
-    against by hand in `EmitterProfileService._check_fiscal`.
+    against by hand in `AziendaService._check_fiscal`.
 
     Nullability is read from the mapper rather than from a hand-written list per
     service: a list is a second source of truth that drifts the moment somebody adds a

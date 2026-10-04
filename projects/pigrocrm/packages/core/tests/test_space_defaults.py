@@ -52,3 +52,52 @@ def test_a_second_call_seeds_nothing(db_session: Session) -> None:
     again = ensure_defaults(db_session)
     assert again.seeded is False
     assert (again.stages, again.templates, again.categories) == (0, 0, 0)
+
+
+# -- the azienda (REB-615) ----------------------------------------------------------
+
+
+def _bare(session: Session) -> None:
+    from sqlalchemy import delete
+
+    from pigrocrm.core.emitter.models import Azienda
+
+    session.execute(delete(Azienda))
+    session.flush()
+
+
+def test_a_space_with_no_azienda_gets_one_named_after_the_space(db_session: Session) -> None:
+    from pigrocrm.core.emitter.repository import AziendaRepository
+
+    _bare(db_session)
+    report = ensure_defaults(db_session, nome="Studio Ada")
+    assert report.aziende == 1
+    azienda = AziendaRepository(db_session).default()
+    assert azienda is not None
+    assert (azienda.ragione_sociale, azienda.nome, azienda.predefinita) == (
+        "Studio Ada",
+        "Studio Ada",
+        True,
+    )
+    assert azienda.partita_iva is None
+
+
+def test_a_space_that_has_its_azienda_keeps_it_whatever_the_name_says(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.emitter.repository import AziendaRepository
+
+    report = ensure_defaults(db_session, nome="Un altro nome")
+    assert report.aziende == 0
+    azienda = AziendaRepository(db_session).default()
+    assert azienda is not None
+    assert azienda.ragione_sociale == "Studio di prova"
+
+
+def test_without_a_name_no_azienda_is_invented(db_session: Session) -> None:
+    from pigrocrm.core.emitter.repository import AziendaRepository
+
+    _bare(db_session)
+    report = ensure_defaults(db_session)
+    assert report.aziende == 0
+    assert AziendaRepository(db_session).default() is None

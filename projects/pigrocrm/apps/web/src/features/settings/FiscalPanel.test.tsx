@@ -47,7 +47,7 @@ function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <FiscalPanel />
+      <FiscalPanel aziendaId="a-1" />
     </QueryClientProvider>,
   )
 }
@@ -84,7 +84,7 @@ describe('FiscalPanel', () => {
   })
 
   /**
-   * A fresh install has no row and `GET /api/fiscal-profile` answers 404. That is
+   * A fresh install has no row and `GET /api/aziende/{id}/fiscal-profile` answers 404. That is
    * "not configured yet", not a failure, and the form has to be usable right there --
    * without a fiscal profile no invoice can be issued at all, so a screen that only
    * said "missing" would be a dead end.
@@ -138,7 +138,7 @@ describe('FiscalPanel', () => {
 
   /**
    * The defect the three income fields were added to close, pinned as a test rather
-   * than as a comment. `PUT /api/fiscal-profile` is a full replace, so a save writes
+   * than as a comment. `PUT /api/aziende/{id}/fiscal-profile` is a full replace, so a save writes
    * back every key the form holds -- and while the form did not know these three
    * existed, it held their defaults and nothing else. Editing an unrelated field on
    * this screen therefore reset a coefficient somebody had chosen, with no message and

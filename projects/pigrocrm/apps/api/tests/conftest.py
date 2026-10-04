@@ -41,6 +41,15 @@ def api_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
 def api_session(api_engine: Engine) -> Iterator[Session]:
     connection = api_engine.connect()
     transaction = connection.begin()
+    # The default azienda every provisioned space has (REB-615), seeded on the outer
+    # connection so a service's rollback inside the session cannot remove it.
+    from pigrocrm.core.emitter.models import Azienda
+
+    connection.execute(
+        Azienda.__table__.insert().values(
+            nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
+        )
+    )
     # join_transaction_mode="create_savepoint" is load-bearing, not optional -- see
     # packages/core/tests/conftest.py's identical `db_session` fixture, established
     # in Task 2 specifically because its absence lets `session.rollback()` propagate

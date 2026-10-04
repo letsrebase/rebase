@@ -29,6 +29,15 @@ def mcp_engine(pigrocrm_postgres: Any) -> Iterator[Engine]:
 def mcp_session(mcp_engine: Engine) -> Iterator[Session]:
     connection = mcp_engine.connect()
     transaction = connection.begin()
+    # The default azienda every provisioned space has (REB-615), seeded on the outer
+    # connection so a service's rollback inside the session cannot remove it.
+    from pigrocrm.core.emitter.models import Azienda
+
+    connection.execute(
+        Azienda.__table__.insert().values(
+            nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
+        )
+    )
     # join_transaction_mode="create_savepoint" is load-bearing, not optional -- see
     # packages/core/tests/conftest.py's identical `db_session` fixture, established
     # in Task 2 specifically because its absence lets `session.rollback()` propagate
@@ -100,13 +109,13 @@ def seeded_template_id(mcp_session: Session) -> str:
     template with a single declared variable, `oggetto`, so
     `test_describe_template_reports_the_variables_before_anyone_is_asked` has
     exactly one name to check for."""
-    from pigrocrm.core.emitter.schemas import EmitterProfileUpsert
-    from pigrocrm.core.emitter.service import EmitterProfileService
+    from pigrocrm.core.emitter.schemas import AziendaUpsert
+    from pigrocrm.core.emitter.service import AziendaService
     from pigrocrm.core.templates.schemas import TemplateCreate, TemplateVariable
     from pigrocrm.core.templates.service import TemplateService
 
-    EmitterProfileService(mcp_session).upsert(
-        EmitterProfileUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
+    AziendaService(mcp_session).upsert_default(
+        AziendaUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
         ADMIN,
     )
     template = TemplateService(mcp_session).create(

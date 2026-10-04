@@ -49,7 +49,9 @@ export const queryKeys = {
   documentVersions: (id: string) => ['document-versions', id] as const,
   templates: () => ['templates'] as const,
   templateDescription: (id: string) => ['template-description', id] as const,
-  emitter: ['emitter'] as const,
+  // The aziende of the space (REB-617): the list every selector and Impostazioni →
+  // Aziende read; a single azienda is read from the list, so there is no per-id key.
+  aziende: ['aziende'] as const,
   invoices: (params?: unknown) => ['invoices', params ?? {}] as const,
   // Distinct from `invoices` above: that key holds one `InvoicePage`, this one holds
   // an `useInfiniteQuery`'s own `{pages, pageParams}` shape (`useInvoicesPaged`,
@@ -64,7 +66,8 @@ export const queryKeys = {
   // invalidating the prefix `invoicePdfs(id)` instead (`useInvoiceInvalidation`).
   invoicePdfs: (id: string) => ['invoice-pdf', id] as const,
   invoicePdf: (id: string, documentId: string) => ['invoice-pdf', id, documentId] as const,
-  fiscalProfile: ['fiscal-profile'] as const,
+  // Keyed by azienda since REB-615: a fiscal profile belongs to one.
+  fiscalProfile: (aziendaId: string) => ['fiscal-profile', aziendaId] as const,
   // The space's own settings (`GET /api/settings/space`): the panel in Impostazioni reads
   // and writes it, and the get-started invoice door reads the same entry.
   spaceSettings: ['settings', 'space'] as const,

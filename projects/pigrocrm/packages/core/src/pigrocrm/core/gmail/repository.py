@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.db import escape_like
 from pigrocrm.core.documents.models import Document, DocumentVersion
-from pigrocrm.core.emitter.models import EmitterProfile
+from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.gmail.models import (
     EmailDraft,
     GmailKnownAddress,
@@ -747,14 +747,18 @@ class GmailRepository:
             .limit(1)
         ).scalar_one_or_none()
 
-    def emitter_profile(self) -> EmitterProfile | None:
-        """The single issuer row, or `None` on an installation that has not filled it in.
+    def emitter_profile(self) -> Azienda | None:
+        """The default azienda, or `None` on an installation that has not filled it in.
 
         It supplies the display name on the `From` header. Read through the repository
-        rather than by constructing `EmitterProfileService`, which would pull a whole
-        service (and its `actor` checks) into a path that needs one string.
+        rather than by constructing `AziendaService`, which would pull a whole
+        service (and its `actor` checks) into a path that needs one string. The
+        default and not the record's own azienda until milestone 4 (spec 2026-10-03
+        §1.8), when a mail learns which azienda it speaks for.
         """
-        return self.session.execute(select(EmitterProfile).limit(1)).scalar_one_or_none()
+        return self.session.execute(
+            select(Azienda).where(Azienda.predefinita.is_(True))
+        ).scalar_one_or_none()
 
     def last_inbound_from(
         self, account_id: UUID, addresses: Sequence[str], since: datetime

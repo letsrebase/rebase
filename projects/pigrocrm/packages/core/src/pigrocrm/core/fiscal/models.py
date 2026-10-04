@@ -1,13 +1,14 @@
 from decimal import Decimal
+from uuid import UUID
 
-from sqlalchemy import Boolean, Integer, Numeric, String, Text, text
+from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
 
 
 class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
-    """The fiscal parameters of the one issuer. One row, ever.
+    """The fiscal parameters of one azienda. At most one row per azienda.
 
     `emitter_profile` (slice 2) holds the issuer's *identity*; this holds the numbers
     and codes the SdI validates. They are not duplicates, and
@@ -22,15 +23,19 @@ class FiscalProfile(Base, PrimaryKeyMixin, TimestampMixin):
     parameters. A `valido_da`/`valido_a` pair would only answer a question the
     per-invoice `snapshot` already answers, and answers better.
 
-    Single-row is enforced by the database, exactly as `EmitterProfile` does it:
-    `singleton` is `unique=True` and always `True`, so a second insert fails on the
-    constraint. A "select then insert" pre-check alone would let two concurrent
-    first-time saves both pass.
+    One per azienda is enforced by the database (REB-615, spec 2026-10-03 §1.2):
+    `azienda_id` is `unique=True`, so a second insert for the same azienda fails on
+    the constraint, which is what turns two concurrent first-time saves into one row
+    and one `Conflict`. It used to be a `singleton` column and one row ever; a space
+    with one azienda sees no difference, and a space whose owner never saved this
+    profile still has no row, which `issue` keeps answering `NotFound` on.
     """
 
     __tablename__ = "fiscal_profile"
 
-    singleton: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, unique=True)
+    azienda_id: Mapped[UUID] = mapped_column(
+        ForeignKey("emitter_profile.id"), nullable=False, unique=True
+    )
     # RF01..RF19, as FPR12's RegimeFiscaleType enumerates them.
     codice_regime: Mapped[str] = mapped_column(String(4), nullable=False)
     aliquota_iva_default: Mapped[Decimal] = mapped_column(

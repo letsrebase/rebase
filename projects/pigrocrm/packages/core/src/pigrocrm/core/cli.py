@@ -9,6 +9,7 @@ from uuid import UUID
 
 from sqlalchemy import Engine
 from sqlalchemy.engine import URL
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core import telemetry
@@ -20,6 +21,8 @@ from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.digest.run import DigestOutcome, DigestRun
 from pigrocrm.core.digest.service import previous_week, week_containing
+from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.repository import AziendaRepository
 from pigrocrm.core.errors import Conflict, DomainError, ValidationFailed
 from pigrocrm.core.gmail.errors import GoogleCallFailed
 from pigrocrm.core.gmail.models import GoogleAccount
@@ -67,8 +70,40 @@ def createadmin(email: str | None, nome: str | None) -> int:
             # will make with this tool; a raw traceback here is a bad first impression.
             print(exc.message, file=sys.stderr)
             return 1
+        azienda_created = _bootstrap_root_azienda(session, nome)
     print(f"Creato amministratore {user.email}")
+    if azienda_created:
+        print(f"Creata l'azienda predefinita «{nome}»: si rinomina da Impostazioni → Aziende")
     return 0
+
+
+def _bootstrap_root_azienda(session: Session, nome: str) -> bool:
+    """The root installation's first azienda, written with its first admin.
+
+    The root is not in the registry, so `ensure_defaults` never reaches it
+    (`ensure_space_defaults` says so), and the API updates an azienda by id and creates
+    none (REB-615): a root migrated from an empty database would have no issuer to
+    configure from Impostazioni. The first admin's own name is the row's, as a space's
+    name is at provisioning; a root that already has its azienda keeps it, whoever is
+    created after.
+
+    Insert-only, never through `upsert_default`: two `createadmin` runs racing on an
+    empty root would both pass the count, and the second's upsert would rename the
+    first's row. An insert can only be refused: the partial unique index on
+    `predefinita` turns the second into an `IntegrityError`, rolled back here with its
+    savepoint, and the first admin's row stands. No timeline entry, the same as the
+    test seed: the row is the installation's, not a person's edit."""
+    repo = AziendaRepository(session)
+    if repo.count():
+        return False
+    try:
+        with session.begin_nested():
+            repo.add(Azienda(ragione_sociale=nome, predefinita=True, attiva=True))
+    except IntegrityError:
+        session.rollback()
+        return False
+    session.commit()
+    return True
 
 
 def _read_password(prompt: str) -> str:
@@ -198,7 +233,7 @@ def ensure_space_defaults() -> int:
                 print(f"{slug}: schema migrato da {before or 'zero'} a {after}")
             try:
                 with session_factory(engine)() as space:
-                    report = ensure_defaults(space)
+                    report = ensure_defaults(space, nome=slug)
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 print(f"{slug}: non arredato ({type(exc).__name__})", file=sys.stderr)
                 continue
@@ -207,7 +242,7 @@ def ensure_space_defaults() -> int:
         if report.seeded:
             print(
                 f"{slug}: stati {report.stages}, template {report.templates}, "
-                f"categorie {report.categories}"
+                f"categorie {report.categories}, aziende {report.aziende}"
             )
         else:
             print(f"{slug}: già a posto")

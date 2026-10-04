@@ -73,7 +73,7 @@ const EMPTY: Record<string, unknown> = {
   '/api/gmail/account': NO_GMAIL,
 }
 
-/** Stubs by path: `overrides` win, `/api/emitter` is 404 unless overridden, `failing`
+/** Stubs by path: `overrides` win, `/api/aziende` is an empty list unless overridden, `failing`
  *  answers that HTTP status with an error body. */
 function answers(overrides: Record<string, unknown> = {}, failing: Record<string, number> = {}) {
   vi.mocked(api.GET).mockImplementation(
@@ -83,8 +83,8 @@ function answers(overrides: Record<string, unknown> = {}, failing: Record<string
           ? { error: { detail: 'boom' }, response: new Response(null, { status: failing[path] }) }
           : path in overrides
             ? { data: overrides[path], response: new Response(null, { status: 200 }) }
-            : path === '/api/emitter'
-              ? { error: { detail: 'Not Found' }, response: new Response(null, { status: 404 }) }
+            : path === '/api/aziende'
+              ? { data: [], response: new Response(null, { status: 200 }) }
               : { data: EMPTY[path], response: new Response(null, { status: 200 }) },
       )) as never,
   )
@@ -252,8 +252,8 @@ describe('the assistant block', () => {
         Promise.resolve(
           path === '/api/tokens'
             ? { data: tokens, response: new Response(null, { status: 200 }) }
-            : path === '/api/emitter'
-              ? { error: { detail: 'Not Found' }, response: new Response(null, { status: 404 }) }
+            : path === '/api/aziende'
+              ? { data: [], response: new Response(null, { status: 200 }) }
               : { data: EMPTY[path], response: new Response(null, { status: 200 }) },
         )) as never,
     )
@@ -295,8 +295,8 @@ describe('the assistant block, once the token is copied', () => {
         Promise.resolve(
           path === '/api/tokens'
             ? { data: tokens, response: new Response(null, { status: 200 }) }
-            : path === '/api/emitter'
-              ? { error: { detail: 'Not Found' }, response: new Response(null, { status: 404 }) }
+            : path === '/api/aziende'
+              ? { data: [], response: new Response(null, { status: 200 }) }
               : { data: EMPTY[path], response: new Response(null, { status: 200 }) },
         )) as never,
     )
@@ -323,9 +323,9 @@ describe('the manual steps', () => {
   it('pairs each step to do with its screen and its prompt', async () => {
     renderPage()
     const steps = within(block(await findHeading('Oppure a mano')))
-    expect(steps.getByRole('link', { name: 'A mano: Impostazioni → Emittente' })).toHaveAttribute(
+    expect(steps.getByRole('link', { name: 'A mano: Impostazioni → Aziende' })).toHaveAttribute(
       'href',
-      '/app/settings/issuer',
+      '/app/settings/aziende',
     )
     expect(steps.getByRole('link', { name: 'A mano: Clienti' })).toHaveAttribute('href', '/app/customers')
     expect(steps.getAllByRole('link', { name: 'A mano: Deal' })).toHaveLength(2)
@@ -356,7 +356,7 @@ describe('the manual steps', () => {
 
   it('counts a step done when the thing exists, and only then', async () => {
     answers({
-      '/api/emitter': { ragione_sociale: 'Ada', partita_iva: '01234567890', codice_fiscale: null },
+      '/api/aziende': [{ ragione_sociale: 'Ada', partita_iva: '01234567890', codice_fiscale: null }],
       '/api/customers': { items: [{ id: 'c1' }], next_cursor: null },
     })
     renderPage()
@@ -389,7 +389,7 @@ describe('the manual steps', () => {
 
   it('keeps the steps, all ticked, once everything is done', async () => {
     answers({
-      '/api/emitter': { ragione_sociale: 'Ada', partita_iva: null, codice_fiscale: 'RSSMRA80A01H501U' },
+      '/api/aziende': [{ ragione_sociale: 'Ada', partita_iva: null, codice_fiscale: 'RSSMRA80A01H501U' }],
       '/api/customers': { items: [{ id: 'c1' }], next_cursor: null },
       '/api/time-entries': { items: [{ id: 't1' }], next_cursor: null },
       '/api/documents': { items: [{ id: 'd1' }], next_cursor: null },
@@ -414,7 +414,7 @@ describe('the manual steps', () => {
     if (auth.user) auth.user.ruolo = 'collaboratore'
     renderPage()
     expect(await screen.findByText(/0 di 4/)).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'A mano: Impostazioni → Emittente' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'A mano: Impostazioni → Aziende' })).toBeNull()
     expect(screen.getByText(/Li imposta l.amministratore/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'A mano: Clienti' })).toBeInTheDocument()
     expect(screen.getAllByRole('button', { name: 'Chiedilo all’assistente' })).toHaveLength(3)
