@@ -5,15 +5,14 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
+import { AziendaImages } from './AziendaImages'
 import { useSaveAzienda, type AziendaRecord } from './queries'
 
 /**
  * Every field the upsert accepts, in the order a person reads an invoice header:
  * who you are, where you are, how to reach you, how you are taxed. `logo_key` and
- * `firma_key` are deliberately absent -- they are storage keys for images, and no
- * upload UI exists yet, so offering a raw key field would invite someone to type a
- * path that resolves to nothing. The images currently ship as build assets; the
- * slice's own notes record this as the one known gap.
+ * `firma_key` are not fields: they are the server's storage keys, written by the two
+ * uploads `AziendaImages` offers under this form (REB-629) and read-only on the row.
  */
 interface EmitterField {
   name:
@@ -104,6 +103,9 @@ export function AziendaPanel({ azienda }: { azienda: AziendaRecord }) {
           here is typing. The form itself follows a newer row while it is untouched,
           below, so a stale value is never what a Salva writes back by default. */}
       <AziendaForm key={azienda.id} profile={azienda} />
+      {/* Keyed like the form: a refusal shown under azienda A's block must not
+          outlive the switch to B. */}
+      <AziendaImages key={azienda.id} azienda={azienda} />
     </div>
   )
 }

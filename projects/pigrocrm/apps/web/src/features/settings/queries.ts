@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { api, unwrap } from '@/lib/api'
+import { api, fetchWithRefresh, toProblem, unwrap, type ProblemDetail } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import type { EntityType } from '@/lib/schema'
 import { queryKeys } from '@/lib/query'
@@ -371,5 +371,93 @@ export function useSaveAzienda(aziendaId: string) {
         }),
       ),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.aziende }),
+  })
+}
+
+// -- The logo and the signature of an azienda (REB-629) --------------------------------
+
+export type AziendaImageSlot = 'logo' | 'firma'
+
+/**
+ * The image's bytes, as a Blob the block turns into an object URL, or `null` when the
+ * azienda has none. Asked only when the row says there is one (`present`): the route
+ * answers 404 otherwise, and a 404 is a fact the row already carries.
+ *
+ * Outside the typed client for the response type, through `fetchWithRefresh` for the
+ * session and the tenant prefix, like a document's download (`features/documents`).
+ */
+export function useAziendaImage(aziendaId: string, slot: AziendaImageSlot, present: boolean) {
+  return useQuery({
+    queryKey: queryKeys.aziendaImage(aziendaId, slot),
+    enabled: present,
+    queryFn: async (): Promise<Blob | null> => {
+      const response = await fetchWithRefresh(`/api/aziende/${aziendaId}/${slot}`)
+      if (response.status === 404) return null
+      if (!response.ok) {
+        const payload: unknown = await response.json().catch(() => null)
+        throw toProblem(payload, response.status)
+      }
+      return response.blob()
+    },
+  })
+}
+
+/** Multipart, so outside the typed client, the same exception `putVersion` documents. */
+async function putAziendaImage(
+  aziendaId: string,
+  slot: AziendaImageSlot,
+  file: File,
+): Promise<AziendaRecord> {
+  const body = new FormData()
+  body.append('file', file)
+  const response = await fetchWithRefresh(`/api/aziende/${aziendaId}/${slot}`, {
+    method: 'PUT',
+    body,
+  })
+  // nginx answers a body over its own limit with an HTML 413 before the service can
+  // say anything: the same sentence the service would have said.
+  if (response.status === 413) throw toProblem({ detail: IMAGE_TOO_LARGE }, 413)
+  const payload: unknown = await response.json().catch(() => null)
+  if (!response.ok) throw toProblem(payload, response.status)
+  return payload as AziendaRecord
+}
+
+/** The service's own limit and its own sentence (`AziendaAssets._check`), repeated here
+ *  so a file the browser already knows is too large is refused before it travels. */
+export const IMAGE_MAX_BYTES = 1024 * 1024
+export const IMAGE_TOO_LARGE = 'il file supera 1024 KiB'
+
+export function imageTooLarge(file: File): ProblemDetail | null {
+  return file.size > IMAGE_MAX_BYTES ? toProblem({ detail: IMAGE_TOO_LARGE }, 413) : null
+}
+
+export function useUploadAziendaImage(aziendaId: string, slot: AziendaImageSlot) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (file: File) => putAziendaImage(aziendaId, slot, file),
+    // The row (its key changed) and the bytes under the same prefix.
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.aziende }),
+  })
+}
+
+export function useRemoveAziendaImage(aziendaId: string, slot: AziendaImageSlot) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      unwrap(
+        slot === 'logo'
+          ? api.DELETE('/api/aziende/{azienda_id}/logo', {
+              params: { path: { azienda_id: aziendaId } },
+            })
+          : api.DELETE('/api/aziende/{azienda_id}/firma', {
+              params: { path: { azienda_id: aziendaId } },
+            }),
+      ),
+    onSuccess: () => {
+      // The bytes query is disabled once the row has no key, so its cached Blob would
+      // otherwise outlive the removal and flash on the next upload: dropped outright.
+      queryClient.removeQueries({ queryKey: queryKeys.aziendaImage(aziendaId, slot) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.aziende })
+    },
   })
 }
