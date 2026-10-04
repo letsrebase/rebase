@@ -44,17 +44,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Literal, cast
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
-from pigrocrm.core.actor import Actor, Role
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
+from pigrocrm.core.auth.scope import actor_for, scope_of
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.digest.models import Digest
 from pigrocrm.core.digest.schemas import WeeklyDigest
@@ -208,7 +210,7 @@ class DigestRun:
         # `cast` and not a runtime check, exactly as `cli.py`'s `_cron_actor` does it:
         # `Actor` validates `role` against its own literal on construction, so a column
         # holding something else raises there rather than travelling on unnoticed.
-        attore = Actor(id=titolare.id, type="system", role=cast(Role, titolare.ruolo))
+        attore = actor_for(titolare, "system")
 
         if self._spazio_vuoto():
             return self._senza_scrivere(DigestOutcome(slug, "vuoto", iso))
@@ -220,8 +222,10 @@ class DigestRun:
         # Plain values, taken now: the `User` objects behind them expire on the rollback
         # the build needs, and reloading them would reopen the very transaction that
         # rollback exists to close.
+        # Each recipient with their own scope (spec 2026-10-03 §4): the report is
+        # rendered once per distinct scope, so B's Monday mail sums B's aziende alone.
         destinatari = [
-            (utente.id, utente.email)
+            (utente.id, utente.email, scope_of(utente))
             for utente in utenti.list_all()
             if utente.attivo and utente.digest_settimanale
         ]
@@ -261,7 +265,7 @@ class DigestRun:
         slug: str,
         iso: str,
         attore: Actor,
-        destinatari: list[tuple[UUID, str]],
+        destinatari: list[tuple[UUID, str, tuple[UUID, ...] | None]],
         riga_id: UUID | None,
         settimana: tuple[date, date],
         *,
@@ -292,10 +296,23 @@ class DigestRun:
         # Nothing has been written yet: this closes the *read* transaction the checks
         # above autobegan, so that the dashboard's snapshot is the first statement of the
         # next one. `DashboardService._open_snapshot` refuses a session in a transaction.
-        self.session.rollback()
-
-        digest = DigestService(self.session, self.settings).build(attore, settimana)
-        sezioni = sezioni_con_righe(digest)
+        # One report per distinct scope, each built with that scope bound on the session
+        # (spec 2026-10-03 §4): the dashboard call inside `build` opens its own snapshot,
+        # and the listener `bind_scope` registers writes the scope at the start of it.
+        # The titolare's own actor, with the recipients' scope in place of theirs.
+        per_ambito: dict[tuple[UUID, ...] | None, list[tuple[UUID, str]]] = {}
+        for user_id, indirizzo, ambito in destinatari:
+            per_ambito.setdefault(ambito, []).append((user_id, indirizzo))
+        accettati: list[tuple[UUID, str]] = []
+        sezioni = 0
+        for ambito, gruppo in per_ambito.items():
+            bind_scope(self.session, attore.model_copy(update={"aziende": ambito}))
+            self.session.rollback()
+            digest = DigestService(self.session, self.settings).build(attore, settimana)
+            sezioni = max(sezioni, sezioni_con_righe(digest))
+            if not dry_run and self.sender is not None:
+                accettati.extend(self._spedisci(self.sender, digest, gruppo))
+        bind_scope(self.session, attore)
 
         if dry_run:
             # A rehearsal: the report is built so the operator can be told what would go
@@ -309,10 +326,6 @@ class DigestRun:
                 None,
             )
 
-        sender = self.sender
-        assert sender is not None  # answered above, before the report was built
-
-        accettati = self._spedisci(sender, digest, destinatari)
         if not accettati:
             # Every address was refused. `EmailSender.send` never raises, so without this
             # the week would be recorded, tracked and `gia_inviato` forever on the

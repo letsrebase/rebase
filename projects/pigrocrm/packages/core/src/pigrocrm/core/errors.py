@@ -62,6 +62,25 @@ class PermissionDenied(DomainError):
         )
 
 
+class ScopedAdmin(DomainError):
+    """An admin whose view is limited to some aziende asked for a space-level change
+    (spec 2026-10-03 §1.11). The same code as `PermissionDenied`, so the API answers 403
+    and the SPA hides nothing it would not hide for a collaboratore, but its own words:
+    the role is right, the scope is what is missing, and only an unscoped admin can
+    widen it from the Team panel."""
+
+    code = "permission_denied"
+
+    def __init__(self, action: str) -> None:
+        super().__init__(
+            f"{action} requires an admin whose view covers the whole space",
+            action=action,
+            required_roles=["admin"],
+            actual_role="admin",
+            reason="serve un amministratore senza limiti di azienda",
+        )
+
+
 class AgentForbidden(DomainError):
     """An operation no agent may perform, whatever role its owner has.
 

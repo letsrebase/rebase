@@ -109,7 +109,7 @@ class SpaceSettingsService:
     def update(
         self, data: SpaceSettingsUpdate, actor: Actor, *, spazio: str | None
     ) -> SpaceSettingsRead:
-        actor.require_admin("update_space_settings")
+        actor.require_unscoped_admin("update_space_settings")
         changed: list[str] = []
         for key in data.model_fields_set:
             value = getattr(data, key)

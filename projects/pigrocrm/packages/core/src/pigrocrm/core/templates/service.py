@@ -95,7 +95,7 @@ class TemplateService:
         self.activities = ActivityService(session)
 
     def create(self, data: TemplateCreate, actor: Actor) -> TemplateRead:
-        actor.require_admin("create_template")
+        actor.require_unscoped_admin("create_template")
         # Fails fast, at save time, naming the offending template line -- rather
         # than at the first `preview`/render, which could be long after whoever
         # wrote the template has moved on. `parse_template` already raises
@@ -123,7 +123,7 @@ class TemplateService:
         return TemplateRead.model_validate(template)
 
     def update(self, template_id: UUID, data: TemplateUpdate, actor: Actor) -> TemplateRead:
-        actor.require_admin("update_template")
+        actor.require_unscoped_admin("update_template")
         template = self.repo.get(template_id)
         if template is None:
             raise NotFound(ENTITY, template_id)
@@ -170,7 +170,7 @@ class TemplateService:
         every other domain's soft delete, hiding a template from `list`'s default
         view and from being picked for a new document while keeping every document
         already generated from it, and its own history, fully intact."""
-        actor.require_admin("deactivate_template")
+        actor.require_unscoped_admin("deactivate_template")
         template = self.repo.get(template_id)
         if template is None:
             raise NotFound(ENTITY, template_id)
@@ -182,7 +182,7 @@ class TemplateService:
         return TemplateRead.model_validate(template)
 
     def activate(self, template_id: UUID, actor: Actor) -> TemplateRead:
-        actor.require_admin("activate_template")
+        actor.require_unscoped_admin("activate_template")
         template = self.repo.get(template_id)
         if template is None:
             raise NotFound(ENTITY, template_id)
@@ -278,7 +278,7 @@ class TemplateService:
         Returns only what it actually created, so a caller can tell "seeded" from
         "already there".
         """
-        actor.require_admin("seed_templates")
+        actor.require_unscoped_admin("seed_templates")
         from pigrocrm.core.gmail.solleciti_template import (  # local: avoids a package cycle
             SOLLECITO_TEMPLATE_NOME,
             SOLLECITO_TEMPLATE_SOURCE,

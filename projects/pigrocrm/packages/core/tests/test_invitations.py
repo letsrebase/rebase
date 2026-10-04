@@ -12,6 +12,7 @@ prove: two racing clicks create exactly one user.
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from threading import Barrier
+from uuid import UUID
 
 import pytest
 from sqlalchemy import select
@@ -380,3 +381,87 @@ def test_the_partial_unique_index_refuses_two_open_invitations(db_engine) -> Non
     finally:
         with factory() as cleaner:
             _wipe(cleaner, "dup@x.it", "finita@x.it")
+
+
+# --- a scoped invitation (REB-633, spec 2026-10-03 §1.11) ----------------------------
+
+
+def _second_azienda(session: Session, nome: str = "rebase ltd", **overrides: object) -> UUID:
+    from pigrocrm.core.emitter.models import Azienda
+
+    values: dict[str, object] = {"nome": nome, "ragione_sociale": nome.title(), "nazione": "GB"}
+    values.update(overrides)
+    row = Azienda(**values)  # type: ignore[arg-type]
+    session.add(row)
+    session.flush()
+    return row.id
+
+
+def test_an_invitation_carries_its_scope_and_the_accepted_account_keeps_it(
+    db_session: Session,
+) -> None:
+    ltd = _second_azienda(db_session)
+    invite, raw = InvitationService(db_session).create(
+        InvitationCreate(email=INVITEE, nome="Bea", aziende=[ltd]), _admin(db_session)
+    )
+    assert invite.aziende == [ltd]
+    user = InvitationService(db_session).accept(raw, None)
+    assert user.aziende == [ltd]
+    row = UserRepository(db_session).get(user.id)
+    assert row is not None and row.ambito_limitato is True
+    assert [s.azienda_id for s in row.scopes] == [ltd]
+
+
+def test_an_unscoped_invitation_opens_an_unscoped_account_as_before(db_session: Session) -> None:
+    _, raw = _invite(db_session)
+    user = InvitationService(db_session).accept(raw, None)
+    assert user.aziende is None
+    row = UserRepository(db_session).get(user.id)
+    assert row is not None and row.ambito_limitato is False and row.scopes == []
+
+
+def test_an_empty_scope_and_an_unknown_azienda_are_refused_by_field(db_session: Session) -> None:
+    from uuid import uuid4
+
+    from pigrocrm.core.errors import ValidationFailed
+
+    service = InvitationService(db_session)
+    with pytest.raises(ValidationFailed) as empty:
+        service.create(InvitationCreate(email=INVITEE, aziende=[]), _admin(db_session))
+    assert empty.value.details["field"] == "aziende"
+    with pytest.raises(ValidationFailed) as unknown:
+        service.create(InvitationCreate(email=INVITEE, aziende=[uuid4()]), _admin(db_session))
+    assert unknown.value.details["field"] == "aziende"
+
+
+def test_an_azienda_deactivated_before_the_click_leaves_the_scope_empty_not_tutte(
+    db_session: Session,
+) -> None:
+    """Nothing turns an empty scope into «tutte» (spec §1.11): the account opens, sees
+    nothing, and the Team panel says so."""
+    from pigrocrm.core.emitter.models import Azienda
+
+    ltd = _second_azienda(db_session)
+    _, raw = InvitationService(db_session).create(
+        InvitationCreate(email=INVITEE, nome="Bea", aziende=[ltd]), _admin(db_session)
+    )
+    row = db_session.get(Azienda, ltd)
+    assert row is not None
+    row.attiva = False
+    db_session.flush()
+    user = InvitationService(db_session).accept(raw, None)
+    assert user.aziende == []
+    fresh = UserRepository(db_session).get(user.id)
+    assert fresh is not None and fresh.ambito_limitato is True and fresh.scopes == []
+
+
+def test_a_scoped_admin_cannot_invite(db_session: Session) -> None:
+    from pigrocrm.core.errors import ScopedAdmin
+
+    ltd = _second_azienda(db_session)
+    admin = _admin(db_session)
+    scoped = Actor(id=admin.id, type="user", role="admin", aziende=(ltd,))
+    with pytest.raises(ScopedAdmin) as refused:
+        InvitationService(db_session).create(InvitationCreate(email=INVITEE), scoped)
+    assert refused.value.code == "permission_denied"
+    assert "senza limiti di azienda" in refused.value.details["reason"]

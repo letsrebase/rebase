@@ -40,6 +40,7 @@ from pigrocrm.core.auth.schemas import (
     UserCreate,
     UserRead,
 )
+from pigrocrm.core.auth.scope import active_only, apply_scope, check_scope
 from pigrocrm.core.auth.service import UserService, require_verified_identity
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 
@@ -114,8 +115,9 @@ class InvitationService:
 
         The address claim is checked here before any row is written; the index is the
         race guard behind the read, the same shape `UserService.create` uses."""
-        actor.require_admin("invite_user")
+        actor.require_unscoped_admin("invite_user")
         require_verified_identity(self.session, actor, "invite_user")
+        aziende = check_scope(self.session, ENTITY, data.aziende)
         email = data.email
         now = datetime.now(UTC)
         # `invited_by` is a real FK: a system actor has no id to leave as the trail,
@@ -141,6 +143,7 @@ class InvitationService:
             open_row.email = email
             open_row.nome = data.nome
             open_row.ruolo = data.ruolo
+            open_row.aziende = aziende
             open_row.token_hash = _hash(raw)
             open_row.invited_by = actor.id
             open_row.expires_at = expires_at
@@ -150,6 +153,7 @@ class InvitationService:
                 email=email,
                 nome=data.nome,
                 ruolo=data.ruolo,
+                aziende=aziende,
                 token_hash=_hash(raw),
                 invited_by=actor.id,
                 expires_at=expires_at,
@@ -190,7 +194,7 @@ class InvitationService:
         from a repeat one either). Another space's id, an unknown id, or a terminal
         row are all 404: there is nothing to resend, and the reason is not the
         caller's business."""
-        actor.require_admin("resend_invite")
+        actor.require_unscoped_admin("resend_invite")
         require_verified_identity(self.session, actor, "invite_user")
         row = self._pending_row(invitation_id)
         raw = secrets.token_urlsafe(32)
@@ -204,7 +208,7 @@ class InvitationService:
         """Sets `revoked_at` and nothing else; the row stays, because a revoked
         invitation is exactly the record an admin needs to see was undone. 404 for a
         terminal row: there is nothing left to take back."""
-        actor.require_admin("revoke_invite")
+        actor.require_unscoped_admin("revoke_invite")
         row = self._pending_row(invitation_id)
         row.revoked_at = datetime.now(UTC)
         self.activities.record(ENTITY, row.id, "revoked", actor, {"email": row.email})
@@ -283,6 +287,12 @@ class InvitationService:
             if fresh.email_verificata_il is None:
                 fresh.email_verificata_il = now
             fresh.last_login_at = now
+            # The scope the invitation carried, kept to the aziende still active at the
+            # click (spec §1.11): an invitation whose every azienda was deactivated
+            # meanwhile opens an account that sees nothing, and the Team panel says so.
+            # Nothing turns an empty scope into «tutte».
+            if row.aziende is not None:
+                apply_scope(self.session, fresh, active_only(self.session, list(row.aziende)))
             user = UserRead.model_validate(fresh)
         self.activities.record(ENTITY, row.id, "accepted", Actor.system(), {"email": row.email})
         self.activities.record(

@@ -69,7 +69,7 @@ class PipelineService:
         self.activities = ActivityService(session)
 
     def create(self, data: PipelineStageCreate, actor: Actor) -> PipelineStageRead:
-        actor.require_admin("create_pipeline_stage")
+        actor.require_unscoped_admin("create_pipeline_stage")
         _check_probability(data.probabilita_default)
         if data.code is not None and self.repo.get_by_code(data.code) is not None:
             raise _conflicting_code(data.code)
@@ -91,7 +91,7 @@ class PipelineService:
         return PipelineStageRead.model_validate(stage)
 
     def update(self, stage_id: UUID, data: PipelineStageUpdate, actor: Actor) -> PipelineStageRead:
-        actor.require_admin("update_pipeline_stage")
+        actor.require_unscoped_admin("update_pipeline_stage")
         stage = self.repo.get(stage_id)
         if stage is None:
             raise NotFound("pipeline_stage", stage_id)
@@ -129,7 +129,7 @@ class PipelineService:
         below says so explicitly, rather than leaving an administrator to work out
         both of those facts from a bare count.
         """
-        actor.require_admin("delete_pipeline_stage")
+        actor.require_unscoped_admin("delete_pipeline_stage")
         stage = self.repo.get(stage_id)
         if stage is None:
             raise NotFound("pipeline_stage", stage_id)
@@ -166,7 +166,7 @@ class PipelineService:
         directly, which is the entire point of putting it on a shared service. See
         `test_seed_defaults_requires_admin`.
         """
-        actor.require_admin("seed_pipeline")
+        actor.require_unscoped_admin("seed_pipeline")
         existing_codes = {s.code for s in self.repo.list() if s.code is not None}
         try:
             for code, nome, posizione, probabilita, tipo in DEFAULT_STAGES:

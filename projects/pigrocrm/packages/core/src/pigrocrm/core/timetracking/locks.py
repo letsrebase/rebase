@@ -97,7 +97,7 @@ class PeriodLockService:
         self.activities = ActivityService(session)
 
     def close_period(self, data: PeriodLockCreate, actor: Actor) -> PeriodLockRead:
-        actor.require_admin("close_period")
+        actor.require_unscoped_admin("close_period")
         if self.repo.get(data.anno, data.mese) is not None:
             raise Conflict(
                 ENTITY,
@@ -131,7 +131,7 @@ class PeriodLockService:
         return PeriodLockRead.model_validate(lock)
 
     def reopen_period(self, anno: int, mese: int, actor: Actor) -> None:
-        actor.require_admin("reopen_period")
+        actor.require_unscoped_admin("reopen_period")
         lock = self.repo.get(anno, mese)
         if lock is None:
             raise NotFound(ENTITY, f"{anno}-{mese:02d}")

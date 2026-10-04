@@ -100,7 +100,7 @@ class AutomationConfigService:
         `exclude_unset=True`, not `exclude_none`: with two booleans, "not sent" and `None`
         have to be distinguishable, or switching A1 off would silently switch A2 on.
         """
-        actor.require_admin("update_automation_config")
+        actor.require_unscoped_admin("update_automation_config")
         row = self.repo.get_or_create()
 
         changes: dict[str, Any] = {}

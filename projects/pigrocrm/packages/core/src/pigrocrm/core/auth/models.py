@@ -3,7 +3,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Numeric, String, func, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
 
@@ -51,8 +51,23 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     ambito_limitato: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # The rows of the scope, loaded with the user (REB-633): one query per read of a
+    # list of users, never one per row, and `aziende` below is what every reader
+    # answers with. `delete-orphan`, so clearing the list deletes the rows.
+    scopes: Mapped[list["UserAzienda"]] = relationship(
+        lazy="selectin", cascade="all, delete-orphan", order_by="UserAzienda.azienda_id"
+    )
 
     __table_args__ = (Index("uq_users_email_lower", func.lower(email), unique=True),)
+
+    @property
+    def aziende(self) -> list[UUID] | None:
+        """The scope as the API and the actor carry it (spec 2026-10-03 §1.11): `None`
+        for an unscoped member, the ids otherwise, an empty list for a scope whose every
+        azienda was deactivated, which sees nothing and is never read as «tutte»."""
+        if not self.ambito_limitato:
+            return None
+        return [row.azienda_id for row in self.scopes]
 
 
 class UserAzienda(Base):

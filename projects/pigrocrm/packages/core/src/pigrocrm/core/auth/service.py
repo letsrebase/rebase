@@ -12,6 +12,7 @@ from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.passwords import dummy_hash, hash_password, verify_password
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import MIN_PASSWORD_LENGTH, UserCreate, UserRead, UserUpdate
+from pigrocrm.core.auth.scope import apply_scope, check_scope
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 from pigrocrm.core.schemas import reject_cleared_columns, supplied_changes
 
@@ -31,7 +32,7 @@ ENTITY = "user"
 # an administrator" and "who turned this account off", which is the entire reason this
 # audit exists. `password_hash` is not here and must never be -- it is not reachable
 # through `UserUpdate` at all, and the absence tests pin that.
-_AUDITED_FIELDS = ("nome", "ruolo", "attivo")
+_AUDITED_FIELDS = ("nome", "ruolo", "attivo", "ambito_limitato")
 
 # `update` refuses a change that would take the space's ability to administer itself
 # away. Two refusals, both in service of one invariant -- there is always at least one
@@ -43,6 +44,21 @@ LAST_ACTIVE_ADMIN = "lo spazio deve avere almeno un amministratore attivo"
 SELF_ACCOUNT_CHANGE = (
     "non puoi cambiare ruolo o stato del tuo stesso account: chiedilo a un altro amministratore"
 )
+
+
+class LastUnscopedAdmin(DomainError):
+    """The change would leave the space with no active admin who sees the whole of it
+    (spec 2026-10-03 §1.11): the same guard as `LastActiveAdmin`, one notch up, since
+    a scoped admin cannot widen a scope, invite anybody or change the configuration."""
+
+    code = "conflict"
+
+    def __init__(self, field: str) -> None:
+        super().__init__(
+            "lo spazio resterebbe senza un amministratore attivo che veda tutte le aziende",
+            entity="user",
+            field=field,
+        )
 
 
 class LastActiveAdmin(DomainError):
@@ -100,7 +116,7 @@ class UserService:
         self.activities = ActivityService(session)
 
     def create(self, data: UserCreate, actor: Actor) -> UserRead:
-        actor.require_admin("create_user")
+        actor.require_unscoped_admin("create_user")
         require_verified_identity(self.session, actor, "create_user")
         if data.password is None:
             # A user with no password enters with a link by mail (spec 2026-09-12 §6.2).
@@ -154,7 +170,7 @@ class UserService:
         return UserRead.model_validate(user)
 
     def update(self, user_id: UUID, data: UserUpdate, actor: Actor) -> UserRead:
-        actor.require_admin("update_user")
+        actor.require_unscoped_admin("update_user")
         user = self.repo.get(user_id)
         if user is None:
             raise NotFound("user", user_id)
@@ -172,6 +188,13 @@ class UserService:
         # mentioned, so the audit entry would report nothing for exactly the change most
         # worth recording -- somebody removing a default rate.
         changes = supplied_changes(data)
+        # The scope is not a column of the row (the flag and the rows under it are):
+        # taken out before the column checks, and only when the caller named it, since
+        # `null` here means «every azienda» and not «leave it».
+        scope_named = "aziende" in data.model_fields_set
+        changes.pop("aziende", None)
+        aziende = check_scope(self.session, "user", data.aziende) if scope_named else None
+        scope_before = user.aziende
         reject_cleared_columns("user", User, changes)
         # REB-292, both refusals before the first write, and neither outside the two
         # privileged fields: nome and the rate defaults are ordinary edits, whoever
@@ -203,12 +226,43 @@ class UserService:
                     raise LastActiveAdmin(privileged[0])
             if actor.id == user_id:
                 raise SelfAccountChange(privileged[0])
+        # And one active admin who sees the whole of it (spec 2026-10-03 §1.11), after
+        # the two refusals above so their answers do not change: refused when THIS row
+        # is such an admin and the patch would demote, deactivate or scope them with
+        # nobody else left in that position.
+        narrowing = scope_named and aziende is not None
+        if (
+            (privileged or narrowing)
+            and user.ruolo == "admin"
+            and user.attivo
+            and not user.ambito_limitato
+        ):
+            final_ruolo = changes.get("ruolo", user.ruolo)
+            final_attivo = changes.get("attivo", user.attivo)
+            if final_ruolo != "admin" or not final_attivo or narrowing:
+                other_unscoped = self.session.scalar(
+                    select(func.count(User.id)).where(
+                        User.id != user_id,
+                        User.ruolo == "admin",
+                        User.attivo.is_(True),
+                        User.ambito_limitato.is_(False),
+                    )
+                )
+                if not other_unscoped:
+                    raise LastUnscopedAdmin(privileged[0] if privileged else "aziende")
         for field, value in changes.items():
             setattr(user, field, value)
+        if scope_named:
+            apply_scope(self.session, user, aziende)
 
         # Nothing is recorded when the patch changed nothing: a deactivation that was
         # already in force is not a decision anyone took today. See `field_changes`.
         delta = field_changes(before, _snapshot(user))
+        if scope_named and user.aziende != scope_before:
+            delta.setdefault("changed", [])
+            if "aziende" not in delta["changed"]:
+                delta["changed"].append("aziende")
+            delta["aziende"] = [str(a) for a in user.aziende] if user.aziende is not None else None
         # A deactivation ends the account's agent credentials in the same transaction
         # (REB-295): `resolve()` already refuses a token whose owner is inactive, but
         # refusing on every call left the rows live -- reactivating the account would

@@ -877,3 +877,57 @@ def test_a_send_that_blows_up_names_the_type_and_writes_nothing(corpus: Corpus) 
     assert cattura.chiamate == []
     assert _riga(corpus.engine, corpus.iso) is None
     assert _attivita(corpus.engine) == []
+
+
+# --- one report per distinct scope (REB-633, spec 2026-10-03 §4) ----------------------
+
+
+def test_a_scoped_recipient_gets_a_report_built_inside_their_scope(
+    corpus: Corpus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bruno may see one azienda, Ada the whole space: the report is rendered twice, once
+    with `*` bound and once with Bruno's azienda, each sent to its own group, and the
+    session is handed back inside the titolare's scope."""
+    from sqlalchemy import text
+
+    from pigrocrm.core.auth.models import UserAzienda
+    from pigrocrm.core.db.scope import SCOPE_SETTING
+    from pigrocrm.core.digest.service import DigestService
+
+    factory = session_factory(corpus.engine)
+    with factory() as session:
+        azienda_id = session.execute(select(Customer.azienda_id)).scalars().first()
+        assert azienda_id is not None
+        bruno = session.get(User, corpus.destinatari[1])
+        assert bruno is not None
+        bruno.ambito_limitato = True
+        session.add(UserAzienda(user_id=bruno.id, azienda_id=azienda_id))
+        session.commit()
+
+    bound: list[str] = []
+    original = DigestService.build
+
+    def _recording(self: DigestService, actor: Any, settimana: tuple[date, date]) -> WeeklyDigest:
+        digest = original(self, actor, settimana)
+        bound.append(
+            self.session.execute(
+                text(f"SELECT current_setting('{SCOPE_SETTING}', true)")
+            ).scalar_one()
+        )
+        return digest
+
+    monkeypatch.setattr(DigestService, "build", _recording)
+    sender = RecordingSender()
+    with factory() as session:
+        run = DigestRun(session, SETTINGS, sender=sender, tracker=None, public_url=PUBLIC_URL)
+        esito = run.send_for_space(SLUG, corpus.titolare, corpus.settimana)
+        assert not session.in_transaction()
+        back = session.execute(
+            text(f"SELECT current_setting('{SCOPE_SETTING}', true)")
+        ).scalar_one()
+
+    assert esito.esito == "inviato" and esito.destinatari == 2
+    assert bound == ["*", str(azienda_id)]
+    assert [mail.to for mail in sender.sent] == [corpus.titolare, corpus.collega]
+    # The titolare's scope is what the session carries once the groups are done.
+    assert back == "*"

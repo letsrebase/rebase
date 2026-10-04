@@ -843,3 +843,24 @@ Added as the milestones land, dated, never rewriting the sections above.
   lands on right after. The ordinary regime sends no natura beside its rate and the
   foreign one sends what the settings panel sends, so the server's own refusals name a
   field the form shows.
+- **2026-10-04, milestone «Invite a person to one azienda», the core (REB-633).**
+  Migration `0048` creates the eleven SQL functions of §4 and one `FOR ALL` policy named
+  `ambito_azienda` on each of the twenty-eight tables that reach an azienda, with
+  `FORCE ROW LEVEL SECURITY` so the owner of the schema is not exempt. The scope is two
+  transaction-local settings, `pigrocrm.aziende` (`*`, a comma-joined list of ids, or
+  the empty string) and `pigrocrm.user_id`, written by `db/scope.py`'s `bind_scope` on
+  the open transaction and again at every `after_begin`, because a service commits in
+  the middle of a request; a connection with nothing bound sees nothing, which is the
+  closed default of §4. `Actor.aziende` is `None` for the whole space and a tuple
+  otherwise, and `require_unscoped_admin` guards the space-level actions (team, pipeline,
+  fields, templates, settings, categories, locks, automations, Drive) with the
+  `permission_denied` refusal «serve un amministratore senza limiti di azienda»; a
+  scoped admin keeps every other admin action. An invitation carries `aziende`
+  (checked: no empty list, no unknown or inactive azienda) and `accept` writes the flag
+  and the rows, dropping an azienda deactivated in between without ever widening to
+  «tutte» (§1.11). `UserUpdate.aziende` sets the scope when present and `null` clears
+  it; the last unscoped active admin cannot be scoped or demoted (`LastUnscopedAdmin`,
+  409). The weekly digest is built once per distinct scope among its recipients, and the
+  Gmail sync binds the mailbox owner's scope. The test database's user is a superuser,
+  which bypasses RLS, so the proof runs through a `pigrocrm_app_test` role created by
+  the test itself; the application's own role is REB-634's work.

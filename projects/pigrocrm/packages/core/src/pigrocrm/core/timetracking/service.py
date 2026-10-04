@@ -421,7 +421,7 @@ class TimeEntryService:
         from the start, ahead of the rest; task 4B-1 converted every other service to
         the same contract via `supplied_changes` (residual A14).
         """
-        actor.require_admin("update_user_rates")
+        actor.require_unscoped_admin("update_user_rates")
         user = self.users.get(user_id)
         if user is None:
             raise NotFound("user", user_id)
@@ -471,7 +471,7 @@ class TimeEntryService:
         Returns how many entries were rewritten, so a caller can say "12 voci
         aggiornate" instead of "done".
         """
-        actor.require_admin("recalculate_rates")
+        actor.require_unscoped_admin("recalculate_rates")
         if data.a < data.da:
             raise ValidationFailed(
                 ENTITY, "a", "intervallo invertito", expected="una data non anteriore a 'da'"

@@ -2,10 +2,11 @@ import statistics
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -603,3 +604,87 @@ def test_nothing_refused_leaves_the_row_untouched(db_session: Session) -> None:
 
     row = UserRepository(db_session).get(solo.id)
     assert row is not None and row.ruolo == "admin" and row.attivo is True
+
+
+# --- the member's scope (REB-633, spec 2026-10-03 §1.11) -----------------------------
+
+
+def _azienda(session: Session, nome: str) -> UUID:
+    from pigrocrm.core.emitter.models import Azienda
+
+    row = Azienda(nome=nome, ragione_sociale=nome.title(), nazione="GB")
+    session.add(row)
+    session.flush()
+    return row.id
+
+
+def _member(session: Session, email: str, ruolo: str = "collaboratore") -> UUID:
+    return (
+        UserService(session)
+        .create(UserCreate(email=email, password="supersegreta1", nome="M", ruolo=ruolo), ADMIN)  # type: ignore[arg-type]
+        .id
+    )
+
+
+def test_update_scopes_a_member_and_null_clears_the_scope(db_session: Session) -> None:
+    ltd = _azienda(db_session, "rebase ltd")
+    member = _member(db_session, "m@x.it")
+    service = UserService(db_session)
+    scoped = service.update(member, UserUpdate(aziende=[ltd]), ADMIN)
+    assert scoped.aziende == [ltd]
+    # Left out: left alone.
+    assert service.update(member, UserUpdate(nome="Mara"), ADMIN).aziende == [ltd]
+    # Explicit null: the whole space again.
+    assert service.update(member, UserUpdate(aziende=None), ADMIN).aziende is None
+    row = db_session.get(User, member)
+    assert row is not None and row.ambito_limitato is False and row.scopes == []
+
+
+def test_the_scope_change_is_on_the_timeline(db_session: Session) -> None:
+    from pigrocrm.core.activities.models import Activity
+
+    ltd = _azienda(db_session, "rebase ltd")
+    member = _member(db_session, "m@x.it")
+    UserService(db_session).update(member, UserUpdate(aziende=[ltd]), ADMIN)
+    rows = (
+        db_session.execute(
+            select(Activity).where(Activity.entity_type == "user", Activity.entity_id == member)
+        )
+        .scalars()
+        .all()
+    )
+    last = rows[-1]
+    assert "aziende" in last.payload["changed"] and "ambito_limitato" in last.payload["changed"]
+    assert last.payload["aziende"] == [str(ltd)]
+
+
+def test_the_space_keeps_one_active_admin_who_sees_everything(db_session: Session) -> None:
+    from pigrocrm.core.auth.service import LastUnscopedAdmin
+
+    ltd = _azienda(db_session, "rebase ltd")
+    only = _member(db_session, "a@x.it", "admin")
+    second = _member(db_session, "b@x.it", "admin")
+    service = UserService(db_session)
+    # Two unscoped admins: either may be scoped.
+    assert service.update(second, UserUpdate(aziende=[ltd]), ADMIN).aziende == [ltd]
+    # Now `only` is the last one who sees the whole space: scoping them is refused,
+    # and so is demoting them, with the field that caused it named.
+    with pytest.raises(LastUnscopedAdmin) as refused:
+        service.update(only, UserUpdate(aziende=[ltd]), ADMIN)
+    assert refused.value.details["field"] == "aziende"
+    with pytest.raises(LastUnscopedAdmin):
+        service.update(only, UserUpdate(ruolo="collaboratore"), ADMIN)
+    # Widening the second back makes room again.
+    service.update(second, UserUpdate(aziende=None), ADMIN)
+    assert service.update(only, UserUpdate(aziende=[ltd]), ADMIN).aziende == [ltd]
+
+
+def test_a_scoped_admin_cannot_manage_the_team(db_session: Session) -> None:
+    from pigrocrm.core.errors import ScopedAdmin
+
+    ltd = _azienda(db_session, "rebase ltd")
+    scoped = Actor(id=None, type="user", role="admin", aziende=(ltd,))
+    with pytest.raises(ScopedAdmin):
+        UserService(db_session).create(
+            UserCreate(email="e@f.it", password="supersegreta1", nome="E", ruolo="readonly"), scoped
+        )

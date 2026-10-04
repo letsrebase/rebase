@@ -428,7 +428,7 @@ class GoogleDriveAccountService:
         actor.require_write(_ROOTS_ACTION)
         named = "storage_folder_id" in data.model_fields_set
         if named:
-            actor.require_admin(_STORAGE_FOLDER_ACTION)
+            actor.require_unscoped_admin(_STORAGE_FOLDER_ACTION)
         account = self._present(actor)
         chosen = data.storage_folder_id
         verified = account.storage_folder_verified

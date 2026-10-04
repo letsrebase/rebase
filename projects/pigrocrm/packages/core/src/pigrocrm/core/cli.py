@@ -4,7 +4,6 @@ import sys
 import traceback
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
-from typing import cast
 from uuid import UUID
 
 from sqlalchemy import Engine
@@ -13,12 +12,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core import telemetry
-from pigrocrm.core.actor import Actor, Role
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import UserCreate
+from pigrocrm.core.auth.scope import actor_for
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
+from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.digest.run import DigestOutcome, DigestRun
 from pigrocrm.core.digest.service import previous_week, week_containing
 from pigrocrm.core.emitter.models import Azienda
@@ -700,6 +701,10 @@ def _sync_mailbox(
                 # Removed between the listing and now: the owner disconnected it.
                 raise Conflict("google_account", "nessuna casella Google collegata")
             actor = _cron_actor(session, account)
+            # The owner's own scope, never «tutte» (spec 2026-10-03 §4): a scoped
+            # owner's mailbox is matched against the customers and people their scope
+            # can see, so the sync writes no link on another azienda's customer.
+            bind_scope(session, actor)
             report = GmailSyncService(
                 session, settings=settings, transport=transport, tokens=tokens
             ).sync(actor)
@@ -764,7 +769,7 @@ def _cron_actor(session: Session, account: GoogleAccount) -> Actor:
     # `cast` and not a runtime check: `Actor` is a pydantic model and validates `role`
     # against the same literal on construction, so a column holding something else
     # raises there rather than travelling on unnoticed.
-    actor = Actor(id=user.id, type="system", role=cast(Role, user.ruolo))
+    actor = actor_for(user, "system")
     if not actor.can_write:
         raise Conflict(
             "google_account",
