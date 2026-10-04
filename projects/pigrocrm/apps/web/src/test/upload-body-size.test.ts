@@ -7,7 +7,9 @@
  * all three of the container's and the host's nginx configs carry the same shape: a
  * tight, explicit server-level default (so the limit is versioned rather than left to
  * whatever the `http` block it lands in happens to default to) and a
- * `location ^~ /api/documents/` override that clears the application ceiling, so a
+ * location matching `api/documents` (a regex with `(/|$)`, never a slashed proxied
+ * prefix, which makes nginx redirect the bare path, REB-636) that clears the
+ * application ceiling, so a
  * regression in either direction -- the directive dropped again, or set below the
  * ceiling it exists to match -- is caught here rather than by the next scanned
  * contract somebody uploads.
@@ -48,6 +50,23 @@ function bodySizeBytes(value: string): number {
 }
 
 describe.each(Object.entries(configs))('%s', (_label, conf) => {
+  it('never proxies through a prefix location that ends with a slash (REB-636)', () => {
+    // `location ^~ /api/x/ { proxy_pass ... }` makes nginx answer the bare `/api/x`
+    // with a 301 to `/api/x/`, which FastAPI answers with a 307 back: a redirect loop
+    // on every collection route, measured on the preview's `/api/aziende`. Every such
+    // block under `/api/` is a regex with `(/|$)`. The catch-all `/api/` is the one
+    // exception: the API has no route at `/api`, so its redirect ends in a 404 and never
+    // loops. The SPA's own prefixes (`/app/`, `/`) are not API routes and may redirect.
+    const blocks = [...conf.matchAll(/location\s+(?:\^~\s+)?(\/[^\s{"~]*)\s*\{([\s\S]*?)\n {4}\}/g)]
+    const slashed = blocks
+      .filter(
+        ([, path = '', body = '']) =>
+          path.startsWith('/api/') && path !== '/api/' && path.endsWith('/') && /proxy_pass/.test(body),
+      )
+      .map(([, path]) => path ?? '')
+    expect(slashed).toEqual([])
+  })
+
   it('sets a tight, explicit server-level default before the first location', () => {
     // Same slicing robots.test.ts uses for the same reason: nginx does not inherit a
     // directive into a location block that declares its own, so what matters is
