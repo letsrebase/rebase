@@ -60,10 +60,10 @@ describe.each(Object.entries(configs))('%s', (_label, conf) => {
     const blocks = [...conf.matchAll(/location\s+(?:\^~\s+)?(\/[^\s{"~]*)\s*\{([\s\S]*?)\n {4}\}/g)]
     const slashed = blocks
       .filter(
-        ([, path, body]) =>
+        ([, path = '', body = '']) =>
           path.startsWith('/api/') && path !== '/api/' && path.endsWith('/') && /proxy_pass/.test(body),
       )
-      .map(([, path]) => path)
+      .map(([, path]) => path ?? '')
     expect(slashed).toEqual([])
   })
 
