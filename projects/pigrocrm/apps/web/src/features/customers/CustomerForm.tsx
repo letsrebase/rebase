@@ -169,6 +169,12 @@ export function CustomerForm({
     azienda.aziende.length > 0 &&
     azienda.byId(initialAzienda) === undefined
   const showAziendaPicker = azienda.several || stranded
+  // `azienda_id` has its own picker below and no control in `DynamicForm`, so it is kept
+  // out of the flattened values: a tenant's custom field of the same name would
+  // otherwise display the chosen azienda's id as if it were its own value (Greptile,
+  // PR #509).
+  const { azienda_id: _pickedElsewhere, ...nativeForForm } = values.native
+  void _pickedElsewhere
 
   // This component stays mounted across opens -- only `Dialog`'s own visibility
   // toggles (see the list/detail routes: `open={open}` on an always-rendered
@@ -299,7 +305,7 @@ export function CustomerForm({
           // (`FieldDefinitionService.create` only checks other definitions), and if
           // that ever happens the control the user sees and the value read back here
           // must at least be the same one.
-          values={{ ...values.native, ...values.custom }}
+          values={{ ...nativeForForm, ...values.custom }}
           onChange={change}
           // Withheld when the server blamed `azienda_id`: that key has no control inside
           // `DynamicForm`, so it would render the message a second time as a raw banner

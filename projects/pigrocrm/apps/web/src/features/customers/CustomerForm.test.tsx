@@ -491,5 +491,7 @@ describe('the picker beside a custom field that happens to be named azienda_id (
     const body = submitted(onSubmit)
     expect(body.azienda_id).toBe('a-2')
     expect(body.custom_fields).toEqual({})
+    // And the homonymous custom control never shows the picked id as its own value.
+    expect(screen.getByLabelText('Codice azienda interno')).toHaveValue('')
   })
 })
