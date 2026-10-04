@@ -734,3 +734,19 @@ Added as the milestones land, dated, never rewriting the sections above.
   customer, so a contact with no customer answers only the search over every azienda.
   Time entries and the calendar's hours narrow through their deal with a subquery served
   by `ix_deals_azienda_id` rather than a column they would copy.
+- **2026-10-04, same milestone, the routes and the tools (REB-624).** The proposal of
+  §1.6 is a route of its own, `GET /api/aziende/proposta?nazione=XX`, declared before
+  `/{azienda_id}` so the literal segment is not read as an id, and a tool of its own,
+  `propose_azienda(nazione?)`, so the customer form and an agent can show the person
+  what the server would pick before creating; `POST /api/customers` and
+  `create_customer` apply the same `AziendaService.propose` when `azienda_id` is left
+  out, and `create_customer` takes `nazione?` for it. The list routes of §3 take
+  `azienda_id` as a query parameter, the calendar included (its hours through their
+  deal, its invoices by their own column, its activities always the space's); the
+  receivables of §3 are the dashboard's and move with milestone 5. Over MCP every
+  `azienda_id` goes through `parse_azienda_id`: omitted is everything on a list and the
+  proposal on a customer, a value that is not an id is refused in words rather than
+  falling back to the default. `search_contracts`, `list_documents`, `list_costs`,
+  `list_time_entries` and `get_calendar_month` take the filter with the four §7 names,
+  since the lists they wrap narrow the same way. The role matrix is unchanged: the
+  proposal is a read every role may make, like the list of aziende.

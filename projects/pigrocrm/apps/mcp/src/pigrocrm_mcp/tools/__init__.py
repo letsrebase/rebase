@@ -46,6 +46,7 @@ from pigrocrm_mcp.tools import (
 )
 from pigrocrm_mcp.tools import dashboard as dashboard_tools
 from pigrocrm_mcp.tools import search as search_tools
+from pigrocrm_mcp.tools.invoices import parse_azienda_id
 
 # `changes` stays a plain `dict[str, Any]` at runtime -- deliberately, not an
 # oversight. Typing it directly as `CustomerUpdate` (etc.) would make the MCP SDK
@@ -261,13 +262,21 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         giorni_pagamento: int | None = None,
         pagamento_fine_mese: bool = False,
         custom_fields: dict[str, Any] | None = None,
+        nazione: str | None = None,
+        azienda_id: str | None = None,
     ) -> dict[str, Any]:
         """Crea un cliente. Chiama prima `describe_schema` per i campi personalizzati.
 
         `giorni_pagamento` e `pagamento_fine_mese` sono i termini di pagamento concordati
         («30 giorni data fattura fine mese» e' `30` con `True`): da qui `issue_invoice`
         calcola la scadenza di ogni fattura al cliente. Senza giorni valgono quelli del
-        profilo fiscale."""
+        profilo fiscale.
+
+        `nazione` e' il paese del cliente (ISO 3166-1 alpha-2, `IT` se omessa).
+        `azienda_id` e' l'azienda dello spazio che lo fattura: omessa, la propone la
+        nazione (l'unica azienda di quel paese, altrimenti l'unica estera per un cliente
+        estero, altrimenti la predefinita), la stessa regola di `propose_azienda`. Le
+        aziende sono in `list_aziende`."""
         return customers.create(
             context,
             {
@@ -286,8 +295,20 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 "giorni_pagamento": giorni_pagamento,
                 "pagamento_fine_mese": pagamento_fine_mese,
                 "custom_fields": custom_fields or {},
+                **({"nazione": nazione} if nazione is not None else {}),
+                "azienda_id": parse_azienda_id(azienda_id),
             },
         )
+
+    @mcp.tool()
+    @guard
+    def propose_azienda(nazione: str | None = None) -> dict[str, Any]:
+        """L'azienda che fatturerebbe un nuovo cliente di `nazione` (ISO 3166-1 alpha-2,
+        `IT` se omessa) se nessuno ne sceglie una: l'unica azienda di quel paese,
+        altrimenti l'unica estera per un cliente estero, altrimenti la predefinita. E' la
+        regola che `create_customer` applica senza `azienda_id`; chiedila qui per
+        mostrarla alla persona prima di creare."""
+        return invoices.propose_azienda(context, nazione)
 
     @mcp.tool()
     @guard
@@ -307,6 +328,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         search: str | None = None,
         stato: str | None = None,
         custom: dict[str, Any] | None = None,
+        azienda_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
         sort: str | None = None,
@@ -321,8 +343,9 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         `custom` filtra sui campi personalizzati per uguaglianza esatta (es.
         {"settore": "IT"}); chiama `describe_schema` per conoscere le chiavi
         disponibili. `sort` accetta `created_at`, `updated_at` o `ragione_sociale`,
-        `dir` accetta `asc` o `desc`. Per leggere la pagina successiva passa
-        `next_cursor` come `cursor` nella chiamata seguente, senza interpretarlo.
+        `dir` accetta `asc` o `desc`. `azienda_id` tiene solo i clienti fatturati da
+        quell'azienda (`list_aziende`); omesso, tutti. Per leggere la pagina successiva
+        passa `next_cursor` come `cursor` nella chiamata seguente, senza interpretarlo.
         """
         return customers.search(
             context,
@@ -330,6 +353,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 search=search,
                 stato=stato,
                 custom=custom,
+                azienda_id=parse_azienda_id(azienda_id),
                 # cast: limit is `int | str` at runtime for the SDK-bypass reason
                 # documented on BoundedLimit above; the *ListQuery schema this
                 # feeds is what actually enforces (and coerces) "must be an int".
@@ -508,6 +532,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         customer_id: str | None = None,
         stage_id: str | None = None,
         custom: dict[str, Any] | None = None,
+        azienda_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
         sort: str | None = None,
@@ -517,7 +542,8 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         """Cerca deal per nome, cliente o stato di pipeline. `custom` filtra sui
         campi personalizzati per uguaglianza esatta; chiama `describe_schema` per
         conoscere le chiavi disponibili. `sort` accetta `created_at`, `updated_at` o
-        `nome`, `dir` accetta `asc` o `desc`. Per leggere la pagina successiva passa
+        `nome`, `dir` accetta `asc` o `desc`. `azienda_id` tiene solo i deal di
+        quell'azienda; omesso, tutti. Per leggere la pagina successiva passa
         `next_cursor` come `cursor` nella chiamata seguente, senza interpretarlo.
         """
         return deals.search(
@@ -527,6 +553,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 customer_id=UUID(customer_id) if customer_id else None,
                 stage_id=UUID(stage_id) if stage_id else None,
                 custom=custom,
+                azienda_id=parse_azienda_id(azienda_id),
                 # cast: limit is `int | str` at runtime for the SDK-bypass reason
                 # documented on BoundedLimit above; the *ListQuery schema this
                 # feeds is what actually enforces (and coerces) "must be an int".
@@ -620,21 +647,23 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     def search_contracts(
         customer_id: str | None = None,
         stato: str | None = None,
+        azienda_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
         sort: str | None = None,
         dir: str = "asc",
     ) -> dict[str, Any]:
         """Cerca contratti per cliente o stato. `sort` accetta `created_at`,
-        `updated_at` o `titolo`, `dir` accetta `asc` o `desc`. Per leggere la pagina
-        successiva passa `next_cursor` come `cursor` nella chiamata seguente, senza
-        interpretarlo.
+        `updated_at` o `titolo`, `dir` accetta `asc` o `desc`. `azienda_id` tiene solo
+        i contratti di quell'azienda; omesso, tutti. Per leggere la pagina successiva
+        passa `next_cursor` come `cursor` nella chiamata seguente, senza interpretarlo.
         """
         return contracts.search(
             context,
             ContractListQuery(
                 customer_id=UUID(customer_id) if customer_id else None,
                 stato=stato,
+                azienda_id=parse_azienda_id(azienda_id),
                 limit=cast(int, limit),
                 cursor=cursor,
                 sort=sort,
@@ -1019,7 +1048,9 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
-    def search_everything(termine: str, limite: SearchLimite = PER_CLASS_LIMIT) -> dict[str, Any]:
+    def search_everything(
+        termine: str, limite: SearchLimite = PER_CLASS_LIMIT, azienda_id: str | None = None
+    ) -> dict[str, Any]:
         """Cerca in tutto il CRM — clienti, persone, deal, documenti e fatture — con una
         sola chiamata: ragione sociale, P.IVA, codice fiscale, email, nome e cognome, nome
         del deal, titolo del documento, causale della fattura. Accetta anche un frammento
@@ -1029,7 +1060,8 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         anno. Servono almeno 3 caratteri. Restituisce fino a `limite` risultati per classe
         di entità più il conteggio reale di quella classe: se `totale_e_un_minimo` è true
         il conteggio è un minimo e i risultati completi stanno sull'elenco della singola
-        entità.
+        entità. `azienda_id` restringe ogni classe a quell'azienda, le persone attraverso
+        il loro cliente; omesso, cerca in tutto lo spazio.
         """
         # `termine` is a bare `str` with no `Annotated` bound, following this file's own
         # runtime-permissive / schema-only-strict convention: the length check happens
@@ -1037,7 +1069,10 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         # domain error the agent can act on instead of an SDK rejection whose wording is
         # not ours.
         return search_tools.search_everything(
-            context, SearchQuery(termine=termine, limite=cast(int, limite))
+            context,
+            SearchQuery(
+                termine=termine, limite=cast(int, limite), azienda_id=parse_azienda_id(azienda_id)
+            ),
         )
 
     # ---- automations -------------------------------------------------------
@@ -1177,6 +1212,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         tipo: str | None = None,
         stato: str | None = None,
         search: str | None = None,
+        azienda_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
         sort: str | None = None,
@@ -1185,7 +1221,8 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
     ) -> dict[str, Any]:
         """Elenca i documenti di un cliente o di un deal. `search` filtra per titolo.
         `sort` accetta `created_at`, `updated_at` o `titolo`, `dir` accetta `asc` o
-        `desc`. Passa `next_cursor` come `cursor` per la pagina successiva, senza
+        `desc`. `azienda_id` tiene solo i documenti di quell'azienda; omesso, tutti.
+        Passa `next_cursor` come `cursor` per la pagina successiva, senza
         interpretarlo. Per scaricare i byte usa l'API REST: MCP restituisce
         identificativi, non file."""
         return documents.search(
@@ -1193,6 +1230,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
             DocumentListQuery(
                 customer_id=UUID(customer_id) if customer_id else None,
                 deal_id=UUID(deal_id) if deal_id else None,
+                azienda_id=parse_azienda_id(azienda_id),
                 tipo=tipo,  # type: ignore[arg-type]
                 stato=stato,  # type: ignore[arg-type]
                 search=search,
@@ -1350,19 +1388,22 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         stato: str | None = None,
         anno: int | None = None,
         escludi_consumate: bool = False,
+        azienda_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
         """Elenca fatture e proforma. Passa `next_cursor` come `cursor` per la pagina
         successiva. `escludi_consumate` lascia fuori le proforma gia' emesse come
         fattura, che l'elenco del sito non mostra sotto «Tutte»: la fattura porta il
-        loro numero e `origine_proforma_id` punta alla proforma. Per scaricare il PDF
-        o l'XML usa l'API REST: MCP restituisce identificativi, non file."""
+        loro numero e `origine_proforma_id` punta alla proforma. `azienda_id` tiene
+        solo le fatture di quell'azienda; omesso, tutte. Per scaricare il PDF o l'XML
+        usa l'API REST: MCP restituisce identificativi, non file."""
         return invoices.search(
             context,
             InvoiceListQuery(
                 customer_id=UUID(customer_id) if customer_id else None,
                 deal_id=UUID(deal_id) if deal_id else None,
+                azienda_id=parse_azienda_id(azienda_id),
                 tipo=tipo,  # type: ignore[arg-type]
                 stato=stato,  # type: ignore[arg-type]
                 anno=anno,
@@ -1666,15 +1707,18 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         a: IsoDateStr = None,
         fatturabile: bool | None = None,
         fatturato: bool | None = None,
+        azienda_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
         """Elenca le voci di ore, dalla più recente. `fatturato = false` risponde alla
-        domanda "quanto ho da fatturare"."""
+        domanda "quanto ho da fatturare". `azienda_id` tiene solo le ore sui deal di
+        quell'azienda; omesso, tutte."""
         return timetracking.list_time_entries(
             context,
             TimeEntryListQuery(
                 deal_id=UUID(deal_id) if deal_id else None,
+                azienda_id=parse_azienda_id(azienda_id),
                 user_id=UUID(user_id) if user_id else None,
                 da=da,  # type: ignore[arg-type]
                 a=a,  # type: ignore[arg-type]
@@ -1778,11 +1822,14 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         fornitore: str | None = None,
         document_id: str | None = None,
         custom_fields: dict[str, Any] | None = None,
+        azienda_id: str | None = None,
     ) -> dict[str, Any]:
         """Registra un costo. `deal_id` assente significa spesa generale, che entra nel
         conto economico di periodo e non viene ripartita su nessun deal. `importo` è il
         totale pagato, IVA inclusa; un valore negativo è un rimborso; zero è rifiutato.
-        Chiama `list_cost_categories` per le categorie disponibili."""
+        Chiama `list_cost_categories` per le categorie disponibili. `azienda_id` si da'
+        solo a una spesa generale, per dire di quale azienda e'; omesso, la spesa e'
+        condivisa. Un costo su un deal e' dell'azienda del deal e un'altra e' rifiutata."""
         return timetracking.create_cost(
             context,
             {
@@ -1791,6 +1838,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 "importo": importo,
                 "descrizione": descrizione,
                 "deal_id": UUID(deal_id) if deal_id else None,
+                "azienda_id": parse_azienda_id(azienda_id),
                 "fornitore": fornitore,
                 "document_id": UUID(document_id) if document_id else None,
                 "custom_fields": custom_fields or {},
@@ -1829,15 +1877,18 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         category_id: str | None = None,
         da: IsoDateStr = None,
         a: IsoDateStr = None,
+        azienda_id: str | None = None,
         limit: BoundedLimit = 50,
         cursor: str | None = None,
     ) -> dict[str, Any]:
         """Elenca i costi, dal più recente. `solo_generali = true` mostra solo le spese
-        senza deal."""
+        senza deal. `azienda_id` tiene solo i costi di quell'azienda; omesso, tutti,
+        compresi quelli senza azienda, che sono le spese condivise."""
         return timetracking.list_costs(
             context,
             CostListQuery(
                 deal_id=UUID(deal_id) if deal_id else None,
+                azienda_id=parse_azienda_id(azienda_id),
                 solo_generali=solo_generali,
                 category_id=UUID(category_id) if category_id else None,
                 da=da,  # type: ignore[arg-type]
@@ -2143,7 +2194,9 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
-    def get_calendar_month(mese: str, tutti: bool = False) -> dict[str, Any]:
+    def get_calendar_month(
+        mese: str, tutti: bool = False, azienda_id: str | None = None
+    ) -> dict[str, Any]:
         """Un mese in una sola lettura: le ore per giorno con il dettaglio per deal, le
         attività che scadono, e le fatture emesse e non incassate che scadono.
 
@@ -2154,6 +2207,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         casella.
 
         Le ore sono quelle di chi possiede il token; `tutti: true` legge quelle di tutto
-        lo spazio. Per registrare ore usa `log_time`: questo strumento legge e non
-        scrive."""
-        return calendar_tools.month(context, mese, tutti)
+        lo spazio. `azienda_id` tiene solo le ore sui deal e le fatture di quell'azienda,
+        le attività restano tutte. Per registrare ore usa `log_time`: questo strumento
+        legge e non scrive."""
+        return calendar_tools.month(context, mese, tutti, parse_azienda_id(azienda_id))

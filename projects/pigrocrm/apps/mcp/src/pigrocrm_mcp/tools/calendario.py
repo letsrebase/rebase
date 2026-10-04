@@ -65,13 +65,17 @@ def restore(context: McpContext, attivita_id: str) -> dict[str, Any]:
     return result.model_dump(mode="json")
 
 
-def month(context: McpContext, mese: str, tutti: bool) -> dict[str, Any]:
+def month(
+    context: McpContext, mese: str, tutti: bool, azienda_id: UUID | None = None
+) -> dict[str, Any]:
     """One month, hours included. `tutti` reads the whole space instead of the token
     owner's own days -- the same switch the web route carries, and the same default: an
     `mcp` actor holds the id of the token's owner (slice 1 §9), so «my month» is that
     person's."""
     user_id = None if tutti else context.actor.id
-    result = CalendarService(context.session).month(mese, context.actor, user_id=user_id)
+    result = CalendarService(context.session).month(
+        mese, context.actor, user_id=user_id, azienda_id=azienda_id
+    )
     return result.model_dump(mode="json")
 
 

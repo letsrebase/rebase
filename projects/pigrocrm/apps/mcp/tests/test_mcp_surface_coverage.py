@@ -216,11 +216,6 @@ _INTERNE: dict[Method, str] = {
         "lettura interna: la riga che un `azienda_id` nomina, o la predefinita quando e' "
         "`None`; e' cio' che ogni servizio chiama per se', e `describe_azienda` la espone"
     ),
-    ("AziendaService", "propose"): (
-        "l'azienda che la nazione di un nuovo cliente propone (REB-623, spec §1.6): la "
-        "chiama `CustomerService` quando `create_customer` non ne nomina una, e "
-        "`create_customer` stesso la raggiunge con `nazione`; non e' un'azione a se'"
-    ),
     ("FieldDefinitionService", "specs_for"): "alimenta la validazione dei campi custom",
     ("FiscalProfileService", "snapshot"): "lettura interna del regime, senza actor",
     ("InvoiceService", "undeclared_gaps"): (

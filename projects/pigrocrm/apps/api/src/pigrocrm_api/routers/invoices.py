@@ -68,6 +68,9 @@ def list_invoices(
     actor: ActorDep,
     customer_id: Annotated[UUID | None, Query()] = None,
     deal_id: Annotated[UUID | None, Query()] = None,
+    azienda_id: Annotated[
+        UUID | None, Query(description="Solo le righe di questa azienda; omesso, tutte")
+    ] = None,
     tipo: Annotated[InvoiceTipo | None, Query()] = None,
     stato: Annotated[InvoiceStato | None, Query()] = None,
     anno: Annotated[int | None, Query(ge=ANNO_MIN, le=ANNO_MAX)] = None,
@@ -88,6 +91,7 @@ def list_invoices(
     query = InvoiceListQuery(
         customer_id=customer_id,
         deal_id=deal_id,
+        azienda_id=azienda_id,
         tipo=tipo,
         stato=stato,
         anno=anno,

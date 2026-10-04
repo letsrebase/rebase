@@ -74,6 +74,9 @@ def list_deals(
     search: Annotated[SafeStr | None, Query()] = None,
     customer_id: Annotated[UUID | None, Query()] = None,
     stage_id: Annotated[UUID | None, Query()] = None,
+    azienda_id: Annotated[
+        UUID | None, Query(description="Solo le righe di questa azienda; omesso, tutte")
+    ] = None,
     custom: Annotated[list[SafeStr] | None, Query(description=CUSTOM_QUERY_DESCRIPTION)] = None,
     # The two drill-throughs of the operational dashboard's signal cards (§6.2). Each card
     # links here and nowhere else, and the rows returned are counted by the same predicate
@@ -94,6 +97,7 @@ def list_deals(
         search=search,
         customer_id=customer_id,
         stage_id=stage_id,
+        azienda_id=azienda_id,
         custom=parse_custom_filter(custom),
         fatturato_non_vinto=fatturato_non_vinto,
         da_fatturare=da_fatturare,
