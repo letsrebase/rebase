@@ -63,6 +63,30 @@ export default defineConfig([
     },
   },
   {
+    // The same bundle shape as `auth.tsx`, for the same reason (REB-625): `AziendaProvider`
+    // and the three hooks that only make sense beside it, plus the context the shell's
+    // test mounts with a value of its own and the two storage helpers the provider's
+    // test reads back. Named one by one, so a new non-component export is still caught.
+    files: ['src/lib/azienda.tsx'],
+    rules: {
+      'react-refresh/only-export-components': [
+        'error',
+        {
+          allowConstantExport: true,
+          allowExportNames: [
+            'AziendaContext',
+            'aziendaKey',
+            'readSelectedAzienda',
+            'writeSelectedAzienda',
+            'useAzienda',
+            'useAziendaScope',
+            'useAziendeToName',
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Same shape as the `auth.tsx` override above, same reason: `renderFieldValue`
     // is `DynamicFieldRenderer`'s read-only counterpart -- the control and its
     // table/detail-panel rendering for the same nine field types belong in one

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { SETTINGS_TABS } from '@/features/settings/tabs'
 import { readAndClearRegisterHandoffEmail } from '@/lib/registerHandoff'
+import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
 import { AppShell } from './AppShell'
 import { SIDEBAR_GROUPS_KEY } from './sidebarGroups'
 
@@ -88,13 +89,20 @@ const mockGo = vi.fn()
  * provider is part of the harness rather than of any one test. Its query is disabled
  * below three characters, so nothing here issues a request.
  */
-function renderShell(children: React.ReactNode = <div />) {
+function renderShell(children: React.ReactNode = <div />, azienda?: AziendaValue) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   // A fresh element on every call: re-rendering the *same* element object is a React
   // bail-out, which would make `refresh()` (the stand-in for a navigation) do nothing.
+  // Without `azienda` the shell runs on the context's default, a one-azienda space.
   const tree = () => (
     <QueryClientProvider client={client}>
-      <AppShell go={mockGo}>{children}</AppShell>
+      {azienda ? (
+        <AziendaContext value={azienda}>
+          <AppShell go={mockGo}>{children}</AppShell>
+        </AziendaContext>
+      ) : (
+        <AppShell go={mockGo}>{children}</AppShell>
+      )}
     </QueryClientProvider>
   )
   const result = render(tree())
@@ -629,5 +637,53 @@ describe('the space switcher', () => {
     const menu = within(await screen.findByRole('menu'))
     expect(await menu.findByRole('menuitem', { name: /altro/ })).toBeInTheDocument()
     expect(spacesCalls).toBeGreaterThanOrEqual(2)
+  })
+})
+
+describe('the azienda selector (REB-625)', () => {
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, attiva: true } as AziendaRecord
+  const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, attiva: true } as AziendaRecord
+
+  function twoAziende(selected: string | null): AziendaValue {
+    return {
+      aziende: [HUMANCRAFT, REBASE],
+      selected,
+      select: vi.fn(),
+      several: true,
+      byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
+    }
+  }
+
+  it('is not drawn in a one-azienda space, which is every space until milestone 5', () => {
+    renderShell()
+    expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
+  })
+
+  it('sits between the search and the navigation, offers «Tutte le aziende» first and selects by id', async () => {
+    const value = twoAziende(null)
+    renderShell(<div />, value)
+    const trigger = screen.getByRole('combobox', { name: 'Azienda' })
+    expect(trigger).toHaveTextContent('Tutte le aziende')
+    // After the search landmark and before the navigation one, in document order.
+    const search = screen.getByRole('search', { name: 'Ricerca globale' })
+    const nav = screen.getByRole('navigation', { name: 'Navigazione principale' })
+    expect(search.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(trigger.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await userEvent.click(trigger)
+    const options = screen.getAllByRole('option').map((option) => option.textContent)
+    expect(options).toEqual(['Tutte le aziende', 'humancraft', 'rebase'])
+    await userEvent.click(screen.getByRole('option', { name: 'rebase' }))
+    expect(value.select).toHaveBeenCalledWith('a2')
+  })
+
+  it('shows the selected azienda and goes back to every one of them', async () => {
+    const value = twoAziende('a2')
+    renderShell(<div />, value)
+    const trigger = screen.getByRole('combobox', { name: 'Azienda' })
+    expect(trigger).toHaveTextContent('rebase')
+    await userEvent.click(trigger)
+    await userEvent.click(screen.getByRole('option', { name: 'Tutte le aziende' }))
+    expect(value.select).toHaveBeenCalledWith(null)
   })
 })

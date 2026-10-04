@@ -2,6 +2,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { EntityCell } from '@/components/cells'
 import type { DataTableFeatures } from '@/components/DataTable'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
+import type { AziendaRecord } from '@/lib/azienda'
 import type { FieldDefinition } from '@/lib/schema'
 import type { Customer } from './queries'
 
@@ -40,9 +41,32 @@ export function displayNative(value: string | null): string {
  * `useEntitySchema`/`describe_specs`), so there is nothing here to filter a second
  * time.
  */
+export interface CustomerColumnOptions {
+  /**
+   * The aziende to name in an «Azienda» column after the name (REB-625, spec 2026-10-03
+   * §5 «Lists»). Given only under «Tutte le aziende» from the second azienda on
+   * (`useAziendeToName`): with one azienda, or with one selected, the column would say
+   * the same thing on every row.
+   */
+  aziende?: AziendaRecord[]
+}
+
 export function buildCustomerColumns(
   customFields: FieldDefinition[],
+  options: CustomerColumnOptions = {},
 ): ColumnDef<DataTableFeatures, Customer>[] {
+  const aziendaName = new Map((options.aziende ?? []).map((a) => [a.id, a.nome]))
+  const azienda: ColumnDef<DataTableFeatures, Customer>[] = options.aziende
+    ? [
+        {
+          header: 'Azienda',
+          id: 'azienda',
+          // The dash for an id the active list does not carry: a customer of a
+          // deactivated azienda keeps its rows and its history (spec §1.8).
+          accessorFn: (row) => aziendaName.get(row.azienda_id) ?? EMPTY,
+        },
+      ]
+    : []
   const native: ColumnDef<DataTableFeatures, Customer>[] = [
     {
       header: 'Ragione sociale',
@@ -54,6 +78,7 @@ export function buildCustomerColumns(
       // `features/people/columns.tsx` already uses.
       cell: ({ row }) => <EntityCell name={row.original.ragione_sociale} />,
     },
+    ...azienda,
     { header: 'P.IVA', id: 'partita_iva', accessorFn: (row) => displayNative(row.partita_iva) },
     { header: 'Comune', id: 'comune', accessorFn: (row) => displayNative(row.comune) },
     { header: 'Email', id: 'email', accessorFn: (row) => displayNative(row.email) },

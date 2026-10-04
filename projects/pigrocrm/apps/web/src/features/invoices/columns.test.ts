@@ -295,3 +295,32 @@ describe('the state column and an imported invoice', () => {
     expect(screen.queryByText(/^importata$/i)).toBeNull()
   })
 })
+
+describe('the azienda beside the number (REB-625)', () => {
+  const AZIENDE = [
+    { id: 'a1', nome: 'humancraft' },
+    { id: 'a2', nome: 'rebase' },
+  ] as InvoiceColumnOptions['aziende']
+
+  function renderNumber(row: Invoice, options?: InvoiceColumnOptions) {
+    const column = buildInvoiceColumns(options).find((candidate) => candidate.id === 'numero')
+    if (column === undefined || typeof column.cell !== 'function') {
+      throw new Error('la colonna «Numero» non ha un cell renderer')
+    }
+    return render(column.cell({ row: { original: row } } as never) as ReactElement)
+  }
+
+  it('names the azienda under «tutte» and keeps the bare number as the sortable value', () => {
+    const row = { ...ISSUED, azienda_id: 'a2' } as Invoice
+    const { container } = renderNumber(row, { aziende: AZIENDE })
+    expect(container).toHaveTextContent('2026/7 · rebase')
+    expect(accessor('numero', row, { aziende: AZIENDE })).toBe('2026/7')
+  })
+
+  it('draws the bare number with one azienda, with one selected, and for an azienda no longer active', () => {
+    const row = { ...ISSUED, azienda_id: 'a2' } as Invoice
+    expect(renderNumber(row).container).toHaveTextContent(/^2026\/7$/)
+    expect(renderNumber({ ...row, azienda_id: 'gone' } as Invoice, { aziende: AZIENDE }).container)
+      .toHaveTextContent(/^2026\/7$/)
+  })
+})

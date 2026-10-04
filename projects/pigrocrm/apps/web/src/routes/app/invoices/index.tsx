@@ -15,6 +15,7 @@ import {
 import { buildInvoiceColumns } from '@/features/invoices/columns'
 import { LoadMoreInvoices } from '@/features/invoices/LoadMoreInvoices'
 import { NewProformaButton } from '@/features/invoices/NewProformaDialog'
+import { useAziendeToName } from '@/lib/azienda'
 import { booleanSearchParam } from '@/lib/searchParams'
 import {
   INVOICE_STATE_LABELS,
@@ -99,7 +100,9 @@ export function InvoicesList({ scadute }: { scadute?: boolean }) {
   // With the customer: this is the one screen that mixes every customer's invoices, so
   // a row has to say whose it is (ORB-98). The Fatture tab on a customer's or a deal's
   // page draws the same columns without it -- see `InvoicesTab`.
-  const columns = buildInvoiceColumns({ cliente: true })
+  // And the azienda's name beside the number, only under «Tutte le aziende» from the
+  // second azienda on (REB-625): with one selected the sidebar already says whose.
+  const columns = buildInvoiceColumns({ cliente: true, aziende: useAziendeToName() })
 
   return (
     <>

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
+import { useAzienda } from '@/lib/azienda'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -52,9 +53,17 @@ function useDebounced(value: string, delayMs: number): string {
  */
 export function useGlobalSearch(term: string) {
   const debounced = useDebounced(term.trim(), SEARCH_DEBOUNCE_MS)
+  // The sidebar's azienda narrows the palette too (REB-625): under azienda A, «brief»
+  // finds A's documents and A's customers' people, and nothing of B's.
+  const { selected } = useAzienda()
   const query = useQuery({
-    queryKey: queryKeys.search(debounced),
-    queryFn: () => unwrap(api.GET('/api/search', { params: { query: { q: debounced } } })),
+    queryKey: queryKeys.search(debounced, selected),
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/search', {
+          params: { query: { q: debounced, azienda_id: selected ?? undefined } },
+        }),
+      ),
     enabled: debounced.length >= MIN_TERM_LENGTH,
     // A palette is re-opened constantly and the same term is retyped constantly. Ten
     // seconds is long enough to make reopening instant and short enough that a record

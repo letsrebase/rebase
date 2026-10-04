@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client'
 import { analyticsMiddleware } from './lib/analytics'
 import { api } from './lib/api'
 import { AuthProvider } from './lib/auth'
+import { AziendaProvider } from './lib/azienda'
 import { stripEntraToken } from './lib/entra-token'
 import { queryClient } from './lib/query'
 import { tenantPrefix } from './lib/tenant'
@@ -40,7 +41,9 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <RouterProvider router={router} />
+        <AziendaProvider>
+          <RouterProvider router={router} />
+        </AziendaProvider>
       </AuthProvider>
     </QueryClientProvider>
   </StrictMode>,
