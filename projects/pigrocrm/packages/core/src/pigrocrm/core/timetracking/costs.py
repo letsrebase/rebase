@@ -114,7 +114,11 @@ class CostService:
                     "un costo su un deal prende l'azienda del deal",
                     expected=f"nessuna azienda, oppure {deal.azienda_id}",
                 )
-            return deal.azienda_id
+            # The deal's azienda may be closed since the deal was created: a cost already
+            # there stays editable, a new one is refused like a deal or a document.
+            if deal.azienda_id == kept:
+                return deal.azienda_id
+            return self.aziende.inherited(deal.azienda_id, ENTITY)
         if wanted is None:
             return None
         azienda = self.aziende.resolve(wanted)

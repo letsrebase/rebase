@@ -520,3 +520,44 @@ def test_a_new_general_cost_is_refused_on_a_deactivated_azienda_and_an_old_one_s
     moved = costs.update(old.id, CostUpdate(azienda_id=_default(db_session).id), ADMIN)
     assert moved.azienda_id == _default(db_session).id
     assert costs.update(old.id, CostUpdate(azienda_id=None), ADMIN).azienda_id is None
+
+
+def test_a_new_cost_on_a_deal_of_a_deactivated_azienda_is_refused_and_an_old_one_stays(
+    db_session: Session, seeded_open_stage_id: UUID, seeded_category_id: UUID
+) -> None:
+    """The deal's azienda may close after the deal: a cost already on it is edited in
+    place, a new one is refused like a deal or a document would be."""
+    closed = _azienda(db_session, "rebase")
+    customer_id = _customer(db_session, azienda_id=closed.id)
+    deal = DealService(db_session).create(
+        DealCreate(nome="Vecchio", customer_id=customer_id, pipeline_stage_id=seeded_open_stage_id),
+        ADMIN,
+    )
+    costs = CostService(db_session)
+    old = costs.create(
+        CostCreate(
+            deal_id=deal.id,
+            category_id=seeded_category_id,
+            data=date(2026, 3, 1),
+            importo=Decimal("10.00"),
+            descrizione="Treno",
+        ),
+        ADMIN,
+    )
+    closed.attiva = False
+    db_session.flush()
+    with pytest.raises(ValidationFailed) as refused:
+        costs.create(
+            CostCreate(
+                deal_id=deal.id,
+                category_id=seeded_category_id,
+                data=date(2026, 3, 2),
+                importo=Decimal("5.00"),
+                descrizione="Dopo",
+            ),
+            ADMIN,
+        )
+    assert "sposta prima il cliente" in str(refused.value)
+    kept = costs.update(old.id, CostUpdate(descrizione="Treno regionale"), ADMIN)
+    assert (kept.descrizione, kept.azienda_id) == ("Treno regionale", closed.id)
+    assert costs.update(old.id, CostUpdate(azienda_id=closed.id), ADMIN).azienda_id == closed.id
