@@ -889,3 +889,19 @@ Added as the milestones land, dated, never rewriting the sections above.
   test template carries the policies of 0048 (`projects/pigrocrm/conftest.py`), so a
   clone of it is what production is; the suite's own user stays a superuser and sees
   everything. The e2e stack runs the two roles too.
+- **2026-10-04, same milestone, the SPA (REB-635).** `AziendaProvider` reads `me.aziende`:
+  `scoped` says the session is limited, and a scoped person with one visible azienda is
+  `pinned`, the selection fixed to it whatever the browser remembered, so the lists and
+  the dashboards ask for that azienda by name and the sidebar draws its name in place of
+  the selector; with several, the selector offers theirs with «Tutte le aziende» first,
+  since the server already answers their aziende alone. The Team panel, from the second
+  azienda on: an «Aziende» checklist on the invite with every active azienda checked, an
+  «Aziende» column on the members and on the pending invitations («Tutte», the names, or
+  «nessuna azienda attiva» for a scope the deactivations emptied), and an «Aziende…» row
+  action that edits a member's scope in a dialog of the same checklist. Every active
+  azienda checked is sent as `null`, the whole space, so a person who sees them all today
+  sees the next one too; nothing checked cannot be sent. `e2e/aziende.spec.ts` proves the
+  boundary on the stack through the application role: a member scoped from the panel
+  signs in on a second context, reads the pinned label, lists their azienda's customer
+  alone and gets a 404 on the other azienda's by id; the spec deactivates the second
+  azienda at the end so the fiscal pages of the other specs keep one active azienda.

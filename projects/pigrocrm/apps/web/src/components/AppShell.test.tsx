@@ -650,6 +650,8 @@ describe('the azienda selector (REB-625)', () => {
       selected,
       select: vi.fn(),
       several: true,
+      scoped: false,
+      pinned: false,
       byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
     }
   }
@@ -685,5 +687,25 @@ describe('the azienda selector (REB-625)', () => {
     await userEvent.click(trigger)
     await userEvent.click(screen.getByRole('option', { name: 'Tutte le aziende' }))
     expect(value.select).toHaveBeenCalledWith(null)
+  })
+
+  it('draws a scoped person’s one azienda as a label, not a control (REB-635)', () => {
+    const value: AziendaValue = {
+      aziende: [REBASE],
+      selected: 'a2',
+      select: vi.fn(),
+      several: false,
+      scoped: true,
+      pinned: true,
+      byId: (id) => (id === 'a2' ? REBASE : undefined),
+    }
+    renderShell(<div />, value)
+    expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
+    const label = screen.getByLabelText('Azienda')
+    expect(label).toHaveTextContent('rebase')
+    const search = screen.getByRole('search', { name: 'Ricerca globale' })
+    const nav = screen.getByRole('navigation', { name: 'Navigazione principale' })
+    expect(search.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(label.compareDocumentPosition(nav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

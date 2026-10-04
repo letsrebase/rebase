@@ -36,6 +36,12 @@ export interface AziendaValue {
   select: (id: string | null) => void
   /** True from the second azienda on: when the selector, the column and the name are drawn. */
   several: boolean
+  /** True when the session is scoped to some aziende (`me.aziende` is a list, REB-635):
+   *  the list above is then theirs alone, which the server already answers. */
+  scoped: boolean
+  /** True for a scoped person with one azienda: the selection is that azienda, drawn as
+   *  a label rather than a control, since there is nothing to choose between. */
+  pinned: boolean
   /** The active azienda an id names, or `undefined` for `null` and for an id no longer there. */
   byId: (id: string | null | undefined) => AziendaRecord | undefined
 }
@@ -45,6 +51,8 @@ const ONE_AZIENDA: AziendaValue = {
   selected: null,
   select: () => {},
   several: false,
+  scoped: false,
+  pinned: false,
   byId: () => undefined,
 }
 
@@ -96,10 +104,20 @@ export function AziendaProvider({ children }: { children: ReactNode }) {
   const chosen = choice.userId === userId ? choice.id : readSelectedAzienda(userId)
 
   const several = aziende.length > 1
+  // A scoped session (spec 2026-10-03 §1.11, §5): `me.aziende` is the list the person
+  // may see, and `GET /api/aziende` already answers those alone, so nothing is filtered
+  // here. With one of them there is nothing to choose: the selection is pinned to it,
+  // so the dashboards and the estimate ask for that azienda by name, and the sidebar
+  // draws its name instead of a selector. With several, the selector offers theirs.
+  const scoped = Array.isArray(user?.aziende)
+  const pinned = scoped && aziende.length === 1
   // A stored id that names no active azienda any more (deactivated since), or a space
   // back to one azienda: «tutte», which is also what the lists send when nothing is chosen.
-  const selected =
-    several && chosen !== null && aziende.some((a) => a.id === chosen) ? chosen : null
+  const selected = pinned
+    ? (aziende[0]?.id ?? null)
+    : several && chosen !== null && aziende.some((a) => a.id === chosen)
+      ? chosen
+      : null
   const select = useCallback(
     (id: string | null) => {
       setChoice({ userId, id })
@@ -112,8 +130,8 @@ export function AziendaProvider({ children }: { children: ReactNode }) {
     [aziende],
   )
   const value = useMemo<AziendaValue>(
-    () => ({ aziende, selected, select, several, byId }),
-    [aziende, selected, select, several, byId],
+    () => ({ aziende, selected, select, several, scoped, pinned, byId }),
+    [aziende, selected, select, several, scoped, pinned, byId],
   )
   return <AziendaContext value={value}>{children}</AziendaContext>
 }

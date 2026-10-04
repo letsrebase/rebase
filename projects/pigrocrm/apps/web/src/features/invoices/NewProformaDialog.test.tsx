@@ -497,7 +497,7 @@ describe('«Emessa da» (REB-626)', () => {
       aziende: [HUMANCRAFT, REBASE],
       selected: null,
       select: vi.fn(),
-      several: true,
+      several: true, scoped: false, pinned: false,
       byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
     }
   }
