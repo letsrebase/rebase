@@ -1365,7 +1365,8 @@ export interface paths {
         /**
          * Import Issued
          * @description Slice 9 §3: a fattura issued by the previous system. Admin only, enforced by the
-         *     service. No artefacts are produced: the PDF, if any, is the original.
+         *     service. No artefacts are produced: the PDF, if any, is the original. On the
+         *     register of `azienda_id`, the default azienda when omitted (REB-620).
          */
         post: operations["import_issued_api_invoices_import_post"];
         delete?: never;
@@ -4128,6 +4129,8 @@ export interface components {
              * @enum {string}
              */
             outcome: "imported" | "already_present" | "conflict" | "incoming_skipped" | "needs_customer_confirmation" | "unclaimed";
+            /** Azienda Id */
+            azienda_id?: string | null;
             fattura?: components["schemas"]["InvoiceRead"] | null;
             /** Buchi Non Dichiarati */
             buchi_non_dichiarati?: number[] | null;
@@ -5925,7 +5928,7 @@ export interface components {
              */
             id: string;
             /** Codice Regime */
-            codice_regime: string;
+            codice_regime: string | null;
             /** Aliquota Iva Default */
             aliquota_iva_default: string;
             /** Natura Default */
@@ -5982,7 +5985,13 @@ export interface components {
          */
         FiscalProfileUpsert: {
             /** Codice Regime */
-            codice_regime: string;
+            codice_regime?: string | null;
+            /**
+             * Pack Id
+             * @default it-flat-rate
+             * @enum {string}
+             */
+            pack_id: "it-flat-rate" | "non-it";
             /**
              * Aliquota Iva Default
              * @default 0.00
@@ -6735,6 +6744,11 @@ export interface components {
             customer_id: string;
             /** Deal Id */
             deal_id: string | null;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
             /** Tipo */
             tipo: string;
             /** Stato */
@@ -8102,6 +8116,8 @@ export interface components {
              */
             outcome: "ready" | "needs_customer_confirmation" | "already_present" | "conflict" | "incoming_skipped" | "unclaimed";
             invoice?: components["schemas"]["ParsedInvoice"] | null;
+            /** Azienda Id */
+            azienda_id?: string | null;
             /** Matched Customer Id */
             matched_customer_id?: string | null;
             /** Mappature Giorni */
@@ -20117,7 +20133,9 @@ export interface operations {
     };
     import_issued_api_invoices_import_post: {
         parameters: {
-            query?: never;
+            query?: {
+                azienda_id?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -20480,7 +20498,9 @@ export interface operations {
     };
     register_gaps_api_invoices_register__anno__gaps_get: {
         parameters: {
-            query?: never;
+            query?: {
+                azienda_id?: string | null;
+            };
             header?: never;
             path: {
                 anno: number;
@@ -20599,7 +20619,9 @@ export interface operations {
     };
     declare_register_gaps_api_invoices_register__anno__gaps_post: {
         parameters: {
-            query?: never;
+            query?: {
+                azienda_id?: string | null;
+            };
             header?: never;
             path: {
                 anno: number;

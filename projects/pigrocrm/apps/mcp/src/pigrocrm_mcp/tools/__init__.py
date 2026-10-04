@@ -1374,10 +1374,13 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
-    def list_invoice_register_gaps(anno: int) -> list[dict[str, Any]]:
+    def list_invoice_register_gaps(
+        anno: int, azienda_id: str | None = None
+    ) -> list[dict[str, Any]]:
         """I numeri che il registro di `anno` non porta per dichiarazione esplicita, con
-        il motivo. Vuoto se non ci sono buchi dichiarati."""
-        return invoices.list_register_gaps(context, anno)
+        il motivo. Vuoto se non ci sono buchi dichiarati. Ogni azienda ha il suo
+        registro: `azienda_id` omesso legge quello dell'azienda predefinita."""
+        return invoices.list_register_gaps(context, anno, azienda_id)
 
     @mcp.tool()
     @guard
@@ -1536,7 +1539,10 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         `describe_fiscal_profile`, rimanda indietro l'oggetto intero con le modifiche,
         e mostra alla persona il riepilogo completo chiedendo conferma prima di salvare.
 
-        `dati` ha la forma di `FiscalProfileUpsert`: `codice_regime` (`RF19` per il
+        `dati` ha la forma di `FiscalProfileUpsert`: `pack_id` (`it-flat-rate`, il
+        default, per un'azienda italiana; `non-it` per una con sede all'estero, che non
+        ha `codice_regime`, non applica il bollo e non ha i parametri del forfettario:
+        lasciali fuori e restano vuoti), `codice_regime` (`RF19` per il
         forfettario), `coefficiente_redditivita`, `aliquota_imposta_sostitutiva` e
         `aliquota_inps` in percentuale, `modalita_pagamento` (codice SdI, `MP05` per il
         bonifico), `giorni_scadenza`, `iban`, e i parametri IVA e bollo che per un

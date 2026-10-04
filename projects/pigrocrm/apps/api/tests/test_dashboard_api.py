@@ -42,11 +42,7 @@ from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm_api.deps import get_snapshot_session
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
-from fakes.azienda_fixtures import (  # noqa: E402
-    NOME,
-    committed_default_azienda,
-    remove_azienda,
-)
+from fakes.azienda_fixtures import committed_default_azienda, remove_azienda  # noqa: E402
 
 SEED = Actor(id=None, type="system", role="admin")
 _PREFIX = "APIDASH"
@@ -104,7 +100,9 @@ def dashboard_corpus(client: TestClient, api_engine: Engine) -> Iterator[Engine]
         # `client` fixture already holds an uncommitted default on the test's own
         # connection, and a second one would wait on its unique index for the whole
         # test, so this one is named on each invoice below instead of being found.
-        azienda_id = committed_default_azienda(session, predefinita=False)
+        azienda_id = committed_default_azienda(
+            session, nome=f"{_PREFIX} Azienda", predefinita=False
+        )
         assert azienda_id is not None
         stages = {s.code: s for s in PipelineService(session).seed_defaults(SEED) if s.code}
         customer = Customer(ragione_sociale=f"{_PREFIX} Cliente", nazione="IT", custom_fields={})
@@ -558,7 +556,9 @@ def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
         session.flush()
         # The corpus's own azienda (non-default, see `dashboard_corpus`), named on the
         # row since the column default only knows a default.
-        azienda_id = session.execute(select(Azienda.id).where(Azienda.nome == NOME)).scalar_one()
+        azienda_id = session.execute(
+            select(Azienda.id).where(Azienda.nome == f"{_PREFIX} Azienda")
+        ).scalar_one()
         cliente_id = cliente.id
         session.add(
             Invoice(

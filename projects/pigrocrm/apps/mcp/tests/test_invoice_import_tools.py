@@ -189,3 +189,90 @@ async def test_list_invoice_register_gaps_reads_what_was_declared(
         rows = rows["result"] if isinstance(rows, dict) and "result" in rows else rows
         assert rows[0]["numero"] == 3
         assert rows[0]["motivo"] == "annullata nel gestionale precedente"
+
+
+async def test_the_import_and_the_gaps_take_the_azienda_they_are_for(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    """REB-620, spec §7: `azienda_id` on the three register tools; omitted is the
+    default azienda's register, a value that is not an id is refused in words."""
+    from pigrocrm.core.emitter.models import Azienda
+
+    _seed_fiscal_and_emitter_profiles(mcp_session)
+    second = Azienda(
+        nome="rebase",
+        ragione_sociale="Rebase S.r.l.",
+        partita_iva="09876543210",
+        indirizzo="Via Po 1",
+        cap="10100",
+        comune="Torino",
+        provincia="TO",
+        nazione="IT",
+    )
+    customer = Customer(
+        ragione_sociale="Acme S.r.l.",
+        partita_iva="12345678901",
+        codice_sdi="ABCDEFG",
+        indirizzo="Via Roma 1",
+        cap="20154",
+        comune="Milano",
+        provincia="MI",
+        nazione="IT",
+    )
+    mcp_session.add_all([second, customer])
+    mcp_session.flush()
+    FiscalProfileService(mcp_session).upsert(
+        FiscalProfileUpsert(codice_regime="RF19"),
+        Actor(id=None, type="system", role="admin"),
+        azienda_id=second.id,
+    )
+    dati = {
+        "anno": 2026,
+        "numero": 3,
+        "data_emissione": "2026-06-05",
+        "customer_id": str(customer.id),
+        "righe": [
+            {
+                "descrizione": "Consulenza",
+                "quantita": "1",
+                "prezzo_unitario": "100.00",
+                "prezzo_totale": "100.00",
+                "aliquota_iva": "0",
+                "natura": "N2.2",
+            }
+        ],
+        "imponibile": "100.00",
+        "imposta": "0.00",
+        "bollo": "2.00",
+        "totale": "100.00",
+    }
+    async with Client(_server(mcp_session, tmp_path, full_access=True)) as client:
+        imported = await client.call_tool(
+            "import_issued_invoice", {"dati": dati, "azienda_id": str(second.id)}
+        )
+        payload = _payload(imported)
+        assert payload["fattura"]["azienda_id"] == str(second.id)
+        assert payload["buchi_non_dichiarati"] == [1, 2]
+        await client.call_tool(
+            "declare_invoice_register_gaps",
+            {
+                "anno": 2026,
+                "buchi": [{"numero": 1, "motivo": "mai emessa"}],
+                "azienda_id": str(second.id),
+            },
+        )
+        on_second = _payload(
+            await client.call_tool(
+                "list_invoice_register_gaps", {"anno": 2026, "azienda_id": str(second.id)}
+            )
+        )
+        rows = on_second["result"] if isinstance(on_second, dict) else on_second
+        assert [r["numero"] for r in rows] == [1]
+        on_default = _payload(await client.call_tool("list_invoice_register_gaps", {"anno": 2026}))
+        rows = on_default["result"] if isinstance(on_default, dict) else on_default
+        assert rows == []
+        refused = await client.call_tool(
+            "list_invoice_register_gaps", {"anno": 2026, "azienda_id": "x"}
+        )
+        assert refused.is_error
+        assert "azienda_id" in refused.content[0].text
