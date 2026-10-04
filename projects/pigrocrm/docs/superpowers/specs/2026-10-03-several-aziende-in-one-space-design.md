@@ -798,3 +798,48 @@ Added as the milestones land, dated, never rewriting the sections above.
   once each delete only the file they found, and a storage that refuses the delete leaves
   an orphan and a logged warning, never a failed request over a committed change. A
   payment reminder's draft speaks for the invoice's azienda, not the customer's of today.
+- **2026-10-04, milestone «Sum the cash across aziende and keep the taxes apart»
+  (REB-630).** Every sum behind the four dashboards, the cash view, the period P&L, the
+  backlog, the estimate and the ceilings takes `azienda_id` as one more predicate and
+  nothing else changes in its arithmetic; «tutte» sends none and is the unfiltered sum
+  by construction, with a cost without a deal counted there alone (§1.7). The refusal
+  of an estimate or a ceiling on a space with several aziende is this project's
+  `ValidationFailed` on `azienda_id`, a 422 naming the field like every other parameter
+  a caller has to change (`PeriodoQuery`'s own refusals), where §1.9 wrote 400: it is
+  the shape the SPA's `fieldErrorFrom` already reads. The resolution counts active
+  aziende: a deactivated one no longer makes the choice ambiguous, since no selector
+  offers it, and its own estimate stays readable by id. In «tutte» `revenue_by_customer`
+  groups by azienda with each share against its own azienda's revenue, in the order the
+  selector lists them, and the concentration signal counts distinct customers over the
+  threshold in any azienda. The contract concentration cap reads the contract's own
+  azienda. `AziendaService.create` makes the first azienda of a space its default and
+  refuses the whole request when the profile would be refused, so no azienda is born
+  that `issue` could not use; `deactivate` answers `clienti_collegati`. The estimate,
+  the headroom and the simulation name their azienda; the cash view, the overview and
+  the four dashboards echo it, `None` for «tutte». The P&L and the economic dashboard
+  take it too, through the same `PeriodoQuery`.
+- **2026-10-04, same milestone, the routes and the tools (REB-631).** `POST /api/aziende`
+  takes `AziendaCreate` and answers 201; `DELETE /api/aziende/{id}` answers
+  `AziendaDeactivated`, the row plus `clienti_collegati`. The four dashboard routes,
+  `/api/analytics/overview` and `/pnl` take `azienda_id` as a filter; `/fiscal`,
+  `/ceilings` and `/ceilings/simulate` take it as the azienda to compute for, and the
+  OpenAPI description says in Italian when it is required. Over MCP `create_azienda(dati,
+  profilo_fiscale)` is the one tool for the one transaction, on the default surface with
+  `update_azienda`; the four dashboard tools, `get_ceiling_headroom`, `simulate_ceiling`
+  and the privileged `get_fiscal_estimate` take `azienda_id?`, parsed inside the guard
+  so a malformed id is this project's own refusal. `FiscalProfileService.check` is public
+  for `AziendaService.create` and named internal in the coverage map with `single` and
+  `require_single`.
+- **2026-10-04, same milestone, the SPA (REB-632).** The four dashboard hooks read the
+  sidebar's selection themselves and spread it into the request and the query key alike,
+  so a switch is a new cache entry; the URL keeps `{tab, da, a, base}` (§5). In «tutte»
+  with several aziende the economic tab draws the summary cards on the summed cash, a
+  note in place of the estimate, one `FiscalPanel` per azienda (quiet: an azienda with
+  no profile or no coefficient draws nothing, since Impostazioni is where that is
+  answered) and the concentration table split by azienda, named through the provider.
+  «Nuova azienda» is one form for the one request: the identity fields an invoice
+  header prints plus the regime, the VAT rate it proposes and the IBAN; everything else
+  on the profile keeps the server's defaults and is completed on the panels the page
+  lands on right after. The ordinary regime sends no natura beside its rate and the
+  foreign one sends what the settings panel sends, so the server's own refusals name a
+  field the form shows.

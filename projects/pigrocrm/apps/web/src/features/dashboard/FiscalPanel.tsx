@@ -73,10 +73,29 @@ function money(value: string | null): string {
  * import is legal either way, and the money formatter above moved to `./format`
  * precisely because for money there *was* a local one to move to.
  */
-export function FiscalPanel({ anno }: { anno: number }) {
-  const estimate = useFiscalEstimate(anno)
+export function FiscalPanel({
+  anno,
+  aziendaId,
+  titolo,
+  quiet = false,
+}: {
+  anno: number
+  /** One azienda's estimate, by id; omitted, the sidebar's selection (REB-632). */
+  aziendaId?: string
+  /** Shown beside the year in the card's heading: the azienda's name in «tutte». */
+  titolo?: string
+  /** In «tutte» the tab draws one card per azienda whose profile carries the
+   *  coefficients and nothing for the others (spec §1.9): a missing profile or a
+   *  regime with no coefficient renders nothing instead of a prompt to configure it,
+   *  which is a question for Impostazioni and not for a page that lists every azienda.
+   *  The same for the refusal a non-admin gets: the cards above already say the
+   *  estimate is an administrator's, and one banner per azienda would say it again. */
+  quiet?: boolean
+}) {
+  const estimate = useFiscalEstimate(anno, aziendaId)
 
   if (estimate.isError) {
+    if (quiet && [403, 404].includes(toProblem(estimate.error).status)) return null
     // `get_fiscal_estimate` raises `NotFound("fiscal_profile", "singleton")` when nothing
     // has been configured, whose detail is "fiscal_profile singleton not found" -- true,
     // English, and useless to the person who has to fix it. Every other failure keeps
@@ -98,6 +117,9 @@ export function FiscalPanel({ anno }: { anno: number }) {
     data.coefficiente_redditivita === null ||
     data.aliquota_imposta_sostitutiva === null ||
     data.aliquota_inps === null
+  // «Whose profile carries the coefficients» (spec §1.9) means all three: a card with
+  // one line «non calcolabile» is not an estimate, and in «tutte» it draws nothing.
+  if (quiet && missingParameters) return null
 
   return (
     <div className="space-y-4">
@@ -112,7 +134,10 @@ export function FiscalPanel({ anno }: { anno: number }) {
 
       <Card>
         <CardContent className="pt-6">
-          <h2 className="mb-3 font-semibold">Stima fiscale {data.anno}</h2>
+          <h2 className="mb-3 font-semibold">
+            Stima fiscale {data.anno}
+            {titolo ? ` · ${titolo}` : ''}
+          </h2>
           <Row
             label="Ricavi incassabili"
             value={money(data.ricavi)}

@@ -18,6 +18,11 @@ from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.pipeline.models import PipelineStage
 
 
+def _azienda_filter(azienda_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
+    """One azienda's documents, or every azienda's (REB-630, spec 2026-10-03 §1.9)."""
+    return () if azienda_id is None else (Document.azienda_id == azienda_id,)
+
+
 def _accepted_with_unwon_deal_predicate() -> tuple[ColumnElement[bool], ...]:
     """§6.2's first signal, as one predicate used by both the count and the list.
 
@@ -130,7 +135,7 @@ class DocumentRepository:
         stmt = select(Invoice.tipo).where(Invoice.pdf_document_id == document_id).limit(1)
         return self.session.execute(stmt).scalar_one_or_none()
 
-    def pending_offers(self, limit: int = 20) -> list[PendingOffer]:
+    def pending_offers(self, limit: int = 20, azienda_id: UUID | None = None) -> list[PendingOffer]:
         """Sent offers still awaiting an answer, oldest first, with their age in days.
 
         The age is computed in Python from `today_local()` rather than in SQL from
@@ -144,6 +149,7 @@ class DocumentRepository:
             select(Document)
             .where(
                 Document.deleted_at.is_(None),
+                *_azienda_filter(azienda_id),
                 Document.tipo == "offerta",
                 Document.stato == "inviata",
             )
@@ -168,13 +174,14 @@ class DocumentRepository:
             for row in rows
         ]
 
-    def count_pending_offers(self) -> int:
+    def count_pending_offers(self, azienda_id: UUID | None = None) -> int:
         """The real total behind `pending_offers`'s truncated list, so a dashboard showing
         twenty of ninety says ninety."""
         return (
             self.session.scalar(
                 select(func.count(Document.id)).where(
                     Document.deleted_at.is_(None),
+                    *_azienda_filter(azienda_id),
                     Document.tipo == "offerta",
                     Document.stato == "inviata",
                 )
@@ -182,7 +189,7 @@ class DocumentRepository:
             or 0
         )
 
-    def count_accepted_with_unwon_deal(self) -> int:
+    def count_accepted_with_unwon_deal(self, azienda_id: UUID | None = None) -> int:
         """§6.2's first signal: accepted offers whose deal is not in a `won` stage.
 
         This is the case where automation A1 did **not** fire -- switched off, or declined
@@ -200,7 +207,7 @@ class DocumentRepository:
                 select(func.count(Document.id))
                 .join(Deal, Deal.id == Document.deal_id)
                 .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
-                .where(*_accepted_with_unwon_deal_predicate())
+                .where(*_accepted_with_unwon_deal_predicate(), *_azienda_filter(azienda_id))
             )
             or 0
         )

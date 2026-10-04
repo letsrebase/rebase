@@ -42,6 +42,8 @@ from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 
 ADMIN = Actor(id=None, type="system", role="admin")
+# The pure arithmetic names its azienda like the service does (REB-630): any id will do.
+AZIENDA = UUID("00000000-0000-7000-8000-000000000001")
 WRITER = Actor(id=None, type="user", role="collaboratore")
 
 # The year `deal_with_mixed_invoices` lands in. `issue()` refuses a `data_emissione`
@@ -82,6 +84,7 @@ def test_the_arithmetic_matches_the_previous_systems_at_the_annual_level() -> No
     is different, and the constants now live in a table."""
     estimate = estimate_income(
         anno=2026,
+        azienda_id=AZIENDA,
         ricavi=Decimal("100000.00"),
         coefficiente=Decimal("67.00"),
         aliquota_sostitutiva=Decimal("5.00"),
@@ -104,6 +107,7 @@ def test_the_rates_are_arguments_and_not_constants() -> None:
     """
     estimate = estimate_income(
         anno=2026,
+        azienda_id=AZIENDA,
         ricavi=Decimal("100000.00"),
         coefficiente=Decimal("78.00"),
         aliquota_sostitutiva=Decimal("15.00"),
@@ -126,6 +130,7 @@ def test_it_says_it_is_an_estimate_in_its_own_payload() -> None:
     defect in a new form. So the label is in the data, not only in the page copy."""
     estimate = estimate_income(
         anno=2026,
+        azienda_id=AZIENDA,
         ricavi=Decimal("1000.00"),
         coefficiente=Decimal("67.00"),
         aliquota_sostitutiva=Decimal("5.00"),
@@ -149,6 +154,7 @@ def test_a_missing_coefficient_yields_null_not_a_guess() -> None:
     """
     estimate = estimate_income(
         anno=2026,
+        azienda_id=AZIENDA,
         ricavi=Decimal("1000.00"),
         coefficiente=None,
         aliquota_sostitutiva=Decimal("5.00"),
@@ -172,6 +178,7 @@ def test_only_the_lines_that_depend_on_the_missing_rate_go_null() -> None:
     """
     estimate = estimate_income(
         anno=2026,
+        azienda_id=AZIENDA,
         ricavi=Decimal("1000.00"),
         coefficiente=Decimal("67.00"),
         aliquota_sostitutiva=Decimal("5.00"),
@@ -188,6 +195,7 @@ def test_rounding_is_the_projects_own_half_up_at_every_step() -> None:
     lines add up to the printed total -- §6.2's rule applied to a report."""
     estimate = estimate_income(
         anno=2026,
+        azienda_id=AZIENDA,
         ricavi=Decimal("1.05"),
         coefficiente=Decimal("67.00"),
         aliquota_sostitutiva=Decimal("5.00"),

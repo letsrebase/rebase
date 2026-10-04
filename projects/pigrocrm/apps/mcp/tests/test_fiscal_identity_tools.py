@@ -64,9 +64,9 @@ async def test_both_writes_exist_on_an_installation_that_never_opened_the_switch
     assert {"update_fiscal_profile", "update_azienda"} <= names
     # And the reads they pair with, so the docstrings' «leggi prima» is possible.
     assert {"describe_fiscal_profile", "describe_azienda"} <= names
-    # No creation before milestone 5 of spec 2026-10-03 (§9): a second azienda would
-    # have invoices nothing can number yet and customers it cannot own.
-    assert "create_azienda" not in names
+    # And the creation milestone 5 of spec 2026-10-03 opened (§9, REB-631), on the same
+    # surface as the two writes: setting a space up is not a fiscal act.
+    assert "create_azienda" in names
 
 
 async def test_an_admin_agent_sets_the_fiscal_profile_and_the_read_reflects_it(
@@ -168,3 +168,62 @@ async def test_an_explicit_azienda_id_that_is_not_an_id_is_refused_not_the_defau
             assert result.is_error, bad
             assert "azienda_id" in result.content[0].text
     assert AziendaService(mcp_session).get(ADMIN).partita_iva is None
+
+
+async def test_an_admin_agent_opens_a_second_azienda_with_its_profile(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    """REB-631, spec §7: one call, the row and its profile; the new azienda is listed
+    after the default and its profile reads back under its id, while a profile the
+    fiscal rules refuse makes the whole call fail with the field named."""
+    server = _server(mcp_session, ADMIN, tmp_path)
+    async with Client(server) as client:
+        await client.call_tool("update_azienda", {"dati": EMITTENTE})
+        created = await client.call_tool(
+            "create_azienda",
+            {
+                "dati": {"nome": "rebase ltd", "ragione_sociale": "Rebase Ltd", "nazione": "GB"},
+                "profilo_fiscale": {"pack_id": "non-it", "aliquota_iva_default": "20.00"},
+            },
+        )
+        assert not created.is_error, created.content[0].text
+        nuova = created.structured_content
+        assert (nuova["nome"], nuova["predefinita"], nuova["attiva"]) == ("rebase ltd", False, True)
+        listed = await client.call_tool("list_aziende", {})
+        rows = listed.structured_content
+        if isinstance(rows, dict):
+            # A list result reaches the wire wrapped under `result`.
+            rows = rows["result"]
+        assert [a["nome"] for a in rows] == ["Studio Verdi", "rebase ltd"]
+        profile = await client.call_tool("describe_fiscal_profile", {"azienda_id": nuova["id"]})
+        assert profile.structured_content["pack_id"] == "non-it"
+        refused = await client.call_tool(
+            "create_azienda",
+            {
+                "dati": {"nome": "terza", "ragione_sociale": "Terza Srl"},
+                "profilo_fiscale": {
+                    "pack_id": "non-it",
+                    "aliquota_iva_default": "20.00",
+                    "applica_bollo": True,
+                },
+            },
+        )
+        assert refused.is_error
+        assert "applica_bollo" in refused.content[0].text
+    assert len(AziendaService(mcp_session).list(ADMIN)) == 2
+
+
+async def test_a_collaboratore_agent_cannot_open_an_azienda(
+    mcp_session: Session, tmp_path: Path
+) -> None:
+    server = _server(mcp_session, COLLABORATORE, tmp_path)
+    async with Client(server) as client:
+        refused = await client.call_tool(
+            "create_azienda",
+            {
+                "dati": {"nome": "x", "ragione_sociale": "X Ltd", "nazione": "GB"},
+                "profilo_fiscale": {"pack_id": "non-it", "aliquota_iva_default": "20.00"},
+            },
+        )
+    assert refused.is_error
+    assert "admin" in refused.content[0].text

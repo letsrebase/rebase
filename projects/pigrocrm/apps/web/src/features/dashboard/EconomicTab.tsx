@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { RadioGroup } from 'radix-ui'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
+import { useAzienda } from '@/lib/azienda'
 import { Button } from '@rebase/ui/button'
 import { Skeleton } from '@rebase/ui/skeleton'
 import {
@@ -17,7 +18,7 @@ import { money } from './format'
 import { Freshness } from './Freshness'
 import { MonthlyBars } from './MonthlyBars'
 import type { Periodo } from './periodo'
-import { useEconomicOverview, type FiscalEstimate } from './queries'
+import { useEconomicOverview, type EconomicOverview, type FiscalEstimate } from './queries'
 import { CASH_BASES, type CashBase } from './search'
 
 /** The year the picker's start date names: cash and taxes are told by the year. A date,
@@ -28,6 +29,56 @@ function yearOf(periodo: Periodo): number {
 
 function dovuto(estimate: FiscalEstimate | null): string {
   return estimate?.totale_dovuto ? money(estimate.totale_dovuto) : '—'
+}
+
+type ConcentrationRow = EconomicOverview['concentrazione_clienti'][number]
+
+/**
+ * The rows grouped by the azienda whose revenue each share is of (REB-632, spec §1.9),
+ * in the order the server sent them, which is the selector's: the default first. A
+ * customer billed by two aziende appears in both groups, once per share.
+ */
+function byAzienda(rows: ConcentrationRow[]): { aziendaId: string; rows: ConcentrationRow[] }[] {
+  const groups: { aziendaId: string; rows: ConcentrationRow[] }[] = []
+  for (const row of rows) {
+    const last = groups[groups.length - 1]
+    if (last && last.aziendaId === row.azienda_id) last.rows.push(row)
+    else groups.push({ aziendaId: row.azienda_id, rows: [row] })
+  }
+  return groups
+}
+
+function ConcentrationTable({ rows }: { rows: ConcentrationRow[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Cliente</TableHead>
+          <TableHead className="text-right">Fatture</TableHead>
+          <TableHead className="text-right">Ricavi</TableHead>
+          <TableHead className="text-right">Quota</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row) => (
+          <TableRow key={`${row.azienda_id}:${row.customer_id}`}>
+            <TableCell>
+              <Link
+                to="/app/customers/$customerId"
+                params={{ customerId: row.customer_id }}
+                className="underline-offset-4 hover:underline"
+              >
+                {row.ragione_sociale}
+              </Link>
+            </TableCell>
+            <TableCell className="text-right">{row.fatture}</TableCell>
+            <TableCell className="text-right">{money(row.ricavi)}</TableCell>
+            <TableCell className="text-right">{shareFormatter.format(row.quota)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
 }
 
 /**
@@ -82,6 +133,12 @@ export function EconomicTab({
 }) {
   const anno = yearOf(periodo)
   const query = useEconomicOverview(anno, base)
+  // «Tutte» on a space with several aziende (REB-632, spec §1.9): the cash adds up on
+  // the server, the taxes do not, so the tab draws the estimate once per azienda and
+  // names which azienda each concentration share belongs to. With one azienda, or one
+  // selected, the page reads as it always did.
+  const { aziende, selected, several, byId } = useAzienda()
+  const perAzienda = several && selected === null
 
   if (query.isError) return <QueryErrorBanner error={query.error} />
   if (query.isPending || !query.data) {
@@ -194,6 +251,17 @@ export function EconomicTab({
               hint="proiettato meno costi e tasse stimate, su base incasso"
             />
           </>
+        ) : perAzienda ? (
+          <div className="border bg-card p-4 sm:col-span-2">
+            <p className="text-sm text-muted-foreground">Stima fiscale</p>
+            {/* Two regimes' taxes do not add (spec §1.9): the server sends no estimate in
+                «tutte» and the cards below carry one per azienda instead. */}
+            <p className="mt-1 text-sm">
+              Con più aziende la stima è una per azienda, ciascuna sui propri ricavi e sul
+              proprio regime: le trovi qui sotto, per chi amministra lo spazio e per le
+              aziende con un profilo fiscale configurato.
+            </p>
+          </div>
         ) : (
           <div className="border bg-card p-4 sm:col-span-2">
             <p className="text-sm text-muted-foreground">Stima fiscale</p>
@@ -224,35 +292,21 @@ export function EconomicTab({
         </p>
         {concentrazione_clienti.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nessuna fattura emessa nell'anno.</p>
+        ) : perAzienda ? (
+          // One table per azienda, each share of that azienda's own revenue: a
+          // customer who is a third of one azienda reads as a third, never as a tenth
+          // of the whole (spec §1.9). An azienda deactivated meanwhile still owns its
+          // year's invoices and is named as such.
+          byAzienda(concentrazione_clienti).map((group) => (
+            <div key={group.aziendaId} className="space-y-1">
+              <h3 className="text-sm font-medium text-muted-foreground">
+                {byId(group.aziendaId)?.nome ?? 'Azienda non più attiva'}
+              </h3>
+              <ConcentrationTable rows={group.rows} />
+            </div>
+          ))
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Cliente</TableHead>
-                <TableHead className="text-right">Fatture</TableHead>
-                <TableHead className="text-right">Ricavi</TableHead>
-                <TableHead className="text-right">Quota</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {concentrazione_clienti.map((row) => (
-                <TableRow key={row.customer_id}>
-                  <TableCell>
-                    <Link
-                      to="/app/customers/$customerId"
-                      params={{ customerId: row.customer_id }}
-                      className="underline-offset-4 hover:underline"
-                    >
-                      {row.ragione_sociale}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-right">{row.fatture}</TableCell>
-                  <TableCell className="text-right">{money(row.ricavi)}</TableCell>
-                  <TableCell className="text-right">{shareFormatter.format(row.quota)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <ConcentrationTable rows={concentrazione_clienti} />
         )}
       </section>
 
@@ -265,7 +319,19 @@ export function EconomicTab({
           one request, its own loading and error branches -- rather than taking the excerpt
           `panoramica` already carries, because a card that renders half of itself while the
           other half loads is worse than a card that arrives whole. */}
-      <FiscalPanel anno={anno} />
+      {perAzienda ? (
+        aziende.map((azienda) => (
+          <FiscalPanel
+            key={azienda.id}
+            anno={anno}
+            aziendaId={azienda.id}
+            titolo={azienda.nome}
+            quiet
+          />
+        ))
+      ) : (
+        <FiscalPanel anno={anno} />
+      )}
     </div>
   )
 }

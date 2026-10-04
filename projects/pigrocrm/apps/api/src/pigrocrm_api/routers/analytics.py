@@ -38,6 +38,28 @@ router = APIRouter(prefix="/api/analytics", tags=["analytics"], responses=PROBLE
 # recorded here rather than silently diverging from the spec.
 FromDate = Annotated[date, Query(alias="from", description="Inizio del periodo, YYYY-MM-DD")]
 ToDate = Annotated[date, Query(alias="to", description="Fine del periodo, YYYY-MM-DD")]
+# The sidebar's azienda on a sum (REB-630, spec 2026-10-03 §1.9): one more predicate,
+# omitted for «tutte». On the estimate and the ceilings it is the azienda the figure is
+# computed for: resolved alone on a one-azienda space, required by name on a space with
+# several, since a forfettario's coefficients and an SRL's arithmetic do not add.
+AziendaFilter = Annotated[
+    UUID | None,
+    Query(
+        description=(
+            "Limita le cifre a un'azienda dello spazio; omesso, tutte le aziende sommate. "
+            "La risposta lo riporta in `azienda_id`."
+        )
+    ),
+]
+AziendaRequired = Annotated[
+    UUID | None,
+    Query(
+        description=(
+            "L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una "
+            "(una risposta 422 nomina `azienda_id`), altrimenti è l'unica e si può omettere."
+        )
+    ),
+]
 
 
 @router.get("/pnl", response_model=PeriodPnl)
@@ -47,6 +69,7 @@ def period_pnl(
     da: FromDate,
     a: ToDate,
     customer_id: Annotated[UUID | None, Query()] = None,
+    azienda_id: AziendaFilter = None,
     base: Annotated[
         RevenueBase,
         Query(
@@ -64,7 +87,8 @@ def period_pnl(
     neither. `base` picks which of the two readings of revenue the report gives
     (ORB-61); everything else about it is the same."""
     return AnalyticsService(session).period_pnl(
-        PeriodPnlQuery(da=da, a=a, customer_id=customer_id, base=base), actor
+        PeriodPnlQuery(da=da, a=a, customer_id=customer_id, base=base, azienda_id=azienda_id),
+        actor,
     )
 
 
@@ -91,6 +115,7 @@ def economic_overview(
     session: SessionDep,
     actor: ActorDep,
     anno: Annotated[int, Query(ge=2000, le=2200)],
+    azienda_id: AziendaFilter = None,
     base: Annotated[
         CashBase,
         Query(
@@ -109,18 +134,23 @@ def economic_overview(
     """The dashboard's economic tab: the year as cash for everyone, plus the fiscal
     estimate on collected and projected revenue for an admin with a profile. No MCP
     tool, for the estimate's own reasons. `base` moves the charts and the cash cards
-    between the two readings (ORB-133); the fiscal block stays on the money."""
-    return AnalyticsService(session).economic_overview(anno, actor, base)
+    between the two readings (ORB-133); the fiscal block stays on the money. In «tutte»
+    on a space with several aziende the fiscal block is empty and the page asks
+    `/fiscal` once per azienda (REB-630)."""
+    return AnalyticsService(session).economic_overview(anno, actor, base, azienda_id)
 
 
 @router.get("/fiscal", response_model=FiscalEstimate)
 def fiscal_estimate(
-    session: SessionDep, actor: ActorDep, anno: Annotated[int, Query(ge=2000, le=2200)]
+    session: SessionDep,
+    actor: ActorDep,
+    anno: Annotated[int, Query(ge=2000, le=2200)],
+    azienda_id: AziendaRequired = None,
 ) -> FiscalEstimate:
     """`admin` -- enforced by the service, not here. A router containing an authorisation
     `if` is a router the MCP adapter cannot reuse, and this figure has no MCP tool at all
     (§11's exclusion list), so the check has to live where both adapters share it."""
-    return AnalyticsService(session).get_fiscal_estimate(anno, actor)
+    return AnalyticsService(session).get_fiscal_estimate(anno, actor, azienda_id=azienda_id)
 
 
 @router.get("/backlog", response_model=UnbilledBacklog)
@@ -136,13 +166,16 @@ def backlog(session: SessionDep, actor: ActorDep) -> UnbilledBacklog:
 
 @router.get("/ceilings", response_model=CeilingHeadroom)
 def ceiling_headroom(
-    session: SessionDep, actor: ActorDep, anno: Annotated[int, Query(ge=2000, le=2200)]
+    session: SessionDep,
+    actor: ActorDep,
+    anno: Annotated[int, Query(ge=2000, le=2200)],
+    azienda_id: AziendaRequired = None,
 ) -> CeilingHeadroom:
     """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
     configurato (REB-352 §1.4), sui ricavi incassati e reali dell'anno. Aperto a ogni
     ruolo, a differenza di `/fiscal`: è un ricavo, non la stima fiscale che protegge
     solo `get_fiscal_estimate`."""
-    return AnalyticsService(session).ceiling_headroom(anno, actor)
+    return AnalyticsService(session).ceiling_headroom(anno, actor, azienda_id)
 
 
 @router.get("/ceilings/simulate", response_model=CeilingSimulation)
@@ -153,6 +186,7 @@ def simulate_ceiling(
     ore_preventivate: Annotated[Decimal | None, Query(ge=0)] = None,
     valore_preventivato: Annotated[Decimal | None, Query(ge=0)] = None,
     tariffa_oraria: Annotated[Decimal | None, Query(ge=0)] = None,
+    azienda_id: AziendaRequired = None,
 ) -> CeilingSimulation:
     """Il simulatore "ci sta?" (REB-352 §1.4): la stima di un deal non ancora vinto,
     aggiunta ai ricavi reali e rivalutata su ogni soglia attiva, senza salvare
@@ -166,4 +200,5 @@ def simulate_ceiling(
             tariffa_oraria=tariffa_oraria,
         ),
         actor,
+        azienda_id,
     )

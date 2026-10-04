@@ -136,8 +136,10 @@ class ContractService:
                 expected=f">= {contract.inizio.isoformat()}",
             )
         periodo_da, periodo_a = anniversary_year_bounds(contract.inizio, reference)
+        # Within the contract's own azienda (REB-630, spec 2026-10-03 §1.9): a share of
+        # revenue is a share of one azienda's revenue, and the contract names which.
         ricavi_cliente, ricavi_totali = self.analytics.revenue_for_customer_in_window(
-            contract.customer_id, periodo_da, periodo_a
+            contract.customer_id, periodo_da, periodo_a, azienda_id=contract.azienda_id
         )
         quota = float(ricavi_cliente / ricavi_totali) if ricavi_totali > 0 else 0.0
         return ContractConcentrationCap(

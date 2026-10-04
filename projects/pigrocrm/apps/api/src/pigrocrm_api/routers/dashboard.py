@@ -16,6 +16,7 @@ untouched. See `deps.get_snapshot_session`.
 
 from datetime import date
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Query
 
@@ -32,6 +33,19 @@ from pigrocrm_api.errors import PROBLEM_RESPONSES
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"], responses=PROBLEM_RESPONSES)
 
+# The sidebar's azienda (REB-630, spec 2026-10-03 §1.9): one more predicate on every
+# figure, never a change in its arithmetic. Omitted, the figures of every azienda add up,
+# which is what «tutte» shows; the answer echoes it, `null` for «tutte».
+AziendaQuery = Annotated[
+    UUID | None,
+    Query(
+        description=(
+            "Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le "
+            "aziende sommate. La risposta lo riporta in `azienda_id`."
+        )
+    ),
+]
+
 
 @router.get("/sales", response_model=CommercialDashboard)
 def commerciale(
@@ -43,8 +57,11 @@ def commerciale(
     # a dashboard with no explicit period is a number with no unit (§4).
     da: Annotated[date | None, Query()] = None,
     a: Annotated[date | None, Query()] = None,
+    azienda_id: AziendaQuery = None,
 ) -> CommercialDashboard:
-    return DashboardService(session).get_commercial_dashboard(PeriodoQuery(da=da, a=a), actor)
+    return DashboardService(session).get_commercial_dashboard(
+        PeriodoQuery(da=da, a=a, azienda_id=azienda_id), actor
+    )
 
 
 @router.get("/economic", response_model=EconomicDashboard)
@@ -57,13 +74,19 @@ def economica(
     # reads to put the message under the right input.
     da: Annotated[date | None, Query()] = None,
     a: Annotated[date | None, Query()] = None,
+    azienda_id: AziendaQuery = None,
 ) -> EconomicDashboard:
-    return DashboardService(session).get_economic_dashboard(PeriodoQuery(da=da, a=a), actor)
+    return DashboardService(session).get_economic_dashboard(
+        PeriodoQuery(da=da, a=a, azienda_id=azienda_id), actor
+    )
 
 
 @router.get("/operational", response_model=OperationalDashboard)
 def operativa(
-    session: SnapshotSessionDep, actor: ActorDep, settings: SettingsDep
+    session: SnapshotSessionDep,
+    actor: ActorDep,
+    settings: SettingsDep,
+    azienda_id: AziendaQuery = None,
 ) -> OperationalDashboard:
     """No period parameter, and not an optional one either.
 
@@ -79,12 +102,14 @@ def operativa(
     resolved to authenticate this request -- so the concentration signal (REB-371) reads
     the threshold a space actually configured, not the process's bare environment.
     """
-    return DashboardService(session, settings).get_operational_dashboard(actor)
+    return DashboardService(session, settings).get_operational_dashboard(actor, azienda_id)
 
 
 @router.get("/receivables", response_model=ReceivablesDashboard)
-def scadenziario(session: SnapshotSessionDep, actor: ActorDep) -> ReceivablesDashboard:
+def scadenziario(
+    session: SnapshotSessionDep, actor: ActorDep, azienda_id: AziendaQuery = None
+) -> ReceivablesDashboard:
     """Slice 8 part A (REB-329). No period parameter, for `operativa`'s reason: what is
     owed is owed today, and a `da`/`a` the service ignored would be a parameter the API
     advertises and does not honour."""
-    return DashboardService(session).get_receivables_dashboard(actor)
+    return DashboardService(session).get_receivables_dashboard(actor, azienda_id)

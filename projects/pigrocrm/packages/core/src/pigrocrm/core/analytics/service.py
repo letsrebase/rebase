@@ -38,6 +38,7 @@ from pigrocrm.core.contracts.dates import irrevocability_window_end, renewal_dea
 from pigrocrm.core.contracts.repository import ContractRepository
 from pigrocrm.core.db import today_local
 from pigrocrm.core.deals.repository import DealRepository
+from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.ceiling import (
     CeilingStatus,
@@ -265,20 +266,29 @@ class AnalyticsService:
                 ENTITY, "a", "intervallo invertito", expected="una data non anteriore a 'da'"
             )
 
-        revenue = self.repo.revenue_in_range(query.da, query.a, query.customer_id, query.base)
-        per_deal_costs, general = self.repo.costs_in_range(query.da, query.a, query.customer_id)
-        labour = self.repo.labour_cost_in_range(query.da, query.a, query.customer_id)
+        # `azienda_id` is one more predicate on every read (REB-630, spec 2026-10-03
+        # §1.9) and nothing else: the arithmetic below does not know it exists.
+        azienda = query.azienda_id
+        revenue = self.repo.revenue_in_range(
+            query.da, query.a, query.customer_id, query.base, azienda
+        )
+        per_deal_costs, general = self.repo.costs_in_range(
+            query.da, query.a, query.customer_id, azienda
+        )
+        labour = self.repo.labour_cost_in_range(query.da, query.a, query.customer_id, azienda)
         # Slice 6 §5's three rows, from the same aggregate `unbilled_backlog` uses and
         # merely bounded to the period: one definition of "ore fatturabili non fatturate",
         # not one per screen. They are informative and enter no margin, which is why they
         # sit outside both `PnlTotals` columns rather than inside either.
         ore_arretrate, valore_arretrato, senza_tariffa, _ = self.repo.unbilled_backlog(
-            query.da, query.a, query.customer_id
+            query.da, query.a, query.customer_id, azienda
         )
 
         chiusi: list[tuple[Decimal, Decimal, Decimal]] = []
         in_corso: list[tuple[Decimal, Decimal, Decimal]] = []
-        for deal in self.repo.deals_in_range(query.da, query.a, query.customer_id, query.base):
+        for deal in self.repo.deals_in_range(
+            query.da, query.a, query.customer_id, query.base, azienda
+        ):
             row = (
                 revenue.get(deal.id, ZERO_MONEY),
                 per_deal_costs.get(deal.id, ZERO_MONEY),
@@ -306,6 +316,7 @@ class AnalyticsService:
             a=query.a,
             customer_id=query.customer_id,
             base=query.base,
+            azienda_id=azienda,
             chiusi=_totals(chiusi),
             in_corso=_totals(in_corso),
             # Never apportioned onto any deal (§7.4), and absent entirely under a
@@ -317,10 +328,10 @@ class AnalyticsService:
             periodo_chiuso=periodo_chiuso,
             # Free: a COUNT over two columns that already exist, and the one thing a
             # reader most needs to know about an open period (§6.4).
-            voci_scritte_in_ritardo=self.repo.late_entry_count(query.da, query.a),
+            voci_scritte_in_ritardo=self.repo.late_entry_count(query.da, query.a, azienda),
         )
 
-    def unbilled_backlog(self, actor: Actor) -> UnbilledBacklog:
+    def unbilled_backlog(self, actor: Actor, azienda_id: UUID | None = None) -> UnbilledBacklog:
         """The arrears: billable hours not yet on the line of an issued invoice, with no
         period.
 
@@ -340,7 +351,7 @@ class AnalyticsService:
         does not grow. That is the right outcome: the backlog is the figure an agent can be
         most useful about, and it is read-only.
         """
-        ore, valore, senza_tariffa, voci = self.repo.unbilled_backlog()
+        ore, valore, senza_tariffa, voci = self.repo.unbilled_backlog(azienda_id=azienda_id)
         return UnbilledBacklog(
             ore_fatturabili_non_fatturate=ore,
             valore_maturato=valore,
@@ -447,7 +458,9 @@ class AnalyticsService:
             deal_non_preventivati=len(rows) - len(budgeted),
         )
 
-    def ceiling_headroom(self, anno: int, actor: Actor) -> CeilingHeadroom:
+    def ceiling_headroom(
+        self, anno: int, actor: Actor, azienda_id: UUID | None = None
+    ) -> CeilingHeadroom:
         """REB-352 §1.4: every active ceiling of the configured jurisdiction pack,
         evaluated against `anno`'s real paid revenue -- `evaluate_pack`'s own output,
         read rather than recomputed (no new revenue query, per REB-352 §1.4's own
@@ -459,20 +472,33 @@ class AnalyticsService:
         threshold figure over the same `Invoice` rows `cash_overview` and
         `budget_vs_actual` already open to every role, not the taxable-income
         computation that method alone gates.
+
+        One azienda's, always (REB-630, spec 2026-10-03 §1.9): a ceiling exists on the
+        pack one azienda's profile points at, and its receipts are that azienda's
+        alone. `azienda_id` resolves to the only azienda when the caller names none,
+        so a one-azienda space reads what it always read; with several it is required,
+        and `require_single` says so naming the field.
         """
-        profile = FiscalProfileService(self.session).get(actor)
+        azienda = AziendaService(self.session).require_single(azienda_id, entity=ENTITY)
+        profile = FiscalProfileService(self.session).get(actor, azienda.id)
         pack = resolve_pack(profile.pack_id, profile.pack_version)
         return CeilingHeadroom(
             anno=anno,
+            azienda_id=azienda.id,
             pack_id=pack.id,
             pack_version=pack.version,
             soglie=[
-                _ceiling_status_read(status) for status in evaluate_pack(pack, self.session, anno)
+                _ceiling_status_read(status)
+                for status in evaluate_pack(pack, self.session, anno, azienda.id)
             ],
         )
 
     def simulate_ceiling(
-        self, anno: int, query: CeilingSimulationQuery, actor: Actor
+        self,
+        anno: int,
+        query: CeilingSimulationQuery,
+        actor: Actor,
+        azienda_id: UUID | None = None,
     ) -> CeilingSimulation:
         """REB-352 §1.4's "would this fit?" simulator: the same active ceilings,
         each re-evaluated with a synthetic addition on top of the real, already-
@@ -480,13 +506,15 @@ class AnalyticsService:
         no second revenue query (`fiscal/ceiling.py::evaluate_ceiling`'s own
         docstring names this simulator by name). The addition is a not-yet-won
         deal's own estimate, read raw off its own three columns rather than by
-        `deal_id`, so nothing has to be saved to ask the question.
+        `deal_id`, so nothing has to be saved to ask the question. The azienda
+        resolves as in `ceiling_headroom` (REB-630).
         """
-        profile = FiscalProfileService(self.session).get(actor)
+        azienda = AziendaService(self.session).require_single(azienda_id, entity=ENTITY)
+        profile = FiscalProfileService(self.session).get(actor, azienda.id)
         pack = resolve_pack(profile.pack_id, profile.pack_version)
         aggiunta = _synthetic_addition(query)
         risultati: list[CeilingSimulationResult] = []
-        for prima in evaluate_pack(pack, self.session, anno):
+        for prima in evaluate_pack(pack, self.session, anno, azienda.id):
             dopo = evaluate_ceiling(prima.ceiling, prima.ricavi + aggiunta)
             risultati.append(
                 CeilingSimulationResult(
@@ -504,13 +532,16 @@ class AnalyticsService:
             )
         return CeilingSimulation(
             anno=anno,
+            azienda_id=azienda.id,
             pack_id=pack.id,
             pack_version=pack.version,
             aggiunta_sintetica=aggiunta,
             soglie=risultati,
         )
 
-    def _contract_date_markers(self, anno: int) -> list[ContractDateMarker]:
+    def _contract_date_markers(
+        self, anno: int, azienda_id: UUID | None = None
+    ) -> list[ContractDateMarker]:
         """REB-352 §1.6's overlay: every irrevocability-window close and renewal
         deadline that falls inside `anno`'s calendar, across every non-deleted
         contract. The irrevocability date is measured "as of" today regardless of
@@ -523,6 +554,9 @@ class AnalyticsService:
         oggi = today_local()
         markers: list[ContractDateMarker] = []
         for contract in self.contracts.list_active():
+            if azienda_id is not None and contract.azienda_id != azienda_id:
+                # One azienda's calendar carries its own contracts' dates (REB-630).
+                continue
             end = irrevocability_window_end(contract, oggi)
             if end is not None and year_start <= end <= year_end:
                 markers.append(
@@ -548,18 +582,27 @@ class AnalyticsService:
         markers.sort(key=lambda m: (m.data, m.titolo))
         return markers
 
-    def cash_overview(self, anno: int, actor: Actor, base: CashBase = "competenza") -> CashOverview:
+    def cash_overview(
+        self,
+        anno: int,
+        actor: Actor,
+        base: CashBase = "competenza",
+        azienda_id: UUID | None = None,
+    ) -> CashOverview:
         """The year as cash, month by month (`CashOverview`). Read by anyone who may read
         the dashboard: nothing here is fiscal, and every figure is a SUM the repository
         produced plus additions done once, here. `base` says which month a document
         falls in (ORB-133). The year's totals agree under the two readings except for a
         document whose declared period and whose money fall in different years: that
-        one is in one year's view and not the other's."""
+        one is in one year's view and not the other's. `azienda_id` narrows every sum
+        to one azienda (REB-630, spec 2026-10-03 §1.9); without it the cash of every
+        azienda adds up, which is what «tutte» exists to show, and a cost without a
+        deal is counted there alone (§1.7)."""
         actor.require_agent_allowed("cash_overview")
-        incassato = self.repo.monthly_incassato(anno, base)
-        da_incassare = self.repo.monthly_da_incassare(anno, base)
-        bozze = self.repo.monthly_bozze(anno, base)
-        costi = self.repo.monthly_costi(anno)
+        incassato = self.repo.monthly_incassato(anno, base, azienda_id)
+        da_incassare = self.repo.monthly_da_incassare(anno, base, azienda_id)
+        bozze = self.repo.monthly_bozze(anno, base, azienda_id)
+        costi = self.repo.monthly_costi(anno, azienda_id)
         months = range(1, 13)
         zero = ZERO_MONEY
         stack_andamento = max(
@@ -615,6 +658,7 @@ class AnalyticsService:
         return CashOverview(
             anno=anno,
             base=base,
+            azienda_id=azienda_id,
             incassato=tot_incassato,
             da_incassare=tot_da_incassare,
             bozze=tot_bozze,
@@ -623,11 +667,15 @@ class AnalyticsService:
             lordo_effettivo=round_money(tot_incassato - tot_costi),
             lordo_proiettato=round_money(proiettato - tot_costi),
             mesi=mesi,
-            scadenze_contrattuali=self._contract_date_markers(anno),
+            scadenze_contrattuali=self._contract_date_markers(anno, azienda_id),
         )
 
     def economic_overview(
-        self, anno: int, actor: Actor, base: CashBase = "competenza"
+        self,
+        anno: int,
+        actor: Actor,
+        base: CashBase = "competenza",
+        azienda_id: UUID | None = None,
     ) -> EconomicOverview:
         """The economic tab of the dashboard, in one answer: the cash view for everyone,
         and for an admin with a fiscal profile the estimate on what was collected and on
@@ -650,40 +698,71 @@ class AnalyticsService:
         `annual_revenue` -- a different money entirely from `cassa` (cash, VAT included)
         and open to every role the way the rest of this page is, not gated to `admin`
         with the fiscal block.
+
+        `azienda_id` (REB-630, spec 2026-10-03 §1.9): the cash and the concentration
+        narrow to it, or add up every azienda without it. The fiscal block is one
+        azienda's or nothing: the named one, or the only one, and `None` in «tutte» on
+        a space with several, where the page asks `/api/analytics/fiscal` once per
+        azienda instead, because a forfettario's coefficients and an SRL's arithmetic
+        do not add. In «tutte» the concentration rows come per azienda, each share of
+        its own azienda's revenue, and carry which.
         """
-        cassa = self.cash_overview(anno, actor, base)
-        per_fisco = cassa if base == "incasso" else self.cash_overview(anno, actor, "incasso")
+        cassa = self.cash_overview(anno, actor, base, azienda_id)
         fiscale = fiscale_proiettato = None
         netto = netto_proiettato = None
         if actor.role == "admin":
             try:
-                fiscale = self.get_fiscal_estimate(anno, actor, ricavi=per_fisco.incassato)
-                fiscale_proiettato = self.get_fiscal_estimate(
-                    anno, actor, ricavi=per_fisco.proiettato
-                )
+                titolare = AziendaService(self.session).single(azienda_id)
+                if titolare is not None:
+                    # The money the taxes are computed on is the azienda's own, never
+                    # the page's: in «tutte» with one active azienda `cassa` still adds
+                    # up a deactivated azienda's receipts, which must not reach the
+                    # active one's coefficients (spec §1.9, review of REB-630). The
+                    # two nets below are read off the same figure, so they are that
+                    # azienda's too.
+                    per_fisco = (
+                        cassa
+                        if base == "incasso" and cassa.azienda_id == titolare.id
+                        else self.cash_overview(anno, actor, "incasso", titolare.id)
+                    )
+                    fiscale = self.get_fiscal_estimate(
+                        anno, actor, ricavi=per_fisco.incassato, azienda_id=titolare.id
+                    )
+                    fiscale_proiettato = self.get_fiscal_estimate(
+                        anno, actor, ricavi=per_fisco.proiettato, azienda_id=titolare.id
+                    )
+                    if fiscale.totale_dovuto is not None:
+                        netto = round_money(per_fisco.lordo_effettivo - fiscale.totale_dovuto)
+                    if fiscale_proiettato.totale_dovuto is not None:
+                        netto_proiettato = round_money(
+                            per_fisco.lordo_proiettato - fiscale_proiettato.totale_dovuto
+                        )
             except NotFound:
-                # No fiscal profile yet: the page says so and shows the cash alone.
+                # No fiscal profile yet, or no azienda at all: the page says so and
+                # shows the cash alone.
                 fiscale = fiscale_proiettato = None
-        if fiscale is not None and fiscale.totale_dovuto is not None:
-            netto = round_money(per_fisco.lordo_effettivo - fiscale.totale_dovuto)
-        if fiscale_proiettato is not None and fiscale_proiettato.totale_dovuto is not None:
-            netto_proiettato = round_money(
-                per_fisco.lordo_proiettato - fiscale_proiettato.totale_dovuto
-            )
+                netto = netto_proiettato = None
         return EconomicOverview(
             calcolato_alle=datetime.now(UTC),
+            azienda_id=azienda_id,
             cassa=cassa,
             fiscale=fiscale,
             fiscale_proiettato=fiscale_proiettato,
             concentrazione_clienti=[
-                RevenueByCustomer(**row._asdict()) for row in self.repo.revenue_by_customer(anno)
+                RevenueByCustomer(**row._asdict())
+                for row in self.repo.revenue_by_customer(anno, azienda_id)
             ],
             netto_effettivo=netto,
             netto_proiettato=netto_proiettato,
         )
 
     def get_fiscal_estimate(
-        self, anno: int, actor: Actor, *, ricavi: Decimal | None = None
+        self,
+        anno: int,
+        actor: Actor,
+        *,
+        ricavi: Decimal | None = None,
+        azienda_id: UUID | None = None,
     ) -> FiscalEstimate:
         """A **period** report, never per deal (§8).
 
@@ -709,12 +788,19 @@ class AnalyticsService:
         inheriting its owner's full role -- while "give Claude a token" still means "give
         it your account" -- that figure does not enter a conversational context on the
         back of a generic question about deals.
+
+        One azienda's, always (REB-630, spec 2026-10-03 §1.9): the estimate reads one
+        profile's three rates and that azienda's invoices alone. `azienda_id` resolves
+        to the only azienda when none is named, and is required, by name, when the
+        space has several: a forfettario's coefficients and an SRL's arithmetic do not
+        add, so there is no space-wide figure to answer with.
         """
         actor.require_admin("get_fiscal_estimate")
-        # Raises `NotFound("fiscal_profile", "singleton")` when nothing is configured,
+        azienda = AziendaService(self.session).require_single(azienda_id, entity=ENTITY)
+        # Raises `NotFound("fiscal_profile", <azienda id>)` when nothing is configured,
         # which tells the user which screen to go to -- better than an estimate of zero
         # computed from three nulls, which reads as "you owe nothing".
-        profile = FiscalProfileService(self.session).get(actor)
+        profile = FiscalProfileService(self.session).get(actor, azienda.id)
         if ricavi is None:
             # Every issued invoice of the year, deal or no deal: the estimate is about
             # the person's income, and an invoice attached to no deal is still income.
@@ -723,9 +809,16 @@ class AnalyticsService:
             # taxable income, so it never reaches the coefficiente base here even
             # though `annual_revenue` sums it in full.
             pack = resolve_pack(profile.pack_id, profile.pack_version)
-            ricavi = taxable_ricavi(pack, self.session, anno, self.repo.annual_revenue(anno))
+            ricavi = taxable_ricavi(
+                pack,
+                self.session,
+                anno,
+                self.repo.annual_revenue(anno, azienda.id),
+                azienda.id,
+            )
         return estimate_income(
             anno=anno,
+            azienda_id=azienda.id,
             # `ricavi` overrides the reduced figure above when the caller asks "what
             # if": the economic overview passes what was collected, and what is
             # projected, neither of which the pack's own tag applies to.

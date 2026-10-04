@@ -102,10 +102,13 @@ export function AziendaPanel({ azienda }: { azienda: AziendaRecord }) {
           somebody else's save would remount the form and throw away what the person
           here is typing. The form itself follows a newer row while it is untouched,
           below, so a stale value is never what a Salva writes back by default. */}
-      <AziendaForm key={azienda.id} profile={azienda} />
+      <AziendaForm key={`form-${azienda.id}`} profile={azienda} />
       {/* Keyed like the form: a refusal shown under azienda A's block must not
-          outlive the switch to B. */}
-      <AziendaImages key={azienda.id} azienda={azienda} />
+          outlive the switch to B. A distinct prefix on each, since the two are
+          siblings: two siblings sharing one key is undefined to React, and in
+          practice (REB-632, seen on the switch after «Nuova azienda») the previous
+          azienda's form stayed mounted under the new one. */}
+      <AziendaImages key={`images-${azienda.id}`} azienda={azienda} />
     </div>
   )
 }

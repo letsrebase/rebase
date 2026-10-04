@@ -9,7 +9,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.emitter.assets import AziendaAssets
 from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.emitter.repository import AziendaRepository
-from pigrocrm.core.emitter.schemas import FIRMA_EMAIL_MAX_LENGTH, AziendaUpsert
+from pigrocrm.core.emitter.schemas import FIRMA_EMAIL_MAX_LENGTH, AziendaCreate, AziendaUpsert
 from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from pigrocrm.core.render.pdf import BLANK_PNG as PNG_PIXEL
@@ -333,3 +333,116 @@ def test_a_lower_case_country_code_does_not_make_an_italian_p_iva_foreign(
     assert excinfo.value.details["field"] == "partita_iva"
     read = AziendaService(db_session).upsert_default(_upsert(nazione="it"), ADMIN)
     assert read.nazione == "IT"
+
+
+# --- creation, the single-azienda resolution and the deactivation count (REB-630) -----
+
+
+def _create(**overrides: object) -> AziendaCreate:
+    from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+
+    payload: dict[str, object] = {
+        **_upsert().model_dump(),
+        "nome": "rebase ltd",
+        "ragione_sociale": "Rebase Ltd",
+        "partita_iva": "GB123456789",
+        "nazione": "GB",
+        "provincia": None,
+        "pec": None,
+        "fiscal_profile": FiscalProfileUpsert(
+            pack_id="non-it", aliquota_iva_default=Decimal("20.00")
+        ),
+    }
+    payload.update(overrides)
+    return AziendaCreate(**payload)  # type: ignore[arg-type]
+
+
+def test_create_gives_a_second_azienda_its_profile_in_one_call(db_session: Session) -> None:
+    from pigrocrm.core.fiscal.service import FiscalProfileService
+
+    service = AziendaService(db_session)
+    first = service.upsert_default(_upsert(), ADMIN)
+    created = service.create(_create(), ADMIN)
+    assert (created.nome, created.predefinita, created.attiva) == ("rebase ltd", False, True)
+    assert created.partita_iva == "GB123456789"
+    profile = FiscalProfileService(db_session).get(ADMIN, created.id)
+    assert (profile.pack_id, profile.aliquota_iva_default) == ("non-it", Decimal("20.00"))
+    assert [a.id for a in service.list(ADMIN)] == [first.id, created.id]
+
+
+def test_the_first_azienda_a_space_creates_is_its_default(db_session: Session) -> None:
+    created = AziendaService(db_session).create(_create(), ADMIN)
+    assert created.predefinita is True
+    assert AziendaService(db_session).get(ADMIN).id == created.id
+
+
+def test_a_profile_the_fiscal_service_refuses_leaves_no_azienda_behind(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
+
+    service = AziendaService(db_session)
+    service.upsert_default(_upsert(), ADMIN)
+    with pytest.raises(ValidationFailed) as refused:
+        service.create(
+            _create(
+                fiscal_profile=FiscalProfileUpsert(
+                    pack_id="non-it", aliquota_iva_default=Decimal("20.00"), applica_bollo=True
+                )
+            ),
+            ADMIN,
+        )
+    assert refused.value.details["field"] == "applica_bollo"
+    assert AziendaRepository(db_session).count() == 1
+
+
+def test_create_is_admin_only_and_refuses_a_fiscal_id_another_azienda_holds(
+    db_session: Session,
+) -> None:
+    service = AziendaService(db_session)
+    service.upsert_default(_upsert(), ADMIN)
+    with pytest.raises(PermissionDenied):
+        service.create(_create(), READONLY)
+    with pytest.raises(Conflict):
+        service.create(_create(nazione="IT", partita_iva="01234567890"), ADMIN)
+    assert AziendaRepository(db_session).count() == 1
+
+
+def test_single_resolves_the_only_azienda_and_never_picks_between_two(
+    db_session: Session,
+) -> None:
+    service = AziendaService(db_session)
+    first = service.upsert_default(_upsert(), ADMIN)
+    assert service.single(None) is not None
+    assert service.require_single(None, entity="analytics").id == first.id
+    second = service.create(_create(), ADMIN)
+    assert service.single(None) is None
+    with pytest.raises(ValidationFailed) as refused:
+        service.require_single(None, entity="analytics")
+    assert refused.value.details["entity"] == "analytics"
+    assert refused.value.details["field"] == "azienda_id"
+    assert service.require_single(second.id, entity="analytics").id == second.id
+    # A deactivated azienda no longer makes the choice ambiguous: the sidebar does not
+    # offer it, and the one active azienda is again the one every read means.
+    service.deactivate(second.id, ADMIN)
+    assert service.require_single(None, entity="analytics").id == first.id
+
+
+def test_deactivate_answers_how_many_customers_still_point_at_the_row(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.customers.models import Customer
+
+    service = AziendaService(db_session)
+    service.upsert_default(_upsert(), ADMIN)
+    second = service.create(_create(), ADMIN)
+    db_session.add_all(
+        [
+            Customer(ragione_sociale="Cliente uno", nazione="GB", azienda_id=second.id),
+            Customer(ragione_sociale="Cliente due", nazione="GB", azienda_id=second.id),
+        ]
+    )
+    db_session.flush()
+    deactivated = service.deactivate(second.id, ADMIN)
+    assert deactivated.attiva is False
+    assert deactivated.clienti_collegati == 2

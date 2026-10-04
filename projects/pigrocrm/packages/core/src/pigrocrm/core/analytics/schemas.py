@@ -93,6 +93,9 @@ class PeriodPnlQuery(BaseModel):
     a: date
     customer_id: UUID | None = None
     base: RevenueBase = "emissione"
+    # One azienda's deals, costs and hours, or every azienda's (REB-630, spec
+    # 2026-10-03 §1.9). A cost without a deal is shared and counts only in «tutte».
+    azienda_id: UUID | None = None
 
 
 class PnlTotals(BaseModel):
@@ -118,6 +121,8 @@ class PeriodPnl(BaseModel):
     # Echoed from the query, so a reader of the figure knows which of the two readings
     # of revenue produced it (ORB-61) without keeping the request beside the response.
     base: RevenueBase
+    # Echoed too (REB-630): `None` is every azienda, which is what «tutte» shows.
+    azienda_id: UUID | None = None
     chiusi: PnlTotals
     in_corso: PnlTotals
     # A cost with `deal_id IS NULL`: it enters the period P&L in a row of its own and is
@@ -229,6 +234,9 @@ class FiscalEstimate(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     anno: int
+    # The azienda whose profile and invoices this was computed on (REB-630): an
+    # estimate is one azienda's, never the space's, and the card says whose.
+    azienda_id: UUID
     stima: Literal[True] = True
     avvertenza: str
     ricavi: Decimal
@@ -313,6 +321,9 @@ class CashOverview(BaseModel):
     anno: int
     # Echoed from the request, so the page can label the reading it shows (ORB-133).
     base: CashBase
+    # Echoed as well (REB-630): one azienda's cash, or `None` for every azienda added
+    # up, which is the sum «tutte» exists to show.
+    azienda_id: UUID | None = None
     incassato: Decimal = Field(max_digits=12, decimal_places=2)
     da_incassare: Decimal = Field(max_digits=12, decimal_places=2)
     bozze: Decimal = Field(max_digits=12, decimal_places=2)
@@ -354,6 +365,8 @@ class CeilingHeadroom(BaseModel):
     year -- `evaluate_pack`'s own list, unmodified."""
 
     anno: int
+    # The azienda whose pack these ceilings belong to (REB-630).
+    azienda_id: UUID
     pack_id: str
     pack_version: str
     soglie: list[CeilingStatusRead]
@@ -404,6 +417,7 @@ class CeilingSimulationResult(BaseModel):
 
 class CeilingSimulation(BaseModel):
     anno: int
+    azienda_id: UUID
     pack_id: str
     pack_version: str
     aggiunta_sintetica: Decimal = Field(max_digits=12, decimal_places=2)
@@ -429,6 +443,11 @@ class RevenueByCustomer(BaseModel):
     ricavi: Decimal = Field(max_digits=12, decimal_places=2)
     fatture: int
     quota: float
+    # The azienda whose revenue `quota` is a share of (REB-630, spec 2026-10-03 §1.9):
+    # a share of revenue is a share of one azienda's revenue, so in «tutte» the rows
+    # come grouped by it and a customer billed by two aziende appears twice, once per
+    # share. With one azienda every row carries the same id and nothing changes.
+    azienda_id: UUID
 
 
 class EconomicOverview(BaseModel):
@@ -438,6 +457,11 @@ class EconomicOverview(BaseModel):
     admin, o senza profilo, la parte fiscale e' `None` e la pagina mostra solo la cassa."""
 
     calcolato_alle: datetime
+    # The azienda the whole answer speaks for, or `None` for every azienda (REB-630).
+    # In that case the fiscal block below is empty when the space has several, because
+    # two regimes' taxes do not add: the page then asks `/api/analytics/fiscal` once per
+    # azienda instead (spec 2026-10-03 §1.9).
+    azienda_id: UUID | None = None
     cassa: CashOverview
     fiscale: FiscalEstimate | None
     fiscale_proiettato: FiscalEstimate | None

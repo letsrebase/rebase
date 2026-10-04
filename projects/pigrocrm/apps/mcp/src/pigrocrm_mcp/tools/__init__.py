@@ -1111,13 +1111,16 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
-    def get_commercial_dashboard(da: IsoDateStr = None, a: IsoDateStr = None) -> dict[str, Any]:
+    def get_commercial_dashboard(
+        da: IsoDateStr = None, a: IsoDateStr = None, azienda_id: str | None = None
+    ) -> dict[str, Any]:
         """Il quadro commerciale in una sola chiamata: pipeline per stato, deal chiusi nel
         periodo con il tasso di conversione, offerte inviate ancora in attesa con da quanti
         giorni, chiusure previste nei 30 giorni successivi al periodo e le offerte accettate
         il cui deal non risulta vinto. Ogni cifra è letta nello stesso istante, indicato da
         `calcolato_alle`. `da` e `a` sono date `YYYY-MM-DD` e vanno insieme: senza, il
         periodo è il mese corrente. `valore_ponderato` è una stima e non è fatturato.
+        `azienda_id` limita ogni cifra a un'azienda dello spazio; senza, tutte sommate.
         """
         # `IsoDateStr`, the alias this file already uses for a date parameter: the runtime
         # type stays `str | None` so a malformed date is rejected inside `PeriodoQuery`,
@@ -1128,7 +1131,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         # would be a type error to a reader (and to mypy) that says nothing true about the
         # runtime.
         return dashboard_tools.get_commercial_dashboard(
-            context, PeriodoQuery.model_validate({"da": da, "a": a})
+            context, PeriodoQuery.model_validate({"da": da, "a": a, "azienda_id": azienda_id})
         )
 
     # Registered by Task C4, which created `get_economic_dashboard`, for the reason given
@@ -1140,7 +1143,9 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
-    def get_economic_dashboard(da: IsoDateStr = None, a: IsoDateStr = None) -> dict[str, Any]:
+    def get_economic_dashboard(
+        da: IsoDateStr = None, a: IsoDateStr = None, azienda_id: str | None = None
+    ) -> dict[str, Any]:
         """Il conto economico del periodo in una sola chiamata: ricavi, costi diretti, costo
         del lavoro e margine, in due colonne separate -- `chiusi` e `in_corso` -- che non
         vanno sommate fra loro, più le spese generali, il valore maturato non ancora
@@ -1148,10 +1153,11 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         non hanno periodo: una fattura di febbraio non pagata è dovuta anche guardando
         marzo. Ogni cifra è letta nello stesso istante, indicato da `calcolato_alle`. `da` e
         `a` sono date `YYYY-MM-DD` e vanno insieme: senza, il periodo è il mese corrente.
-        Non contiene nessuna stima fiscale.
+        Non contiene nessuna stima fiscale. `azienda_id` limita ogni cifra a un'azienda
+        dello spazio; senza, tutte sommate, con i costi condivisi.
         """
         return dashboard_tools.get_economic_dashboard(
-            context, PeriodoQuery.model_validate({"da": da, "a": a})
+            context, PeriodoQuery.model_validate({"da": da, "a": a, "azienda_id": azienda_id})
         )
 
     # Registered by Task C6, with the same reasoning. No parameters at all: §6's dashboard
@@ -1160,7 +1166,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
-    def get_receivables_dashboard() -> dict[str, Any]:
+    def get_receivables_dashboard(azienda_id: str | None = None) -> dict[str, Any]:
         """Lo scadenziario incassi: quando arrivano i soldi già fatturati. Le fatture emesse
         e non incassate in sei fasce per scadenza (scaduto, entro 30 giorni, 31-60, 61-90,
         oltre 90, senza scadenza) con importo e numero, la cui somma è `totale`, lo stesso
@@ -1168,21 +1174,24 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         per cliente con la quota già scaduta; le fatture scadute dalla più vecchia, con
         quanti solleciti sono partiti e quando l'ultimo. Nessun periodo: è ciò che è dovuto
         oggi. Non invia niente: per un sollecito c'è `list_payment_reminder_candidates`.
+        `azienda_id` limita tutto a un'azienda dello spazio; senza, tutte sommate.
         """
-        return dashboard_tools.get_receivables_dashboard(context)
+        return dashboard_tools.get_receivables_dashboard(context, parse_azienda_id(azienda_id))
 
     @mcp.tool()
     @guard
-    def get_operational_dashboard() -> dict[str, Any]:
+    def get_operational_dashboard(azienda_id: str | None = None) -> dict[str, Any]:
         """Che cosa c'è da fare adesso: le ore registrate giorno per giorno nella settimana
         corrente (compresi i giorni senza ore, che è il punto), l'arretrato da fatturare in
         totale, quattro segnali di incoerenza da sistemare -- fatturato ma non vinto, vinto
         ma da fatturare, scaduto e non incassato, concentrazione di un cliente sopra la
         quota preferita -- e le ultime attività. Non prende periodo: la settimana corrente
         e l'arretrato sono le due cose che nel passato non hanno senso. I segnali sono
-        conteggi: non inviano niente e non cambiano niente.
+        conteggi: non inviano niente e non cambiano niente. `azienda_id` limita ore,
+        arretrato e segnali a un'azienda dello spazio; senza, tutte insieme, e il segnale
+        di concentrazione conta i clienti sopra soglia in una qualsiasi di esse.
         """
-        return dashboard_tools.get_operational_dashboard(context)
+        return dashboard_tools.get_operational_dashboard(context, parse_azienda_id(azienda_id))
 
     # ---- documents ---------------------------------------------------------
     # The download of bytes never goes through MCP (spec 7): a tool returning a
@@ -1590,6 +1599,27 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         forfettario restano ai default. Solo un admin.
         """
         return invoices.update_fiscal_profile(context, dati, azienda_id)
+
+    @mcp.tool()
+    @guard
+    def create_azienda(dati: dict[str, Any], profilo_fiscale: dict[str, Any]) -> dict[str, Any]:
+        """Apre una seconda azienda nello spazio, con il suo profilo fiscale, in una sola
+        chiamata: da qui in poi i clienti si possono assegnare a lei, le sue fatture hanno
+        un registro proprio e i suoi documenti portano la sua intestazione. Non diventa la
+        predefinita, salvo che lo spazio non ne abbia ancora una. Solo un admin, e solo
+        dopo che la persona ha confermato i dati: una
+        volta emessa una fattura, un'azienda non si cancella piu', al massimo si disattiva.
+
+        `dati` ha la forma di `update_azienda` piu' `nome` obbligatorio (il nome breve
+        mostrato nel selettore e nelle liste: «humancraft», «rebase ltd»). `profilo_fiscale`
+        ha la forma di `update_fiscal_profile`: `pack_id` `it-flat-rate` con `codice_regime`
+        per un'azienda italiana, `non-it` per una con sede all'estero, che non ha regime,
+        non applica il bollo e, con aliquota IVA zero, richiede una `natura_default`. Un
+        profilo che le regole fiscali rifiutano fa rifiutare tutta la chiamata: nessuna
+        azienda nasce senza profilo. Un dato fiscale che non ti e' stato dato non si
+        inventa: chiedilo.
+        """
+        return invoices.create_azienda(context, dati, profilo_fiscale)
 
     @mcp.tool()
     @guard
@@ -2005,14 +2035,15 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
 
     @mcp.tool()
     @guard
-    def get_ceiling_headroom(anno: Anno) -> dict[str, Any]:
+    def get_ceiling_headroom(anno: Anno, azienda_id: str | None = None) -> dict[str, Any]:
         """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
         configurato, sui ricavi incassati e reali dell'anno (REB-352 §1.4): `residuo`
         è soglia meno ricavi, la cifra che l'audit di mastro segnalava come "calcolata
         da nessuna parte" finché REB-361 non ha aggiunto `evaluate_ceiling`. Nessun
         `admin` richiesto: è un ricavo, non la stima fiscale che protegge solo
-        `get_fiscal_estimate`."""
-        return timetracking.get_ceiling_headroom(context, anno)
+        `get_fiscal_estimate`. Di una sola azienda: senza `azienda_id` è l'unica dello
+        spazio, con più di una va indicata; un'azienda estera non ha soglie."""
+        return timetracking.get_ceiling_headroom(context, anno, parse_azienda_id(azienda_id))
 
     @mcp.tool()
     @guard
@@ -2021,11 +2052,13 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         ore_preventivate: OptionalFactor = None,
         valore_preventivato: OptionalFactor = None,
         tariffa_oraria: OptionalFactor = None,
+        azienda_id: str | None = None,
     ) -> dict[str, Any]:
         """Il simulatore "ci sta?" (REB-352 §1.4): aggiunge la stima di un deal non
         ancora vinto ai ricavi reali dell'anno e rivaluta ogni soglia attiva, senza
         salvare nulla. Serve `valore_preventivato`, oppure `ore_preventivate` insieme
-        a `tariffa_oraria` -- le stesse tre colonne che legge `get_budget_vs_actual`."""
+        a `tariffa_oraria` -- le stesse tre colonne che legge `get_budget_vs_actual`.
+        `azienda_id` come in `get_ceiling_headroom`: l'unica azienda, o quella indicata."""
         return timetracking.simulate_ceiling(
             context,
             anno,
@@ -2040,6 +2073,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 if tariffa_oraria is not None
                 else None,
             ),
+            parse_azienda_id(azienda_id),
         )
 
     # -- Attività e calendario (slice 10) -------------------------------------

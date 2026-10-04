@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { FiscalPanel } from './FiscalPanel'
@@ -190,5 +190,49 @@ describe('FiscalPanel', () => {
     ]
     expect(path).toBe('/api/analytics/fiscal')
     expect(options.params.query.anno).toBe(2025)
+  })
+})
+
+// -- one card per azienda in «tutte» (REB-632) --------------------------------------------
+
+function renderQuiet(aziendaId: string) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <FiscalPanel anno={2026} aziendaId={aziendaId} titolo="humancraft" quiet />
+    </QueryClientProvider>,
+  )
+}
+
+describe('FiscalPanel, quiet and by azienda', () => {
+  it('asks the estimate for the azienda it was given and names it in the heading', async () => {
+    vi.mocked(api.GET).mockReturnValue(ok(estimate()))
+    renderQuiet('a-1')
+    expect(
+      await screen.findByRole('heading', { name: 'Stima fiscale 2026 · humancraft' }),
+    ).toBeInTheDocument()
+    expect(api.GET).toHaveBeenCalledWith('/api/analytics/fiscal', {
+      params: { query: { anno: 2026, azienda_id: 'a-1' } },
+    })
+  })
+
+  it('renders nothing for an azienda with no profile or no coefficient', async () => {
+    vi.mocked(api.GET).mockReturnValue(failed({ code: 'not_found' }, 404))
+    const { container, unmount } = renderQuiet('a-2')
+    await waitFor(() => expect(api.GET).toHaveBeenCalled())
+    await waitFor(() => expect(container).toBeEmptyDOMElement())
+    unmount()
+
+    vi.mocked(api.GET).mockReturnValue(ok(estimate({ coefficiente_redditivita: null })))
+    const second = renderQuiet('a-3')
+    await waitFor(() => expect(api.GET).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(second.container).toBeEmptyDOMElement())
+    second.unmount()
+
+    // Any of the three: a card with one line «non calcolabile» is not an estimate.
+    vi.mocked(api.GET).mockReturnValue(ok(estimate({ aliquota_inps: null })))
+    const third = renderQuiet('a-4')
+    await waitFor(() => expect(api.GET).toHaveBeenCalledTimes(3))
+    await waitFor(() => expect(third.container).toBeEmptyDOMElement())
   })
 })

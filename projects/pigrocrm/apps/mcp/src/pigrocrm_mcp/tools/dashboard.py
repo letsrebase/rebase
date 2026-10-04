@@ -22,6 +22,7 @@ taxonomy.
 """
 
 from typing import Any
+from uuid import UUID
 
 from pigrocrm.core.dashboard.schemas import PeriodoQuery
 from pigrocrm.core.dashboard.service import DashboardService
@@ -51,7 +52,9 @@ def get_economic_dashboard(context: McpContext, query: PeriodoQuery) -> dict[str
     )
 
 
-def get_operational_dashboard(context: McpContext) -> dict[str, Any]:
+def get_operational_dashboard(
+    context: McpContext, azienda_id: UUID | None = None
+) -> dict[str, Any]:
     """No query object, because §6's dashboard takes no period: its figures are the current
     week and a backlog, which are the two things that make no sense in the past.
 
@@ -69,16 +72,19 @@ def get_operational_dashboard(context: McpContext) -> dict[str, Any]:
     """
     return (
         DashboardService(context.session)
-        .get_operational_dashboard(context.actor)
+        .get_operational_dashboard(context.actor, azienda_id)
         .model_dump(mode="json")
     )
 
 
-def get_receivables_dashboard(context: McpContext) -> dict[str, Any]:
+def get_receivables_dashboard(
+    context: McpContext, azienda_id: UUID | None = None
+) -> dict[str, Any]:
     """No period, like the operational one: a receivable is owed today whatever window the
-    reader has in mind (slice 8 §2, REB-329)."""
+    reader has in mind (slice 8 §2, REB-329). `azienda_id` narrows it to one azienda
+    (REB-631, spec 2026-10-03 §7), like the three tools beside it."""
     return (
         DashboardService(context.session)
-        .get_receivables_dashboard(context.actor)
+        .get_receivables_dashboard(context.actor, azienda_id)
         .model_dump(mode="json")
     )

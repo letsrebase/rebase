@@ -102,7 +102,10 @@ export const queryKeys = {
   // different periods is two different answers, and a key that dropped the dates would
   // serve January's report for December's.
   periodPnl: (params?: unknown) => ['period-pnl', params ?? {}] as const,
-  fiscalEstimate: (anno: number) => ['fiscal-estimate', anno] as const,
+  // The azienda is part of the key since REB-632: an estimate is one azienda's, and in
+  // «tutte» the economic tab holds one entry per azienda at once.
+  fiscalEstimate: (anno: number, aziendaId: string | null = null) =>
+    ['fiscal-estimate', anno, aziendaId] as const,
   // The term is part of the key so an in-flight response for "ross" cannot overwrite the
   // rendering of "rossi": TanStack Query discards the stale entry rather than the
   // component having to compare what came back with what was typed.

@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Numeric, and_, case, func, literal, select
+from sqlalchemy import ColumnElement, Numeric, and_, case, func, literal, select, true
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
@@ -17,6 +17,12 @@ from pigrocrm.core.money import percentage_of, round_money
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.timetracking.models import TimeEntry
 from pigrocrm.core.timetracking.repository import won_with_unbilled_hours_predicate
+
+
+def _azienda_filter(azienda_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
+    """One azienda's deals, or every azienda's (REB-630, spec 2026-10-03 §1.9): the
+    deal's own column, which a deal keeps when its customer moves (§1.7)."""
+    return () if azienda_id is None else (Deal.azienda_id == azienda_id,)
 
 
 class DealRepository:
@@ -107,7 +113,7 @@ class DealRepository:
             .limit(1)
         ).first()
 
-    def pipeline_summary(self) -> list[PipelineStageSummary]:
+    def pipeline_summary(self, azienda_id: UUID | None = None) -> list[PipelineStageSummary]:
         """Deals per stage: count, `Σ valore_previsto`, count without a value, and the
         weighted estimate.
 
@@ -162,7 +168,13 @@ class DealRepository:
             .select_from(PipelineStage)
             .outerjoin(
                 Deal,
-                (Deal.pipeline_stage_id == PipelineStage.id) & Deal.deleted_at.is_(None),
+                # The azienda goes in the join condition, never in a `where` (REB-630):
+                # a `where` on a column of the outer side turns the join inner, and a
+                # stage with none of this azienda's deals would vanish instead of
+                # reading zero, which is the one thing the outer join is here for.
+                (Deal.pipeline_stage_id == PipelineStage.id)
+                & Deal.deleted_at.is_(None)
+                & (true() if azienda_id is None else Deal.azienda_id == azienda_id),
             )
             .group_by(
                 PipelineStage.id,
@@ -188,7 +200,7 @@ class DealRepository:
             for row in self.session.execute(stmt).all()
         ]
 
-    def closed_in_period(self, da: date, a: date) -> ClosedInPeriod:
+    def closed_in_period(self, da: date, a: date, azienda_id: UUID | None = None) -> ClosedInPeriod:
         """Deals won and lost in the period, by `chiuso_il`.
 
         `chiuso_il` and not the timeline: `move_stage` records the stage *names*, which a
@@ -212,6 +224,7 @@ class DealRepository:
             .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
             .where(
                 Deal.deleted_at.is_(None),
+                *_azienda_filter(azienda_id),
                 Deal.chiuso_il.is_not(None),
                 Deal.chiuso_il >= da,
                 Deal.chiuso_il <= a,
@@ -231,7 +244,7 @@ class DealRepository:
             tasso_conversione=percentage_of(Decimal(vinti), Decimal(vinti + persi)),
         )
 
-    def expected_closures(self, da: date, a: date) -> int:
+    def expected_closures(self, da: date, a: date, azienda_id: UUID | None = None) -> int:
         """Open deals whose `data_chiusura_prevista` falls in the window.
 
         `tipo='open'` only: a deal already won with a future expected date is not an
@@ -243,6 +256,7 @@ class DealRepository:
                 .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
                 .where(
                     Deal.deleted_at.is_(None),
+                    *_azienda_filter(azienda_id),
                     PipelineStage.tipo == "open",
                     Deal.data_chiusura_prevista.is_not(None),
                     Deal.data_chiusura_prevista >= da,
@@ -252,7 +266,7 @@ class DealRepository:
             or 0
         )
 
-    def unattributable_closures(self) -> int:
+    def unattributable_closures(self, azienda_id: UUID | None = None) -> int:
         """Deals in a terminal stage with no `chiuso_il`.
 
         §4.1: `chiuso_il` is deliberately not backfilled, so every deal closed before
@@ -266,6 +280,7 @@ class DealRepository:
                 .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
                 .where(
                     Deal.deleted_at.is_(None),
+                    *_azienda_filter(azienda_id),
                     Deal.chiuso_il.is_(None),
                     PipelineStage.tipo.in_(("won", "lost")),
                 )

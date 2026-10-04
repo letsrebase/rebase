@@ -45,6 +45,22 @@ class AziendaRepository:
     def count(self) -> int:
         return self.session.scalar(select(func.count()).select_from(Azienda)) or 0
 
+    def count_customers(self, azienda_id: UUID) -> int:
+        """The live customers billed by `azienda_id`: what a deactivation answers with
+        (spec §3), since each of them refuses a new deal, document or proforma until it
+        is moved. Imported lazily for the reason `AziendaService._normalise_ids` gives:
+        the customer's model already imports this package for its column default."""
+        from pigrocrm.core.customers.models import Customer
+
+        return (
+            self.session.scalar(
+                select(func.count())
+                .select_from(Customer)
+                .where(Customer.azienda_id == azienda_id, Customer.deleted_at.is_(None))
+            )
+            or 0
+        )
+
     def add(self, azienda: Azienda) -> Azienda:
         # Flushes: this is what actually sends the `INSERT` to Postgres, where the
         # partial unique indexes (one default, one P.IVA, one codice fiscale) are the

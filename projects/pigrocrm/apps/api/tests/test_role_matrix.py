@@ -304,6 +304,17 @@ ROWS: list[Row] = [
     ),
     # --- the aziende and their fiscal profiles: admin (aziende/) ----------------------
     Row(
+        "POST",
+        "/api/aziende",
+        admin_only=True,
+        body={
+            "nome": "matrice",
+            "ragione_sociale": "Matrice Ltd",
+            "nazione": "GB",
+            "fiscal_profile": {"pack_id": "non-it", "aliquota_iva_default": "20.00"},
+        },
+    ),
+    Row(
         "PUT", "/api/aziende/{azienda_id}", admin_only=True, body={"ragione_sociale": "Matrice Srl"}
     ),
     Row("POST", "/api/aziende/{azienda_id}/predefinita", admin_only=True),

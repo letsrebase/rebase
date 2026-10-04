@@ -75,7 +75,7 @@ class FiscalProfileService:
         """
         actor.require_admin("update_fiscal_profile")
         payload = data.model_dump()
-        self._check(payload)
+        self.check(payload)
         azienda = self.aziende.resolve(azienda_id)
 
         profile = self.repo.get(azienda.id)
@@ -99,7 +99,11 @@ class FiscalProfileService:
         return FiscalProfileRead.model_validate(profile)
 
     @staticmethod
-    def _check(payload: dict[str, Any]) -> None:
+    def check(payload: dict[str, Any]) -> None:
+        """Every refusal a profile body can earn, on the dumped payload, before any row
+        is touched. Public since REB-630: `AziendaService.create` runs it on the
+        profile a new azienda is born with, so a bad profile refuses the whole request
+        rather than leaving an azienda `issue` could never use."""
         # `resolve_regime` does every check: the pack decides whether a code is
         # required (`it-flat-rate`) or forbidden (`non-it`, REB-619), then the
         # `RF01`-`RF19` shape, with `.fullmatch` so "RF19\n" cannot reach the String(4)

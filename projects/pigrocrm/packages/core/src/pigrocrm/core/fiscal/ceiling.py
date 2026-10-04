@@ -41,6 +41,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from uuid import UUID
 
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
@@ -60,16 +61,29 @@ from pigrocrm.core.money import ZERO_MONEY, round_money
 # package's repository is not a contract this module should depend on regardless).
 # Three comparisons cost nothing to rebuild -- the same reasoning `_revenue_filter`'s
 # own docstring gives for not sharing a module-level tuple either.
-def _issued_invoice_filter(anno: int) -> tuple[ColumnElement[bool], ...]:
+def _azienda_filter(azienda_id: UUID | None) -> tuple[ColumnElement[bool], ...]:
+    """One azienda's register, or every one (REB-630, spec 2026-10-03 §1.9). A ceiling
+    exists on one pack and a pack is one azienda's, so every caller on the service side
+    passes an id; `None` is kept for the arithmetic's own tests, which built their
+    corpus before the column existed and still describe one azienda."""
+    return () if azienda_id is None else (Invoice.azienda_id == azienda_id,)
+
+
+def _issued_invoice_filter(
+    anno: int, azienda_id: UUID | None = None
+) -> tuple[ColumnElement[bool], ...]:
     return (
         Invoice.anno == anno,
         Invoice.tipo == "fattura",
         Invoice.stato == "emessa",
         Invoice.deleted_at.is_(None),
+        *_azienda_filter(azienda_id),
     )
 
 
-def _paid_calendar_year_filter(anno: int) -> tuple[ColumnElement[bool], ...]:
+def _paid_calendar_year_filter(
+    anno: int, azienda_id: UUID | None = None
+) -> tuple[ColumnElement[bool], ...]:
     """`cash_received_calendar_year` (REB-344 §8): paid, by the year of `data_incasso`
     falling back to `data_emissione` when a paid invoice never recorded the exact
     collection date -- the identical fallback `AnalyticsRepository.monthly_incassato`
@@ -81,17 +95,21 @@ def _paid_calendar_year_filter(anno: int) -> tuple[ColumnElement[bool], ...]:
         Invoice.deleted_at.is_(None),
         Invoice.stato_pagamento == "incassato",
         func.extract("year", quando) == anno,
+        *_azienda_filter(azienda_id),
     )
 
 
-def paid_revenue_for_calendar_year(session: Session, anno: int) -> Decimal:
+def paid_revenue_for_calendar_year(
+    session: Session, anno: int, azienda_id: UUID | None = None
+) -> Decimal:
     """Sigma `Invoice.imponibile` of every invoice paid within `anno` -- the ceiling's
-    own basis, in full, rivalsa included (REB-352 §2)."""
+    own basis, in full, rivalsa included (REB-352 §2) -- of one azienda when named
+    (REB-630): a ceiling is a fact about one azienda's receipts, never the space's."""
     return round_money(
         Decimal(
             session.execute(
                 select(func.coalesce(func.sum(Invoice.imponibile), 0)).where(
-                    *_paid_calendar_year_filter(anno)
+                    *_paid_calendar_year_filter(anno, azienda_id)
                 )
             ).scalar_one()
         )
@@ -126,11 +144,14 @@ def evaluate_ceiling(ceiling: Ceiling, ricavi: Decimal) -> CeilingStatus:
     )
 
 
-def evaluate_pack(pack: FiscalPack, session: Session, anno: int) -> list[CeilingStatus]:
+def evaluate_pack(
+    pack: FiscalPack, session: Session, anno: int, azienda_id: UUID | None = None
+) -> list[CeilingStatus]:
     """Every ceiling `pack` declares, evaluated against `anno`'s paid revenue -- one
     query shared by every ceiling, since `IT_FLAT_RATE_PACK`'s own two share the same
-    `all_clients` perimeter and `cash_received_calendar_year` basis."""
-    ricavi = paid_revenue_for_calendar_year(session, anno)
+    `all_clients` perimeter and `cash_received_calendar_year` basis. `azienda_id` is
+    the azienda whose profile points at `pack` (REB-630)."""
+    ricavi = paid_revenue_for_calendar_year(session, anno, azienda_id)
     return [evaluate_ceiling(ceiling, ricavi) for ceiling in pack.ceilings]
 
 
@@ -160,7 +181,9 @@ def rivalsa_line_for_contract(
     )
 
 
-def excluded_from_coefficiente_base(pack: FiscalPack, session: Session, anno: int) -> Decimal:
+def excluded_from_coefficiente_base(
+    pack: FiscalPack, session: Session, anno: int, azienda_id: UUID | None = None
+) -> Decimal:
     """Sigma `InvoiceLine.prezzo_totale` of every line the pack tags as counting
     toward a ceiling but not toward the coefficiente base (REB-352 §2/§6) -- issued
     invoices of `anno`, the same universe `AnalyticsRepository.annual_revenue` sums,
@@ -176,14 +199,21 @@ def excluded_from_coefficiente_base(pack: FiscalPack, session: Session, anno: in
             session.execute(
                 select(func.coalesce(func.sum(InvoiceLine.prezzo_totale), 0))
                 .join(Invoice, InvoiceLine.invoice_id == Invoice.id)
-                .where(*_issued_invoice_filter(anno), InvoiceLine.descrizione.in_(marcatori))
+                .where(
+                    *_issued_invoice_filter(anno, azienda_id),
+                    InvoiceLine.descrizione.in_(marcatori),
+                )
             ).scalar_one()
         )
     )
 
 
 def taxable_ricavi(
-    pack: FiscalPack, session: Session, anno: int, ricavi_totali: Decimal
+    pack: FiscalPack,
+    session: Session,
+    anno: int,
+    ricavi_totali: Decimal,
+    azienda_id: UUID | None = None,
 ) -> Decimal:
     """`ricavi_totali` minus the pack's tagged, non-taxable statutory charges --
     REB-352 §6's resolved decision, applied. `ricavi_totali` is the caller's own
@@ -191,7 +221,7 @@ def taxable_ricavi(
     this function recomputes, so the ceiling's revenue sum and the coefficiente base
     can never read a different universe of invoices by accident -- they diverge by
     exactly the tagged amount, and by nothing else."""
-    return ricavi_totali - excluded_from_coefficiente_base(pack, session, anno)
+    return ricavi_totali - excluded_from_coefficiente_base(pack, session, anno, azienda_id)
 
 
 __all__ = [

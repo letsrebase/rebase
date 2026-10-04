@@ -11,14 +11,18 @@ whole surface -- is admin-only and refuses hours already on an *issued* invoice 
 still rewriting a draft.
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any
 
 import pytest
 from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from pigrocrm.core.clock import oggi_in_italia
+from pigrocrm.core.customers.models import Customer
+from pigrocrm.core.invoices.models import Invoice
 
 # Never a literal year: `_check_issue_date` refuses a `data_emissione` outside the
 # current year, so a hard-coded 2026 would be a suite that starts failing on the first
@@ -701,3 +705,104 @@ def test_the_openapi_document_describes_the_base_parameter_in_italian(
     assert set(params["base"]["schema"]["enum"]) == {"emissione", "competenza"}
     assert params["base"]["schema"]["default"] == "emissione"
     assert "competenza" in params["base"]["description"]
+
+
+# --- one azienda at a time for the taxes, every azienda for the cash (REB-631) ---------
+
+LTD = {
+    "nome": "rebase ltd",
+    "ragione_sociale": "Rebase Ltd",
+    "nazione": "GB",
+    "fiscal_profile": {"pack_id": "non-it", "aliquota_iva_default": "20.00"},
+}
+
+
+def _paid_invoice(session: Session, azienda_id: str, numero: int, importo: str) -> None:
+    """One paid invoice of `importo` on its own customer, written by row on the test's
+    session: enough to move every sum the routes below read, without the whole issue
+    flow, which is not what these tests are about."""
+    customer = Customer(ragione_sociale=f"Cliente {azienda_id[:8]} {numero}", nazione="IT")
+    customer.azienda_id = azienda_id  # type: ignore[assignment]
+    session.add(customer)
+    session.flush()
+    session.add(
+        Invoice(
+            customer_id=customer.id,
+            azienda_id=azienda_id,
+            tipo="fattura",
+            stato="emessa",
+            anno=ANNO,
+            numero=numero,
+            stato_pagamento="incassato",
+            data_emissione=date(ANNO, 2, 1),
+            data_incasso=date(ANNO, 2, 10),
+            imponibile=Decimal(importo),
+            imposta=Decimal("0.00"),
+            bollo=Decimal("0.00"),
+            totale=Decimal(importo),
+            custom_fields={},
+        )
+    )
+    session.flush()
+
+
+def test_the_fiscal_routes_resolve_alone_on_one_azienda_and_need_it_on_two(
+    logged_in: TestClient, fiscal_profile: dict[str, Any]
+) -> None:
+    """Spec §1.9, §8 «Dashboard»: with one azienda the three routes answer as they always
+    did; from the second on they refuse without `azienda_id`, naming it, and answer for
+    the one named. The refusal is this project's own 422, the shape `fieldErrorFrom`
+    reads, where the spec's prose wrote 400 (REB-630's note in §11)."""
+    default = logged_in.get("/api/aziende").json()[0]["id"]
+    alone = logged_in.get("/api/analytics/fiscal", params={"anno": ANNO})
+    assert alone.status_code == 200, alone.text
+    assert alone.json()["azienda_id"] == default
+
+    created = logged_in.post("/api/aziende", json=LTD)
+    assert created.status_code == 201, created.text
+    second = created.json()["id"]
+    simulate = {"anno": ANNO, "valore_preventivato": "100.00"}
+    for path, params in (
+        ("/api/analytics/fiscal", {"anno": ANNO}),
+        ("/api/analytics/ceilings", {"anno": ANNO}),
+        ("/api/analytics/ceilings/simulate", simulate),
+    ):
+        refused = logged_in.get(path, params=params)
+        assert refused.status_code == 422, (path, refused.text)
+        assert refused.json()["field"] == "azienda_id", path
+        named = logged_in.get(path, params={**params, "azienda_id": default})
+        assert named.status_code == 200, (path, named.text)
+        assert named.json()["azienda_id"] == default
+    # The foreign azienda has a profile but no ceilings, and no forfettario estimate.
+    estero = logged_in.get("/api/analytics/ceilings", params={"anno": ANNO, "azienda_id": second})
+    assert estero.status_code == 200, estero.text
+    assert (estero.json()["pack_id"], estero.json()["soglie"]) == ("non-it", [])
+
+
+def test_the_overview_in_tutte_sums_the_aziende_and_keeps_no_estimate(
+    logged_in: TestClient, api_session: Session, fiscal_profile: dict[str, Any]
+) -> None:
+    default = logged_in.get("/api/aziende").json()[0]["id"]
+    second = logged_in.post("/api/aziende", json=LTD).json()["id"]
+    _paid_invoice(api_session, default, 1, "1000.00")
+    _paid_invoice(api_session, second, 1, "5000.00")
+
+    def overview(**params: Any) -> dict[str, Any]:
+        response = logged_in.get("/api/analytics/overview", params={"anno": ANNO, **params})
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    tutte = overview()
+    studio = overview(azienda_id=default)
+    estero = overview(azienda_id=second)
+    assert (studio["cassa"]["incassato"], estero["cassa"]["incassato"]) == ("1000.00", "5000.00")
+    assert tutte["cassa"]["incassato"] == "6000.00"
+    assert (tutte["azienda_id"], studio["azienda_id"]) == (None, default)
+    # Two aziende, no estimate in «tutte»: the page asks `/fiscal` per azienda instead.
+    assert tutte["fiscale"] is None
+    assert studio["fiscale"] is not None and studio["fiscale"]["ricavi"] == "1000.00"
+    assert {row["azienda_id"] for row in tutte["concentrazione_clienti"]} == {default, second}
+    assert all(row["quota"] == 1.0 for row in tutte["concentrazione_clienti"])
+    pnl = logged_in.get("/api/analytics/pnl", params={**PERIODO, "azienda_id": second})
+    assert pnl.status_code == 200, pnl.text
+    assert pnl.json()["azienda_id"] == second

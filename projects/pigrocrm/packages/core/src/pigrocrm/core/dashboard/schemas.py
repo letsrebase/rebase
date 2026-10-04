@@ -49,6 +49,9 @@ class PeriodoQuery(BaseModel):
 
     da: date | None = None
     a: date | None = None
+    # One azienda's figures, or every azienda's added up (REB-630, spec 2026-10-03
+    # §1.9): the sidebar's selection, which the SPA sends and «tutte» leaves out.
+    azienda_id: UUID | None = None
 
     def resolve(self) -> Periodo:
         """The normalised period, or a named `ValidationFailed`.
@@ -147,6 +150,8 @@ class CommercialDashboard(BaseModel):
 
     periodo: Periodo
     calcolato_alle: datetime
+    # Echoed from the query (REB-630): `None` is every azienda, which «tutte» shows.
+    azienda_id: UUID | None = None
     pipeline: list[PipelineStageSummary]
     chiusure: ClosedInPeriod
     offerte_in_attesa: list[PendingOffer]
@@ -182,6 +187,7 @@ class EconomicDashboard(BaseModel):
 
     periodo: Periodo
     calcolato_alle: datetime
+    azienda_id: UUID | None = None
     pnl: PeriodPnl
     # No period: an invoice issued in February and still unpaid is still owed in March.
     da_incassare: Decimal = Field(max_digits=12, decimal_places=2)
@@ -270,6 +276,7 @@ class OperationalDashboard(BaseModel):
     """
 
     calcolato_alle: datetime
+    azienda_id: UUID | None = None
     settimana: WeekHours
     arretrato: UnbilledBacklog
     segnali: list[Signal]
@@ -347,6 +354,7 @@ class ReceivablesDashboard(BaseModel):
 
     calcolato_alle: datetime
     oggi: date
+    azienda_id: UUID | None = None
     totale: Decimal = Field(max_digits=12, decimal_places=2)
     fasce: list[FasciaScadenza]
     per_mese: list[CassaAttesaMese]

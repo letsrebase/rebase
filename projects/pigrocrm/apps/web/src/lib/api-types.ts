@@ -2025,7 +2025,9 @@ export interface paths {
          * @description The dashboard's economic tab: the year as cash for everyone, plus the fiscal
          *     estimate on collected and projected revenue for an admin with a profile. No MCP
          *     tool, for the estimate's own reasons. `base` moves the charts and the cash cards
-         *     between the two readings (ORB-133); the fiscal block stays on the money.
+         *     between the two readings (ORB-133); the fiscal block stays on the money. In «tutte»
+         *     on a space with several aziende the fiscal block is empty and the page asks
+         *     `/fiscal` once per azienda (REB-630).
          */
         get: operations["economic_overview_api_analytics_overview_get"];
         put?: never;
@@ -2142,7 +2144,14 @@ export interface paths {
          */
         get: operations["list_aziende_api_aziende_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Azienda
+         * @description A second azienda, with its fiscal profile, in one transaction (REB-631, spec
+         *     2026-10-03 §3): active, not the default, and the first of a space when it had
+         *     none. A profile the fiscal rules would refuse refuses the whole request, so no
+         *     azienda exists that could not issue.
+         */
+        post: operations["create_azienda_api_aziende_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2191,7 +2200,9 @@ export interface paths {
         /**
          * Deactivate Azienda
          * @description Deactivation, never a row delete: an azienda that issued an invoice stays
-         *     readable forever. Refused on the default; move the default first.
+         *     readable forever. Refused on the default; move the default first. The answer says
+         *     how many customers still point at the row (`clienti_collegati`): nothing new is
+         *     born under them until they are moved to an active azienda.
          */
         delete: operations["deactivate_azienda_api_aziende__azienda_id__delete"];
         options?: never;
@@ -3711,6 +3722,122 @@ export interface components {
             /** Esecuzioni */
             esecuzioni: components["schemas"]["AutomationRun"][];
         };
+        /**
+         * AziendaCreate
+         * @description A second azienda, born with its fiscal profile (spec 2026-10-03 §1.2, §3, §9
+         *     milestone 5): the upsert's fields, a required short name, and the profile body
+         *     `PUT /api/aziende/{id}/fiscal-profile` takes. One request, one transaction, so no
+         *     azienda ever exists that `issue` would refuse with `NotFound("fiscal_profile")`.
+         *
+         *     `nome` is required here where `AziendaUpsert` derives it: the first azienda of a
+         *     space was never named, but the second is created to be told apart from the first,
+         *     in the sidebar and on every list, and a derived name is a ragione sociale cut to
+         *     eighty characters.
+         */
+        AziendaCreate: {
+            /** Nome */
+            nome: string;
+            /** Ragione Sociale */
+            ragione_sociale: string;
+            /** Partita Iva */
+            partita_iva?: string | null;
+            /** Codice Fiscale */
+            codice_fiscale?: string | null;
+            /** Indirizzo */
+            indirizzo?: string | null;
+            /** Cap */
+            cap?: string | null;
+            /** Comune */
+            comune?: string | null;
+            /** Provincia */
+            provincia?: string | null;
+            /**
+             * Nazione
+             * @default IT
+             */
+            nazione: string;
+            /** Pec */
+            pec?: string | null;
+            /** Codice Sdi */
+            codice_sdi?: string | null;
+            /** Telefono */
+            telefono?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Sito Web */
+            sito_web?: string | null;
+            /** Firma Email */
+            firma_email?: string | null;
+            /** Regime Fiscale */
+            regime_fiscale?: string | null;
+            fiscal_profile: components["schemas"]["FiscalProfileUpsert"];
+        };
+        /**
+         * AziendaDeactivated
+         * @description What `DELETE /api/aziende/{id}` answers (spec §3): the row, switched off, and
+         *     how many live customers still point at it. Nothing new is born under such a
+         *     customer until it is moved («sposta prima il cliente su un'azienda attiva»), so the
+         *     count is the work the person has left to do, said once, in the same answer.
+         */
+        AziendaDeactivated: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Nome */
+            nome: string;
+            /** Predefinita */
+            predefinita: boolean;
+            /** Attiva */
+            attiva: boolean;
+            /** Ragione Sociale */
+            ragione_sociale: string;
+            /** Partita Iva */
+            partita_iva: string | null;
+            /** Codice Fiscale */
+            codice_fiscale: string | null;
+            /** Indirizzo */
+            indirizzo: string | null;
+            /** Cap */
+            cap: string | null;
+            /** Comune */
+            comune: string | null;
+            /** Provincia */
+            provincia: string | null;
+            /** Nazione */
+            nazione: string;
+            /** Pec */
+            pec: string | null;
+            /** Codice Sdi */
+            codice_sdi: string | null;
+            /** Telefono */
+            telefono: string | null;
+            /** Email */
+            email: string | null;
+            /** Sito Web */
+            sito_web: string | null;
+            /** Logo Key */
+            logo_key: string | null;
+            /** Firma Key */
+            firma_key: string | null;
+            /** Firma Email */
+            firma_email: string | null;
+            /** Regime Fiscale */
+            regime_fiscale: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** Clienti Collegati */
+            clienti_collegati: number;
+        };
         /** AziendaRead */
         AziendaRead: {
             /**
@@ -4026,6 +4153,8 @@ export interface components {
              * @enum {string}
              */
             base: "competenza" | "incasso";
+            /** Azienda Id */
+            azienda_id?: string | null;
             /** Incassato */
             incassato: string;
             /** Da Incassare */
@@ -4070,6 +4199,11 @@ export interface components {
         CeilingHeadroom: {
             /** Anno */
             anno: number;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
             /** Pack Id */
             pack_id: string;
             /** Pack Version */
@@ -4081,6 +4215,11 @@ export interface components {
         CeilingSimulation: {
             /** Anno */
             anno: number;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
             /** Pack Id */
             pack_id: string;
             /** Pack Version */
@@ -4177,6 +4316,8 @@ export interface components {
              * Format: date-time
              */
             calcolato_alle: string;
+            /** Azienda Id */
+            azienda_id?: string | null;
             /** Pipeline */
             pipeline: components["schemas"]["PipelineStageSummary"][];
             chiusure: components["schemas"]["ClosedInPeriod"];
@@ -5516,6 +5657,8 @@ export interface components {
              * Format: date-time
              */
             calcolato_alle: string;
+            /** Azienda Id */
+            azienda_id?: string | null;
             pnl: components["schemas"]["PeriodPnl"];
             /** Da Incassare */
             da_incassare: string;
@@ -5537,6 +5680,8 @@ export interface components {
              * Format: date-time
              */
             calcolato_alle: string;
+            /** Azienda Id */
+            azienda_id?: string | null;
             cassa: components["schemas"]["CashOverview"];
             fiscale: components["schemas"]["FiscalEstimate"] | null;
             fiscale_proiettato: components["schemas"]["FiscalEstimate"] | null;
@@ -6009,6 +6154,11 @@ export interface components {
         FiscalEstimate: {
             /** Anno */
             anno: number;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
             /**
              * Stima
              * @default true
@@ -7097,6 +7247,8 @@ export interface components {
              * Format: date-time
              */
             calcolato_alle: string;
+            /** Azienda Id */
+            azienda_id?: string | null;
             settimana: components["schemas"]["WeekHours"];
             arretrato: components["schemas"]["UnbilledBacklog"];
             /** Segnali */
@@ -7490,6 +7642,8 @@ export interface components {
              * @enum {string}
              */
             base: "emissione" | "competenza";
+            /** Azienda Id */
+            azienda_id?: string | null;
             chiusi: components["schemas"]["PnlTotals"];
             in_corso: components["schemas"]["PnlTotals"];
             /** Spese Generali */
@@ -8020,6 +8174,8 @@ export interface components {
              * Format: date
              */
             oggi: string;
+            /** Azienda Id */
+            azienda_id?: string | null;
             /** Totale */
             totale: string;
             /** Fasce */
@@ -8212,6 +8368,11 @@ export interface components {
             fatture: number;
             /** Quota */
             quota: number;
+            /**
+             * Azienda Id
+             * Format: uuid
+             */
+            azienda_id: string;
         };
         /**
          * ReviewedInvoiceRead
@@ -25698,6 +25859,8 @@ export interface operations {
                 /** @description Fine del periodo, YYYY-MM-DD */
                 to: string;
                 customer_id?: string | null;
+                /** @description Limita le cifre a un'azienda dello spazio; omesso, tutte le aziende sommate. La risposta lo riporta in `azienda_id`. */
+                azienda_id?: string | null;
                 /** @description Quale data colloca il ricavo di una fattura nel periodo: 'emissione' (la data del documento, predefinita) oppure 'competenza' (il periodo di competenza dichiarato sulla fattura, con la data di emissione per chi non lo dichiara). Costi e ore restano attribuiti alla propria data. */
                 base?: "emissione" | "competenza";
             };
@@ -25944,6 +26107,8 @@ export interface operations {
         parameters: {
             query: {
                 anno: number;
+                /** @description Limita le cifre a un'azienda dello spazio; omesso, tutte le aziende sommate. La risposta lo riporta in `azienda_id`. */
+                azienda_id?: string | null;
                 /** @description In quale mese cade il denaro di ogni documento: 'competenza' (il periodo di competenza dichiarato sulla fattura o sulla proforma, con la data del documento per chi non lo dichiara; predefinito) oppure 'incasso' (la data di incasso per le fatture pagate, la scadenza per quelle da incassare, la data del documento, o di creazione, per bozze e proforma). La stima fiscale resta sempre sull'incassato dell'anno. */
                 base?: "competenza" | "incasso";
             };
@@ -26065,6 +26230,8 @@ export interface operations {
         parameters: {
             query: {
                 anno: number;
+                /** @description L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una (una risposta 422 nomina `azienda_id`), altrimenti è l'unica e si può omettere. */
+                azienda_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -26301,6 +26468,8 @@ export interface operations {
         parameters: {
             query: {
                 anno: number;
+                /** @description L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una (una risposta 422 nomina `azienda_id`), altrimenti è l'unica e si può omettere. */
+                azienda_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -26423,6 +26592,8 @@ export interface operations {
                 ore_preventivate?: number | string | null;
                 valore_preventivato?: number | string | null;
                 tariffa_oraria?: number | string | null;
+                /** @description L'azienda per cui calcolare: obbligatoria quando lo spazio ne ha più di una (una risposta 422 nomina `azienda_id`), altrimenti è l'unica e si può omettere. */
+                azienda_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -26556,6 +26727,127 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AziendaRead"][];
+                };
+            };
+            /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La risorsa richiesta non esiste o è stata rimossa. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description La richiesta è in conflitto con lo stato attuale della risorsa. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Una regola di dominio non è stata rispettata (application/problem+json), oppure il corpo, i parametri o il path della richiesta non hanno la forma attesa e non hanno mai raggiunto l'endpoint (application/json). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": {
+                        /** Type */
+                        type: string;
+                        /** Title */
+                        title: string;
+                        /** Status */
+                        status: number;
+                        /** Detail */
+                        detail: string;
+                        /** Code */
+                        code: string;
+                        /** Instance */
+                        instance: string;
+                    } & {
+                        [key: string]: unknown;
+                    };
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_azienda_api_aziende_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AziendaCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AziendaRead"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -27036,7 +27328,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AziendaRead"];
+                    "application/json": components["schemas"]["AziendaDeactivated"];
                 };
             };
             /** @description Permesso negato: l'actor non ha il ruolo richiesto. */
@@ -30972,6 +31264,8 @@ export interface operations {
             query?: {
                 da?: string | null;
                 a?: string | null;
+                /** @description Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le aziende sommate. La risposta lo riporta in `azienda_id`. */
+                azienda_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -31092,6 +31386,8 @@ export interface operations {
             query?: {
                 da?: string | null;
                 a?: string | null;
+                /** @description Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le aziende sommate. La risposta lo riporta in `azienda_id`. */
+                azienda_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -31209,7 +31505,10 @@ export interface operations {
     };
     operativa_api_dashboard_operational_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le aziende sommate. La risposta lo riporta in `azienda_id`. */
+                azienda_id?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -31326,7 +31625,10 @@ export interface operations {
     };
     scadenziario_api_dashboard_receivables_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Limita ogni cifra a un'azienda dello spazio; omesso, le cifre di tutte le aziende sommate. La risposta lo riporta in `azienda_id`. */
+                azienda_id?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;

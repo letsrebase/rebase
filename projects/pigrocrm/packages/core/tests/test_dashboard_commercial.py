@@ -258,7 +258,9 @@ def test_every_figure_comes_from_one_instant(
     """
     original = DealRepository.closed_in_period
 
-    def intruding(self: DealRepository, da: date, a: date) -> object:
+    def intruding(
+        self: DealRepository, da: date, a: date, azienda_id: UUID | None = None
+    ) -> object:
         with session_factory(seeded.engine)() as outside:
             outside.add(
                 Deal(
@@ -272,7 +274,7 @@ def test_every_figure_comes_from_one_instant(
                 )
             )
             outside.commit()
-        return original(self, da, a)
+        return original(self, da, a, azienda_id)
 
     monkeypatch.setattr(DealRepository, "closed_in_period", intruding)
     da, a = _this_month()

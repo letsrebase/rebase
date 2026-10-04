@@ -516,8 +516,11 @@ def register(
 
     @mcp.tool()
     @guard
-    def get_fiscal_estimate(anno: int) -> dict[str, Any]:
-        """La stima delle imposte dell'anno, dai parametri del profilo fiscale.
+    def get_fiscal_estimate(anno: int, azienda_id: str | None = None) -> dict[str, Any]:
+        """La stima delle imposte dell'anno di un'azienda, dai parametri del suo profilo
+        fiscale. Senza `azienda_id` è l'unica azienda dello spazio; quando ce n'è più di
+        una va indicata, perché i coefficienti di un forfettario e i conti di una SRL non
+        si sommano.
 
         **È una stima, non una dichiarazione**: non tiene conto di acconti, altri
         redditi, deduzioni o detrazioni, e non sostituisce il commercialista. Presentala
@@ -529,7 +532,7 @@ def register(
             # is the adapter's answer, and a call site that omits it is one refactor away
             # from resolving a second one from the environment (see `bind_time_to_invoice`).
             AnalyticsService(context.session, context.storage)
-            .get_fiscal_estimate(anno, context.actor)
+            .get_fiscal_estimate(anno, context.actor, azienda_id=parse_azienda_id(azienda_id))
             .model_dump(mode="json")
         )
 

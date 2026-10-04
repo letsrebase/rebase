@@ -91,7 +91,7 @@ class TimeEntryRepository:
         da, a = month_bounds(anno, mese)
         return self.in_range(deal_id, da, a)
 
-    def week_hours(self, da: date, a: date) -> WeekHours:
+    def week_hours(self, da: date, a: date, azienda_id: UUID | None = None) -> WeekHours:
         """`SUM(ore) GROUP BY data` over the window, filled out to **every** day in it.
 
         Assembled here rather than in the dashboard for two reasons that agree: it is a
@@ -122,7 +122,7 @@ class TimeEntryRepository:
         where `Decimal.quantize` would default to half-even, and a second copy here is how
         two totals of the same hours begin to disagree.
         """
-        rows = self.session.execute(
+        stmt = (
             select(TimeEntry.data, func.sum(TimeEntry.ore))
             .where(
                 TimeEntry.deleted_at.is_(None),
@@ -130,7 +130,14 @@ class TimeEntryRepository:
                 TimeEntry.data <= a,
             )
             .group_by(TimeEntry.data)
-        ).all()
+        )
+        if azienda_id is not None:
+            # An entry's azienda is its deal's (REB-623, REB-630): the same subquery
+            # `list` below uses, so the week and the filtered list agree on the rows.
+            stmt = stmt.where(
+                TimeEntry.deal_id.in_(select(Deal.id).where(Deal.azienda_id == azienda_id))
+            )
+        rows = self.session.execute(stmt).all()
         # `func.sum` over a group is never null -- a group exists because it has at least
         # one row -- so there is no `coalesce` here. The `or ZERO_HOURS` that would look
         # prudent would instead hide a column becoming nullable.
@@ -153,7 +160,7 @@ class TimeEntryRepository:
             ore_totali=sum_hours([row.ore for row in giorni]),
         )
 
-    def count_won_deals_to_invoice(self) -> int:
+    def count_won_deals_to_invoice(self, azienda_id: UUID | None = None) -> int:
         """§6.2's third signal: deals in a `won` stage with billable, unbilled hours.
 
         The `da fatturare` state slice 4 §7.3 already defines, counted here rather than
@@ -173,7 +180,10 @@ class TimeEntryRepository:
                 .select_from(TimeEntry)
                 .join(Deal, Deal.id == TimeEntry.deal_id)
                 .join(PipelineStage, PipelineStage.id == Deal.pipeline_stage_id)
-                .where(*won_with_unbilled_hours_predicate())
+                .where(
+                    *won_with_unbilled_hours_predicate(),
+                    *(() if azienda_id is None else (Deal.azienda_id == azienda_id,)),
+                )
             ).scalar_one()
         )
 

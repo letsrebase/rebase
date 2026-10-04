@@ -23,6 +23,7 @@ from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -50,6 +51,7 @@ _PREFIX = "APIDASH"
 EXPECTED_KEYS = {
     "periodo",
     "calcolato_alle",
+    "azienda_id",
     "pipeline",
     "chiusure",
     "offerte_in_attesa",
@@ -59,13 +61,29 @@ EXPECTED_KEYS = {
     "offerte_accettate_deal_non_vinto",
 }
 
-ECONOMIC_KEYS = {"periodo", "calcolato_alle", "pnl", "da_incassare", "scaduto", "fatture_emesse"}
+ECONOMIC_KEYS = {
+    "periodo",
+    "calcolato_alle",
+    "azienda_id",
+    "pnl",
+    "da_incassare",
+    "scaduto",
+    "fatture_emesse",
+}
 
-OPERATIONAL_KEYS = {"calcolato_alle", "settimana", "arretrato", "segnali", "attivita_recenti"}
+OPERATIONAL_KEYS = {
+    "calcolato_alle",
+    "azienda_id",
+    "settimana",
+    "arretrato",
+    "segnali",
+    "attivita_recenti",
+}
 
 RECEIVABLES_KEYS = {
     "calcolato_alle",
     "oggi",
+    "azienda_id",
     "totale",
     "fasce",
     "per_mese",
@@ -427,7 +445,8 @@ def test_the_operational_dashboard_takes_no_period(
     """
     schema = logged_in.get("/openapi.json").json()
     params = schema["paths"]["/api/dashboard/operational"]["get"].get("parameters", [])
-    assert [p["name"] for p in params] == []
+    # The azienda is a scope, not a period (REB-631): the one parameter it does take.
+    assert [p["name"] for p in params] == ["azienda_id"]
 
     response = logged_in.get("/api/dashboard/operational")
     assert response.status_code == 200, response.text
@@ -630,7 +649,7 @@ def test_the_receivables_dashboard_takes_no_period_and_adds_up(
     buckets are distinguishable from each other and from an empty register."""
     schema = logged_in.get("/openapi.json").json()
     params = schema["paths"]["/api/dashboard/receivables"]["get"].get("parameters", [])
-    assert [p["name"] for p in params] == []
+    assert [p["name"] for p in params] == ["azienda_id"]
 
     response = logged_in.get("/api/dashboard/receivables")
     assert response.status_code == 200, response.text
@@ -771,3 +790,42 @@ def test_the_runs_limit_is_bounded(logged_in: TestClient) -> None:
     a full table scan requested from a query string."""
     assert logged_in.get("/api/automation-runs", params={"limit": 500}).status_code == 422
     assert logged_in.get("/api/automation-runs", params={"limit": 0}).status_code == 422
+
+
+# --- the sidebar's azienda, as one more predicate (REB-631, spec 2026-10-03 §1.9) --------
+
+
+@pytest.mark.parametrize("path", ["sales", "economic", "operational", "receivables"])
+def test_every_dashboard_takes_the_azienda_and_echoes_it(
+    logged_in: TestClient, dashboard_corpus: Engine, path: str
+) -> None:
+    """The arithmetic is proven in `packages/core/tests/test_dashboard_per_azienda.py`;
+    this is the wire: the parameter exists on all four, it is echoed back (`null` for
+    «tutte»), and under an azienda that owns nothing every figure the corpus put on
+    the page reads empty, while the page keeps its shape."""
+    schema = logged_in.get("/openapi.json").json()
+    declared = {p["name"] for p in schema["paths"][f"/api/dashboard/{path}"]["get"]["parameters"]}
+    assert "azienda_id" in declared
+
+    tutte = logged_in.get(f"/api/dashboard/{path}")
+    assert tutte.status_code == 200, tutte.text
+    assert tutte.json()["azienda_id"] is None
+
+    nobody = str(uuid4())
+    scoped = logged_in.get(f"/api/dashboard/{path}", params={"azienda_id": nobody})
+    assert scoped.status_code == 200, scoped.text
+    body = scoped.json()
+    assert body["azienda_id"] == nobody
+    if path == "sales":
+        assert body["pipeline"], "every stage is still a row, at zero"
+        assert all(row["numero"] == 0 for row in body["pipeline"])
+        assert body["chiusure"]["vinti"] == 0
+        assert body["offerte_in_attesa"] == []
+    elif path == "economic":
+        assert (body["da_incassare"], body["scaduto"]) == ("0.00", "0.00")
+    elif path == "operational":
+        assert body["settimana"]["ore_totali"] == "0.00"
+        assert all(s["conteggio"] == 0 for s in body["segnali"])
+    else:
+        assert body["totale"] == "0.00"
+        assert body["scadute"] == []
