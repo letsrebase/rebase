@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
-from pigrocrm.core.customers.schemas import CustomerCreate
+from pigrocrm.core.customers.schemas import CustomerCreate, CustomerUpdate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.deals.schemas import DealCreate
 from pigrocrm.core.deals.service import DealService
@@ -28,6 +28,7 @@ from pigrocrm.core.emitter.repository import AziendaRepository
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.gmail.drafts import EmailDraftService
+from pigrocrm.core.gmail.models import EmailDraft, PaymentReminder
 from pigrocrm.core.gmail.repository import GmailRepository
 from pigrocrm.core.gmail.solleciti import SollecitiService
 from pigrocrm.core.invoices import pdf as invoice_pdf
@@ -236,3 +237,49 @@ def test_a_reminder_signs_as_the_invoice_s_azienda_and_names_its_iban(db_session
     )
     assert solleciti._iban(second.id) == "IT60X0542811101000000654321"
     assert solleciti._iban(default.id) == "IT60X0542811101000000123456"
+
+
+def test_a_reminder_s_draft_speaks_for_the_invoice_s_azienda_even_after_the_customer_moved(
+    db_session: Session, local_storage: LocalFileStorage
+) -> None:
+    """The body and the IBAN of a reminder are the invoice's azienda's; so are the `From`
+    name and the Message-ID domain of the draft that carries it, although the draft is
+    filed under the customer, who may since have moved (Greptile, PR #510)."""
+    default = _default(db_session)
+    second = _second(db_session)
+    _fiscal(db_session, default.id, "IT60X0542811101000000123456")
+    customer_id = _customer_of(db_session, default.id)
+    invoice = InvoiceService(db_session, local_storage, SETTINGS).create(
+        InvoiceCreate(
+            customer_id=customer_id,
+            righe=[InvoiceLineIn(descrizione="Consulenza", prezzo_unitario=Decimal("1.00"))],
+        ),
+        ADMIN,
+    )
+    assert invoice.azienda_id == default.id
+    CustomerService(db_session).update(customer_id, CustomerUpdate(azienda_id=second.id), ADMIN)
+
+    reminder = PaymentReminder(invoice_id=invoice.id, sequence=1)
+    db_session.add(reminder)
+    db_session.flush()
+    draft = EmailDraft(
+        entity_type="customer",
+        entity_id=customer_id,
+        subject="Sollecito",
+        body_markdown="…",
+        message_id_header="<x@rebase.example>",
+        send_state="bozza",
+        payment_reminder_id=reminder.id,
+    )
+    db_session.add(draft)
+    db_session.flush()
+    repo = GmailRepository(db_session)
+    # The customer is azienda B's now; the reminder still signs as A, who issued.
+    assert repo.azienda_for("customer", customer_id).id == second.id  # type: ignore[union-attr]
+    assert repo.azienda_for_draft(draft).id == default.id  # type: ignore[union-attr]
+    # And the Message-ID domain the reminder's draft is minted with is A's site.
+    default.sito_web = "https://studio.example"
+    db_session.flush()
+    drafts = EmailDraftService(db_session, settings=SETTINGS)
+    assert drafts._domain("customer", customer_id, default.id) == "studio.example"
+    assert drafts._domain("customer", customer_id) == "rebase.example"

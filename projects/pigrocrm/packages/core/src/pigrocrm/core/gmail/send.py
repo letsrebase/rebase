@@ -543,7 +543,7 @@ class EmailSendService:
         freelancer's name in its source. An installation that has not filled the issuer
         in sends from a bare address, which is honest.
         """
-        profile = self.repo.azienda_for(draft.entity_type, draft.entity_id)
+        profile = self.repo.azienda_for_draft(draft)
         return profile.ragione_sociale if profile else ""
 
     def _finish(

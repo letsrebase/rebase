@@ -310,6 +310,8 @@ class SollecitiService:
                 in_reply_to_message_id=self._thread_of(invoice, actor),
             ),
             actor,
+            # The invoice's azienda, which the body and the IBAN already speak for.
+            azienda_id=invoice.azienda_id,
         )
 
         # Both directions of the link. The reminder needs the draft so the caller can send

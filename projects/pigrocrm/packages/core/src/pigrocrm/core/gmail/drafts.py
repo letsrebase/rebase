@@ -34,6 +34,7 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import DocumentVersion
+from pigrocrm.core.emitter.models import Azienda
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.attach import describe_attachments
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage
@@ -117,7 +118,7 @@ class EmailDraftService:
 
     # ---- the pieces the write paths share ------------------------------------------
 
-    def _domain(self, entity_type: str, entity_id: UUID) -> str:
+    def _domain(self, entity_type: str, entity_id: UUID, azienda_id: UUID | None = None) -> str:
         """The right-hand side of the `Message-ID`, from the installation's own identity.
 
         `public_url` first, because that is the origin this CRM answers on and the one
@@ -127,14 +128,21 @@ class EmailDraftService:
         recognise. `localhost.invalid` last, and it is a deliberate admission rather
         than a default that looks plausible.
         """
-        for candidate in (self.settings.public_url, self._emitter_site(entity_type, entity_id)):
+        site = self._emitter_site(entity_type, entity_id, azienda_id)
+        for candidate in (self.settings.public_url, site):
             host = urlparse(candidate).hostname if "//" in candidate else candidate.strip()
             if host and "." in host:
                 return host.lower()
         return _FALLBACK_DOMAIN
 
-    def _emitter_site(self, entity_type: str, entity_id: UUID) -> str:
-        azienda = self.repo.azienda_for(entity_type, entity_id)
+    def _emitter_site(
+        self, entity_type: str, entity_id: UUID, azienda_id: UUID | None = None
+    ) -> str:
+        azienda = (
+            self.session.get(Azienda, azienda_id)
+            if azienda_id is not None
+            else self.repo.azienda_for(entity_type, entity_id)
+        )
         return (azienda.sito_web if azienda is not None else None) or ""
 
     def _get(self, draft_id: UUID) -> EmailDraft:
@@ -185,7 +193,12 @@ class EmailDraftService:
 
     # ---- the surface ----------------------------------------------------------------
 
-    def create(self, data: EmailDraftCreate, actor: Actor) -> EmailDraftRead:
+    def create(
+        self, data: EmailDraftCreate, actor: Actor, *, azienda_id: UUID | None = None
+    ) -> EmailDraftRead:
+        """`azienda_id` names the azienda the draft speaks for when it is not the
+        record's own: a payment reminder is filed under the customer but signs as the
+        invoice's azienda, and its Message-ID domain follows (REB-627)."""
         actor.require_write("create_email_draft")
         self._check_entity(data.entity_type, data.entity_id)
         self._check_reply_target(data.in_reply_to_message_id)
@@ -200,7 +213,9 @@ class EmailDraftService:
             subject=data.subject,
             body_markdown=data.body_markdown,
             attachment_version_ids=attachments,
-            message_id_header=new_message_id(self._domain(data.entity_type, data.entity_id)),
+            message_id_header=new_message_id(
+                self._domain(data.entity_type, data.entity_id, azienda_id)
+            ),
             in_reply_to_message_id=data.in_reply_to_message_id,
             send_state="bozza",
         )

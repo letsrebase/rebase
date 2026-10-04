@@ -762,6 +762,21 @@ class GmailRepository:
             select(Azienda).where(Azienda.predefinita.is_(True))
         ).scalar_one_or_none()
 
+    def azienda_for_draft(self, draft: EmailDraft) -> Azienda | None:
+        """The azienda a draft speaks for: for a payment reminder the invoice's, which
+        the body and the IBAN already use, even when its customer has since moved to
+        another azienda (Greptile, PR #510); for any other draft the record's
+        (`azienda_for`)."""
+        if draft.payment_reminder_id is not None:
+            azienda_id = self.session.execute(
+                select(Invoice.azienda_id)
+                .join(PaymentReminder, PaymentReminder.invoice_id == Invoice.id)
+                .where(PaymentReminder.id == draft.payment_reminder_id)
+            ).scalar_one_or_none()
+            if azienda_id is not None:
+                return self.session.get(Azienda, azienda_id)
+        return self.azienda_for(draft.entity_type, draft.entity_id)
+
     def azienda_for(self, entity_type: str, entity_id: UUID) -> Azienda | None:
         """The azienda a mail speaks for (REB-627, spec 2026-10-03 §1.8): a customer's own,
         a person's through its customer, a deal's own; the default when the record has

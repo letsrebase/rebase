@@ -31,13 +31,19 @@ def _default(session: Session) -> Azienda:
     return row
 
 
-def test_the_bytes_decide_the_kind_never_a_name() -> None:
+def test_the_bytes_decide_the_kind_never_a_name_and_only_a_whole_image() -> None:
     assert sniff_image(BLANK_PNG) == "png"
     assert sniff_image(SVG) == "svg"
     assert sniff_image(b'<?xml version="1.0"?>\n<svg xmlns="x"></svg>') == "svg"
     assert sniff_image(JPEG) is None
     assert sniff_image(b"<html><svg></svg></html>") is None
     assert sniff_image(b"") is None
+    # Cut short: a PNG without its trailer, an SVG that does not parse, an XML whose
+    # root is not an svg. Each would be stored under the size limit and fail every
+    # later render instead of this upload.
+    assert sniff_image(BLANK_PNG[:-12]) is None
+    assert sniff_image(b'<svg xmlns="x"><rect></svg>') is None
+    assert sniff_image(b'<?xml version="1.0"?><not-svg><svg/></not-svg>') is None
 
 
 def test_a_logo_is_stored_under_the_azienda_s_key_and_read_back_for_the_job(
@@ -85,6 +91,8 @@ def test_what_is_refused_at_upload(db_session: Session, local_storage: LocalFile
     assets = AziendaAssets(db_session, local_storage)
     for bad, words in (
         (JPEG, "PNG"),
+        (BLANK_PNG[:-12], "PNG"),
+        (b'<svg xmlns="x"><rect></svg>', "PNG"),
         (b"\x89PNG\r\n\x1a\n" + b"\x00" * MAX_IMAGE_BYTES, "KiB"),
         (b'<svg xmlns="x"><script>alert(1)</script></svg>', "script"),
         (b'<svg xmlns="x" onload="alert(1)"></svg>', "script"),
