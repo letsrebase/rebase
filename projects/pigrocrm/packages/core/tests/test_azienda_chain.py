@@ -562,6 +562,9 @@ def test_a_new_cost_on_a_deal_of_a_deactivated_azienda_is_refused_and_an_old_one
     kept = costs.update(old.id, CostUpdate(descrizione="Treno regionale"), ADMIN)
     assert (kept.descrizione, kept.azienda_id) == ("Treno regionale", closed.id)
     assert costs.update(old.id, CostUpdate(azienda_id=closed.id), ADMIN).azienda_id == closed.id
+    # The same deal sent back, as a client echoing the row does, is no move either.
+    echoed = costs.update(old.id, CostUpdate(deal_id=deal.id, azienda_id=closed.id), ADMIN)
+    assert (echoed.deal_id, echoed.azienda_id) == (deal.id, closed.id)
     # A move onto another deal of the closed azienda is a new assignment, and refused.
     # Built by row: the customer is on the closed azienda, so the service would refuse.
     sibling = Deal(
