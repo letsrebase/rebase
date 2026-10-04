@@ -8,7 +8,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@rebase/ui/dialog'
-import type { ProblemDetail } from '@/lib/api'
+import { Label } from '@rebase/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@rebase/ui/select'
+import { fieldErrorFrom, type ProblemDetail } from '@/lib/api'
+import { useAzienda, useAziendaProposta } from '@/lib/azienda'
 import { clearedNativeValue, type FieldDefinition } from '@/lib/schema'
 import type { Customer } from './queries'
 
@@ -39,6 +48,11 @@ const NATIVE_FIELDS: FieldDefinition[] = [
 ]
 
 const NATIVE_FIELD_KEYS = NATIVE_FIELDS.map((field) => field.key)
+
+// `azienda_id` is seeded and sent like a native column but drawn by its own picker below
+// `DynamicForm`, the way the cost form draws `category_id`: the value is an id, and a
+// `select` field would submit the option's label (REB-626).
+const SEEDED_KEYS = [...NATIVE_FIELD_KEYS, 'azienda_id']
 
 /**
  * The form's state, kept in the two namespaces the API itself uses -- native columns
@@ -89,7 +103,7 @@ const DEFAULT_CREATE_VALUES: CustomerFormValues = { native: { nazione: 'IT' }, c
  */
 export function customerToFormValues(customer: Customer): CustomerFormValues {
   const native: Record<string, unknown> = {}
-  for (const key of NATIVE_FIELD_KEYS) {
+  for (const key of SEEDED_KEYS) {
     native[key] = (customer as unknown as Record<string, unknown>)[key]
   }
   return { native, custom: { ...customer.custom_fields } }
@@ -130,6 +144,19 @@ export function CustomerForm({
   title,
 }: Props) {
   const [values, setValues] = useState<CustomerFormValues>(initial ?? DEFAULT_CREATE_VALUES)
+  const isCreate = initial === undefined
+  // «Azienda» from the second azienda on (REB-626, spec §1.6): while creating, the one
+  // the nation proposes is shown live until the person picks one by hand, and what the
+  // form shows is what is sent, so the saved customer carries it. While editing the
+  // stored one is shown and sent only if changed.
+  const azienda = useAzienda()
+  const chosenAzienda = values.native.azienda_id as string | null | undefined
+  const nazione = typeof values.native.nazione === 'string' ? values.native.nazione : ''
+  const proposta = useAziendaProposta(
+    nazione,
+    azienda.several && isCreate && (chosenAzienda === undefined || chosenAzienda === null),
+  )
+  const shownAzienda = chosenAzienda ?? (isCreate ? (proposta.data?.id ?? '') : '')
 
   // This component stays mounted across opens -- only `Dialog`'s own visibility
   // toggles (see the list/detail routes: `open={open}` on an always-rendered
@@ -175,6 +202,9 @@ export function CustomerForm({
   function submit() {
     const native: Record<string, unknown> = {}
     for (const [key, value] of Object.entries(values.native)) {
+      // Decided below from what the picker shows, not from the seeded value: re-sending
+      // an unchanged id would be refused the day that azienda is deactivated.
+      if (key === 'azienda_id') continue
       if (!isBlank(value)) {
         // A number control hands back its text (`DynamicFieldRenderer` reads
         // `event.target.value`); the column is an integer and `CustomerUpdate` is typed
@@ -227,8 +257,18 @@ export function CustomerForm({
       }
     }
 
+    if (azienda.several) {
+      if (isCreate && shownAzienda !== '') native.azienda_id = shownAzienda
+      if (!isCreate && !isBlank(chosenAzienda) && chosenAzienda !== initial?.native.azienda_id) {
+        native.azienda_id = chosenAzienda
+      }
+    }
+
     onSubmit({ ...native, custom_fields: custom })
   }
+
+  const aziendaError = problem ? fieldErrorFrom(problem) : null
+  const aziendaRefused = aziendaError?.field === 'azienda_id' ? aziendaError.message : null
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -249,7 +289,10 @@ export function CustomerForm({
           // must at least be the same one.
           values={{ ...values.native, ...values.custom }}
           onChange={change}
-          problem={problem}
+          // Withheld when the server blamed `azienda_id`: that key has no control inside
+          // `DynamicForm`, so it would render the message a second time as a raw banner
+          // next to the line shown under the picker below.
+          problem={aziendaRefused ? null : problem}
           // `initial` is not a prefill, it *is* the record being edited
           // (`customerToFormValues(customer)`, from the detail route); its absence is
           // what "Nuovo cliente" means, and the list route passes none. Deriving the
@@ -260,8 +303,33 @@ export function CustomerForm({
           // effect of guessing "edit" here is only that an untouched checkbox is
           // omitted rather than sent as `false`, which `renderFieldValue` already
           // reads as "No" anyway -- benign in the one direction it can be wrong.
-          mode={initial === undefined ? 'create' : 'edit'}
+          mode={isCreate ? 'create' : 'edit'}
         />
+
+        {azienda.several ? (
+          <div className="space-y-2">
+            <Label htmlFor="customer-azienda">Azienda</Label>
+            <Select value={shownAzienda} onValueChange={(value) => change('azienda_id', value)}>
+              <SelectTrigger id="customer-azienda" className="w-full">
+                <SelectValue placeholder="Seleziona…" />
+              </SelectTrigger>
+              <SelectContent>
+                {azienda.aziende.map((item) => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {aziendaRefused ? (
+              <p className="text-sm text-destructive">{aziendaRefused}</p>
+            ) : isCreate && (chosenAzienda === undefined || chosenAzienda === null) ? (
+              <p className="text-sm text-muted-foreground">
+                Proposta dalla nazione del cliente: la fattura questa azienda, salvo tua scelta.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

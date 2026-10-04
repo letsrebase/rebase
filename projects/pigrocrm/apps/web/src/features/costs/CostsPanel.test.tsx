@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
 import { api } from '@/lib/api'
 import { CostsPanel } from './CostsPanel'
 
@@ -76,11 +77,14 @@ function respond(routes: Record<string, () => Promise<never>>) {
   }) as never)
 }
 
-function renderPanel() {
+/** `null` is the general-costs panel, the one with no deal: a defaulted parameter
+ *  cannot be handed `undefined` to mean that, it would take the default instead. */
+function renderPanel(dealId: string | null = DEAL, azienda?: AziendaValue) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const panel = <CostsPanel dealId={dealId ?? undefined} />
   return render(
     <QueryClientProvider client={client}>
-      <CostsPanel dealId={DEAL} />
+      {azienda ? <AziendaContext value={azienda}>{panel}</AziendaContext> : panel}
     </QueryClientProvider>,
   )
 }
@@ -162,5 +166,55 @@ describe('CostsPanel', () => {
       importo: '120',
       descrizione: 'Hosting',
     })
+  })
+})
+
+describe('the «Azienda» picker of a general expense (REB-626)', () => {
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as AziendaRecord
+  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as AziendaRecord
+  const TWO: AziendaValue = {
+    aziende: [HUMANCRAFT, REBASE],
+    selected: null,
+    select: vi.fn(),
+    several: true,
+    byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
+  }
+
+  function serveEmpty() {
+    respond({
+      '/api/costs': () => ok({ items: [], next_cursor: null }),
+      '/api/cost-categories': () => ok([CATEGORY]),
+      '/api/schema/{entity_type}': () => ok(EMPTY_SCHEMA),
+    })
+  }
+
+  it('offers «Condivisa» first for a cost with no deal, from the second azienda on', async () => {
+    serveEmpty()
+    renderPanel(null, TWO)
+    await userEvent.click(await screen.findByRole('button', { name: /Registra costo/ }))
+    const picker = await screen.findByRole('combobox', { name: 'Azienda' })
+    expect(picker).toHaveTextContent('Condivisa')
+    await userEvent.click(picker)
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Condivisa',
+      'humancraft',
+      'rebase',
+    ])
+  })
+
+  it('draws nothing for a cost on a deal, nor in a one-azienda space', async () => {
+    serveEmpty()
+    renderPanel(DEAL, TWO)
+    await userEvent.click(await screen.findByRole('button', { name: /Registra costo/ }))
+    await screen.findByRole('dialog')
+    expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
+  })
+
+  it('draws nothing for a general expense in a one-azienda space', async () => {
+    serveEmpty()
+    renderPanel(null)
+    await userEvent.click(await screen.findByRole('button', { name: /Registra costo/ }))
+    await screen.findByRole('dialog')
+    expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
   })
 })

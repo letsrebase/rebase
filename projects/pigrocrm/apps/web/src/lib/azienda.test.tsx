@@ -163,7 +163,7 @@ describe('useAziendaScope', () => {
     const calls = GET.mock.calls as [string, { params: { query: unknown } }][]
     const customers = calls.find(([path]) => path === '/api/customers')
     const hours = calls.find(([path]) => path === '/api/time-entries')
-    if (customers === undefined || hours === undefined) throw new Error('una delle due letture manca')
+    if (customers === undefined || hours === undefined) throw new Error('one of the two reads is missing')
     expect(customers[1].params.query).toMatchObject({ limit: 200, azienda_id: 'a2' })
     expect(hours[1].params.query).not.toHaveProperty('azienda_id')
   })

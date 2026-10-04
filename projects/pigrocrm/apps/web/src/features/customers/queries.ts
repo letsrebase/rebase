@@ -47,8 +47,11 @@ export function useCustomers(params: CustomersListParams = {}) {
   })
 }
 
-export function useCustomer(customerId: string) {
+export function useCustomer(customerId: string, options: { enabled?: boolean } = {}) {
   return useQuery({
+    // `enabled` for a caller that only sometimes needs the row (the proforma dialog's
+    // issuing azienda, REB-626); an empty id must never produce a request (residuo B1).
+    enabled: (options.enabled ?? true) && customerId !== '',
     queryKey: queryKeys.customer(customerId),
     queryFn: () =>
       unwrap(

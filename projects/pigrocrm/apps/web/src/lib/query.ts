@@ -52,6 +52,9 @@ export const queryKeys = {
   // The aziende of the space (REB-617): the list every selector and Impostazioni →
   // Aziende read; a single azienda is read from the list, so there is no per-id key.
   aziende: ['aziende'] as const,
+  // The azienda a nation proposes for a new customer (REB-626). Under the `aziende`
+  // prefix on purpose: a rename or a deactivation invalidates the proposal with the list.
+  aziendaProposta: (nazione: string) => ['aziende', 'proposta', nazione] as const,
   invoices: (params?: unknown) => ['invoices', params ?? {}] as const,
   // Distinct from `invoices` above: that key holds one `InvoicePage`, this one holds
   // an `useInfiniteQuery`'s own `{pages, pageParams}` shape (`useInvoicesPaged`,

@@ -23,6 +23,7 @@ import {
   useInvoiceLines,
   type StatoPagamento,
 } from '@/features/invoices/queries'
+import { useAzienda } from '@/lib/azienda'
 import { useCan } from '@/lib/auth'
 
 export function InvoiceDetail() {
@@ -35,6 +36,8 @@ export function InvoiceDetail() {
   const canEditInvoice = useCan('update_invoice')
   const invoice = useInvoice(invoiceId)
   const lines = useInvoiceLines(invoiceId)
+  const azienda = useAzienda()
+  const emessaDa = azienda.several ? azienda.byId(invoice.data?.azienda_id)?.nome : undefined
   if (invoice.isLoading) {
     return (
       <p className="flex items-center gap-2 p-8">
@@ -69,7 +72,12 @@ export function InvoiceDetail() {
     <EntityDetailLayout
       icon={Receipt}
       title={formatInvoiceNumber(row)}
-      subtitle={row.causale ?? undefined}
+      // The causale, and from the second azienda on who issued it (REB-626).
+      subtitle={
+        [row.causale, emessaDa ? `Emessa da ${emessaDa}` : undefined]
+          .filter((part): part is string => typeof part === 'string' && part !== '')
+          .join(' · ') || undefined
+      }
       entityType="invoice"
       entityId={row.id}
       actions={

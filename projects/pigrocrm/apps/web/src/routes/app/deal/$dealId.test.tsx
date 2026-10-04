@@ -5,6 +5,7 @@ import type { ReactElement, ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DealDetail } from './$dealId'
 import { api } from '@/lib/api'
+import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
 
 vi.mock('@tanstack/react-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-router')>()
@@ -63,6 +64,7 @@ const DEAL = {
   id: 'd1',
   nome: 'Sito vetrina',
   customer_id: 'c1',
+  azienda_id: 'a2',
   customer_ragione_sociale: 'ACME Srl',
   pipeline_stage_id: 's1',
   valore_previsto: '4500.00',
@@ -188,5 +190,48 @@ describe('DealDetail', () => {
       await openDeal()
       expect(screen.queryByRole('button', { name: 'Nuova fattura' })).not.toBeInTheDocument()
     })
+  })
+})
+
+describe('the azienda in the header (REB-626)', () => {
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as AziendaRecord
+  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as AziendaRecord
+  const TWO: AziendaValue = {
+    aziende: [HUMANCRAFT, REBASE],
+    selected: null,
+    select: vi.fn(),
+    several: true,
+    byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
+  }
+
+  /** The deal and the stages the header needs; the rest of the page's reads answer empty. */
+  function mockPage() {
+    mockGet.mockImplementation(
+      ((path: string) => {
+        if (path === '/api/deals/{deal_id}') return ok(DEAL)
+        if (path === '/api/pipeline-stages')
+          return ok([{ id: 's1', nome: 'Lead', posizione: 1, tipo: 'open', code: null, probabilita_default: 10 }])
+        return ok([])
+      }) as never,
+    )
+  }
+
+  it("names the deal's azienda after the customer and the amount, from the second azienda on", async () => {
+    mockPage()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <AziendaContext value={TWO}>
+          <DealDetail />
+        </AziendaContext>
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText(/^ACME Srl · 4\.500,00\s€ · rebase$/)).toBeInTheDocument()
+  })
+
+  it('says nothing about the azienda in a one-azienda space', async () => {
+    mockPage()
+    renderWithClient(<DealDetail />)
+    expect(await screen.findByText(/^ACME Srl · 4\.500,00\s€$/)).toBeInTheDocument()
   })
 })

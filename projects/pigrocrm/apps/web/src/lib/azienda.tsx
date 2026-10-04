@@ -145,3 +145,21 @@ export function useAziendeToName(): AziendaRecord[] | undefined {
   const { aziende, selected, several } = useAzienda()
   return several && selected === null ? aziende : undefined
 }
+
+/**
+ * The azienda `nazione` proposes for a new customer (REB-626, spec 2026-10-03 §1.6), read
+ * from the server so the form shows what `POST /api/customers` would pick: the rule lives
+ * in `AziendaService.propose` once. `enabled` is the caller's: the customer form asks only
+ * from the second azienda on, while creating, and until the person picks one by hand. A
+ * nation is two letters, so a half-typed one asks nothing rather than flipping the picker
+ * to the default between the first letter and the second.
+ */
+export function useAziendaProposta(nazione: string, enabled: boolean) {
+  const paese = nazione.trim().toUpperCase() || 'IT'
+  return useQuery({
+    queryKey: queryKeys.aziendaProposta(paese),
+    queryFn: () =>
+      unwrap(api.GET('/api/aziende/proposta', { params: { query: { nazione: paese } } })),
+    enabled: enabled && paese.length === 2,
+  })
+}

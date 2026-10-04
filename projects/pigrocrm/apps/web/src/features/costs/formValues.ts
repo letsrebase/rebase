@@ -29,7 +29,9 @@ export const NATIVE_FIELDS: FieldDefinition[] = [
  * name would be indistinguishable on the way back. A real picker keyed on the id is the
  * only shape that survives a rename.
  */
-const NATIVE_FIELD_KEYS = [...NATIVE_FIELDS.map((field) => field.key), 'category_id']
+// `azienda_id` likewise (REB-626): a picker keyed on the id, drawn only for a cost with
+// no deal, where `null` is the «Condivisa» the server reads as a shared expense.
+const NATIVE_FIELD_KEYS = [...NATIVE_FIELDS.map((field) => field.key), 'category_id', 'azienda_id']
 
 /** Two namespaces, decided once at seed time and never re-derived at submit -- the same
  *  structural provenance `TimeEntryFormValues` carries: a native column clears on the

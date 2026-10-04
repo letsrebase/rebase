@@ -305,7 +305,7 @@ describe('the azienda beside the number (REB-625)', () => {
   function renderNumber(row: Invoice, options?: InvoiceColumnOptions) {
     const column = buildInvoiceColumns(options).find((candidate) => candidate.id === 'numero')
     if (column === undefined || typeof column.cell !== 'function') {
-      throw new Error('la colonna «Numero» non ha un cell renderer')
+      throw new Error('the «Numero» column has no cell renderer')
     }
     return render(column.cell({ row: { original: row } } as never) as ReactElement)
   }

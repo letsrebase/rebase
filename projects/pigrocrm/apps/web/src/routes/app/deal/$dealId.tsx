@@ -12,6 +12,7 @@ import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { EconomicsTab } from '@/features/analytics/EconomicsTab'
 import { useCustomer } from '@/features/customers/queries'
+import { useAzienda } from '@/lib/azienda'
 import { DealForm, dealToFormValues } from '@/features/deals/DealForm'
 import { DealStageBar } from '@/features/deals/DealStageBar'
 import { displayNative, formatDate, formatHours, formatMoney } from '@/features/deals/columns'
@@ -123,6 +124,7 @@ export function DealDetail() {
   const { dealId } = useParams({ from: '/app/deal/$dealId' })
   const navigate = useNavigate()
   const canWrite = useCanWrite()
+  const azienda = useAzienda()
   const [editing, setEditing] = useState(false)
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 
@@ -188,7 +190,13 @@ export function DealDetail() {
   // The header's second line: whose deal, and for how much. `customer_ragione_sociale`
   // rides on `DealRead` so this costs no request; the Collegamenti tab keeps the full
   // customer card.
-  const subtitle = [deal.customer_ragione_sociale, formatMoney(deal.valore_previsto)]
+  // And, from the second azienda on, whose azienda it is (REB-626): the deal keeps the
+  // one its customer had when it was created (spec §1.7), so the header says it.
+  const subtitle = [
+    deal.customer_ragione_sociale,
+    formatMoney(deal.valore_previsto),
+    azienda.several ? azienda.byId(deal.azienda_id)?.nome : undefined,
+  ]
     .filter((part): part is string => typeof part === 'string' && part !== '' && part !== '—')
     .join(' · ')
 

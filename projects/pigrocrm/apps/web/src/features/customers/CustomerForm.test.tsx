@@ -1,9 +1,21 @@
-import { render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import type { ReactElement } from 'react'
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
+import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
 import { CustomerForm, customerToFormValues } from './CustomerForm'
 import type { Customer } from './queries'
 import type { FieldDefinition } from '@/lib/schema'
+
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>()
+  return { ...actual, api: { GET: vi.fn() } }
+})
+
+import { api } from '@/lib/api'
+
+const GET = api.GET as unknown as Mock
 
 const BASE_CUSTOMER: Customer = {
   id: 'c1',
@@ -52,10 +64,18 @@ function submitted(onSubmit: ReturnType<typeof vi.fn>): Record<string, unknown> 
   return first[0] as Record<string, unknown>
 }
 
+
+/** The form mounts a query (the azienda proposal, disabled with one azienda), so every
+ *  render needs a client even where no request is ever made. */
+function renderWithClient(ui: ReactElement) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>)
+}
+
 describe('CustomerForm', () => {
   it('round-trips a value for a field the active schema still defines', async () => {
     const onSubmit = vi.fn()
-    render(
+    renderWithClient(
       <CustomerForm
         title="Modifica cliente"
         open
@@ -94,7 +114,7 @@ describe('CustomerForm', () => {
    */
   it('neither sends an archived field as a native column nor drops its stored value', async () => {
     const onSubmit = vi.fn()
-    render(
+    renderWithClient(
       <CustomerForm
         title="Modifica cliente"
         open
@@ -125,7 +145,7 @@ describe('CustomerForm', () => {
 
   it('sends an untouched checkbox as false on create, never as an absent key', async () => {
     const onSubmit = vi.fn()
-    render(
+    renderWithClient(
       <CustomerForm
         title="Nuovo cliente"
         open
@@ -159,7 +179,7 @@ describe('CustomerForm', () => {
    */
   it('does not backfill an untouched checkbox on edit, whatever else changed', async () => {
     const onSubmit = vi.fn()
-    render(
+    renderWithClient(
       <CustomerForm
         title="Modifica cliente"
         open
@@ -187,7 +207,7 @@ describe('CustomerForm', () => {
 
   it('sends false for a checkbox the user actually turns off on edit', async () => {
     const onSubmit = vi.fn()
-    render(
+    renderWithClient(
       <CustomerForm
         title="Modifica cliente"
         open
@@ -209,7 +229,7 @@ describe('CustomerForm', () => {
 
   it('sends false for a checkbox toggled on and back off from absent on edit', async () => {
     const onSubmit = vi.fn()
-    render(
+    renderWithClient(
       <CustomerForm
         title="Modifica cliente"
         open
@@ -234,7 +254,7 @@ describe('CustomerForm', () => {
       telefono: '02123456',
       custom_fields: { settore: 'PMI' },
     })
-    render(
+    renderWithClient(
       <CustomerForm
         title="Modifica cliente"
         open
@@ -257,5 +277,117 @@ describe('CustomerForm', () => {
       pagamento_fine_mese: false,
       custom_fields: { settore: null },
     })
+  })
+})
+
+describe('the «Azienda» picker (REB-626)', () => {
+  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', attiva: true } as AziendaRecord
+  const REBASE = { id: 'a-2', nome: 'rebase ltd', attiva: true } as AziendaRecord
+  const TWO: AziendaValue = {
+    aziende: [HUMANCRAFT, REBASE],
+    selected: null,
+    select: vi.fn(),
+    several: true,
+    byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
+  }
+
+  /** `GET /api/aziende/proposta` answers the rule the server applies: GB has its own
+   *  azienda, everything else gets the default. */
+  function serveProposal() {
+    GET.mockImplementation((path: string, options: { params: { query: { nazione: string } } }) => {
+      if (path !== '/api/aziende/proposta') throw new Error(`unexpected GET ${path}`)
+      const proposed = options.params.query.nazione === 'GB' ? REBASE : HUMANCRAFT
+      return Promise.resolve({ data: proposed, response: { status: 200 } })
+    })
+  }
+
+  function renderWithAziende(ui: ReactElement, value: AziendaValue = TWO) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return render(
+      <QueryClientProvider client={client}>
+        <AziendaContext value={value}>{ui}</AziendaContext>
+      </QueryClientProvider>,
+    )
+  }
+
+  beforeEach(() => {
+    GET.mockReset()
+    serveProposal()
+  })
+
+  it('shows the azienda the nation proposes, follows the nation, and sends what it shows', async () => {
+    const onSubmit = vi.fn()
+    renderWithAziende(
+      <CustomerForm title="Nuovo cliente" open onOpenChange={() => {}} customFields={[]} onSubmit={onSubmit} />,
+    )
+    const picker = screen.getByRole('combobox', { name: 'Azienda' })
+    await waitFor(() => expect(picker).toHaveTextContent('humancraft'))
+    expect(screen.getByText(/Proposta dalla nazione/)).toBeInTheDocument()
+
+    const nazione = screen.getByLabelText('Nazione')
+    await userEvent.clear(nazione)
+    await userEvent.type(nazione, 'GB')
+    await waitFor(() => expect(picker).toHaveTextContent('rebase ltd'))
+
+    await userEvent.type(screen.getByLabelText(/Ragione sociale/), 'Overseas Ltd')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).toMatchObject({ ragione_sociale: 'Overseas Ltd', nazione: 'GB', azienda_id: 'a-2' })
+  })
+
+  it('keeps a hand-picked azienda whatever the nation says afterwards', async () => {
+    const onSubmit = vi.fn()
+    renderWithAziende(
+      <CustomerForm title="Nuovo cliente" open onOpenChange={() => {}} customFields={[]} onSubmit={onSubmit} />,
+    )
+    const picker = screen.getByRole('combobox', { name: 'Azienda' })
+    await waitFor(() => expect(picker).toHaveTextContent('humancraft'))
+    await userEvent.click(picker)
+    await userEvent.click(await screen.findByRole('option', { name: 'rebase ltd' }))
+    expect(screen.queryByText(/Proposta dalla nazione/)).not.toBeInTheDocument()
+
+    const nazione = screen.getByLabelText('Nazione')
+    await userEvent.clear(nazione)
+    await userEvent.type(nazione, 'FR')
+    expect(picker).toHaveTextContent('rebase ltd')
+    await userEvent.type(screen.getByLabelText(/Ragione sociale/), 'Choisie')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).toMatchObject({ nazione: 'FR', azienda_id: 'a-2' })
+  })
+
+  it('while editing shows the stored azienda, asks for no proposal, and sends it only when changed', async () => {
+    const onSubmit = vi.fn()
+    renderWithAziende(
+      <CustomerForm
+        title="Modifica cliente"
+        open
+        onOpenChange={() => {}}
+        customFields={[]}
+        initial={customerToFormValues(BASE_CUSTOMER)}
+        onSubmit={onSubmit}
+      />,
+    )
+    const picker = screen.getByRole('combobox', { name: 'Azienda' })
+    expect(picker).toHaveTextContent('humancraft')
+    expect(GET).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).not.toHaveProperty('azienda_id')
+
+    onSubmit.mockReset()
+    await userEvent.click(picker)
+    await userEvent.click(await screen.findByRole('option', { name: 'rebase ltd' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).toMatchObject({ azienda_id: 'a-2' })
+  })
+
+  it('is not drawn in a one-azienda space, and the body carries no azienda', async () => {
+    const onSubmit = vi.fn()
+    renderWithClient(
+      <CustomerForm title="Nuovo cliente" open onOpenChange={() => {}} customFields={[]} onSubmit={onSubmit} />,
+    )
+    expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText(/Ragione sociale/), 'Sola')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).not.toHaveProperty('azienda_id')
+    expect(GET).not.toHaveBeenCalled()
   })
 })

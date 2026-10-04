@@ -82,7 +82,7 @@ describe('the «Azienda» column (REB-625)', () => {
     ])
     const azienda = columns[1]
     if (azienda === undefined || !('accessorFn' in azienda) || azienda.accessorFn === undefined) {
-      throw new Error('la colonna «Azienda» non ha un accessorFn')
+      throw new Error('the «Azienda» column has no accessorFn')
     }
     expect(azienda.accessorFn({ ...BASE_CUSTOMER, azienda_id: 'a-2' }, 0)).toBe('rebase')
     expect(azienda.accessorFn({ ...BASE_CUSTOMER, azienda_id: 'gone' }, 0)).toBe('—')

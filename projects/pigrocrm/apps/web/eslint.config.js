@@ -81,6 +81,7 @@ export default defineConfig([
             'useAzienda',
             'useAziendaScope',
             'useAziendeToName',
+            'useAziendaProposta',
           ],
         },
       ],

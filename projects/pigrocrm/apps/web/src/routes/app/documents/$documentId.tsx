@@ -8,10 +8,12 @@ import { OfferStatePicker } from '@/features/documents/OfferStatePicker'
 import { VersionHistory } from '@/features/documents/VersionHistory'
 import { DOCUMENT_TYPE_LABELS, downloadDocument, useDocument } from '@/features/documents/queries'
 import { toProblem } from '@/lib/api'
+import { useAzienda } from '@/lib/azienda'
 
 function DocumentDetail() {
   const { documentId } = useParams({ from: '/app/documents/$documentId' })
   const document = useDocument(documentId)
+  const azienda = useAzienda()
 
   if (document.isError) {
     // A real 404 keeps its own honest wording, the same way CustomerDetail's own
@@ -42,7 +44,14 @@ function DocumentDetail() {
     <EntityDetailLayout
       icon={FileText}
       title={record.titolo}
-      subtitle={DOCUMENT_TYPE_LABELS[record.tipo] ?? record.tipo}
+      // The type, and from the second azienda on the azienda the document belongs to
+      // (REB-626), the one its owner had when it was created.
+      subtitle={[
+        DOCUMENT_TYPE_LABELS[record.tipo] ?? record.tipo,
+        azienda.several ? azienda.byId(record.azienda_id)?.nome : undefined,
+      ]
+        .filter((part): part is string => typeof part === 'string' && part !== '')
+        .join(' · ')}
       entityType="document"
       entityId={record.id}
       actions={

@@ -750,3 +750,32 @@ Added as the milestones land, dated, never rewriting the sections above.
   `list_time_entries` and `get_calendar_month` take the filter with the four §7 names,
   since the lists they wrap narrow the same way. The role matrix is unchanged: the
   proposal is a read every role may make, like the list of aziende.
+- **2026-10-04, same milestone, the SPA (REB-625, REB-626).** The selection rides inside
+  the list hooks (`useAziendaScope`) and applies only to a list with no owner of its own:
+  a customer's or a deal's tab shows that owner's rows whatever the sidebar says, since
+  opening a deal of azienda A with B selected would otherwise show an empty tab. With one
+  azienda the selection stays «tutte» and the context's default value is that state, so a
+  one-azienda space sees the pages it saw and sends the same list requests (plus one read
+  of `GET /api/aziende` per app load, and `azienda_id` on a cost edit), and a page mounted
+  without the provider behaves the same. No invalidation on a switch: the parameters are the query
+  key's argument, and the calendar and search keys carry the azienda explicitly. The
+  customer form sends what its «Azienda» picker shows, the proposal read from
+  `GET /api/aziende/proposta` until the person picks one by hand, and while editing sends
+  the id only when changed, so an unchanged customer of a since-deactivated azienda is
+  not refused on an unrelated edit. The proforma dialog names the issuer with the rule
+  `InvoiceService.create` applies, the deal's azienda when a deal is chosen and the
+  customer's otherwise. The SPA has no contract page, so of the four headers §5 names
+  three exist and get the line; a contract is reached over the API and MCP.
+- **2026-10-04, same milestone, after the independent review.** The four creations that
+  inherit an azienda (a deal and a contract from the customer, a document from its owner,
+  an invoice from its deal or customer, the proposal's contract too) go through
+  `AziendaService.inherited`, which refuses a deactivated azienda with §3's words («sposta
+  prima il cliente su un'azienda attiva»); the count of customers a deactivation would
+  strand, which the same §3 row promises, waits for milestone 5 with the screen that
+  deactivates. A customer `confirm_import` creates takes the azienda the file landed on
+  (§1.5), not the one its nation would propose. `create_cost` over MCP takes `azienda_id?`
+  like the API. A document re-owned through `DocumentUpdate` keeps the azienda it was
+  born with, by the same «nothing moves» rule as a moved customer. The Persone page's
+  customer filter already says «Azienda» for the customer's company, which from the
+  second azienda on sits under a sidebar that says «Tutte le aziende» for the issuing one;
+  renaming that filter is a card of its own.

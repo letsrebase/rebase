@@ -133,8 +133,10 @@ export function useStages() {
   })
 }
 
-export function useDeal(dealId: string) {
+export function useDeal(dealId: string, options: { enabled?: boolean } = {}) {
   return useQuery({
+    // See `useCustomer`: the proforma dialog reads the deal's azienda only when it has to.
+    enabled: (options.enabled ?? true) && dealId !== '',
     queryKey: queryKeys.deal(dealId),
     queryFn: () =>
       unwrap(api.GET('/api/deals/{deal_id}', { params: { path: { deal_id: dealId } } })),
