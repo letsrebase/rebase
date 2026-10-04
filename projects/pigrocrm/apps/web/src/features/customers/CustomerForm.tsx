@@ -321,7 +321,18 @@ export function CustomerForm({
         {showAziendaPicker ? (
           <div className="space-y-2">
             <Label htmlFor="customer-azienda">Azienda</Label>
-            <Select value={shownAzienda} onValueChange={(value) => change('azienda_id', value)}>
+            {/* Straight into `native`, not through `change`: that routes a key the
+                active schema lists as a custom field into `custom`, and a tenant may
+                well have named one `azienda_id` (CodeRabbit, PR #509). */}
+            <Select
+              value={shownAzienda}
+              onValueChange={(value) =>
+                setValues((previous) => ({
+                  ...previous,
+                  native: { ...previous.native, azienda_id: value },
+                }))
+              }
+            >
               <SelectTrigger id="customer-azienda" className="w-full">
                 <SelectValue placeholder="Seleziona…" />
               </SelectTrigger>

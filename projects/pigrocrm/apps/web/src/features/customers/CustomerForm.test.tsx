@@ -448,3 +448,48 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
     expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
   })
 })
+
+describe('the picker beside a custom field that happens to be named azienda_id (CodeRabbit, PR #509)', () => {
+  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', attiva: true } as AziendaRecord
+  const REBASE = { id: 'a-2', nome: 'rebase ltd', attiva: true } as AziendaRecord
+  const TWO: AziendaValue = {
+    aziende: [HUMANCRAFT, REBASE],
+    selected: null,
+    select: vi.fn(),
+    several: true,
+    byId: (id) => [HUMANCRAFT, REBASE].find((a) => a.id === id),
+  }
+  const HOMONYM: FieldDefinition = {
+    key: 'azienda_id',
+    label: 'Codice azienda interno',
+    type: 'text',
+    required: false,
+    options: [],
+  }
+
+  it('sends the chosen azienda as the native column, never inside custom_fields', async () => {
+    GET.mockReset()
+    const onSubmit = vi.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <AziendaContext value={TWO}>
+          <CustomerForm
+            title="Modifica cliente"
+            open
+            onOpenChange={() => {}}
+            customFields={[HOMONYM]}
+            initial={customerToFormValues(BASE_CUSTOMER)}
+            onSubmit={onSubmit}
+          />
+        </AziendaContext>
+      </QueryClientProvider>,
+    )
+    await userEvent.click(screen.getByRole('combobox', { name: 'Azienda' }))
+    await userEvent.click(await screen.findByRole('option', { name: 'rebase ltd' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    const body = submitted(onSubmit)
+    expect(body.azienda_id).toBe('a-2')
+    expect(body.custom_fields).toEqual({})
+  })
+})

@@ -189,7 +189,14 @@ export function CostForm({
             <Label htmlFor="cost-azienda">Azienda</Label>
             <Select
               value={aziendaId}
-              onValueChange={(value) => change('azienda_id', value === SHARED ? null : value)}
+              // Straight into `native`, not through `change`, which would route a key a
+              // tenant happened to define as a custom field into `custom`.
+              onValueChange={(value) =>
+                setValues((previous) => ({
+                  ...previous,
+                  native: { ...previous.native, azienda_id: value === SHARED ? null : value },
+                }))
+              }
             >
               <SelectTrigger id="cost-azienda" className="w-full">
                 <SelectValue />
