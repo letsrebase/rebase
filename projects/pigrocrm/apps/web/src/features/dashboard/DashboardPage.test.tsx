@@ -249,7 +249,8 @@ describe('DashboardPage, three tabs', () => {
     renderPage({ ...SEARCH, tab: 'scadenziario' })
     expect(await screen.findByText(/scadenziario per fascia/i)).toBeInTheDocument()
     expect(screen.queryByLabelText('Dal')).not.toBeInTheDocument()
-    expect(api.GET).toHaveBeenCalledWith('/api/dashboard/receivables')
+    // No period, and in «tutte» no azienda either: an empty query (REB-632).
+    expect(api.GET).toHaveBeenCalledWith('/api/dashboard/receivables', { params: { query: {} } })
     expect(api.GET).not.toHaveBeenCalledWith('/api/dashboard/sales', expect.anything())
   })
 })

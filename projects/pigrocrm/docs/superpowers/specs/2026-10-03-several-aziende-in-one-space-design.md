@@ -830,3 +830,16 @@ Added as the milestones land, dated, never rewriting the sections above.
   so a malformed id is this project's own refusal. `FiscalProfileService.check` is public
   for `AziendaService.create` and named internal in the coverage map with `single` and
   `require_single`.
+- **2026-10-04, same milestone, the SPA (REB-632).** The four dashboard hooks read the
+  sidebar's selection themselves and spread it into the request and the query key alike,
+  so a switch is a new cache entry; the URL keeps `{tab, da, a, base}` (§5). In «tutte»
+  with several aziende the economic tab draws the summary cards on the summed cash, a
+  note in place of the estimate, one `FiscalPanel` per azienda (quiet: an azienda with
+  no profile or no coefficient draws nothing, since Impostazioni is where that is
+  answered) and the concentration table split by azienda, named through the provider.
+  «Nuova azienda» is one form for the one request: the identity fields an invoice
+  header prints plus the regime, the VAT rate it proposes and the IBAN; everything else
+  on the profile keeps the server's defaults and is completed on the panels the page
+  lands on right after. The ordinary regime sends no natura beside its rate and the
+  foreign one sends what the settings panel sends, so the server's own refusals name a
+  field the form shows.

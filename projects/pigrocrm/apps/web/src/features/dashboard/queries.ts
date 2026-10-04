@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from '@rebase/ui/sonner'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
+import { useAzienda } from '@/lib/azienda'
 import { queryKeys } from '@/lib/query'
 import type { Periodo } from './periodo'
 import type { CashBase } from './search'
@@ -25,18 +26,32 @@ export type AutomationConfigUpdate = components['schemas']['AutomationConfigUpda
  */
 export const DASHBOARD_STALE_MS = 60_000
 
+/**
+ * The sidebar's azienda as the parameter every dashboard read takes (REB-632, spec
+ * 2026-10-03 §5): `azienda_id` when one is selected, nothing in «tutte», where the
+ * server adds every azienda up. It is spread into the request and into the key alike,
+ * so a switch of the sidebar is a new cache entry and a fresh request, with no
+ * invalidation to forget. Not in the URL: the selection is a session choice (§5).
+ */
+function useAziendaParam(): { azienda_id?: string } {
+  const { selected } = useAzienda()
+  return selected === null ? {} : { azienda_id: selected }
+}
+
 export function useCommercialDashboard(periodo: Periodo) {
+  const params = { ...periodo, ...useAziendaParam() }
   return useQuery({
-    queryKey: queryKeys.dashboard('commerciale', periodo),
-    queryFn: () => unwrap(api.GET('/api/dashboard/sales', { params: { query: periodo } })),
+    queryKey: queryKeys.dashboard('commerciale', params),
+    queryFn: () => unwrap(api.GET('/api/dashboard/sales', { params: { query: params } })),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
 
 export function useEconomicDashboard(periodo: Periodo) {
+  const params = { ...periodo, ...useAziendaParam() }
   return useQuery({
-    queryKey: queryKeys.dashboard('economica', periodo),
-    queryFn: () => unwrap(api.GET('/api/dashboard/economic', { params: { query: periodo } })),
+    queryKey: queryKeys.dashboard('economica', params),
+    queryFn: () => unwrap(api.GET('/api/dashboard/economic', { params: { query: params } })),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
@@ -44,9 +59,10 @@ export function useEconomicDashboard(periodo: Periodo) {
 /** Slice 8 part A (REB-329): no period, so the key carries none. What is owed is owed
  *  today, and the response's `oggi` says which day the buckets were measured from. */
 export function useReceivablesDashboard() {
+  const params = useAziendaParam()
   return useQuery({
-    queryKey: queryKeys.dashboard('scadenziario', {}),
-    queryFn: () => unwrap(api.GET('/api/dashboard/receivables')),
+    queryKey: queryKeys.dashboard('scadenziario', params),
+    queryFn: () => unwrap(api.GET('/api/dashboard/receivables', { params: { query: params } })),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
@@ -56,10 +72,13 @@ export function useReceivablesDashboard() {
  *  is which month each document falls in (ORB-133), part of the key because the same
  *  year answers differently under the two readings. */
 export function useEconomicOverview(anno: number, base: CashBase) {
+  const scope = useAziendaParam()
   return useQuery({
-    queryKey: queryKeys.dashboard('panoramica', { anno: String(anno), base }),
+    queryKey: queryKeys.dashboard('panoramica', { anno: String(anno), base, ...scope }),
     queryFn: () =>
-      unwrap(api.GET('/api/analytics/overview', { params: { query: { anno, base } } })),
+      unwrap(
+        api.GET('/api/analytics/overview', { params: { query: { anno, base, ...scope } } }),
+      ),
     staleTime: DASHBOARD_STALE_MS,
   })
 }
@@ -74,11 +93,19 @@ export function useEconomicOverview(anno: number, base: CashBase) {
  *
  * No `staleTime` override: unlike the aggregates above, this one is read once per visit
  * under the cards and the default in `lib/query.ts` is the right answer for it.
+ *
+ * One azienda's (REB-632): the one `aziendaId` names, or the sidebar's when the caller
+ * names none. In «tutte» on a space with several aziende the economic tab asks once
+ * per azienda, by id, because the server has no space-wide estimate to give (spec
+ * §1.9); with one azienda nothing is sent and the server resolves it alone.
  */
-export function useFiscalEstimate(anno: number) {
+export function useFiscalEstimate(anno: number, aziendaId?: string | null) {
+  const { selected } = useAzienda()
+  const azienda = aziendaId === undefined ? selected : aziendaId
+  const query = azienda === null ? { anno } : { anno, azienda_id: azienda }
   return useQuery({
-    queryKey: queryKeys.fiscalEstimate(anno),
-    queryFn: () => unwrap(api.GET('/api/analytics/fiscal', { params: { query: { anno } } })),
+    queryKey: queryKeys.fiscalEstimate(anno, azienda),
+    queryFn: () => unwrap(api.GET('/api/analytics/fiscal', { params: { query } })),
   })
 }
 

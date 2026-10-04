@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
@@ -5,22 +6,25 @@ import { Skeleton } from '@rebase/ui/skeleton'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { AziendaPanel } from './AziendaPanel'
 import { FiscalPanel } from './FiscalPanel'
+import { NuovaAziendaForm } from './NuovaAziendaForm'
 import { useAziende, type AziendaRecord } from './queries'
 
 /**
  * Impostazioni → Aziende (REB-617, spec 2026-10-03 §5): the one page that replaced
  * «Emittente» and «Fiscale» when the emitter profile became one row per azienda.
  *
- * With one azienda, which is every space until milestone 5 opens creation, the page
- * opens straight on it and reads as the two panels did: who issues, then how it is
- * taxed. From the second azienda on, a row of buttons picks which one the two panels
- * show, with the default marked. There is no «Nuova azienda» here on purpose: a second
- * azienda would have invoices nothing can number yet and customers it cannot own
- * (spec §9), so the button lands with the milestone that can serve it.
+ * With one azienda the page opens straight on it and reads as the two panels did: who
+ * issues, then how it is taxed. From the second azienda on, a row of buttons picks
+ * which one the two panels show, with the default marked. «Nuova azienda» arrived with
+ * milestone 5 (REB-632, spec §9): it waited until the register, the customer chain,
+ * the rendering and the per-azienda taxes could serve a second azienda, and it is the
+ * first visible piece of the whole project, since the sidebar's selector appears the
+ * moment the list has two.
  */
 export function AziendePanel() {
   const aziende = useAziende()
   const [selected, setSelected] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
 
   if (aziende.isError) return <QueryErrorBanner error={aziende.error} />
   if (aziende.isLoading || !aziende.data) return <Skeleton className="h-64 w-full" />
@@ -38,9 +42,31 @@ export function AziendePanel() {
     )
   }
 
+  if (creating) {
+    return (
+      <NuovaAziendaForm
+        onCreated={(created) => {
+          setSelected(created.id)
+          setCreating(false)
+        }}
+        onCancel={() => setCreating(false)}
+      />
+    )
+  }
+
   return (
     <div className="space-y-8">
-      {list.length > 1 ? <AziendaPicker list={list} current={current} onPick={setSelected} /> : null}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {list.length > 1 ? (
+          <AziendaPicker list={list} current={current} onPick={setSelected} />
+        ) : (
+          <span />
+        )}
+        <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
+          <Plus className="mr-1 size-4" aria-hidden="true" />
+          Nuova azienda
+        </Button>
+      </div>
       <AziendaPanel azienda={current} />
       <FiscalPanel aziendaId={current.id} />
     </div>

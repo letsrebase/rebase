@@ -422,3 +422,159 @@ describe('EconomicTab', () => {
     expect(screen.queryByRole('group', { name: 'Ricavi incassati' })).toBeNull()
   })
 })
+
+// -- the sidebar's azienda (REB-632, spec 2026-10-03 §1.9, §5) ---------------------------
+
+import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
+
+function aziendaRecord(id: string, nome: string): AziendaRecord {
+  return {
+    id,
+    nome,
+    predefinita: id === 'a-1',
+    attiva: true,
+    ragione_sociale: nome,
+    partita_iva: null,
+    codice_fiscale: null,
+    indirizzo: null,
+    cap: null,
+    comune: null,
+    provincia: null,
+    nazione: 'IT',
+    pec: null,
+    codice_sdi: null,
+    telefono: null,
+    email: null,
+    sito_web: null,
+    logo_key: null,
+    firma_key: null,
+    firma_email: null,
+    regime_fiscale: null,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+  }
+}
+
+const HUMANCRAFT = aziendaRecord('a-1', 'humancraft')
+const REBASE_LTD = aziendaRecord('a-2', 'rebase ltd')
+
+function twoAziende(selected: string | null): AziendaValue {
+  return {
+    aziende: [HUMANCRAFT, REBASE_LTD],
+    selected,
+    select: vi.fn(),
+    several: true,
+    byId: (id) => [HUMANCRAFT, REBASE_LTD].find((a) => a.id === id),
+  }
+}
+
+const CONCENTRAZIONE_PER_AZIENDA = [
+  { ...CONCENTRAZIONE[0], azienda_id: 'a-1', quota: 1 },
+  { ...CONCENTRAZIONE[1], azienda_id: 'a-2', quota: 1 },
+]
+
+function renderWithAziende(value: AziendaValue) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
+      <AziendaContext value={value}>
+        <EconomicTab periodo={PERIODO} base="competenza" onBaseChange={vi.fn()} />
+      </AziendaContext>
+    </QueryClientProvider>,
+  )
+}
+
+type GetCall = [string, { params?: { query?: Record<string, unknown> } } | undefined]
+
+function queriesSentTo(path: string): Record<string, unknown>[] {
+  return (vi.mocked(api.GET).mock.calls as unknown as GetCall[])
+    .filter(([called]) => called === path)
+    .map(([, init]) => init?.params?.query ?? {})
+}
+
+describe('EconomicTab, with several aziende', () => {
+  it('in «tutte» asks the estimate once per azienda and names each share’s azienda', async () => {
+    vi.mocked(api.GET).mockImplementation((path: string, init?: unknown) => {
+      if (path === '/api/analytics/fiscal') {
+        const query = (init as GetCall[1])?.params?.query ?? {}
+        // The forfettario has an estimate; the foreign company has no profile at all.
+        return Promise.resolve(
+          query.azienda_id === 'a-1' ? ok(FISCALE) : failed({ code: 'not_found' }, 404),
+        )
+      }
+      return Promise.resolve(
+        ok({
+          ...RESPONSE,
+          azienda_id: null,
+          fiscale: null,
+          fiscale_proiettato: null,
+          netto_effettivo: null,
+          netto_proiettato: null,
+          concentrazione_clienti: CONCENTRAZIONE_PER_AZIENDA,
+        }),
+      )
+    })
+    renderWithAziende(twoAziende(null))
+
+    // The cards say why there is no space-wide estimate, never «non disponibile».
+    expect(await screen.findByText(/Con più aziende la stima è una per azienda/)).toBeInTheDocument()
+    expect(screen.queryByText(/Non disponibile qui/)).not.toBeInTheDocument()
+    // One estimate per azienda, by id; the overview itself was asked for every azienda.
+    await waitFor(() =>
+      expect(queriesSentTo('/api/analytics/fiscal')).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ azienda_id: 'a-1' }),
+          expect.objectContaining({ azienda_id: 'a-2' }),
+        ]),
+      ),
+    )
+    expect(queriesSentTo('/api/analytics/overview')[0]).not.toHaveProperty('azienda_id')
+    // The one card that exists carries its azienda's name; the other draws nothing.
+    expect(
+      await screen.findByRole('heading', { name: 'Stima fiscale 2026 · humancraft' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: 'Stima fiscale 2026 · rebase ltd' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/Profilo fiscale non configurato/)).not.toBeInTheDocument()
+    // The concentration table is split by azienda, each share of its own revenue.
+    const section = screen.getByRole('heading', { name: 'Concentrazione clienti' }).closest('section')
+    expect(section).not.toBeNull()
+    expect(within(section as HTMLElement).getByRole('heading', { name: 'humancraft' })).toBeInTheDocument()
+    expect(within(section as HTMLElement).getByRole('heading', { name: 'rebase ltd' })).toBeInTheDocument()
+    expect(within(section as HTMLElement).getAllByText('100,0%')).toHaveLength(2)
+  })
+
+  it('for a non-admin in «tutte» draws no card and no banner, only the note', async () => {
+    vi.mocked(api.GET).mockImplementation((path: string) =>
+      Promise.resolve(
+        path === '/api/analytics/fiscal'
+          ? failed({ code: 'permission_denied', detail: 'solo un admin' }, 403)
+          : ok({
+              ...RESPONSE,
+              azienda_id: null,
+              fiscale: null,
+              fiscale_proiettato: null,
+              netto_effettivo: null,
+              netto_proiettato: null,
+              concentrazione_clienti: CONCENTRAZIONE_PER_AZIENDA,
+            }),
+      ),
+    )
+    renderWithAziende(twoAziende(null))
+    expect(await screen.findByText(/Con più aziende la stima è una per azienda/)).toBeInTheDocument()
+    await waitFor(() => expect(queriesSentTo('/api/analytics/fiscal')).toHaveLength(2))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /^Stima fiscale \d{4}/ })).not.toBeInTheDocument()
+  })
+
+  it('with one azienda selected sends it on the overview and the estimate alike', async () => {
+    vi.mocked(api.GET).mockImplementation(byPath({ ...RESPONSE, azienda_id: 'a-1' }) as never)
+    renderWithAziende(twoAziende('a-1'))
+    expect(await screen.findByRole('heading', { name: 'Stima fiscale 2026' })).toBeInTheDocument()
+    expect(queriesSentTo('/api/analytics/overview')[0]).toMatchObject({ azienda_id: 'a-1' })
+    expect(queriesSentTo('/api/analytics/fiscal')).toEqual([{ anno: 2026, azienda_id: 'a-1' }])
+    // One azienda on screen: no per-azienda headings anywhere.
+    expect(screen.queryByRole('heading', { name: 'humancraft' })).not.toBeInTheDocument()
+  })
+})

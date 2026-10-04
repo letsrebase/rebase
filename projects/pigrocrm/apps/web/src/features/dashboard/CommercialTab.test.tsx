@@ -270,3 +270,32 @@ describe('CommercialTab', () => {
     expect(screen.queryByText(/Chiusure previste/)).toBeNull()
   })
 })
+
+// -- the sidebar's azienda (REB-632) ---------------------------------------------------------
+
+import { AziendaContext, type AziendaValue } from '@/lib/azienda'
+
+describe('CommercialTab, with an azienda selected', () => {
+  it('sends the selection beside the period, and nothing in «tutte»', async () => {
+    vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
+    const value: AziendaValue = {
+      aziende: [],
+      selected: 'a-2',
+      select: vi.fn(),
+      several: true,
+      byId: () => undefined,
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <AziendaContext value={value}>
+          <CommercialTab periodo={PERIODO} />
+        </AziendaContext>
+      </QueryClientProvider>,
+    )
+    await screen.findByText('Pipeline per stato')
+    expect(api.GET).toHaveBeenCalledWith('/api/dashboard/sales', {
+      params: { query: { ...PERIODO, azienda_id: 'a-2' } },
+    })
+  })
+})

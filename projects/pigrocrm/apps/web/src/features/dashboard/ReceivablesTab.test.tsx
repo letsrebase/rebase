@@ -6,7 +6,7 @@
  * an empty scadenziario.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
@@ -144,5 +144,34 @@ describe('ReceivablesTab', () => {
     renderTab()
     expect(await screen.findByRole('alert')).toHaveTextContent(/boom/)
     expect(screen.queryByText(/scadenziario per fascia/i)).not.toBeInTheDocument()
+  })
+})
+
+// -- the sidebar's azienda (REB-632) ---------------------------------------------------------
+
+import { AziendaContext, type AziendaValue } from '@/lib/azienda'
+
+describe('ReceivablesTab, with an azienda selected', () => {
+  it('sends the selection as the one parameter the page takes', async () => {
+    vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
+    const value: AziendaValue = {
+      aziende: [],
+      selected: 'a-2',
+      select: vi.fn(),
+      several: true,
+      byId: () => undefined,
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <AziendaContext value={value}>
+          <ReceivablesTab />
+        </AziendaContext>
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(api.GET).toHaveBeenCalled())
+    expect(api.GET).toHaveBeenCalledWith('/api/dashboard/receivables', {
+      params: { query: { azienda_id: 'a-2' } },
+    })
   })
 })

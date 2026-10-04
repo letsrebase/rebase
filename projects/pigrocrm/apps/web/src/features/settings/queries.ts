@@ -342,12 +342,12 @@ export function useActivateTemplate() {
 
 export type AziendaRecord = components['schemas']['AziendaRead']
 type AziendaUpsertBody = components['schemas']['AziendaUpsert']
+type AziendaCreateBody = components['schemas']['AziendaCreate']
 
 /**
  * The aziende of the space, the default first (REB-617, spec 2026-10-03 §5). Every
  * provisioned space has one, so an empty list is a space between signup and its first
- * boot and not a state the page designs for; a second azienda cannot be created before
- * milestone 5, which is why there is no create hook here.
+ * boot and not a state the page designs for.
  */
 export function useAziende() {
   return useQuery({
@@ -371,6 +371,30 @@ export function useSaveAzienda(aziendaId: string) {
         }),
       ),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.aziende }),
+  })
+}
+
+/**
+ * A second azienda, born with its fiscal profile in the one request `POST /api/aziende`
+ * takes (REB-632, spec 2026-10-03 §3, §9 milestone 5). Invalidates the list, which is
+ * also what the sidebar's provider reads, so the selector appears the moment the list
+ * has two.
+ */
+export function useCreateAzienda() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    // The same cast `useSaveAzienda` makes: the form sends the keys it asks for and the
+    // server defaults the rest, while the generated type lists them all as present.
+    mutationFn: (body: Record<string, unknown>) =>
+      unwrap(api.POST('/api/aziende', { body: body as unknown as AziendaCreateBody })),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.aziende })
+      // The Home's «tutte» is a different answer from the second azienda on (no
+      // space-wide estimate, the concentration per azienda), and its key does not
+      // change: dropped here so a sixty-second `staleTime` cannot keep the old shape.
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: ['fiscal-estimate'] })
+    },
   })
 }
 
