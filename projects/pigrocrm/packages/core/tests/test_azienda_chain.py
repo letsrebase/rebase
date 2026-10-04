@@ -517,6 +517,9 @@ def test_a_new_general_cost_is_refused_on_a_deactivated_azienda_and_an_old_one_s
         old.id, CostUpdate(descrizione="Licenza annuale", azienda_id=closed.id), ADMIN
     )
     assert (kept.descrizione, kept.azienda_id) == ("Licenza annuale", closed.id)
+    # `deal_id: null` echoed on a cost that never had a deal is no move: it keeps A.
+    echoed = costs.update(old.id, CostUpdate(deal_id=None, descrizione="Licenza"), ADMIN)
+    assert echoed.azienda_id == closed.id
     # Off the closed azienda, onto an active one or to shared, is a move and allowed.
     moved = costs.update(old.id, CostUpdate(azienda_id=_default(db_session).id), ADMIN)
     assert moved.azienda_id == _default(db_session).id

@@ -215,15 +215,18 @@ class CostService:
             # Moved to another deal, off a deal, or given an azienda of its own: the
             # azienda follows the deal when there is one and the request otherwise.
             deal_id = changes.get("deal_id", cost.deal_id)
-            # Off a deal with no azienda named: shared, not the old deal's.
-            kept = None if "deal_id" in changes else cost.azienda_id
-            wanted = changes.get("azienda_id", kept)
-            # `kept` only while the cost stays where it is: a move onto another deal is a
-            # new assignment, and a closed azienda takes none (Greptile, PR #509). A
-            # `deal_id` sent back unchanged, as a client echoing the row does, is no move.
+            # A move is a `deal_id` that differs from the cost's: one sent back unchanged,
+            # as a client echoing the row does, is no move, and neither is `null` echoed
+            # on a cost that had no deal (Greptile and CodeRabbit, PR #509).
             moved = "deal_id" in changes and changes["deal_id"] != cost.deal_id
-            kept_azienda = None if moved else cost.azienda_id
-            changes["azienda_id"] = self._azienda_for(deal_id, wanted, kept=kept_azienda)
+            # Off a deal with no azienda named: shared, not the old deal's. Not moved and
+            # nothing named: the azienda it has.
+            wanted = changes.get("azienda_id", None if moved else cost.azienda_id)
+            # And the allowance for a closed azienda holds only while the cost stays where
+            # it is: a move is a new assignment, and a closed azienda takes none.
+            changes["azienda_id"] = self._azienda_for(
+                deal_id, wanted, kept=None if moved else cost.azienda_id
+            )
         if changes.get("category_id") is not None:
             self.categories.require_active(changes["category_id"])
         self.locks.assert_writable(ENTITY, "data", cost.data, changes.get("data"))
