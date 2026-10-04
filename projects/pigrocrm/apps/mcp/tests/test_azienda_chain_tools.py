@@ -153,31 +153,40 @@ async def test_the_lists_narrow_to_the_azienda_named(
     async with Client(server) as client:
         beta = _payload(
             await client.call_tool(
-                "create_customer", {"ragione_sociale": "Beta S.r.l.", "azienda_id": second}
+                "create_customer", {"ragione_sociale": "Zeta Quattro S.r.l.", "azienda_id": second}
             )
         )
         stage_id = _payload(await client.call_tool("list_pipeline_stages", {}))["stages"][0]["id"]
         await client.call_tool(
             "create_deal",
-            {"nome": "Beta deal", "customer_id": beta["id"], "pipeline_stage_id": stage_id},
+            {"nome": "Zeta Quattro deal", "customer_id": beta["id"], "pipeline_stage_id": stage_id},
         )
 
         customers = _payload(await client.call_tool("search_customers", {"azienda_id": second}))
-        assert [c["ragione_sociale"] for c in customers["items"]] == ["Beta S.r.l."]
+        assert [c["ragione_sociale"] for c in customers["items"]] == ["Zeta Quattro S.r.l."]
+        # Superset, not equality: a committed world of another file may have left rows
+        # on this worker's database, all of them on the default azienda.
         everyone = _payload(await client.call_tool("search_customers", {}))
-        assert len(everyone["items"]) == 2
+        assert {"ACME S.r.l.", "Zeta Quattro S.r.l."} <= {
+            c["ragione_sociale"] for c in everyone["items"]
+        }
 
         deals = _payload(await client.call_tool("search_deals", {"azienda_id": second}))
-        assert [d["nome"] for d in deals["items"]] == ["Beta deal"]
+        assert [d["nome"] for d in deals["items"]] == ["Zeta Quattro deal"]
         default_deals = _payload(await client.call_tool("search_deals", {"azienda_id": default}))
-        assert [d["nome"] for d in default_deals["items"]] == ["Progetto MCP"]
+        default_names = {d["nome"] for d in default_deals["items"]}
+        assert "Progetto MCP" in default_names and "Zeta Quattro deal" not in default_names
 
         found = _payload(
-            await client.call_tool("search_everything", {"termine": "Beta", "azienda_id": default})
+            await client.call_tool(
+                "search_everything", {"termine": "Zeta Quattro", "azienda_id": default}
+            )
         )
         assert all(group["hits"] == [] for group in found["gruppi"])
         found = _payload(
-            await client.call_tool("search_everything", {"termine": "Beta", "azienda_id": second})
+            await client.call_tool(
+                "search_everything", {"termine": "Zeta Quattro", "azienda_id": second}
+            )
         )
         assert next(g for g in found["gruppi"] if g["entity"] == "deal")["totale"] == 1
 
@@ -196,8 +205,9 @@ async def test_the_lists_narrow_to_the_azienda_named(
         assert own["azienda_id"] == second
 
         costs = _payload(await client.call_tool("list_costs", {"azienda_id": default}))
-        assert [c["descrizione"] for c in costs["items"]] == ["Treno"]
+        default_costs = {c["descrizione"] for c in costs["items"]}
+        assert "Treno" in default_costs and not {"Software", "Licenza"} & default_costs
         second_costs = _payload(await client.call_tool("list_costs", {"azienda_id": second}))
         assert [c["descrizione"] for c in second_costs["items"]] == ["Licenza"]
         all_costs = _payload(await client.call_tool("list_costs", {}))
-        assert {c["descrizione"] for c in all_costs["items"]} == {"Treno", "Software", "Licenza"}
+        assert {"Treno", "Software", "Licenza"} <= {c["descrizione"] for c in all_costs["items"]}
