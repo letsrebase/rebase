@@ -91,10 +91,15 @@ class CostService:
         if document_id is not None and self.documents.get(document_id) is None:
             raise NotFound("document", document_id)
 
-    def _azienda_for(self, deal_id: UUID | None, wanted: UUID | None) -> UUID | None:
+    def _azienda_for(
+        self, deal_id: UUID | None, wanted: UUID | None, *, kept: UUID | None = None
+    ) -> UUID | None:
         """A cost's azienda (REB-623, spec §1.7): the deal's when it has a deal, and a
         different one named beside it is refused rather than overruled in silence;
-        without a deal, the one named, which must exist, or `None`, a shared cost."""
+        without a deal, the one named, which must exist and be active, or `None`, a
+        shared cost. `kept` is the azienda the cost already has: an edit that leaves it
+        where it is passes even once that azienda is deactivated, so the history of a
+        closed azienda stays editable while nothing new is filed under it (spec §3)."""
         if deal_id is not None:
             # The deal a cost already hangs on may be archived since: its azienda still
             # answers, and an update of such a cost is a domain error at worst, never
@@ -112,7 +117,15 @@ class CostService:
             return deal.azienda_id
         if wanted is None:
             return None
-        return self.aziende.resolve(wanted).id
+        azienda = self.aziende.resolve(wanted)
+        if not azienda.attiva and wanted != kept:
+            raise ValidationFailed(
+                ENTITY,
+                "azienda_id",
+                "l'azienda non e' attiva: una spesa si assegna a un'azienda attiva",
+                expected="l'id di un'azienda attiva, oppure nessuna per una spesa condivisa",
+            )
+        return azienda.id
 
     def _validated_custom(self, values: dict[str, Any]) -> dict[str, Any]:
         return validate_custom_fields(ENTITY, self.fields.specs_for(ENTITY), values)
@@ -201,7 +214,7 @@ class CostService:
             # Off a deal with no azienda named: shared, not the old deal's.
             kept = None if "deal_id" in changes else cost.azienda_id
             wanted = changes.get("azienda_id", kept)
-            changes["azienda_id"] = self._azienda_for(deal_id, wanted)
+            changes["azienda_id"] = self._azienda_for(deal_id, wanted, kept=cost.azienda_id)
         if changes.get("category_id") is not None:
             self.categories.require_active(changes["category_id"])
         self.locks.assert_writable(ENTITY, "data", cost.data, changes.get("data"))

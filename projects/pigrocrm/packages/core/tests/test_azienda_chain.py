@@ -479,3 +479,44 @@ def test_a_cost_of_an_archived_deal_can_still_be_edited(
         cost.id, CostUpdate(descrizione="Treno regionale", azienda_id=deal.azienda_id), ADMIN
     )
     assert (edited.descrizione, edited.azienda_id) == ("Treno regionale", deal.azienda_id)
+
+
+def test_a_new_general_cost_is_refused_on_a_deactivated_azienda_and_an_old_one_stays(
+    db_session: Session, seeded_category_id: UUID
+) -> None:
+    """Spec §3 for the one record that names its azienda directly: nothing new is filed
+    under a closed azienda, but a cost already there can still be edited in place."""
+    closed = _azienda(db_session, "rebase")
+    costs = CostService(db_session)
+    old = costs.create(
+        CostCreate(
+            category_id=seeded_category_id,
+            data=date(2026, 3, 1),
+            importo=Decimal("10.00"),
+            descrizione="Licenza",
+            azienda_id=closed.id,
+        ),
+        ADMIN,
+    )
+    closed.attiva = False
+    db_session.flush()
+    with pytest.raises(ValidationFailed) as refused:
+        costs.create(
+            CostCreate(
+                category_id=seeded_category_id,
+                data=date(2026, 3, 2),
+                importo=Decimal("5.00"),
+                descrizione="Dopo",
+                azienda_id=closed.id,
+            ),
+            ADMIN,
+        )
+    assert refused.value.details["field"] == "azienda_id"
+    kept = costs.update(
+        old.id, CostUpdate(descrizione="Licenza annuale", azienda_id=closed.id), ADMIN
+    )
+    assert (kept.descrizione, kept.azienda_id) == ("Licenza annuale", closed.id)
+    # Off the closed azienda, onto an active one or to shared, is a move and allowed.
+    moved = costs.update(old.id, CostUpdate(azienda_id=_default(db_session).id), ADMIN)
+    assert moved.azienda_id == _default(db_session).id
+    assert costs.update(old.id, CostUpdate(azienda_id=None), ADMIN).azienda_id is None
