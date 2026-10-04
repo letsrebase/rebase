@@ -154,7 +154,8 @@ def test_the_bytes_live_under_the_fiscal_prefix(
         {"id": artifact.document_id, "numero": artifact.version_numero},
     ).scalar_one()
     invoice = service.get(invoice_id, ADMIN)
-    assert key == f"fatture/{invoice.anno}/{invoice.numero}/v1.xml"
+    # The azienda first since REB-619: `2026/1` names one invoice per azienda.
+    assert key == f"fatture/{invoice.azienda_id}/{invoice.anno}/{invoice.numero}/v1.xml"
 
 
 def test_the_xml_gets_its_own_documents_row_typed_fattura_xml(

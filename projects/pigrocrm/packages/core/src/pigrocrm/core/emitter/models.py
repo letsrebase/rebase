@@ -1,14 +1,42 @@
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import Boolean, CheckConstraint, Index, String, Text, func, text
+from sqlalchemy import Boolean, CheckConstraint, Index, String, Text, func, select, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
+
+# Wide enough for a foreign VAT number kept in its own shape (REB-619, spec 2026-10-03
+# §1.3): an EU one runs to fourteen characters with its prefix (`NL123456789B01`), a
+# Swiss one to sixteen once its punctuation is stripped. An Italian P.IVA is still
+# exactly eleven digits, which `AziendaService` checks before anything reaches the
+# column; the width only stops a foreign code from dying as a `DataError` at flush.
+PARTITA_IVA_WIDTH = 20
 
 
 def _nome_from_ragione_sociale(context: Any) -> str:
     params = context.get_current_parameters()
     return str(params.get("ragione_sociale") or "")[:80]
+
+
+def default_azienda_id(context: Any) -> UUID | None:
+    """The space's default azienda, for a row inserted without naming one.
+
+    A column default on `invoices.azienda_id`, `invoice_counters.azienda_id` and
+    `invoice_register_gaps.azienda_id` (REB-619): the services name the azienda on
+    every row they write, so in production this runs for no row at all; it is what a
+    row built by hand, which the test suite does in fifty places and a migration's
+    planted fixture may, gets instead of a NOT NULL violation. Until the customer chain
+    of milestone 3 decides it, the default azienda is also the only answer there is.
+    Context-sensitive on purpose (`context.connection` is the inserting connection, so
+    a default seeded in the caller's own transaction is visible); `None` when the space
+    has no default at all, which the NOT NULL then refuses loudly rather than this
+    function inventing one.
+    """
+    found: UUID | None = context.connection.execute(
+        select(Azienda.id).where(Azienda.predefinita.is_(True))
+    ).scalar_one_or_none()
+    return found
 
 
 class Azienda(Base, PrimaryKeyMixin, TimestampMixin):
@@ -47,7 +75,7 @@ class Azienda(Base, PrimaryKeyMixin, TimestampMixin):
         Boolean, nullable=False, default=True, server_default=text("true")
     )
     ragione_sociale: Mapped[str] = mapped_column(String(255), nullable=False)
-    partita_iva: Mapped[str | None] = mapped_column(String(11), default=None)
+    partita_iva: Mapped[str | None] = mapped_column(String(PARTITA_IVA_WIDTH), default=None)
     codice_fiscale: Mapped[str | None] = mapped_column(String(16), default=None)
     indirizzo: Mapped[str | None] = mapped_column(String(255), default=None)
     cap: Mapped[str | None] = mapped_column(String(10), default=None)

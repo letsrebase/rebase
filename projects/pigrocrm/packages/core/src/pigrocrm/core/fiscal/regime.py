@@ -17,6 +17,7 @@ from decimal import Decimal
 from typing import Protocol, runtime_checkable
 
 from pigrocrm.core.errors import ValidationFailed
+from pigrocrm.core.fiscal.pack import PACK_IT_FLAT_RATE, PACK_NON_IT
 from pigrocrm.core.fiscal.schemas import (
     CODICE_REGIME_RE,
     DEFAULT_RIFERIMENTO_NORMATIVO,
@@ -155,8 +156,44 @@ class _Ordinario:
         return ZERO
 
 
+class _Estero:
+    """The `non-it` pack's regime (REB-619, spec 2026-10-03 §1.3): a company
+    established outside Italy, which issues no FatturaPA and owes no Italian duty.
+
+    The rate is the one entered, or the profile's default: the strategy knows nothing
+    of the local VAT law and does not pretend to. No bollo, ever. No `Natura`
+    default of its own, because a `Natura` is a FatturaPA code: a zero rate is
+    accepted only when the profile names one, since `invoice_lines` requires a
+    `natura` beside a zero rate whoever the issuer is; a foreign invoice that needs a
+    legal mention beside its untaxed line puts it in the profile's default.
+    """
+
+    codice = PACK_NON_IT
+
+    def resolve_line_vat(
+        self, requested: Decimal | None, profile: FiscalSnapshot, *, nazione_cliente: str
+    ) -> tuple[Decimal, str | None, str | None]:
+        aliquota = requested if requested is not None else profile.aliquota_iva_default
+        if aliquota == ZERO:
+            if not profile.natura_default:
+                raise ValidationFailed(
+                    "invoice_line",
+                    "aliquota_iva",
+                    "un'azienda estera non ha una natura da abbinare a un'aliquota zero: "
+                    "imposta una natura di default nel profilo fiscale oppure un'aliquota "
+                    "maggiore di zero",
+                    expected="un'aliquota maggiore di zero",
+                )
+            return ZERO, profile.natura_default, profile.riferimento_normativo
+        return aliquota, None, None
+
+    def bollo(self, riepilogo: Sequence[RiepilogoGroup], profile: FiscalSnapshot) -> Decimal:
+        return ZERO
+
+
 FORFETTARIO: RegimeStrategy = _Forfettario()
 ORDINARIO: RegimeStrategy = _Ordinario()
+ESTERO: RegimeStrategy = _Estero()
 
 _BY_CODE: dict[str, RegimeStrategy] = {
     FORFETTARIO.codice: FORFETTARIO,
@@ -164,15 +201,36 @@ _BY_CODE: dict[str, RegimeStrategy] = {
 }
 
 
-def resolve_regime(codice_regime: str) -> RegimeStrategy:
-    """The strategy for a stored `codice_regime`, or `ValidationFailed` naming it.
+def resolve_regime(codice_regime: str | None, pack_id: str = PACK_IT_FLAT_RATE) -> RegimeStrategy:
+    """The strategy for a stored `codice_regime` and pack, or `ValidationFailed`
+    naming the field.
 
-    Two checks, not one: the value must be a syntactically valid `RF01`-`RF19` code
-    (`.fullmatch`, so a trailing newline is refused rather than accepted and passed
-    on), and a strategy must exist for it. A code such as `RF07` is real FPR12 and
-    still has no implementation here, and saying so is more useful than resolving it
-    to the forfettario and silently issuing an invoice under the wrong regime.
+    The pack decides first (REB-619): `non-it` is `ESTERO` and carries no code, since
+    RF01..RF19 are FatturaPA values; a code beside it is refused rather than ignored,
+    because a profile that says both «estera» and «RF19» is a configuration nobody
+    meant. On the Italian pack the code is required, then two checks, not one: the
+    value must be a syntactically valid `RF01`-`RF19` code (`.fullmatch`, so a
+    trailing newline is refused rather than accepted and passed on), and a strategy
+    must exist for it. A code such as `RF07` is real FPR12 and still has no
+    implementation here, and saying so is more useful than resolving it to the
+    forfettario and silently issuing an invoice under the wrong regime.
     """
+    if pack_id == PACK_NON_IT:
+        if codice_regime is not None:
+            raise ValidationFailed(
+                ENTITY,
+                "codice_regime",
+                "un'azienda estera non ha un codice regime FatturaPA",
+                expected="nessun codice con il pacchetto non-it",
+            )
+        return ESTERO
+    if codice_regime is None:
+        raise ValidationFailed(
+            ENTITY,
+            "codice_regime",
+            "il regime italiano richiede un codice",
+            expected="un codice da RF01 a RF19",
+        )
     if not CODICE_REGIME_RE.fullmatch(codice_regime):
         raise ValidationFailed(
             ENTITY,
@@ -191,4 +249,4 @@ def resolve_regime(codice_regime: str) -> RegimeStrategy:
     return strategy
 
 
-__all__ = ["FORFETTARIO", "ORDINARIO", "RegimeStrategy", "resolve_regime"]
+__all__ = ["ESTERO", "FORFETTARIO", "ORDINARIO", "RegimeStrategy", "resolve_regime"]

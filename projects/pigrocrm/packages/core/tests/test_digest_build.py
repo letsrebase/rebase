@@ -26,6 +26,7 @@ from typing import NamedTuple
 from uuid import UUID
 
 import pytest
+from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
 from sqlalchemy import Engine, delete, func, select
 from sqlalchemy.orm import Session
 
@@ -131,6 +132,7 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
     emissioni: list[tuple[date, Decimal]] = []
     with factory() as session:
         _require_empty(session)
+        azienda_id = committed_default_azienda(session)
         aperto = PipelineStage(
             nome=f"{_PREFIX} Aperto", posizione=0, probabilita_default=20, tipo="open"
         )
@@ -295,6 +297,7 @@ def corpus(db_engine: Engine, frozen_day: date) -> Iterator[Corpus]:
             session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
             session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
             session.execute(delete(User).where(User.nome == "Digestore"))
+            remove_azienda(session, azienda_id)
             session.commit()
 
 

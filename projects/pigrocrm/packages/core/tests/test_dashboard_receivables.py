@@ -21,6 +21,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
 from sqlalchemy import Engine, delete, func, select
 
 from pigrocrm.core.actor import Actor
@@ -50,6 +51,7 @@ def corpus(db_engine: Engine) -> Iterator[tuple[Engine, date, UUID, UUID]]:
     with factory() as session:
         leftovers = session.execute(select(func.count(Invoice.id))).scalar_one()
         assert leftovers == 0, f"{leftovers} committed invoice(s) already in the register"
+        azienda_id = committed_default_azienda(session)
         acme = Customer(ragione_sociale=f"{_PREFIX} Acme", nazione="IT", custom_fields={})
         beta = Customer(ragione_sociale=f"{_PREFIX} Beta", nazione="IT", custom_fields={})
         session.add_all([acme, beta])
@@ -98,6 +100,7 @@ def corpus(db_engine: Engine) -> Iterator[tuple[Engine, date, UUID, UUID]]:
             session.execute(delete(PaymentReminder).where(PaymentReminder.invoice_id.in_(invoices)))
             session.execute(delete(Invoice).where(Invoice.customer_id.in_(customers)))
             session.execute(delete(Customer).where(Customer.id.in_(customers)))
+            remove_azienda(session, azienda_id)
             session.commit()
 
 

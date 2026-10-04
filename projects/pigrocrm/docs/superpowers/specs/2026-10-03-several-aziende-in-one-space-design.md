@@ -688,3 +688,34 @@ Added as the milestones land, dated, never rewriting the sections above.
   refused in words until the `non-it` pack widens it; and the default azienda is kept
   active by a check constraint (`ck_emitter_profile_default_active`), since
   `set_default` and `deactivate` can race each other across two transactions.
+
+- **2026-10-04, milestone «Number and import invoices per azienda» (REB-619).**
+  `invoices.azienda_id`, `invoice_counters.azienda_id` and
+  `invoice_register_gaps.azienda_id` carry a context default to the space's default
+  azienda (`emitter/models.py::default_azienda_id`): the services name the azienda on
+  every row they write, so the default serves a row built by hand, which the test
+  suite does in some fifty places, and nothing else; until milestone 3 derives it from
+  the customer, the default azienda is also the only answer there is. The foreign
+  regime (`fiscal/regime.py::ESTERO`, selected by the `non-it` pack) accepts a zero
+  rate only when the profile names a `natura_default`, since `invoice_lines` requires
+  a `natura` beside a zero rate whoever issues; it never invents one. The pack id is a
+  `Literal` on the schemas (`PackId`), so a typo is refused by the schema and never
+  reaches `resolve_pack`. `rivalsa_line_for_contract` answers `None` on a pack with no
+  such charge rather than failing, since a contract's election names an Italian charge
+  a foreign azienda does not owe. `export_xml` reads the foreign refusal off the
+  row's frozen snapshot (`fiscale.pack_id`), never the live profile, so the document
+  is judged by the azienda it was issued under. The register's own ambiguity check,
+  one azienda matched by P.IVA and another by codice fiscale, lives in
+  `import_direction.match_azienda`, which is also what names the azienda a review or
+  a confirm answers. The P.IVA column is twenty characters wide
+  (`PARTITA_IVA_WIDTH`), so the eleven-character refusal of the first milestone is
+  gone and one beyond twenty is refused in its place. A register write (`issue`,
+  `import_issued`, `declare_gaps`) refuses an inactive azienda; a read still answers
+  for one, since its history stays readable. The timeline entity a gap declaration
+  hangs on is derived from the azienda and the year now
+  (`pigrocrm:invoice_register:{azienda_id}:{anno}`); declarations recorded before this
+  milestone sit under the year-only id, which nothing reads back by id. And the
+  `non-it` defaults are the schema's, not the panel's: `FiscalProfileUpsert` empties
+  the natura, the riferimento, the bollo and the three income parameters when the pack
+  is foreign and the caller leaves them out, and the service refuses them when given,
+  so the API and MCP agree with Impostazioni without each repeating the rule.

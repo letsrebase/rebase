@@ -145,7 +145,12 @@ def rivalsa_line_for_contract(
     `chargeSlotOrder` would widen it the day that ever changes)."""
     if not applies_social_charge:
         return None
-    charge = pack.charge(RIVALSA_INPS_CHARGE_ID)
+    try:
+        charge = pack.charge(RIVALSA_INPS_CHARGE_ID)
+    except KeyError:
+        # A pack with no such charge (`non-it`, REB-619): the contract's election names
+        # an Italian charge a foreign azienda does not owe, so there is no line to add.
+        return None
     importo = round_money(fee_subtotal * charge.aliquota)
     return InvoiceLineIn(
         descrizione=charge.descrizione_riga,

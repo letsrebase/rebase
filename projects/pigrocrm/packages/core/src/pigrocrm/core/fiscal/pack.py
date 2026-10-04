@@ -25,7 +25,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Literal
+from typing import Final, Literal
+
+# The two pack ids, as literals so a schema can name them in a `Literal` type
+# (`fiscal/schemas.py::PackId`) and a profile cannot point at a pack that does not exist.
+PACK_IT_FLAT_RATE: Final = "it-flat-rate"
+PACK_NON_IT: Final = "non-it"
 
 # The only basis this pack's ceilings use today -- mastro's `cash_received_calendar_year`
 # (`pack.ts`'s `CeilingBasis`). Money in the bank, within the calendar year, matching
@@ -146,7 +151,7 @@ RIVALSA_INPS = StatutoryCharge(
 # (comma 54, l. 190/2014); €100,000 loses it *immediately*, in the same year
 # (comma 71). Alert ratios ported verbatim (0.8/1.0 and 0.9/1.0).
 IT_FLAT_RATE_PACK = FiscalPack(
-    id="it-flat-rate",
+    id=PACK_IT_FLAT_RATE,
     version="1",
     ceilings=(
         Ceiling(
@@ -187,8 +192,16 @@ IT_FLAT_RATE_PACK = FiscalPack(
     charges=(RIVALSA_INPS,),
 )
 
+# A company established outside Italy (REB-619, spec 2026-10-03 §1.3): no ceiling,
+# because the forfettario's thresholds are a fact of Italian law; no statutory charge,
+# because the rivalsa INPS is too; and no bollo or `Natura`, which are the regime
+# strategy's (`fiscal/regime.py::ESTERO`, selected by this pack's id). Its invoices
+# are never FatturaPA, so `codice_regime` is `NULL` on a profile that points here.
+NON_IT_PACK = FiscalPack(id=PACK_NON_IT, version="1", ceilings=(), charges=())
+
 _PACKS: dict[tuple[str, str], FiscalPack] = {
     (IT_FLAT_RATE_PACK.id, IT_FLAT_RATE_PACK.version): IT_FLAT_RATE_PACK,
+    (NON_IT_PACK.id, NON_IT_PACK.version): NON_IT_PACK,
 }
 
 
@@ -206,6 +219,9 @@ def resolve_pack(pack_id: str, pack_version: str) -> FiscalPack:
 
 __all__ = [
     "IT_FLAT_RATE_PACK",
+    "NON_IT_PACK",
+    "PACK_IT_FLAT_RATE",
+    "PACK_NON_IT",
     "RIVALSA_INPS",
     "RIVALSA_INPS_CHARGE_ID",
     "Ceiling",

@@ -25,6 +25,7 @@ a second server, genuinely empty, for about a second of setup and no second cont
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable, Iterator
 from datetime import date, timedelta
 from decimal import Decimal
@@ -57,6 +58,9 @@ from pigrocrm_mcp.prompts import customer as customer_prompts
 from pigrocrm_mcp.prompts import dashboards as dashboard_prompts
 from pigrocrm_mcp.server import DOMAIN_REFUSAL, build_server
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "packages" / "core" / "tests"))
+from fakes.azienda_fixtures import committed_default_azienda, remove_azienda  # noqa: E402
+
 ADMIN = Actor(id=None, type="mcp", role="admin")
 _PREFIX = "MCPPROMPT"
 # The month `chiusura-mese` is asked about everywhere in this file. In the past, and fixed:
@@ -86,6 +90,9 @@ class _Seeded(NamedTuple):
     customer_id: UUID
     open_deal_name: str
     won_deal_name: str
+    # The default azienda this corpus wrote for its invoices (REB-619), to remove last;
+    # `None` when another file's world already held one.
+    azienda_id: UUID | None
 
 
 def _seed(factory: sessionmaker[Any]) -> _Seeded:
@@ -98,6 +105,7 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
     fail on somebody else's foreign keys and would be wrong even if it did not.
     """
     with factory() as session:
+        azienda_id = committed_default_azienda(session)
         # `code=None`, so these are user-created stages as far as `seed_defaults` is
         # concerned and never collide with a seeded `lead`/`vinto` on the unique index.
         aperto = PipelineStage(
@@ -298,14 +306,17 @@ def _seed(factory: sessionmaker[Any]) -> _Seeded:
         )
 
         seeded = _Seeded(
-            customer_id=customer.id, open_deal_name=open_deal.nome, won_deal_name=won_deal.nome
+            customer_id=customer.id,
+            open_deal_name=open_deal.nome,
+            won_deal_name=won_deal.nome,
+            azienda_id=azienda_id,
         )
         session.commit()
 
     return seeded
 
 
-def _teardown(factory: sessionmaker[Any]) -> None:
+def _teardown(factory: sessionmaker[Any], azienda_id: UUID | None = None) -> None:
     with factory() as session:
         # Children before parents. Everything is scoped to this file's prefix rather than
         # truncated, so a wholesale delete cannot take another file's committed rows with
@@ -320,6 +331,7 @@ def _teardown(factory: sessionmaker[Any]) -> None:
         session.execute(delete(CostCategory).where(CostCategory.nome.like(f"{_PREFIX} %")))
         session.execute(delete(User).where(User.email.like(f"{_PREFIX.lower()}%")))
         session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
+        remove_azienda(session, azienda_id)
         session.commit()
 
 
@@ -338,7 +350,7 @@ def prompt_corpus(mcp_engine: Engine, tmp_path: Path) -> Iterator[Corpus]:
             won_deal_name=seeded.won_deal_name,
         )
     finally:
-        _teardown(factory)
+        _teardown(factory, seeded.azienda_id)
 
 
 @pytest.fixture

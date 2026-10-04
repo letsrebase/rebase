@@ -28,6 +28,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+from fakes.azienda_fixtures import committed_default_azienda
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
@@ -200,6 +201,9 @@ def _seed_root(settings: Settings) -> None:
                         ),
                     )
                 )
+            # And the azienda `createadmin` writes with the first admin (REB-615), which
+            # the root's one invoice below belongs to (REB-619).
+            committed_default_azienda(session, nome="Radice")
             session.commit()
     finally:
         engine.dispose()

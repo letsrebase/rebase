@@ -13,6 +13,13 @@ class AziendaRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def active_italian(self) -> list[Azienda]:
+        """The aziende a FatturaPA file can name as its `CedentePrestatore` (REB-619,
+        spec §1.5): active, established in Italy. The import classifier matches the
+        file's supplier against these and no other; a foreign azienda never issued a
+        file the SdI carried."""
+        return [a for a in self.list(only_active=True) if (a.nazione or "").upper() == "IT"]
+
     def list(self, *, only_active: bool = True) -> list[Azienda]:
         """The default first, then by short name, so every list and every selector
         shows the same order without sorting again."""

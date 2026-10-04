@@ -82,6 +82,9 @@ class ConfirmedInvoiceRead(BaseModel):
 
     document_id: UUID
     outcome: InvoiceConfirmOutcome
+    # The azienda the file landed on, or was checked against (REB-619, spec §1.5);
+    # `None` for `incoming_skipped` and `unclaimed`, which land nowhere.
+    azienda_id: UUID | None = None
     fattura: InvoiceRead | None = None
     buchi_non_dichiarati: list[int] | None = None
 

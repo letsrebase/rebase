@@ -264,7 +264,7 @@ class SearchRepository:
         forbid.
 
         The two paths are **exclusive**. When the term parses as a fiscal number the
-        equality path runs alone -- served by `uq_invoices_anno_numero`, the unique index
+        equality path runs alone -- served by `ix_invoices_anno_numero`, the partial index
         slice 3 §3 already creates, so the number half needs no new index at all.
         Trigramming `123` over `causale` would return every invoice whose description
         contains 123 beside the one that *is* 123, and the row the user named would be one
@@ -324,15 +324,18 @@ class SearchRepository:
         return clauses
 
     def _invoices_by_number(self, anno: int | None, numero: int, *, limit: int) -> SearchGroup:
-        """The equality half. At most one row per year, so the ceiling is never reached in
-        practice -- and the bounded count is used anyway, because "in practice" is not a
-        property and this way both paths report `totale` by the same rule.
+        """The equality half. At most one row per year and azienda (REB-619: two aziende
+        of one space each have their own `2026/1`, listed one after the other and told
+        apart by the azienda's name once milestone 3 shows it), so the ceiling is never
+        reached in practice -- and the bounded count is used anyway, because "in
+        practice" is not a property and this way both paths report `totale` by the same
+        rule.
 
         `ORDER BY anno DESC` is §8.5's "what was touched most recently is more likely what
         is wanted", expressed in the only ordering a number has. `id DESC` closes it into a
-        total order: `uq_invoices_anno_numero` already makes `(anno, numero)` unique, so it
-        is redundant today, and it costs nothing to not depend on a constraint in another
-        package for criterion 4's byte-identical guarantee.
+        total order: since REB-619 two aziende of one space may share `(anno, numero)`,
+        so it is what orders their rows, and it costs nothing to not depend on a
+        constraint in another package for criterion 4's byte-identical guarantee.
         """
         predicate = self._number_predicate(anno, numero)
         rows = (

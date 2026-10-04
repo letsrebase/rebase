@@ -188,3 +188,67 @@ def test_one_profile_per_azienda_is_the_database_guarantee(db_session: Session) 
     with pytest.raises(IntegrityError):
         db_session.flush()
     db_session.rollback()
+
+
+def test_a_foreign_profile_leaves_the_italian_fields_empty_unless_told_otherwise(
+    db_session: Session,
+) -> None:
+    """REB-619: on the `non-it` pack the schema's defaults are not the forfettario's,
+    so the minimal body an API or MCP caller sends saves a profile with no natura, no
+    bollo and no income parameters, and the service then accepts it."""
+    minimal = FiscalProfileUpsert(pack_id="non-it", aliquota_iva_default=Decimal("20.00"))
+    assert minimal.codice_regime is None
+    assert (minimal.natura_default, minimal.riferimento_normativo) == (None, None)
+    assert minimal.applica_bollo is False
+    assert (
+        minimal.coefficiente_redditivita,
+        minimal.aliquota_imposta_sostitutiva,
+        minimal.aliquota_inps,
+    ) == (None, None, None)
+    saved = FiscalProfileService(db_session).upsert(minimal, ADMIN)
+    assert (saved.pack_id, saved.codice_regime, saved.applica_bollo) == ("non-it", None, False)
+    assert saved.coefficiente_redditivita is None
+    # The Italian pack keeps the forfettario's defaults, untouched by the rule above.
+    assert FiscalProfileUpsert(codice_regime="RF19").natura_default == "N2.2"
+
+
+def test_a_foreign_profile_refuses_the_bollo_and_the_forfettarios_parameters(
+    db_session: Session,
+) -> None:
+    service = FiscalProfileService(db_session)
+    with pytest.raises(ValidationFailed) as bollo:
+        service.upsert(
+            FiscalProfileUpsert(
+                pack_id="non-it", aliquota_iva_default=Decimal("20.00"), applica_bollo=True
+            ),
+            ADMIN,
+        )
+    assert bollo.value.details["field"] == "applica_bollo"
+    with pytest.raises(ValidationFailed) as coefficient:
+        service.upsert(
+            FiscalProfileUpsert(
+                pack_id="non-it",
+                aliquota_iva_default=Decimal("20.00"),
+                coefficiente_redditivita=Decimal("67.00"),
+            ),
+            ADMIN,
+        )
+    assert coefficient.value.details["field"] == "coefficiente_redditivita"
+
+
+def test_a_foreign_zero_rate_needs_a_natura_and_says_so_in_its_own_words(
+    db_session: Session,
+) -> None:
+    """`invoice_lines` requires a natura beside a zero rate whoever issues; the foreign
+    refusal names the reason a foreign company understands, not the SdI."""
+    with pytest.raises(ValidationFailed) as refused:
+        FiscalProfileService(db_session).upsert(FiscalProfileUpsert(pack_id="non-it"), ADMIN)
+    assert refused.value.details["field"] == "natura_default"
+    assert "estera" in refused.value.message
+    saved = FiscalProfileService(db_session).upsert(
+        FiscalProfileUpsert(
+            pack_id="non-it", natura_default="N2.1", riferimento_normativo="Art. 7"
+        ),
+        ADMIN,
+    )
+    assert (saved.natura_default, saved.riferimento_normativo) == ("N2.1", "Art. 7")

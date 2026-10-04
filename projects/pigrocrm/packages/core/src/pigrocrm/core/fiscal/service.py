@@ -10,6 +10,7 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.emitter.service import AziendaService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.models import FiscalProfile
+from pigrocrm.core.fiscal.pack import PACK_NON_IT
 from pigrocrm.core.fiscal.regime import resolve_regime
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead, FiscalProfileUpsert, FiscalSnapshot
@@ -39,6 +40,7 @@ class FiscalProfileService:
         profile = self._require(azienda_id)
         return FiscalSnapshot(
             codice_regime=profile.codice_regime,
+            pack_id=profile.pack_id,
             aliquota_iva_default=profile.aliquota_iva_default,
             natura_default=profile.natura_default,
             riferimento_normativo=profile.riferimento_normativo,
@@ -98,19 +100,53 @@ class FiscalProfileService:
 
     @staticmethod
     def _check(payload: dict[str, Any]) -> None:
-        # `resolve_regime` does both checks: the `RF01`-`RF19` shape, with
-        # `.fullmatch` so "RF19\n" cannot reach the String(4) column, and whether a
-        # strategy exists. Raising here means an unimplemented regime is refused at
-        # configuration time rather than at the first emission.
-        resolve_regime(payload["codice_regime"])
+        # `resolve_regime` does every check: the pack decides whether a code is
+        # required (`it-flat-rate`) or forbidden (`non-it`, REB-619), then the
+        # `RF01`-`RF19` shape, with `.fullmatch` so "RF19\n" cannot reach the String(4)
+        # column, and whether a strategy exists. Raising here means an unimplemented
+        # regime is refused at configuration time rather than at the first emission.
+        resolve_regime(payload["codice_regime"], payload["pack_id"])
+        abroad = payload["pack_id"] == PACK_NON_IT
         if payload["aliquota_iva_default"] == ZERO and not payload.get("natura_default"):
+            # The same rule for both packs, since `invoice_lines` requires a natura
+            # beside a zero rate whoever issues; the reason differs, so the words do.
             raise ValidationFailed(
                 ENTITY,
                 "natura_default",
-                "un'aliquota di default a zero richiede una natura, altrimenti ogni "
+                "un'azienda estera con aliquota zero richiede una natura: la dicitura che "
+                "ogni riga non tassata porta"
+                if abroad
+                else "un'aliquota di default a zero richiede una natura, altrimenti ogni "
                 "riepilogo prodotto verrebbe scartato dallo SdI",
-                expected="una natura, per esempio N2.2",
+                expected="una natura, oppure un'aliquota maggiore di zero"
+                if abroad
+                else "una natura, per esempio N2.2",
             )
+        if abroad:
+            # What a foreign azienda cannot carry (REB-619): the bollo is an Italian
+            # duty, and the three income parameters are the forfettario's arithmetic,
+            # which the fiscal estimate would otherwise compute for a company it does
+            # not apply to. `FiscalProfileUpsert` defaults them off for this pack; an
+            # explicit value is refused, not silently dropped.
+            if payload["applica_bollo"]:
+                raise ValidationFailed(
+                    ENTITY,
+                    "applica_bollo",
+                    "un'azienda estera non applica il bollo virtuale",
+                    expected="applica_bollo = false",
+                )
+            for field in (
+                "coefficiente_redditivita",
+                "aliquota_imposta_sostitutiva",
+                "aliquota_inps",
+            ):
+                if payload.get(field) is not None:
+                    raise ValidationFailed(
+                        ENTITY,
+                        field,
+                        "un'azienda estera non ha i parametri del forfettario",
+                        expected="nessun valore",
+                    )
         if payload["aliquota_iva_default"] != ZERO and payload.get("natura_default"):
             raise ValidationFailed(
                 ENTITY,

@@ -439,6 +439,9 @@ class InvoiceRead(BaseModel):
     id: UUID
     customer_id: UUID
     deal_id: UUID | None
+    # The azienda that issues or issued it (REB-619): read-only here, the default
+    # azienda on creation until the customer chain of milestone 3 decides it.
+    azienda_id: UUID
     tipo: str
     stato: str
     anno: int | None

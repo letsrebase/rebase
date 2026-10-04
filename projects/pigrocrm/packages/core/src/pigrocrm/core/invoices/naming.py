@@ -80,11 +80,13 @@ def sdi_filename(id_fiscale: str, anno: int, numero: int) -> str:
     return f"IT{id_fiscale}_{progressivo_invio(anno, numero)}.xml"
 
 
-def invoice_storage_prefix(anno: int, numero: int) -> str:
-    """`fatture/{anno}/{numero}` -- so a file pulled out of context is still
-    identifiable, which is mechanism 4 of the four that keep a proforma from being
-    mistaken for an invoice."""
-    return f"fatture/{anno}/{numero}"
+def invoice_storage_prefix(azienda_id: UUID, anno: int, numero: int) -> str:
+    """`fatture/{azienda_id}/{anno}/{numero}` -- so a file pulled out of context is
+    still identifiable, which is mechanism 4 of the four that keep a proforma from
+    being mistaken for an invoice. The azienda first since REB-619, because `2026/1`
+    names one invoice per azienda; every key written before it stays on its row and is
+    never moved (spec 2026-10-03 §1.4)."""
+    return f"fatture/{azienda_id}/{anno}/{numero}"
 
 
 def proforma_storage_prefix(invoice_id: UUID) -> str:

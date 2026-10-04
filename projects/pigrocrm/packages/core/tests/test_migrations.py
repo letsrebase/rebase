@@ -34,7 +34,10 @@ HAND_MAINTAINED_INDEXES = {
     "ix_customers_custom_fields",
     "ix_people_custom_fields",
     "ix_deals_custom_fields",
-    "uq_invoices_anno_numero",
+    "uq_invoices_azienda_anno_numero",
+    # REB-619: the `(anno, numero)` path the unique index stopped offering to a search
+    # across aziende; partial, so `compare_metadata` cannot see it either.
+    "ix_invoices_anno_numero",
     "ix_invoices_custom_fields",
     # Same shape as `uq_pipeline_stage_code`: a plain unique index on a nullable
     # column, one of the two shapes autogenerate is known to silently omit.
@@ -222,12 +225,14 @@ def test_hand_maintained_indexes_survive_the_migration(pigrocrm_postgres: Any) -
         "uq_invitations_email_lower_open lost its pending predicate, so an accepted or "
         f"revoked invitation would block the address forever: {invitations_email_open_def}"
     )
-    anno_numero_def = indexes["uq_invoices_anno_numero"]
-    assert "UNIQUE" in anno_numero_def, "uq_invoices_anno_numero must be a unique index"
+    anno_numero_def = indexes["uq_invoices_azienda_anno_numero"]
+    assert "UNIQUE" in anno_numero_def, "uq_invoices_azienda_anno_numero must be a unique index"
     assert "WHERE" in anno_numero_def and "numero IS NOT NULL" in anno_numero_def, (
-        "uq_invoices_anno_numero lost its partial predicate, so every unnumbered draft "
-        f"is now a duplicate of every other: {anno_numero_def}"
+        "uq_invoices_azienda_anno_numero lost its partial predicate, so every unnumbered "
+        f"draft is now a duplicate of every other: {anno_numero_def}"
     )
+    # REB-619: the register is per azienda, so the azienda leads the key.
+    assert "azienda_id" in anno_numero_def, anno_numero_def
 
 
 def test_0045_gives_a_used_database_with_no_emitter_row_its_azienda(
@@ -1172,3 +1177,192 @@ def test_0041_backfills_pack_id_and_pack_version_on_the_existing_row(
         engine.dispose()
 
     assert (pack_id, pack_version) == ("it-flat-rate", "1")
+
+
+def test_0046_keys_the_register_by_azienda_over_planted_rows_and_refuses_to_undo_two(
+    pigrocrm_postgres: Any,
+) -> None:
+    """The migration over real rows planted at 0045, not read as text (REB-619): a
+    default azienda, a fiscal profile, a counter and a declared gap. The upgrade keys
+    counter and gap to the azienda, swaps the two uniques and the primary key, lets
+    `codice_regime` be empty and widens the P.IVA; the downgrade with one azienda goes
+    back, and with a second azienda's counter it refuses before touching anything."""
+    azienda = "00000000-0000-7000-8000-0000000000a1"
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0045")
+
+        engine: Engine = create_engine(url)
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO emitter_profile (id, nome, predefinita, attiva, ragione_sociale,
+                                                 nazione, created_at, updated_at)
+                    VALUES (:id, 'Studio', true, true, 'Studio Rossi', 'IT', now(), now())
+                    """
+                ),
+                {"id": azienda},
+            )
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO fiscal_profile (id, azienda_id, codice_regime, aliquota_iva_default,
+                                                applica_bollo, soglia_bollo, importo_bollo,
+                                                condizioni_pagamento, modalita_pagamento,
+                                                giorni_scadenza, created_at, updated_at)
+                    VALUES ('00000000-0000-7000-8000-0000000000f1', :id, 'RF19', 0, true, 77.47,
+                            2.00, 'TP02', 'MP05', 30, now(), now())
+                    """
+                ),
+                {"id": azienda},
+            )
+            connection.execute(
+                text("INSERT INTO invoice_counters (anno, ultimo_numero) VALUES (2026, 3)")
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO invoice_register_gaps (id, anno, numero, motivo, dichiarato_il) "
+                    "VALUES ('00000000-0000-7000-8000-0000000000b1', 2026, 2, 'mai emessa', now())"
+                )
+            )
+            # A numbered invoice too, the one table every real space has rows in: the
+            # backfill, the NOT NULL and the swap of the partial unique index with data
+            # under it are what production meets.
+            connection.execute(
+                text(
+                    "INSERT INTO customers (id, ragione_sociale, nazione, custom_fields, "
+                    "created_at, updated_at) VALUES ('00000000-0000-7000-8000-0000000000c1', "
+                    "'Acme', 'IT', '{}', now(), now())"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO invoices (id, customer_id, tipo, stato, anno, numero, "
+                    "data_emissione, tipo_documento, divisa, imponibile, imposta, bollo, totale, "
+                    "stato_pagamento, custom_fields, created_at, updated_at) VALUES "
+                    "('00000000-0000-7000-8000-0000000000d1', "
+                    "'00000000-0000-7000-8000-0000000000c1', 'fattura', 'emessa', 2026, 3, "
+                    "'2026-03-01', 'TD01', 'EUR', 100, 0, 0, 100, 'da_incassare', '{}', "
+                    "now(), now())"
+                )
+            )
+        engine.dispose()
+
+        upgrade(config, "0046")
+
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            invoice_azienda = connection.execute(
+                text("SELECT azienda_id FROM invoices WHERE numero = 3")
+            ).scalar_one()
+            counter = connection.execute(
+                text("SELECT azienda_id, anno, ultimo_numero FROM invoice_counters")
+            ).one()
+            gap = connection.execute(
+                text("SELECT azienda_id, anno, numero FROM invoice_register_gaps")
+            ).one()
+            pk = connection.execute(
+                text(
+                    "SELECT array_agg(a.attname ORDER BY k.n) FROM pg_index i "
+                    "JOIN LATERAL unnest(i.indkey) WITH ORDINALITY AS k(attnum, n) ON true "
+                    "JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = k.attnum "
+                    "WHERE i.indrelid = 'invoice_counters'::regclass AND i.indisprimary"
+                )
+            ).scalar_one()
+            invoice_indexes = set(
+                connection.execute(
+                    text("SELECT indexname FROM pg_indexes WHERE tablename = 'invoices'")
+                ).scalars()
+            )
+            regime_nullable, piva_width = connection.execute(
+                text(
+                    "SELECT (SELECT is_nullable FROM information_schema.columns "
+                    "        WHERE table_name = 'fiscal_profile' "
+                    "        AND column_name = 'codice_regime'), "
+                    "       (SELECT character_maximum_length FROM information_schema.columns "
+                    "        WHERE table_name = 'emitter_profile' AND column_name = 'partita_iva')"
+                )
+            ).one()
+        engine.dispose()
+        assert str(invoice_azienda) == azienda
+        assert (str(counter.azienda_id), counter.anno, counter.ultimo_numero) == (azienda, 2026, 3)
+        assert (str(gap.azienda_id), gap.anno, gap.numero) == (azienda, 2026, 2)
+        assert pk == ["azienda_id", "anno"]
+        assert "uq_invoices_azienda_anno_numero" in invoice_indexes
+        assert "ix_invoices_anno_numero" in invoice_indexes
+        assert "uq_invoices_anno_numero" not in invoice_indexes
+        assert "ix_invoices_azienda_id" in invoice_indexes
+        assert (regime_nullable, piva_width) == ("YES", 20)
+
+        # One azienda: the downgrade goes back to 0045 and the old key returns.
+        downgrade(config, "0045")
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            invoice_indexes = set(
+                connection.execute(
+                    text("SELECT indexname FROM pg_indexes WHERE tablename = 'invoices'")
+                ).scalars()
+            )
+            counter_columns = set(
+                connection.execute(
+                    text(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'invoice_counters'"
+                    )
+                ).scalars()
+            )
+        engine.dispose()
+        assert "uq_invoices_anno_numero" in invoice_indexes
+        assert "ix_invoices_anno_numero" not in invoice_indexes
+        assert "azienda_id" not in counter_columns
+
+        # The downgrade refuses what it could not give back: a profile with no regime
+        # code, a P.IVA wider than the old column, and then a second azienda with a
+        # register of its own; each time the head stays at 0046.
+        upgrade(config, "0046")
+        engine = create_engine(url)
+        for setup, undo, reason in (
+            (
+                "UPDATE fiscal_profile SET codice_regime = NULL",
+                "UPDATE fiscal_profile SET codice_regime = 'RF19'",
+                "no regime code",
+            ),
+            (
+                "UPDATE emitter_profile SET partita_iva = 'FR12345678901'",
+                "UPDATE emitter_profile SET partita_iva = NULL",
+                "longer than 11",
+            ),
+        ):
+            with engine.begin() as connection:
+                connection.execute(text(setup))
+            with pytest.raises(Exception, match=reason):
+                downgrade(config, "0045")
+            with engine.begin() as connection:
+                connection.execute(text(undo))
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    """
+                    INSERT INTO emitter_profile (id, nome, predefinita, attiva, ragione_sociale,
+                                                 nazione, created_at, updated_at)
+                    VALUES ('00000000-0000-7000-8000-0000000000a2', 'rebase', false, true,
+                            'Rebase S.r.l.', 'IT', now(), now())
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO invoice_counters (azienda_id, anno, ultimo_numero) "
+                    "VALUES ('00000000-0000-7000-8000-0000000000a2', 2026, 1)"
+                )
+            )
+        engine.dispose()
+        with pytest.raises(Exception, match="more than one azienda"):
+            downgrade(config, "0045")
+        engine = create_engine(url)
+        with engine.connect() as connection:
+            head = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        engine.dispose()
+        assert head == "0046"

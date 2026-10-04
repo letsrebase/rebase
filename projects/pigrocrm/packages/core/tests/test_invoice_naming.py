@@ -64,12 +64,14 @@ def test_storage_prefixes_are_lowercase_and_disjoint() -> None:
     """`storage/base.py`'s key pattern is lowercase-only on purpose -- two keys
     differing only in case name the same file on APFS and NTFS -- so the SdI's
     uppercase name cannot be a storage key. It is the download name instead."""
-    assert invoice_storage_prefix(2026, 7) == "fatture/2026/7"
+    azienda_id = UUID("0192f0aa-0000-7000-8000-00000000000a")
+    # The azienda first since REB-619: `2026/7` names one invoice per azienda.
+    assert invoice_storage_prefix(azienda_id, 2026, 7) == f"fatture/{azienda_id}/2026/7"
     assert (
         proforma_storage_prefix(UUID("0192f0aa-0000-7000-8000-000000000001"))
         == "proforma/0192f0aa-0000-7000-8000-000000000001"
     )
-    assert invoice_storage_prefix(2026, 7).islower()
+    assert invoice_storage_prefix(azienda_id, 2026, 7).islower()
 
 
 def test_the_full_number_is_year_slash_number() -> None:
