@@ -21,6 +21,7 @@ from pigrocrm.core.contracts.schemas import ContractCreate, ContractListQuery
 from pigrocrm.core.contracts.service import ContractService
 from pigrocrm.core.customers.schemas import CustomerCreate, CustomerListQuery, CustomerUpdate
 from pigrocrm.core.customers.service import CustomerService
+from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.schemas import DealCreate, DealListQuery
 from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.documents.schemas import DocumentCreate, DocumentListQuery
@@ -561,3 +562,16 @@ def test_a_new_cost_on_a_deal_of_a_deactivated_azienda_is_refused_and_an_old_one
     kept = costs.update(old.id, CostUpdate(descrizione="Treno regionale"), ADMIN)
     assert (kept.descrizione, kept.azienda_id) == ("Treno regionale", closed.id)
     assert costs.update(old.id, CostUpdate(azienda_id=closed.id), ADMIN).azienda_id == closed.id
+    # A move onto another deal of the closed azienda is a new assignment, and refused.
+    # Built by row: the customer is on the closed azienda, so the service would refuse.
+    sibling = Deal(
+        nome="Fratello",
+        customer_id=customer_id,
+        pipeline_stage_id=seeded_open_stage_id,
+        azienda_id=closed.id,
+        probabilita=10,
+    )
+    db_session.add(sibling)
+    db_session.flush()
+    with pytest.raises(ValidationFailed):
+        costs.update(old.id, CostUpdate(deal_id=sibling.id), ADMIN)

@@ -218,7 +218,10 @@ class CostService:
             # Off a deal with no azienda named: shared, not the old deal's.
             kept = None if "deal_id" in changes else cost.azienda_id
             wanted = changes.get("azienda_id", kept)
-            changes["azienda_id"] = self._azienda_for(deal_id, wanted, kept=cost.azienda_id)
+            # `kept` only while the cost stays where it is: a move onto another deal is a
+            # new assignment, and a closed azienda takes none (Greptile, PR #509).
+            kept_azienda = None if "deal_id" in changes else cost.azienda_id
+            changes["azienda_id"] = self._azienda_for(deal_id, wanted, kept=kept_azienda)
         if changes.get("category_id") is not None:
             self.categories.require_active(changes["category_id"])
         self.locks.assert_writable(ENTITY, "data", cost.data, changes.get("data"))
