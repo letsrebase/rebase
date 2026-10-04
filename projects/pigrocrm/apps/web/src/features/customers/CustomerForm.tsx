@@ -157,6 +157,18 @@ export function CustomerForm({
     azienda.several && isCreate && (chosenAzienda === undefined || chosenAzienda === null),
   )
   const shownAzienda = chosenAzienda ?? (isCreate ? (proposta.data?.id ?? '') : '')
+  // A customer whose azienda has since been deactivated is stranded: nothing new can
+  // be created under it until it moves (spec §3), so the picker is drawn for it even
+  // when one active azienda is left and the selector elsewhere has gone (Greptile, PR
+  // #509). It then offers the active aziende and shows no current value, since the
+  // deactivated one is not among them.
+  const initialAzienda = initial?.native.azienda_id
+  const stranded =
+    !isCreate &&
+    typeof initialAzienda === 'string' &&
+    azienda.aziende.length > 0 &&
+    azienda.byId(initialAzienda) === undefined
+  const showAziendaPicker = azienda.several || stranded
 
   // This component stays mounted across opens -- only `Dialog`'s own visibility
   // toggles (see the list/detail routes: `open={open}` on an always-rendered
@@ -257,7 +269,7 @@ export function CustomerForm({
       }
     }
 
-    if (azienda.several) {
+    if (showAziendaPicker) {
       if (isCreate && shownAzienda !== '') native.azienda_id = shownAzienda
       if (!isCreate && !isBlank(chosenAzienda) && chosenAzienda !== initial?.native.azienda_id) {
         native.azienda_id = chosenAzienda
@@ -306,7 +318,7 @@ export function CustomerForm({
           mode={isCreate ? 'create' : 'edit'}
         />
 
-        {azienda.several ? (
+        {showAziendaPicker ? (
           <div className="space-y-2">
             <Label htmlFor="customer-azienda">Azienda</Label>
             <Select value={shownAzienda} onValueChange={(value) => change('azienda_id', value)}>
@@ -323,6 +335,11 @@ export function CustomerForm({
             </Select>
             {aziendaRefused ? (
               <p className="text-sm text-destructive">{aziendaRefused}</p>
+            ) : stranded && chosenAzienda === initialAzienda ? (
+              <p className="text-sm text-muted-foreground">
+                L’azienda di questo cliente non è più attiva: scegline una attiva per poter
+                creare nuovi deal, documenti e fatture.
+              </p>
             ) : isCreate && (chosenAzienda === undefined || chosenAzienda === null) ? (
               <p className="text-sm text-muted-foreground">
                 Proposta dalla nazione del cliente: la fattura questa azienda, salvo tua scelta.

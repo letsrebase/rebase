@@ -391,3 +391,60 @@ describe('the «Azienda» picker (REB-626)', () => {
     expect(GET).not.toHaveBeenCalled()
   })
 })
+
+describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR #509)', () => {
+  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', attiva: true } as AziendaRecord
+  const ONE_LEFT: AziendaValue = {
+    aziende: [HUMANCRAFT],
+    selected: null,
+    select: vi.fn(),
+    several: false,
+    byId: (id) => (id === 'a-1' ? HUMANCRAFT : undefined),
+  }
+
+  it('still offers the active aziende while editing, so the customer can move', async () => {
+    GET.mockReset()
+    const onSubmit = vi.fn()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <AziendaContext value={ONE_LEFT}>
+          <CustomerForm
+            title="Modifica cliente"
+            open
+            onOpenChange={() => {}}
+            customFields={[]}
+            initial={customerToFormValues({ ...BASE_CUSTOMER, azienda_id: 'a-gone' })}
+            onSubmit={onSubmit}
+          />
+        </AziendaContext>
+      </QueryClientProvider>,
+    )
+    expect(screen.getByText(/non è più attiva/)).toBeInTheDocument()
+    const picker = screen.getByRole('combobox', { name: 'Azienda' })
+    await userEvent.click(picker)
+    await userEvent.click(await screen.findByRole('option', { name: 'humancraft' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(submitted(onSubmit)).toMatchObject({ azienda_id: 'a-1' })
+    expect(GET).not.toHaveBeenCalled()
+  })
+
+  it('draws nothing for a customer of the one active azienda', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <AziendaContext value={ONE_LEFT}>
+          <CustomerForm
+            title="Modifica cliente"
+            open
+            onOpenChange={() => {}}
+            customFields={[]}
+            initial={customerToFormValues(BASE_CUSTOMER)}
+            onSubmit={vi.fn()}
+          />
+        </AziendaContext>
+      </QueryClientProvider>,
+    )
+    expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
+  })
+})
