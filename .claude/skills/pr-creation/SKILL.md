@@ -517,7 +517,7 @@ gh pr create --body-file pr-body.md \
    project ran; `ci` is green on it; the deploy's own run answered its health check.
    Then the card gets its `**In production:**` comment with the tag, the tag run's id,
    the deploy run's id and what answered (the URL you opened and what you saw), in
-   the `linear-content` shape. The mechanism and the four secrets are
+   the `linear-content` shape. The mechanism and the five secrets are
    `docs/adding-a-project.md` § 7; a tag is immutable once pushed (ruleset, 2026-09-10),
    so a wrong one is followed by the next version, never moved.
 

@@ -1,16 +1,28 @@
 # One deploy mechanism for every project in the monorepo that ships as a Docker
 # Compose stack over ssh. A project does not write a deploy workflow: it writes a
-# caller with two jobs, one per environment, and passes the four values below.
+# caller with two jobs, one per environment, and names its environment and its
+# stack in the inputs below.
 #
 # Everything that differs between a preview and a production stack -- which host,
-# which user, which directory -- is a **GitHub Environment secret**, not an input and
-# not a repository secret with a longer name. That is the whole reason this file can
-# stay one file:
+# which user, which directory, which key the host answers with -- is a **GitHub
+# Environment secret**, not an input and not a repository secret with a longer name.
+# That is the whole reason this file can stay one file:
 #
-#   * `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SSH_KEY` are read by name,
-#     always the same four names, and GitHub resolves them from whichever environment
-#     the calling job named. Ten projects with two environments each are forty secrets
-#     with four names, not forty names.
+#   * `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PATH`, `DEPLOY_SSH_KEY` and
+#     `DEPLOY_KNOWN_HOSTS` are read by name, always the same five names, and GitHub
+#     resolves them from whichever environment the calling job named. Ten projects
+#     with two environments each are fifty secrets with five names, not fifty names.
+#   * `DEPLOY_SSH_KEY` authenticates the runner to the host; `DEPLOY_KNOWN_HOSTS`
+#     authenticates the host to the runner. It is the host's `known_hosts` line, as
+#     `ssh-keyscan -H -t ed25519 "$DEPLOY_HOST"` prints it, captured once by a person
+#     who then checked the fingerprint on the host itself, and every ssh and rsync
+#     below runs with `StrictHostKeyChecking=yes` against it. Until REB-653 this file
+#     ran `ssh-keyscan` on every deploy and trusted whatever key answered, which is
+#     trust on first use on a connection that also carries a secret into the host
+#     `.env` (REB-650): anyone who could redirect the runner's connection got the
+#     repository, the compose commands and that value. A key that does not match
+#     fails the deploy now, and the fix for a host that really changed its key is a
+#     new value for the secret, never a looser check (`docs/adding-a-project.md` § 7).
 #   * The caller MUST pass `secrets: inherit`. A reusable workflow resolves an
 #     environment's secrets only when the caller inherits: measured on this repository
 #     before this file was written, a job with `environment:` and no `inherit` reads
@@ -25,7 +37,7 @@ on:
   workflow_call:
     inputs:
       environment:
-        description: GitHub environment holding the four DEPLOY_* secrets.
+        description: GitHub environment holding the five DEPLOY_* secrets.
         type: string
         required: true
       compose-dir:
@@ -98,22 +110,25 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
 
       - name: Verify the environment is configured
-        # Four missing secrets produce four confusing failures further down (ssh to an
-        # empty host, rsync to `@:`), and an inherited-secrets mistake produces all
-        # four at once. Name them here instead.
+        # Five missing secrets produce five confusing failures further down (ssh to an
+        # empty host, rsync to `@:`, `Host key verification failed` on an empty
+        # known_hosts), and an inherited-secrets mistake produces all five at once.
+        # Name them here instead.
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           missing=()
           [ -z "$DEPLOY_HOST" ] && missing+=(DEPLOY_HOST)
           [ -z "$DEPLOY_USER" ] && missing+=(DEPLOY_USER)
           [ -z "$DEPLOY_PATH" ] && missing+=(DEPLOY_PATH)
           [ -z "$DEPLOY_SSH_KEY" ] && missing+=(DEPLOY_SSH_KEY)
+          [ -z "$DEPLOY_KNOWN_HOSTS" ] && missing+=(DEPLOY_KNOWN_HOSTS)
           if [ "${#missing[@]}" -gt 0 ]; then
-            printf '::error::Environment %s is missing: %s. If all four are missing, the caller is not passing `secrets: inherit`.\n' \
+            printf '::error::Environment %s is missing: %s. If all five are missing, the caller is not passing `secrets: inherit`. DEPLOY_KNOWN_HOSTS alone missing is the host key pin REB-653 added: docs/adding-a-project.md § 7 says how to capture it.\n' \
               "${{ inputs.environment }}" "${missing[*]}"
             exit 1
           fi
@@ -161,14 +176,45 @@ jobs:
           exit 1
 
       - name: Configure SSH
+        # The host's key is pinned, never discovered: `known_hosts` is written from the
+        # environment's own `DEPLOY_KNOWN_HOSTS`, and nothing else is ever appended to
+        # it, so every ssh and rsync below, each with `StrictHostKeyChecking=yes` and
+        # this file as its only `UserKnownHostsFile`, refuses a host whose key is not
+        # the pinned one. Two checks before the first connection, each a clearer
+        # failure than ssh's own `Host key verification failed`: `ssh-keygen -lf`
+        # checks the value holds at least one key and prints each key's size,
+        # fingerprint and type (the line a person compares with the host's own
+        # `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`; the hashed host field
+        # between them is cut, since GitHub masks a secret whole and not a part of
+        # one), and `ssh-keygen -F` checks the value names this DEPLOY_HOST, lowered
+        # first because `-F` compares case-sensitively while `ssh-keyscan` and `ssh`
+        # lower the name. A hashed `known_hosts` line matches only the exact
+        # string it was scanned with: a line scanned on `pigro.letsrebase.com` does
+        # not match the same host by IP or by another of its names (measured on
+        # 2026-10-05, REB-653), so the secret has to be captured with the environment's
+        # own `DEPLOY_HOST` value, and this is where a mismatch says so.
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
+          set -euo pipefail
           mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          if ! ssh-keygen -lf ~/.ssh/known_hosts | awk '{print $1, $2, $NF}'; then
+            echo "::error::DEPLOY_KNOWN_HOSTS on environment ${ENVIRONMENT} is not a known_hosts line: capture it with ssh-keyscan -H -t ed25519 <DEPLOY_HOST> (docs/adding-a-project.md § 7)."
+            exit 1
+          fi
+          if ! ssh-keygen -F "${DEPLOY_HOST,,}" -f ~/.ssh/known_hosts >/dev/null; then
+            echo "::error::DEPLOY_KNOWN_HOSTS on environment ${ENVIRONMENT} holds no key for DEPLOY_HOST: a hashed line matches only the exact name or address it was scanned with, so scan the value DEPLOY_HOST holds, not another name of the same host."
+            exit 1
+          fi
+          echo "host key pinned for environment ${ENVIRONMENT}; every connection below verifies against it"
 
       - name: Sync sources
         # The whole repository, not just the project: the uv and pnpm workspace roots
@@ -181,8 +227,10 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
         run: |
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p \"${DEPLOY_PATH}\""
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p \"${DEPLOY_PATH}\""
           rsync -az --delete \
+            -e 'ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts' \
             --exclude '.git' --exclude '.github' \
             --exclude '.env' --exclude '.reference-*' \
             --exclude 'node_modules' --exclude 'dist' --exclude '.venv' \
@@ -264,7 +312,8 @@ jobs:
               exit 1
             fi
             printf '%s' "$value" | base64 | tr -d '\n' \
-              | ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
+              | ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+                  "${DEPLOY_USER}@${DEPLOY_HOST}" \
                   "NAME='${name}' ENVFILE='${DEPLOY_PATH}/.env' bash -c '${remote}'"
           done <<< "$WANT"
 
@@ -276,7 +325,8 @@ jobs:
           COMPOSE_DIR: ${{ inputs.compose-dir }}
           COMPOSE_PROJECT: ${{ inputs.compose-project }}
         run: |
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "DEPLOY_PATH='${DEPLOY_PATH}' COMPOSE_DIR='${COMPOSE_DIR}' COMPOSE_PROJECT='${COMPOSE_PROJECT}' bash -s" <<'SSH'
             set -euo pipefail
             cd "${DEPLOY_PATH}/${COMPOSE_DIR}"
@@ -320,7 +370,8 @@ jobs:
           EXTRA_HEALTH_URL: ${{ inputs.extra-health-url }}
           COMPOSE_PROJECT: ${{ inputs.compose-project }}
         run: |
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
+          ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "HEALTH_URL='${HEALTH_URL}' EXTRA_HEALTH_URL='${EXTRA_HEALTH_URL}' COMPOSE_PROJECT='${COMPOSE_PROJECT}' bash -s" <<'SSH'
             set -uo pipefail
             for attempt in $(seq 1 30); do
@@ -418,5 +469,6 @@ jobs:
             actor=${{ github.actor }}
             environment=${{ inputs.environment }}
         run: |
-          printf '%s' "$RECORD" | ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
+          printf '%s' "$RECORD" | ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts \
+            "${DEPLOY_USER}@${DEPLOY_HOST}" \
             "cat > '${DEPLOY_PATH}.deployed' && date -u '+deployed_at=%Y-%m-%dT%H:%M:%SZ' >> '${DEPLOY_PATH}.deployed' && cat '${DEPLOY_PATH}.deployed'"
