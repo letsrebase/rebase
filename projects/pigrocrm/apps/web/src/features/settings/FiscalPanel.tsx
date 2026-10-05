@@ -269,19 +269,18 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
     'natura_default' | 'riferimento_normativo' | 'applica_bollo'
   > | null>(null)
 
-  // Only a row that arrived is considered, and `adopt` waits for one that differs, as
-  // in `LegalEntityForm`.
+  // As in `LegalEntityForm`: an untouched form follows a row as it arrives, and
+  // «Ricarica» adopts the row in hand once it differs from the seed.
   const [seen, setSeen] = useState(profile)
-  if (profile !== seen) {
-    setSeen(profile)
-    if (
-      (profile?.updated_at ?? null) !== (seeded?.updated_at ?? null) &&
-      (touched.size === 0 || adopt)
-    ) {
-      setSeeded(profile)
-      setValues(withDraft(profile ? valuesFrom(profile) : emptyValues(), values, touched))
-      setAdopt(false)
-    }
+  const arrived = profile !== seen
+  if (arrived) setSeen(profile)
+  if (
+    (profile?.updated_at ?? null) !== (seeded?.updated_at ?? null) &&
+    ((arrived && touched.size === 0) || adopt)
+  ) {
+    setSeeded(profile)
+    setValues(withDraft(profile ? valuesFrom(profile) : emptyValues(), values, touched))
+    setAdopt(false)
   }
 
   function change(patch: Partial<Values>) {
@@ -375,9 +374,8 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
     <div className="space-y-4">
       {stale !== 'none' ? (
         <StaleRowBanner phase={stale} onReload={() => void reload()} reloading={reloading} />
-      ) : bannered ? (
-        <QueryErrorBanner error={problem} />
       ) : null}
+      {bannered && !isStaleRow(problem) ? <QueryErrorBanner error={problem} /> : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
@@ -389,6 +387,9 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
             id="fiscal-regime"
             className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
             value={regime}
+            // Locked while a save is in flight, like the azienda's fields: an edit made
+            // between the PUT and its answer would be replaced by the row that comes back.
+            disabled={save.isPending}
             aria-invalid={fieldError?.field === 'codice_regime' ? true : undefined}
             onChange={(event) => pickRegime(event.target.value as Regime)}
           >
@@ -414,6 +415,7 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
             <Input
               id={`fiscal-${field.name}`}
               value={values[field.name]}
+              disabled={save.isPending}
               aria-invalid={fieldError?.field === field.name ? true : undefined}
               onChange={(event) => change({ [field.name]: event.target.value })}
             />
@@ -439,6 +441,7 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
           <input
             type="checkbox"
             checked={values.applica_bollo}
+            disabled={save.isPending}
             onChange={(event) => change({ applica_bollo: event.target.checked })}
           />
           Applica il bollo virtuale sopra la soglia

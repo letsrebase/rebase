@@ -30,8 +30,9 @@ SETTINGS_ID = UUID("00000000-0000-0000-0000-00000000c0f6")
 # would not. Its value is the stamp as text, only so that each write is an UPDATE the
 # ORM emits (an unchanged value emits none, and `onupdate` would not fire).
 VERSION_KEY = "_version"
-# The advisory lock a versioned save takes for the comparison, since these settings have
-# no single row to lock: the same for every writer of one database, and transaction-scoped.
+# The advisory lock every write takes, since these settings have no single row to lock:
+# the same for every writer of one database, and transaction-scoped, so a save that
+# carries a version is compared against a settled state.
 VERSION_LOCK = 0xC0F6
 
 _BOOLS = {"google_app_unverified", "mcp_full_access"}
@@ -130,12 +131,13 @@ class SpaceSettingsService:
         self, data: SpaceSettingsUpdate, actor: Actor, *, spazio: str | None
     ) -> SpaceSettingsRead:
         actor.require_unscoped_admin("update_space_settings")
+        # Every write takes the advisory lock, a versionless one included, so a save
+        # that carries a version is never checked while another write is half done.
+        self.session.execute(select(func.pg_advisory_xact_lock(VERSION_LOCK)))
         # Sent, not merely non-null (REB-622): the version is `None` on a database with
         # no row yet, and a draft built on that state has to be refused once a row
         # exists, so an explicit `null` is a real check and only an absent key is none.
-        # Under the advisory lock, so two saves carrying one version cannot both pass.
         if "updated_at" in data.model_fields_set:
-            self.session.execute(select(func.pg_advisory_xact_lock(VERSION_LOCK)))
             require_unchanged(ENTITY, sent=data.updated_at, current=self.version())
         changed: list[str] = []
         for key in data.model_fields_set - {"updated_at"}:

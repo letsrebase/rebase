@@ -6107,7 +6107,7 @@ export interface components {
             aliquota_inps: number | string | null;
             /**
              * Updated At
-             * @description L'`updated_at` letto sul profilo da cui parte questa modifica: se nel frattempo qualcun altro ha salvato, la richiesta e' rifiutata con 409 `stale_row`. Omesso, nessun controllo.
+             * @description L'`updated_at` letto sul profilo da cui parte questa modifica, `null` per un profilo non ancora salvato: se nel frattempo qualcun altro ha salvato, la richiesta è rifiutata con 409 `stale_row`. Omesso, nessun controllo.
              */
             updated_at?: string | null;
         };
@@ -7123,7 +7123,9 @@ export interface components {
          *     REB-622 (spec 2026-10-03 §11): `updated_at` is the row the caller built its draft
          *     on, read off `LegalEntityRead`, and a save whose value is not the row's own is
          *     refused with `StaleRow` (409) instead of overwriting another admin's fields. Left
-         *     out, nothing is checked: the MCP tools read right before they write.
+         *     out, nothing is checked: the MCP tools read right before they write. Sent as
+         *     `null` it is a draft built on no row, which this table, where the row always
+         *     exists, refuses.
          */
         LegalEntityUpsert: {
             /** Nome */
@@ -7163,7 +7165,7 @@ export interface components {
             regime_fiscale?: string | null;
             /**
              * Updated At
-             * @description L'`updated_at` letto sulla riga da cui parte questa modifica: se nel frattempo qualcun altro ha salvato, la richiesta e' rifiutata con 409 `stale_row`. Omesso, nessun controllo.
+             * @description L'`updated_at` letto sulla riga da cui parte questa modifica: se nel frattempo qualcun altro ha salvato, la richiesta è rifiutata con 409 `stale_row`. Omesso, nessun controllo.
              */
             updated_at?: string | null;
         };
@@ -8628,7 +8630,7 @@ export interface components {
             concentrazione_soglia_preferita?: number | null;
             /**
              * Updated At
-             * @description L'`updated_at` letto sulle impostazioni da cui parte questa modifica (`null` compreso): se nel frattempo qualcun altro ha salvato, la richiesta e' rifiutata con 409 `stale_row`. Omesso, nessun controllo.
+             * @description L'`updated_at` letto sulle impostazioni da cui parte questa modifica (`null` compreso): se nel frattempo qualcun altro ha salvato, la richiesta è rifiutata con 409 `stale_row`. Omesso, nessun controllo.
              */
             updated_at?: string | null;
         };

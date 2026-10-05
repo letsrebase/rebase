@@ -205,6 +205,43 @@ describe('LegalEntityPanel', () => {
     expect(saveCall()[1].body.updated_at).toBe('2026-08-20T09:00:00Z')
   })
 
+  it('Ricarica adopts a newer row that had already arrived under the draft', async () => {
+    // A background refetch brought the other admin's row while the draft was open; the
+    // reload fetches the same row again, and it must be adopted all the same.
+    vi.mocked(api.PUT).mockResolvedValueOnce(failed(STALE, 409)).mockResolvedValue(ok(AZIENDA))
+    const { rerenderWith } = renderPanel()
+    await userEvent.type(screen.getByLabelText('PEC'), 'x')
+    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    expect(screen.getByLabelText('Comune')).toHaveValue('Milano')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await screen.findByRole('button', { name: 'Ricarica' })
+    await userEvent.click(screen.getByRole('button', { name: 'Ricarica' }))
+    await waitFor(() => expect(screen.getByLabelText('Comune')).toHaveValue('Torino'))
+    expect(screen.getByLabelText('PEC')).toHaveValue('studio@pec.itx')
+    expect(screen.getByRole('alert')).toHaveTextContent('Riga ricaricata.')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
+    const [, options] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
+    expect(options.body.updated_at).toBe('2026-08-21T09:00:00Z')
+  })
+
+  it('shows a refusal of another kind beside the reload reminder, never behind it', async () => {
+    vi.mocked(api.PUT)
+      .mockResolvedValueOnce(failed(STALE, 409))
+      .mockResolvedValue(
+        failed({ code: 'permission_denied', detail: 'upsert_emitter_profile requires one of [admin], actor has collaboratore' }, 403),
+      )
+    const { rerenderWith } = renderPanel()
+    await userEvent.type(screen.getByLabelText('PEC'), 'x')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ricarica' }))
+    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2))
+    expect(screen.getAllByRole('alert')[0]).toHaveTextContent('Riga ricaricata.')
+    expect(screen.getAllByRole('alert')[1]).toHaveTextContent(/requires one of \[admin\]/)
+  })
+
   it('on a stale refusal offers Ricarica, which takes the newer row under the touched fields', async () => {
     vi.mocked(api.PUT).mockResolvedValueOnce(failed(STALE, 409)).mockResolvedValue(ok(AZIENDA))
     const { rerenderWith } = renderPanel()

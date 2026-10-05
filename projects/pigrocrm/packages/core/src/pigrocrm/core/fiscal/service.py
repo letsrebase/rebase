@@ -2,6 +2,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -18,6 +19,12 @@ from pigrocrm.core.versioning import require_unchanged
 
 ENTITY = "fiscal_profile"
 ZERO = Decimal("0.00")
+# The first half of the advisory lock a versioned save takes per azienda (REB-622), the
+# second being the azienda id hashed: a profile not saved yet has no row to lock, and two
+# first saves sent with `updated_at: null` would otherwise both read «no row», both pass
+# the comparison, and the loser would meet the unique key as a generic `conflict` instead
+# of the `stale_row` the panel knows how to recover from. Transaction-scoped.
+VERSION_LOCK = 0xF15C
 
 
 class FiscalProfileService:
@@ -86,11 +93,18 @@ class FiscalProfileService:
         self.check(payload)
         azienda = self.aziende.resolve(azienda_id)
 
+        versioned = "updated_at" in data.model_fields_set
+        if versioned:
+            # Before the read, so two versioned saves on one azienda run one after the
+            # other and the second reads what the first committed: a row where it
+            # expected none (`null` sent) is `stale_row`, never the unique key's
+            # `conflict`. Then the row's own lock, as `LegalEntityService.update` takes
+            # it, which also orders a versioned save after an unversioned one in flight.
+            self.session.execute(
+                select(func.pg_advisory_xact_lock(VERSION_LOCK, func.hashtext(str(azienda.id))))
+            )
         profile = self.repo.get(azienda.id)
-        if "updated_at" in data.model_fields_set:
-            # The row's lock before the comparison, as `LegalEntityService.update` takes
-            # it: two saves with one version must not both pass. A first save has no
-            # row to lock; the unique key on `azienda_id` is what refuses the second.
+        if versioned:
             if profile is not None:
                 self.session.refresh(profile, with_for_update=True)
             require_unchanged(

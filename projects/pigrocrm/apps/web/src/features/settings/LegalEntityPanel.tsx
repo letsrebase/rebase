@@ -157,13 +157,16 @@ function LegalEntityForm({ profile }: { profile: LegalEntityRecord }) {
   // and comparing versions alone would adopt that older row back over the saved values.
   const [seen, setSeen] = useState(profile)
 
-  if (profile !== seen) {
-    setSeen(profile)
-    if (profile.updated_at !== seeded.updated_at && (touched.size === 0 || adopt)) {
-      setSeeded(profile)
-      setValues(withDraft(valuesFrom(profile), values, touched))
-      setAdopt(false)
-    }
+  // An untouched form follows a row as it arrives; «Ricarica» adopts whatever row is in
+  // hand once it differs from the seed, seen before or not, since a background refetch
+  // may already have brought the other admin's row under the draft and the reload then
+  // fetches the same object again.
+  const arrived = profile !== seen
+  if (arrived) setSeen(profile)
+  if (profile.updated_at !== seeded.updated_at && ((arrived && touched.size === 0) || adopt)) {
+    setSeeded(profile)
+    setValues(withDraft(valuesFrom(profile), values, touched))
+    setAdopt(false)
   }
 
   function submit() {
@@ -213,9 +216,11 @@ function LegalEntityForm({ profile }: { profile: LegalEntityRecord }) {
     <div className="space-y-4">
       {stale !== 'none' ? (
         <StaleRowBanner phase={stale} onReload={() => void reload()} reloading={reloading} />
-      ) : problem && !fieldError ? (
-        <QueryErrorBanner error={problem} />
       ) : null}
+      {/* A refusal of another kind after a reload shows beside the reminder, never
+          behind it: the reminder says what to do next, the refusal says why it did
+          not work. */}
+      {problem && !fieldError && !isStaleRow(problem) ? <QueryErrorBanner error={problem} /> : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {FIELDS.map((field) => (

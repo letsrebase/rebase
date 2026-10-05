@@ -479,6 +479,19 @@ describe('FiscalPanel', () => {
     updated_at: '2026-08-21T09:00:00Z',
   }
 
+  it('locks the fields while a save is in flight, so nothing typed then is lost', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
+    let finish!: (value: unknown) => void
+    vi.mocked(api.PUT).mockReturnValue(new Promise((resolve) => (finish = resolve)) as never)
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(screen.getByLabelText('IBAN')).toBeDisabled())
+    expect(screen.getByLabelText('Regime')).toBeDisabled()
+    expect(screen.getByLabelText(/Applica il bollo/)).toBeDisabled()
+    finish({ data: PROFILE, response: new Response(null, { status: 200 }) })
+    await waitFor(() => expect(screen.getByLabelText('IBAN')).toBeEnabled())
+  })
+
   it('sends the version of the profile it was seeded from', async () => {
     vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
     vi.mocked(api.PUT).mockImplementation(() => ok(PROFILE))
