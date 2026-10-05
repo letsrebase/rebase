@@ -994,3 +994,81 @@ def test_every_table_that_reaches_an_azienda_carries_the_policy(db_engine: Engin
     missing = expected - policied
     assert missing == set(), f"tables reaching an azienda with no policy: {sorted(missing)}"
     assert "users" not in policied and "user_aziende" not in policied
+
+
+# The tables whose policy reaches an azienda through a parent row, as 0049 lists them: an
+# unscoped session answers «tutte» on the policy's first arm and calls no function.
+FAST_PATH = {
+    "people",
+    "time_entries",
+    "time_timers",
+    "invoice_lines",
+    "payment_reminders",
+    "document_versions",
+    "proposals",
+    "rate_cards",
+    "renewal_assumptions",
+    "contract_expenses",
+    "work_units",
+    "approvals",
+    "work_unit_transitions",
+    "attivita",
+    "gmail_message_links",
+    "email_drafts",
+    "gmail_messages",
+    "activities",
+}
+THROUGH_THE_PARENT = (
+    "customer_visibile",
+    "person_visibile",
+    "deal_visibile",
+    "invoice_visibile",
+    "contract_visibile",
+    "document_visibile",
+    "work_unit_visibile",
+    "entita_visibile",
+)
+
+
+def test_the_through_the_parent_policies_put_the_tutte_fast_path_first(db_engine: Engine) -> None:
+    """Migration 0049 (REB-656): measured on REB-633's corpus, the dashboard's recent 50
+    cost 15.8 ms as «tutte» against 0.04 ms with no policy, one SQL function call per row
+    before `*` answered. The fast path is the shape of the stored predicate, which the
+    template applies from the revision itself; this reads it back, so a template rebuilt
+    without 0049 or a later revision that writes the policy afresh fails here by name."""
+    with db_engine.connect() as connection:
+        policies = {
+            row.tablename: (row.qual, row.with_check)
+            for row in connection.execute(
+                text(
+                    "SELECT tablename, qual, with_check FROM pg_policies "
+                    "WHERE policyname = 'ambito_azienda'"
+                )
+            )
+        }
+        bodies = dict(
+            connection.execute(
+                text("SELECT proname, prosrc FROM pg_proc WHERE proname = ANY(:names)"),
+                {"names": list(THROUGH_THE_PARENT)},
+            ).all()
+        )
+    # Postgres deparses the arm as written, minus the parentheses around a lone call and
+    # with a `CASE` on a line of its own, so the prefix is read on the tokens.
+    fast = "(scope_tutte()OR"
+    for table in FAST_PATH:
+        using, check = policies[table]
+        assert "".join(using.split()).startswith(fast), f"{table}: {using[:60]}"
+        # A link is written after the mail has left: its `WITH CHECK` stays `true`.
+        assert check == ("true" if table == "gmail_message_links" else using), table
+    for table in POLICIED - FAST_PATH:
+        assert not "".join(policies[table][0].split()).startswith(fast), table
+    assert set(bodies) == set(THROUGH_THE_PARENT)
+    spelled_out = "current_setting('pigrocrm.aziende', true) = '*' OR "
+    for name, body in bodies.items():
+        if name == "entita_visibile":
+            # Inside each branch, so an unknown type still answers the third argument.
+            assert body.lstrip().startswith("SELECT CASE $1"), body.strip()[:70]
+            assert f"THEN {spelled_out}EXISTS (" in body and "ELSE $3" in body
+            assert "scope_tutte() OR" not in body
+        else:
+            assert body.lstrip().startswith(f"SELECT {spelled_out}"), f"{name}: {body[:70]}"
