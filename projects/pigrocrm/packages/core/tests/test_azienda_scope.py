@@ -778,13 +778,12 @@ def test_hours_billed_on_an_invoice_out_of_sight_stay_frozen(world: World) -> No
                 TimeEntryUpdate(ore=D("3.00")),
                 Actor(id=world.user_id, type="user", role="collaboratore", aziende=(world.studio,)),
             )
-        with _scoped(world, world.studio, world.estero) as session:
-            with pytest.raises(ImmutableField):
-                TimeEntryService(session).update(
-                    entry_id,
-                    TimeEntryUpdate(ore=D("3.00")),
-                    Actor(id=world.user_id, type="user", role="collaboratore"),
-                )
+        with _scoped(world, world.studio, world.estero) as session, pytest.raises(ImmutableField):
+            TimeEntryService(session).update(
+                entry_id,
+                TimeEntryUpdate(ore=D("3.00")),
+                Actor(id=world.user_id, type="user", role="collaboratore"),
+            )
     finally:
         with factory() as session:
             entry = session.get(TimeEntry, entry_id)
