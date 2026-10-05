@@ -1256,6 +1256,7 @@ class Referral(Base, PrimaryKeyMixin, TimestampMixin):
         CheckConstraint(
             "(stato = 'da_verificare' AND verified_at IS NULL AND verified_via IS NULL) "
             "OR (stato = 'verificato' AND verified_at IS NOT NULL "
+            "AND verified_via IS NOT NULL "
             "AND verified_via IN ('accesso', 'lettera', 'storico'))",
             name="ck_referrals_verification",
         ),

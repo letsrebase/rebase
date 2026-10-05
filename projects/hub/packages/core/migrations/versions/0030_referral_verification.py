@@ -12,6 +12,8 @@ referral was recorded, or a referred freelancer's own signature of a letter).
 Three columns on `referrals`: `stato` (`NOT NULL DEFAULT 'da_verificare'`, so a row
 inserted by anything that predates this revision's code is pending, never silently
 counted), `verified_at` and `verified_via`, and a check that ties the three together.
+The check names `verified_via IS NOT NULL` outright: an `IN` test on a NULL is NULL, which a
+CHECK lets through.
 
 Existing rows are not all pending: a referral that already counts must not stop
 counting. A row becomes `verificato` when it already has a reward (`storico`: it counted
@@ -92,6 +94,7 @@ def upgrade() -> None:
         f"ALTER TABLE referrals ADD CONSTRAINT {_CHECK} CHECK ("
         "(stato = 'da_verificare' AND verified_at IS NULL AND verified_via IS NULL) "
         "OR (stato = 'verificato' AND verified_at IS NOT NULL "
+        "AND verified_via IS NOT NULL "
         "AND verified_via IN ('accesso', 'lettera', 'storico')))"
     )
 

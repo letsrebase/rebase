@@ -582,6 +582,7 @@ def test_the_database_refuses_a_referral_half_verified(clean: Session) -> None:
     for statement in (
         "UPDATE referrals SET stato = 'verificato'",
         "UPDATE referrals SET verified_at = now()",
+        "UPDATE referrals SET stato = 'verificato', verified_at = now()",
         "UPDATE referrals SET stato = 'verificato', verified_at = now(), verified_via = 'x'",
     ):
         with pytest.raises(IntegrityError):
