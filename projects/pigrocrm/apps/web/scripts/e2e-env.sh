@@ -88,34 +88,40 @@ export PIGROCRM_E2E_WEB_PORT="5173"
 # is a process this user cannot see or signal -- it says so, naming the port, and
 # returns non-zero rather than letting the next step run against someone else's
 # server.
-listener_pids() {
+# Prints the `ss` rows for the listeners on port $1 (none when it is free). Returns
+# non-zero, naming the port, when `ss` is missing or the query itself fails: an empty
+# listing is only "free" when the query succeeded.
+port_listeners() {
+  local rows
   command -v ss >/dev/null 2>&1 || {
     echo "pigrocrm e2e: 'ss' is not installed, cannot tell what holds :$1" >&2
-    return 2
+    return 1
   }
-  # `-H` drops the header; each row ends `users:(("node",pid=123,fd=19),...)`.
-  # `grep` exits 1 on an empty listing; that is "nothing there", not a failure.
-  { ss -H -ltnp "sport = :$1" 2>/dev/null | grep -o 'pid=[0-9]*' || true; } | cut -d= -f2 | sort -u
-}
-
-port_in_use() {
-  [ -n "$(ss -H -ltn "sport = :$1" 2>/dev/null)" ]
+  # `-p` adds each row's `users:(("node",pid=123,fd=19),...)` for the processes this
+  # user can see.
+  rows="$(ss -H -ltnp "sport = :$1" 2>/dev/null)" || {
+    echo "pigrocrm e2e: 'ss' failed while checking :$1, cannot tell whether it is free" >&2
+    return 1
+  }
+  printf '%s' "$rows"
 }
 
 kill_port() {
-  local port="$1"
-  local pids
-  pids="$(listener_pids "$port")" || return 1
-  if [ -z "$pids" ]; then
-    port_in_use "$port" || return 0
-  else
+  local port="$1" rows pids
+  rows="$(port_listeners "$port")" || return 1
+  [ -z "$rows" ] && return 0
+  pids="$(printf '%s\n' "$rows" | { grep -o 'pid=[0-9]*' || true; } | cut -d= -f2 | sort -u)"
+  if [ -n "$pids" ]; then
     echo "pigrocrm e2e: :$port is held by pid(s) $(echo "$pids" | tr '\n' ' '), stopping" >&2
     echo "$pids" | xargs kill -TERM 2>/dev/null || true
     sleep 1
-    pids="$(listener_pids "$port")" || return 1
+    rows="$(port_listeners "$port")" || return 1
+    [ -z "$rows" ] && return 0
+    pids="$(printf '%s\n' "$rows" | { grep -o 'pid=[0-9]*' || true; } | cut -d= -f2 | sort -u)"
     if [ -n "$pids" ]; then echo "$pids" | xargs kill -9 2>/dev/null || true; fi
     sleep 1
-    port_in_use "$port" || return 0
+    rows="$(port_listeners "$port")" || return 1
+    [ -z "$rows" ] && return 0
   fi
   echo "pigrocrm e2e: :$port is still in use and could not be cleared (held by a process this user cannot see or signal?). Free it and run again." >&2
   return 1
