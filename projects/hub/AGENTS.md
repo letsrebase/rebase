@@ -485,16 +485,23 @@ repeated, because they write data or send mail.
   it for signature.
 - **Sign on Documenso** with a headless browser at the `/sign/<token>` link from the
   mail. The fields are a canvas, not form inputs: click the pad, type the name, «Next»,
-  then «Next Field», click the field by its coordinates, «Complete», «Sign». The journey
-  is in `docs/superpowers/specs/2026-09-23-documenso-probe.md` § 6. Repeat for each
-  document and each signer. The preview signs on production's Documenso
+  then «Next Field», click the field by its coordinates, and repeat «Next Field» and the
+  click until none is left (the framework agreement has two signature fields for the
+  freelancer), «Complete», «Sign». The journey is in
+  `docs/superpowers/specs/2026-09-23-documenso-probe.md` § 6, written for a letter with
+  one field. Repeat for each document and each signer. A freelancer with no active
+  framework agreement gets the framework agreement first and the letter only once it is
+  signed, with a new mail; to test both, use a test freelancer without one. The preview
+  signs on production's Documenso
   (`REBASE_DOCUMENSO_URL=https://firma.letsrebase.com`, the preview's own Documenso user,
   § "Documenso, the signing site"), so the envelopes are created there;
-  `rebase-preview-api-1 uv run --no-sync rebase documenso-check` says whether it reaches it.
+  `ssh pigrocrm docker exec rebase-preview-api-1 uv run --no-sync rebase documenso-check`
+  says whether it reaches it.
 - **A match sent for signature mails real addresses.** Give the freelancer and the
   company only addresses you own.
-- **The preview keeps what earlier runs left**: test members, matches and envelopes stay
-  in its database, so expect rows you did not make and do not clean them up unasked.
+- **The preview keeps what earlier runs left**: test members, matches and contract rows
+  stay in its database, while the envelopes stay on production's Documenso. Expect rows
+  and envelopes you did not make in both places and do not clean them up unasked.
 
 ## The database was inherited
 
