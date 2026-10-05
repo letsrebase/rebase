@@ -20,7 +20,6 @@ from typing import Any, NamedTuple
 from uuid import UUID
 
 import pytest
-from fastapi import Depends
 from fastapi.testclient import TestClient
 from sqlalchemy import Engine, create_engine, delete, select
 from sqlalchemy.orm import Session
@@ -37,7 +36,6 @@ from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.role import ensure_application_role
-from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.emitter.models import Azienda
@@ -46,7 +44,8 @@ from pigrocrm.core.mail import RecordingSender
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.timetracking.models import Cost, CostCategory
-from pigrocrm_api.deps import get_actor, get_session, get_snapshot_session, get_storage
+from pigrocrm_api import deps
+from pigrocrm_api.deps import get_storage
 from pigrocrm_api.main import create_app
 from pigrocrm_api.sessions import get_sender
 
@@ -240,31 +239,17 @@ def _application_engine(engine: Engine) -> Engine:
 
 
 @pytest.fixture
-def served(world: ScopedWorld, tmp_path: Path) -> Iterator[TestClient]:
+def served(
+    world: ScopedWorld, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
     """The app, every session of it opened as the application role: one per request,
-    closed after it, the way production's pool hands them out. The snapshot session is
-    overridden with the same shape the real dependency has, actor included, so the
-    dashboards run inside the scope here too."""
+    closed after it, the way production's pool hands them out. The two session
+    dependencies run as written, `get_snapshot_session` with its own binding of the
+    actor included; only the factory they draw from is this world's role."""
     factory = session_factory(world.app)
-
-    def provide() -> Iterator[Session]:
-        session = factory()
-        try:
-            yield session
-        finally:
-            session.close()
-
-    def provide_snapshot(actor: Actor = Depends(get_actor)) -> Iterator[Session]:  # noqa: B008
-        session = factory()
-        bind_scope(session, actor)
-        try:
-            yield session
-        finally:
-            session.close()
+    monkeypatch.setattr(deps, "_factory_for", lambda request, settings: factory)
 
     app = create_app()
-    app.dependency_overrides[get_session] = provide
-    app.dependency_overrides[get_snapshot_session] = provide_snapshot
     app.dependency_overrides[get_storage] = lambda: LocalFileStorage(tmp_path)
     app.dependency_overrides[get_settings] = lambda: Settings(
         public_url="https://crm.example.test",
@@ -412,6 +397,36 @@ def test_an_invitation_carries_its_scope_and_the_list_shows_it(
     assert created.json()["aziende"] == [str(world.ltd)]
     listed = admin.get("/api/users/invites").json()
     assert [i["aziende"] for i in listed if i["email"] == INVITED] == [[str(world.ltd)]]
+
+
+def test_accepting_a_scoped_invitation_through_the_role_opens_a_scoped_account(
+    served: TestClient, world: ScopedWorld
+) -> None:
+    """The click lands on a public route with no actor: `accept` binds the system scope
+    itself, or the application role reads no azienda and opens an account that sees
+    nothing (the first independent review of this PR found exactly that)."""
+    from pigrocrm.core.auth.invitations import InvitationService
+    from pigrocrm.core.auth.schemas import InvitationCreate
+
+    with session_factory(world.engine)() as session:
+        _, raw = InvitationService(session).create(
+            InvitationCreate(email=INVITED, nome="Bea", aziende=[world.ltd]),
+            Actor(id=world.admin_id, type="user", role="admin"),
+        )
+    accepted = served.post("/api/auth/invite", json={"t": raw, "nome": None})
+    assert accepted.status_code == 200, accepted.text
+    try:
+        assert accepted.json()["aziende"] == [str(world.ltd)]
+        assert served.get("/api/auth/me").json()["aziende"] == [str(world.ltd)]
+        assert _ids(served, "/api/customers") == {str(world.ltd_rows.customer)}
+    finally:
+        with session_factory(world.engine)() as session:
+            new_id = session.execute(select(User.id).where(User.email == INVITED)).scalar_one()
+            session.execute(delete(Activity).where(Activity.entity_id == new_id))
+            session.execute(delete(Activity).where(Activity.actor_id == new_id))
+            session.execute(delete(RefreshToken).where(RefreshToken.user_id == new_id))
+            session.execute(delete(User).where(User.id == new_id))
+            session.commit()
 
 
 def test_a_scoped_admin_is_refused_the_space_level_writes(

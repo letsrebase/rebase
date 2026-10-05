@@ -212,8 +212,12 @@ def ensure_space_defaults() -> int:
             print(f"{ROOT_LABEL}: ruolo applicativo pronto")
         else:
             print(f"{ROOT_LABEL}: un solo URL, nessun ruolo applicativo da creare")
-    except Exception as exc:  # noqa: BLE001 - the API's own first request will say more
+    except Exception as exc:  # noqa: BLE001 - reported, then the boot stops
+        # The one failure this command does not swallow: uvicorn would start with a URL
+        # that cannot log in, and every request of every space would be a 500. The CMD
+        # chains on this exit code, so the container restarts and says why.
         print(f"{ROOT_LABEL}: ruolo applicativo non creato ({type(exc).__name__})", file=sys.stderr)
+        return 1
     try:
         registry = ensure_tenants_database(settings)
         try:

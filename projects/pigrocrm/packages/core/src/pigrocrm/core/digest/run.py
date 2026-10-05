@@ -211,6 +211,10 @@ class DigestRun:
         # `Actor` validates `role` against its own literal on construction, so a column
         # holding something else raises there rather than travelling on unnoticed.
         attore = actor_for(titolare, "system")
+        # Bound before the first read of a policied table (REB-634): the cron opens this
+        # session as the application role, and an unbound probe of `customers` would
+        # answer «vuoto» for every space, for ever.
+        bind_scope(self.session, attore)
 
         if self._spazio_vuoto():
             return self._senza_scrivere(DigestOutcome(slug, "vuoto", iso))

@@ -42,6 +42,7 @@ from pigrocrm.core.auth.schemas import (
 )
 from pigrocrm.core.auth.scope import active_only, apply_scope, check_scope
 from pigrocrm.core.auth.service import UserService, require_verified_identity
+from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 
 # Seven days, not fifteen minutes: an invitation is handed to someone who may not open
@@ -248,7 +249,13 @@ class InvitationService:
         user: both pass the reads, `UserService.create`'s own unique email index lets
         one win, and this is the belt behind that brace. `nome` is required when the
         invitation carried none; an empty effective name never reaches the column.
+
+        Bound to the system actor's scope first (REB-634): this runs on a public route,
+        with no actor and nothing bound, and `active_only` reads `emitter_profile`, a
+        policied table. Unbound, the application role would read no azienda at all and
+        every scoped invitation would open an account that sees nothing.
         """
+        bind_scope(self.session, Actor.system())
         row = self._live_row(raw)
         chosen = (nome or row.nome or "").strip()
         if not chosen:

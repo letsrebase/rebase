@@ -80,4 +80,31 @@ def bind_scope(session: Session, actor: Actor) -> None:
                 _apply(connection, *bound)
 
 
-__all__ = ["EVERY_AZIENDA", "SCOPE_SETTING", "USER_SETTING", "bind_scope", "scope_value"]
+# SQLSTATE of `insufficient_privilege`, and the sentence Postgres puts in front of a
+# row-level policy's refusal. A missing grant answers the same SQLSTATE with another
+# sentence («permission denied for table ...»), and that one is a deploy defect, not a
+# row that is not there: it stays the 500 it always was.
+INSUFFICIENT_PRIVILEGE = "42501"
+_POLICY_SENTENCE = "row-level security policy"
+
+
+def is_policy_refusal(exc: BaseException) -> bool:
+    """Whether a database error is a row-level policy saying no to a write (REB-634):
+    what the API and a tool answer as the row not existing for this person."""
+    orig = getattr(exc, "orig", None)
+    if getattr(orig, "sqlstate", None) != INSUFFICIENT_PRIVILEGE:
+        return False
+    diag = getattr(orig, "diag", None)
+    message = getattr(diag, "message_primary", None) or str(orig)
+    return _POLICY_SENTENCE in message
+
+
+__all__ = [
+    "EVERY_AZIENDA",
+    "INSUFFICIENT_PRIVILEGE",
+    "SCOPE_SETTING",
+    "USER_SETTING",
+    "bind_scope",
+    "is_policy_refusal",
+    "scope_value",
+]

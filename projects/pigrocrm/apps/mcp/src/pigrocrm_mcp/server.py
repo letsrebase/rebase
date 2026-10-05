@@ -14,7 +14,7 @@ from mcp.types import INVALID_PARAMS
 from sqlalchemy.exc import DBAPIError
 
 from pigrocrm.core.config import Settings, get_settings, gmail_configured
-from pigrocrm.core.db.scope import bind_scope
+from pigrocrm.core.db.scope import bind_scope, is_policy_refusal
 from pigrocrm.core.errors import DomainError, OutOfScope
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.storage import DocumentStorage, storage_from_settings
@@ -88,16 +88,12 @@ def _as_protocol_error(exc: DomainError) -> MCPError:
     return MCPError(code=code, message=to_agent_message(exc))
 
 
-# SQLSTATE of `insufficient_privilege`, Postgres's answer when a row-level policy refuses
-# a write outright; the API maps it the same way (`pigrocrm_api.errors`).
-_INSUFFICIENT_PRIVILEGE = "42501"
-
-
 def _policy_refusal(exc: DBAPIError) -> DomainError:
     """The one database error a tool translates (REB-634): a write the azienda scope
     refused reads as a record that is not there, like the read of it would. Anything
-    else is re-raised as it was."""
-    if getattr(exc.orig, "sqlstate", None) != _INSUFFICIENT_PRIVILEGE:
+    else, a missing grant included, is re-raised as it was; the API maps it the same
+    way (`pigrocrm_api.errors`)."""
+    if not is_policy_refusal(exc):
         raise exc
     return OutOfScope()
 

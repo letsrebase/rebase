@@ -56,7 +56,7 @@ async function createCustomer(
   return ((await created.json()) as { id: string }).id
 }
 
-async function scopeFromTheTeamPanel(page: Page, nome: string, uncheck: string): Promise<void> {
+async function scopeFromTheTeamPanel(page: Page, nome: string, keep: string): Promise<void> {
   await page.goto('/app/settings/users')
   const row = page.getByRole('row', { name: new RegExp(nome) })
   await expect(row).toContainText('Tutte')
@@ -64,7 +64,15 @@ async function scopeFromTheTeamPanel(page: Page, nome: string, uncheck: string):
   await page.getByRole('menuitem', { name: 'Aziende…' }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toContainText(`Aziende di ${nome}`)
-  await dialog.getByLabel(uncheck).click()
+  // Every azienda but `keep` unchecked: a stack kept alive between runs may hold more
+  // active aziende than the two this spec makes, and B must end up with exactly one.
+  for (const box of await dialog.getByRole('checkbox').all()) {
+    const id = await box.getAttribute('id')
+    const label = id ? await dialog.locator(`label[for="${id}"]`).textContent() : null
+    if (label?.trim() !== keep && (await box.getAttribute('aria-checked')) === 'true') {
+      await box.click()
+    }
+  }
   await dialog.getByRole('button', { name: 'Salva' }).click()
   await expect(dialog).toBeHidden()
   await expect(row).toContainText(LTD)
@@ -92,7 +100,7 @@ test('a member scoped to one azienda sees it pinned, lists its rows alone and ge
     data: { email: B_EMAIL, password: B_PASSWORD, nome: `Bea ${STAMP}`, ruolo: 'collaboratore' },
   })
   expect(created.status(), await created.text()).toBe(201)
-  await scopeFromTheTeamPanel(page, `Bea ${STAMP}`, studio!.nome)
+  await scopeFromTheTeamPanel(page, `Bea ${STAMP}`, LTD)
 
   const context = await browser.newContext()
   const bPage = await context.newPage()

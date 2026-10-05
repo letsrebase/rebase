@@ -1,7 +1,7 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
 import pigrocrm.core.models_registry  # noqa: F401  (populates Base.metadata)
 from pigrocrm.core.config import get_settings
@@ -60,6 +60,12 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
+        # Since 0048 every azienda-scoped table carries FORCE ROW LEVEL SECURITY, which
+        # binds the owner too; a data migration that backfills one of them (0045 to
+        # 0047 did) would otherwise touch zero rows and report success. Session-level,
+        # since Alembic may open a transaction per revision (REB-634).
+        connection.execute(text("SELECT set_config('pigrocrm.aziende', '*', false)"))
+        connection.commit()
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()

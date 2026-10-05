@@ -7,6 +7,7 @@ table created after the role was granted, which is what every later migration is
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.exc import DBAPIError
 
@@ -65,3 +66,18 @@ def test_the_role_is_created_once_granted_every_time_and_reaches_later_tables(
         app.dispose()
         with db_engine.begin() as connection:
             connection.execute(text("DROP TABLE IF EXISTS role_test_later"))
+
+
+def test_a_role_that_bypasses_the_policies_is_refused_not_granted(db_engine: Engine) -> None:
+    """The attributes go on CREATE and never on ALTER (a CREATEROLE owner may not say
+    SUPERUSER or BYPASSRLS at all), so a role somebody made a superuser by hand is
+    caught by the check instead, and the boot stops rather than serving through it."""
+    with db_engine.begin() as connection:
+        connection.execute(text(f"DROP ROLE IF EXISTS {ROLE}_super"))
+        connection.execute(text(f"CREATE ROLE {ROLE}_super LOGIN BYPASSRLS"))
+    try:
+        with pytest.raises(DBAPIError, match="bypasses RLS"):
+            ensure_application_role(db_engine.url, db_engine.url.set(username=f"{ROLE}_super"))
+    finally:
+        with db_engine.begin() as connection:
+            connection.execute(text(f"DROP ROLE IF EXISTS {ROLE}_super"))

@@ -347,7 +347,12 @@ def _scoped(world: World, *aziende: UUID) -> Session:
 
 
 def _count(session: Session, table: str) -> int:
-    return int(session.execute(text(f"SELECT count(*) FROM {table}")).scalar_one())  # noqa: S608
+    """Rows of `table` this session may see. `activities` is narrowed to this file's own
+    rows: a space-level timeline row is everyone's by design, and another file in the
+    same worker may have committed some (a login, a user created through the service),
+    which the policy rightly shows and this file's arithmetic must not count."""
+    where = f" WHERE kind = '{_PREFIX}.test'" if table == "activities" else ""
+    return int(session.execute(text(f"SELECT count(*) FROM {table}{where}")).scalar_one())  # noqa: S608
 
 
 # --- the boundary -------------------------------------------------------------------

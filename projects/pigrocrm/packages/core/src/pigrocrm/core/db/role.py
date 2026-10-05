@@ -31,21 +31,30 @@ DECLARE
 BEGIN
     BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ruolo) THEN
-            EXECUTE format('CREATE ROLE %I', ruolo);
+            -- The attributes go on CREATE, which a CREATEROLE owner may say; an ALTER
+            -- that mentions SUPERUSER or BYPASSRLS, even to deny them, is refused to
+            -- anybody but a superuser, and a managed Postgres hands out no superuser.
+            EXECUTE format(
+                'CREATE ROLE %I LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE', ruolo
+            );
         END IF;
     EXCEPTION WHEN duplicate_object THEN
         NULL;  -- two boots at once: the other one made it a moment ago
     END;
     IF parola = '' THEN
-        EXECUTE format(
-            'ALTER ROLE %I WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE', ruolo
-        );
+        EXECUTE format('ALTER ROLE %I WITH LOGIN NOCREATEDB NOCREATEROLE', ruolo);
     ELSE
         EXECUTE format(
-            'ALTER ROLE %I WITH LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE '
-            'PASSWORD %L',
-            ruolo, parola
+            'ALTER ROLE %I WITH LOGIN NOCREATEDB NOCREATEROLE PASSWORD %L', ruolo, parola
         );
+    END IF;
+    -- A role somebody made a superuser by hand would bypass every policy: refused,
+    -- loudly, rather than granted and served.
+    IF EXISTS (
+        SELECT 1 FROM pg_roles WHERE rolname = ruolo AND (rolsuper OR rolbypassrls)
+    ) THEN
+        RAISE EXCEPTION 'the application role % is a superuser or bypasses RLS', ruolo
+            USING ERRCODE = 'invalid_parameter_value';
     END IF;
     EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), ruolo);
     EXECUTE format('GRANT USAGE ON SCHEMA public TO %I', ruolo);

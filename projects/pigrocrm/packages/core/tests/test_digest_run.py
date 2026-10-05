@@ -906,6 +906,18 @@ def test_a_scoped_recipient_gets_a_report_built_inside_their_scope(
 
     bound: list[str] = []
     original = DigestService.build
+    probed: list[str] = []
+    original_probe = DigestRun._spazio_vuoto
+
+    def _recording_probe(self: DigestRun) -> bool:
+        probed.append(
+            self.session.execute(
+                text(f"SELECT current_setting('{SCOPE_SETTING}', true)")
+            ).scalar_one()
+        )
+        return original_probe(self)
+
+    monkeypatch.setattr(DigestRun, "_spazio_vuoto", _recording_probe)
 
     def _recording(self: DigestService, actor: Any, settimana: tuple[date, date]) -> WeeklyDigest:
         digest = original(self, actor, settimana)
@@ -927,6 +939,8 @@ def test_a_scoped_recipient_gets_a_report_built_inside_their_scope(
         ).scalar_one()
 
     assert esito.esito == "inviato" and esito.destinatari == 2
+    # The emptiness probe, the first read of a policied table, already ran as «tutte».
+    assert probed == ["*"]
     assert bound == ["*", str(azienda_id)]
     assert [mail.to for mail in sender.sent] == [corpus.titolare, corpus.collega]
     # The titolare's scope is what the session carries once the groups are done.

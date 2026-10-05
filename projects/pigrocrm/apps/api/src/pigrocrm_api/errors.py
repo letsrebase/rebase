@@ -8,12 +8,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.exc import DBAPIError
 
+from pigrocrm.core.db.scope import is_policy_refusal
 from pigrocrm.core.errors import DomainError, OutOfScope
-
-# SQLSTATE of `insufficient_privilege`: what Postgres answers when a row-level policy
-# refuses a write outright (an INSERT on another azienda, an UPDATE that would move a
-# row across the line), since a policy's `WITH CHECK` has no softer way to say no.
-INSUFFICIENT_PRIVILEGE = "42501"
 
 STATUS_BY_CODE: dict[str, int] = {
     "not_found": 404,
@@ -107,7 +103,7 @@ async def insufficient_privilege_handler(request: Request, exc: Exception) -> JS
     same answer rather than a 500 that says more than the status should. Any other
     database error is not this handler's and goes on to the 500 it always was."""
     assert isinstance(exc, DBAPIError)
-    if getattr(exc.orig, "sqlstate", None) != INSUFFICIENT_PRIVILEGE:
+    if not is_policy_refusal(exc):
         raise exc
     return await domain_error_handler(request, OutOfScope())
 

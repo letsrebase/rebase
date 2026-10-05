@@ -151,8 +151,12 @@ export function UsersPanel() {
   function openScope(user: UserRecord) {
     setScopeProblem(null)
     setScopeOf(user)
+    // Only the ids the checklist draws: an azienda deactivated since the scope was set
+    // is not there to uncheck, and sending it back would be refused as inactive.
     setScopeAziende(
-      Array.isArray(user.aziende) ? user.aziende : azienda.aziende.map((a) => a.id),
+      Array.isArray(user.aziende)
+        ? user.aziende.filter((id) => azienda.byId(id) !== undefined)
+        : azienda.aziende.map((a) => a.id),
     )
   }
 

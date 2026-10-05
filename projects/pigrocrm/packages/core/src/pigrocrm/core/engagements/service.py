@@ -34,6 +34,7 @@ from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
 from pigrocrm.core.db import session_factory, today_local
+from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.schemas import DealCreate, DealRead
 from pigrocrm.core.deals.service import DealService
@@ -581,6 +582,10 @@ class EngagementService:
         )
         try:
             with session_factory(engine)() as space:
+                # The door is unscoped by design (spec 2026-10-03 §4): it opens the space
+                # as the application role, and without this it would find no marker
+                # deal and be refused its own customer (REB-634).
+                bind_scope(space, Actor.rebase())
                 yield space
         except SQLAlchemyError as exc:
             raise SpaceUnreachable(tenant_id) from exc
