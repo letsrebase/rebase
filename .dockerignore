@@ -48,6 +48,7 @@ var/
 # Editor / tooling noise, and documentation no image reads
 .superpowers/
 .claude/
+.greptile/
 docs/
 projects/*/docs/
 
