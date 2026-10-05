@@ -11,8 +11,11 @@
 #   apps/web/scripts/e2e.sh e2e/time-tracking.spec.ts
 #
 # Nothing else needs to be running first: no manually-started API, no manually
-# started frontend. Playwright's own `webServer` block (apps/web/playwright.config.ts)
-# starts `pnpm dev` before the run and stops it after a normal pass or failure --
+# started frontend. The SPA is built here (`vite build`) and Playwright's own
+# `webServer` block (apps/web/playwright.config.ts) serves that build with `vite
+# preview` before the run and stops it after a normal pass or failure. A production
+# build rather than the dev server because the dev server's hundreds of module requests
+# per page get aborted by Chromium on a loaded box (REB-659) --
 # but not reliably after a signal (fix round 1: confirmed live that Playwright
 # launches it fully detached, in its own process group, so a real Ctrl-C to this
 # whole process group never reaches it at all). e2e-teardown.sh's own trap below
@@ -39,6 +42,10 @@ cleanup() {
   "$REPO_ROOT/apps/web/scripts/e2e-teardown.sh"
 }
 trap cleanup EXIT
+
+# Before the database comes up, so a build that fails costs nothing to tear down.
+echo "== pigrocrm e2e: building the SPA =="
+(cd "$REPO_ROOT/apps/web" && pnpm exec vite build)
 
 "$REPO_ROOT/apps/web/scripts/e2e-setup.sh"
 
