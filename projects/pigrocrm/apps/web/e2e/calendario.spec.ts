@@ -7,7 +7,7 @@ import { loginAsAdmin, seedDealWithRate } from './helpers'
  * its top right), so the bare accessible name matches two buttons and Playwright's
  * strict mode refuses to pick one. The footer is what the panel itself renders.
  */
-const chiudi = (dialog: Locator) =>
+const closeDayPanel = (dialog: Locator) =>
   dialog.locator('[data-slot="dialog-footer"]').getByRole('button', { name: 'Chiudi' })
 
 /**
@@ -85,7 +85,7 @@ test.describe('il calendario', () => {
 
     // The calendar itself shows it, which is the read the page just invalidated.
     await expect(dialog.getByText('8.00 h')).toBeVisible()
-    await chiudi(dialog).click()
+    await closeDayPanel(dialog).click()
 
     // And `/app/hours` shows the same row, because it *is* the same row: the calendar
     // fills `POST /api/time-entries`, it does not write the table a second way. The
@@ -111,7 +111,7 @@ test.describe('il calendario', () => {
     await dialog.getByRole('textbox', { name: 'Titolo della scadenza' }).fill(titolo)
     await dialog.getByRole('button', { name: 'Aggiungi' }).click()
     await expect(dialog.getByText(titolo)).toBeVisible()
-    await chiudi(dialog).click()
+    await closeDayPanel(dialog).click()
 
     // The reload is the point: the month is read again from three tables, and the
     // commitment has to come back on the same day.

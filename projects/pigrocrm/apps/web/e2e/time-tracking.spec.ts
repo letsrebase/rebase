@@ -70,6 +70,8 @@ function centesimi(testo: string): number {
   return Number(intero) * 100 + Number(decimali.padEnd(2, '0').slice(0, 2))
 }
 
+test.use({ timezoneId: 'Europe/Rome' })
+
 test.describe('time tracking', () => {
   test('a week of hours, a timesheet and a closed month', async ({ page }) => {
     // Two subprocess renders (pandoc, then Typst) and a dozen navigations: the
@@ -97,12 +99,21 @@ test.describe('time tracking', () => {
     // (a Monday that is the 7th steps onto the previous month's last day, and one more
     // clears it). `weekDays` anchors on "today", so the steps have to be made through the
     // screen's own «Settimana precedente» control every time this test returns to it.
-    const oggi = new Date()
-    const oggiAMezzanotte = new Date(oggi.getFullYear(), oggi.getMonth(), oggi.getDate())
-    let lunedi = lunediDi(oggi)
+    // «Today» is the API's today, Europe/Rome's, not the runner's: between midnight in
+    // Rome and midnight on a runner to its west, the runner's Tuesday is still Rome's
+    // Monday and the API would answer `422 data futura`. The browser is pinned to the
+    // same zone (`test.use` below), so the grid's own «today» agrees with this one.
+    const [romeYear = 0, romeMonth = 1, romeDay = 1] = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Rome',
+    })
+      .format(new Date())
+      .split('-')
+      .map(Number)
+    const today = new Date(romeYear, romeMonth - 1, romeDay)
+    let lunedi = lunediDi(today)
     let settimaneIndietro = 0
     while (
-      piuGiorni(lunedi, 1) > oggiAMezzanotte ||
+      piuGiorni(lunedi, 1) > today ||
       piuGiorni(lunedi, 1).getMonth() !== lunedi.getMonth()
     ) {
       lunedi = piuGiorni(lunedi, -7)
