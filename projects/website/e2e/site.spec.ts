@@ -349,6 +349,7 @@ test.describe('every page of the site', () => {
 // page at `/` and a 200 for any path at all, so a test written against `/` checked a
 // page production never serves there. These pin the served map to deploy/nginx.conf's:
 // the same file under each name, the same redirect, and a 404 where nginx has one.
+
 // REB-575: landing.js reads window.__utm, window.__typewriter and window.__pigroField,
 // which three other scripts assign. Vite does not promise the order of plain module
 // scripts across chunks, so this watches the built bundle itself: an accessor on each
