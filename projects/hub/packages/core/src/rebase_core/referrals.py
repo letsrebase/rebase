@@ -346,6 +346,7 @@ class ReferralService:
         row = ReferralSettings()
         self.session.add(row)
         self.session.flush()
+        self.session.refresh(row)
         return row
 
     def save_settings(
