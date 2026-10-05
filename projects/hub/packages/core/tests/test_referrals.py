@@ -606,25 +606,48 @@ def test_a_price_waits_for_the_confirmation_in_flight_then_is_refused(clean: Ses
     row.confirmed_by = admin_id
     clean.flush()
 
-    other = session_factory(clean.get_bind())()  # type: ignore[arg-type]
+    factory = session_factory(clean.get_bind())  # type: ignore[arg-type]
     outcome: list[BaseException] = []
+    started = threading.Event()
+    backend: list[int] = []
 
     def price_from_another_session() -> None:
-        try:
-            ReferralService(other).set_price(reward_id, Decimal("1.00"), Decimal("0.10"))
-        except ValidationFailed as exc:
-            outcome.append(exc)
-        finally:
-            other.rollback()
+        # The session is opened, used and closed on this thread alone.
+        with factory() as other:
+            try:
+                backend.append(other.execute(text("SELECT pg_backend_pid()")).scalar_one())
+                started.set()
+                ReferralService(other).set_price(reward_id, Decimal("1.00"), Decimal("0.10"))
+            except ValidationFailed as exc:
+                outcome.append(exc)
+            finally:
+                other.rollback()
+                started.set()
 
     worker = threading.Thread(target=price_from_another_session)
     worker.start()
-    worker.join(timeout=0.5)
-    assert worker.is_alive(), "set_price did not wait for the confirmation holding the row"
-
-    clean.commit()
-    worker.join(timeout=5)
-    other.close()
+    try:
+        assert started.wait(timeout=5), "the second session never connected"
+        # Wait until the database itself reports the worker parked on a lock inside the
+        # locking SELECT. Without `FOR UPDATE` that read never waits: the worker's first
+        # wait would be the UPDATE at commit, whose query text is not a SELECT.
+        for _ in range(100):
+            blocked = clean.execute(
+                text(
+                    "SELECT 1 FROM pg_stat_activity WHERE pid = :pid "
+                    "AND wait_event_type = 'Lock' AND query ILIKE 'SELECT%FOR UPDATE%'"
+                ),
+                {"pid": backend[0]},
+            ).first()
+            if blocked is not None:
+                break
+            worker.join(timeout=0.05)
+        assert blocked is not None, "set_price did not wait on the row the confirmation holds"
+    finally:
+        # Release the row whatever happened above, so a failed assertion above never
+        # leaves the worker parked on a lock the fixture's teardown then waits on.
+        clean.commit()
+        worker.join(timeout=5)
 
     assert not worker.is_alive()
     assert len(outcome) == 1 and "prima della conferma" in str(outcome[0])
