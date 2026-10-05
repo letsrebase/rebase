@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { Button } from '@rebase/ui/button'
@@ -5,11 +6,14 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
+import { queryKeys } from '@/lib/query'
 import {
   useFiscalProfile,
   useSaveFiscalProfile,
   type FiscalProfile,
 } from '@/features/invoices/queries'
+import { StaleRowBanner } from './StaleRowBanner'
+import { isStaleRow, type StalePhase } from './staleRow'
 
 interface FiscalField {
   name:
@@ -114,6 +118,21 @@ type Values = Record<FiscalField['name'], string> & {
   codice_regime: string
 }
 
+type ValueName = keyof Values
+
+/** The reloaded profile under the draft: a value the person changed keeps the draft,
+ *  every other one takes the row's. The regime select writes `pack_id` and
+ *  `codice_regime` together, so both are marked when it is picked. */
+function withDraft(fresh: Values, draft: Values, touched: ReadonlySet<ValueName>): Values {
+  const merged: Values = { ...fresh }
+  for (const name of touched) {
+    // One assignment per key, typed by the key: `Values` is a record of strings plus
+    // two non-string members, and a loop over `keyof` cannot narrow them one by one.
+    ;(merged as Record<ValueName, unknown>)[name] = draft[name]
+  }
+  return merged
+}
+
 function emptyValues(): Values {
   return {
     pack_id: 'it-flat-rate',
@@ -179,6 +198,8 @@ function bodyFrom(values: Values): Record<string, unknown> {
 
 export function FiscalPanel({ aziendaId }: { aziendaId: string }) {
   const profile = useFiscalProfile(aziendaId)
+  // `data` is `undefined` only before the first successful read: a 404 is `null`.
+  const unreadable = profile.isError && profile.data === undefined
 
   return (
     <div className="space-y-4">
@@ -194,41 +215,55 @@ export function FiscalPanel({ aziendaId }: { aziendaId: string }) {
 
       {profile.isError ? <QueryErrorBanner error={profile.error} /> : null}
 
-      {!profile.isLoading && !profile.isError && profile.data === null ? (
+      {!profile.isLoading && !unreadable && profile.data === null ? (
         <p className="text-muted-foreground text-sm">
-          Profilo non ancora configurato: senza di esso non è possibile emettere fatture.
+          {profile.isError
+            ? // A `null` from an earlier read beside a read that failed: what was true
+              // then is not known to be true now, and the sentence says so instead of
+              // presenting the absence as a fact (REB-622).
+              'All’ultima lettura il profilo non era configurato; non è stato possibile verificarne lo stato attuale. La bozza resta nei campi.'
+            : 'Profilo non ancora configurato: senza di esso non è possibile emettere fatture.'}
         </p>
       ) : null}
 
-      {profile.isLoading || profile.isError ? null : (
-        // A failed read hides the form entirely -- `isError`, not just `isLoading`.
-        // A 404 is not an error here (`useFiscalProfile` maps it to `null`, "not configured
-        // yet"), so this branch only fires on a *real* failure: the row may well exist
-        // and simply be unreadable. Rendering the blank form in that state invites
-        // somebody to fill it in and press Salva, and the save is a PUT of every key --
-        // it would overwrite a stored profile the panel was never able to show them.
-        // Keyed on identity so the form seeds at mount rather than in an effect: one
-        // render with the right values, and a later refetch cannot overwrite what the
-        // user is typing.
-        <FiscalForm
-          // The azienda is part of the key: two aziende without a profile would
-          // otherwise share one mounted form, and values typed for the first would be
-          // saved under the second after a switch.
-          key={`${aziendaId}:${profile.data?.id ?? 'nuovo'}`}
-          aziendaId={aziendaId}
-          profile={profile.data ?? null}
-        />
+      {profile.isLoading || unreadable ? null : (
+        // A read that never succeeded hides the form entirely (`unreadable`). A 404 is
+        // not an error here (`useFiscalProfile` maps it to `null`, "not configured yet"),
+        // so that only fires on a *real* failure: the row may well exist and simply be
+        // unreadable, and rendering the blank form in that state invites somebody to
+        // fill it in and press Salva, a PUT of every key over a profile the panel was
+        // never able to show them. A refetch that fails *after* a read succeeded leaves
+        // the form up, with the error above it: a draft and a stale refusal survive a
+        // «Ricarica» that did not answer (REB-622).
+        // Keyed on the azienda alone, so the form seeds at mount rather than in an
+        // effect and a profile that appears under it (another admin's first save) is a
+        // row that arrived, which the form follows while untouched and adopts on
+        // «Ricarica», never a remount that drops the draft. Two aziende without a
+        // profile still get a form each.
+        <FiscalForm key={aziendaId} aziendaId={aziendaId} profile={profile.data ?? null} />
       )}
     </div>
   )
 }
 
 function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: FiscalProfile | null }) {
+  const queryClient = useQueryClient()
   const save = useSaveFiscalProfile(aziendaId)
+  // The row the inputs were built from, `null` for a profile not saved yet. Its
+  // `updated_at` is the version every save sends (REB-622, spec 2026-10-03 §11), and
+  // only a reseed moves it: a newer row that arrives while a draft is open is not
+  // adopted, so a Salva over it is refused by the server instead of the draft's
+  // untouched fields replacing what somebody else just saved. State adjusted during
+  // render, as `LegalEntityForm` does.
+  const [seeded, setSeeded] = useState(profile)
   const [values, setValues] = useState<Values>(() =>
     profile ? valuesFrom(profile) : emptyValues(),
   )
+  const [touched, setTouched] = useState<ReadonlySet<ValueName>>(() => new Set())
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
+  const [stale, setStale] = useState<StalePhase>('none')
+  const [adopt, setAdopt] = useState(false)
+  const [reloading, setReloading] = useState(false)
   // What «Estero» empties, kept aside while the choice is unsaved: a person who looks
   // at the foreign form and comes back finds their natura, declaration and bollo
   // switch as they were, not the blanks a save would have written.
@@ -237,12 +272,65 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
     'natura_default' | 'riferimento_normativo' | 'applica_bollo'
   > | null>(null)
 
+  // As in `LegalEntityForm`: an untouched form follows a row as it arrives, and
+  // «Ricarica» adopts the row in hand once it differs from the seed.
+  const [seen, setSeen] = useState(profile)
+  const arrived = profile !== seen
+  if (arrived) setSeen(profile)
+  if (
+    (profile?.updated_at ?? null) !== (seeded?.updated_at ?? null) &&
+    ((arrived && touched.size === 0) || adopt)
+  ) {
+    setSeeded(profile)
+    setValues(withDraft(profile ? valuesFrom(profile) : emptyValues(), values, touched))
+    setAdopt(false)
+  }
+
+  function change(patch: Partial<Values>) {
+    setTouched((previous) => {
+      const next = new Set(previous)
+      for (const name of Object.keys(patch) as ValueName[]) next.add(name)
+      return next
+    })
+    setValues((previous) => ({ ...previous, ...patch }))
+  }
+
   function submit() {
     setProblem(null)
-    save.mutate(bodyFrom(values), {
-      onSuccess: () => toast.success('Profilo fiscale salvato'),
-      onError: (error) => setProblem(toProblem(error)),
+    // `null` on a first save: the version of a profile not saved yet, which the server
+    // accepts while the row is still missing and refuses once somebody else created it.
+    save.mutate({ ...bodyFrom(values), updated_at: seeded?.updated_at ?? null }, {
+      onSuccess: (saved) => {
+        setSeeded(saved)
+        setValues(valuesFrom(saved))
+        setTouched(new Set())
+        setStale('none')
+        toast.success('Profilo fiscale salvato')
+      },
+      onError: (error) => {
+        const refusal = toProblem(error)
+        setProblem(refusal)
+        if (isStaleRow(refusal)) setStale('refused')
+      },
     })
+  }
+
+  async function reload() {
+    setReloading(true)
+    try {
+      await queryClient.refetchQueries(
+        { queryKey: queryKeys.fiscalProfile(aziendaId) },
+        { throwOnError: true },
+      )
+    } catch (error) {
+      toast.error(toProblem(error).detail)
+      return
+    } finally {
+      setReloading(false)
+    }
+    setAdopt(true)
+    setProblem(null)
+    setStale('reloaded')
   }
 
   // Reads `values` and calls the two setters outside any updater: an updater has to be
@@ -259,8 +347,7 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
       }
       // The forfettario's natura and declaration mean nothing abroad; the bollo is an
       // Italian duty. Emptied here so the foreign save never carries them.
-      setValues({
-        ...values,
+      change({
         pack_id: 'non-it',
         codice_regime: '',
         natura_default: '',
@@ -270,7 +357,7 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
       return
     }
     const restored = values.pack_id === 'non-it' && kept ? kept : {}
-    setValues({ ...values, ...restored, pack_id: 'it-flat-rate', codice_regime: regime })
+    change({ ...restored, pack_id: 'it-flat-rate', codice_regime: regime })
   }
 
   const fieldError = problem ? fieldErrorFrom(problem) : null
@@ -288,7 +375,10 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
 
   return (
     <div className="space-y-4">
-      {bannered ? <QueryErrorBanner error={problem} /> : null}
+      {stale !== 'none' ? (
+        <StaleRowBanner phase={stale} onReload={() => void reload()} reloading={reloading} />
+      ) : null}
+      {bannered && !isStaleRow(problem) ? <QueryErrorBanner error={problem} /> : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2">
@@ -300,6 +390,9 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
             id="fiscal-regime"
             className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
             value={regime}
+            // Locked while a save is in flight, like the azienda's fields: an edit made
+            // between the PUT and its answer would be replaced by the row that comes back.
+            disabled={save.isPending}
             aria-invalid={fieldError?.field === 'codice_regime' ? true : undefined}
             onChange={(event) => pickRegime(event.target.value as Regime)}
           >
@@ -325,10 +418,9 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
             <Input
               id={`fiscal-${field.name}`}
               value={values[field.name]}
+              disabled={save.isPending}
               aria-invalid={fieldError?.field === field.name ? true : undefined}
-              onChange={(event) =>
-                setValues((previous) => ({ ...previous, [field.name]: event.target.value }))
-              }
+              onChange={(event) => change({ [field.name]: event.target.value })}
             />
             {fieldError?.field === field.name ? (
               <p className="text-destructive text-sm">{fieldError.message}</p>
@@ -352,9 +444,8 @@ function FiscalForm({ aziendaId, profile }: { aziendaId: string; profile: Fiscal
           <input
             type="checkbox"
             checked={values.applica_bollo}
-            onChange={(event) =>
-              setValues((previous) => ({ ...previous, applica_bollo: event.target.checked }))
-            }
+            disabled={save.isPending}
+            onChange={(event) => change({ applica_bollo: event.target.checked })}
           />
           Applica il bollo virtuale sopra la soglia
         </label>

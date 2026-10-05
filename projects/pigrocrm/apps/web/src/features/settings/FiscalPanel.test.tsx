@@ -268,6 +268,8 @@ describe('FiscalPanel', () => {
       'pack_id',
       'riferimento_normativo',
       'soglia_bollo',
+      // The version the form was seeded from (REB-622), beside the fifteen fields.
+      'updated_at',
     ])
     expect(body).toHaveProperty('pack_id', 'it-flat-rate')
     expect(body).toHaveProperty('codice_regime', 'RF19')
@@ -308,9 +310,9 @@ describe('FiscalPanel', () => {
       aliquota_imposta_sostitutiva: null,
       aliquota_inps: null,
     })
-    // The same fifteen keys as an Italian save: a full replace leaves nothing to the
-    // server's defaults, which are the forfettario's.
-    expect(Object.keys(body)).toHaveLength(15)
+    // The same fifteen keys as an Italian save, plus the version: a full replace leaves
+    // nothing to the server's defaults, which are the forfettario's.
+    expect(Object.keys(body)).toHaveLength(16)
   })
 
   it('reads a stored foreign profile back as «Estero» with the Italian fields hidden', async () => {
@@ -444,11 +446,14 @@ describe('FiscalPanel', () => {
    * The form is keyed on the profile's identity, so it seeds at mount and a later
    * refetch cannot overwrite what is in the inputs. Seeding in an effect instead would
    * mean the invalidation fired by a successful save reaches back into the form and
-   * replaces whatever the user has typed since.
+   * replaces whatever the user has typed since. The save's own answer is adopted (it is
+   * the row as saved), and the refetch that follows brings the same version, so nothing
+   * moves twice.
    */
   it('does not reseed itself when the query refetches after a save', async () => {
-    vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
-    vi.mocked(api.PUT).mockImplementation(() => ok(PROFILE))
+    const saved = { ...PROFILE, codice_regime: 'RF01', updated_at: '2026-08-21T09:00:00Z' }
+    vi.mocked(api.GET).mockImplementationOnce(() => ok(PROFILE)).mockImplementation(() => ok(saved))
+    vi.mocked(api.PUT).mockImplementation(() => ok(saved))
     renderPanel()
 
     await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
@@ -456,10 +461,191 @@ describe('FiscalPanel', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
     await waitFor(() => expect(api.PUT).toHaveBeenCalled())
-    // The save invalidates the profile, so the panel asks again -- and the server here
-    // still answers with the old document, `RF19` and all.
+    // The save invalidates the profile, so the panel asks again.
     await waitFor(() => expect(vi.mocked(api.GET).mock.calls.length).toBeGreaterThan(1))
 
     expect(screen.getByLabelText('Regime')).toHaveValue('RF01')
+  })
+
+  // ---- the version check (REB-622, spec 2026-10-03 §11) ---------------------------------
+
+  const STALE = {
+    type: 'https://pigrocrm.dev/errors/stale_row',
+    title: 'Riga cambiata nel frattempo',
+    status: 409,
+    detail: 'qualcun altro ha salvato nel frattempo: ricarica e riprova',
+    code: 'stale_row',
+    entity: 'fiscal_profile',
+    updated_at: '2026-08-21T09:00:00Z',
+  }
+
+  it('locks the fields while a save is in flight, so nothing typed then is lost', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
+    let finish!: (value: unknown) => void
+    vi.mocked(api.PUT).mockReturnValue(new Promise((resolve) => (finish = resolve)) as never)
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(screen.getByLabelText('IBAN')).toBeDisabled())
+    expect(screen.getByLabelText('Regime')).toBeDisabled()
+    expect(screen.getByLabelText(/Applica il bollo/)).toBeDisabled()
+    finish({ data: PROFILE, response: new Response(null, { status: 200 }) })
+    await waitFor(() => expect(screen.getByLabelText('IBAN')).toBeEnabled())
+  })
+
+  it('sends the version of the profile it was seeded from', async () => {
+    vi.mocked(api.GET).mockImplementation(() => ok(PROFILE))
+    vi.mocked(api.PUT).mockImplementation(() => ok(PROFILE))
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+    expect(bodyOfSave()).toHaveProperty('updated_at', '2026-08-20T09:00:00Z')
+  })
+
+  it('sends null as the version on the first save of a profile', async () => {
+    // A profile not saved yet was built on «nothing there», which the server accepts
+    // while the row is still missing and refuses once somebody else created it.
+    vi.mocked(api.GET).mockImplementation(() => failed({ detail: 'not found' }, 404))
+    vi.mocked(api.PUT).mockImplementation(() => ok(PROFILE))
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+    expect(bodyOfSave()).toHaveProperty('updated_at', null)
+  })
+
+  it('shows the saved values and carries the new version while the refetch is still out', async () => {
+    const saved = { ...PROFILE, giorni_scadenza: 60, updated_at: '2026-08-21T09:00:00Z' }
+    let answer!: (value: unknown) => void
+    vi.mocked(api.GET)
+      .mockImplementationOnce(() => ok(PROFILE))
+      .mockImplementation(() => new Promise((resolve) => (answer = resolve)) as never)
+    vi.mocked(api.PUT).mockImplementation(() => ok(saved))
+    renderPanel()
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
+    await userEvent.clear(screen.getByLabelText('Giorni di scadenza'))
+    await userEvent.type(screen.getByLabelText('Giorni di scadenza'), '60')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1))
+    // The refetch is held: the form shows what was saved, not the row before it.
+    expect(screen.getByLabelText('Giorni di scadenza')).toHaveValue('60')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
+    const [, second] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
+    expect(second.body).toMatchObject({ giorni_scadenza: '60', updated_at: '2026-08-21T09:00:00Z' })
+    answer({ data: saved, response: new Response(null, { status: 200 }) })
+  })
+
+  it('follows a newer row while untouched, and keeps its seed under an open draft', async () => {
+    const newer = { ...PROFILE, iban: 'IT60X0542811101000000123456', updated_at: '2026-08-21T09:00:00Z' }
+    const newest = { ...newer, giorni_scadenza: 45, updated_at: '2026-08-22T09:00:00Z' }
+    vi.mocked(api.GET)
+      .mockImplementationOnce(() => ok(PROFILE))
+      .mockImplementationOnce(() => ok(newer))
+      .mockImplementation(() => ok(newest))
+    vi.mocked(api.PUT).mockImplementation(() => ok(newer))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <FiscalPanel aziendaId="a-1" />
+      </QueryClientProvider>,
+    )
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
+    // Untouched: another admin's row is adopted as it arrives.
+    await client.invalidateQueries({ queryKey: ['fiscal-profile', 'a-1'] })
+    await waitFor(() => expect(screen.getByLabelText('IBAN')).toHaveValue('IT60X0542811101000000123456'))
+    // Touched: the next row is not, and the save carries the seed it was built on.
+    await userEvent.clear(screen.getByLabelText('Giorni di scadenza'))
+    await userEvent.type(screen.getByLabelText('Giorni di scadenza'), '60')
+    await client.invalidateQueries({ queryKey: ['fiscal-profile', 'a-1'] })
+    expect(screen.getByLabelText('Giorni di scadenza')).toHaveValue('60')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalled())
+    expect(bodyOfSave()).toMatchObject({ giorni_scadenza: '60', updated_at: '2026-08-21T09:00:00Z' })
+  })
+
+  it('keeps a first-save draft when another admin creates the profile, and reloads under it', async () => {
+    // The form is keyed on the azienda alone: the profile appearing is a row that
+    // arrived, not a remount that drops what was typed.
+    const theirs = { ...PROFILE, iban: 'IT60X0542811101000000123456', updated_at: '2026-08-21T09:00:00Z' }
+    vi.mocked(api.GET)
+      .mockImplementationOnce(() => failed({ detail: 'not found' }, 404))
+      .mockImplementation(() => ok(theirs))
+    vi.mocked(api.PUT).mockImplementationOnce(() => failed({ ...STALE, updated_at: theirs.updated_at }, 409)).mockImplementation(() => ok(theirs))
+    renderPanel()
+    await userEvent.clear(await screen.findByLabelText('Giorni di scadenza'))
+    await userEvent.type(screen.getByLabelText('Giorni di scadenza'), '60')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(bodyOfSave()).toHaveProperty('updated_at', null)
+    await userEvent.click(await screen.findByRole('button', { name: 'Ricarica' }))
+    await waitFor(() => expect(screen.getByLabelText('IBAN')).toHaveValue('IT60X0542811101000000123456'))
+    expect(screen.getByLabelText('Giorni di scadenza')).toHaveValue('60')
+    expect(screen.queryByText(/Profilo non ancora configurato/)).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
+    const [, second] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
+    expect(second.body).toMatchObject({ giorni_scadenza: '60', updated_at: '2026-08-21T09:00:00Z' })
+  })
+
+  it('says a first-save draft could not be checked when the reload fails, and keeps it', async () => {
+    vi.mocked(api.GET)
+      .mockImplementationOnce(() => failed({ detail: 'not found' }, 404))
+      .mockImplementation(() => failed({ detail: 'database non raggiungibile' }, 503))
+    vi.mocked(api.PUT).mockImplementation(() => failed({ ...STALE, updated_at: '2026-08-21T09:00:00Z' }, 409))
+    renderPanel()
+    expect(await screen.findByText(/Profilo non ancora configurato/)).toBeInTheDocument()
+    await userEvent.clear(screen.getByLabelText('Giorni di scadenza'))
+    await userEvent.type(screen.getByLabelText('Giorni di scadenza'), '60')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ricarica' }))
+    // The absence seen earlier is no longer stated as a fact, the draft stays.
+    await waitFor(() => expect(screen.getByText('database non raggiungibile')).toBeInTheDocument())
+    expect(screen.getByText(/All’ultima lettura il profilo non era configurato/)).toBeInTheDocument()
+    expect(screen.queryByText(/Profilo non ancora configurato:/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Giorni di scadenza')).toHaveValue('60')
+    expect(screen.getByText(/Qualcun altro ha salvato nel frattempo/)).toBeInTheDocument()
+  })
+
+  it('keeps the draft and the refusal through a reload that fails', async () => {
+    vi.mocked(api.GET)
+      .mockImplementationOnce(() => ok(PROFILE))
+      .mockImplementation(() => failed({ detail: 'database non raggiungibile' }, 503))
+    vi.mocked(api.PUT).mockImplementation(() => failed(STALE, 409))
+    renderPanel()
+    await userEvent.clear(await screen.findByLabelText('Giorni di scadenza'))
+    await userEvent.type(screen.getByLabelText('Giorni di scadenza'), '60')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ricarica' }))
+    // The failed read shows above the form; the form, the draft and the refusal stay.
+    await waitFor(() => expect(screen.getByText('database non raggiungibile')).toBeInTheDocument())
+    expect(screen.getByLabelText('Giorni di scadenza')).toHaveValue('60')
+    expect(screen.getByText(/Qualcun altro ha salvato nel frattempo/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ricarica' })).toBeEnabled()
+  })
+
+  it('on a stale refusal offers Ricarica, which takes the newer profile under the touched fields', async () => {
+    const newer = { ...PROFILE, iban: 'IT60X0542811101000000123456', updated_at: '2026-08-21T09:00:00Z' }
+    vi.mocked(api.GET).mockImplementationOnce(() => ok(PROFILE)).mockImplementation(() => ok(newer))
+    vi.mocked(api.PUT).mockImplementationOnce(() => failed(STALE, 409)).mockImplementation(() => ok(newer))
+    renderPanel()
+    await waitFor(() => expect(screen.getByLabelText('Regime')).toHaveValue('RF19'))
+    await userEvent.clear(screen.getByLabelText('Giorni di scadenza'))
+    await userEvent.type(screen.getByLabelText('Giorni di scadenza'), '60')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Qualcun altro ha salvato nel frattempo.')
+    expect(screen.getByLabelText('Giorni di scadenza')).toHaveValue('60')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ricarica' }))
+    await waitFor(() => expect(screen.getByLabelText('IBAN')).toHaveValue('IT60X0542811101000000123456'))
+    expect(screen.getByLabelText('Giorni di scadenza')).toHaveValue('60')
+    expect(screen.getByRole('alert')).toHaveTextContent('Riga ricaricata.')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
+    const [, second] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
+    expect(second.body).toMatchObject({
+      giorni_scadenza: '60',
+      iban: 'IT60X0542811101000000123456',
+      updated_at: '2026-08-21T09:00:00Z',
+    })
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
   })
 })

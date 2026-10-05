@@ -18,6 +18,7 @@ from pigrocrm.core.emitter.schemas import (
     LegalEntityUpsert,
 )
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
+from pigrocrm.core.versioning import require_unchanged
 
 # The error label and the timeline entity keep the table's name (spec 2026-10-03 §10):
 # every row already written under it stays readable as history.
@@ -229,7 +230,9 @@ class LegalEntityService:
         `test_emitter.py`).
         """
         actor.require_admin("upsert_emitter_profile")
-        payload = data.model_dump()
+        # Never a column: the version travels beside the fields and is checked, when it
+        # is checked, by `update`; the default's first save has no row to compare with.
+        payload = data.model_dump(exclude={"updated_at"})
         _check_fiscal(payload)
         row = self.repo.default()
         try:
@@ -267,7 +270,9 @@ class LegalEntityService:
         actor.require_unscoped_admin("create_azienda")
         payload = data.model_dump(exclude={"fiscal_profile"})
         _check_fiscal(payload)
-        profilo = data.fiscal_profile.model_dump()
+        # The profile body is `FiscalProfileUpsert`, whose `updated_at` is a version and
+        # not a column (REB-622); a row being created has none to check against.
+        profilo = data.fiscal_profile.model_dump(exclude={"updated_at"})
         FiscalProfileService.check(profilo)
         try:
             row = self.repo.add(
@@ -292,11 +297,19 @@ class LegalEntityService:
     def update(self, azienda_id: UUID, data: LegalEntityUpsert, actor: Actor) -> LegalEntityRead:
         """Replace one azienda's fields. Whole-row, like every write on this table:
         a key left out goes back to its default, which is why the MCP tool tells the
-        agent to read first and send the object back."""
+        agent to read first and send the object back. A body that names the version it
+        was built on (`updated_at`, REB-622) is refused when the row has moved since,
+        before anything is assigned."""
         actor.require_admin("upsert_emitter_profile")
-        payload = data.model_dump()
+        payload = data.model_dump(exclude={"updated_at"})
         _check_fiscal(payload)
         row = self.resolve(azienda_id)
+        if "updated_at" in data.model_fields_set:
+            # The row's lock before the comparison: two saves carrying the same version
+            # would otherwise both read the old `updated_at` under READ COMMITTED and
+            # the second would still land. The second waits here, then reads the first's.
+            self.session.refresh(row, with_for_update=True)
+            require_unchanged(ENTITY, sent=data.updated_at, current=row.updated_at)
         try:
             for key, value in payload.items():
                 setattr(row, key, value)

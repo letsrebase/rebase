@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -108,6 +109,24 @@ class AgentForbidden(DomainError):
         super().__init__(
             f"{action} non è eseguibile da un agente: è un atto che richiede una persona",
             action=action,
+        )
+
+
+class StaleRow(DomainError):
+    """A whole-row save built on a row that changed since it was read (REB-622, spec
+    2026-10-03 §11). The caller sent the `updated_at` its draft was built on, the row's
+    is another: the second admin's Salva would otherwise overwrite the first's fields in
+    silence. The API answers 409; the message is what the panel shows, and `updated_at`
+    in the details is the row's current version, so a client can tell whether a reload
+    brought it."""
+
+    code = "stale_row"
+
+    def __init__(self, entity: str, *, updated_at: datetime | None) -> None:
+        super().__init__(
+            "qualcun altro ha salvato nel frattempo: ricarica e riprova",
+            entity=entity,
+            updated_at=updated_at,
         )
 
 

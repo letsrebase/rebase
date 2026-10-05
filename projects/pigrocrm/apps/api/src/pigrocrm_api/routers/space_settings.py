@@ -45,6 +45,9 @@ def update(
     base: BaseSettingsDep,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SpaceSettingsRead:
+    """Only the keys sent change; with `updated_at` in the body (the read's own, `null`
+    included), a save on settings somebody else saved since answers 409 `stale_row`
+    (REB-622)."""
     result = SpaceSettingsService(session, base).update(data, actor, spazio=tenant_slug(request))
     # This request's own settings, so a test that overrides `get_settings` invalidates
     # the registry it read from rather than one built against the process environment.

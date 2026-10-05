@@ -147,4 +147,126 @@ describe('LegalEntityPanel', () => {
     expect(await screen.findByText(/11 cifre/)).toBeInTheDocument()
     expect(screen.getByLabelText('Partita IVA')).toHaveAttribute('aria-invalid', 'true')
   })
+
+  // ---- the version check (REB-622, spec 2026-10-03 §11) ---------------------------------
+
+  const STALE = {
+    type: 'https://pigrocrm.dev/errors/stale_row',
+    title: 'Riga cambiata nel frattempo',
+    status: 409,
+    detail: 'qualcun altro ha salvato nel frattempo: ricarica e riprova',
+    code: 'stale_row',
+    entity: 'emitter_profile',
+    updated_at: '2026-08-21T09:00:00Z',
+  }
+
+  it('sends the version of the row the form was seeded from, and the newer one once it followed it', async () => {
+    vi.mocked(api.PUT).mockResolvedValue(ok(AZIENDA))
+    const { rerenderWith } = renderPanel()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1))
+    expect(saveCall()[1].body.updated_at).toBe('2026-08-20T09:00:00Z')
+    // Untouched, the form followed the newer row: the next save is built on it.
+    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
+    const [, options] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
+    expect(options.body.updated_at).toBe('2026-08-21T09:00:00Z')
+  })
+
+  it('shows the saved row and carries its version while the list has not refetched yet', async () => {
+    // The answer is the row as saved; the prop still holds the previous row for a
+    // round trip, and that older row must not be adopted back over the saved values.
+    const saved = { ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' }
+    vi.mocked(api.PUT).mockResolvedValue(ok(saved))
+    renderPanel()
+    await userEvent.clear(screen.getByLabelText('Comune'))
+    await userEvent.type(screen.getByLabelText('Comune'), 'Torino')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByLabelText('Comune')).toBeEnabled())
+    expect(screen.getByLabelText('Comune')).toHaveValue('Torino')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
+    const [, options] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
+    expect(options.body).toMatchObject({ comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+  })
+
+  it('keeps the seeded version under an open draft, so a newer row is not overwritten in silence', async () => {
+    vi.mocked(api.PUT).mockResolvedValue(ok(AZIENDA))
+    const { rerenderWith } = renderPanel()
+    await userEvent.type(screen.getByLabelText('PEC'), 'x')
+    // Another admin saved while the draft was open: the form keeps its values and its
+    // version, and the server, not this form, decides what happens to the save.
+    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    expect(screen.getByLabelText('Comune')).toHaveValue('Milano')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(1))
+    expect(saveCall()[1].body.updated_at).toBe('2026-08-20T09:00:00Z')
+  })
+
+  it('Ricarica adopts a newer row that had already arrived under the draft', async () => {
+    // A background refetch brought the other admin's row while the draft was open; the
+    // reload fetches the same row again, and it must be adopted all the same.
+    vi.mocked(api.PUT).mockResolvedValueOnce(failed(STALE, 409)).mockResolvedValue(ok(AZIENDA))
+    const { rerenderWith } = renderPanel()
+    await userEvent.type(screen.getByLabelText('PEC'), 'x')
+    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    expect(screen.getByLabelText('Comune')).toHaveValue('Milano')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await screen.findByRole('button', { name: 'Ricarica' })
+    await userEvent.click(screen.getByRole('button', { name: 'Ricarica' }))
+    await waitFor(() => expect(screen.getByLabelText('Comune')).toHaveValue('Torino'))
+    expect(screen.getByLabelText('PEC')).toHaveValue('studio@pec.itx')
+    expect(screen.getByRole('alert')).toHaveTextContent('Riga ricaricata.')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
+    const [, options] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
+    expect(options.body.updated_at).toBe('2026-08-21T09:00:00Z')
+  })
+
+  it('shows a refusal of another kind beside the reload reminder, never behind it', async () => {
+    vi.mocked(api.PUT)
+      .mockResolvedValueOnce(failed(STALE, 409))
+      .mockResolvedValue(
+        failed({ code: 'permission_denied', detail: 'upsert_emitter_profile requires one of [admin], actor has collaboratore' }, 403),
+      )
+    const { rerenderWith } = renderPanel()
+    await userEvent.type(screen.getByLabelText('PEC'), 'x')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ricarica' }))
+    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2))
+    expect(screen.getAllByRole('alert')[0]).toHaveTextContent('Riga ricaricata.')
+    expect(screen.getAllByRole('alert')[1]).toHaveTextContent(/requires one of \[admin\]/)
+  })
+
+  it('on a stale refusal offers Ricarica, which takes the newer row under the touched fields', async () => {
+    vi.mocked(api.PUT).mockResolvedValueOnce(failed(STALE, 409)).mockResolvedValue(ok(AZIENDA))
+    const { rerenderWith } = renderPanel()
+    await userEvent.type(screen.getByLabelText('PEC'), 'x')
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    const banner = await screen.findByRole('alert')
+    expect(banner).toHaveTextContent('Qualcun altro ha salvato nel frattempo.')
+    // The draft is still in the inputs, nothing was reseeded by the refusal alone.
+    expect(screen.getByLabelText('PEC')).toHaveValue('studio@pec.itx')
+    await userEvent.click(screen.getByRole('button', { name: 'Ricarica' }))
+    // The refetch brings the other admin's row: the untouched field follows it, the
+    // touched one keeps the draft, and the banner says so until the next save lands.
+    rerenderWith({ ...AZIENDA, comune: 'Torino', updated_at: '2026-08-21T09:00:00Z' })
+    expect(screen.getByLabelText('Comune')).toHaveValue('Torino')
+    expect(screen.getByLabelText('PEC')).toHaveValue('studio@pec.itx')
+    expect(screen.getByRole('alert')).toHaveTextContent('Riga ricaricata.')
+    expect(screen.queryByRole('button', { name: 'Ricarica' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(api.PUT).toHaveBeenCalledTimes(2))
+    const [, options] = vi.mocked(api.PUT).mock.calls[1] as unknown as [string, { body: Record<string, unknown> }]
+    expect(options.body).toMatchObject({
+      comune: 'Torino',
+      pec: 'studio@pec.itx',
+      updated_at: '2026-08-21T09:00:00Z',
+    })
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+  })
 })

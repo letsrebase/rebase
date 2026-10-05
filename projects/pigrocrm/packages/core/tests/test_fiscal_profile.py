@@ -254,3 +254,46 @@ def test_a_foreign_zero_rate_needs_a_natura_and_says_so_in_its_own_words(
         ADMIN,
     )
     assert (saved.natura_default, saved.riferimento_normativo) == ("N2.1", "Art. 7")
+
+
+# ---- the version check (REB-622, spec 2026-10-03 §11) ----------------------------------
+
+
+def test_a_save_built_on_the_current_profile_is_accepted_and_a_stale_one_refused(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.errors import StaleRow
+
+    service = FiscalProfileService(db_session)
+    first = service.upsert(_payload(), ADMIN)
+    second = service.upsert(_payload(giorni_scadenza=60, updated_at=first.updated_at), ADMIN)
+    assert second.giorni_scadenza == 60
+    assert second.updated_at > first.updated_at
+    with pytest.raises(StaleRow) as excinfo:
+        service.upsert(_payload(giorni_scadenza=90, updated_at=first.updated_at), ADMIN)
+    assert excinfo.value.code == "stale_row"
+    assert excinfo.value.details == {"entity": "fiscal_profile", "updated_at": second.updated_at}
+    assert service.get(ADMIN).giorni_scadenza == 60
+    # No version, no check: the MCP tool's whole-row replace as before.
+    assert service.upsert(_payload(giorni_scadenza=90), ADMIN).giorni_scadenza == 90
+
+
+def test_null_is_the_version_of_a_profile_not_saved_yet(db_session: Session) -> None:
+    """A first save built on «nothing there» sends `null` and is accepted; the same
+    `null` once somebody else created the row is a draft built on a state that is gone,
+    and a timestamp sent for a profile that does not exist was built on nothing either.
+    A body without the key (the MCP tool) checks nothing on a first save."""
+    from datetime import UTC, datetime
+
+    from pigrocrm.core.errors import StaleRow
+
+    service = FiscalProfileService(db_session)
+    with pytest.raises(StaleRow) as excinfo:
+        service.upsert(_payload(updated_at=datetime(2026, 1, 1, tzinfo=UTC)), ADMIN)
+    assert excinfo.value.details["updated_at"] is None
+    first = service.upsert(_payload(updated_at=None), ADMIN)
+    assert first.giorni_scadenza == 30
+    with pytest.raises(StaleRow) as again:
+        service.upsert(_payload(giorni_scadenza=60, updated_at=None), ADMIN)
+    assert again.value.details["updated_at"] == first.updated_at
+    assert service.upsert(_payload(giorni_scadenza=60), ADMIN).giorni_scadenza == 60

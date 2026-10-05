@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from '@rebase/ui/sonner'
 import { Button } from '@rebase/ui/button'
@@ -5,8 +6,11 @@ import { Input } from '@rebase/ui/input'
 import { Label } from '@rebase/ui/label'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
+import { queryKeys } from '@/lib/query'
 import { LegalEntityImages } from './LegalEntityImages'
 import { useSaveLegalEntity, type LegalEntityRecord } from './queries'
+import { StaleRowBanner } from './StaleRowBanner'
+import { isStaleRow, type StalePhase } from './staleRow'
 
 /**
  * Every field the upsert accepts, in the order a person reads an invoice header:
@@ -101,7 +105,8 @@ export function LegalEntityPanel({ azienda }: { azienda: LegalEntityRecord }) {
           and a cascading re-render. Not on `updated_at`: a background refetch after
           somebody else's save would remount the form and throw away what the person
           here is typing. The form itself follows a newer row while it is untouched,
-          below, so a stale value is never what a Salva writes back by default. */}
+          below, and sends the version it was seeded from with every save (REB-622), so
+          a draft started before somebody else's save is refused rather than written. */}
       <LegalEntityForm key={`form-${azienda.id}`} profile={azienda} />
       {/* Keyed like the form: a refusal shown under azienda A's block must not
           outlive the switch to B. A distinct prefix on each, since the two are
@@ -113,38 +118,109 @@ export function LegalEntityPanel({ azienda }: { azienda: LegalEntityRecord }) {
   )
 }
 
+/** The reloaded row under the draft: a field the person typed in keeps the draft, every
+ *  other one takes the row's value. What «Ricarica» shows, and what an untouched form
+ *  follows on its own. */
+function withDraft(
+  fresh: Record<FieldName, string>,
+  draft: Record<FieldName, string>,
+  touched: ReadonlySet<FieldName>,
+): Record<FieldName, string> {
+  const merged = { ...fresh }
+  for (const name of touched) merged[name] = draft[name]
+  return merged
+}
+
 function LegalEntityForm({ profile }: { profile: LegalEntityRecord }) {
+  const queryClient = useQueryClient()
   const save = useSaveLegalEntity(profile.id)
+  // The row the inputs were built from. Its `updated_at` is the version every save
+  // sends (REB-622, spec 2026-10-03 §11), and only a reseed moves it: a newer row that
+  // arrives while a draft is open is not adopted, so a Salva over it carries the old
+  // version and the server refuses it, instead of the draft's untouched fields quietly
+  // replacing what somebody else just saved. State adjusted during render, the way
+  // React documents for «adjusting state when a prop changes».
+  const [seeded, setSeeded] = useState(profile)
   const [values, setValues] = useState<Record<FieldName, string>>(() => valuesFrom(profile))
+  // The fields typed in since the last seed: what a reload keeps.
+  const [touched, setTouched] = useState<ReadonlySet<FieldName>>(() => new Set())
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
-  // The row the form was last seeded from, and whether the person has typed since.
-  // A background refetch that brings a newer row (another admin saved) reseeds an
-  // untouched form, so Salva never writes back values that are already stale; one
-  // with a draft in it keeps the draft, as the key comment above says. State derived
-  // during render, the way React documents for «adjusting state when a prop changes».
-  const [seededFrom, setSeededFrom] = useState(profile.updated_at)
-  const [dirty, setDirty] = useState(false)
-  if (profile.updated_at !== seededFrom) {
-    setSeededFrom(profile.updated_at)
-    if (!dirty) setValues(valuesFrom(profile))
+  const [stale, setStale] = useState<StalePhase>('none')
+  // Set by «Ricarica»: the next row that differs from the seeded one is adopted under
+  // the draft even though the form is touched. It waits for that row rather than being
+  // cleared by a render in between, since the refetch's answer and the promise that
+  // follows it reach this component in no fixed order.
+  const [adopt, setAdopt] = useState(false)
+  const [reloading, setReloading] = useState(false)
+  // The prop as last seen, so only a row that *arrived* is considered: after a save the
+  // seed moves to the answer while the prop may still be the previous row for a render,
+  // and comparing versions alone would adopt that older row back over the saved values.
+  const [seen, setSeen] = useState(profile)
+
+  // An untouched form follows a row as it arrives; «Ricarica» adopts whatever row is in
+  // hand once it differs from the seed, seen before or not, since a background refetch
+  // may already have brought the other admin's row under the draft and the reload then
+  // fetches the same object again.
+  const arrived = profile !== seen
+  if (arrived) setSeen(profile)
+  if (profile.updated_at !== seeded.updated_at && ((arrived && touched.size === 0) || adopt)) {
+    setSeeded(profile)
+    setValues(withDraft(valuesFrom(profile), values, touched))
+    setAdopt(false)
   }
 
   function submit() {
     setProblem(null)
-    save.mutate(values, {
-      onSuccess: () => {
-        setDirty(false)
-        toast.success('Azienda salvata')
+    save.mutate(
+      { ...values, updated_at: seeded.updated_at },
+      {
+        // The answer is the row as saved, normalised: seeded from it at once, so a
+        // second Salva before the list refetches already carries the new version.
+        onSuccess: (saved) => {
+          setSeeded(saved)
+          setValues(valuesFrom(saved))
+          setTouched(new Set())
+          setStale('none')
+          toast.success('Azienda salvata')
+        },
+        onError: (error) => {
+          const refusal = toProblem(error)
+          setProblem(refusal)
+          if (isStaleRow(refusal)) setStale('refused')
+        },
       },
-      onError: (error) => setProblem(toProblem(error)),
-    })
+    )
+  }
+
+  async function reload() {
+    setReloading(true)
+    try {
+      // `refetchQueries` with `throwOnError`, not `invalidateQueries`: the latter
+      // resolves on a failed refetch too, and the banner would read «ricaricata» over
+      // fields nothing reloaded.
+      await queryClient.refetchQueries({ queryKey: queryKeys.aziende }, { throwOnError: true })
+    } catch (error) {
+      toast.error(toProblem(error).detail)
+      return
+    } finally {
+      setReloading(false)
+    }
+    setAdopt(true)
+    setProblem(null)
+    setStale('reloaded')
   }
 
   const fieldError = problem ? fieldErrorFrom(problem) : null
 
   return (
     <div className="space-y-4">
-      {problem && !fieldError ? <QueryErrorBanner error={problem} /> : null}
+      {stale !== 'none' ? (
+        <StaleRowBanner phase={stale} onReload={() => void reload()} reloading={reloading} />
+      ) : null}
+      {/* A refusal of another kind after a reload shows beside the reminder, never
+          behind it: the reminder says what to do next, the refusal says why it did
+          not work. */}
+      {problem && !fieldError && !isStaleRow(problem) ? <QueryErrorBanner error={problem} /> : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {FIELDS.map((field) => (
@@ -162,7 +238,7 @@ function LegalEntityForm({ profile }: { profile: LegalEntityRecord }) {
               disabled={save.isPending}
               aria-invalid={fieldError?.field === field.name ? true : undefined}
               onChange={(event) => {
-                setDirty(true)
+                setTouched((previous) => new Set(previous).add(field.name))
                 setValues((previous) => ({ ...previous, [field.name]: event.target.value }))
               }}
             />

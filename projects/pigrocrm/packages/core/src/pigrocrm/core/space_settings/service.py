@@ -1,9 +1,10 @@
 import base64
 import secrets
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -16,11 +17,23 @@ from pigrocrm.core.space_settings.schemas import (
     SpaceSettingsRead,
     SpaceSettingsUpdate,
 )
+from pigrocrm.core.versioning import require_unchanged
 
 ENTITY = "space_settings"
 # The timeline wants an entity id and there is exactly one settings object per
 # database, so it gets one fixed id.
 SETTINGS_ID = UUID("00000000-0000-0000-0000-00000000c0f6")
+# The row that carries the version a save is checked against (REB-622). Not in
+# `OVERRIDABLE_KEYS`, so `overrides()` never hands it to `Settings` and the page never
+# lists it; written on every write that changed something, so clearing an override under
+# a newer one moves the version too, which `max(updated_at)` over the overrides alone
+# would not. Its value is the stamp as text, only so that each write is an UPDATE the
+# ORM emits (an unchanged value emits none, and `onupdate` would not fire).
+VERSION_KEY = "_version"
+# The advisory lock every write takes, since these settings have no single row to lock:
+# the same for every writer of one database, and transaction-scoped, so a save that
+# carries a version is compared against a settled state.
+VERSION_LOCK = 0xC0F6
 
 _BOOLS = {"google_app_unverified", "mcp_full_access"}
 _INTS = {
@@ -95,12 +108,42 @@ class SpaceSettingsService:
         self.base = base
         self.activities = ActivityService(session)
 
-    def overrides(self) -> dict[str, str]:
-        rows = self.session.scalars(select(SpaceSetting)).all()
+    def _rows(self) -> list[SpaceSetting]:
+        """The table in one statement, so the values and the version a read answers come
+        from one snapshot (REB-622): under READ COMMITTED two statements can straddle
+        another admin's commit, and a read that paired the old values with the new
+        version would let a save built on it pass the check and land over theirs.
+        `populate_existing`, because a row this session already holds (the request's
+        dependency lays the overrides over the settings before any service runs) would
+        otherwise come back from the identity map with the attributes it had then, not
+        the ones the statement just read."""
+        return list(
+            self.session.scalars(select(SpaceSetting).execution_options(populate_existing=True))
+        )
+
+    @staticmethod
+    def _overrides_of(rows: list[SpaceSetting]) -> dict[str, str]:
         return {row.key: row.value for row in rows if row.key in OVERRIDABLE_KEYS}
+
+    @staticmethod
+    def _version_of(rows: list[SpaceSetting]) -> datetime | None:
+        return max((row.updated_at for row in rows), default=None)
+
+    def overrides(self) -> dict[str, str]:
+        return self._overrides_of(self._rows())
 
     def effective(self) -> Settings:
         return apply_overrides(self.base, self.overrides())
+
+    def version(self) -> datetime | None:
+        """What `SpaceSettingsRead.updated_at` says and what a save compares with
+        (REB-622): the newest row's `updated_at`, the reserved `VERSION_KEY` row's after
+        the first write under this code and the newest override's on a database written
+        before it, `None` with no row at all. One value for the whole settings object,
+        since the page saves it as one, over a table that keeps one row per key. A
+        scalar query, never an entity: what a save compares with under the lock must be
+        what the database holds now, not what this session loaded before the lock."""
+        return self.session.scalar(select(func.max(SpaceSetting.updated_at)))
 
     def read(self, actor: Actor, *, spazio: str | None) -> SpaceSettingsRead:
         actor.require_admin("read_space_settings")
@@ -110,8 +153,16 @@ class SpaceSettingsService:
         self, data: SpaceSettingsUpdate, actor: Actor, *, spazio: str | None
     ) -> SpaceSettingsRead:
         actor.require_unscoped_admin("update_space_settings")
+        # Every write takes the advisory lock, a versionless one included, so a save
+        # that carries a version is never checked while another write is half done.
+        self.session.execute(select(func.pg_advisory_xact_lock(VERSION_LOCK)))
+        # Sent, not merely non-null (REB-622): the version is `None` on a database with
+        # no row yet, and a draft built on that state has to be refused once a row
+        # exists, so an explicit `null` is a real check and only an absent key is none.
+        if "updated_at" in data.model_fields_set:
+            require_unchanged(ENTITY, sent=data.updated_at, current=self.version())
         changed: list[str] = []
-        for key in data.model_fields_set:
+        for key in data.model_fields_set - {"updated_at"}:
             value = getattr(data, key)
             if value is None:
                 continue
@@ -136,6 +187,7 @@ class SpaceSettingsService:
             self.activities.record(
                 ENTITY, SETTINGS_ID, "updated", actor, {"chiavi": sorted(set(changed))}
             )
+            self._set(VERSION_KEY, datetime.now(UTC).isoformat())
         self.session.commit()
         return self._read(spazio=spazio)
 
@@ -154,7 +206,8 @@ class SpaceSettingsService:
         return True
 
     def _read(self, *, spazio: str | None) -> SpaceSettingsRead:
-        overrides = self.overrides()
+        rows = self._rows()
+        overrides = self._overrides_of(rows)
         settings = apply_overrides(self.base, overrides)
         public_url = settings.public_url.rstrip("/")
         return SpaceSettingsRead(
@@ -180,4 +233,5 @@ class SpaceSettingsService:
             concentrazione_soglia_preferita=settings.concentrazione_soglia_preferita,
             sovrascritte=sorted(key for key in overrides if key not in SECRET_KEYS)
             + sorted(key for key in overrides if key in SECRET_KEYS),
+            updated_at=self._version_of(rows),
         )

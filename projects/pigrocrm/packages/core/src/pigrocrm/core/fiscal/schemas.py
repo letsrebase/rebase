@@ -219,6 +219,19 @@ class FiscalProfileUpsert(BaseModel):
         ge=RATE_MIN,
         le=RATE_MAX,
     )
+    # The version check of REB-622 (spec 2026-10-03 §11): the `updated_at` read off
+    # `FiscalProfileRead`, never a column the service assigns. A save whose value is
+    # not the row's is refused with `StaleRow` (409). Sent as `null` it is the version
+    # of a profile not saved yet, so a first save built on «nothing there» is refused
+    # once somebody else has created the row; left out, nothing is checked.
+    updated_at: datetime | None = Field(
+        default=None,
+        description=(
+            "L'`updated_at` letto sul profilo da cui parte questa modifica, `null` per "
+            "un profilo non ancora salvato: se nel frattempo qualcun altro ha salvato, la "
+            "richiesta è rifiutata con 409 `stale_row`. Omesso, nessun controllo."
+        ),
+    )
 
 
 class FiscalProfileRead(BaseModel):
