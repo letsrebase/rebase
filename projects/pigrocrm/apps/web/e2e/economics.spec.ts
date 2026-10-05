@@ -248,8 +248,11 @@ test.describe('economics', () => {
     await page.getByRole('button', { name: 'Emetti' }).click()
     // `POST /issue` renders the PDF and the XML before it answers (routers/invoices.py:
     // `issue` owns the second transaction), so this one round trip is genuinely slow.
-    await expect(page.getByText('Documento emesso')).toBeVisible({ timeout: 120_000 })
-    await expect(page.getByText('Emessa')).toBeVisible()
+    // Waits on the state, the invoice page's own «Emessa» badge, and not on the success
+    // toast: it is transient and its wording («Fattura 2026/1 emessa») is not the
+    // sentence this once matched. `exact`, because the toast also contains «emessa» and a
+    // substring match would find two elements.
+    await expect(page.getByText('Emessa', { exact: true })).toBeVisible({ timeout: 120_000 })
 
     // Criterion 5, on the document itself: **one** line for three entries, grouped by
     // rate and month, whose `quantita` is the sum of their `ore` -- and whose description

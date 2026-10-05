@@ -26,6 +26,11 @@
 # and not a superuser that Postgres keeps outside every policy.
 export PIGROCRM_DATABASE_URL="postgresql+psycopg://pigrocrm_app:pigrocrm_app@localhost:55434/pigrocrm_e2e"
 export PIGROCRM_ADMIN_DATABASE_URL="postgresql+psycopg://pigrocrm:pigrocrm@localhost:55434/pigrocrm_e2e"
+# The API judges «data futura» in this zone, and `e2e/time-tracking.spec.ts` takes its
+# «today» from the same one (and pins the browser to it). The default is already
+# Europe/Rome; pinned here so a `PIGROCRM_TIMEZONE` left in the caller's shell cannot
+# move the API's «today» away from the spec's.
+export PIGROCRM_TIMEZONE="Europe/Rome"
 # The brief's own literal value here ("e2e-secret-not-for-production") is 29
 # characters -- one short of `MIN_JWT_SECRET_LENGTH = 32`
 # (packages/core/src/pigrocrm/core/config.py). `Settings`' own field validator
