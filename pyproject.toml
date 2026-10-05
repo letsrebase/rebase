@@ -43,7 +43,7 @@ dev = [
   "testcontainers[postgres]==4.15.0",
   "httpx==0.28.1",
   "ruff==0.16.8",
-  "mypy==2.3.0",
+  "mypy==2.3.1",
   "lxml-stubs==0.5.1",
   # openpyxl ships no inline types, so under `strict` every `from openpyxl import ...`
   # is an `import-untyped` error and the whole workbook builder degrades to `Any` --
