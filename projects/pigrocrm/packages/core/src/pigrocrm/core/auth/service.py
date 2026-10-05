@@ -227,15 +227,21 @@ class UserService:
         # only the count rule; `pigrocrm createadmin` stays the operator's way back.
         privileged = sorted({"ruolo", "attivo"} & changes.keys())
         narrowing = scope_named and aziende is not None
-        if privileged or narrowing:
+        if privileged or scope_named:
             # The two counts below are check-then-write: two requests demoting, or
             # scoping, the last two admins at once would each see the other as the
             # one who stays and both go through. One transaction-level advisory lock
-            # per database serialises them, so the second counts after the first has
-            # committed and is the one refused (Greptile on PR #513).
+            # per database serialises every change to a role, a state or a scope,
+            # widening included, so the second counts after the first has committed
+            # and is the one refused; and the target row is read again under the
+            # lock, since the row loaded above may predate the change the lock was
+            # waiting for (Greptile and CodeRabbit on PR #513).
             self.session.execute(
                 text("SELECT pg_advisory_xact_lock(:key)"), {"key": ADMIN_GUARD_LOCK}
             )
+            self.session.refresh(user)
+            before = _snapshot(user)
+            scope_before = user.aziende
         if privileged:
             # The state the row WOULD hold, predicted rather than written: raising
             # after `setattr` would leave the pending change on the session's
