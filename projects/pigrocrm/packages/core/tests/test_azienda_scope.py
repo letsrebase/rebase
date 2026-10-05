@@ -18,7 +18,7 @@ from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import NamedTuple
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import pytest
 from fakes.azienda_fixtures import committed_default_azienda, remove_azienda
@@ -261,6 +261,19 @@ def world(db_engine: Engine) -> Iterator[World]:
                     occurred_at=datetime.now(UTC),
                 )
             )
+            # The register's own timeline row: no record behind its id, the azienda in
+            # the payload (`InvoiceService.declare_gaps`), and a gap's reason inside.
+            session.add(
+                Activity(
+                    entity_type="invoice_register",
+                    entity_id=uuid5(NAMESPACE_URL, f"pigrocrm:invoice_register:{azienda}:2026"),
+                    kind=f"{_PREFIX}.test",
+                    actor_id=None,
+                    actor_type="system",
+                    payload={"azienda_id": str(azienda), "anno": 2026, "numero": 7, "motivo": tag},
+                    occurred_at=datetime.now(UTC),
+                )
+            )
 
         seed(studio.id, "studio", 2)
         seed(estero.id, "estero", 1)
@@ -304,7 +317,7 @@ def world(db_engine: Engine) -> Iterator[World]:
                 "invoice_lines": 1,
                 "time_entries": 1,
                 "costs": 1,
-                "activities": 2,  # its customer's row, and the space-level one
+                "activities": 3,  # its customer's, its register's, and the space-level one
                 "emitter_profile": 1,
             },
         )
@@ -387,7 +400,7 @@ def test_a_raw_select_on_every_policied_table_agrees_with_the_lists(world: World
         assert _count(session, "customers") == 2
         assert _count(session, "invoices") == 3
         assert _count(session, "costs") == 2  # the shared one is still «tutte»'s alone
-        assert _count(session, "activities") == 3
+        assert _count(session, "activities") == 5
 
 
 def test_an_unscoped_actor_and_tutte_see_everything(world: World) -> None:
@@ -396,7 +409,7 @@ def test_an_unscoped_actor_and_tutte_see_everything(world: World) -> None:
     with session:
         assert _count(session, "customers") == 2
         assert _count(session, "costs") == 3
-        assert _count(session, "activities") == 3
+        assert _count(session, "activities") == 5
 
 
 def test_a_session_with_nothing_bound_sees_nothing(world: World) -> None:
@@ -414,6 +427,24 @@ def test_a_scope_with_no_azienda_left_sees_nothing_either(world: World) -> None:
     with _scoped(world) as session:
         assert _count(session, "customers") == 0
         assert _count(session, "activities") == 1  # the space-level row is everyone's
+
+
+def test_the_register_s_timeline_rows_follow_their_azienda(world: World) -> None:
+    """An `invoice_register` row has no record behind its id: the policy reads the
+    azienda from its payload, so a gap's number and reason reach only that azienda's
+    members and «tutte» (the adversarial pass on PR #513 found them everyone's)."""
+    query = text(
+        "SELECT payload->>'motivo' FROM activities WHERE entity_type = 'invoice_register' "
+        f"AND kind = '{_PREFIX}.test' ORDER BY 1"
+    )
+    with _scoped(world, world.studio) as session:
+        assert session.execute(query).scalars().all() == ["studio"]
+    with _scoped(world, world.estero) as session:
+        assert session.execute(query).scalars().all() == ["estero"]
+    with _scoped(world, world.studio, world.estero) as session:
+        assert session.execute(query).scalars().all() == ["estero", "studio"]
+    with session_factory(world.app)() as session:
+        assert session.execute(query).scalars().all() == []
 
 
 def test_an_insert_across_the_line_is_refused_by_the_policy(world: World) -> None:

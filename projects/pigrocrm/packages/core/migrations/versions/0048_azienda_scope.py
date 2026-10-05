@@ -93,8 +93,17 @@ POLICIES: dict[str, tuple[str, str | None]] = {
         None,
     ),
     # The timeline: a row about an azienda-bound record follows that record; a row
-    # about a space-level one (a user, a template, a stage, ...) is everyone's.
-    "activities": ("entita_visibile(entity_type, entity_id, true)", None),
+    # about a space-level one (a user, a template, a stage, ...) is everyone's. The
+    # invoice register has no row of its own: its timeline entries carry a derived id
+    # and name their azienda in the payload, which is what the policy reads for them
+    # (CodeRabbit's adversarial pass on PR #513: a gap's number and reason are the
+    # azienda's, not the space's).
+    "activities": (
+        "CASE WHEN entity_type = 'invoice_register' "
+        "THEN azienda_visibile(NULLIF(payload->>'azienda_id', '')::uuid) "
+        "ELSE entita_visibile(entity_type, entity_id, true) END",
+        None,
+    ),
 }
 
 FUNCTIONS = [
