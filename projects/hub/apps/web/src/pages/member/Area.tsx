@@ -112,14 +112,16 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
  *  A company sees every request it filed, newest first, each with its own «Modifica»
  *  (REB-602), and «Richiedi una nuova figura» as the section's action.
  *
- *  From `lg` the page is two columns of its own, each stacking independently so a tall
- *  neighbour leaves no gap. The referral link is the feature to highlight (REB-610), so
- *  it opens the left column, above the card, and «Contratti» follows the card there; the
- *  requests, the role (for a person with neither a card nor a request) and the perks
- *  take the right. Every combination of roles leaves both columns filled: the left
- *  always holds the referral, the right holds the requests, the role or the perks, at
- *  least one of which every person has. Under `lg` the columns collapse in reading
- *  order: referral, card, contracts, requests, role, perks.
+ *  One column at every viewport, one section per row (REB-641): the referral link, the
+ *  feature to highlight (REB-610), opens the page; then the card, the requests, the role
+ *  (for a person with neither a card nor a request), the perks, and «Contratti» last.
+ *  It was two columns from `lg` between REB-602 and REB-641, the referral, the card and
+ *  the contracts on the left and the rest on the right, and the two stacks never lined
+ *  up: a reader scanned both to find one thing. The column is `max-w-3xl`: wider than
+ *  the edit forms' `max-w-2xl`, because a request card's four cells and the referral
+ *  input with its «Copia link» want the room, and narrower than the `max-w-6xl` the two
+ *  columns had, which in one column put a ledger row's answer a screen away from its
+ *  label.
  *
  *  The `negato` flag is set by `AdminGuard` when a signed-in non-admin is bounced off
  *  `/admin/*`: this is where they land, with a sentence saying why instead of a blank
@@ -206,9 +208,9 @@ export function Area() {
   )
 
   const perksSection = showPerks && (
-    <section aria-label="I tuoi vantaggi" className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+    <section aria-label="I tuoi vantaggi" className="space-y-4">
       <div className="flex flex-col gap-3 border-(length:--line-strong) border-foreground bg-card p-5">
-        <div className="flex-1 space-y-2">
+        <div className="space-y-2">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Per chi è dentro</p>
           <h2 className="text-lg font-semibold">PigroCRM è tuo, gratis</h2>
           <p className="text-sm text-muted-foreground">
@@ -221,13 +223,9 @@ export function Area() {
             <ArrowUpRight className="ml-2 size-4" />
           </a>
         </Button>
-        {/* Keeps the two perks' buttons on one line while they sit side by side. */}
-        <p className="invisible hidden text-xs sm:block lg:hidden" aria-hidden="true">
-          &nbsp;
-        </p>
       </div>
       <div className="flex flex-col gap-3 border-(length:--line-strong) border-foreground bg-card p-5">
-        <div className="flex-1 space-y-2">
+        <div className="space-y-2">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Per chi è dentro</p>
           <h2 className="text-lg font-semibold">I primi passi da freelance</h2>
           <p className="text-sm text-muted-foreground">
@@ -249,7 +247,7 @@ export function Area() {
   )
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 p-6">
+    <div className="mx-auto max-w-3xl space-y-8 p-6">
       {negato && (
         <p role="status" className="border-(length:--line-strong) border-accent bg-card p-4 text-sm">
           Quella sezione è riservata a chi amministra l’hub: eccoti nella tua area.
@@ -277,21 +275,13 @@ export function Area() {
         )}
       </header>
 
-      <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-x-8">
-        <div className="min-w-0 space-y-8">
-          <MemberReferral />
-          {value && (
-            <>
-              {cardSection}
-              <MemberContratti />
-            </>
-          )}
-        </div>
-        <div className="min-w-0 space-y-8">
-          {requestsSection}
-          {roleSection}
-          {perksSection}
-        </div>
+      <div className="space-y-8">
+        <MemberReferral />
+        {cardSection}
+        {requestsSection}
+        {roleSection}
+        {perksSection}
+        {value && <MemberContratti />}
       </div>
     </div>
   )
