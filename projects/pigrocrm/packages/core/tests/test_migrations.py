@@ -1592,12 +1592,15 @@ def test_0049_puts_the_fast_path_first_and_its_downgrade_restores_0048(
         else:
             assert (using, check) == (before_using, before_check), table
     assert len(bodies) == 8
+    spelled_out = "current_setting('pigrocrm.aziende', true) = '*' OR "
     for name, body in bodies.items():
-        assert body.lstrip().startswith(
-            "SELECT current_setting('pigrocrm.aziende', true) = '*' OR "
-        ), name
-        assert at_0048[1][name].lstrip().startswith("SELECT scope_tutte() OR ") or name == (
-            "entita_visibile"
-        ), name
+        if name == "entita_visibile":
+            assert body.lstrip().startswith("SELECT CASE $1"), name
+            assert body.count(f"THEN {spelled_out}EXISTS (") == at_0048[1][name].count(
+                "THEN scope_tutte() OR EXISTS ("
+            ), name
+        else:
+            assert body.lstrip().startswith(f"SELECT {spelled_out}"), name
+            assert at_0048[1][name].lstrip().startswith("SELECT scope_tutte() OR "), name
     assert back_at_0048 == at_0048
     assert at_head_again == at_head

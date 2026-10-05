@@ -1063,7 +1063,12 @@ def test_the_through_the_parent_policies_put_the_tutte_fast_path_first(db_engine
     for table in POLICIED - FAST_PATH:
         assert not "".join(policies[table][0].split()).startswith(fast), table
     assert set(bodies) == set(THROUGH_THE_PARENT)
+    spelled_out = "current_setting('pigrocrm.aziende', true) = '*' OR "
     for name, body in bodies.items():
-        assert body.lstrip().startswith(
-            "SELECT current_setting('pigrocrm.aziende', true) = '*' OR "
-        ), f"{name}: {body.strip()[:70]}"
+        if name == "entita_visibile":
+            # Inside each branch, so an unknown type still answers the third argument.
+            assert body.lstrip().startswith("SELECT CASE $1"), body.strip()[:70]
+            assert f"THEN {spelled_out}EXISTS (" in body and "ELSE $3" in body
+            assert "scope_tutte() OR" not in body
+        else:
+            assert body.lstrip().startswith(f"SELECT {spelled_out}"), f"{name}: {body[:70]}"

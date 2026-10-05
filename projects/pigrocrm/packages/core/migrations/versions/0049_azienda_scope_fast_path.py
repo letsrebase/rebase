@@ -31,9 +31,9 @@ The eight through-the-parent functions are recreated the same way, with the
 `current_setting` test spelled out first instead of a call to `scope_tutte()`: nothing a
 policy above still reaches under `*`, but a caller outside these policies (a later
 policy, a definer function, a query by hand) gets the same answer at the same price. In
-`entita_visibile` the test moves in front of the whole `CASE`, which under `*` answers
-true for every entity type, including the unknown ones the third argument decides: every
-caller passes `true` or `scope_tutte()` there, both true under `*`.
+`entita_visibile` the test sits inside each branch, as 0048 had it, and not in front of
+the `CASE`: an unknown type answers the third argument whatever the scope, which is the
+function's contract and not only what today's callers happen to pass.
 
 Not here: `azienda_visibile`, which is a `CASE` on the setting already and inlines;
 the tables whose policy calls only `scope_tutte` and `azienda_visibile`, which inline for
@@ -134,12 +134,15 @@ FUNCTIONS = [
     # The polymorphic tables: `entity_type` names the table `entity_id` points at. The
     # third argument is the answer for a type with no azienda, true for the timeline
     # (a user's or a template's row is everyone's) and «tutte» only for a link or a
-    # draft, which only ever name a customer, a person or a deal. The branches no longer
-    # repeat the «tutte» test: the one in front answers for all of them.
+    # draft, which only ever name a customer, a person or a deal. It is honoured under
+    # «tutte» too, so the test sits inside each branch and not in front of the `CASE`:
+    # the seven `*_visibile` branches carry it in the function they call,
+    # `azienda_visibile` is a `CASE` on the setting, and the `EXISTS` branches spell it
+    # out where 0048 called `scope_tutte()`.
     f"""
     CREATE OR REPLACE FUNCTION entita_visibile(text, uuid, boolean) RETURNS boolean
     LANGUAGE sql STABLE AS $$
-      SELECT {TUTTE} OR CASE $1
+      SELECT CASE $1
         WHEN 'customer' THEN customer_visibile($2)
         WHEN 'person' THEN person_visibile($2)
         WHEN 'deal' THEN deal_visibile($2)
@@ -148,29 +151,29 @@ FUNCTIONS = [
         WHEN 'invoice' THEN invoice_visibile($2)
         WHEN 'work_unit' THEN work_unit_visibile($2)
         WHEN 'emitter_profile' THEN azienda_visibile($2)
-        WHEN 'fiscal_profile' THEN EXISTS (
+        WHEN 'fiscal_profile' THEN {TUTTE} OR EXISTS (
           SELECT 1 FROM fiscal_profile f WHERE f.id = $2 AND azienda_visibile(f.azienda_id))
-        WHEN 'payment_reminder' THEN EXISTS (
+        WHEN 'payment_reminder' THEN {TUTTE} OR EXISTS (
           SELECT 1 FROM payment_reminders r WHERE r.id = $2 AND invoice_visibile(r.invoice_id))
-        WHEN 'email_draft' THEN EXISTS (
+        WHEN 'email_draft' THEN {TUTTE} OR EXISTS (
           SELECT 1 FROM email_drafts e WHERE e.id = $2
           AND entita_visibile(e.entity_type, e.entity_id, scope_tutte()))
-        WHEN 'proposal' THEN EXISTS (
+        WHEN 'proposal' THEN {TUTTE} OR EXISTS (
           SELECT 1 FROM proposals p WHERE p.id = $2 AND document_visibile(p.document_id)
           AND (p.contract_id IS NULL OR contract_visibile(p.contract_id)))
-        WHEN 'contract_expense' THEN EXISTS (
+        WHEN 'contract_expense' THEN {TUTTE} OR EXISTS (
           SELECT 1 FROM contract_expenses x WHERE x.id = $2 AND contract_visibile(x.contract_id))
-        WHEN 'approval' THEN EXISTS (
+        WHEN 'approval' THEN {TUTTE} OR EXISTS (
           SELECT 1 FROM approvals a WHERE a.id = $2 AND contract_visibile(a.contract_id))
-        WHEN 'time_entry' THEN EXISTS (
+        WHEN 'time_entry' THEN {TUTTE} OR EXISTS (
           SELECT 1 FROM time_entries t WHERE t.id = $2 AND deal_visibile(t.deal_id))
-        WHEN 'timer' THEN EXISTS (
+        WHEN 'timer' THEN {TUTTE} OR EXISTS (
           SELECT 1 FROM time_timers t WHERE t.id = $2
           AND (t.deal_id IS NULL OR deal_visibile(t.deal_id)))
-        WHEN 'cost' THEN EXISTS (
+        WHEN 'cost' THEN {TUTTE} OR EXISTS (
           SELECT 1 FROM costs c WHERE c.id = $2
           AND (c.azienda_id IS NULL OR azienda_visibile(c.azienda_id)))
-        WHEN 'attivita' THEN EXISTS (
+        WHEN 'attivita' THEN {TUTTE} OR EXISTS (
           SELECT 1 FROM attivita a WHERE a.id = $2 AND (
             (a.customer_id IS NULL OR customer_visibile(a.customer_id))
             AND (a.person_id IS NULL OR person_visibile(a.person_id))
