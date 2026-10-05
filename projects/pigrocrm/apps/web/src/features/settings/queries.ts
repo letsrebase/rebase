@@ -345,34 +345,34 @@ export function useActivateTemplate() {
 
 // -- Aziende ------------------------------------------------------------------
 
-export type AziendaRecord = components['schemas']['AziendaRead']
-type AziendaUpsertBody = components['schemas']['AziendaUpsert']
-type AziendaCreateBody = components['schemas']['AziendaCreate']
+export type LegalEntityRecord = components['schemas']['LegalEntityRead']
+type LegalEntityUpsertBody = components['schemas']['LegalEntityUpsert']
+type LegalEntityCreateBody = components['schemas']['LegalEntityCreate']
 
 /**
  * The aziende of the space, the default first (REB-617, spec 2026-10-03 §5). Every
  * provisioned space has one, so an empty list is a space between signup and its first
  * boot and not a state the page designs for.
  */
-export function useAziende() {
+export function useLegalEntities() {
   return useQuery({
     queryKey: queryKeys.aziende,
     queryFn: () => unwrap(api.GET('/api/aziende')),
   })
 }
 
-/** `PUT`, not `PATCH`: `AziendaUpsert` is one shape for every write, because a
+/** `PUT`, not `PATCH`: `LegalEntityUpsert` is one shape for every write, because a
  *  write is always a whole row. Slice 3 builds FatturaPA on this row, so a partial
  *  save leaving `partita_iva` empty would surface much later as an invalid invoice.
  *  Invalidates the list, which is where every reader of this azienda gets it from. */
-export function useSaveAzienda(aziendaId: string) {
+export function useSaveLegalEntity(aziendaId: string) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (body: Record<string, unknown>) =>
       unwrap(
         api.PUT('/api/aziende/{azienda_id}', {
           params: { path: { azienda_id: aziendaId } },
-          body: body as unknown as AziendaUpsertBody,
+          body: body as unknown as LegalEntityUpsertBody,
         }),
       ),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.aziende }),
@@ -385,13 +385,13 @@ export function useSaveAzienda(aziendaId: string) {
  * also what the sidebar's provider reads, so the selector appears the moment the list
  * has two.
  */
-export function useCreateAzienda() {
+export function useCreateLegalEntity() {
   const queryClient = useQueryClient()
   return useMutation({
-    // The same cast `useSaveAzienda` makes: the form sends the keys it asks for and the
+    // The same cast `useSaveLegalEntity` makes: the form sends the keys it asks for and the
     // server defaults the rest, while the generated type lists them all as present.
     mutationFn: (body: Record<string, unknown>) =>
-      unwrap(api.POST('/api/aziende', { body: body as unknown as AziendaCreateBody })),
+      unwrap(api.POST('/api/aziende', { body: body as unknown as LegalEntityCreateBody })),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.aziende })
       // The Home's «tutte» is a different answer from the second azienda on (no
@@ -405,7 +405,7 @@ export function useCreateAzienda() {
 
 // -- The logo and the signature of an azienda (REB-629) --------------------------------
 
-export type AziendaImageSlot = 'logo' | 'firma'
+export type LegalEntityImageSlot = 'logo' | 'firma'
 
 /**
  * The image's bytes, as a Blob the block turns into an object URL, or `null` when the
@@ -415,7 +415,7 @@ export type AziendaImageSlot = 'logo' | 'firma'
  * Outside the typed client for the response type, through `fetchWithRefresh` for the
  * session and the tenant prefix, like a document's download (`features/documents`).
  */
-export function useAziendaImage(aziendaId: string, slot: AziendaImageSlot, present: boolean) {
+export function useLegalEntityImage(aziendaId: string, slot: LegalEntityImageSlot, present: boolean) {
   return useQuery({
     queryKey: queryKeys.aziendaImage(aziendaId, slot),
     enabled: present,
@@ -432,11 +432,11 @@ export function useAziendaImage(aziendaId: string, slot: AziendaImageSlot, prese
 }
 
 /** Multipart, so outside the typed client, the same exception `putVersion` documents. */
-async function putAziendaImage(
+async function putLegalEntityImage(
   aziendaId: string,
-  slot: AziendaImageSlot,
+  slot: LegalEntityImageSlot,
   file: File,
-): Promise<AziendaRecord> {
+): Promise<LegalEntityRecord> {
   const body = new FormData()
   body.append('file', file)
   const response = await fetchWithRefresh(`/api/aziende/${aziendaId}/${slot}`, {
@@ -448,10 +448,10 @@ async function putAziendaImage(
   if (response.status === 413) throw toProblem({ detail: IMAGE_TOO_LARGE }, 413)
   const payload: unknown = await response.json().catch(() => null)
   if (!response.ok) throw toProblem(payload, response.status)
-  return payload as AziendaRecord
+  return payload as LegalEntityRecord
 }
 
-/** The service's own limit and its own sentence (`AziendaAssets._check`), repeated here
+/** The service's own limit and its own sentence (`LegalEntityAssets._check`), repeated here
  *  so a file the browser already knows is too large is refused before it travels. */
 export const IMAGE_MAX_BYTES = 1024 * 1024
 export const IMAGE_TOO_LARGE = 'il file supera 1024 KiB'
@@ -460,16 +460,16 @@ export function imageTooLarge(file: File): ProblemDetail | null {
   return file.size > IMAGE_MAX_BYTES ? toProblem({ detail: IMAGE_TOO_LARGE }, 413) : null
 }
 
-export function useUploadAziendaImage(aziendaId: string, slot: AziendaImageSlot) {
+export function useUploadLegalEntityImage(aziendaId: string, slot: LegalEntityImageSlot) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (file: File) => putAziendaImage(aziendaId, slot, file),
+    mutationFn: (file: File) => putLegalEntityImage(aziendaId, slot, file),
     // The row (its key changed) and the bytes under the same prefix.
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.aziende }),
   })
 }
 
-export function useRemoveAziendaImage(aziendaId: string, slot: AziendaImageSlot) {
+export function useRemoveLegalEntityImage(aziendaId: string, slot: LegalEntityImageSlot) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () =>

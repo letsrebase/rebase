@@ -320,7 +320,7 @@ async def test_describe_azienda_reads_the_issuer_every_header_prints(
 ) -> None:
     """`seeded_template_id` is the fixture that seeds the emitter profile, because
     rendering a document needs one -- which is the same reason
-    `AziendaService.get` is un-role-gated at the service layer: the PDF header
+    `LegalEntityService.get` is un-role-gated at the service layer: the PDF header
     needs it for every role, so there is no role for which this read is privileged. The
     write on that row is `update_azienda`, admin-only (ORB-188)."""
     async with Client(server) as client:

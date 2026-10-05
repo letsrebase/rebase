@@ -38,7 +38,7 @@ from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.role import ensure_application_role
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.mail import RecordingSender
 from pigrocrm.core.pipeline.models import PipelineStage
@@ -163,8 +163,10 @@ def world(api_engine: Engine) -> Iterator[ScopedWorld]:
     worker's database. Undone row by row at the end, since this file writes for real."""
     factory = session_factory(api_engine)
     with factory() as session:
-        studio = session.execute(select(Azienda).where(Azienda.predefinita.is_(True))).scalar_one()
-        ltd = Azienda(nome=f"{_PREFIX} ltd", ragione_sociale=f"{_PREFIX} Ltd", nazione="GB")
+        studio = session.execute(
+            select(LegalEntity).where(LegalEntity.predefinita.is_(True))
+        ).scalar_one()
+        ltd = LegalEntity(nome=f"{_PREFIX} ltd", ragione_sociale=f"{_PREFIX} Ltd", nazione="GB")
         stage = PipelineStage(
             nome=f"{_PREFIX} aperto", posizione=0, probabilita_default=20, tipo="open"
         )
@@ -228,7 +230,7 @@ def world(api_engine: Engine) -> Iterator[ScopedWorld]:
             session.execute(delete(User).where(User.id.in_([admin.id, member.id])))
             session.execute(delete(PipelineStage).where(PipelineStage.id == stage.id))
             session.execute(delete(CostCategory).where(CostCategory.id == category.id))
-            session.execute(delete(Azienda).where(Azienda.id == ltd.id))
+            session.execute(delete(LegalEntity).where(LegalEntity.id == ltd.id))
             session.commit()
 
 

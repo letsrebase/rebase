@@ -6,7 +6,7 @@ model (design record `2026-09-23-mastro-invoice-import-onto-pigrocrm-design.md` 
 mastro reads a fixed `accountHolderTaxId` from its own deployment's config file,
 because mastro is one deployment for one consultant. PigroCRM has no equivalent
 config, and needs none: whichever space's database a request opened holds the
-`Azienda` rows this classifier can see, and since REB-619 (spec 2026-10-03 §1.5)
+`LegalEntity` rows this classifier can see, and since REB-619 (spec 2026-10-03 §1.5)
 there may be several, so "the account holder's own tax id" is the set of the active
 Italian aziende's ids, and a match names *which* azienda the file lands on.
 
@@ -20,7 +20,7 @@ ParsedInvoiceTransmission`'s own docstring restates it on this side.
 from collections.abc import Sequence
 from typing import Literal
 
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.invoices.fatturapa import normalise_fiscal_id
 from pigrocrm.core.invoices.import_schemas import ParsedInvoice, ParsedInvoiceParty
@@ -34,7 +34,9 @@ PigroCRM has no representation for today, parsed and reported but never written
 (design §3)."""
 
 
-def match_azienda(fornitore: ParsedInvoiceParty, aziende: Sequence[Azienda]) -> Azienda | None:
+def match_azienda(
+    fornitore: ParsedInvoiceParty, aziende: Sequence[LegalEntity]
+) -> LegalEntity | None:
     """The azienda `fornitore` -- the party the parsed document names as having issued
     it -- *is*, compared by fiscal identifier, case- and punctuation-insensitively
     (mirrors mastro's `classifyDirection`, `direction.ts:38-49`), or `None` when it is
@@ -42,7 +44,7 @@ def match_azienda(fornitore: ParsedInvoiceParty, aziende: Sequence[Azienda]) -> 
 
     Two independent channels, not one: mastro's own `taxId` is a single string
     because mastro's source document always carries one identifier; PigroCRM's
-    `ParsedInvoiceParty`/`Azienda` both carry `partita_iva` and `codice_fiscale` as
+    `ParsedInvoiceParty`/`LegalEntity` both carry `partita_iva` and `codice_fiscale` as
     separate, independently optional fields (mirrors `import_schemas.
     ParsedInvoiceParty`'s own docstring). A match on *either* channel means the
     fornitore is that azienda: a document can carry only a VAT number, only a fiscal
@@ -52,7 +54,7 @@ def match_azienda(fornitore: ParsedInvoiceParty, aziende: Sequence[Azienda]) -> 
     `normalise_fiscal_id` (`fatturapa.py`) does the comparison-shape work already
     written and tested for the export path -- strips the `IT` prefix and punctuation,
     upper-cases, and validates the two shapes FPR12 recognises -- reused here rather
-    than re-implemented, so a VAT number stored as `"01234567890"` on `Azienda` and
+    than re-implemented, so a VAT number stored as `"01234567890"` on `LegalEntity` and
     read as `"IT01234567890"` off a document's `IdFiscaleIVA` compare equal.
 
     Two aziende matched by different channels (X by P.IVA, Y by codice fiscale) is a
@@ -84,7 +86,7 @@ def match_azienda(fornitore: ParsedInvoiceParty, aziende: Sequence[Azienda]) -> 
         )
     supplier_piva = normalise_fiscal_id(fornitore.partita_iva)
     supplier_cf = normalise_fiscal_id(fornitore.codice_fiscale)
-    matched: list[Azienda] = []
+    matched: list[LegalEntity] = []
     for azienda, piva, cf in identities:
         by_piva = piva is not None and supplier_piva == piva
         by_cf = cf is not None and supplier_cf == cf
@@ -102,7 +104,7 @@ def match_azienda(fornitore: ParsedInvoiceParty, aziende: Sequence[Azienda]) -> 
 
 
 def classify_direction(
-    fornitore: ParsedInvoiceParty, aziende: Sequence[Azienda]
+    fornitore: ParsedInvoiceParty, aziende: Sequence[LegalEntity]
 ) -> InvoiceDirection:
     """`"outgoing"` when `fornitore` is one of the space's aziende (`match_azienda`),
     `"incoming"` otherwise."""
@@ -110,7 +112,7 @@ def classify_direction(
 
 
 def classify_invoice_direction(
-    invoice: ParsedInvoice, aziende: Sequence[Azienda]
+    invoice: ParsedInvoice, aziende: Sequence[LegalEntity]
 ) -> InvoiceDirection:
     """`classify_direction` against a full `ParsedInvoice`'s own `fornitore` --
     never `invoice.trasmissione` (module docstring above). Mirrors mastro's own

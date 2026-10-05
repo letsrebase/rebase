@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router'
 import { RadioGroup } from 'radix-ui'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { useAzienda } from '@/lib/azienda'
+import { useLegalEntity } from '@/lib/legalEntity'
 import { Button } from '@rebase/ui/button'
 import { Skeleton } from '@rebase/ui/skeleton'
 import {
@@ -137,7 +137,7 @@ export function EconomicTab({
   // the server, the taxes do not, so the tab draws the estimate once per azienda and
   // names which azienda each concentration share belongs to. With one azienda, or one
   // selected, the page reads as it always did.
-  const { aziende, selected, several, byId } = useAzienda()
+  const { aziende, selected, several, byId } = useLegalEntity()
   const perAzienda = several && selected === null
 
   if (query.isError) return <QueryErrorBanner error={query.error} />

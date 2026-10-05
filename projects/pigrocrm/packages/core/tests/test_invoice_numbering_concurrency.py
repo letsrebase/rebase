@@ -19,8 +19,8 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
@@ -60,8 +60,8 @@ def world(db_engine: Engine, tmp_path):  # type: ignore[no-untyped-def]
         setup.add(customer)
         setup.flush()
         customer_id = customer.id
-        AziendaService(setup).upsert_default(
-            AziendaUpsert(
+        LegalEntityService(setup).upsert_default(
+            LegalEntityUpsert(
                 ragione_sociale="Studio Rossi",
                 partita_iva="01234567890",
                 codice_fiscale="HMCRFT00A01H501K",

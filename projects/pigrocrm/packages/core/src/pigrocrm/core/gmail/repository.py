@@ -15,7 +15,7 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import escape_like
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document, DocumentVersion
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.gmail.models import (
     EmailDraft,
     GmailKnownAddress,
@@ -750,19 +750,19 @@ class GmailRepository:
             .limit(1)
         ).scalar_one_or_none()
 
-    def emitter_profile(self) -> Azienda | None:
+    def emitter_profile(self) -> LegalEntity | None:
         """The default azienda, or `None` on an installation that has not filled it in.
 
-        Read through the repository rather than by constructing `AziendaService`, which
+        Read through the repository rather than by constructing `LegalEntityService`, which
         would pull a whole service (and its `actor` checks) into a path that needs one
         string. Since REB-627 it is the fallback of `azienda_for`, for a mail about a
         record that has no azienda of its own (a contact with no customer).
         """
         return self.session.execute(
-            select(Azienda).where(Azienda.predefinita.is_(True))
+            select(LegalEntity).where(LegalEntity.predefinita.is_(True))
         ).scalar_one_or_none()
 
-    def azienda_for_draft(self, draft: EmailDraft) -> Azienda | None:
+    def azienda_for_draft(self, draft: EmailDraft) -> LegalEntity | None:
         """The azienda a draft speaks for: for a payment reminder the invoice's, which
         the body and the IBAN already use, even when its customer has since moved to
         another azienda (Greptile, PR #510); for any other draft the record's
@@ -774,10 +774,10 @@ class GmailRepository:
                 .where(PaymentReminder.id == draft.payment_reminder_id)
             ).scalar_one_or_none()
             if azienda_id is not None:
-                return self.session.get(Azienda, azienda_id)
+                return self.session.get(LegalEntity, azienda_id)
         return self.azienda_for(draft.entity_type, draft.entity_id)
 
-    def azienda_for(self, entity_type: str, entity_id: UUID) -> Azienda | None:
+    def azienda_for(self, entity_type: str, entity_id: UUID) -> LegalEntity | None:
         """The azienda a mail speaks for (REB-627, spec 2026-10-03 §1.8): a customer's own,
         a person's through its customer, a deal's own; the default when the record has
         none, or names none. It supplies the `From` display name and the Message-ID
@@ -799,7 +799,7 @@ class GmailRepository:
             ).scalar_one_or_none()
         if azienda_id is None:
             return self.emitter_profile()
-        return self.session.get(Azienda, azienda_id)
+        return self.session.get(LegalEntity, azienda_id)
 
     def last_inbound_from(
         self, account_id: UUID, addresses: Sequence[str], since: datetime

@@ -26,7 +26,7 @@ import { useCustomer, useCustomers } from '@/features/customers/queries'
 import { useDeal, useDeals } from '@/features/deals/queries'
 import { toProblem, type ProblemDetail } from '@/lib/api'
 import { useCan } from '@/lib/auth'
-import { useAzienda } from '@/lib/azienda'
+import { useLegalEntity } from '@/lib/legalEntity'
 import { toIsoDate } from '@/lib/dates'
 import { AccrualPeriodFields } from './AccrualPeriodFields'
 import {
@@ -301,7 +301,7 @@ function NewProformaDialog({
   // Which azienda will issue (REB-626, spec §1.7): the deal's when one is chosen, the
   // customer's otherwise, the same rule `InvoiceService.create` applies. Read only from
   // the second azienda on; on the fixed variants both reads are the page's own cache hits.
-  const azienda = useAzienda()
+  const azienda = useLegalEntity()
   const issuingCustomer = useCustomer(customerId, { enabled: azienda.several })
   const issuingDeal = useDeal(dealId, { enabled: azienda.several })
   const issuedBy = azienda.several

@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound
 from pigrocrm.core.fiscal.schemas import (
     DEFAULT_RIFERIMENTO_NORMATIVO,
@@ -43,8 +43,8 @@ def storage(tmp_path) -> LocalFileStorage:  # type: ignore[no-untyped-def]
 @pytest.fixture
 def service(db_session: Session, storage: LocalFileStorage) -> InvoiceService:
     FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
-    AziendaService(db_session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(db_session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="01234567890",
             codice_fiscale="HMCRFT00A01H501K",
@@ -124,8 +124,8 @@ def test_the_download_name_follows_the_sdi_convention_using_the_frozen_emitter_i
     invoice_id = _issue(service, customer_id)
     service.export_xml(invoice_id, ADMIN)
     _, _, before = service.download(invoice_id, "xml", ADMIN)
-    AziendaService(service.session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(service.session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Altro Nome",
             partita_iva="01234567890",
             codice_fiscale="RSSMRA80A01H501U",
@@ -207,8 +207,8 @@ def test_a_regenerated_export_is_byte_identical_to_the_original(
         ),
         ADMIN,
     )
-    AziendaService(service.session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(service.session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Altro Nome",
             partita_iva="01234567890",
             codice_fiscale="HMCRFT00A01H501K",

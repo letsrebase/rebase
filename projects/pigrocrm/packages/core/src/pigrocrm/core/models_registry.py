@@ -7,7 +7,7 @@ from pigrocrm.core.activities.models import Activity  # noqa: F401
 from pigrocrm.core.attivita.models import Attivita  # noqa: F401
 from pigrocrm.core.auth.invitation_models import Invitation  # noqa: F401
 from pigrocrm.core.auth.magic_models import MagicLinkToken  # noqa: F401
-from pigrocrm.core.auth.models import User, UserAzienda  # noqa: F401
+from pigrocrm.core.auth.models import User, UserLegalEntity  # noqa: F401
 from pigrocrm.core.auth.pat_models import PersonalAccessToken  # noqa: F401
 from pigrocrm.core.auth.refresh_models import RefreshToken  # noqa: F401
 from pigrocrm.core.automations.models import AutomationConfig  # noqa: F401
@@ -18,7 +18,7 @@ from pigrocrm.core.deals.models import Deal  # noqa: F401
 from pigrocrm.core.digest.models import Digest  # noqa: F401
 from pigrocrm.core.documents.models import Document, DocumentVersion  # noqa: F401
 from pigrocrm.core.drive.models import GoogleDriveAccount  # noqa: F401
-from pigrocrm.core.emitter.models import Azienda  # noqa: F401
+from pigrocrm.core.emitter.models import LegalEntity  # noqa: F401
 from pigrocrm.core.fields.models import FieldDefinition  # noqa: F401
 from pigrocrm.core.fiscal.models import FiscalProfile  # noqa: F401
 from pigrocrm.core.gmail.models import (  # noqa: F401

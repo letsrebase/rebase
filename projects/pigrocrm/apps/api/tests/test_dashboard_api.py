@@ -36,7 +36,7 @@ from pigrocrm.core.dashboard.service import DashboardService
 from pigrocrm.core.db import session_factory, today_local
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.service import PipelineService
@@ -576,7 +576,7 @@ def test_the_concentration_signals_link_leads_to_the_same_rows_it_counted(
         # The corpus's own azienda (non-default, see `dashboard_corpus`), named on the
         # row since the column default only knows a default.
         azienda_id = session.execute(
-            select(Azienda.id).where(Azienda.nome == f"{_PREFIX} Azienda")
+            select(LegalEntity.id).where(LegalEntity.nome == f"{_PREFIX} Azienda")
         ).scalar_one()
         cliente_id = cliente.id
         session.add(

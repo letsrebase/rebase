@@ -23,7 +23,7 @@ import {
   useInvoiceLines,
   type StatoPagamento,
 } from '@/features/invoices/queries'
-import { useAzienda } from '@/lib/azienda'
+import { useLegalEntity } from '@/lib/legalEntity'
 import { useCan } from '@/lib/auth'
 
 export function InvoiceDetail() {
@@ -36,7 +36,7 @@ export function InvoiceDetail() {
   const canEditInvoice = useCan('update_invoice')
   const invoice = useInvoice(invoiceId)
   const lines = useInvoiceLines(invoiceId)
-  const azienda = useAzienda()
+  const azienda = useLegalEntity()
   const emessaDa = azienda.several ? azienda.byId(invoice.data?.azienda_id)?.nome : undefined
   if (invoice.isLoading) {
     return (

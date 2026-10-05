@@ -14,7 +14,7 @@ customer yet.
 from collections.abc import Callable, Sequence
 from typing import Literal
 
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.invoices.import_dedup import check_invoice_duplicate
 from pigrocrm.core.invoices.import_direction import match_azienda
 from pigrocrm.core.invoices.import_schemas import ParsedInvoice
@@ -32,11 +32,11 @@ REB-365; the actual write, REB-366)."""
 
 def classify_parsed_invoice(
     invoice: ParsedInvoice,
-    aziende: Sequence[Azienda],
+    aziende: Sequence[LegalEntity],
     *,
-    existing_for: Callable[[Azienda], Invoice | None],
+    existing_for: Callable[[LegalEntity], Invoice | None],
     content: bytes,
-) -> tuple[InvoiceImportClassification, Azienda | None]:
+) -> tuple[InvoiceImportClassification, LegalEntity | None]:
     """Direction first, register second -- exactly the order mastro's own
     `importer.ts` runs them in, and for the same reason: an incoming invoice has
     no natural key to check at all (PigroCRM's register only ever held its own

@@ -46,7 +46,7 @@ from pigrocrm_mcp.tools import (
 )
 from pigrocrm_mcp.tools import dashboard as dashboard_tools
 from pigrocrm_mcp.tools import search as search_tools
-from pigrocrm_mcp.tools.invoices import parse_azienda_id
+from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
 
 # `changes` stays a plain `dict[str, Any]` at runtime -- deliberately, not an
 # oversight. Typing it directly as `CustomerUpdate` (etc.) would make the MCP SDK
@@ -296,7 +296,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 "pagamento_fine_mese": pagamento_fine_mese,
                 "custom_fields": custom_fields or {},
                 **({"nazione": nazione} if nazione is not None else {}),
-                "azienda_id": parse_azienda_id(azienda_id),
+                "azienda_id": parse_legal_entity_id(azienda_id),
             },
         )
 
@@ -353,7 +353,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 search=search,
                 stato=stato,
                 custom=custom,
-                azienda_id=parse_azienda_id(azienda_id),
+                azienda_id=parse_legal_entity_id(azienda_id),
                 # cast: limit is `int | str` at runtime for the SDK-bypass reason
                 # documented on BoundedLimit above; the *ListQuery schema this
                 # feeds is what actually enforces (and coerces) "must be an int".
@@ -553,7 +553,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 customer_id=UUID(customer_id) if customer_id else None,
                 stage_id=UUID(stage_id) if stage_id else None,
                 custom=custom,
-                azienda_id=parse_azienda_id(azienda_id),
+                azienda_id=parse_legal_entity_id(azienda_id),
                 # cast: limit is `int | str` at runtime for the SDK-bypass reason
                 # documented on BoundedLimit above; the *ListQuery schema this
                 # feeds is what actually enforces (and coerces) "must be an int".
@@ -663,7 +663,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
             ContractListQuery(
                 customer_id=UUID(customer_id) if customer_id else None,
                 stato=stato,
-                azienda_id=parse_azienda_id(azienda_id),
+                azienda_id=parse_legal_entity_id(azienda_id),
                 limit=cast(int, limit),
                 cursor=cursor,
                 sort=sort,
@@ -1071,7 +1071,9 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         return search_tools.search_everything(
             context,
             SearchQuery(
-                termine=termine, limite=cast(int, limite), azienda_id=parse_azienda_id(azienda_id)
+                termine=termine,
+                limite=cast(int, limite),
+                azienda_id=parse_legal_entity_id(azienda_id),
             ),
         )
 
@@ -1176,7 +1178,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         oggi. Non invia niente: per un sollecito c'è `list_payment_reminder_candidates`.
         `azienda_id` limita tutto a un'azienda dello spazio; senza, tutte sommate.
         """
-        return dashboard_tools.get_receivables_dashboard(context, parse_azienda_id(azienda_id))
+        return dashboard_tools.get_receivables_dashboard(context, parse_legal_entity_id(azienda_id))
 
     @mcp.tool()
     @guard
@@ -1191,7 +1193,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         arretrato e segnali a un'azienda dello spazio; senza, tutte insieme, e il segnale
         di concentrazione conta i clienti sopra soglia in una qualsiasi di esse.
         """
-        return dashboard_tools.get_operational_dashboard(context, parse_azienda_id(azienda_id))
+        return dashboard_tools.get_operational_dashboard(context, parse_legal_entity_id(azienda_id))
 
     # ---- documents ---------------------------------------------------------
     # The download of bytes never goes through MCP (spec 7): a tool returning a
@@ -1239,7 +1241,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
             DocumentListQuery(
                 customer_id=UUID(customer_id) if customer_id else None,
                 deal_id=UUID(deal_id) if deal_id else None,
-                azienda_id=parse_azienda_id(azienda_id),
+                azienda_id=parse_legal_entity_id(azienda_id),
                 tipo=tipo,  # type: ignore[arg-type]
                 stato=stato,  # type: ignore[arg-type]
                 search=search,
@@ -1412,7 +1414,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
             InvoiceListQuery(
                 customer_id=UUID(customer_id) if customer_id else None,
                 deal_id=UUID(deal_id) if deal_id else None,
-                azienda_id=parse_azienda_id(azienda_id),
+                azienda_id=parse_legal_entity_id(azienda_id),
                 tipo=tipo,  # type: ignore[arg-type]
                 stato=stato,  # type: ignore[arg-type]
                 anno=anno,
@@ -1632,7 +1634,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         torna a `IT`, `ragione_sociale` e' obbligatoria). Per questo leggi prima
         `describe_azienda` e rimanda indietro l'oggetto letto con le sole modifiche,
         cosi' non cancelli quello che non hai nominato. Le chiavi, nella forma di
-        `AziendaUpsert`: `nome` (il nome breve mostrato nelle liste; se manca e' la
+        `LegalEntityUpsert`: `nome` (il nome breve mostrato nelle liste; se manca e' la
         ragione sociale), `ragione_sociale`, `partita_iva` (11 cifre) o
         `codice_fiscale`, `indirizzo`, `cap`, `comune`, `provincia`, `nazione`, `pec`,
         `codice_sdi` (7 caratteri), `telefono`, `email`, `sito_web`, `regime_fiscale`
@@ -1748,7 +1750,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
             context,
             TimeEntryListQuery(
                 deal_id=UUID(deal_id) if deal_id else None,
-                azienda_id=parse_azienda_id(azienda_id),
+                azienda_id=parse_legal_entity_id(azienda_id),
                 user_id=UUID(user_id) if user_id else None,
                 da=da,  # type: ignore[arg-type]
                 a=a,  # type: ignore[arg-type]
@@ -1868,7 +1870,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 "importo": importo,
                 "descrizione": descrizione,
                 "deal_id": UUID(deal_id) if deal_id else None,
-                "azienda_id": parse_azienda_id(azienda_id),
+                "azienda_id": parse_legal_entity_id(azienda_id),
                 "fornitore": fornitore,
                 "document_id": UUID(document_id) if document_id else None,
                 "custom_fields": custom_fields or {},
@@ -1918,7 +1920,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
             context,
             CostListQuery(
                 deal_id=UUID(deal_id) if deal_id else None,
-                azienda_id=parse_azienda_id(azienda_id),
+                azienda_id=parse_legal_entity_id(azienda_id),
                 solo_generali=solo_generali,
                 category_id=UUID(category_id) if category_id else None,
                 da=da,  # type: ignore[arg-type]
@@ -2043,7 +2045,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         `admin` richiesto: è un ricavo, non la stima fiscale che protegge solo
         `get_fiscal_estimate`. Di una sola azienda: senza `azienda_id` è l'unica dello
         spazio, con più di una va indicata; un'azienda estera non ha soglie."""
-        return timetracking.get_ceiling_headroom(context, anno, parse_azienda_id(azienda_id))
+        return timetracking.get_ceiling_headroom(context, anno, parse_legal_entity_id(azienda_id))
 
     @mcp.tool()
     @guard
@@ -2073,7 +2075,7 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
                 if tariffa_oraria is not None
                 else None,
             ),
-            parse_azienda_id(azienda_id),
+            parse_legal_entity_id(azienda_id),
         )
 
     # -- Attività e calendario (slice 10) -------------------------------------
@@ -2244,4 +2246,4 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         lo spazio. `azienda_id` tiene solo le ore sui deal e le fatture di quell'azienda,
         le attività restano tutte. Per registrare ore usa `log_time`: questo strumento
         legge e non scrive."""
-        return calendar_tools.month(context, mese, tutti, parse_azienda_id(azienda_id))
+        return calendar_tools.month(context, mese, tutti, parse_legal_entity_id(azienda_id))

@@ -282,7 +282,7 @@ def test_two_racing_uploads_computing_the_same_version_number_become_a_clean_con
     either commits) -- reproduced deterministically against a single
     savepoint-backed test session, the same technique
     `test_upsert_converts_a_true_insert_race_into_a_clean_conflict` in
-    `test_emitter.py` uses on `AziendaRepository.get`.
+    `test_emitter.py` uses on `LegalEntityRepository.get`.
 
     The loser must not be able to overwrite the winner's bytes at the storage key
     both compute from the same numero: `add_version` flushes the database row (and

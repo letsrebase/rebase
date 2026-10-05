@@ -35,8 +35,8 @@ from pigrocrm.core.documents.schemas import (
     DocumentVersionRead,
     OfferState,
 )
-from pigrocrm.core.emitter.assets import AziendaAssets, logo_file_in
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.assets import LegalEntityAssets, logo_file_in
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -105,8 +105,8 @@ class DocumentService:
         self.fields = FieldDefinitionService(session)
         self.activities = ActivityService(session)
         self.templates = TemplateService(session)
-        self.emitter = AziendaService(session)
-        self.assets = AziendaAssets(session, storage)
+        self.emitter = LegalEntityService(session)
+        self.assets = LegalEntityAssets(session, storage)
 
     # ---- owner resolution ---------------------------------------------------
 
@@ -150,7 +150,7 @@ class DocumentService:
         """The azienda of whichever owner a new document hangs on (REB-623, spec §1.7):
         exactly one is set and `_check_owner` has already found it, so one of the three
         reads answers. Refused when that azienda is deactivated (spec §3)."""
-        aziende = AziendaService(self.session)
+        aziende = LegalEntityService(self.session)
         if customer_id is not None:
             customer = self.session.get(Customer, customer_id)
             assert customer is not None
@@ -342,7 +342,7 @@ class DocumentService:
         (below) has exactly one thing to be provably correct about, and so a test can
         force a collision deterministically -- the same technique
         `test_upsert_converts_a_true_insert_race_into_a_clean_conflict` in
-        `test_emitter.py` uses on `AziendaRepository.get` -- without needing
+        `test_emitter.py` uses on `LegalEntityRepository.get` -- without needing
         real threads against a single savepoint-backed test session.
         """
         return document.versione_corrente + 1

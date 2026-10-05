@@ -9,7 +9,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.documents.repository import DocumentRepository
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import NotFound, ValidationFailed
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.fields.service import FieldDefinitionService
@@ -53,7 +53,7 @@ class CostService:
         self.session = session
         self.repo = CostRepository(session)
         self.deals = DealRepository(session)
-        self.aziende = AziendaService(session)
+        self.aziende = LegalEntityService(session)
         self.documents = DocumentRepository(session)
         self.categories = CostCategoryService(session)
         self.locks = PeriodLockService(session)

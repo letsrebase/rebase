@@ -63,25 +63,26 @@ export default defineConfig([
     },
   },
   {
-    // The same bundle shape as `auth.tsx`, for the same reason (REB-625): `AziendaProvider`
-    // and the three hooks that only make sense beside it, plus the context the shell's
-    // test mounts with a value of its own and the two storage helpers the provider's
-    // test reads back. Named one by one, so a new non-component export is still caught.
-    files: ['src/lib/azienda.tsx'],
+    // The same bundle shape as `auth.tsx`, for the same reason (REB-625, renamed in
+    // REB-651): `LegalEntityProvider` and the hooks that only make sense beside it, plus
+    // the context the shell's test mounts with a value of its own and the two storage
+    // helpers the provider's test reads back. Named one by one, so a new non-component
+    // export is still caught.
+    files: ['src/lib/legalEntity.tsx'],
     rules: {
       'react-refresh/only-export-components': [
         'error',
         {
           allowConstantExport: true,
           allowExportNames: [
-            'AziendaContext',
-            'aziendaKey',
-            'readSelectedAzienda',
-            'writeSelectedAzienda',
-            'useAzienda',
-            'useAziendaScope',
-            'useAziendeToName',
-            'useAziendaProposta',
+            'LegalEntityContext',
+            'legalEntityKey',
+            'readSelectedLegalEntity',
+            'writeSelectedLegalEntity',
+            'useLegalEntity',
+            'useLegalEntityScope',
+            'useLegalEntitiesToName',
+            'useLegalEntityProposal',
           ],
         },
       ],

@@ -14,8 +14,8 @@ from pigrocrm.core.documents.schemas import (
     DocumentListQuery,
 )
 from pigrocrm.core.documents.service import OFFER_TRANSITIONS, DocumentService
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm.core.templates.escaping import escape_markdown, escape_typst
@@ -48,8 +48,8 @@ Oggetto: {{offerta.oggetto}}
 
 @pytest.fixture
 def setup(db_session: Session, tmp_path: Path) -> tuple[DocumentService, Customer, object]:
-    AziendaService(db_session).upsert_default(
-        AziendaUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
+    LegalEntityService(db_session).upsert_default(
+        LegalEntityUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
         ADMIN,
     )
     template = TemplateService(db_session).create(
@@ -316,8 +316,8 @@ def test_oggi_defaults_to_italys_own_day_not_the_processs(
     why the assertion is on the compiled source rather than on which function was
     called.
     """
-    AziendaService(db_session).upsert_default(
-        AziendaUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
+    LegalEntityService(db_session).upsert_default(
+        LegalEntityUpsert(ragione_sociale="Studio Rossi", partita_iva="01234567890"),
         ADMIN,
     )
     template = TemplateService(db_session).create(

@@ -387,11 +387,11 @@ def test_the_partial_unique_index_refuses_two_open_invitations(db_engine) -> Non
 
 
 def _second_azienda(session: Session, nome: str = "rebase ltd", **overrides: object) -> UUID:
-    from pigrocrm.core.emitter.models import Azienda
+    from pigrocrm.core.emitter.models import LegalEntity
 
     values: dict[str, object] = {"nome": nome, "ragione_sociale": nome.title(), "nazione": "GB"}
     values.update(overrides)
-    row = Azienda(**values)  # type: ignore[arg-type]
+    row = LegalEntity(**values)  # type: ignore[arg-type]
     session.add(row)
     session.flush()
     return row.id
@@ -439,13 +439,13 @@ def test_an_azienda_deactivated_before_the_click_leaves_the_scope_empty_not_tutt
 ) -> None:
     """Nothing turns an empty scope into «tutte» (spec §1.11): the account opens, sees
     nothing, and the Team panel says so."""
-    from pigrocrm.core.emitter.models import Azienda
+    from pigrocrm.core.emitter.models import LegalEntity
 
     ltd = _second_azienda(db_session)
     _, raw = InvitationService(db_session).create(
         InvitationCreate(email=INVITEE, nome="Bea", aziende=[ltd]), _admin(db_session)
     )
-    row = db_session.get(Azienda, ltd)
+    row = db_session.get(LegalEntity, ltd)
     assert row is not None
     row.attiva = False
     db_session.flush()

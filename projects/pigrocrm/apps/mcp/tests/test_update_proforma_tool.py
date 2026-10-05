@@ -17,8 +17,8 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
@@ -31,8 +31,8 @@ UMANO = Actor(id=None, type="user", role="admin")
 
 def _customer(session: Session) -> str:
     FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), Actor.system())
-    AziendaService(session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="01234567890",
             indirizzo="Via Vittorio Veneto 12",

@@ -6,11 +6,15 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.emitter.assets import AziendaAssets
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
-from pigrocrm.core.emitter.schemas import FIRMA_EMAIL_MAX_LENGTH, AziendaCreate, AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.assets import LegalEntityAssets
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
+from pigrocrm.core.emitter.schemas import (
+    FIRMA_EMAIL_MAX_LENGTH,
+    LegalEntityCreate,
+    LegalEntityUpsert,
+)
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from pigrocrm.core.render.pdf import BLANK_PNG as PNG_PIXEL
 from pigrocrm.core.storage.local import LocalFileStorage
@@ -23,11 +27,11 @@ READONLY = Actor(id=None, type="user", role="readonly")
 def _bare(db_session: Session) -> None:
     """This file tests the first save too, so it starts from a space with no azienda,
     undoing the default row the session fixture seeds for everyone else."""
-    db_session.execute(delete(Azienda))
+    db_session.execute(delete(LegalEntity))
     db_session.flush()
 
 
-def _upsert(**overrides: object) -> AziendaUpsert:
+def _upsert(**overrides: object) -> LegalEntityUpsert:
     payload: dict[str, object] = {
         "ragione_sociale": "Studio Rossi",
         "partita_iva": "01234567890",
@@ -41,22 +45,22 @@ def _upsert(**overrides: object) -> AziendaUpsert:
         "regime_fiscale": "Regime forfettario, L. 190/2014 art. 1 commi 54-89",
     }
     payload.update(overrides)
-    return AziendaUpsert(**payload)  # type: ignore[arg-type]
+    return LegalEntityUpsert(**payload)  # type: ignore[arg-type]
 
 
 def test_get_before_any_save_raises_not_found(db_session: Session) -> None:
     with pytest.raises(NotFound):
-        AziendaService(db_session).get(ADMIN)
+        LegalEntityService(db_session).get(ADMIN)
 
 
 def test_upsert_creates_the_single_row(db_session: Session) -> None:
-    profile = AziendaService(db_session).upsert_default(_upsert(), ADMIN)
+    profile = LegalEntityService(db_session).upsert_default(_upsert(), ADMIN)
     assert profile.ragione_sociale == "Studio Rossi"
     assert profile.partita_iva == "01234567890"
 
 
 def test_a_second_upsert_updates_rather_than_creating_a_second_row(db_session: Session) -> None:
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     first = service.upsert_default(_upsert(), ADMIN)
     second = service.upsert_default(_upsert(ragione_sociale="Nuovo Nome"), ADMIN)
     assert second.id == first.id
@@ -65,12 +69,12 @@ def test_a_second_upsert_updates_rather_than_creating_a_second_row(db_session: S
 
 def test_a_readonly_actor_cannot_write(db_session: Session) -> None:
     with pytest.raises(PermissionDenied):
-        AziendaService(db_session).upsert_default(_upsert(), READONLY)
+        LegalEntityService(db_session).upsert_default(_upsert(), READONLY)
 
 
 def test_a_malformed_partita_iva_is_refused(db_session: Session) -> None:
     with pytest.raises(ValidationFailed) as excinfo:
-        AziendaService(db_session).upsert_default(_upsert(partita_iva="1234567890"), ADMIN)
+        LegalEntityService(db_session).upsert_default(_upsert(partita_iva="1234567890"), ADMIN)
     assert excinfo.value.details["field"] == "partita_iva"
 
 
@@ -82,13 +86,17 @@ def test_a_partita_iva_with_a_trailing_newline_is_stored_as_its_eleven_digits(
     # `normalise_fiscal_id` on every write (spec 2026-10-03 §2 step 1), which strips
     # the newline the way it strips punctuation and an `IT` prefix: what is stored is
     # the code the classifier compares, never the keystroke that came with it.
-    read = AziendaService(db_session).upsert_default(_upsert(partita_iva="IT 01234567890\n"), ADMIN)
+    read = LegalEntityService(db_session).upsert_default(
+        _upsert(partita_iva="IT 01234567890\n"), ADMIN
+    )
     assert read.partita_iva == "01234567890"
 
 
 def test_a_value_the_normaliser_empties_is_refused_not_saved_as_null(db_session: Session) -> None:
     with pytest.raises(ValidationFailed) as excinfo:
-        AziendaService(db_session).upsert_default(_upsert(codice_fiscale="non-un-codice"), ADMIN)
+        LegalEntityService(db_session).upsert_default(
+            _upsert(codice_fiscale="non-un-codice"), ADMIN
+        )
     assert excinfo.value.details["field"] == "codice_fiscale"
 
 
@@ -97,14 +105,14 @@ def test_a_foreign_azienda_keeps_a_vat_number_that_is_not_italian_in_shape(
 ) -> None:
     # A nine-digit British VAT number: `normalise_fiscal_id` would return None for it,
     # which is exactly why a foreign azienda goes through `normalise_foreign_fiscal_id`.
-    read = AziendaService(db_session).upsert_default(
+    read = LegalEntityService(db_session).upsert_default(
         _upsert(nazione="GB", partita_iva="GB 123 4567 89"), ADMIN
     )
     assert read.partita_iva == "GB123456789"
 
 
 def test_as_template_values_exposes_the_profile_under_emittente(db_session: Session) -> None:
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     service.upsert_default(_upsert(), ADMIN)
     values = service.as_template_values(ADMIN)
     assert values["emittente"]["ragione_sociale"] == "Studio Rossi"
@@ -114,7 +122,7 @@ def test_as_template_values_exposes_the_profile_under_emittente(db_session: Sess
 
 def test_as_template_values_before_any_save_raises_not_found(db_session: Session) -> None:
     with pytest.raises(NotFound):
-        AziendaService(db_session).as_template_values(ADMIN)
+        LegalEntityService(db_session).as_template_values(ADMIN)
 
 
 def test_upsert_converts_a_true_insert_race_into_a_clean_conflict(
@@ -132,15 +140,15 @@ def test_upsert_converts_a_true_insert_race_into_a_clean_conflict(
     concurrency, which a single savepoint-backed test session cannot produce) is
     what reproduces that race deterministically.
     """
-    service = AziendaService(db_session)
-    monkeypatch.setattr(AziendaRepository, "default", lambda self: None)
+    service = LegalEntityService(db_session)
+    monkeypatch.setattr(LegalEntityRepository, "default", lambda self: None)
     service.upsert_default(_upsert(), ADMIN)
     with pytest.raises(Conflict):
         service.upsert_default(_upsert(ragione_sociale="Secondo"), ADMIN)
 
     # The session must still be usable after the rollback, not poisoned.
     monkeypatch.undo()
-    profile = AziendaService(db_session).get(ADMIN)
+    profile = LegalEntityService(db_session).get(ADMIN)
     assert profile.ragione_sociale == "Studio Rossi"
 
 
@@ -151,10 +159,12 @@ def test_firma_email_holds_a_text_block_and_firma_key_still_holds_an_image(
     an email does not attach one -- it wants a text block. The two coexist; neither is
     overloaded. Since REB-627 the key is written by the upload, never by the row's
     `PUT`, which leaves it as it is."""
-    AziendaService(db_session).upsert_default(_upsert(firma_email="Mario Rossi\nConsulente"), ADMIN)
-    AziendaAssets(db_session, local_storage).set_firma(PNG_PIXEL, ADMIN)
+    LegalEntityService(db_session).upsert_default(
+        _upsert(firma_email="Mario Rossi\nConsulente"), ADMIN
+    )
+    LegalEntityAssets(db_session, local_storage).set_firma(PNG_PIXEL, ADMIN)
     # A second whole-row save names no key and leaves the image where it is.
-    read = AziendaService(db_session).upsert_default(
+    read = LegalEntityService(db_session).upsert_default(
         _upsert(firma_email="Mario Rossi\nConsulente"), ADMIN
     )
     assert read.firma_email == "Mario Rossi\nConsulente"
@@ -162,10 +172,10 @@ def test_firma_email_holds_a_text_block_and_firma_key_still_holds_an_image(
 
 
 def test_firma_email_reaches_a_template_scope_under_emittente(db_session: Session) -> None:
-    """`as_template_values` derives from `AziendaRead`, so a column added to the
+    """`as_template_values` derives from `LegalEntityRead`, so a column added to the
     model but forgotten on the read schema would be silently absent from every rendered
     document and every rendered email instead of failing anywhere."""
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     service.upsert_default(_upsert(firma_email="Mario Rossi\nConsulente"), ADMIN)
     scope = service.as_template_values(ADMIN)
     assert scope["emittente"]["firma_email"] == "Mario Rossi\nConsulente"
@@ -186,7 +196,7 @@ def test_firma_email_is_bounded_and_rejects_a_nul_byte() -> None:
 # profiles apart, one default, a deactivation that refuses the default.
 
 
-def _second_azienda(db_session: Session, **overrides: object) -> Azienda:
+def _second_azienda(db_session: Session, **overrides: object) -> LegalEntity:
     values: dict[str, object] = {
         "nome": "rebase",
         "ragione_sociale": "Rebase S.r.l.",
@@ -194,21 +204,21 @@ def _second_azienda(db_session: Session, **overrides: object) -> Azienda:
         "nazione": "IT",
     }
     values.update(overrides)
-    row = Azienda(**values)  # type: ignore[arg-type]
+    row = LegalEntity(**values)  # type: ignore[arg-type]
     db_session.add(row)
     db_session.flush()
     return row
 
 
 def test_nome_is_derived_from_the_ragione_sociale_when_missing(db_session: Session) -> None:
-    read = AziendaService(db_session).upsert_default(_upsert(ragione_sociale="S" * 120), ADMIN)
+    read = LegalEntityService(db_session).upsert_default(_upsert(ragione_sociale="S" * 120), ADMIN)
     assert read.nome == "S" * 80
     assert read.predefinita is True
     assert read.attiva is True
 
 
 def test_the_list_puts_the_default_first_and_hides_an_inactive_one(db_session: Session) -> None:
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     service.upsert_default(_upsert(ragione_sociale="Zeta"), ADMIN)
     second = _second_azienda(db_session, nome="alfa")
     assert [a.nome for a in service.list(ADMIN)] == ["Zeta", "alfa"]
@@ -221,7 +231,7 @@ def test_two_aziende_hold_two_fiscal_profiles_apart(db_session: Session) -> None
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
     from pigrocrm.core.fiscal.service import FiscalProfileService
 
-    aziende = AziendaService(db_session)
+    aziende = LegalEntityService(db_session)
     first = aziende.upsert_default(_upsert(), ADMIN)
     second = _second_azienda(db_session)
     fiscal = FiscalProfileService(db_session)
@@ -243,7 +253,7 @@ def test_two_aziende_hold_two_fiscal_profiles_apart(db_session: Session) -> None
 def test_the_default_moves_in_one_step_and_never_onto_an_inactive_azienda(
     db_session: Session,
 ) -> None:
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     first = service.upsert_default(_upsert(), ADMIN)
     second = _second_azienda(db_session)
     moved = service.set_default(second.id, ADMIN)
@@ -256,7 +266,7 @@ def test_the_default_moves_in_one_step_and_never_onto_an_inactive_azienda(
 
 
 def test_the_default_cannot_be_deactivated(db_session: Session) -> None:
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     default = service.upsert_default(_upsert(), ADMIN)
     with pytest.raises(ValidationFailed) as excinfo:
         service.deactivate(default.id, ADMIN)
@@ -264,7 +274,7 @@ def test_the_default_cannot_be_deactivated(db_session: Session) -> None:
 
 
 def test_update_addresses_one_azienda_and_leaves_the_other_alone(db_session: Session) -> None:
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     service.upsert_default(_upsert(), ADMIN)
     second = _second_azienda(db_session)
     read = service.update(
@@ -277,7 +287,7 @@ def test_update_addresses_one_azienda_and_leaves_the_other_alone(db_session: Ses
 
 
 def test_a_partita_iva_already_held_by_another_azienda_is_a_conflict(db_session: Session) -> None:
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     service.upsert_default(_upsert(), ADMIN)
     second = _second_azienda(db_session)
     with pytest.raises(Conflict):
@@ -290,7 +300,7 @@ def test_a_missing_azienda_id_is_not_found_under_the_table_label(db_session: Ses
     from uuid import uuid4
 
     with pytest.raises(NotFound) as excinfo:
-        AziendaService(db_session).get(ADMIN, uuid4())
+        LegalEntityService(db_session).get(ADMIN, uuid4())
     assert excinfo.value.details["entity"] == "emitter_profile"
 
 
@@ -300,24 +310,24 @@ def test_a_foreign_vat_number_fits_the_column_and_one_beyond_it_is_refused_not_a
     # A French VAT number is 13 characters once normalised and fits since REB-619
     # widened the column; one longer than the column is still refused in words, never
     # as a DataError.
-    read = AziendaService(db_session).upsert_default(
+    read = LegalEntityService(db_session).upsert_default(
         _upsert(nazione="FR", partita_iva="FR 12 345678901"), ADMIN
     )
     assert read.partita_iva == "FR12345678901"
     with pytest.raises(ValidationFailed) as excinfo:
-        AziendaService(db_session).upsert_default(
+        LegalEntityService(db_session).upsert_default(
             _upsert(nazione="FR", partita_iva="FR" + "1" * 25), ADMIN
         )
     assert excinfo.value.details["field"] == "partita_iva"
     # The session is still usable: a refusal before the flush poisons nothing.
-    assert [a.partita_iva for a in AziendaService(db_session).list(ADMIN)] == ["FR12345678901"]
+    assert [a.partita_iva for a in LegalEntityService(db_session).list(ADMIN)] == ["FR12345678901"]
 
 
 def test_the_database_refuses_an_inactive_default(db_session: Session) -> None:
     from sqlalchemy.exc import IntegrityError
 
-    AziendaService(db_session).upsert_default(_upsert(), ADMIN)
-    row = AziendaRepository(db_session).default()
+    LegalEntityService(db_session).upsert_default(_upsert(), ADMIN)
+    row = LegalEntityRepository(db_session).default()
     assert row is not None
     row.attiva = False
     with pytest.raises(IntegrityError):
@@ -329,16 +339,18 @@ def test_a_lower_case_country_code_does_not_make_an_italian_p_iva_foreign(
     db_session: Session,
 ) -> None:
     with pytest.raises(ValidationFailed) as excinfo:
-        AziendaService(db_session).upsert_default(_upsert(nazione="it", partita_iva="123"), ADMIN)
+        LegalEntityService(db_session).upsert_default(
+            _upsert(nazione="it", partita_iva="123"), ADMIN
+        )
     assert excinfo.value.details["field"] == "partita_iva"
-    read = AziendaService(db_session).upsert_default(_upsert(nazione="it"), ADMIN)
+    read = LegalEntityService(db_session).upsert_default(_upsert(nazione="it"), ADMIN)
     assert read.nazione == "IT"
 
 
 # --- creation, the single-azienda resolution and the deactivation count (REB-630) -----
 
 
-def _create(**overrides: object) -> AziendaCreate:
+def _create(**overrides: object) -> LegalEntityCreate:
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 
     payload: dict[str, object] = {
@@ -354,13 +366,13 @@ def _create(**overrides: object) -> AziendaCreate:
         ),
     }
     payload.update(overrides)
-    return AziendaCreate(**payload)  # type: ignore[arg-type]
+    return LegalEntityCreate(**payload)  # type: ignore[arg-type]
 
 
 def test_create_gives_a_second_azienda_its_profile_in_one_call(db_session: Session) -> None:
     from pigrocrm.core.fiscal.service import FiscalProfileService
 
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     first = service.upsert_default(_upsert(), ADMIN)
     created = service.create(_create(), ADMIN)
     assert (created.nome, created.predefinita, created.attiva) == ("rebase ltd", False, True)
@@ -371,9 +383,9 @@ def test_create_gives_a_second_azienda_its_profile_in_one_call(db_session: Sessi
 
 
 def test_the_first_azienda_a_space_creates_is_its_default(db_session: Session) -> None:
-    created = AziendaService(db_session).create(_create(), ADMIN)
+    created = LegalEntityService(db_session).create(_create(), ADMIN)
     assert created.predefinita is True
-    assert AziendaService(db_session).get(ADMIN).id == created.id
+    assert LegalEntityService(db_session).get(ADMIN).id == created.id
 
 
 def test_a_profile_the_fiscal_service_refuses_leaves_no_azienda_behind(
@@ -381,7 +393,7 @@ def test_a_profile_the_fiscal_service_refuses_leaves_no_azienda_behind(
 ) -> None:
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     service.upsert_default(_upsert(), ADMIN)
     with pytest.raises(ValidationFailed) as refused:
         service.create(
@@ -393,25 +405,25 @@ def test_a_profile_the_fiscal_service_refuses_leaves_no_azienda_behind(
             ADMIN,
         )
     assert refused.value.details["field"] == "applica_bollo"
-    assert AziendaRepository(db_session).count() == 1
+    assert LegalEntityRepository(db_session).count() == 1
 
 
 def test_create_is_admin_only_and_refuses_a_fiscal_id_another_azienda_holds(
     db_session: Session,
 ) -> None:
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     service.upsert_default(_upsert(), ADMIN)
     with pytest.raises(PermissionDenied):
         service.create(_create(), READONLY)
     with pytest.raises(Conflict):
         service.create(_create(nazione="IT", partita_iva="01234567890"), ADMIN)
-    assert AziendaRepository(db_session).count() == 1
+    assert LegalEntityRepository(db_session).count() == 1
 
 
 def test_single_resolves_the_only_azienda_and_never_picks_between_two(
     db_session: Session,
 ) -> None:
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     first = service.upsert_default(_upsert(), ADMIN)
     assert service.single(None) is not None
     assert service.require_single(None, entity="analytics").id == first.id
@@ -433,7 +445,7 @@ def test_deactivate_answers_how_many_customers_still_point_at_the_row(
 ) -> None:
     from pigrocrm.core.customers.models import Customer
 
-    service = AziendaService(db_session)
+    service = LegalEntityService(db_session)
     service.upsert_default(_upsert(), ADMIN)
     second = service.create(_create(), ADMIN)
     db_session.add_all(

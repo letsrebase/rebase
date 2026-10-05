@@ -34,7 +34,7 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import DocumentVersion
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.gmail.attach import describe_attachments
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage
@@ -139,7 +139,7 @@ class EmailDraftService:
         self, entity_type: str, entity_id: UUID, azienda_id: UUID | None = None
     ) -> str:
         azienda = (
-            self.session.get(Azienda, azienda_id)
+            self.session.get(LegalEntity, azienda_id)
             if azienda_id is not None
             else self.repo.azienda_for(entity_type, entity_id)
         )

@@ -54,8 +54,8 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
     # The rows of the scope, loaded with the user (REB-633): one query per read of a
     # list of users, never one per row, and `aziende` below is what every reader
     # answers with. `delete-orphan`, so clearing the list deletes the rows.
-    scopes: Mapped[list["UserAzienda"]] = relationship(
-        lazy="selectin", cascade="all, delete-orphan", order_by="UserAzienda.azienda_id"
+    scopes: Mapped[list["UserLegalEntity"]] = relationship(
+        lazy="selectin", cascade="all, delete-orphan", order_by="UserLegalEntity.azienda_id"
     )
 
     __table_args__ = (Index("uq_users_email_lower", func.lower(email), unique=True),)
@@ -70,7 +70,7 @@ class User(Base, PrimaryKeyMixin, TimestampMixin):
         return [row.azienda_id for row in self.scopes]
 
 
-class UserAzienda(Base):
+class UserLegalEntity(Base):
     """One row per azienda a scoped member may see (spec 2026-10-03 §1.11, §2 step
     6). Empty until milestone 6: the table exists now so the migration that gives
     every later table its `azienda_id` finds it, and so `users.ambito_limitato` has

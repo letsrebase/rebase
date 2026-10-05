@@ -9,7 +9,7 @@ from pigrocrm.core.db import Base, PrimaryKeyMixin, TimestampMixin
 # Wide enough for a foreign VAT number kept in its own shape (REB-619, spec 2026-10-03
 # §1.3): an EU one runs to fourteen characters with its prefix (`NL123456789B01`), a
 # Swiss one to sixteen once its punctuation is stripped. An Italian P.IVA is still
-# exactly eleven digits, which `AziendaService` checks before anything reaches the
+# exactly eleven digits, which `LegalEntityService` checks before anything reaches the
 # column; the width only stops a foreign code from dying as a `DataError` at flush.
 PARTITA_IVA_WIDTH = 20
 
@@ -34,12 +34,12 @@ def default_azienda_id(context: Any) -> UUID | None:
     function inventing one.
     """
     found: UUID | None = context.connection.execute(
-        select(Azienda.id).where(Azienda.predefinita.is_(True))
+        select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
     ).scalar_one_or_none()
     return found
 
 
-class Azienda(Base, PrimaryKeyMixin, TimestampMixin):
+class LegalEntity(Base, PrimaryKeyMixin, TimestampMixin):
     """Who is issuing the document: one row per azienda of the space.
 
     Until REB-615 this was `EmitterProfile`, «one row, ever», held to a single row by
@@ -55,7 +55,7 @@ class Azienda(Base, PrimaryKeyMixin, TimestampMixin):
     `attiva`, because an azienda that issued an invoice is never deleted, only switched
     off. The two partial unique indexes on the upper-cased fiscal ids are what makes
     «an XML whose supplier matches two aziende» impossible to save in the first place
-    (spec §1.5, §2 step 1); `AziendaService` writes both ids already normalised, so
+    (spec §1.5, §2 step 1); `LegalEntityService` writes both ids already normalised, so
     two spellings of one code cannot sit on two rows.
     """
 

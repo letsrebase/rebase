@@ -7,8 +7,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { AziendePanel } from './AziendePanel'
-import type { AziendaRecord } from './queries'
+import { LegalEntitiesPanel } from './LegalEntitiesPanel'
+import type { LegalEntityRecord } from './queries'
 import { api } from '@/lib/api'
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -25,7 +25,7 @@ function failed(error: unknown, status: number) {
   return { error, response: new Response(null, { status }) } as never
 }
 
-function azienda(id: string, nome: string, overrides: Partial<AziendaRecord> = {}): AziendaRecord {
+function azienda(id: string, nome: string, overrides: Partial<LegalEntityRecord> = {}): LegalEntityRecord {
   return {
     id,
     nome,
@@ -58,7 +58,7 @@ const STUDIO = azienda('a-1', 'Studio Rossi', { predefinita: true })
 const LTD = azienda('a-2', 'rebase ltd', { nazione: 'GB', ragione_sociale: 'Rebase Ltd' })
 
 /** The list the page reads, as the server would answer it after each write. */
-let listed: AziendaRecord[]
+let listed: LegalEntityRecord[]
 
 function mockReads() {
   vi.mocked(api.GET).mockImplementation((path: string) => {
@@ -72,7 +72,7 @@ function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <AziendePanel />
+      <LegalEntitiesPanel />
     </QueryClientProvider>,
   )
 }
@@ -92,7 +92,7 @@ beforeEach(() => {
   mockReads()
 })
 
-describe('AziendePanel, «Nuova azienda»', () => {
+describe('LegalEntitiesPanel, «Nuova azienda»', () => {
   it('offers the button even with one azienda, where the picker is not drawn', async () => {
     renderPanel()
     expect(await screen.findByRole('button', { name: 'Nuova azienda' })).toBeInTheDocument()

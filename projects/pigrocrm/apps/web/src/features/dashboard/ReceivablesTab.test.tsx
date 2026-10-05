@@ -149,12 +149,12 @@ describe('ReceivablesTab', () => {
 
 // -- the sidebar's azienda (REB-632) ---------------------------------------------------------
 
-import { AziendaContext, type AziendaValue } from '@/lib/azienda'
+import { LegalEntityContext, type LegalEntityValue } from '@/lib/legalEntity'
 
 describe('ReceivablesTab, with an azienda selected', () => {
   it('sends the selection as the one parameter the page takes', async () => {
     vi.mocked(api.GET).mockResolvedValue(ok(RESPONSE))
-    const value: AziendaValue = {
+    const value: LegalEntityValue = {
       aziende: [],
       selected: 'a-2',
       select: vi.fn(),
@@ -164,9 +164,9 @@ describe('ReceivablesTab, with an azienda selected', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
-        <AziendaContext value={value}>
+        <LegalEntityContext value={value}>
           <ReceivablesTab />
-        </AziendaContext>
+        </LegalEntityContext>
       </QueryClientProvider>,
     )
     await waitFor(() => expect(api.GET).toHaveBeenCalled())

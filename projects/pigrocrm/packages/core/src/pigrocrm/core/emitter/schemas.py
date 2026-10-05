@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.validation import SafeStr
 
-# Mirror Azienda's column widths exactly (emitter/models.py). Without these an
+# Mirror LegalEntity's column widths exactly (emitter/models.py). Without these an
 # over-long value reaches Postgres and raises sqlalchemy.exc.DataError, which is not
 # an IntegrityError subclass, so no handler catches it and the session is poisoned.
 NOME_MAX_LENGTH = 80
@@ -31,7 +31,7 @@ REGIME_FISCALE_MAX_LENGTH = 200
 FIRMA_EMAIL_MAX_LENGTH = 2_000
 
 
-class AziendaUpsert(BaseModel):
+class LegalEntityUpsert(BaseModel):
     """One shape for the first save and for every update: the fields are the same and
     all of them are required or defaulted, so a write is always a whole row.
 
@@ -63,19 +63,19 @@ class AziendaUpsert(BaseModel):
     email: SafeStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
     sito_web: SafeStr | None = Field(default=None, max_length=SITO_WEB_MAX_LENGTH)
     # No `logo_key` and no `firma_key` since REB-627: the two images are written by
-    # `AziendaAssets` under keys the server chooses, so a whole-row `PUT` can neither
+    # `LegalEntityAssets` under keys the server chooses, so a whole-row `PUT` can neither
     # clear them nor point them at somebody else's file. `update` leaves them as they are.
     firma_email: SafeStr | None = Field(default=None, max_length=FIRMA_EMAIL_MAX_LENGTH)
     regime_fiscale: SafeStr | None = Field(default=None, max_length=REGIME_FISCALE_MAX_LENGTH)
 
 
-class AziendaCreate(AziendaUpsert):
+class LegalEntityCreate(LegalEntityUpsert):
     """A second azienda, born with its fiscal profile (spec 2026-10-03 §1.2, §3, §9
     milestone 5): the upsert's fields, a required short name, and the profile body
     `PUT /api/aziende/{id}/fiscal-profile` takes. One request, one transaction, so no
     azienda ever exists that `issue` would refuse with `NotFound("fiscal_profile")`.
 
-    `nome` is required here where `AziendaUpsert` derives it: the first azienda of a
+    `nome` is required here where `LegalEntityUpsert` derives it: the first azienda of a
     space was never named, but the second is created to be told apart from the first,
     in the sidebar and on every list, and a derived name is a ragione sociale cut to
     eighty characters."""
@@ -84,7 +84,7 @@ class AziendaCreate(AziendaUpsert):
     fiscal_profile: FiscalProfileUpsert
 
 
-class AziendaRead(BaseModel):
+class LegalEntityRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
@@ -112,7 +112,7 @@ class AziendaRead(BaseModel):
     updated_at: datetime
 
 
-class AziendaDeactivated(AziendaRead):
+class LegalEntityDeactivated(LegalEntityRead):
     """What `DELETE /api/aziende/{id}` answers (spec §3): the row, switched off, and
     how many live customers still point at it. Nothing new is born under such a
     customer until it is moved («sposta prima il cliente su un'azienda attiva»), so the

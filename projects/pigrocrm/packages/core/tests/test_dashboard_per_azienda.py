@@ -41,9 +41,9 @@ from pigrocrm.core.db.base import uuid7
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.deals.repository import DealRepository
 from pigrocrm.core.deals.schemas import DealListQuery
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import ValidationFailed
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
@@ -94,9 +94,9 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
     with factory() as session:
         _require_empty(session)
         inserted = committed_default_azienda(session)
-        studio = AziendaRepository(session).default()
+        studio = LegalEntityRepository(session).default()
         assert studio is not None
-        estero = Azienda(
+        estero = LegalEntity(
             nome=f"{_PREFIX} ltd", ragione_sociale=f"{_PREFIX} Ltd", nazione="GB", predefinita=False
         )
         aperto = PipelineStage(
@@ -280,7 +280,7 @@ def corpus(db_engine: Engine) -> Iterator[Corpus]:
             session.execute(
                 delete(FiscalProfile).where(FiscalProfile.azienda_id.in_((ids.studio, ids.estero)))
             )
-            session.execute(delete(Azienda).where(Azienda.id == ids.estero))
+            session.execute(delete(LegalEntity).where(LegalEntity.id == ids.estero))
             remove_azienda(session, inserted)
             session.commit()
 
@@ -495,7 +495,7 @@ def test_a_deactivated_azienda_s_cash_never_reaches_the_active_one_s_estimate(
     and the two nets are read off the active azienda's own cash (spec §1.9)."""
     factory = session_factory(corpus.engine)
     with factory() as session:
-        AziendaService(session).deactivate(corpus.estero, ADMIN)
+        LegalEntityService(session).deactivate(corpus.estero, ADMIN)
     try:
         with factory() as session:
             tutte = AnalyticsService(session).economic_overview(ANNO, ADMIN)
@@ -508,7 +508,7 @@ def test_a_deactivated_azienda_s_cash_never_reaches_the_active_one_s_estimate(
         assert tutte.netto_effettivo == P_INCASSATO - tutte.fiscale.totale_dovuto
     finally:
         with factory() as session:
-            row = session.get(Azienda, corpus.estero)
+            row = session.get(LegalEntity, corpus.estero)
             assert row is not None
             row.attiva = True
             session.commit()

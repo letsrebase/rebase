@@ -22,8 +22,8 @@ from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.storage import LocalFileStorage
 from pigrocrm_mcp.server import build_server
@@ -55,8 +55,8 @@ def _payload(result: Any) -> Any:
 def _seed_emitter(session: Session) -> None:
     # Always written: the session seeds a bare default azienda (REB-615) and this fills
     # in the identity the review compares the file against.
-    AziendaService(session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Chiara Bianchi",
             partita_iva=FORNITORE_PIVA,
             codice_fiscale=FORNITORE_CF,

@@ -10,8 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor, ActorType, Role
-from pigrocrm.core.auth.models import User, UserAzienda
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.auth.models import User, UserLegalEntity
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import ValidationFailed
 
 
@@ -48,7 +48,7 @@ def check_scope(session: Session, entity: str, aziende: list[UUID] | None) -> li
     unique = list(dict.fromkeys(aziende))
     active = set(
         session.scalars(
-            select(Azienda.id).where(Azienda.id.in_(unique), Azienda.attiva.is_(True))
+            select(LegalEntity.id).where(LegalEntity.id.in_(unique), LegalEntity.attiva.is_(True))
         ).all()
     )
     missing = [str(a) for a in unique if a not in active]
@@ -70,7 +70,7 @@ def apply_scope(session: Session, user: User, aziende: list[UUID] | None) -> Non
         user.scopes = []
     else:
         user.ambito_limitato = True
-        user.scopes = [UserAzienda(user_id=user.id, azienda_id=azienda) for azienda in aziende]
+        user.scopes = [UserLegalEntity(user_id=user.id, azienda_id=azienda) for azienda in aziende]
     session.flush()
 
 
@@ -81,7 +81,7 @@ def active_only(session: Session, aziende: list[UUID]) -> list[UUID]:
         return []
     return list(
         session.scalars(
-            select(Azienda.id).where(Azienda.id.in_(aziende), Azienda.attiva.is_(True))
+            select(LegalEntity.id).where(LegalEntity.id.in_(aziende), LegalEntity.attiva.is_(True))
         ).all()
     )
 

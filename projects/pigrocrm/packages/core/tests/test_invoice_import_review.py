@@ -1,5 +1,5 @@
 """The read-only review step (REB-365): `import_review.review_content` and
-`InvoiceService.review_import`, exercised end to end with a real `Azienda`
+`InvoiceService.review_import`, exercised end to end with a real `LegalEntity`
 row, a real `documents` row and the FPR12 fixture REB-363/364 already use.
 
 The issue's own "Done when" is the one property every scenario below serves:
@@ -21,8 +21,8 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.errors import AgentForbidden, PermissionDenied, ValidationFailed
 from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.invoices.service import InvoiceService
@@ -33,7 +33,7 @@ CONSULENZA = "fpr12-consulenza-marzo.xml"
 ADMIN = Actor(id=None, type="user", role="admin")
 
 # The FPR12 fixture's own `CedentePrestatore` (fornitore): matching this on an
-# `Azienda` is what makes the fixture "outgoing" for the account holder.
+# `LegalEntity` is what makes the fixture "outgoing" for the account holder.
 FORNITORE_PIVA = "01234567890"
 FORNITORE_CF = "BNCCHR85M41H501Z"
 # Its `CessionarioCommittente` (cliente): matching this on a `Customer` is what
@@ -46,7 +46,7 @@ def _fixture(name: str) -> bytes:
     return (FIXTURES / name).read_bytes()
 
 
-def _emitter(session: Session, **overrides: object) -> Azienda:
+def _emitter(session: Session, **overrides: object) -> LegalEntity:
     base: dict[str, object] = {
         "ragione_sociale": "Chiara Bianchi",
         "partita_iva": FORNITORE_PIVA,
@@ -55,13 +55,13 @@ def _emitter(session: Session, **overrides: object) -> Azienda:
         "predefinita": True,
     }
     base.update(overrides)
-    existing = AziendaRepository(session).default()
+    existing = LegalEntityRepository(session).default()
     if existing is not None:
         for key, value in base.items():
             setattr(existing, key, value)
         session.flush()
         return existing
-    profile = Azienda(**base)
+    profile = LegalEntity(**base)
     session.add(profile)
     session.flush()
     return profile

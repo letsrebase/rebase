@@ -905,3 +905,11 @@ Added as the milestones land, dated, never rewriting the sections above.
   signs in on a second context, reads the pinned label, lists their azienda's customer
   alone and gets a 404 on the other azienda's by id; the spec deactivates the second
   azienda at the end so the fiscal pages of the other specs keep one active azienda.
+- **2026-10-05, the identifiers (REB-651).** The code's names for the thing are English
+  like every other record's: `LegalEntity`, `LegalEntityService`, `LegalEntityRepository`,
+  the `LegalEntity*` schemas (and so the OpenAPI components), `UserLegalEntity`, the web's
+  `LegalEntityProvider`, `useLegalEntity` and the settings components, in modules moved to
+  the same names. What the product says and what a client calls keep «azienda»: the
+  routes, the JSON fields (`azienda_id`, `aziende`), the MCP tools and their parameters,
+  the UI copy, the SQL functions, the tables and columns. The decision of §10 on
+  `emitter_profile` stands.

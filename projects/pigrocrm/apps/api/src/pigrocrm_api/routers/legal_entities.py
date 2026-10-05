@@ -18,15 +18,15 @@ from uuid import UUID
 from fastapi import APIRouter, File, Query, UploadFile, status
 from fastapi.responses import Response
 
-from pigrocrm.core.emitter.assets import MAX_IMAGE_BYTES, AziendaAssets
+from pigrocrm.core.emitter.assets import MAX_IMAGE_BYTES, LegalEntityAssets
 from pigrocrm.core.emitter.schemas import (
     NAZIONE_MAX_LENGTH,
-    AziendaCreate,
-    AziendaDeactivated,
-    AziendaRead,
-    AziendaUpsert,
+    LegalEntityCreate,
+    LegalEntityDeactivated,
+    LegalEntityRead,
+    LegalEntityUpsert,
 )
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import NotFound
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead, FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -37,27 +37,29 @@ from pigrocrm_api.errors import PROBLEM_RESPONSES
 router = APIRouter(prefix="/api/aziende", tags=["aziende"], responses=PROBLEM_RESPONSES)
 
 
-@router.get("", response_model=list[AziendaRead])
+@router.get("", response_model=list[LegalEntityRead])
 def list_aziende(
     session: SessionDep, actor: ActorDep, include_inactive: bool = False
-) -> list[AziendaRead]:
+) -> list[LegalEntityRead]:
     """The default first. Deactivated aziende are left out unless asked for: a
     selector never offers one, Impostazioni may still show it."""
-    return AziendaService(session).list(actor, only_active=not include_inactive)
+    return LegalEntityService(session).list(actor, only_active=not include_inactive)
 
 
-@router.post("", response_model=AziendaRead, status_code=status.HTTP_201_CREATED)
-def create_azienda(data: AziendaCreate, session: SessionDep, actor: ActorDep) -> AziendaRead:
+@router.post("", response_model=LegalEntityRead, status_code=status.HTTP_201_CREATED)
+def create_azienda(
+    data: LegalEntityCreate, session: SessionDep, actor: ActorDep
+) -> LegalEntityRead:
     """A second azienda, with its fiscal profile, in one transaction (REB-631, spec
     2026-10-03 §3): active, not the default, and the first of a space when it had
     none. A profile the fiscal rules would refuse refuses the whole request, so no
     azienda exists that could not issue."""
-    return AziendaService(session).create(data, actor)
+    return LegalEntityService(session).create(data, actor)
 
 
 # Before `/{azienda_id}`: a literal segment declared after the parameterised route would
 # be read as an id and answer 422.
-@router.get("/proposta", response_model=AziendaRead)
+@router.get("/proposta", response_model=LegalEntityRead)
 def propose_azienda(
     session: SessionDep,
     actor: ActorDep,
@@ -68,42 +70,42 @@ def propose_azienda(
             description="Nazione del cliente, ISO 3166-1 alpha-2; omessa, IT",
         ),
     ] = None,
-) -> AziendaRead:
+) -> LegalEntityRead:
     """The azienda a new customer of `nazione` would be billed by when nobody picks one
     (REB-624, spec 2026-10-03 §1.6). The form and an agent both ask here, so the rule
-    lives in `AziendaService.propose` once; `POST /api/customers` applies the same one
+    lives in `LegalEntityService.propose` once; `POST /api/customers` applies the same one
     when `azienda_id` is left out."""
-    return AziendaRead.model_validate(AziendaService(session).propose(nazione))
+    return LegalEntityRead.model_validate(LegalEntityService(session).propose(nazione))
 
 
-@router.get("/{azienda_id}", response_model=AziendaRead)
-def get_azienda(azienda_id: UUID, session: SessionDep, actor: ActorDep) -> AziendaRead:
-    return AziendaService(session).get(actor, azienda_id)
+@router.get("/{azienda_id}", response_model=LegalEntityRead)
+def get_azienda(azienda_id: UUID, session: SessionDep, actor: ActorDep) -> LegalEntityRead:
+    return LegalEntityService(session).get(actor, azienda_id)
 
 
-@router.put("/{azienda_id}", response_model=AziendaRead)
+@router.put("/{azienda_id}", response_model=LegalEntityRead)
 def update_azienda(
-    azienda_id: UUID, data: AziendaUpsert, session: SessionDep, actor: ActorDep
-) -> AziendaRead:
+    azienda_id: UUID, data: LegalEntityUpsert, session: SessionDep, actor: ActorDep
+) -> LegalEntityRead:
     """Whole-row replacement, as the single profile always was: a key left out goes
     back to its default."""
-    return AziendaService(session).update(azienda_id, data, actor)
+    return LegalEntityService(session).update(azienda_id, data, actor)
 
 
-@router.post("/{azienda_id}/predefinita", response_model=AziendaRead)
-def set_default_azienda(azienda_id: UUID, session: SessionDep, actor: ActorDep) -> AziendaRead:
-    return AziendaService(session).set_default(azienda_id, actor)
+@router.post("/{azienda_id}/predefinita", response_model=LegalEntityRead)
+def set_default_azienda(azienda_id: UUID, session: SessionDep, actor: ActorDep) -> LegalEntityRead:
+    return LegalEntityService(session).set_default(azienda_id, actor)
 
 
-@router.delete("/{azienda_id}", response_model=AziendaDeactivated)
+@router.delete("/{azienda_id}", response_model=LegalEntityDeactivated)
 def deactivate_azienda(
     azienda_id: UUID, session: SessionDep, actor: ActorDep
-) -> AziendaDeactivated:
+) -> LegalEntityDeactivated:
     """Deactivation, never a row delete: an azienda that issued an invoice stays
     readable forever. Refused on the default; move the default first. The answer says
     how many customers still point at the row (`clienti_collegati`): nothing new is
     born under them until they are moved to an active azienda."""
-    return AziendaService(session).deactivate(azienda_id, actor)
+    return LegalEntityService(session).deactivate(azienda_id, actor)
 
 
 @router.get("/{azienda_id}/fiscal-profile", response_model=FiscalProfileRead)
@@ -144,7 +146,7 @@ _IMAGE_HEADERS = {
 
 
 def _serve(session: SessionDep, storage: StorageDep, azienda_id: UUID, slot: Slot) -> Response:
-    assets = AziendaAssets(session, storage)
+    assets = LegalEntityAssets(session, storage)
     image = assets.logo(azienda_id) if slot == "logo" else assets.firma(azienda_id)
     if image is None:
         raise NotFound("emitter_profile", f"{azienda_id}/{slot}")
@@ -172,28 +174,28 @@ def get_logo(
     return _serve(session, storage, azienda_id, "logo")
 
 
-@router.put("/{azienda_id}/logo", response_model=AziendaRead)
+@router.put("/{azienda_id}/logo", response_model=LegalEntityRead)
 async def put_logo(
     azienda_id: UUID,
     session: SessionDep,
     storage: StorageDep,
     actor: ActorDep,
     file: Annotated[UploadFile, File()],
-) -> AziendaRead:
+) -> LegalEntityRead:
     """A PNG or an SVG under 1 MiB, sniffed from the bytes: the client's content type
     and file name are never trusted. Replaces the one before. One byte past the limit
     is read and no more, so an oversize body is refused by the service's own sentence
     without being buffered whole."""
     data = await file.read(MAX_IMAGE_BYTES + 1)
-    return AziendaAssets(session, storage).set_logo(data, actor, azienda_id)
+    return LegalEntityAssets(session, storage).set_logo(data, actor, azienda_id)
 
 
-@router.delete("/{azienda_id}/logo", response_model=AziendaRead)
+@router.delete("/{azienda_id}/logo", response_model=LegalEntityRead)
 def delete_logo(
     azienda_id: UUID, session: SessionDep, storage: StorageDep, actor: ActorDep
-) -> AziendaRead:
+) -> LegalEntityRead:
     """Idempotent: an azienda with no logo answers its row, not an error."""
-    return AziendaAssets(session, storage).remove_logo(actor, azienda_id)
+    return LegalEntityAssets(session, storage).remove_logo(actor, azienda_id)
 
 
 @router.get(
@@ -208,22 +210,22 @@ def get_firma(
     return _serve(session, storage, azienda_id, "firma")
 
 
-@router.put("/{azienda_id}/firma", response_model=AziendaRead)
+@router.put("/{azienda_id}/firma", response_model=LegalEntityRead)
 async def put_firma(
     azienda_id: UUID,
     session: SessionDep,
     storage: StorageDep,
     actor: ActorDep,
     file: Annotated[UploadFile, File()],
-) -> AziendaRead:
+) -> LegalEntityRead:
     """A PNG under 1 MiB: the offers draw the signature through a Markdown image whose
     name is fixed in the template, so an SVG is refused."""
     data = await file.read(MAX_IMAGE_BYTES + 1)
-    return AziendaAssets(session, storage).set_firma(data, actor, azienda_id)
+    return LegalEntityAssets(session, storage).set_firma(data, actor, azienda_id)
 
 
-@router.delete("/{azienda_id}/firma", response_model=AziendaRead)
+@router.delete("/{azienda_id}/firma", response_model=LegalEntityRead)
 def delete_firma(
     azienda_id: UUID, session: SessionDep, storage: StorageDep, actor: ActorDep
-) -> AziendaRead:
-    return AziendaAssets(session, storage).remove_firma(actor, azienda_id)
+) -> LegalEntityRead:
+    return LegalEntityAssets(session, storage).remove_firma(actor, azienda_id)

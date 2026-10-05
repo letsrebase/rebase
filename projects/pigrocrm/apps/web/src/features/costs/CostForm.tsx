@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from '@rebase/ui/select'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
-import { useAzienda } from '@/lib/azienda'
+import { useLegalEntity } from '@/lib/legalEntity'
 import type { FieldDefinition } from '@/lib/schema'
 import {
   NATIVE_FIELDS,
@@ -150,7 +150,7 @@ export function CostForm({
   // «Azienda» only for a cost with no deal and from the second azienda on (REB-626, spec
   // §1.7): a cost on a deal is that deal's azienda's and the server would refuse another,
   // while a general expense is shared («Condivisa», `null`) unless one azienda owns it.
-  const azienda = useAzienda()
+  const azienda = useLegalEntity()
   const aziendaId = (values.native.azienda_id as string | null | undefined) ?? SHARED
   // Kept out of the flattened values, like the customer form does: a custom field a
   // tenant named `azienda_id` would otherwise display the picker's id as its own value.

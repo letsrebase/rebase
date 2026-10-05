@@ -12,7 +12,7 @@ import { Card, CardContent } from '@rebase/ui/card'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { EconomicsTab } from '@/features/analytics/EconomicsTab'
 import { useCustomer } from '@/features/customers/queries'
-import { useAzienda } from '@/lib/azienda'
+import { useLegalEntity } from '@/lib/legalEntity'
 import { DealForm, dealToFormValues } from '@/features/deals/DealForm'
 import { DealStageBar } from '@/features/deals/DealStageBar'
 import { displayNative, formatDate, formatHours, formatMoney } from '@/features/deals/columns'
@@ -124,7 +124,7 @@ export function DealDetail() {
   const { dealId } = useParams({ from: '/app/deal/$dealId' })
   const navigate = useNavigate()
   const canWrite = useCanWrite()
-  const azienda = useAzienda()
+  const azienda = useLegalEntity()
   const [editing, setEditing] = useState(false)
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
 

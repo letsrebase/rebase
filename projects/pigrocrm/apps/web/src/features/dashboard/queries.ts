@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from '@rebase/ui/sonner'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
-import { useAzienda } from '@/lib/azienda'
+import { useLegalEntity } from '@/lib/legalEntity'
 import { queryKeys } from '@/lib/query'
 import type { Periodo } from './periodo'
 import type { CashBase } from './search'
@@ -33,13 +33,13 @@ export const DASHBOARD_STALE_MS = 60_000
  * so a switch of the sidebar is a new cache entry and a fresh request, with no
  * invalidation to forget. Not in the URL: the selection is a session choice (§5).
  */
-function useAziendaParam(): { azienda_id?: string } {
-  const { selected } = useAzienda()
+function useLegalEntityParam(): { azienda_id?: string } {
+  const { selected } = useLegalEntity()
   return selected === null ? {} : { azienda_id: selected }
 }
 
 export function useCommercialDashboard(periodo: Periodo) {
-  const params = { ...periodo, ...useAziendaParam() }
+  const params = { ...periodo, ...useLegalEntityParam() }
   return useQuery({
     queryKey: queryKeys.dashboard('commerciale', params),
     queryFn: () => unwrap(api.GET('/api/dashboard/sales', { params: { query: params } })),
@@ -48,7 +48,7 @@ export function useCommercialDashboard(periodo: Periodo) {
 }
 
 export function useEconomicDashboard(periodo: Periodo) {
-  const params = { ...periodo, ...useAziendaParam() }
+  const params = { ...periodo, ...useLegalEntityParam() }
   return useQuery({
     queryKey: queryKeys.dashboard('economica', params),
     queryFn: () => unwrap(api.GET('/api/dashboard/economic', { params: { query: params } })),
@@ -59,7 +59,7 @@ export function useEconomicDashboard(periodo: Periodo) {
 /** Slice 8 part A (REB-329): no period, so the key carries none. What is owed is owed
  *  today, and the response's `oggi` says which day the buckets were measured from. */
 export function useReceivablesDashboard() {
-  const params = useAziendaParam()
+  const params = useLegalEntityParam()
   return useQuery({
     queryKey: queryKeys.dashboard('scadenziario', params),
     queryFn: () => unwrap(api.GET('/api/dashboard/receivables', { params: { query: params } })),
@@ -72,7 +72,7 @@ export function useReceivablesDashboard() {
  *  is which month each document falls in (ORB-133), part of the key because the same
  *  year answers differently under the two readings. */
 export function useEconomicOverview(anno: number, base: CashBase) {
-  const scope = useAziendaParam()
+  const scope = useLegalEntityParam()
   return useQuery({
     queryKey: queryKeys.dashboard('panoramica', { anno: String(anno), base, ...scope }),
     queryFn: () =>
@@ -100,7 +100,7 @@ export function useEconomicOverview(anno: number, base: CashBase) {
  * §1.9); with one azienda nothing is sent and the server resolves it alone.
  */
 export function useFiscalEstimate(anno: number, aziendaId?: string | null) {
-  const { selected } = useAzienda()
+  const { selected } = useLegalEntity()
   const azienda = aziendaId === undefined ? selected : aziendaId
   const query = azienda === null ? { anno } : { anno, azienda_id: azienda }
   return useQuery({
