@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import NamedTuple
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -573,6 +574,57 @@ def test_a_reminder_s_draft_and_timeline_row_follow_the_invoice_not_the_moved_cu
             session.execute(delete(EmailDraft).where(EmailDraft.id == draft_id))
             session.execute(delete(PaymentReminder).where(PaymentReminder.id == reminder_id))
             session.execute(delete(GoogleAccount).where(GoogleAccount.id == account_id))
+            session.commit()
+
+
+def test_an_artefact_rendered_after_the_customer_moved_stays_with_the_invoice(
+    world: World, tmp_path: Path
+) -> None:
+    """The invoice keeps its azienda when its customer moves (spec §1.7); the PDF and
+    the XML rendered for it afterwards are the invoice's, not the customer's new
+    azienda's (CodeRabbit's fourth adversarial pass on PR #513)."""
+    from pigrocrm.core.config import Settings
+    from pigrocrm.core.invoices.service import InvoiceService
+    from pigrocrm.core.storage import LocalFileStorage
+
+    factory = session_factory(world.engine)
+    with factory() as session:
+        invoice = session.execute(
+            select(Invoice).where(Invoice.azienda_id == world.estero)
+        ).scalar_one()
+        customer = session.get(Customer, invoice.customer_id)
+        assert customer is not None
+        customer.azienda_id = world.studio  # the move, by hand: the rows under it stay
+        session.commit()
+        service = InvoiceService(
+            session,
+            LocalFileStorage(tmp_path),
+            Settings(_env_file=None),  # type: ignore[call-arg]
+        )
+        document = service._artifact_document(  # noqa: SLF001 - the one seam the render uses
+            invoice, "fattura_xml", f"{_PREFIX} xml", Actor.system()
+        )
+        session.commit()
+        document_id = document.id
+    try:
+        with factory() as session:
+            row = session.get(Document, document_id)
+            assert row is not None and row.azienda_id == world.estero
+        with _scoped(world, world.studio) as session:
+            assert session.get(Document, document_id) is None
+        with _scoped(world, world.estero) as session:
+            assert session.get(Document, document_id) is not None
+    finally:
+        with factory() as session:
+            session.execute(delete(Activity).where(Activity.entity_id == document_id))
+            invoice = session.execute(
+                select(Invoice).where(Invoice.azienda_id == world.estero)
+            ).scalar_one()
+            invoice.xml_document_id = None
+            session.execute(delete(Document).where(Document.id == document_id))
+            customer = session.get(Customer, invoice.customer_id)
+            assert customer is not None
+            customer.azienda_id = world.estero
             session.commit()
 
 

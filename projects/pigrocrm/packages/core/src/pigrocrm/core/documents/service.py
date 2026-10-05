@@ -237,7 +237,9 @@ class DocumentService:
 
     # ---- documents ------------------------------------------------------------
 
-    def _create_row(self, data: DocumentCreate, actor: Actor) -> Document:
+    def _create_row(
+        self, data: DocumentCreate, actor: Actor, *, azienda_id: UUID | None = None
+    ) -> Document:
         """Everything `create` does except the commit, so `import_bytes` can compose it
         with `_add_version_row` inside one transaction.
 
@@ -256,8 +258,16 @@ class DocumentService:
         is_offer = payload["tipo"] == "offerta"
         payload["stato"] = (payload.get("stato") or "bozza") if is_offer else None
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
-        payload["azienda_id"] = self._azienda_of_owner(
-            payload["customer_id"], payload["deal_id"], payload["contract_id"]
+        # The owner's azienda, unless the caller names the record's own: an invoice's
+        # artefact is the invoice's, and the invoice keeps its azienda when its customer
+        # moves (spec §1.7), so a PDF rendered after the move must not land where the
+        # customer is now (CodeRabbit's fourth adversarial pass on PR #513).
+        payload["azienda_id"] = (
+            azienda_id
+            if azienda_id is not None
+            else self._azienda_of_owner(
+                payload["customer_id"], payload["deal_id"], payload["contract_id"]
+            )
         )
 
         document = self.repo.add(Document(**payload))
@@ -270,8 +280,10 @@ class DocumentService:
         )
         return document
 
-    def create(self, data: DocumentCreate, actor: Actor) -> DocumentRead:
-        document = self._create_row(data, actor)
+    def create(
+        self, data: DocumentCreate, actor: Actor, *, azienda_id: UUID | None = None
+    ) -> DocumentRead:
+        document = self._create_row(data, actor, azienda_id=azienda_id)
         self.session.commit()
         return DocumentRead.model_validate(document)
 

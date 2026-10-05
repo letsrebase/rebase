@@ -2260,9 +2260,13 @@ class InvoiceService:
             document = self.documents.repo.get(existing_id)
             if document is not None:
                 return document
+        # The invoice's own azienda, never the customer's current one: a customer moved
+        # since the invoice was issued keeps the invoice where it was (spec §1.7), and
+        # so must the artefacts rendered for it afterwards.
         created = self.documents.create(
             DocumentCreate(customer_id=invoice.customer_id, tipo=tipo, titolo=titolo),  # type: ignore[arg-type]
             actor,
+            azienda_id=invoice.azienda_id,
         )
         document = self.documents.repo.get(created.id)
         if document is None:  # pragma: no cover - just created in this transaction
