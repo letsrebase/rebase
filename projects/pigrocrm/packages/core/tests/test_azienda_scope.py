@@ -784,6 +784,16 @@ def test_hours_billed_on_an_invoice_out_of_sight_stay_frozen(world: World) -> No
                 TimeEntryUpdate(ore=D("3.00")),
                 Actor(id=world.user_id, type="user", role="collaboratore"),
             )
+        # And the backlog does not count those hours as still to invoice, from the
+        # deal's scope (the line is out of sight) as from «tutte» (the line is issued).
+        from pigrocrm.core.analytics.repository import AnalyticsRepository
+
+        with _scoped(world, world.studio) as session:
+            ore, _, _, voci = AnalyticsRepository(session).unbilled_backlog(azienda_id=world.studio)
+            assert ore == D("0.00") and voci == 0
+        with _scoped(world, world.studio, world.estero) as session:
+            ore, _, _, voci = AnalyticsRepository(session).unbilled_backlog(azienda_id=world.studio)
+            assert ore == D("0.00") and voci == 0
     finally:
         with factory() as session:
             entry = session.get(TimeEntry, entry_id)

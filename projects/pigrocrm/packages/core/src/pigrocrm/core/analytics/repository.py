@@ -16,7 +16,7 @@ from decimal import Decimal
 from typing import Any, NamedTuple, TypeVar
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, Select, SQLColumnExpression, case, func, select
+from sqlalchemy import ColumnElement, Select, SQLColumnExpression, and_, case, func, or_, select
 from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from pigrocrm.core.analytics.schemas import CashBase, RevenueBase
@@ -389,10 +389,18 @@ class AnalyticsRepository:
             .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
             .where(InvoiceLine.id == TimeEntry.invoice_line_id, *_revenue_filter())
         )
+        # An entry whose line this session cannot see at all is not backlog either: an
+        # import may bind a deal's hours to an invoice of another azienda, and under the
+        # policies «no issued invoice found» must not read as «not yet invoiced»
+        # (REB-634; the freeze guard of `billed_entry_ids` reads it the same way).
+        visible_line = select(InvoiceLine.id).where(InvoiceLine.id == TimeEntry.invoice_line_id)
         stmt = select(TimeEntry.ore, TimeEntry.tariffa_applicata).where(
             TimeEntry.deleted_at.is_(None),
             TimeEntry.fatturabile.is_(True),
-            ~billed.exists(),
+            or_(
+                TimeEntry.invoice_line_id.is_(None),
+                and_(visible_line.exists(), ~billed.exists()),
+            ),
         )
         if da is not None:
             stmt = stmt.where(TimeEntry.data >= da)

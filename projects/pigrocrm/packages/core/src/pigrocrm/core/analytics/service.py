@@ -941,11 +941,22 @@ class AnalyticsService:
         already = billed_entry_ids(self.session, rows)
         if already:
             frozen = [e.invoice_line_id for e in rows if e.id in already]
-            numero, anno = self.session.execute(
+            named = self.session.execute(
                 select(Invoice.numero, Invoice.anno)
                 .join(InvoiceLine, InvoiceLine.invoice_id == Invoice.id)
                 .where(InvoiceLine.id == frozen[0])
-            ).one()
+            ).one_or_none()
+            if named is None:
+                # Frozen by a line this session cannot see (an invoice of another
+                # azienda, REB-634): the refusal stands, and it names no document,
+                # since the document is not this member's to be pointed at.
+                raise Conflict(
+                    "time_entry",
+                    f"{len(already)} voci sono già su una fattura emessa di un'azienda "
+                    "che non vedi: non si fattura due volte lo stesso lavoro",
+                    voci=len(already),
+                )
+            numero, anno = named
             # The document is named, because "already invoiced" is only actionable if
             # the user can go and look at the invoice in question.
             raise Conflict(
