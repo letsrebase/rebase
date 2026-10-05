@@ -1633,13 +1633,14 @@ def register_entity_tools(mcp: MCPServer, context: McpContext, guard: Callable[.
         **Sostituzione totale** della riga: ogni chiave assente torna vuota (`nazione`
         torna a `IT`, `ragione_sociale` e' obbligatoria). Per questo leggi prima
         `describe_azienda` e rimanda indietro l'oggetto letto con le sole modifiche,
-        cosi' non cancelli quello che non hai nominato. Le chiavi: `nome` (il nome breve mostrato nelle liste; se manca e' la
-        ragione sociale), `ragione_sociale`, `partita_iva` (11 cifre) o
-        `codice_fiscale`, `indirizzo`, `cap`, `comune`, `provincia`, `nazione`, `pec`,
-        `codice_sdi` (7 caratteri), `telefono`, `email`, `sito_web`, `regime_fiscale`
-        (il testo stampato in calce), `firma_email`, `logo_key` e `firma_key` (chiavi
-        di storage, non byte). Mostra alla persona il riepilogo intero e aspetta il suo
-        ok prima di salvare. Un dato fiscale che non ti e' stato dato non si inventa:
+        cosi' non cancelli quello che non hai nominato. Le chiavi: `nome` (il nome breve
+        mostrato nelle liste; se manca e' la ragione sociale), `ragione_sociale`,
+        `partita_iva` (11 cifre) o `codice_fiscale`, `indirizzo`, `cap`, `comune`,
+        `provincia`, `nazione`, `pec`, `codice_sdi` (7 caratteri), `telefono`, `email`,
+        `sito_web`, `regime_fiscale` (il testo stampato in calce), `firma_email`, `logo_key`
+        e `firma_key` (chiavi di storage, non byte). Mostra alla persona il riepilogo
+        intero e aspetta il suo ok prima di salvare. Un dato fiscale che non ti e' stato
+        dato non si inventa:
         lascialo vuoto e dillo. Solo un admin.
         """
         return invoices.update_azienda(context, dati, azienda_id)
