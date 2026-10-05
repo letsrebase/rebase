@@ -1507,3 +1507,97 @@ def test_0047_binds_every_existing_row_to_the_one_azienda_and_a_cost_to_its_deal
             "fiscal_profile",
             "user_aziende",
         }
+
+
+def test_0049_puts_the_fast_path_first_and_its_downgrade_restores_0048(
+    pigrocrm_postgres: Any,
+) -> None:
+    """The migration over the real policies, both ways (REB-656): at head every
+    through-the-parent policy opens on `scope_tutte() OR (`, with `WITH CHECK` equal to
+    `USING` except the links' `true`, and the eight functions open on the spelled-out
+    setting test; one step down, 0048's predicates and bodies are back as 0048 wrote
+    them, and up again is the same as the first time."""
+
+    def read(url: str) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
+        engine: Engine = create_engine(url)
+        with engine.connect() as connection:
+            policies = {
+                row.tablename: (row.qual, row.with_check)
+                for row in connection.execute(
+                    text(
+                        "SELECT tablename, qual, with_check FROM pg_policies "
+                        "WHERE policyname = 'ambito_azienda'"
+                    )
+                )
+            }
+            bodies = dict(
+                connection.execute(
+                    text(
+                        "SELECT proname, prosrc FROM pg_proc WHERE proname IN ("
+                        "'customer_visibile', 'person_visibile', 'deal_visibile', "
+                        "'invoice_visibile', 'contract_visibile', 'document_visibile', "
+                        "'work_unit_visibile', 'entita_visibile')"
+                    )
+                ).all()
+            )
+        engine.dispose()
+        return policies, bodies
+
+    fast_path = {
+        "people",
+        "time_entries",
+        "time_timers",
+        "invoice_lines",
+        "payment_reminders",
+        "document_versions",
+        "proposals",
+        "rate_cards",
+        "renewal_assumptions",
+        "contract_expenses",
+        "work_units",
+        "approvals",
+        "work_unit_transitions",
+        "attivita",
+        "gmail_message_links",
+        "email_drafts",
+        "gmail_messages",
+        "activities",
+    }
+    with pigrocrm_postgres.fresh_container() as container:
+        url = container.get_connection_url()
+        config = _alembic_config(url)
+        upgrade(config, "0048")
+        at_0048 = read(url)
+        upgrade(config, "0049")
+        at_head = read(url)
+        downgrade(config, "0048")
+        back_at_0048 = read(url)
+        upgrade(config, "0049")
+        at_head_again = read(url)
+
+    def squeeze(expression: str) -> str:
+        # Postgres re-indents a `CASE` it nests and drops the parentheses around a lone
+        # function call, so the comparison is on the tokens, not the layout.
+        return "".join(expression.split())
+
+    policies, bodies = at_head
+    assert set(policies) == set(at_0048[0])
+    for table, (using, check) in policies.items():
+        before_using, before_check = at_0048[0][table]
+        if table in fast_path:
+            assert squeeze(using).startswith("(scope_tutte()OR"), table
+            rest = squeeze(using)[len("(scope_tutte()OR") : -1]
+            assert rest in (squeeze(before_using), f"({squeeze(before_using)})"), table
+            assert check == ("true" if table == "gmail_message_links" else using), table
+        else:
+            assert (using, check) == (before_using, before_check), table
+    assert len(bodies) == 8
+    for name, body in bodies.items():
+        assert body.lstrip().startswith(
+            "SELECT current_setting('pigrocrm.aziende', true) = '*' OR "
+        ), name
+        assert at_0048[1][name].lstrip().startswith("SELECT scope_tutte() OR ") or name == (
+            "entita_visibile"
+        ), name
+    assert back_at_0048 == at_0048
+    assert at_head_again == at_head
