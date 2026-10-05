@@ -606,6 +606,7 @@ def test_an_artefact_rendered_after_the_customer_moved_stays_with_the_invoice(
         )
         session.commit()
         document_id = document.id
+    pdf_document_id = None
     try:
         with factory() as session:
             row = session.get(Document, document_id)
@@ -614,14 +615,39 @@ def test_an_artefact_rendered_after_the_customer_moved_stays_with_the_invoice(
             assert session.get(Document, document_id) is None
         with _scoped(world, world.estero) as session:
             assert session.get(Document, document_id) is not None
+            # And the invoice's own member renders the other stream although the
+            # customer is no longer theirs to see (Greptile on PR #513).
+            invoice = session.execute(
+                select(Invoice).where(Invoice.azienda_id == world.estero)
+            ).scalar_one()
+            scoped_service = InvoiceService(
+                session,
+                LocalFileStorage(tmp_path),
+                Settings(_env_file=None),  # type: ignore[call-arg]
+            )
+            pdf = scoped_service._artifact_document(  # noqa: SLF001
+                invoice,
+                "fattura",
+                f"{_PREFIX} pdf",
+                Actor(id=world.user_id, type="user", role="collaboratore", aziende=(world.estero,)),
+            )
+            session.commit()
+            pdf_document_id = pdf.id
+            assert pdf.azienda_id == world.estero
     finally:
         with factory() as session:
-            session.execute(delete(Activity).where(Activity.entity_id == document_id))
+            for doc_id in (document_id, pdf_document_id):
+                if doc_id is not None:
+                    session.execute(delete(Activity).where(Activity.entity_id == doc_id))
             invoice = session.execute(
                 select(Invoice).where(Invoice.azienda_id == world.estero)
             ).scalar_one()
             invoice.xml_document_id = None
-            session.execute(delete(Document).where(Document.id == document_id))
+            invoice.pdf_document_id = None
+            session.flush()
+            for doc_id in (document_id, pdf_document_id):
+                if doc_id is not None:
+                    session.execute(delete(Document).where(Document.id == doc_id))
             customer = session.get(Customer, invoice.customer_id)
             assert customer is not None
             customer.azienda_id = world.estero
@@ -672,6 +698,50 @@ def test_an_imported_original_takes_the_azienda_the_caller_names(
                 delete(DocumentVersion).where(DocumentVersion.document_id == created.id)
             )
             session.execute(delete(Document).where(Document.id == created.id))
+            session.commit()
+
+
+def test_a_proposal_follows_its_contract_as_well_as_its_document(world: World) -> None:
+    """A work-day proposal names a contract and an evidence document; after the customer
+    moved, the document may sit in the new azienda while the contract stayed. Neither
+    azienda alone reads the proposal, both together and «tutte» do (CodeRabbit's sixth
+    adversarial pass on PR #513)."""
+    from decimal import Decimal as D
+
+    from pigrocrm.core.proposals.models import Proposal
+
+    factory = session_factory(world.engine)
+    with factory() as session:
+        estero_contract = session.execute(
+            select(Contract.id).where(Contract.azienda_id == world.estero)
+        ).scalar_one()
+        studio_document = session.execute(
+            select(Document.id).where(Document.azienda_id == world.studio)
+        ).scalar_one()
+        proposal = Proposal(
+            document_id=studio_document,
+            contract_id=estero_contract,
+            target_type="giornata",
+            campi_proposti={"giorno": "2026-03-10"},
+            estratto=f"{_PREFIX} evidenza",
+            confidenza=D("0.80"),
+        )
+        session.add(proposal)
+        session.commit()
+        proposal_id = proposal.id
+    query = text(f"SELECT count(*) FROM proposals WHERE estratto = '{_PREFIX} evidenza'")
+    try:
+        with _scoped(world, world.studio) as session:
+            assert session.execute(query).scalar_one() == 0
+        with _scoped(world, world.estero) as session:
+            assert session.execute(query).scalar_one() == 0
+        with _scoped(world, world.studio, world.estero) as session:
+            assert session.execute(query).scalar_one() == 1
+        with session_factory(world.app)() as session:
+            assert session.execute(query).scalar_one() == 0
+    finally:
+        with factory() as session:
+            session.execute(delete(Proposal).where(Proposal.id == proposal_id))
             session.commit()
 
 

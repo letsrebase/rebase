@@ -251,7 +251,13 @@ class DocumentService:
         """
         actor.require_write("create_document")
         payload = data.model_dump()
-        self._check_owner(payload["customer_id"], payload["deal_id"], payload["contract_id"])
+        if azienda_id is None:
+            # The owner is the authority on the azienda, so it must be there to ask. A
+            # caller that names the azienda is filing a record's own child (an invoice's
+            # artefact) and the record already holds its owner: that owner may have moved
+            # to an azienda this member cannot see, and the artefact must still render
+            # (Greptile on PR #513).
+            self._check_owner(payload["customer_id"], payload["deal_id"], payload["contract_id"])
         # Only an offer has a state; everything else keeps NULL. A new offer starts as
         # a draft rather than stateless, so a Kanban-style state picker always has a
         # value to show.

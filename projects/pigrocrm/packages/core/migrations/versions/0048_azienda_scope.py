@@ -65,7 +65,14 @@ POLICIES: dict[str, tuple[str, str | None]] = {
     "work_units": ("contract_visibile(contract_id)", None),
     "approvals": ("contract_visibile(contract_id)", None),
     "work_unit_transitions": ("work_unit_visibile(work_unit_id)", None),
-    "proposals": ("document_visibile(document_id)", None),
+    # A proposal follows its evidence document and, when it names one, the contract it
+    # proposes for: the document may sit with a customer that moved, the contract did
+    # not (CodeRabbit's sixth adversarial pass on PR #513).
+    "proposals": (
+        "document_visibile(document_id) "
+        "AND (contract_id IS NULL OR contract_visibile(contract_id))",
+        None,
+    ),
     "attivita": (
         "CASE WHEN customer_id IS NULL AND person_id IS NULL AND deal_id IS NULL "
         "AND invoice_id IS NULL THEN scope_tutte() ELSE "
@@ -248,7 +255,8 @@ FUNCTIONS = [
           SELECT 1 FROM email_drafts e WHERE e.id = $2
           AND entita_visibile(e.entity_type, e.entity_id, scope_tutte()))
         WHEN 'proposal' THEN scope_tutte() OR EXISTS (
-          SELECT 1 FROM proposals p WHERE p.id = $2 AND document_visibile(p.document_id))
+          SELECT 1 FROM proposals p WHERE p.id = $2 AND document_visibile(p.document_id)
+          AND (p.contract_id IS NULL OR contract_visibile(p.contract_id)))
         WHEN 'contract_expense' THEN scope_tutte() OR EXISTS (
           SELECT 1 FROM contract_expenses x WHERE x.id = $2 AND contract_visibile(x.contract_id))
         WHEN 'approval' THEN scope_tutte() OR EXISTS (
