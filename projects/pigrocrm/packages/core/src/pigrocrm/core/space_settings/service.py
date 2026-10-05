@@ -112,8 +112,14 @@ class SpaceSettingsService:
         """The table in one statement, so the values and the version a read answers come
         from one snapshot (REB-622): under READ COMMITTED two statements can straddle
         another admin's commit, and a read that paired the old values with the new
-        version would let a save built on it pass the check and land over theirs."""
-        return list(self.session.scalars(select(SpaceSetting)).all())
+        version would let a save built on it pass the check and land over theirs.
+        `populate_existing`, because a row this session already holds (the request's
+        dependency lays the overrides over the settings before any service runs) would
+        otherwise come back from the identity map with the attributes it had then, not
+        the ones the statement just read."""
+        return list(
+            self.session.scalars(select(SpaceSetting).execution_options(populate_existing=True))
+        )
 
     @staticmethod
     def _overrides_of(rows: list[SpaceSetting]) -> dict[str, str]:
@@ -134,8 +140,10 @@ class SpaceSettingsService:
         (REB-622): the newest row's `updated_at`, the reserved `VERSION_KEY` row's after
         the first write under this code and the newest override's on a database written
         before it, `None` with no row at all. One value for the whole settings object,
-        since the page saves it as one, over a table that keeps one row per key."""
-        return self._version_of(self._rows())
+        since the page saves it as one, over a table that keeps one row per key. A
+        scalar query, never an entity: what a save compares with under the lock must be
+        what the database holds now, not what this session loaded before the lock."""
+        return self.session.scalar(select(func.max(SpaceSetting.updated_at)))
 
     def read(self, actor: Actor, *, spazio: str | None) -> SpaceSettingsRead:
         actor.require_admin("read_space_settings")

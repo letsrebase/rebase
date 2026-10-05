@@ -148,6 +148,44 @@ def test_a_borrowing_space_that_sets_its_own_client_gets_its_own_key_and_callbac
 # ---- the version check (REB-622, spec 2026-10-03 §11) ----------------------------------
 
 
+def test_a_read_and_the_version_see_a_row_changed_behind_the_session(db_session: Session) -> None:
+    """The request's dependency loads the rows before any service runs, so the session
+    already holds them when `update` compares versions under the lock: a row another
+    admin committed in between must be read as it is now, not as the identity map
+    remembers it. Simulated by an UPDATE outside the ORM on the same connection."""
+    from datetime import timedelta
+
+    from sqlalchemy import text
+
+    service = SpaceSettingsService(db_session, BASE)
+    first = service.update(SpaceSettingsUpdate(gmail_backfill_days=10), ADMIN, spazio="studio")
+    assert first.updated_at is not None
+    assert service.read(ADMIN, spazio="studio").gmail_backfill_days == 10  # rows now in the session
+    later = first.updated_at + timedelta(minutes=1)
+    db_session.execute(
+        text(
+            "UPDATE space_settings SET value = '20', updated_at = :at "
+            "WHERE key = 'gmail_backfill_days'"
+        ),
+        {"at": later},
+    )
+    db_session.execute(
+        text("UPDATE space_settings SET updated_at = :at WHERE key = '_version'"), {"at": later}
+    )
+    again = service.read(ADMIN, spazio="studio")
+    assert again.gmail_backfill_days == 20
+    assert again.updated_at == later
+    assert service.version() == later
+    from pigrocrm.core.errors import StaleRow
+
+    with pytest.raises(StaleRow):
+        service.update(
+            SpaceSettingsUpdate(gmail_backfill_days=30, updated_at=first.updated_at),
+            ADMIN,
+            spazio="studio",
+        )
+
+
 def test_the_version_is_the_newest_override_row_and_a_stale_save_is_refused(
     db_session: Session,
 ) -> None:
