@@ -538,6 +538,7 @@ def test_the_match_list_projects_a_referral_without_ever_answering_the_budget(
     service.link_signup(
         "company", UUID(company_id), service.code_for(referrer.id), new_user_id=UUID(MISSING)
     )
+    api_session.commit()
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",
         json={"company_id": company_id, "cliente": CLIENTE, "lettera": DAY_RATE_LETTERA},

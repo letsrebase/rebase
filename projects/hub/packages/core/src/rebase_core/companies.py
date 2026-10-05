@@ -156,11 +156,14 @@ class CompanyService:
             **utm,
         )
         self.session.add(row)
-        self.session.commit()
         if not richiedente_esistente:
+            # One commit for the request and its referral (REB-566): a failure between
+            # the two must not leave a request whose referral nothing will ever write.
+            self.session.flush()
             ReferralService(self.session).link_signup(
                 "company", row.id, data.rif, new_user_id=user.id
             )
+        self.session.commit()
         return _to_read(row, user), richiedente_esistente
 
     def list_recent(
