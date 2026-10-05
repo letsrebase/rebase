@@ -169,6 +169,30 @@ FUNCTIONS = [
       SELECT tipo FROM invoices WHERE pdf_document_id = $1 LIMIT 1
     $$
     """,
+    # Two more answers past the policies, for the invariant that no active deal sits
+    # on an archived customer (CodeRabbit's ninth adversarial pass on PR #513): a deal
+    # may be in an azienda its customer's reader cannot see, and a customer in one the
+    # deal's reader cannot. A count that saw only the visible deals would let the
+    # customer be archived over the others; a restore that found no customer would
+    # restore a deal under an archived one.
+    """
+    CREATE OR REPLACE FUNCTION deal_attivi_del_cliente(uuid) RETURNS bigint
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path = public
+    SET pigrocrm.aziende = '*'
+    AS $$
+      SELECT count(*) FROM deals WHERE customer_id = $1 AND deleted_at IS NULL
+    $$
+    """,
+    """
+    CREATE OR REPLACE FUNCTION cliente_archiviato(uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path = public
+    SET pigrocrm.aziende = '*'
+    AS $$
+      SELECT deleted_at IS NOT NULL FROM customers WHERE id = $1
+    $$
+    """,
     """
     CREATE OR REPLACE FUNCTION scope_tutte() RETURNS boolean
     LANGUAGE sql STABLE AS $$
@@ -297,6 +321,8 @@ FUNCTIONS = [
 FUNCTION_NAMES = [
     "sollecito_di_messaggio(uuid, text)",
     "tipo_fattura_del_pdf(uuid)",
+    "deal_attivi_del_cliente(uuid)",
+    "cliente_archiviato(uuid)",
     "entita_visibile(text, uuid, boolean)",
     "mailbox_mia(uuid)",
     "work_unit_visibile(uuid)",

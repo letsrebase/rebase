@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -418,12 +419,18 @@ class DealService:
         if deal is None:
             raise NotFound(ENTITY, deal_id)
 
-        customer = self.customers.get(deal.customer_id, include_deleted=True)
-        if customer is not None and customer.deleted_at is not None:
+        # Past the row-level policies (REB-634): the customer may sit in an azienda the
+        # deal's reader cannot see, and «not found» must not read as «not archived».
+        archived = self.session.execute(
+            text("SELECT cliente_archiviato(:customer_id)"), {"customer_id": deal.customer_id}
+        ).scalar_one_or_none()
+        if archived is None:
+            raise NotFound("customer", deal.customer_id)
+        if archived:
             raise Conflict(
                 ENTITY,
                 "il cliente è archiviato: ripristina prima il cliente",
-                customer_id=str(customer.id),
+                customer_id=str(deal.customer_id),
             )
 
         # Recorded only when the deal really was deleted: unconditionally logging

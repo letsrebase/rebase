@@ -840,6 +840,65 @@ def test_a_non_pdf_version_is_refused_on_an_invoice_s_document_out_of_sight(
             session.commit()
 
 
+def test_no_active_deal_ends_up_on_an_archived_customer_across_the_line(world: World) -> None:
+    """The invariant holds past what the archiver or the restorer can see: a customer
+    with an active deal in another azienda cannot be archived by a member of its own,
+    and a deal cannot be restored under a customer archived in an azienda the deal's
+    member cannot see (CodeRabbit's ninth adversarial pass on PR #513)."""
+    from pigrocrm.core.customers.service import CustomerService
+    from pigrocrm.core.deals.service import DealService
+    from pigrocrm.core.errors import Conflict
+
+    factory = session_factory(world.engine)
+    with factory() as session:
+        studio_customer = session.execute(
+            select(Customer).where(Customer.azienda_id == world.studio)
+        ).scalar_one()
+        estero_deal = session.execute(
+            select(Deal).where(Deal.azienda_id == world.estero)
+        ).scalar_one()
+        original_customer = estero_deal.customer_id
+        estero_deal.customer_id = studio_customer.id  # «estero»'s deal under «studio»'s customer
+        session.commit()
+        customer_id, deal_id = studio_customer.id, estero_deal.id
+    try:
+        studio_actor = Actor(
+            id=world.user_id, type="user", role="collaboratore", aziende=(world.studio,)
+        )
+        with _scoped(world, world.studio) as session, pytest.raises(Conflict) as refused:
+            CustomerService(session).soft_delete(customer_id, studio_actor)
+        assert refused.value.details["active_deals"] == 2  # its own, and the one out of sight
+        # Archive the deal, then the customer (by hand, as the superuser), and try to
+        # restore the deal as a member who cannot see the customer.
+        with factory() as session:
+            deal = session.get(Deal, deal_id)
+            customer = session.get(Customer, customer_id)
+            assert deal is not None and customer is not None
+            deal.deleted_at = datetime.now(UTC)
+            customer.deleted_at = datetime.now(UTC)
+            session.commit()
+        estero_actor = Actor(
+            id=world.user_id, type="user", role="collaboratore", aziende=(world.estero,)
+        )
+        with _scoped(world, world.estero) as session, pytest.raises(Conflict):
+            DealService(session).restore(deal_id, estero_actor)
+    finally:
+        with factory() as session:
+            deal = session.get(Deal, deal_id)
+            customer = session.get(Customer, customer_id)
+            assert deal is not None and customer is not None
+            deal.deleted_at = None
+            deal.customer_id = original_customer
+            customer.deleted_at = None
+            session.execute(
+                delete(Activity).where(
+                    Activity.entity_id.in_([deal_id, customer_id]),
+                    Activity.kind != f"{_PREFIX}.test",
+                )
+            )
+            session.commit()
+
+
 def test_an_insert_across_the_line_is_refused_by_the_policy(world: World) -> None:
     with _scoped(world, world.estero) as session:
         studio_customer = session.execute(text("SELECT count(*) FROM customers")).scalar_one()

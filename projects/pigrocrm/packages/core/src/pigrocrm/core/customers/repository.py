@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
@@ -160,10 +160,12 @@ class CustomerRepository:
             raise RuntimeError(
                 "la tabella deals non espone customer_id: aggiornare count_active_deals"
             )
-        stmt = (
-            select(func.count()).select_from(deals_table).where(customer_id_column == customer_id)
+        # Past the row-level policies, through the definer function of migration 0048
+        # (REB-634): a deal of an azienda this session cannot see still keeps its
+        # customer from being archived, or the invariant `soft_delete` guards would
+        # hold only for the deals the archiver happens to see.
+        return int(
+            self.session.execute(
+                text("SELECT deal_attivi_del_cliente(:customer_id)"), {"customer_id": customer_id}
+            ).scalar_one()
         )
-        deleted_at_column = deals_table.c.get("deleted_at")
-        if deleted_at_column is not None:
-            stmt = stmt.where(deleted_at_column.is_(None))
-        return int(self.session.execute(stmt).scalar_one())
