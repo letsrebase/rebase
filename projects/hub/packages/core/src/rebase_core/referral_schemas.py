@@ -63,6 +63,22 @@ class MatchReferral(BaseModel):
     reward_id: UUID | None
 
 
+class ReferralEvidence(BaseModel):
+    """What an admin needs to judge one attribution (REB-657), all read from rows that
+    already exist (`rebase_core.referral_evidence`): `code` is the `rif` the signup was
+    made with, `signed_up_at` when the referred card or request was made, `utm_source`
+    where that signup came from when one was recorded, `same_email_domain` whether the
+    referred and referring addresses share the domain of an organisation (a shared
+    public provider such as `gmail.com` never counts), and `ever_logged_in` whether the
+    referred person has ever entered through a magic link."""
+
+    code: str
+    signed_up_at: datetime
+    utm_source: str | None
+    same_email_domain: bool
+    ever_logged_in: bool
+
+
 class ReferralLedgerItem(BaseModel):
     """One row of the admin's referral ledger: the referrer, who was referred, and the
     reward as it was computed or as an admin priced it by hand. `reward_id` is `None`
@@ -112,6 +128,7 @@ class ReferralLedgerItem(BaseModel):
     created_at: datetime
     confirmed_at: datetime | None
     paid_at: datetime | None
+    evidence: ReferralEvidence
 
 
 class ReferralLedgerList(BaseModel):
@@ -170,6 +187,7 @@ __all__ = [
     "MemberReferral",
     "MemberReferralItem",
     "REFERRAL_CODE_LENGTH",
+    "ReferralEvidence",
     "ReferralLedgerItem",
     "ReferralLedgerList",
     "ReferralRewardPrice",

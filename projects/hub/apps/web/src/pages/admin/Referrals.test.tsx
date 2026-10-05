@@ -44,6 +44,13 @@ const CONFIRMED_REWARD = {
   created_at: '2026-09-26T10:00:00Z',
   confirmed_at: null,
   paid_at: null,
+  evidence: {
+    code: 'ABCD2345',
+    signed_up_at: '2026-09-26T09:30:00Z',
+    utm_source: 'linkedin',
+    same_email_domain: false,
+    ever_logged_in: true,
+  },
 }
 
 const UNPRICED_REWARD = {
@@ -123,6 +130,31 @@ describe('the Referral admin page (P-REB-44)', () => {
     expect(screen.getByText('700,00 €')).toBeInTheDocument()
     expect(screen.getByLabelText('Percentuale, segnalazione di un freelance')).toHaveValue(10)
     expect(screen.getByLabelText("Percentuale, segnalazione di un'azienda")).toHaveValue(30)
+  })
+
+  it('shows the evidence behind an attribution on its row (REB-657)', async () => {
+    mount([CONFIRMED_REWARD])
+    await screen.findByText('Ada Lovelace')
+    const row = screen.getByText('Ada Lovelace').closest('tr')!
+    expect(within(row).getByText('ABCD2345')).toBeInTheDocument()
+    expect(within(row).getByText('linkedin')).toBeInTheDocument()
+    expect(within(row).getByText('Iscritto').nextElementSibling).toHaveTextContent(/26 set 2026/)
+    expect(within(row).getByText('Dominio email diverso')).toBeInTheDocument()
+    expect(within(row).getByText('Ha già fatto accesso')).toBeInTheDocument()
+  })
+
+  it('says so when the emails share a domain, the person never logged in and no source was recorded (REB-657)', async () => {
+    mount([
+      {
+        ...CONFIRMED_REWARD,
+        evidence: { ...CONFIRMED_REWARD.evidence, utm_source: null, same_email_domain: true, ever_logged_in: false },
+      },
+    ])
+    await screen.findByText('Ada Lovelace')
+    const row = screen.getByText('Ada Lovelace').closest('tr')!
+    expect(within(row).getByText('Stesso dominio email')).toBeInTheDocument()
+    expect(within(row).getByText('Non ha mai fatto accesso')).toBeInTheDocument()
+    expect(within(row).getByText('Fonte').nextElementSibling).toHaveTextContent('-')
   })
 
   it('shows a reward rate to two decimals at most, not rounded to a whole percent', async () => {

@@ -8,7 +8,7 @@ import { Label } from '@rebase/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@rebase/ui/table'
 import { admin, type ReferralLedgerItem, type ReferralSettings, type RewardStato } from '@/lib/api'
 import { matchHeadingId } from '@/lib/contracts'
-import { REFERRAL_STATE_LABELS, formatDate, formatEuro, formatRate } from '@/lib/format'
+import { REFERRAL_STATE_LABELS, formatDate, formatDateTime, formatEuro, formatRate } from '@/lib/format'
 import { Empty, Header, StateFilter } from './lists'
 
 const LEDGER_KEY = ['referrals'] as const
@@ -231,6 +231,38 @@ function RewardCell({ item, onPriced }: { item: ReferralLedgerItem; onPriced: ()
   )
 }
 
+/** The evidence behind the attribution (REB-657), read-only: the code used, when the
+ *  referred person signed up, where from, whether the two email domains match and whether
+ *  they ever logged in. A matching domain and a person who never logged in are the two
+ *  that call for a second look, so they are said in words rather than left as a blank. */
+function EvidenceCell({ item }: { item: ReferralLedgerItem }) {
+  const { evidence } = item
+  return (
+    <div className="mt-2 space-y-0.5 text-xs">
+      <dl className="space-y-0.5">
+        <div className="flex gap-1">
+          <dt className="text-muted-foreground">Codice</dt>
+          <dd className="font-mono">{evidence.code}</dd>
+        </div>
+        <div className="flex gap-1">
+          <dt className="text-muted-foreground">Iscritto</dt>
+          <dd>{formatDateTime(evidence.signed_up_at)}</dd>
+        </div>
+        <div className="flex gap-1">
+          <dt className="text-muted-foreground">Fonte</dt>
+          <dd>{evidence.utm_source ?? '-'}</dd>
+        </div>
+      </dl>
+      <p className={evidence.same_email_domain ? 'font-medium' : 'text-muted-foreground'}>
+        {evidence.same_email_domain ? 'Stesso dominio email' : 'Dominio email diverso'}
+      </p>
+      <p className={evidence.ever_logged_in ? 'text-muted-foreground' : 'font-medium'}>
+        {evidence.ever_logged_in ? 'Ha già fatto accesso' : 'Non ha mai fatto accesso'}
+      </p>
+    </div>
+  )
+}
+
 function ReferralRow({ item }: { item: ReferralLedgerItem }) {
   const client = useQueryClient()
   const move = useMutation({
@@ -249,6 +281,7 @@ function ReferralRow({ item }: { item: ReferralLedgerItem }) {
           {KIND_LABELS[item.kind] ?? item.kind}
           {item.referred_deleted && (item.kind === 'freelancer' ? ' · eliminato' : ' · eliminata')}
         </p>
+        <EvidenceCell item={item} />
       </TableCell>
       <TableCell className="align-top">
         {item.referrer_freelancer_id !== null ? (
