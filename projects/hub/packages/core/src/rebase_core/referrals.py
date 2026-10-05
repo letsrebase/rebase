@@ -73,17 +73,25 @@ def _generate_code() -> str:
 # `modalita` is free text end to end (`LetteraFields.modalita` is a bounded `SafeStr`, the
 # admin form only offers «a giornata» and «a corpo» but the API takes any string, and the
 # letter is also edited by hand), so the day-rate branch is a reading of the text, not an
-# equality. Only how the mode STARTS decides: «a giornata (8 ore)» is a day rate,
-# «forfait 20 giornate» or «a ore (giornata da 8 ore)» merely mention a day.
-_DAY_RATE_START = re.compile(r"(?:a |per |al )?(?:giornat\w*|giornalier\w*|giorn[oi]\b)")
+# equality. How the mode OPENS decides: an optional noun that names the fee («tariffa»,
+# «pagamento»), an optional `a`, `per` or `al`, then the day word. «a giornata (8 ore)»,
+# «tariffa giornaliera» and «pagamento a giornata» are day rates; «forfait 20 giornate»,
+# «mezza giornata» or «a ore (giornata da 8 ore)» merely mention a day.
+_DAY_RATE_START = re.compile(
+    r"(?:(?:tariffa|pagamento|compenso|corrispettivo|prezzo|costo|importo)\s+)?"
+    r"(?:(?:a|per|al)\s+)?"
+    r"(?:giornat\w*|giornalier\w*|giorn[oi]\b)"
+)
 
 
 def is_day_rate(modalita: str) -> bool:
     """Whether a letter's `modalita` prices the fee per day, whatever its spelling: case
     and surrounding or repeated whitespace are ignored, and the mode must open with
     `giornata`, `giornaliera`, `giorno` or `giorni`, optionally after `a `, `per ` or
-    `al `, with anything after it (a note such as «(8 ore)») ignored. A mode that only
-    mentions a day further on (`forfait 20 giornate`, `mezza giornata`) is not one."""
+    `al ` and optionally after a noun naming the fee (`tariffa`, `pagamento`,
+    `compenso`, `corrispettivo`, `prezzo`, `costo`, `importo`), with anything after it
+    (a note such as «(8 ore)») ignored. A mode that only mentions a day further on
+    (`forfait 20 giornate`, `mezza giornata`) is not one."""
     return _DAY_RATE_START.match(" ".join(modalita.casefold().split())) is not None
 
 

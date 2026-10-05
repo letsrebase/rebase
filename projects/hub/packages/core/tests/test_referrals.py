@@ -266,6 +266,11 @@ def test_reward_base_formula(modalita: str, giorni: int | None, expected: Decima
         "giornaliera",
         "a giornata (8 ore)",
         "Al giorno",
+        "per giorno",
+        "a giorni",
+        "tariffa giornaliera",
+        "Pagamento a giornata",
+        "compenso  al giorno",
     ],
 )
 def test_reward_base_treats_every_day_rate_spelling_as_a_day_rate(modalita: str) -> None:
@@ -276,7 +281,19 @@ def test_reward_base_treats_every_day_rate_spelling_as_a_day_rate(modalita: str)
 
 
 @pytest.mark.parametrize(
-    "modalita", ["a corpo", "A Corpo ", "a corpo (giornate stimate)", "", "forfait"]
+    "modalita",
+    [
+        "a corpo",
+        "A Corpo ",
+        "a corpo (giornate stimate)",
+        "",
+        "forfait",
+        "forfait 20 giornate",
+        "a ore (giornata da 8 ore)",
+        "mezza giornata",
+        "a progetto (20 giornate)",
+        "tariffa a corpo",
+    ],
 )
 def test_reward_base_keeps_a_lump_sum_for_any_other_mode(modalita: str) -> None:
     assert not is_day_rate(modalita)
