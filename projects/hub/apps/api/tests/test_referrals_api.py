@@ -10,8 +10,9 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from rebase_api.deps import get_sender
+from rebase_api.ratelimit import reset_rate_limit
 from rebase_core.mail import RecordingSender
-from rebase_core.models import User
+from rebase_core.models import Referral, User
 
 PDF = b"%PDF-1.7\n1 0 obj<<>>endobj\n%%EOF\n"
 ADMIN_EMAIL = "ivan@rebase.it"
@@ -162,6 +163,89 @@ def test_a_malformed_rif_is_no_referral_not_a_422(
         files={"cv": ("Grace CV.pdf", PDF, "application/pdf")},
     )
     assert applied.status_code == 201, applied.text
+
+
+def _apply(client: TestClient, email: str, rif: str | None = None) -> tuple[int, str]:
+    sent = client.post(
+        "/api/hub/freelancers",
+        data={
+            "nome": "Ada",
+            "cognome": "Lovelace",
+            "email": email,
+            "tariffa_giornaliera": "450",
+            "posizione": "Backend developer",
+            "remoto": "remoto",
+            **({"rif": rif} if rif else {}),
+        },
+        files={"cv": ("Ada CV.pdf", PDF, "application/pdf")},
+    )
+    return sent.status_code, sent.text
+
+
+def test_a_squatted_address_is_pending_until_its_owner_logs_in_and_the_route_never_says_so(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    """Someone posts a prospect's address with an accomplice's code. The public answer is
+    the same whether the address is new, already attributed or already a card with no
+    attribution (REB-658: the routes must not tell a stranger which), and the referral
+    stays pending until the owner of the address spends a link mailed to it."""
+    _member(api_session, "accomplice@community.it")
+    _enter(client, sender, "accomplice@community.it")
+    code = client.get("/api/hub/me/referral").json()["code"]
+    client.cookies.clear()
+    reset_rate_limit()  # the four public posts below are one stranger's, not the member's
+
+    fresh = _apply(client, "prospect@acme.it", code)
+    attributed_again = _apply(client, "prospect@acme.it", code)
+    plain = _apply(client, "plain@acme.it")
+    unattributed_again = _apply(client, "plain@acme.it", code)
+
+    assert fresh == attributed_again == plain == unattributed_again == (201, fresh[1])
+    referral = api_session.query(Referral).one()
+    assert referral.stato == "da_verificare"
+
+    # The owner of the address clicks the link the repeat application mailed them.
+    mailed = next(mail for mail in reversed(sender.sent) if mail.to == "prospect@acme.it")
+    token = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", mailed.text)
+    assert token
+    entered = client.post("/api/hub/auth/enter", json={"token": token.group(1)})
+    assert entered.status_code == 200, entered.text
+
+    api_session.expire_all()
+    referral = api_session.query(Referral).one()
+    assert (referral.stato, referral.verified_via) == ("verificato", "accesso")
+
+
+def test_a_company_request_answers_the_same_whether_or_not_its_address_is_attributed(
+    client: TestClient, sender: RecordingSender, api_session: Session, clean: None
+) -> None:
+    _member(api_session, "accomplice@community.it")
+    _enter(client, sender, "accomplice@community.it")
+    code = client.get("/api/hub/me/referral").json()["code"]
+    client.cookies.clear()
+    reset_rate_limit()
+    body = {
+        "nome_azienda": "ACME Srl",
+        "referente_nome": "Wile",
+        "referente_cognome": "E.",
+        "email": "wile@acme.it",
+        "telefono": "+39 345 1234567",
+        "figura_richiesta": "Backend developer",
+        "progetto": "Un backend developer per tre mesi.",
+        "periodo_da": "2026-10-01",
+        "durata": "3 mesi",
+        "budget_giornaliero": "500",
+        "remoto": "remoto",
+        "numero_risorse": 1,
+    }
+
+    squatted = client.post("/api/hub/companies", json={**body, "rif": code})
+    again = client.post("/api/hub/companies", json=body)
+    other = client.post("/api/hub/companies", json={**body, "email": "other@beta.it"})
+
+    assert (squatted.status_code, squatted.text) == (again.status_code, again.text)
+    assert (other.status_code, other.text) == (squatted.status_code, squatted.text)
+    assert api_session.query(Referral).one().stato == "da_verificare"
 
 
 def test_referral_routes_need_the_admin_cookie(client: TestClient, admin: None) -> None:

@@ -14,6 +14,15 @@ and never again, on the `INSERT ... ON CONFLICT DO NOTHING` idiom
 race" -- the one-time maturity design record 2026-09-26 asks for, immune to a later
 renewal, another match, or a rate an admin edits afterward.
 
+A referral counts only once the referred person is verified (REB-658, design record
+2026-10-05). The public routes do not verify the address a `rif` code is posted with,
+so `link_signup` records it `da_verificare` and nothing is owed on it. It becomes
+`verificato` by the first magic-link login after it was made (`verify_on_login`, called
+from `UserService.enter`) or, for a freelancer, their own signature of a letter
+(`record_reward_if_signed`); a company never signs, so only the login verifies one.
+The reward is written at the later of the two moments, the first signed letter and the
+verification. Replacing an attribution with the code the person presents is not here.
+
 The reward's base is rebase's own margin on that letter, `Company.budget_giornaliero`
 against the letter's `compenso`, never the freelancer's fee alone (the contract flow's
 own rule, `matches.py`'s module docstring): `reward_base` below is where the day-rate
@@ -23,11 +32,12 @@ question the P-REB-44 spike raised is answered, grounded in `Match.giorni_previs
 
 import secrets
 from collections.abc import Iterable, Mapping, Sequence
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import Row, Select, and_, literal, or_, select, union_all
+from sqlalchemy import Row, Select, and_, literal, or_, select, union_all, update
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
@@ -39,6 +49,7 @@ from rebase_core.errors import NotFound, ValidationFailed
 from rebase_core.match_words import LETTERA
 from rebase_core.models import (
     REFERRAL_CODE_LENGTH,
+    REFERRAL_STATES,
     Company,
     ContractDocument,
     Freelancer,
@@ -108,6 +119,15 @@ def reward_base(
 EARNING_MATCH_STATES = ("bozza", "in_firma")
 PREVISTO = "previsto"
 GIA_MATURATO = "gia_maturato"
+DA_VERIFICARE, VERIFICATO = REFERRAL_STATES
+
+
+def can_mature(kind: str, stato: str) -> bool:
+    """Whether a first signed letter would write this referral's reward: a verified
+    referral, and a pending freelancer's, whose own signature is what verifies them
+    (`record_reward_if_signed`). A pending company's is not -- the company never signs,
+    so only its referente's login can verify it, and until then no letter earns anything."""
+    return stato == VERIFICATO or kind == "freelancer"
 
 
 def letter_unit(data: Mapping[str, Any]) -> str:
@@ -221,7 +241,58 @@ class ReferralService:
         ).first()
         return None if row is None else f"{row.nome} {row.cognome}".strip()
 
-    # ---- the reward, at the first signed letter --------------------------------------
+    # ---- the referral's proof, and the reward at the first signed letter ---------------
+
+    def verify_on_login(self, user_id: UUID, at: datetime) -> None:
+        """Called by `UserService.enter` in the commit that opens the session: the
+        person just spent a link mailed to their address, so every referral naming them
+        (the freelancer card or the company requests they hold) that was made at or
+        before `at` becomes `verificato`, `verified_via` `accesso`. Never one made after:
+        a login only proves the address was theirs at that moment, and a referral posted
+        later (their address, an accomplice's code) has not been proved by it. Staged,
+        never committed. A referral whose letter was signed while it was pending (a
+        company's, which never signs) earns its reward now.
+
+        The `UPDATE` takes the referral's row lock, which `record_reward_if_signed`
+        takes too, so a login and a signature racing on one referral cannot both miss
+        each other: whichever commits second sees the other's work."""
+        owned = or_(
+            and_(
+                Referral.kind == "freelancer",
+                Referral.entity_id.in_(select(Freelancer.id).where(Freelancer.user_id == user_id)),
+            ),
+            and_(
+                Referral.kind == "company",
+                Referral.entity_id.in_(select(Company.id).where(Company.user_id == user_id)),
+            ),
+        )
+        verified = self.session.execute(
+            update(Referral)
+            .where(Referral.stato == DA_VERIFICARE, Referral.created_at <= at, owned)
+            .values(stato=VERIFICATO, verified_at=at, verified_via="accesso")
+            .returning(Referral.id, Referral.kind, Referral.entity_id)
+        ).all()
+        for referral_id, kind, entity_id in verified:
+            self._mature_first_signed_letter(referral_id, kind, entity_id)
+
+    def _mature_first_signed_letter(self, referral_id: UUID, kind: str, entity_id: UUID) -> None:
+        """The reward of a referral that became `verificato` after its referred side
+        already had a letter signed: written from that first letter, the one
+        `record_reward_if_signed` would have used, with the rate in force now."""
+        side = Match.freelancer_id if kind == "freelancer" else Match.company_id
+        first = self.session.execute(
+            select(ContractDocument, Match)
+            .join(Match, Match.id == ContractDocument.match_id)
+            .where(
+                ContractDocument.kind == LETTERA,
+                ContractDocument.stato == "firmato",
+                side == entity_id,
+            )
+            .order_by(ContractDocument.signed_at.asc().nulls_last(), ContractDocument.id)
+            .limit(1)
+        ).first()
+        if first is not None:
+            self._write_reward(referral_id, kind, first[0], first[1])
 
     def record_reward_if_signed(self, document: ContractDocument, match: Match) -> None:
         """Called once, from `SigningService._confirm_completion`, under the row locks
@@ -234,31 +305,54 @@ class ReferralService:
         from `match.company_budget_giornaliero`, snapshotted at match creation, never
         a live read of `Company.budget_giornaliero`: a company's own request can be
         edited weeks after the match, and the reward this match already promised must
-        never move because of it."""
-        settings = self.get_settings()
-        modalita = letter_unit(document.data)
-        base = match_reward_base(match, modalita)
-        for kind, entity_id, rate in (
-            ("freelancer", match.freelancer_id, settings.rate_freelancer),
-            ("company", match.company_id, settings.rate_company),
-        ):
-            referral_id = self.session.scalar(
-                select(Referral.id).where(Referral.kind == kind, Referral.entity_id == entity_id)
+        never move because of it.
+
+        Only a `verificato` referral earns (REB-658). The freelancer is the letter's one
+        signer -- Documenso mails the envelope to their address -- so their signature
+        verifies a pending referral of theirs, `lettera`, in this same transaction. The
+        company is not a signer: a pending company referral earns nothing here and
+        waits for its referente's login (`verify_on_login`), which writes the reward
+        from this letter."""
+        for kind, entity_id in (("freelancer", match.freelancer_id), ("company", match.company_id)):
+            # The row lock pairs with `verify_on_login`'s `UPDATE`; `populate_existing`
+            # because a login in another transaction may have verified it since this
+            # session loaded it.
+            referral = self.session.scalar(
+                select(Referral)
+                .where(Referral.kind == kind, Referral.entity_id == entity_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
             )
-            if referral_id is None:
+            if referral is None:
                 continue
-            reward = None if base is None else (base * rate).quantize(_CENT)
-            self.session.execute(
-                pg_insert(ReferralReward)
-                .values(
-                    referral_id=referral_id,
-                    document_id=document.id,
-                    rate=rate,
-                    base_amount=base,
-                    reward_amount=reward,
-                )
-                .on_conflict_do_nothing(index_elements=[ReferralReward.referral_id])
+            if referral.stato == DA_VERIFICARE:
+                if kind != "freelancer":
+                    continue
+                referral.stato = VERIFICATO
+                referral.verified_at = document.signed_at or utcnow()
+                referral.verified_via = "lettera"
+            self._write_reward(referral.id, kind, document, match)
+
+    def _write_reward(
+        self, referral_id: UUID, kind: str, document: ContractDocument, match: Match
+    ) -> None:
+        """The one insert of a referral's reward, once per referral and never again
+        (`ON CONFLICT DO NOTHING` on `uq_referral_rewards_referral_id`), at the rate of
+        the referred side's kind in force now."""
+        settings = self.get_settings()
+        rate = settings.rate_freelancer if kind == "freelancer" else settings.rate_company
+        base = match_reward_base(match, letter_unit(document.data))
+        self.session.execute(
+            pg_insert(ReferralReward)
+            .values(
+                referral_id=referral_id,
+                document_id=document.id,
+                rate=rate,
+                base_amount=base,
+                reward_amount=None if base is None else (base * rate).quantize(_CENT),
             )
+            .on_conflict_do_nothing(index_elements=[ReferralReward.referral_id])
+        )
 
     # ---- the member's own view -------------------------------------------------------
 
@@ -406,7 +500,9 @@ class ReferralService:
                 rate_shown: Decimal | None = None
                 amount: Decimal | None = None
                 reward_id: UUID | None = None
-                if earned is None:
+                if earned is None and not can_mature(kind, found.Referral.stato):
+                    stato = DA_VERIFICARE
+                elif earned is None:
                     stato = PREVISTO
                     rate_shown = rate
                     unit = letter_unit(letter.data) if letter is not None else ""
@@ -540,7 +636,11 @@ class ReferralService:
             else {}
         )
         live = self._live_matches(
-            {(r.Referral.kind, r.Referral.entity_id) for r in rows if r.ReferralReward is None}
+            {
+                (r.Referral.kind, r.Referral.entity_id)
+                for r in rows
+                if r.ReferralReward is None and can_mature(r.Referral.kind, r.Referral.stato)
+            }
         )
         facts = self._match_facts(
             {m for m in reward_match.values() if m is not None} | set(live.values())
@@ -586,6 +686,9 @@ class ReferralService:
                     base_amount=reward.base_amount if reward is not None else None,
                     reward_amount=reward.reward_amount if reward is not None else None,
                     stato=reward.stato if reward is not None else None,
+                    referral_stato=referral.stato,
+                    verified_at=referral.verified_at,
+                    verified_via=referral.verified_via,
                     note=reward.note if reward is not None else None,
                     created_at=referral.created_at,
                     confirmed_at=reward.confirmed_at if reward is not None else None,

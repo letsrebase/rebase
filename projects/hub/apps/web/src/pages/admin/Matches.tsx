@@ -50,8 +50,10 @@ function ReferralAmount({ amount }: { amount: string | null }) {
 
 /** Who referred which side of a match, at which rate, and what it earns (REB-609):
  *  a hairline `Previsto` while the first letter is not signed (an estimate), the reward's
- *  own filled state after it, and `Già maturato` when the referral already paid on another
- *  match -- a referral pays once, so there is no figure to show. */
+ *  own filled state after it, `Già maturato` when the referral already paid on another
+ *  match -- a referral pays once, so there is no figure to show -- and `Da verificare`
+ *  for a company whose referente has not logged in yet (REB-658), which earns nothing
+ *  until then, so no figure either. */
 function MatchReferrals({ referrals }: { referrals: MatchReferral[] }) {
   if (referrals.length === 0) return <span className="text-muted-foreground">Nessun referral</span>
   return (
@@ -61,7 +63,7 @@ function MatchReferrals({ referrals }: { referrals: MatchReferral[] }) {
           <p>
             <span className="text-muted-foreground">{`Referral ${REFERRAL_KIND_LABELS[referral.kind]}: `}</span>
             <ReferrerName referral={referral} />
-            {referral.stato !== 'gia_maturato' && (
+            {referral.stato !== 'gia_maturato' && referral.stato !== 'da_verificare' && (
               // One unit, so a narrow cell breaks before the rate, never inside a figure.
               <span className="whitespace-nowrap">
                 {' · '}
@@ -72,10 +74,11 @@ function MatchReferrals({ referrals }: { referrals: MatchReferral[] }) {
             )}
           </p>
           <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-            <Badge variant={referral.stato === 'previsto' ? 'outline' : 'pill'}>
+            <Badge variant={referral.stato === 'previsto' || referral.stato === 'da_verificare' ? 'outline' : 'pill'}>
               {REFERRAL_STATE_LABELS[referral.stato] ?? referral.stato}
             </Badge>
             {referral.stato === 'gia_maturato' && 'Ha già maturato su un altro match.'}
+            {referral.stato === 'da_verificare' && "Non conta finché il referente dell'azienda non fa il primo accesso."}
           </p>
         </li>
       ))}

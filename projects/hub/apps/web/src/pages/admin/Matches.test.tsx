@@ -310,6 +310,32 @@ describe('the Match list (REB-413)', () => {
     expect(cellUnder(none, 'Referral')).toHaveTextContent(/^Nessun referral$/)
   })
 
+  it('says a company referral waits for its referente’s first login, with no rate or figure (REB-658)', async () => {
+    const waiting = {
+      ...MATCH_A,
+      referrals: [
+        {
+          kind: 'company',
+          referrer_nome: 'Lia Neri',
+          referrer_freelancer_id: null,
+          rate: null,
+          amount: null,
+          stato: 'da_verificare',
+          reward_id: null,
+        },
+      ],
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(answer(200, { totale: 1, items: [waiting] }))
+    mount('/admin/matches')
+
+    const row = (await screen.findByText('ada@studio.it')).closest('tr')!
+    const cell = cellUnder(row, 'Referral')
+    expect(within(cell).getByText('Da verificare')).toBeInTheDocument()
+    expect(cell).toHaveTextContent('Referral azienda: Lia Neri')
+    expect(cell).not.toHaveTextContent('Lia Neri ·')
+    expect(cell).toHaveTextContent("Non conta finché il referente dell'azienda non fa il primo accesso.")
+  })
+
   it('says in «Pigro» where each match’s link stands, and opens a linked one’s «Consuntivo» (REB-502, REB-503)', async () => {
     const url = 'https://pigro.letsrebase.com/grace/app/deal/6f1c2d3e-0000-4000-8000-000000000009'
     const linked = { ...MATCH_B, giorni_previsti: 40, pigro_stato: 'collegato', pigro_url: url }

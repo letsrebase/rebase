@@ -22,11 +22,12 @@ from rebase_api.deps import (
     get_renderer,
     get_signing_factory,
 )
+from rebase_core.audit import utcnow
 from rebase_core.config import Settings, get_settings
 from rebase_core.http import urllib_call, urllib_engagements_call
 from rebase_core.mail import RecordingSender
 from rebase_core.match_words import PIGRO_NOT_CONFIGURED
-from rebase_core.models import AdminAction, ContractDocument, Match, User
+from rebase_core.models import AdminAction, Company, ContractDocument, Match, User
 from rebase_core.pigro import NOT_ANSWERING
 from rebase_core.referrals import ReferralService
 
@@ -571,6 +572,10 @@ def test_the_match_list_projects_a_referral_without_ever_answering_the_budget(
     service.link_signup(
         "company", UUID(company_id), service.code_for(referrer.id), new_user_id=UUID(MISSING)
     )
+    # The referente has logged in since: a pending company referral projects nothing (REB-658).
+    company = api_session.get(Company, UUID(company_id))
+    assert company is not None
+    service.verify_on_login(company.user_id, utcnow())
     api_session.commit()
     created = client.post(
         f"/api/hub/freelancers/{freelancer_id}/matches",

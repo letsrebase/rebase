@@ -175,13 +175,21 @@ export const PIGRO_STATE_LABELS: Record<PigroStato, string> = {
 
 /** A referral's state on the «Match» list and on the ledger: the reward's own three (the
  *  ledger's `STATE_LABELS` read the same), `previsto` while its first letter is not signed
- *  (an estimate), and `gia_maturato` when it already paid on another match (REB-609). */
+ *  (an estimate), `gia_maturato` when it already paid on another match (REB-609) and
+ *  `da_verificare` while the referred person has not proved they hold the address (REB-658). */
 export const REFERRAL_STATE_LABELS: Record<string, string> = {
   previsto: 'Previsto',
+  da_verificare: 'Da verificare',
   da_confermare: 'Da confermare',
   confermato: 'Confermato',
   pagato: 'Pagato',
   gia_maturato: 'Già maturato',
+}
+/** What verified a referral (REB-658), as the ledger row says it, one whole sentence each. */
+export const REFERRAL_VERIFIED_VIA_LABELS: Record<string, string> = {
+  accesso: 'Verificato con il primo accesso',
+  lettera: 'Verificato con la lettera firmata',
+  storico: 'Già contava prima della verifica',
 }
 /** Which side of a match a referral brought in. */
 export const REFERRAL_KIND_LABELS: Record<string, string> = { freelancer: 'freelance', company: 'azienda' }

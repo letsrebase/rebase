@@ -9,9 +9,11 @@ logged in, and where the signup came from.
 
 Everything here is read from rows that already exist -- nothing is stored, nothing is
 a migration. The ledger (`ReferralService.list_rewards`) reads it for a page of
-referrals with `referral_evidence`; whatever later needs the same facts (counting a
-referral only once identity is verified, REB-658) imports `domains_match` and
-`referral_evidence` from here instead of deriving them a second time.
+referrals with `referral_evidence`; whatever later needs the same facts imports
+`domains_match` and `referral_evidence` from here instead of deriving them a second
+time. Whether a referral counts is not derived here: that is `Referral.stato`, set by
+`ReferralService.verify_on_login` and `record_reward_if_signed` (REB-658), and
+`ever_logged_in` below is the plain fact, whenever the login happened.
 """
 
 from collections.abc import Iterable
