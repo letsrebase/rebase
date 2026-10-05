@@ -271,15 +271,16 @@ gh pr create --body-file pr-body.md \
    `triggerOnDrafts: false` in `.greptile/config.json`), and an `@greptileai` on a draft
    would review a sha that does not merge.
 
-   A Dependabot PR gets neither review by itself. `.coderabbit.yaml` skips the bot,
-   because Dependabot opens its PRs a dozen at a time (#369 to #380) and CodeRabbit
-   allows ten reviews an hour. `excludeAuthors` in `.greptile/config.json` skips it
-   too, as the dashboard's author filter did before the file held it: #515 got no
-   run, and #514, #516 and #517 one only when asked. Whoever picks one up to merge it
-   comments `@greptileai` and `@coderabbitai review` on that PR, one PR at a time, and
-   runs the loop from (a). The dashboard's filter let that `@greptileai` through; if
-   the file's does not, and a bot PR gets no run within ten minutes of the comment,
-   say so in a comment on the PR and tell the person before you merge.
+   A Dependabot PR is outside this loop. Neither reviewer reads one by itself, by
+   configuration (`ignore_usernames` in `.coderabbit.yaml`, `excludeAuthors` in
+   `.greptile/config.json`, both naming `dependabot[bot]`), and nobody comments
+   `@greptileai` or `@coderabbitai review` on one, though both filters let a request
+   through: a bump changes pins and locks, and
+   CodeRabbit refuses the request on a bot PR anyway («Review skipped. This PR was
+   authored by a bot without an assigned CodeRabbit review seat», #514, 2026-10-05).
+   A bump PR merges on green `ci` and a merge commit, after the `flake.nix` pnpm hash
+   commit when `pnpm-lock.yaml` changed (root `AGENTS.md` § Conventions,
+   `docs/design/DECISIONS.md`, 2026-10-05, REB-639).
 
    **a. Greptile.** It reviews the PRs here (a trial from PR #262; on 2026-10-05 its
    Billing page reads «Free plan», this repository marked «Open source», none of the
@@ -381,13 +382,13 @@ gh pr create --body-file pr-body.md \
    failed, its table; on #363 that is the `Docstring Coverage` warning. The wait keys on
    `Review completed` alone: a `Review skipped: ...` status stays on the sha until a
    requested review starts. After ten minutes, read `$st`: `author ignored by
-   configuration` on a Dependabot PR is the `@coderabbitai review` above, not posted or
-   not picked up yet; `draft pull request` means the loop waits for `gh pr ready`; no
-   status, or a summary saying the reviews are paused (it pauses itself after five
-   reviewed commits on one PR, to spare the hourly allowance), is `gh pr comment <n>
-   --body '@coderabbitai review'`, which reviews the head once and leaves the pause in
-   place, and the wait again. When it answers that it is rate limited instead of
-   reviewing, wait for the window it names and ask again, and say so on the card.
+   configuration` is a Dependabot PR, which this loop does not run on (above); `draft
+   pull request` means the loop waits for `gh pr ready`; no status, or a summary saying
+   the reviews are paused (it pauses itself after five reviewed commits on one PR, to
+   spare the hourly allowance), is `gh pr comment <n> --body '@coderabbitai review'`,
+   which reviews the head once and leaves the pause in place, and the wait again. When
+   it answers that it is rate limited instead of reviewing, wait for the window it
+   names and ask again, and say so on the card.
 
    **c. CodeRabbit against Greptile.** It comes after CodeRabbit's own review on
    purpose: its own findings are not shaped by Greptile's, and then it checks Greptile's
