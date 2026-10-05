@@ -49,6 +49,7 @@ from rebase_core.models import (
     User,
 )
 from rebase_core.pagination import SortSpec, decode_cursor, encode_cursor, keyset_predicate
+from rebase_core.referral_evidence import referral_evidence
 from rebase_core.referral_schemas import (
     MatchReferral,
     MemberReferral,
@@ -544,6 +545,7 @@ class ReferralService:
         facts = self._match_facts(
             {m for m in reward_match.values() if m is not None} | set(live.values())
         )
+        evidence = referral_evidence(self.session, [(r.Referral, r.referrer_email) for r in rows])
         items = []
         for row in rows:
             referral, reward = row.Referral, row.ReferralReward
@@ -588,6 +590,7 @@ class ReferralService:
                     created_at=referral.created_at,
                     confirmed_at=reward.confirmed_at if reward is not None else None,
                     paid_at=reward.paid_at if reward is not None else None,
+                    evidence=evidence[referral.id],
                 )
             )
         return items

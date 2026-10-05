@@ -1646,6 +1646,20 @@ export interface MemberReferral {
 
 export type RewardStato = 'da_confermare' | 'confermato' | 'pagato'
 
+/** The facts around one attribution, read from rows that already exist (REB-657):
+ *  the `rif` code the signup used, when the referred card or request was made, its UTM
+ *  source when one was recorded, whether the two email addresses share an organisation's
+ *  domain (a shared public provider such as gmail.com never counts) and whether the
+ *  referred person ever logged in. */
+export interface ReferralEvidence {
+  code: string
+  signed_up_at: string
+  utm_source: string | null
+  /** `null` for both when the referred card or request was hard-deleted: unknown. */
+  same_email_domain: boolean | null
+  ever_logged_in: boolean | null
+}
+
 /** One row of the admin's referral ledger (`GET /api/hub/referrals`): the referrer,
  *  who was referred, and the reward as it was computed or as an admin priced it.
  *  `reward_id` is `null` until the referred party's first letter is signed -- the
@@ -1683,6 +1697,7 @@ export interface ReferralLedgerItem {
   created_at: string
   confirmed_at: string | null
   paid_at: string | null
+  evidence: ReferralEvidence
 }
 
 export interface ReferralLedgerList {
