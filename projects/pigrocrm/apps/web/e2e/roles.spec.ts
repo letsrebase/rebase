@@ -18,18 +18,15 @@ test('a collaboratore is not offered Settings and cannot reach it by URL, but ca
   const email = `collaboratore-${Date.now()}@pigro.it`
   const password = 'collabora123'
 
-  // Admin creates the collaboratore -- there is no public registration.
+  // Admin creates the collaboratore. The Utenti panel has no «Nuovo utente» form with a
+  // password any more: people enter with an invitation by mail (UsersPanel, REB-291), and
+  // no mail leaves the e2e stack. `POST /api/users` is still how an admin creates an
+  // account with a password, and `aziende.spec.ts` seeds its second member the same way.
   await loginAsAdmin(page)
-  await page.goto('/app/settings/users')
-  await page.getByRole('button', { name: /nuovo utente/i }).click()
-  const dialog = page.getByRole('dialog')
-  await dialog.getByLabel('Nome').fill('Collaboratore E2E')
-  await dialog.getByLabel('Email').fill(email)
-  await dialog.getByLabel('Password').fill(password)
-  // "Ruolo" already defaults to "collaboratore" (UsersPanel's own `useState`) --
-  // left untouched rather than re-selecting the same value through the Select.
-  await dialog.getByRole('button', { name: 'Crea' }).click()
-  await expect(dialog).toBeHidden()
+  const created = await page.request.post('/api/users', {
+    data: { email, password, nome: 'Collaboratore E2E', ruolo: 'collaboratore' },
+  })
+  expect(created.status(), await created.text()).toBe(201)
 
   await logout(page)
 

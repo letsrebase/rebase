@@ -9,7 +9,10 @@ const PASSWORD = 'supersegreta1'
 
 test('an unauthenticated visitor is sent to the login page', async ({ page }) => {
   await page.goto('/app/customers')
-  await expect(page).toHaveURL(/\/app\/login$/)
+  // The guard in routes/app.tsx sends the visitor to the login with the page they asked
+  // for as `redirect`, which the login reads back once a session exists: that is the
+  // whole URL, and a bare `/app/login$` has not matched it since that parameter exists.
+  await expect(page).toHaveURL(/\/app\/login\?redirect=%2Fapp%2Fcustomers$/)
 })
 
 test('a wrong password is rejected without saying which field was wrong', async ({ page }) => {
