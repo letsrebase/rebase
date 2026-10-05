@@ -25,14 +25,21 @@ from test_signing import (
 )
 
 from rebase_core.companies import CompanyService
-from rebase_core.contract_schemas import ClienteData, LetteraFields, MatchCreate, MatchListItem
+from rebase_core.contract_schemas import (
+    DAY_RATE,
+    LUMP_SUM,
+    ClienteData,
+    LetteraFields,
+    MatchCreate,
+    MatchListItem,
+)
 from rebase_core.db import session_factory
 from rebase_core.errors import ValidationFailed
 from rebase_core.freelancers import FreelancerService
 from rebase_core.mail import RecordingSender
 from rebase_core.matches import MatchService
 from rebase_core.models import Company, Freelancer, Match, Referral, ReferralReward, User
-from rebase_core.referrals import ReferralService, is_day_rate, reward_base
+from rebase_core.referrals import ReferralService, reward_base
 from rebase_core.schemas import CompanyCreate, FreelancerCreate
 
 TABLES = (
@@ -313,56 +320,13 @@ def test_reward_base_formula(modalita: str, giorni: int | None, expected: Decima
     assert reward_base(budget, compenso, modalita, giorni) == expected
 
 
-@pytest.mark.parametrize(
-    "modalita",
-    [
-        "A giornata",
-        "  a giornata ",
-        "a  giornata",
-        "giornaliera",
-        "a giornata (8 ore)",
-        "Al giorno",
-        "per giorno",
-        "a giorni",
-        "tariffa giornaliera",
-        "Pagamento a giornata",
-        "compenso  al giorno",
-        "tariffa: giornaliera",
-        "tariffa-giornaliera",
-        "compenso su base giornaliera",
-        "in base a giornata",
-        "a giornata (non a corpo)",
-        "a giornata (no a corpo)",
-        "a giornata, senza a corpo",
-    ],
-)
-def test_reward_base_treats_every_day_rate_spelling_as_a_day_rate(modalita: str) -> None:
-    assert is_day_rate(modalita)
-    # Margin 800 - 450 over 20 days, not the lump-sum reading (800 * 20 - 450).
-    assert reward_base(Decimal("800"), Decimal("450"), modalita, 20) == Decimal("7000")
-    assert reward_base(Decimal("800"), Decimal("450"), modalita, None) == Decimal("350")
-
-
-@pytest.mark.parametrize(
-    "modalita",
-    [
-        "a corpo",
-        "A Corpo ",
-        "a corpo (giornate stimate)",
-        "",
-        "forfait",
-        "forfait 20 giornate",
-        "a ore (giornata da 8 ore)",
-        "mezza giornata",
-        "a progetto (20 giornate)",
-        "tariffa a corpo",
-        "pagamento giornaliero (compenso a corpo)",
-    ],
-)
-def test_reward_base_keeps_a_lump_sum_for_any_other_mode(modalita: str) -> None:
-    assert not is_day_rate(modalita)
-    assert reward_base(Decimal("800"), Decimal("9000"), modalita, 20) == Decimal("7000")
-    assert reward_base(Decimal("800"), Decimal("9000"), modalita, None) is None
+def test_reward_base_compares_the_two_modes_it_stores() -> None:
+    # Day rate: margin 800 - 450 over 20 days, not the lump-sum reading (800 * 20 - 450).
+    assert reward_base(Decimal("800"), Decimal("450"), DAY_RATE, 20) == Decimal("7000")
+    assert reward_base(Decimal("800"), Decimal("450"), DAY_RATE, None) == Decimal("350")
+    # Lump sum: the fee against the client's projected total, none without an estimate.
+    assert reward_base(Decimal("800"), Decimal("9000"), LUMP_SUM, 20) == Decimal("7000")
+    assert reward_base(Decimal("800"), Decimal("9000"), LUMP_SUM, None) is None
 
 
 # ---- the reward, at the first signed letter ----------------------------------------
@@ -377,22 +341,6 @@ def _sign_the_letter(
     signed = signing.apply(_webhook(fake, envelope, "DOCUMENT_COMPLETED"))
     assert signed is not None
     signing.finish(signed)
-
-
-def test_a_letter_signed_with_a_variant_day_rate_spelling_earns_the_day_rate_reward(
-    clean: Session,
-) -> None:
-    _, admin_id, freelancer_id, company_id = _referred_pair(clean)
-    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
-    match = _sent_with_body(
-        clean, renderer, fake, freelancer_id, company_id, admin_id, modalita="A giornata"
-    )
-
-    _sign_the_letter(clean, renderer, fake, match)
-
-    # Margin (800 - 450) over 20 days, not the lump-sum reading (800 * 20 - 450).
-    bases = clean.scalars(select(ReferralReward.base_amount)).all()
-    assert bases == [Decimal("7000.00")] * 2
 
 
 def test_a_referred_freelancer_and_a_referred_company_each_earn_a_reward_once(

@@ -99,6 +99,7 @@ def _seed(factory: sessionmaker[Session]) -> tuple[str, str]:
                     ruolo="Backend developer",
                     attivita="Le API.",
                     data_inizio=date(2026, 10, 1),
+                    modalita="a giornata",
                     compenso=Decimal("450"),
                     giorni_pagamento=30,
                     fine_mese=True,
