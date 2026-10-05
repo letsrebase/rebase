@@ -24,9 +24,9 @@ response, the duration and the error flag; this module decides four things aroun
   `$mcp_is_error` and the message regardless. The same goes for the two the SDK turned
   on by default in 7.56.0, model capture (a required `llm_model` argument on every
   tool) and conversation correlation (a `conversation_id` argument whose description
-  asks the agent to echo it, an `_mcp_instructions` property on every tool's output
-  schema and in every result's structured content, and a text block on the first
-  result of a conversation), and for the two virtual tools the SDK can add to the
+  asks the agent to echo it, an `_mcp_instructions` property on eligible output
+  schemas and the matching object-valued structured results, and a text block
+  whenever the SDK mints a conversation id), and for the two virtual tools the SDK can add to the
   listing, `report_missing` and `collect_feedback`: all off, named explicitly, decided
   on REB-642. `test_analytics_instrumentation.py` holds `tools/list` equal with and
   without a key, so an SDK default cannot reshape the surface again unnoticed.
