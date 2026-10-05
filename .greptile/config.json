@@ -1,6 +1,36 @@
 {
+  "strictness": 1,
+  "commentTypes": ["logic", "syntax", "style"],
+  "effort": "base",
+  "excludeAuthors": ["dependabot[bot]"],
+  "autoReview": ["open"],
   "triggerOnDrafts": false,
   "statusCheck": true,
-  "statusCommentsEnabled": true,
-  "shouldUpdateDescription": false
+  "shouldUpdateDescription": false,
+  "fixWithAI": true,
+  "summarySection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": true
+  },
+  "issuesTableSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": false
+  },
+  "confidenceScoreSection": {
+    "included": true,
+    "collapsible": false,
+    "defaultOpen": false
+  },
+  "sequenceDiagramSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": false
+  },
+  "autoApprove": {
+    "enabled": false,
+    "riskCeiling": "low"
+  },
+  "instructions": "This repository is written in English, with one exception recorded in AGENTS.md § Conventions: what a person said may be quoted in Italian inside «guillemets», for example the rows of docs/design/DECISIONS.md that quote Ivan or Lorenzo. Do not flag Italian inside «guillemets» as non-English text. The strings PigroCRM and the hub show to their Italian users (UI copy, validation and error messages, MCP tool and resource descriptions, document templates, seeded content) are Italian by design; do not flag those either."
 }
