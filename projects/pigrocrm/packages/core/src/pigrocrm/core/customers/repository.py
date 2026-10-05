@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
@@ -169,3 +169,16 @@ class CustomerRepository:
                 text("SELECT deal_attivi_del_cliente(:customer_id)"), {"customer_id": customer_id}
             ).scalar_one()
         )
+
+    def count_visible_active_deals(self, customer_id: UUID) -> int:
+        """The active deals of the customer this session may see: what a refusal may
+        say out loud, where `count_active_deals` is what it decides on (a count of
+        rows out of the caller's sight is a fact about another azienda)."""
+        deals_table = Base.metadata.tables["deals"]
+        stmt = (
+            select(func.count())
+            .select_from(deals_table)
+            .where(deals_table.c["customer_id"] == customer_id)
+            .where(deals_table.c["deleted_at"].is_(None))
+        )
+        return int(self.session.execute(stmt).scalar_one())

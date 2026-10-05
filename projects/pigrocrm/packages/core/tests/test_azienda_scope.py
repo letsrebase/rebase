@@ -867,7 +867,9 @@ def test_no_active_deal_ends_up_on_an_archived_customer_across_the_line(world: W
         )
         with _scoped(world, world.studio) as session, pytest.raises(Conflict) as refused:
             CustomerService(session).soft_delete(customer_id, studio_actor)
-        assert refused.value.details["active_deals"] == 2  # its own, and the one out of sight
+        # Refused on both deals, said with the one in sight: the other is another
+        # azienda's count.
+        assert refused.value.details["active_deals"] == 1
         # Archive the deal, then the customer (by hand, as the superuser), and try to
         # restore the deal as a member who cannot see the customer.
         with factory() as session:
