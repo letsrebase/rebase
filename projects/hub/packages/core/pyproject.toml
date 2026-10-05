@@ -12,7 +12,7 @@ dependencies = [
   "pydantic==2.13.5",
   "pydantic-settings==2.15.0",
   "email-validator==2.3.0",
-  "uuid-utils==0.17.0",
+  "uuid-utils==1.0.0",
   "argon2-cffi==25.1.0",
   # The same pin as pigrocrm-core: the CV's text on the MCP (ORB-206).
   "pypdf==6.19.0",
