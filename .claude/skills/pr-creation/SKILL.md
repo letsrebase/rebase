@@ -271,10 +271,11 @@ gh pr create --body-file pr-body.md \
    `triggerOnDrafts: false` in `.greptile/config.json`), and an `@greptileai` on a draft
    would review a sha that does not merge.
 
-   A Dependabot PR is outside this loop. Neither reviewer reads one, by configuration
-   (`ignore_usernames` in `.coderabbit.yaml`, `excludeAuthors` in
+   A Dependabot PR is outside this loop. Neither reviewer reads one by itself, by
+   configuration (`ignore_usernames` in `.coderabbit.yaml`, `excludeAuthors` in
    `.greptile/config.json`, both naming `dependabot[bot]`), and nobody comments
-   `@greptileai` or `@coderabbitai review` on one: a bump changes pins and locks, and
+   `@greptileai` or `@coderabbitai review` on one, though both filters let a request
+   through: a bump changes pins and locks, and
    CodeRabbit refuses the request on a bot PR anyway («Review skipped. This PR was
    authored by a bot without an assigned CodeRabbit review seat», #514, 2026-10-05).
    A bump PR merges on green `ci` and a merge commit, after the `flake.nix` pnpm hash

@@ -248,17 +248,19 @@ the dry run (`gh workflow run snyk-weekly.yml -f dry_run=true`), are in
   on Monday mornings as `.github/dependabot.yml` schedules them, a security update the
   day its advisory lands; both are bumps and nothing else, titled `chore(deps): ...`,
   `chore(deps-dev): ...` or `ci(deps): ...`. One merges on green `ci` and a merge
-  commit, and on nothing else: neither Greptile nor CodeRabbit reads a Dependabot PR,
-  by configuration (`excludeAuthors` in `.greptile/config.json`, `ignore_usernames` in
-  `.coderabbit.yaml`), and nobody asks either for one with `@greptileai` or
-  `@coderabbitai review`. A bump changes pins and locks; the locks CodeRabbit leaves
+  commit, and on nothing else: neither Greptile nor CodeRabbit reads a Dependabot PR
+  by itself, by configuration (`excludeAuthors` in `.greptile/config.json`,
+  `ignore_usernames` in `.coderabbit.yaml`), and nobody asks either for one with
+  `@greptileai` or `@coderabbitai review`, which both would still answer. A bump changes pins and locks; the locks CodeRabbit leaves
   out of a review by default, an image it touches is proven by the trunk and not by a
   review, and CodeRabbit refuses the request on a bot PR with no seat of its own
   anyway (#514, 2026-10-05): the review would be of nothing
   (`docs/design/DECISIONS.md`, 2026-10-05, REB-639). Two things are invisible to that
   gate. The images are built on the
-  trunk, not on the PR, so a bump to a Dockerfile, a compose file or a lock is proven
-  by preflight's image checks or by the trunk run before the preview deploys. And a PR
+  trunk, not on the PR, so a bump to a Dockerfile, a compose file or a lock is never
+  proven by the PR's own green run: preflight's image checks prove it before the
+  merge, and the trunk run proves it before the preview deploys, never before
+  `main` has it. And a PR
   that changes `pnpm-lock.yaml` leaves the pnpm store hash in `flake.nix` stale:
   `fetchPnpmDeps` is a fixed-output derivation, so a stale hash whose output already
   sits in the local store builds "successfully" instead of failing and naming the new
