@@ -515,3 +515,37 @@ def test_the_campaign_constraints_are_installed(hub_engine: Engine) -> None:
         connection.execute(text(optout), {"email": "o2@rebase.it", "fonte": "link"})
 
         outer.rollback()
+
+
+def test_a_migration_leaves_the_host_process_loggers_emitting(hub_postgres: Any) -> None:
+    """REB-660, the twin of pigrocrm's REB-190: `env.py` calls Alembic's `fileConfig`,
+    whose default `disable_existing_loggers=True` is right for `alembic upgrade` from a
+    shell and wrong inside the API process, where `upgrade_to_head` runs on every
+    signup. The default disabled every logger the ini does not name, including other
+    projects' loggers alive on the same xdist worker: a hub migration left
+    `pigrocrm.core.mail` silent and `test_mail.py`'s `caplog` empty the day `loadfile`
+    put them together. A witness logger with a handler of our own (not `caplog`, since
+    `fileConfig` rebuilds the root handler list and a root-attached capture would go
+    blind for the fix-independent reason) proves a migration leaves it emitting.
+    """
+    import logging
+
+    grabbed: list[str] = []
+
+    class Grab(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            grabbed.append(record.getMessage())
+
+    witness = logging.getLogger("rebase_core.witness-for-reb-660")
+    handler = Grab()
+    witness.addHandler(handler)
+    witness.setLevel(logging.WARNING)
+    try:
+        with hub_postgres.fresh_container() as container:
+            upgrade_to_head(container.get_connection_url())
+            witness.warning("still alive")
+    finally:
+        witness.removeHandler(handler)
+        witness.setLevel(logging.NOTSET)
+
+    assert grabbed == ["still alive"]
