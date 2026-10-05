@@ -31,13 +31,15 @@ def _ensure_committed_default(engine: Engine) -> None:
     commits for real sees only committed rows. The per-test seed below then finds it
     and writes nothing. Inline rather than imported from the core suite's `fakes`,
     which this root's conftest does not put on the path."""
-    from pigrocrm.core.emitter.models import Azienda
+    from pigrocrm.core.emitter.models import LegalEntity
 
     with engine.begin() as connection:
-        if connection.execute(select(Azienda.id).where(Azienda.predefinita.is_(True))).first():
+        if connection.execute(
+            select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+        ).first():
             return
         connection.execute(
-            Azienda.__table__.insert().values(
+            LegalEntity.__table__.insert().values(
                 nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
             )
         )
@@ -62,13 +64,15 @@ def api_session(api_engine: Engine) -> Iterator[Session]:
     transaction = connection.begin()
     # The default azienda every provisioned space has (REB-615), seeded on the outer
     # connection so a service's rollback inside the session cannot remove it.
-    from pigrocrm.core.emitter.models import Azienda
+    from pigrocrm.core.emitter.models import LegalEntity
 
     # Since REB-623 the engine fixture commits one, so this is the fallback for a
     # database that has none. Not an early `return`: this is a generator fixture.
-    if not connection.execute(select(Azienda.id).where(Azienda.predefinita.is_(True))).first():
+    if not connection.execute(
+        select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))
+    ).first():
         connection.execute(
-            Azienda.__table__.insert().values(
+            LegalEntity.__table__.insert().values(
                 nome="Spazio di prova", ragione_sociale="Spazio di prova", predefinita=True
             )
         )

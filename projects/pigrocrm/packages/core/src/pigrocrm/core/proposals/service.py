@@ -34,7 +34,7 @@ from pigrocrm.core.contracts.service import (
 )
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.repository import DocumentRepository
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.proposals.models import Proposal
 from pigrocrm.core.proposals.repository import ProposalRepository
@@ -248,7 +248,7 @@ class ProposalService:
         # The customer's azienda at acceptance, as `ContractService.create` copies it.
         contract = Contract(
             **contract_payload,
-            azienda_id=AziendaService(self.session).inherited(customer.azienda_id, "contract"),
+            azienda_id=LegalEntityService(self.session).inherited(customer.azienda_id, "contract"),
         )
         self.session.add(contract)
         self.session.flush()

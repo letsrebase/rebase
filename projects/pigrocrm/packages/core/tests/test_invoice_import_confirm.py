@@ -1,6 +1,6 @@
 """Confirming a reviewed invoice import onto the register (REB-366):
 `InvoiceService.confirm_import`, exercised end to end with a real
-`Azienda` row, a real `FiscalProfile` row, a real `documents` row and
+`LegalEntity` row, a real `FiscalProfile` row, a real `documents` row and
 the FPR12 fixtures REB-363/364/365 already use.
 
 The issue's own "Done when" is what every scenario below serves: confirming an
@@ -25,8 +25,8 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.customers.repository import CustomerRepository
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.errors import AgentForbidden, PermissionDenied, ValidationFailed
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
@@ -49,7 +49,7 @@ LOTTO = "fpr12-lotto-due-fatture.xml"
 ADMIN = Actor(id=None, type="user", role="admin")
 
 # The FPR12 fixtures' own `CedentePrestatore` (fornitore): matching this on an
-# `Azienda` is what makes them "outgoing" for the account holder.
+# `LegalEntity` is what makes them "outgoing" for the account holder.
 FORNITORE_PIVA = "01234567890"
 FORNITORE_CF = "BNCCHR85M41H501Z"
 # Their `CessionarioCommittente` (cliente).
@@ -63,7 +63,7 @@ def _fixture(name: str) -> bytes:
 def _fiscal_profile(session: Session) -> FiscalProfile:
     # A fiscal profile belongs to an azienda since REB-615: the default one, created
     # here when a test asks for the profile before the emitter.
-    azienda = AziendaRepository(session).default() or _emitter(session)
+    azienda = LegalEntityRepository(session).default() or _emitter(session)
     existing = FiscalProfileRepository(session).get(azienda.id)
     if existing is not None:
         return existing
@@ -73,7 +73,7 @@ def _fiscal_profile(session: Session) -> FiscalProfile:
     return profile
 
 
-def _emitter(session: Session, **overrides: object) -> Azienda:
+def _emitter(session: Session, **overrides: object) -> LegalEntity:
     base: dict[str, object] = {
         "ragione_sociale": "Chiara Bianchi",
         "partita_iva": FORNITORE_PIVA,
@@ -82,13 +82,13 @@ def _emitter(session: Session, **overrides: object) -> Azienda:
         "predefinita": True,
     }
     base.update(overrides)
-    existing = AziendaRepository(session).default()
+    existing = LegalEntityRepository(session).default()
     if existing is not None:
         for key, value in base.items():
             setattr(existing, key, value)
         session.flush()
         return existing
-    profile = Azienda(**base)
+    profile = LegalEntity(**base)
     session.add(profile)
     session.flush()
     return profile

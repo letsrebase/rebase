@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.fiscal.pack import PACK_NON_IT
@@ -23,7 +23,7 @@ class FiscalProfileService:
     def __init__(self, session: Session) -> None:
         self.session = session
         self.repo = FiscalProfileRepository(session)
-        self.aziende = AziendaService(session)
+        self.aziende = LegalEntityService(session)
         self.activities = ActivityService(session)
 
     # Every read takes an optional `azienda_id`; `None` is the default azienda, which
@@ -71,7 +71,7 @@ class FiscalProfileService:
         that can violate the unique key on `azienda_id`, and leaving it outside would
         let two concurrent first-time saves poison the session with a raw
         `IntegrityError` instead of surfacing a clean `Conflict`. Same shape, same
-        reason, as `AziendaService.upsert_default`.
+        reason, as `LegalEntityService.upsert_default`.
         """
         actor.require_admin("update_fiscal_profile")
         payload = data.model_dump()
@@ -101,7 +101,7 @@ class FiscalProfileService:
     @staticmethod
     def check(payload: dict[str, Any]) -> None:
         """Every refusal a profile body can earn, on the dumped payload, before any row
-        is touched. Public since REB-630: `AziendaService.create` runs it on the
+        is touched. Public since REB-630: `LegalEntityService.create` runs it on the
         profile a new azienda is born with, so a bad profile refuses the whole request
         rather than leaving an azienda `issue` could never use."""
         # `resolve_regime` does every check: the pack decides whether a code is

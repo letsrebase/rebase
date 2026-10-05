@@ -76,7 +76,7 @@ Method = tuple[str, str]
 #    a test below asserts this block names exactly the same methods that file bans. If
 #    the two ever disagree, one of them is out of date and neither can be trusted.
 #    A ban expressed as a `(service, method)` pair rather than by bare name (as
-#    `FiscalProfileService.upsert` was until ORB-188: `AziendaService` has an
+#    `FiscalProfileService.upsert` was until ORB-188: `LegalEntityService` has an
 #    `upsert` too) is the shape this table has used all along, and the reason the
 #    comparison test below compares the qualified bans as pairs and the rest as names.
 _VIETATE: dict[Method, str] = {
@@ -206,22 +206,22 @@ _INTERNE: dict[Method, str] = {
         "che autorizza, registra e committa"
     ),
     ("DocumentService", "storage_key_for"): "costruisce una chiave di storage",
-    ("AziendaService", "as_template_values"): "alimenta il renderer dei template",
-    ("AziendaService", "inherited"): (
+    ("LegalEntityService", "as_template_values"): "alimenta il renderer dei template",
+    ("LegalEntityService", "inherited"): (
         "lettura interna: l'azienda che un deal, un contratto, un documento o una fattura "
         "eredita dal genitore, rifiutata se disattivata; la chiamano i servizi che creano, "
         "non e' un'azione a se'"
     ),
-    ("AziendaService", "resolve"): (
+    ("LegalEntityService", "resolve"): (
         "lettura interna: la riga che un `azienda_id` nomina, o la predefinita quando e' "
         "`None`; e' cio' che ogni servizio chiama per se', e `describe_azienda` la espone"
     ),
-    ("AziendaService", "single"): (
+    ("LegalEntityService", "single"): (
         "lettura interna (REB-630): l'unica azienda attiva, o `None` quando lo spazio ne "
         "ha piu' di una e il chiamante non l'ha indicata; la chiamano la stima fiscale e "
         "le soglie per risolvere il proprio `azienda_id`, non e' un'azione a se'"
     ),
-    ("AziendaService", "require_single"): (
+    ("LegalEntityService", "require_single"): (
         "lettura interna (REB-630): `single`, o il rifiuto che nomina `azienda_id`; la "
         "chiamano `get_fiscal_estimate`, `ceiling_headroom` e `simulate_ceiling`, i cui "
         "tool espongono gia' il parametro"
@@ -230,7 +230,7 @@ _INTERNE: dict[Method, str] = {
     ("FiscalProfileService", "snapshot"): "lettura interna del regime, senza actor",
     ("FiscalProfileService", "check"): (
         "validazione interna, senza actor (REB-630): i rifiuti che un corpo di profilo "
-        "puo' meritare, chiamata da `upsert` e da `AziendaService.create` prima di "
+        "puo' meritare, chiamata da `upsert` e da `LegalEntityService.create` prima di "
         "toccare una riga; non e' un'azione, e i due tool che scrivono la espongono gia'"
     ),
     ("InvoiceService", "undeclared_gaps"): (
@@ -487,12 +487,12 @@ _CREDENZIALI: dict[Method, str] = {
 #    the configuration is. Exposing them would also mean an agent could rewrite the field
 #    definitions its own `describe_schema` output is derived from.
 _CONFIGURAZIONE: dict[Method, str] = {
-    ("AziendaService", "set_default"): (
+    ("LegalEntityService", "set_default"): (
         "Impostazioni → Aziende: quale azienda e' la predefinita decide a chi vanno le "
         "letture implicite di tutto lo spazio (REB-616, spec 2026-10-03 §3); una scelta "
         "dell'amministratore dal pannello, non di un agente"
     ),
-    ("AziendaService", "deactivate"): (
+    ("LegalEntityService", "deactivate"): (
         "Impostazioni → Aziende: spegnere un'azienda la toglie da ogni selettore; stessa "
         "ragione di `set_default`"
     ),
@@ -966,7 +966,7 @@ def test_the_forbidden_block_names_exactly_what_the_ban_test_bans() -> None:
     re-stating a list is how lists diverge. Compared the way each half of the ban is
     written: the bare-name bans on names, and the qualified ones as the `(service,
     method)` pairs they are -- comparing those on the name alone would accept
-    `AziendaService.upsert` standing in for `FiscalProfileService.upsert`, which
+    `LegalEntityService.upsert` standing in for `FiscalProfileService.upsert`, which
     is the exact confusion the qualified list exists to prevent.
 
     `_FUORI_DAL_SETACCIO` counts on the same side of the equality as `_VIETATE`, which

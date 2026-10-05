@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.contracts.models import Contract
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.models import Document, DocumentVersion
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.schema_registry import ENTITY_TYPES, native_fields
 from pigrocrm.core.templates.models import Template
 
@@ -126,10 +126,12 @@ def test_only_one_azienda_can_be_the_default(db_session: Session) -> None:
     # the two rows added here, not from the seed.
     from sqlalchemy import delete
 
-    db_session.execute(delete(Azienda))
+    db_session.execute(delete(LegalEntity))
     db_session.flush()
     for i in range(2):
-        db_session.add(Azienda(ragione_sociale="X", partita_iva=f"1234567890{i}", predefinita=True))
+        db_session.add(
+            LegalEntity(ragione_sociale="X", partita_iva=f"1234567890{i}", predefinita=True)
+        )
     with pytest.raises(IntegrityError):
         db_session.flush()
 

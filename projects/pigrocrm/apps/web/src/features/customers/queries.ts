@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useAziendaScope } from '@/lib/azienda'
+import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, unwrap } from '@/lib/api'
 import type { components } from '@/lib/api-types'
 import { queryKeys } from '@/lib/query'
@@ -33,7 +33,7 @@ interface CustomersListParams {
 export function useCustomers(params: CustomersListParams = {}) {
   // The sidebar's azienda, when one is selected (REB-625): on the list page and on
   // every picker that offers the space's customers, which under azienda A are A's.
-  const scoped = useAziendaScope(params)
+  const scoped = useLegalEntityScope(params)
   return useQuery({
     queryKey: queryKeys.customers(scoped),
     queryFn: () =>

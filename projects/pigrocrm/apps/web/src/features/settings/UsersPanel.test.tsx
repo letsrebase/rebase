@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { UsersPanel } from './UsersPanel'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
-import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
+import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -77,11 +77,11 @@ function respond(routes: Record<string, () => unknown>) {
   })
 }
 
-const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, attiva: true } as AziendaRecord
-const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, attiva: true } as AziendaRecord
+const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, attiva: true } as LegalEntityRecord
+const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, attiva: true } as LegalEntityRecord
 
 /** The provider's value for a two-azienda space, the shape `AppShell` reads too. */
-function twoAziende(): AziendaValue {
+function twoAziende(): LegalEntityValue {
   const aziende = [HUMANCRAFT, REBASE]
   return {
     aziende,
@@ -94,12 +94,12 @@ function twoAziende(): AziendaValue {
   }
 }
 
-function renderPanel(azienda?: AziendaValue) {
+function renderPanel(azienda?: LegalEntityValue) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const panel = <UsersPanel />
   return render(
     <QueryClientProvider client={client}>
-      {azienda ? <AziendaContext value={azienda}>{panel}</AziendaContext> : panel}
+      {azienda ? <LegalEntityContext value={azienda}>{panel}</LegalEntityContext> : panel}
     </QueryClientProvider>,
   )
 }
@@ -501,7 +501,7 @@ describe('UsersPanel', () => {
       vi.mocked(api.PATCH).mockReturnValueOnce(
         Promise.resolve(ok({ ...SCOPED_USER, aziende: null })),
       )
-      const one: AziendaValue = {
+      const one: LegalEntityValue = {
         ...twoAziende(),
         aziende: [HUMANCRAFT],
         several: false,

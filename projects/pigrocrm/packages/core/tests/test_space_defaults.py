@@ -60,19 +60,19 @@ def test_a_second_call_seeds_nothing(db_session: Session) -> None:
 def _bare(session: Session) -> None:
     from sqlalchemy import delete
 
-    from pigrocrm.core.emitter.models import Azienda
+    from pigrocrm.core.emitter.models import LegalEntity
 
-    session.execute(delete(Azienda))
+    session.execute(delete(LegalEntity))
     session.flush()
 
 
 def test_a_space_with_no_azienda_gets_one_named_after_the_space(db_session: Session) -> None:
-    from pigrocrm.core.emitter.repository import AziendaRepository
+    from pigrocrm.core.emitter.repository import LegalEntityRepository
 
     _bare(db_session)
     report = ensure_defaults(db_session, nome="Studio Ada")
     assert report.aziende == 1
-    azienda = AziendaRepository(db_session).default()
+    azienda = LegalEntityRepository(db_session).default()
     assert azienda is not None
     assert (azienda.ragione_sociale, azienda.nome, azienda.predefinita) == (
         "Studio Ada",
@@ -85,26 +85,26 @@ def test_a_space_with_no_azienda_gets_one_named_after_the_space(db_session: Sess
 def test_a_space_that_has_its_azienda_keeps_it_whatever_the_name_says(
     db_session: Session,
 ) -> None:
-    from pigrocrm.core.emitter.repository import AziendaRepository
+    from pigrocrm.core.emitter.repository import LegalEntityRepository
 
     # The row, not its name: since REB-623 the default azienda is committed once per
     # worker database, and the committed worlds (`test_invoice_issue_race.py` and its
     # kin) rename it through `upsert_default` as they run, so a literal here depends on
     # which file ran before this one. Identity is what the claim is about anyway.
-    before = AziendaRepository(db_session).default()
+    before = LegalEntityRepository(db_session).default()
     assert before is not None
     report = ensure_defaults(db_session, nome="Un altro nome")
     assert report.aziende == 0
-    azienda = AziendaRepository(db_session).default()
+    azienda = LegalEntityRepository(db_session).default()
     assert azienda is not None
     assert (azienda.id, azienda.ragione_sociale) == (before.id, before.ragione_sociale)
     assert azienda.ragione_sociale != "Un altro nome"
 
 
 def test_without_a_name_no_azienda_is_invented(db_session: Session) -> None:
-    from pigrocrm.core.emitter.repository import AziendaRepository
+    from pigrocrm.core.emitter.repository import LegalEntityRepository
 
     _bare(db_session)
     report = ensure_defaults(db_session)
     assert report.aziende == 0
-    assert AziendaRepository(db_session).default() is None
+    assert LegalEntityRepository(db_session).default() is None

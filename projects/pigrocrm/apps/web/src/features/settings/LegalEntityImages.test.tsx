@@ -2,8 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { AziendaImages } from './AziendaImages'
-import type { AziendaRecord } from './queries'
+import { LegalEntityImages } from './LegalEntityImages'
+import type { LegalEntityRecord } from './queries'
 import { api, fetchWithRefresh } from '@/lib/api'
 
 vi.mock('@/lib/api', async (importOriginal) => {
@@ -18,7 +18,7 @@ const AZIENDA = {
   ragione_sociale: 'Humancraft S.r.l.',
   logo_key: null,
   firma_key: null,
-} as AziendaRecord
+} as LegalEntityRecord
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
@@ -33,11 +33,11 @@ function problemResponse(detail: string) {
   )
 }
 
-function renderImages(azienda: AziendaRecord = AZIENDA) {
+function renderImages(azienda: LegalEntityRecord = AZIENDA) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
-      <AziendaImages azienda={azienda} />
+      <LegalEntityImages azienda={azienda} />
     </QueryClientProvider>,
   )
 }
@@ -50,7 +50,7 @@ beforeEach(() => {
   URL.revokeObjectURL = vi.fn()
 })
 
-describe('AziendaImages', () => {
+describe('LegalEntityImages', () => {
   it('shows both blocks empty, with «Carica» and no «Rimuovi», and asks for no bytes', () => {
     renderImages()
     expect(screen.getByText('Nessun logo')).toBeInTheDocument()

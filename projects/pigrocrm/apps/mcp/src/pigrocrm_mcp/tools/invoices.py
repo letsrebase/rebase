@@ -13,11 +13,11 @@ from uuid import UUID
 
 from pigrocrm.core.emitter.schemas import (
     TEMPLATE_EXCLUDED_FIELDS,
-    AziendaCreate,
-    AziendaRead,
-    AziendaUpsert,
+    LegalEntityCreate,
+    LegalEntityRead,
+    LegalEntityUpsert,
 )
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -46,7 +46,7 @@ from pigrocrm_mcp.context import McpContext
 #
 # The `update_fiscal_profile` disagreement was first settled in the ban's favour (slice
 # 3 §11's four names include it, banned as the `(FiscalProfileService, upsert)` pair
-# because `AziendaService` has an `upsert` too), then reopened by ORB-188
+# because `LegalEntityService` has an `upsert` too), then reopened by ORB-188
 # (2026-09-12): the profile is a total replacement that can be replaced again, an issued
 # invoice keeps its own copy, and in a space born empty «imposta il mio profilo fiscale»
 # is the first thing a person asks their assistant. So the write is on the default
@@ -76,7 +76,7 @@ def list_register_gaps(
     unlike `import_issued_invoice`/`declare_invoice_register_gaps`, which write the
     register and stay behind `mcp_full_access`. One register per azienda (REB-619):
     none named is the default's."""
-    gaps = _invoices(context).register_gaps(anno, context.actor, parse_azienda_id(azienda_id))
+    gaps = _invoices(context).register_gaps(anno, context.actor, parse_legal_entity_id(azienda_id))
     return [g.model_dump(mode="json") for g in gaps]
 
 
@@ -256,7 +256,7 @@ def set_payment_state(
     )
 
 
-def parse_azienda_id(value: str | None) -> UUID | None:
+def parse_legal_entity_id(value: str | None) -> UUID | None:
     """Only an omitted id means the default azienda. A string that is given is an id
     or a refusal in words: an empty one, or one that is not a UUID, must not fall back
     to the default and write there in silence."""
@@ -274,7 +274,7 @@ def describe_fiscal_profile(context: McpContext, azienda_id: str | None = None) 
     """The fiscal parameters of one azienda; none means the default, which on a space
     with one azienda is the only one (REB-616, spec 2026-10-03 §7)."""
     return FiscalProfileService(context.session).describe(
-        context.actor, parse_azienda_id(azienda_id)
+        context.actor, parse_legal_entity_id(azienda_id)
     )
 
 
@@ -286,7 +286,9 @@ def update_fiscal_profile(
     return (
         FiscalProfileService(context.session)
         .upsert(
-            FiscalProfileUpsert.model_validate(dati), context.actor, parse_azienda_id(azienda_id)
+            FiscalProfileUpsert.model_validate(dati),
+            context.actor,
+            parse_legal_entity_id(azienda_id),
         )
         .model_dump(mode="json")
     )
@@ -310,10 +312,10 @@ READ_ONLY_FLAGS: Final[frozenset[str]] = frozenset({"ha_logo", "ha_firma"})
 
 
 def propose_azienda(context: McpContext, nazione: str | None) -> dict[str, Any]:
-    """The azienda `AziendaService.propose` picks for a customer of `nazione`
+    """The azienda `LegalEntityService.propose` picks for a customer of `nazione`
     (REB-624, spec 2026-10-03 §1.6), in the shape `list_aziende` answers."""
-    row = AziendaService(context.session).propose(nazione)
-    return AziendaRead.model_validate(row).model_dump(mode="json", include=AZIENDA_FIELDS)
+    row = LegalEntityService(context.session).propose(nazione)
+    return LegalEntityRead.model_validate(row).model_dump(mode="json", include=AZIENDA_FIELDS)
 
 
 def list_aziende(context: McpContext) -> list[dict[str, Any]]:
@@ -321,26 +323,28 @@ def list_aziende(context: McpContext) -> list[dict[str, Any]]:
     sociale, nazione and the two flags, which is what an agent needs to pick one."""
     return [
         a.model_dump(mode="json", include=AZIENDA_FIELDS)
-        for a in AziendaService(context.session).list(context.actor)
+        for a in LegalEntityService(context.session).list(context.actor)
     ]
 
 
 def describe_azienda(context: McpContext, azienda_id: str | None = None) -> dict[str, Any]:
     """Who the invoices and the documents say they come from.
 
-    `AziendaService.get` is one of the two reads in this product deliberately left
+    `LegalEntityService.get` is one of the two reads in this product deliberately left
     un-role-gated at the service layer, because the PDF header needs it for every
     role -- so there is no role for which this is agent-only knowledge. The logo and the
     signature appear as `ha_logo` and `ha_firma`, since REB-627: the files are uploaded
     over the REST API and their keys are the server's. The write on the same row is
     `update_azienda` (ORB-188). Without `id`, the two state flags, the timestamps and the
     two image flags, what this returns can be handed back to the write unchanged:
-    `AziendaUpsert` forbids extra keys, and the round trip the write's docstring
+    `LegalEntityUpsert` forbids extra keys, and the round trip the write's docstring
     prescribes («leggi prima, rimanda indietro l'oggetto») has to be possible.
     """
-    profile = AziendaService(context.session).get(context.actor, parse_azienda_id(azienda_id))
+    profile = LegalEntityService(context.session).get(
+        context.actor, parse_legal_entity_id(azienda_id)
+    )
     # Whether the two images are set, never the storage keys (REB-627): the keys are
-    # the server's, `AziendaUpsert` no longer takes them, and an agent reading this to
+    # the server's, `LegalEntityUpsert` no longer takes them, and an agent reading this to
     # hand it back to `update_azienda` must get an object the write accepts.
     return {
         **profile.model_dump(
@@ -355,18 +359,18 @@ def create_azienda(
     context: McpContext, dati: dict[str, Any], profilo_fiscale: dict[str, Any]
 ) -> dict[str, Any]:
     """A second azienda with its fiscal profile, in one call (REB-631, spec 2026-10-03
-    §7): `dati` in `AziendaCreate`'s shape, `profilo_fiscale` in `FiscalProfileUpsert`'s,
+    §7): `dati` in `LegalEntityCreate`'s shape, `profilo_fiscale` in `FiscalProfileUpsert`'s,
     the two bodies the REST route takes as one. Admin-only through the service, and
     agent-allowed like `update_azienda` since ORB-188: setting a space up is not a
     fiscal act. The two image flags are dropped as `update_azienda` drops them, so an
     agent that copies `describe_azienda`'s answer as a starting point is not refused."""
-    data = AziendaCreate.model_validate(
+    data = LegalEntityCreate.model_validate(
         {
             **{key: value for key, value in dati.items() if key not in READ_ONLY_FLAGS},
             "fiscal_profile": profilo_fiscale,
         }
     )
-    return AziendaService(context.session).create(data, context.actor).model_dump(mode="json")
+    return LegalEntityService(context.session).create(data, context.actor).model_dump(mode="json")
 
 
 def update_azienda(
@@ -378,22 +382,24 @@ def update_azienda(
     the default azienda, created on the spot when the space has none yet: the first
     thing a person asks the assistant they just connected is to set it (REB-188), and
     a prompt written for a one-azienda space keeps working."""
-    # Spelled as `AziendaService(...)` on each call rather than bound to a local:
+    # Spelled as `LegalEntityService(...)` on each call rather than bound to a local:
     # `test_mcp_surface_coverage.py` resolves receivers by name across the whole
     # module, and `service` is the name this file binds to `InvoiceService`.
     # The two image flags `describe_azienda` answers are read-only facts, not columns:
     # dropped here so the read can be handed back whole, as the tool's own docstring
-    # prescribes, without `AziendaUpsert` refusing them as extra keys.
-    data = AziendaUpsert.model_validate(
+    # prescribes, without `LegalEntityUpsert` refusing them as extra keys.
+    data = LegalEntityUpsert.model_validate(
         {key: value for key, value in dati.items() if key not in READ_ONLY_FLAGS}
     )
-    target = parse_azienda_id(azienda_id)
+    target = parse_legal_entity_id(azienda_id)
     if target is None:
         return (
-            AziendaService(context.session)
+            LegalEntityService(context.session)
             .upsert_default(data, context.actor)
             .model_dump(mode="json")
         )
     return (
-        AziendaService(context.session).update(target, data, context.actor).model_dump(mode="json")
+        LegalEntityService(context.session)
+        .update(target, data, context.actor)
+        .model_dump(mode="json")
     )

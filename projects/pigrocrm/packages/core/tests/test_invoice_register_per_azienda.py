@@ -24,10 +24,10 @@ from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict, ValidationFailed
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -60,8 +60,8 @@ def service(db_session: Session, local_storage: LocalFileStorage) -> InvoiceServ
     """The default azienda with an identity the FatturaPA checks accept, and its
     profile; the fixture's P.IVA is deliberately *not* this one, so a test that wants
     the file to land on the second azienda gives that one the fixture's ids."""
-    AziendaService(db_session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(db_session).upsert_default(
+        LegalEntityUpsert(
             nome="humancraft",
             ragione_sociale="Studio Rossi",
             partita_iva="09876543210",
@@ -97,12 +97,12 @@ def customer_id(db_session: Session) -> UUID:
 
 
 def _default_id(session: Session) -> UUID:
-    azienda = AziendaRepository(session).default()
+    azienda = LegalEntityRepository(session).default()
     assert azienda is not None
     return azienda.id
 
 
-def _second_azienda(session: Session, **overrides: object) -> Azienda:
+def _second_azienda(session: Session, **overrides: object) -> LegalEntity:
     """An Italian SRL beside the default, with a fiscal profile of its own."""
     values: dict[str, object] = {
         "nome": "rebase",
@@ -117,7 +117,7 @@ def _second_azienda(session: Session, **overrides: object) -> Azienda:
         "email": "fatture@rebase.it",
     }
     values.update(overrides)
-    row = Azienda(**values)
+    row = LegalEntity(**values)
     session.add(row)
     session.flush()
     FiscalProfileService(session).upsert(
@@ -126,10 +126,10 @@ def _second_azienda(session: Session, **overrides: object) -> Azienda:
     return row
 
 
-def _foreign_azienda(session: Session) -> Azienda:
+def _foreign_azienda(session: Session) -> LegalEntity:
     """A company established abroad, on the `non-it` pack: no regime code, 20% as
     the rate it enters, nothing of the forfettario's arithmetic."""
-    row = Azienda(
+    row = LegalEntity(
         nome="rebase ltd",
         ragione_sociale="Rebase Ltd",
         partita_iva="GB123456789",
@@ -154,7 +154,7 @@ def _foreign_azienda(session: Session) -> Azienda:
 
 
 def _draft_on(
-    service: InvoiceService, session: Session, customer_id: UUID, azienda: Azienda | None
+    service: InvoiceService, session: Session, customer_id: UUID, azienda: LegalEntity | None
 ) -> UUID:
     """A draft, moved onto `azienda` by row: the service writes every new document on
     the default azienda until milestone 3 derives it from the customer."""
@@ -300,10 +300,10 @@ def test_the_lock_of_one_azienda_does_not_block_the_other(db_engine: Engine) -> 
     with factory() as setup:
         # Inactive, so that while they exist no import in this worker's database can
         # match them; `lock_counter` does not care, it is the row that is the lock.
-        one = Azienda(
+        one = LegalEntity(
             nome="uno", ragione_sociale="Uno S.r.l.", partita_iva="11111111111", attiva=False
         )
-        two = Azienda(
+        two = LegalEntity(
             nome="due", ragione_sociale="Due S.r.l.", partita_iva="22222222222", attiva=False
         )
         setup.add_all([one, two])
@@ -389,7 +389,7 @@ def test_a_foreign_azienda_is_never_a_candidate_issuer_of_a_fatturapa_file(
     service: InvoiceService, db_session: Session
 ) -> None:
     foreign = _foreign_azienda(db_session)
-    candidates = AziendaRepository(db_session).active_italian()
+    candidates = LegalEntityRepository(db_session).active_italian()
     assert foreign.id not in {a.id for a in candidates}
     assert _default_id(db_session) in {a.id for a in candidates}
 
@@ -447,7 +447,7 @@ def test_a_foreign_azienda_issues_a_pdf_with_no_bollo_and_refuses_the_xml(
 def test_a_foreign_profile_has_no_regime_code_and_an_italian_one_requires_it(
     db_session: Session,
 ) -> None:
-    foreign = Azienda(nome="ltd", ragione_sociale="Rebase Ltd", nazione="GB")
+    foreign = LegalEntity(nome="ltd", ragione_sociale="Rebase Ltd", nazione="GB")
     db_session.add(foreign)
     db_session.flush()
     profiles = FiscalProfileService(db_session)
@@ -479,12 +479,14 @@ def test_a_foreign_vat_number_longer_than_eleven_characters_is_kept(
     db_session: Session,
 ) -> None:
     """REB-615 refused it in words until the column widened; it fits now."""
-    foreign = Azienda(nome="sarl", ragione_sociale="Rebase SARL", nazione="FR")
+    foreign = LegalEntity(nome="sarl", ragione_sociale="Rebase SARL", nazione="FR")
     db_session.add(foreign)
     db_session.flush()
-    read = AziendaService(db_session).update(
+    read = LegalEntityService(db_session).update(
         foreign.id,
-        AziendaUpsert(ragione_sociale="Rebase SARL", nazione="FR", partita_iva="FR 12 345678901"),
+        LegalEntityUpsert(
+            ragione_sociale="Rebase SARL", nazione="FR", partita_iva="FR 12 345678901"
+        ),
         ADMIN,
     )
     assert read.partita_iva == "FR12345678901"

@@ -39,8 +39,8 @@ from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.documents.models import Document, DocumentVersion
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.errors import Conflict, NotFound, PermissionDenied
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.gmail.models import EmailDraft, GmailMessage, PaymentReminder
@@ -73,11 +73,11 @@ def _profiles(session: Session, *, iban: str | None = IBAN) -> None:
     # Through the service, not a row by hand: this session may be a committed one of
     # its own, where the default azienda the test session seeds is not visible, and
     # `upsert_default` creates or fills it either way (REB-615).
-    from pigrocrm.core.emitter.schemas import AziendaUpsert
-    from pigrocrm.core.emitter.service import AziendaService
+    from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+    from pigrocrm.core.emitter.service import LegalEntityService
 
-    AziendaService(session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Studio Rossi",
             telefono="+39 333 1234567",
             sito_web="https://studiorossi.it",
@@ -85,7 +85,7 @@ def _profiles(session: Session, *, iban: str | None = IBAN) -> None:
         ),
         Actor(id=None, type="system", role="admin"),
     )
-    azienda = AziendaRepository(session).default()
+    azienda = LegalEntityRepository(session).default()
     assert azienda is not None
     session.add(FiscalProfile(codice_regime="RF19", iban=iban, azienda_id=azienda.id))
     session.flush()
@@ -727,7 +727,7 @@ def _cleanup(
         # The fiscal profile first: since REB-615 it references its azienda, and a
         # delete in the old order fails on the foreign key and leaks the whole cleanup.
         session.execute(delete(FiscalProfile))
-        session.execute(delete(Azienda).where(Azienda.predefinita.is_(False)))
+        session.execute(delete(LegalEntity).where(LegalEntity.predefinita.is_(False)))
         if user_id is not None:
             session.execute(delete(User).where(User.id == user_id))
         session.commit()

@@ -18,8 +18,8 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.clock import oggi_in_italia
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import (
     Conflict,
     ImmutableField,
@@ -69,8 +69,8 @@ DUE_DATE_LEGALI = pytest.mark.skipif(
 @pytest.fixture
 def service(db_session: Session, tmp_path) -> InvoiceService:  # type: ignore[no-untyped-def]
     FiscalProfileService(db_session).upsert(FiscalProfileUpsert(codice_regime="RF19"), ADMIN)
-    AziendaService(db_session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(db_session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="01234567890",
             codice_fiscale="HMCRFT00A01H501K",

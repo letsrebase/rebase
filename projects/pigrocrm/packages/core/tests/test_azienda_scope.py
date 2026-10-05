@@ -44,8 +44,8 @@ from pigrocrm.core.deals.schemas import DealListQuery
 from pigrocrm.core.documents.models import Document
 from pigrocrm.core.documents.repository import DocumentRepository
 from pigrocrm.core.documents.schemas import DocumentListQuery
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.repository import InvoiceRepository
 from pigrocrm.core.invoices.schemas import InvoiceListQuery
@@ -132,9 +132,9 @@ def world(db_engine: Engine) -> Iterator[World]:
     with factory() as session:
         _require_empty(session)
         inserted = committed_default_azienda(session)
-        studio = AziendaRepository(session).default()
+        studio = LegalEntityRepository(session).default()
         assert studio is not None
-        estero = Azienda(nome=f"{_PREFIX} ltd", ragione_sociale=f"{_PREFIX} Ltd", nazione="GB")
+        estero = LegalEntity(nome=f"{_PREFIX} ltd", ragione_sociale=f"{_PREFIX} Ltd", nazione="GB")
         stage = PipelineStage(
             nome=f"{_PREFIX} aperto", posizione=0, probabilita_default=20, tipo="open"
         )
@@ -346,7 +346,7 @@ def world(db_engine: Engine) -> Iterator[World]:
             session.execute(delete(Customer).where(Customer.ragione_sociale.like(f"{_PREFIX} %")))
             session.execute(delete(PipelineStage).where(PipelineStage.nome.like(f"{_PREFIX} %")))
             session.execute(delete(User).where(User.nome == f"{_PREFIX} operatore"))
-            session.execute(delete(Azienda).where(Azienda.id == ids.estero))
+            session.execute(delete(LegalEntity).where(LegalEntity.id == ids.estero))
             remove_azienda(session, inserted)
             session.commit()
 

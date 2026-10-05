@@ -13,7 +13,7 @@ from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 
 
 def _second_azienda(session: Session, **overrides: Any) -> str:
@@ -24,7 +24,7 @@ def _second_azienda(session: Session, **overrides: Any) -> str:
         "nazione": "IT",
     }
     values.update(overrides)
-    row = Azienda(**values)
+    row = LegalEntity(**values)
     session.add(row)
     session.flush()
     return str(row.id)

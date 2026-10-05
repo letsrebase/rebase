@@ -7,15 +7,15 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.emitter.models import PARTITA_IVA_WIDTH, Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.models import PARTITA_IVA_WIDTH, LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.emitter.schemas import (
     NOME_MAX_LENGTH,
     TEMPLATE_EXCLUDED_FIELDS,
-    AziendaCreate,
-    AziendaDeactivated,
-    AziendaRead,
-    AziendaUpsert,
+    LegalEntityCreate,
+    LegalEntityDeactivated,
+    LegalEntityRead,
+    LegalEntityUpsert,
 )
 from pigrocrm.core.errors import Conflict, NotFound, ValidationFailed
 
@@ -101,7 +101,7 @@ def _check_fiscal(data: dict[str, Any]) -> None:
         data["nome"] = data["ragione_sociale"][:NOME_MAX_LENGTH]
 
 
-class AziendaService:
+class LegalEntityService:
     """The aziende of a space, and «the» azienda for every caller that has one.
 
     Every read takes an optional `azienda_id`; `None` means the default, which on a
@@ -114,15 +114,17 @@ class AziendaService:
 
     def __init__(self, session: Session) -> None:
         self.session = session
-        self.repo = AziendaRepository(session)
+        self.repo = LegalEntityRepository(session)
         self.activities = ActivityService(session)
 
     # -- reads ---------------------------------------------------------------
 
-    def list(self, actor: Actor, *, only_active: bool = True) -> list[AziendaRead]:
-        return [AziendaRead.model_validate(row) for row in self.repo.list(only_active=only_active)]
+    def list(self, actor: Actor, *, only_active: bool = True) -> list[LegalEntityRead]:
+        return [
+            LegalEntityRead.model_validate(row) for row in self.repo.list(only_active=only_active)
+        ]
 
-    def propose(self, nazione: str | None) -> Azienda:
+    def propose(self, nazione: str | None) -> LegalEntity:
         """The azienda a new customer of `nazione` is billed by when the caller names
         none (REB-623, spec 2026-10-03 §1.6): the one active azienda of that nation when
         exactly one has it; else, for a customer outside Italy, the one active azienda
@@ -158,7 +160,7 @@ class AziendaService:
             )
         return azienda.id
 
-    def resolve(self, azienda_id: UUID | None = None) -> Azienda:
+    def resolve(self, azienda_id: UUID | None = None) -> LegalEntity:
         """The row `azienda_id` names, or the default when it is `None`. `NotFound`
         either way when there is nothing to answer with, under the label every
         consumer already handles (`emitter_profile`, `predefinita`)."""
@@ -167,7 +169,7 @@ class AziendaService:
             raise NotFound(ENTITY, DEFAULT_LABEL if azienda_id is None else str(azienda_id))
         return row
 
-    def single(self, azienda_id: UUID | None = None) -> Azienda | None:
+    def single(self, azienda_id: UUID | None = None) -> LegalEntity | None:
         """The one azienda a per-azienda figure speaks for (REB-630, spec 2026-10-03
         §1.9): the row `azienda_id` names, or the only active azienda when the caller
         named none, which is what keeps every read written for a one-azienda space
@@ -184,7 +186,7 @@ class AziendaService:
             return self.resolve(None)
         return None
 
-    def require_single(self, azienda_id: UUID | None, *, entity: str) -> Azienda:
+    def require_single(self, azienda_id: UUID | None, *, entity: str) -> LegalEntity:
         """`single`, or a refusal that names the parameter the caller has to add. The
         label is the caller's own (`analytics` for the estimate and the ceilings), since
         it is that request's field that is missing, not this table's."""
@@ -198,8 +200,8 @@ class AziendaService:
             )
         return row
 
-    def get(self, actor: Actor, azienda_id: UUID | None = None) -> AziendaRead:
-        return AziendaRead.model_validate(self.resolve(azienda_id))
+    def get(self, actor: Actor, azienda_id: UUID | None = None) -> LegalEntityRead:
+        return LegalEntityRead.model_validate(self.resolve(azienda_id))
 
     def as_template_values(self, actor: Actor, azienda_id: UUID | None = None) -> dict[str, Any]:
         """The azienda as a template scope, under the name `emittente`.
@@ -207,14 +209,14 @@ class AziendaService:
         This is what makes `{{emittente.ragione_sociale}}` work in a template and what
         replaced the hardcoded issuer data of the previous system's `header.typ`. The
         row's identity and state are excluded: they are storage, not a fact about the
-        business (and `AziendaRead` already drops nothing else).
+        business (and `LegalEntityRead` already drops nothing else).
         """
         profile = self.get(actor, azienda_id)
         return {"emittente": profile.model_dump(mode="json", exclude=set(TEMPLATE_EXCLUDED_FIELDS))}
 
     # -- writes --------------------------------------------------------------
 
-    def upsert_default(self, data: AziendaUpsert, actor: Actor) -> AziendaRead:
+    def upsert_default(self, data: LegalEntityUpsert, actor: Actor) -> LegalEntityRead:
         """Create the space's first azienda as its default, or replace the default's
         fields: the one write a space with one azienda ever needs, and the only path
         that can insert a row before creation opens (spec §9, milestone 5).
@@ -232,7 +234,7 @@ class AziendaService:
         row = self.repo.default()
         try:
             if row is None:
-                row = self.repo.add(Azienda(**payload, predefinita=True, attiva=True))
+                row = self.repo.add(LegalEntity(**payload, predefinita=True, attiva=True))
             else:
                 for key, value in payload.items():
                     setattr(row, key, value)
@@ -241,9 +243,9 @@ class AziendaService:
         except IntegrityError as exc:
             self.session.rollback()
             raise Conflict(ENTITY, self._conflict_reason(exc)) from exc
-        return AziendaRead.model_validate(row)
+        return LegalEntityRead.model_validate(row)
 
-    def create(self, data: AziendaCreate, actor: Actor) -> AziendaRead:
+    def create(self, data: LegalEntityCreate, actor: Actor) -> LegalEntityRead:
         """A second azienda, with its fiscal profile, in one transaction (REB-630, spec
         2026-10-03 §1.2, §3, §9 milestone 5). Active, and the default only when the
         space had none: the first azienda of a space is what every implicit read
@@ -269,7 +271,7 @@ class AziendaService:
         FiscalProfileService.check(profilo)
         try:
             row = self.repo.add(
-                Azienda(**payload, predefinita=self.repo.default() is None, attiva=True)
+                LegalEntity(**payload, predefinita=self.repo.default() is None, attiva=True)
             )
             profile = FiscalProfile(**profilo, azienda_id=row.id)
             self.session.add(profile)
@@ -285,9 +287,9 @@ class AziendaService:
             # space racing for the default, which the fallback names.
             self.session.rollback()
             raise Conflict(ENTITY, self._conflict_reason(exc)) from exc
-        return AziendaRead.model_validate(row)
+        return LegalEntityRead.model_validate(row)
 
-    def update(self, azienda_id: UUID, data: AziendaUpsert, actor: Actor) -> AziendaRead:
+    def update(self, azienda_id: UUID, data: LegalEntityUpsert, actor: Actor) -> LegalEntityRead:
         """Replace one azienda's fields. Whole-row, like every write on this table:
         a key left out goes back to its default, which is why the MCP tool tells the
         agent to read first and send the object back."""
@@ -305,9 +307,9 @@ class AziendaService:
             raise Conflict(
                 ENTITY, self._conflict_reason(exc, "i dati fiscali sono gia' di un'altra azienda")
             ) from exc
-        return AziendaRead.model_validate(row)
+        return LegalEntityRead.model_validate(row)
 
-    def set_default(self, azienda_id: UUID, actor: Actor) -> AziendaRead:
+    def set_default(self, azienda_id: UUID, actor: Actor) -> LegalEntityRead:
         """Move the default. One transaction, old row off first, so the partial unique
         index never sees two defaults; an inactive azienda cannot become the default,
         because the default is what every implicit read resolves to."""
@@ -334,9 +336,9 @@ class AziendaService:
             # deactivation that landed in between. A clean Conflict, not a 500.
             self.session.rollback()
             raise Conflict(ENTITY, "la predefinita e' cambiata nel frattempo: ricarica") from exc
-        return AziendaRead.model_validate(row)
+        return LegalEntityRead.model_validate(row)
 
-    def deactivate(self, azienda_id: UUID, actor: Actor) -> AziendaDeactivated:
+    def deactivate(self, azienda_id: UUID, actor: Actor) -> LegalEntityDeactivated:
         """Switch an azienda off. Never a delete: an azienda that issued an invoice
         stays readable forever, and a row that is gone cannot be the `emittente` a
         snapshot was frozen from. The default is refused, since every implicit read
@@ -361,8 +363,8 @@ class AziendaService:
             # default after the check above read it.
             self.session.rollback()
             raise Conflict(ENTITY, "l'azienda e' diventata la predefinita nel frattempo") from exc
-        return AziendaDeactivated(
-            **AziendaRead.model_validate(row).model_dump(),
+        return LegalEntityDeactivated(
+            **LegalEntityRead.model_validate(row).model_dump(),
             clienti_collegati=self.repo.count_customers(row.id),
         )
 

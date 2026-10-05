@@ -13,12 +13,12 @@ from pigrocrm.core.actor import Actor
 from pigrocrm.core.emitter.assets import (
     _PNG_SIGNATURE,
     MAX_IMAGE_BYTES,
-    AziendaAssets,
+    LegalEntityAssets,
     _png_rows,
     sniff_image,
 )
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.errors import NotFound, PermissionDenied, ValidationFailed
 from pigrocrm.core.render.pdf import BLANK_PNG
 from pigrocrm.core.storage.local import LocalFileStorage
@@ -32,8 +32,8 @@ SVG = (
 JPEG = b"\xff\xd8\xff\xe0" + b"\x00" * 32
 
 
-def _default(session: Session) -> Azienda:
-    row = AziendaRepository(session).default()
+def _default(session: Session) -> LegalEntity:
+    row = LegalEntityRepository(session).default()
     assert row is not None
     return row
 
@@ -115,7 +115,7 @@ def test_the_bytes_decide_the_kind_never_a_name_and_only_a_whole_image() -> None
 def test_a_logo_is_stored_under_the_azienda_s_key_and_read_back_for_the_job(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
-    assets = AziendaAssets(db_session, local_storage)
+    assets = LegalEntityAssets(db_session, local_storage)
     azienda = _default(db_session)
     read = assets.set_logo(BLANK_PNG, ADMIN)
     first_key = read.logo_key
@@ -143,7 +143,7 @@ def test_a_logo_is_stored_under_the_azienda_s_key_and_read_back_for_the_job(
 def test_the_signature_is_a_png_under_the_name_the_offer_template_reads(
     db_session: Session, local_storage: LocalFileStorage
 ) -> None:
-    assets = AziendaAssets(db_session, local_storage)
+    assets = LegalEntityAssets(db_session, local_storage)
     azienda = _default(db_session)
     read = assets.set_firma(BLANK_PNG, ADMIN)
     assert read.firma_key is not None
@@ -158,7 +158,7 @@ def test_the_signature_is_a_png_under_the_name_the_offer_template_reads(
 
 
 def test_what_is_refused_at_upload(db_session: Session, local_storage: LocalFileStorage) -> None:
-    assets = AziendaAssets(db_session, local_storage)
+    assets = LegalEntityAssets(db_session, local_storage)
     for bad, words in (
         (JPEG, "PNG"),
         (BLANK_PNG[:-12], "PNG"),
@@ -185,7 +185,7 @@ def test_what_is_refused_at_upload(db_session: Session, local_storage: LocalFile
 def test_a_storage_that_refuses_the_cleanup_does_not_fail_a_committed_change(
     db_session: Session, local_storage: LocalFileStorage, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assets = AziendaAssets(db_session, local_storage)
+    assets = LegalEntityAssets(db_session, local_storage)
     first = assets.set_logo(BLANK_PNG, ADMIN).logo_key
 
     def refuse(key: str) -> None:
@@ -207,6 +207,6 @@ def test_a_key_the_storage_no_longer_has_reads_as_no_image(
     azienda = _default(db_session)
     azienda.logo_key = f"aziende/{azienda.id}/logo.png"
     db_session.flush()
-    assets = AziendaAssets(db_session, local_storage)
+    assets = LegalEntityAssets(db_session, local_storage)
     assert assets.logo(azienda.id) is None
     assert assets.media_for(azienda.id) == {}

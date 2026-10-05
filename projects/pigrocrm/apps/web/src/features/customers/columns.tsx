@@ -2,7 +2,7 @@ import type { ColumnDef } from '@tanstack/react-table'
 import { EntityCell } from '@/components/cells'
 import type { DataTableFeatures } from '@/components/DataTable'
 import { renderFieldValue } from '@/components/DynamicFieldRenderer'
-import type { AziendaRecord } from '@/lib/azienda'
+import type { LegalEntityRecord } from '@/lib/legalEntity'
 import type { FieldDefinition } from '@/lib/schema'
 import type { Customer } from './queries'
 
@@ -45,10 +45,10 @@ export interface CustomerColumnOptions {
   /**
    * The aziende to name in an «Azienda» column after the name (REB-625, spec 2026-10-03
    * §5 «Lists»). Given only under «Tutte le aziende» from the second azienda on
-   * (`useAziendeToName`): with one azienda, or with one selected, the column would say
+   * (`useLegalEntitiesToName`): with one azienda, or with one selected, the column would say
    * the same thing on every row.
    */
-  aziende?: AziendaRecord[]
+  aziende?: LegalEntityRecord[]
 }
 
 export function buildCustomerColumns(

@@ -3,52 +3,54 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 
 
-class AziendaRepository:
+class LegalEntityRepository:
     """A repository never commits (project rule): every method here reads or flushes,
     and the surrounding service method is the one transaction."""
 
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def active_italian(self) -> list[Azienda]:
+    def active_italian(self) -> list[LegalEntity]:
         """The aziende a FatturaPA file can name as its `CedentePrestatore` (REB-619,
         spec §1.5): active, established in Italy. The import classifier matches the
         file's supplier against these and no other; a foreign azienda never issued a
         file the SdI carried."""
         return [a for a in self.list(only_active=True) if (a.nazione or "").upper() == "IT"]
 
-    def list(self, *, only_active: bool = True) -> list[Azienda]:
+    def list(self, *, only_active: bool = True) -> list[LegalEntity]:
         """The default first, then by short name, so every list and every selector
         shows the same order without sorting again."""
-        query = select(Azienda)
+        query = select(LegalEntity)
         if only_active:
-            query = query.where(Azienda.attiva.is_(True))
-        query = query.order_by(Azienda.predefinita.desc(), Azienda.nome, Azienda.created_at)
+            query = query.where(LegalEntity.attiva.is_(True))
+        query = query.order_by(
+            LegalEntity.predefinita.desc(), LegalEntity.nome, LegalEntity.created_at
+        )
         return list(self.session.execute(query).scalars().all())
 
-    def get(self, azienda_id: UUID) -> Azienda | None:
-        return self.session.get(Azienda, azienda_id)
+    def get(self, azienda_id: UUID) -> LegalEntity | None:
+        return self.session.get(LegalEntity, azienda_id)
 
-    def default(self) -> Azienda | None:
+    def default(self) -> LegalEntity | None:
         """The one row with `predefinita`, or `None` on a space that has no azienda
         yet (between signup and `ensure_defaults`). With one azienda this is the row
         every consumer that used to ask for «the» emitter now gets."""
         return (
-            self.session.execute(select(Azienda).where(Azienda.predefinita.is_(True)))
+            self.session.execute(select(LegalEntity).where(LegalEntity.predefinita.is_(True)))
             .scalars()
             .first()
         )
 
     def count(self) -> int:
-        return self.session.scalar(select(func.count()).select_from(Azienda)) or 0
+        return self.session.scalar(select(func.count()).select_from(LegalEntity)) or 0
 
     def count_customers(self, azienda_id: UUID) -> int:
         """The live customers billed by `azienda_id`: what a deactivation answers with
         (spec §3), since each of them refuses a new deal, document or proforma until it
-        is moved. Imported lazily for the reason `AziendaService._normalise_ids` gives:
+        is moved. Imported lazily for the reason `LegalEntityService._normalise_ids` gives:
         the customer's model already imports this package for its column default."""
         from pigrocrm.core.customers.models import Customer
 
@@ -61,13 +63,13 @@ class AziendaRepository:
             or 0
         )
 
-    def add(self, azienda: Azienda) -> Azienda:
+    def add(self, azienda: LegalEntity) -> LegalEntity:
         # Flushes: this is what actually sends the `INSERT` to Postgres, where the
         # partial unique indexes (one default, one P.IVA, one codice fiscale) are the
         # only things that can refuse it, and what populates `azienda.id` (a flush-time
         # column default, see `PrimaryKeyMixin`) before the service needs it for
         # `ActivityService.record`. Callers invoke this from inside their own
-        # `try/except IntegrityError`: see `AziendaService.upsert_default`.
+        # `try/except IntegrityError`: see `LegalEntityService.upsert_default`.
         self.session.add(azienda)
         self.session.flush()
         return azienda

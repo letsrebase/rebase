@@ -23,7 +23,7 @@ from pigrocrm.core.analytics.schemas import CashBase, RevenueBase
 from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.deals.models import Deal
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.money import ZERO_MONEY, line_value, round_money, sum_hours, sum_money
 from pigrocrm.core.timetracking.models import Cost, TimeEntry
@@ -616,18 +616,18 @@ class AnalyticsRepository:
                 func.count(Invoice.id),
             )
             .join(Customer, Customer.id == Invoice.customer_id)
-            .join(Azienda, Azienda.id == Invoice.azienda_id)
+            .join(LegalEntity, LegalEntity.id == Invoice.azienda_id)
             .where(Invoice.anno == anno, *_revenue_filter(), *_invoice_azienda(azienda_id))
             .group_by(
                 Invoice.azienda_id,
-                Azienda.predefinita,
-                Azienda.nome,
+                LegalEntity.predefinita,
+                LegalEntity.nome,
                 Customer.id,
                 Customer.ragione_sociale,
             )
             .order_by(
-                Azienda.predefinita.desc(),
-                Azienda.nome,
+                LegalEntity.predefinita.desc(),
+                LegalEntity.nome,
                 Invoice.azienda_id,
                 ricavi.desc(),
                 Customer.ragione_sociale,

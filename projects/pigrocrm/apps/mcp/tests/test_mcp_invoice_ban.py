@@ -256,7 +256,7 @@ FORBIDDEN_SERVICE_CALLS = (
 # Empty since ORB-188, and kept with its instrument (`_receivers_of`) because the lesson
 # that filled it still holds: its one entry was `("FiscalProfileService", "upsert")`,
 # and `upsert` is exactly the kind of name a second service carries too --
-# `AziendaService.upsert` -- so putting "upsert" in the tuple above would have
+# `LegalEntityService.upsert` -- so putting "upsert" in the tuple above would have
 # banned the substring, and any call spelled that way, on any service, would have failed
 # this file with a message about the fiscal profile. A ban on a name is not a ban on an
 # operation, and the bare names above are safe only because each happens to be unique.
@@ -545,20 +545,20 @@ def test_the_qualified_scan_tells_two_services_with_the_same_method_apart(tmp_pa
     """Guards the guard, on the one property that makes it worth having. If
     `_receivers_of` collapsed to "some `.upsert(` exists", a qualified ban declared on
     one service's `upsert` would also ban every other service's -- `FiscalProfileService`
-    and `AziendaService` both have one, and both are tools today -- and the build
+    and `LegalEntityService` both have one, and both are tools today -- and the build
     would fail with a message about the wrong operation, which is how a policy stops
     being believed."""
     (tmp_path / "m.py").write_text(
         "def a(context):\n"
-        "    return AziendaService(context.session).upsert(data, context.actor)\n"
+        "    return LegalEntityService(context.session).upsert(data, context.actor)\n"
         "\n"
         "def b(context):\n"
         "    return FiscalProfileService(context.session).upsert(data, context.actor)\n",
         encoding="utf-8",
     )
     assert sorted(str(r) for r in _receivers_of("upsert", tmp_path)) == [
-        "AziendaService",
         "FiscalProfileService",
+        "LegalEntityService",
     ]
 
 

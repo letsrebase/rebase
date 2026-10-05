@@ -42,7 +42,7 @@ ToDate = Annotated[date, Query(alias="to", description="Fine del periodo, YYYY-M
 # omitted for «tutte». On the estimate and the ceilings it is the azienda the figure is
 # computed for: resolved alone on a one-azienda space, required by name on a space with
 # several, since a forfettario's coefficients and an SRL's arithmetic do not add.
-AziendaFilter = Annotated[
+LegalEntityFilter = Annotated[
     UUID | None,
     Query(
         description=(
@@ -51,7 +51,7 @@ AziendaFilter = Annotated[
         )
     ),
 ]
-AziendaRequired = Annotated[
+LegalEntityRequired = Annotated[
     UUID | None,
     Query(
         description=(
@@ -69,7 +69,7 @@ def period_pnl(
     da: FromDate,
     a: ToDate,
     customer_id: Annotated[UUID | None, Query()] = None,
-    azienda_id: AziendaFilter = None,
+    azienda_id: LegalEntityFilter = None,
     base: Annotated[
         RevenueBase,
         Query(
@@ -115,7 +115,7 @@ def economic_overview(
     session: SessionDep,
     actor: ActorDep,
     anno: Annotated[int, Query(ge=2000, le=2200)],
-    azienda_id: AziendaFilter = None,
+    azienda_id: LegalEntityFilter = None,
     base: Annotated[
         CashBase,
         Query(
@@ -145,7 +145,7 @@ def fiscal_estimate(
     session: SessionDep,
     actor: ActorDep,
     anno: Annotated[int, Query(ge=2000, le=2200)],
-    azienda_id: AziendaRequired = None,
+    azienda_id: LegalEntityRequired = None,
 ) -> FiscalEstimate:
     """`admin` -- enforced by the service, not here. A router containing an authorisation
     `if` is a router the MCP adapter cannot reuse, and this figure has no MCP tool at all
@@ -169,7 +169,7 @@ def ceiling_headroom(
     session: SessionDep,
     actor: ActorDep,
     anno: Annotated[int, Query(ge=2000, le=2200)],
-    azienda_id: AziendaRequired = None,
+    azienda_id: LegalEntityRequired = None,
 ) -> CeilingHeadroom:
     """Quanto spazio resta prima di ciascuna soglia attiva del pacchetto fiscale
     configurato (REB-352 §1.4), sui ricavi incassati e reali dell'anno. Aperto a ogni
@@ -186,7 +186,7 @@ def simulate_ceiling(
     ore_preventivate: Annotated[Decimal | None, Query(ge=0)] = None,
     valore_preventivato: Annotated[Decimal | None, Query(ge=0)] = None,
     tariffa_oraria: Annotated[Decimal | None, Query(ge=0)] = None,
-    azienda_id: AziendaRequired = None,
+    azienda_id: LegalEntityRequired = None,
 ) -> CeilingSimulation:
     """Il simulatore "ci sta?" (REB-352 §1.4): la stima di un deal non ancora vinto,
     aggiunta ai ricavi reali e rivalutata su ogni soglia attiva, senza salvare

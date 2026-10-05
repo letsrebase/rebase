@@ -29,8 +29,8 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.db import session_factory
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -43,8 +43,8 @@ HUMAN = Actor(id=None, type="user", role="admin")
 
 
 def _configure(session: Session) -> None:
-    AziendaService(session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="12345678901",
             codice_fiscale="RSSMRA80A01H501U",

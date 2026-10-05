@@ -26,7 +26,7 @@ import {
 import { Checkbox } from '@rebase/ui/checkbox'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
-import { useAzienda, type AziendaRecord } from '@/lib/azienda'
+import { useLegalEntity, type LegalEntityRecord } from '@/lib/legalEntity'
 import { scopeBody, scopeLabel } from './scope'
 import { roleLabel } from '@/lib/roles'
 import {
@@ -48,14 +48,14 @@ const ROLES: { value: UserRecord['ruolo']; label: string }[] = [
 
 const KNOWN_FIELDS = ['email', 'nome', 'ruolo', 'aziende']
 
-function AziendeChecklist({
+function LegalEntitiesChecklist({
   aziende,
   checked,
   onChange,
   idPrefix,
   error,
 }: {
-  aziende: AziendaRecord[]
+  aziende: LegalEntityRecord[]
   checked: string[]
   onChange: (next: string[]) => void
   idPrefix: string
@@ -113,7 +113,7 @@ export function UsersPanel() {
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
   // The scope (REB-635): the checked aziende of the invite, and the member whose scope
   // is being edited with theirs. Drawn from the second azienda on, like the selector.
-  const azienda = useAzienda()
+  const azienda = useLegalEntity()
   const several = azienda.aziende.length > 1
   const [inviteAziende, setInviteAziende] = useState<string[]>([])
   const [scopeOf, setScopeOf] = useState<UserRecord | null>(null)
@@ -483,7 +483,7 @@ export function UsersPanel() {
               </Select>
             </div>
             {several && (
-              <AziendeChecklist
+              <LegalEntitiesChecklist
                 aziende={azienda.aziende}
                 checked={inviteAziende}
                 onChange={setInviteAziende}
@@ -524,7 +524,7 @@ export function UsersPanel() {
                 {scopeProblem.detail}
               </p>
             )}
-            <AziendeChecklist
+            <LegalEntitiesChecklist
               aziende={azienda.aziende}
               checked={scopeAziende}
               onChange={setScopeAziende}

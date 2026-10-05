@@ -15,8 +15,8 @@ from uuid import UUID, uuid4
 from mcp import Client
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.timetracking.models import Cost, CostCategory
 
 # The tools whose input schema must offer `azienda_id`, as the card lists them, plus
@@ -39,14 +39,14 @@ def _payload(result: Any) -> Any:
 
 
 def _second_azienda(session: Session, nome: str = "rebase ltd", nazione: str = "GB") -> str:
-    row = Azienda(nome=nome, ragione_sociale=nome.title(), nazione=nazione)
+    row = LegalEntity(nome=nome, ragione_sociale=nome.title(), nazione=nazione)
     session.add(row)
     session.flush()
     return str(row.id)
 
 
 def _default_id(session: Session) -> str:
-    default = AziendaRepository(session).default()
+    default = LegalEntityRepository(session).default()
     assert default is not None
     return str(default.id)
 

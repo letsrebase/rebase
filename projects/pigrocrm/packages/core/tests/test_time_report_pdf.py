@@ -14,8 +14,8 @@ from orologio import congela
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import PermissionDenied, ValidationFailed
 from pigrocrm.core.templates.service import TemplateService
 from pigrocrm.core.timetracking import report as report_module
@@ -160,11 +160,11 @@ def test_the_pdf_renders_and_contains_the_hostile_description_verbatim(
     the value reaches the page as the literal text somebody typed."""
     # The brief's own sample for this test omitted the emitter profile the render
     # pipeline requires (`DocumentService._template_scope` calls
-    # `AziendaService.as_template_values`, which raises `NotFound` with no
+    # `LegalEntityService.as_template_values`, which raises `NotFound` with no
     # singleton row) -- every other slice-2 PDF test sets one up
     # (`test_documents_from_template.py`'s `setup` fixture); this one needs it too.
-    AziendaService(db_session).upsert_default(
-        AziendaUpsert(ragione_sociale="Studio di prova", partita_iva="01234567890"),
+    LegalEntityService(db_session).upsert_default(
+        LegalEntityUpsert(ragione_sociale="Studio di prova", partita_iva="01234567890"),
         ADMIN,
     )
     TemplateService(db_session).seed_defaults(ADMIN)

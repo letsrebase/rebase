@@ -17,7 +17,7 @@ import {
   SelectValue,
 } from '@rebase/ui/select'
 import { fieldErrorFrom, type ProblemDetail } from '@/lib/api'
-import { useAzienda, useAziendaProposta } from '@/lib/azienda'
+import { useLegalEntity, useLegalEntityProposal } from '@/lib/legalEntity'
 import { clearedNativeValue, type FieldDefinition } from '@/lib/schema'
 import type { Customer } from './queries'
 
@@ -149,10 +149,10 @@ export function CustomerForm({
   // the nation proposes is shown live until the person picks one by hand, and what the
   // form shows is what is sent, so the saved customer carries it. While editing the
   // stored one is shown and sent only if changed.
-  const azienda = useAzienda()
+  const azienda = useLegalEntity()
   const chosenAzienda = values.native.azienda_id as string | null | undefined
   const nazione = typeof values.native.nazione === 'string' ? values.native.nazione : ''
-  const proposta = useAziendaProposta(
+  const proposta = useLegalEntityProposal(
     nazione,
     azienda.several && isCreate && (chosenAzienda === undefined || chosenAzienda === null),
   )

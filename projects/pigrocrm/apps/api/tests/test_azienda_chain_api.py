@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.contracts.schemas import ContractCreate
 from pigrocrm.core.contracts.service import ContractService
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceLineIn
@@ -36,7 +36,7 @@ def _default_id(client: TestClient) -> str:
 
 
 def _second_azienda(session: Session, nome: str = "rebase ltd", nazione: str = "GB") -> str:
-    row = Azienda(nome=nome, ragione_sociale=f"{nome.title()}", nazione=nazione)
+    row = LegalEntity(nome=nome, ragione_sociale=f"{nome.title()}", nazione=nazione)
     session.add(row)
     session.flush()
     return str(row.id)
@@ -121,7 +121,7 @@ def test_a_customer_gets_the_proposal_or_keeps_the_azienda_named(
 def test_an_inactive_azienda_is_refused_on_a_customer_naming_the_field(
     logged_in: TestClient, api_session: Session
 ) -> None:
-    closed = Azienda(nome="chiusa", ragione_sociale="Chiusa S.r.l.", attiva=False)
+    closed = LegalEntity(nome="chiusa", ragione_sociale="Chiusa S.r.l.", attiva=False)
     api_session.add(closed)
     api_session.flush()
     refused = logged_in.post(

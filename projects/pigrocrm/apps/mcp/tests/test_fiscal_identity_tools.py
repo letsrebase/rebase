@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.errors import NotFound
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.storage import LocalFileStorage
@@ -109,14 +109,14 @@ async def test_an_admin_agent_sets_the_emitter_and_a_malformed_value_names_its_f
         assert refused.is_error
         assert "partita_iva" in refused.content[0].text
         assert "11 cifre" in refused.content[0].text
-    assert AziendaService(mcp_session).get(ADMIN).partita_iva == "01234567890"
+    assert LegalEntityService(mcp_session).get(ADMIN).partita_iva == "01234567890"
 
 
 async def test_the_emitter_read_can_be_handed_back_to_the_write_unchanged(
     mcp_session: Session, tmp_path: Path
 ) -> None:
     """The round trip the write's docstring prescribes -- «leggi prima, rimanda indietro
-    l'oggetto letto con le modifiche» -- has to validate: `AziendaUpsert` forbids
+    l'oggetto letto con le modifiche» -- has to validate: `LegalEntityUpsert` forbids
     extra keys, so the read must not carry `id` or the timestamps."""
     server = _server(mcp_session, ADMIN, tmp_path)
     async with Client(server) as client:
@@ -149,7 +149,7 @@ async def test_a_collaboratore_agent_is_refused_both_writes_and_nothing_changes(
     # only its name, and no fiscal profile exists.
     with pytest.raises(NotFound):
         FiscalProfileService(mcp_session).describe(ADMIN)
-    azienda = AziendaService(mcp_session).get(ADMIN)
+    azienda = LegalEntityService(mcp_session).get(ADMIN)
     assert azienda.ragione_sociale == "Spazio di prova"
     assert azienda.partita_iva is None
 
@@ -167,7 +167,7 @@ async def test_an_explicit_azienda_id_that_is_not_an_id_is_refused_not_the_defau
             )
             assert result.is_error, bad
             assert "azienda_id" in result.content[0].text
-    assert AziendaService(mcp_session).get(ADMIN).partita_iva is None
+    assert LegalEntityService(mcp_session).get(ADMIN).partita_iva is None
 
 
 async def test_an_admin_agent_opens_a_second_azienda_with_its_profile(
@@ -210,7 +210,7 @@ async def test_an_admin_agent_opens_a_second_azienda_with_its_profile(
         )
         assert refused.is_error
         assert "applica_bollo" in refused.content[0].text
-    assert len(AziendaService(mcp_session).list(ADMIN)) == 2
+    assert len(LegalEntityService(mcp_session).list(ADMIN)) == 2
 
 
 async def test_a_collaboratore_agent_cannot_open_an_azienda(

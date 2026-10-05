@@ -22,9 +22,9 @@ from pigrocrm.core.deals.service import DealService
 from pigrocrm.core.documents import service as documents_service_module
 from pigrocrm.core.documents.schemas import DocumentFromTemplate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.assets import AziendaAssets
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.assets import LegalEntityAssets
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.gmail.drafts import EmailDraftService
@@ -50,14 +50,14 @@ SVG = (
 )
 
 
-def _default(session: Session) -> Azienda:
-    row = AziendaRepository(session).default()
+def _default(session: Session) -> LegalEntity:
+    row = LegalEntityRepository(session).default()
     assert row is not None
     return row
 
 
-def _second(session: Session) -> Azienda:
-    row = Azienda(
+def _second(session: Session) -> LegalEntity:
+    row = LegalEntity(
         nome="rebase",
         ragione_sociale="Rebase S.r.l.",
         partita_iva="09876543210",
@@ -95,7 +95,7 @@ def test_a_document_renders_from_its_own_azienda_with_its_logo(
     db_session: Session, local_storage: LocalFileStorage, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     second = _second(db_session)
-    AziendaAssets(db_session, local_storage).set_logo(SVG, ADMIN, second.id)
+    LegalEntityAssets(db_session, local_storage).set_logo(SVG, ADMIN, second.id)
     customer_id = _customer_of(db_session, second.id)
     template = TemplateService(db_session).create(
         TemplateCreate(
@@ -145,7 +145,7 @@ def test_the_invoice_pdf_carries_the_issuing_azienda_s_logo(
     second = _second(db_session)
     _fiscal(db_session, _default(db_session).id, "IT60X0542811101000000123456")
     _fiscal(db_session, second.id, "IT60X0542811101000000654321")
-    AziendaAssets(db_session, local_storage).set_logo(BLANK_PNG, ADMIN, second.id)
+    LegalEntityAssets(db_session, local_storage).set_logo(BLANK_PNG, ADMIN, second.id)
     customer_id = _customer_of(db_session, second.id)
     invoices = InvoiceService(db_session, local_storage, SETTINGS)
     proforma = invoices.create(

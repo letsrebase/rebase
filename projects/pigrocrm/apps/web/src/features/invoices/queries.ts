@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import { useAziendaScope } from '@/lib/azienda'
+import { useLegalEntityScope } from '@/lib/legalEntity'
 import { api, fetchWithRefresh, toProblem, unwrap } from '@/lib/api'
 import type { StatusTone } from '@/components/StatusPill'
 import type { components } from '@/lib/api-types'
@@ -208,7 +208,7 @@ function useInvoicesPaged(filters: InvoicesListFilters): InvoicesListResult {
 export function useInvoicesList(filters: InvoicesListFilters = {}): InvoicesListResult {
   // The sidebar's azienda (REB-625) on this page only: the owner tab below passes a
   // customer or a deal, whose invoices are theirs whatever the sidebar says.
-  return useInvoicesPaged(useAziendaScope(filters))
+  return useInvoicesPaged(useLegalEntityScope(filters))
 }
 
 /**

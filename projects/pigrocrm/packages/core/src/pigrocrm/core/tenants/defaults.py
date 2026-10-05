@@ -16,9 +16,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.actor import Actor
-from pigrocrm.core.emitter.repository import AziendaRepository
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.repository import LegalEntityRepository
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.pipeline.models import PipelineStage
 from pigrocrm.core.pipeline.service import PipelineService
 from pigrocrm.core.templates.models import Template
@@ -63,8 +63,8 @@ def ensure_defaults(session: Session, *, nome: str | None = None) -> DefaultsRep
         templates = len(TemplateService(session).seed_defaults(actor))
     if _is_empty(session, CostCategory):
         categories = len(CostCategoryService(session).seed_defaults(actor))
-    if nome and AziendaRepository(session).count() == 0:
-        AziendaService(session).upsert_default(AziendaUpsert(ragione_sociale=nome), actor)
+    if nome and LegalEntityRepository(session).count() == 0:
+        LegalEntityService(session).upsert_default(LegalEntityUpsert(ragione_sociale=nome), actor)
         aziende = 1
     return DefaultsReport(
         stages=stages, templates=templates, categories=categories, aziende=aziende

@@ -72,7 +72,7 @@ from pigrocrm.core.timetracking.schemas import (
 )
 from pigrocrm.core.timetracking.service import TimeEntryService
 from pigrocrm_mcp.context import McpContext
-from pigrocrm_mcp.tools.invoices import parse_azienda_id
+from pigrocrm_mcp.tools.invoices import parse_legal_entity_id
 
 logger = logging.getLogger(__name__)
 
@@ -321,7 +321,7 @@ def register(
         """
         service = InvoiceService(context.session, context.storage)
         payload = InvoiceImport.model_validate(dati)
-        azienda = parse_azienda_id(azienda_id)
+        azienda = parse_legal_entity_id(azienda_id)
         fattura = service.import_issued(payload, context.actor, azienda_id=azienda)
         return {
             "fattura": fattura.model_dump(mode="json"),
@@ -345,7 +345,7 @@ def register(
             anno,
             RegisterGapsDeclare.model_validate({"buchi": buchi}),
             context.actor,
-            parse_azienda_id(azienda_id),
+            parse_legal_entity_id(azienda_id),
         )
         return [g.model_dump(mode="json") for g in result]
 
@@ -532,7 +532,7 @@ def register(
             # is the adapter's answer, and a call site that omits it is one refactor away
             # from resolving a second one from the environment (see `bind_time_to_invoice`).
             AnalyticsService(context.session, context.storage)
-            .get_fiscal_estimate(anno, context.actor, azienda_id=parse_azienda_id(azienda_id))
+            .get_fiscal_estimate(anno, context.actor, azienda_id=parse_legal_entity_id(azienda_id))
             .model_dump(mode="json")
         )
 

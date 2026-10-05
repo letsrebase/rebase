@@ -7,7 +7,7 @@ from aziende_helpers import azienda_url
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 
 COLLABORATORE_PASSWORD = "supersegreta1"
 
@@ -209,7 +209,7 @@ def test_the_import_and_the_gaps_are_keyed_by_the_azienda_named(
     """REB-620, spec §1.4: a second azienda, written by row since no route creates one
     before milestone 5, has a register of its own. The same number lands on both, and
     the gaps of one never show on the other's route."""
-    second = Azienda(
+    second = LegalEntity(
         nome="rebase",
         ragione_sociale="Rebase S.r.l.",
         partita_iva="09876543210",

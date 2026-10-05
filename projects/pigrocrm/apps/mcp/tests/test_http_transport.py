@@ -32,7 +32,7 @@ from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings
 from pigrocrm.core.db import session_factory
 from pigrocrm.core.db.sidecar import drop_database
-from pigrocrm.core.emitter.models import Azienda
+from pigrocrm.core.emitter.models import LegalEntity
 from pigrocrm.core.errors import Conflict
 from pigrocrm.core.fiscal.models import FiscalProfile
 from pigrocrm.core.space_settings import SpaceSettingsService, SpaceSettingsUpdate
@@ -588,8 +588,11 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
         # REB-615. The worker's database carries one committed default since REB-623
         # (`conftest.py`'s engine fixture); a database without one gets a row here,
         # and the teardown below removes only what is not the default.
-        if session.execute(select(Azienda.id).where(Azienda.predefinita.is_(True))).first() is None:
-            session.add(Azienda(nome="Radice", ragione_sociale="Radice", predefinita=True))
+        if (
+            session.execute(select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))).first()
+            is None
+        ):
+            session.add(LegalEntity(nome="Radice", ragione_sociale="Radice", predefinita=True))
         session.commit()
         admin_id = admin.id
     try:
@@ -602,7 +605,7 @@ def admin_root_token(mcp_engine: Engine) -> Iterator[tuple[str, UUID]]:
             )
             session.execute(delete(PersonalAccessToken).where(PersonalAccessToken.user_id.in_(ids)))
             session.execute(delete(FiscalProfile))
-            session.execute(delete(Azienda).where(Azienda.predefinita.is_(False)))
+            session.execute(delete(LegalEntity).where(LegalEntity.predefinita.is_(False)))
             session.execute(delete(User).where(User.id.in_(ids)))
             session.commit()
 

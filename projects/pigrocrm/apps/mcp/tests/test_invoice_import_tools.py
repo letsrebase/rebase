@@ -19,9 +19,9 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.config import Settings
 from pigrocrm.core.customers.models import Customer
-from pigrocrm.core.emitter.repository import AziendaRepository
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.repository import LegalEntityRepository
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
@@ -48,8 +48,8 @@ def _seed_fiscal_and_emitter_profiles(session: Session) -> None:
     admin = Actor(id=None, type="system", role="admin")
     # The azienda first, always (REB-615: a bare default is already seeded and this
     # fills in its identity), then its fiscal profile when it has none.
-    AziendaService(session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Studio Rossi di Mario Rossi",
             partita_iva="01234567890",
             codice_fiscale="HMCRFT00A01H501K",
@@ -62,7 +62,7 @@ def _seed_fiscal_and_emitter_profiles(session: Session) -> None:
         ),
         admin,
     )
-    azienda = AziendaRepository(session).default()
+    azienda = LegalEntityRepository(session).default()
     assert azienda is not None
     if FiscalProfileRepository(session).get(azienda.id) is None:
         FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), admin)
@@ -196,10 +196,10 @@ async def test_the_import_and_the_gaps_take_the_azienda_they_are_for(
 ) -> None:
     """REB-620, spec §7: `azienda_id` on the three register tools; omitted is the
     default azienda's register, a value that is not an id is refused in words."""
-    from pigrocrm.core.emitter.models import Azienda
+    from pigrocrm.core.emitter.models import LegalEntity
 
     _seed_fiscal_and_emitter_profiles(mcp_session)
-    second = Azienda(
+    second = LegalEntity(
         nome="rebase",
         ragione_sociale="Rebase S.r.l.",
         partita_iva="09876543210",

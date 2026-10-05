@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
+import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 import { api } from '@/lib/api'
 import { CostsPanel } from './CostsPanel'
 
@@ -79,12 +79,12 @@ function respond(routes: Record<string, () => Promise<never>>) {
 
 /** `null` is the general-costs panel, the one with no deal: a defaulted parameter
  *  cannot be handed `undefined` to mean that, it would take the default instead. */
-function renderPanel(dealId: string | null = DEAL, azienda?: AziendaValue) {
+function renderPanel(dealId: string | null = DEAL, azienda?: LegalEntityValue) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const panel = <CostsPanel dealId={dealId ?? undefined} />
   return render(
     <QueryClientProvider client={client}>
-      {azienda ? <AziendaContext value={azienda}>{panel}</AziendaContext> : panel}
+      {azienda ? <LegalEntityContext value={azienda}>{panel}</LegalEntityContext> : panel}
     </QueryClientProvider>,
   )
 }
@@ -170,9 +170,9 @@ describe('CostsPanel', () => {
 })
 
 describe('the «Azienda» picker of a general expense (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as AziendaRecord
-  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as AziendaRecord
-  const TWO: AziendaValue = {
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as LegalEntityRecord
+  const TWO: LegalEntityValue = {
     aziende: [HUMANCRAFT, REBASE],
     selected: null,
     select: vi.fn(),
@@ -220,9 +220,9 @@ describe('the «Azienda» picker of a general expense (REB-626)', () => {
 })
 
 describe('a custom cost field that happens to be named azienda_id (CodeRabbit, PR #509)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as AziendaRecord
-  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as AziendaRecord
-  const TWO: AziendaValue = {
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', attiva: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', nome: 'rebase', attiva: true } as LegalEntityRecord
+  const TWO: LegalEntityValue = {
     aziende: [HUMANCRAFT, REBASE],
     selected: null,
     select: vi.fn(),

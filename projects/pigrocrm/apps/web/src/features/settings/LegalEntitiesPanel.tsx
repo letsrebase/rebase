@@ -4,10 +4,10 @@ import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { Skeleton } from '@rebase/ui/skeleton'
 import { QueryErrorBanner } from '@/components/QueryErrorBanner'
-import { AziendaPanel } from './AziendaPanel'
+import { LegalEntityPanel } from './LegalEntityPanel'
 import { FiscalPanel } from './FiscalPanel'
-import { NuovaAziendaForm } from './NuovaAziendaForm'
-import { useAziende, type AziendaRecord } from './queries'
+import { NewLegalEntityForm } from './NewLegalEntityForm'
+import { useLegalEntities, type LegalEntityRecord } from './queries'
 
 /**
  * Impostazioni → Aziende (REB-617, spec 2026-10-03 §5): the one page that replaced
@@ -21,8 +21,8 @@ import { useAziende, type AziendaRecord } from './queries'
  * first visible piece of the whole project, since the sidebar's selector appears the
  * moment the list has two.
  */
-export function AziendePanel() {
-  const aziende = useAziende()
+export function LegalEntitiesPanel() {
+  const aziende = useLegalEntities()
   const [selected, setSelected] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
 
@@ -44,7 +44,7 @@ export function AziendePanel() {
 
   if (creating) {
     return (
-      <NuovaAziendaForm
+      <NewLegalEntityForm
         onCreated={(created) => {
           setSelected(created.id)
           setCreating(false)
@@ -58,7 +58,7 @@ export function AziendePanel() {
     <div className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-2">
         {list.length > 1 ? (
-          <AziendaPicker list={list} current={current} onPick={setSelected} />
+          <LegalEntityPicker list={list} current={current} onPick={setSelected} />
         ) : (
           <span />
         )}
@@ -67,19 +67,19 @@ export function AziendePanel() {
           Nuova azienda
         </Button>
       </div>
-      <AziendaPanel azienda={current} />
+      <LegalEntityPanel azienda={current} />
       <FiscalPanel aziendaId={current.id} />
     </div>
   )
 }
 
-function AziendaPicker({
+function LegalEntityPicker({
   list,
   current,
   onPick,
 }: {
-  list: AziendaRecord[]
-  current: AziendaRecord
+  list: LegalEntityRecord[]
+  current: LegalEntityRecord
   onPick: (id: string) => void
 }) {
   return (

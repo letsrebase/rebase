@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
-import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
+import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 import { CustomerForm, customerToFormValues } from './CustomerForm'
 import type { Customer } from './queries'
 import type { FieldDefinition } from '@/lib/schema'
@@ -281,9 +281,9 @@ describe('CustomerForm', () => {
 })
 
 describe('the «Azienda» picker (REB-626)', () => {
-  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', attiva: true } as AziendaRecord
-  const REBASE = { id: 'a-2', nome: 'rebase ltd', attiva: true } as AziendaRecord
-  const TWO: AziendaValue = {
+  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', attiva: true } as LegalEntityRecord
+  const REBASE = { id: 'a-2', nome: 'rebase ltd', attiva: true } as LegalEntityRecord
+  const TWO: LegalEntityValue = {
     aziende: [HUMANCRAFT, REBASE],
     selected: null,
     select: vi.fn(),
@@ -301,11 +301,11 @@ describe('the «Azienda» picker (REB-626)', () => {
     })
   }
 
-  function renderWithAziende(ui: ReactElement, value: AziendaValue = TWO) {
+  function renderWithAziende(ui: ReactElement, value: LegalEntityValue = TWO) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     return render(
       <QueryClientProvider client={client}>
-        <AziendaContext value={value}>{ui}</AziendaContext>
+        <LegalEntityContext value={value}>{ui}</LegalEntityContext>
       </QueryClientProvider>,
     )
   }
@@ -393,8 +393,8 @@ describe('the «Azienda» picker (REB-626)', () => {
 })
 
 describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR #509)', () => {
-  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', attiva: true } as AziendaRecord
-  const ONE_LEFT: AziendaValue = {
+  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', attiva: true } as LegalEntityRecord
+  const ONE_LEFT: LegalEntityValue = {
     aziende: [HUMANCRAFT],
     selected: null,
     select: vi.fn(),
@@ -408,7 +408,7 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
-        <AziendaContext value={ONE_LEFT}>
+        <LegalEntityContext value={ONE_LEFT}>
           <CustomerForm
             title="Modifica cliente"
             open
@@ -417,7 +417,7 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
             initial={customerToFormValues({ ...BASE_CUSTOMER, azienda_id: 'a-gone' })}
             onSubmit={onSubmit}
           />
-        </AziendaContext>
+        </LegalEntityContext>
       </QueryClientProvider>,
     )
     expect(screen.getByText(/non è più attiva/)).toBeInTheDocument()
@@ -433,7 +433,7 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
-        <AziendaContext value={ONE_LEFT}>
+        <LegalEntityContext value={ONE_LEFT}>
           <CustomerForm
             title="Modifica cliente"
             open
@@ -442,7 +442,7 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
             initial={customerToFormValues(BASE_CUSTOMER)}
             onSubmit={vi.fn()}
           />
-        </AziendaContext>
+        </LegalEntityContext>
       </QueryClientProvider>,
     )
     expect(screen.queryByRole('combobox', { name: 'Azienda' })).not.toBeInTheDocument()
@@ -450,9 +450,9 @@ describe('a customer stranded on a deactivated azienda (REB-626, Greptile on PR 
 })
 
 describe('the picker beside a custom field that happens to be named azienda_id (CodeRabbit, PR #509)', () => {
-  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', attiva: true } as AziendaRecord
-  const REBASE = { id: 'a-2', nome: 'rebase ltd', attiva: true } as AziendaRecord
-  const TWO: AziendaValue = {
+  const HUMANCRAFT = { id: 'a-1', nome: 'humancraft', attiva: true } as LegalEntityRecord
+  const REBASE = { id: 'a-2', nome: 'rebase ltd', attiva: true } as LegalEntityRecord
+  const TWO: LegalEntityValue = {
     aziende: [HUMANCRAFT, REBASE],
     selected: null,
     select: vi.fn(),
@@ -473,7 +473,7 @@ describe('the picker beside a custom field that happens to be named azienda_id (
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     render(
       <QueryClientProvider client={client}>
-        <AziendaContext value={TWO}>
+        <LegalEntityContext value={TWO}>
           <CustomerForm
             title="Modifica cliente"
             open
@@ -482,7 +482,7 @@ describe('the picker beside a custom field that happens to be named azienda_id (
             initial={customerToFormValues(BASE_CUSTOMER)}
             onSubmit={onSubmit}
           />
-        </AziendaContext>
+        </LegalEntityContext>
       </QueryClientProvider>,
     )
     await userEvent.click(screen.getByRole('combobox', { name: 'Azienda' }))

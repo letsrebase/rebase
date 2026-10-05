@@ -20,8 +20,8 @@ from pigrocrm.core.contracts.models import Contract, RateCard
 from pigrocrm.core.customers.models import Customer
 from pigrocrm.core.documents.schemas import DocumentCreate
 from pigrocrm.core.documents.service import DocumentService
-from pigrocrm.core.emitter.models import Azienda
-from pigrocrm.core.emitter.repository import AziendaRepository
+from pigrocrm.core.emitter.models import LegalEntity
+from pigrocrm.core.emitter.repository import LegalEntityRepository
 from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.invoices.service import InvoiceService
 from pigrocrm.core.storage import LocalFileStorage
@@ -31,7 +31,7 @@ FIXTURES = Path(__file__).parent / "fixtures" / "fatturapa"
 CONSULENZA = "fpr12-consulenza-marzo.xml"
 ADMIN = Actor(id=None, type="user", role="admin")
 
-# The fixture's own `CedentePrestatore` -- matching this on an `Azienda` is
+# The fixture's own `CedentePrestatore` -- matching this on a `LegalEntity` is
 # what makes the fixture "outgoing" for the account holder.
 FORNITORE_PIVA = "01234567890"
 FORNITORE_CF = "BNCCHR85M41H501Z"
@@ -46,8 +46,8 @@ def _fixture(name: str) -> bytes:
     return (FIXTURES / name).read_bytes()
 
 
-def _emitter(session: Session) -> Azienda:
-    profile = AziendaRepository(session).default()
+def _emitter(session: Session) -> LegalEntity:
+    profile = LegalEntityRepository(session).default()
     assert profile is not None
     profile.ragione_sociale = "Chiara Bianchi"
     profile.partita_iva = FORNITORE_PIVA

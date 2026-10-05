@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { SETTINGS_TABS } from '@/features/settings/tabs'
 import { readAndClearRegisterHandoffEmail } from '@/lib/registerHandoff'
-import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
+import { LegalEntityContext, type LegalEntityRecord, type LegalEntityValue } from '@/lib/legalEntity'
 import { AppShell } from './AppShell'
 import { SIDEBAR_GROUPS_KEY } from './sidebarGroups'
 
@@ -89,7 +89,7 @@ const mockGo = vi.fn()
  * provider is part of the harness rather than of any one test. Its query is disabled
  * below three characters, so nothing here issues a request.
  */
-function renderShell(children: React.ReactNode = <div />, azienda?: AziendaValue) {
+function renderShell(children: React.ReactNode = <div />, azienda?: LegalEntityValue) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   // A fresh element on every call: re-rendering the *same* element object is a React
   // bail-out, which would make `refresh()` (the stand-in for a navigation) do nothing.
@@ -97,9 +97,9 @@ function renderShell(children: React.ReactNode = <div />, azienda?: AziendaValue
   const tree = () => (
     <QueryClientProvider client={client}>
       {azienda ? (
-        <AziendaContext value={azienda}>
+        <LegalEntityContext value={azienda}>
           <AppShell go={mockGo}>{children}</AppShell>
-        </AziendaContext>
+        </LegalEntityContext>
       ) : (
         <AppShell go={mockGo}>{children}</AppShell>
       )}
@@ -641,10 +641,10 @@ describe('the space switcher', () => {
 })
 
 describe('the azienda selector (REB-625)', () => {
-  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, attiva: true } as AziendaRecord
-  const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, attiva: true } as AziendaRecord
+  const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, attiva: true } as LegalEntityRecord
+  const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, attiva: true } as LegalEntityRecord
 
-  function twoAziende(selected: string | null): AziendaValue {
+  function twoAziende(selected: string | null): LegalEntityValue {
     return {
       aziende: [HUMANCRAFT, REBASE],
       selected,
@@ -690,7 +690,7 @@ describe('the azienda selector (REB-625)', () => {
   })
 
   it('draws a scoped person’s one azienda as a label, not a control (REB-635)', () => {
-    const value: AziendaValue = {
+    const value: LegalEntityValue = {
       aziende: [REBASE],
       selected: 'a2',
       select: vi.fn(),

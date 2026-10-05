@@ -19,8 +19,8 @@ from sqlalchemy.orm import Session
 from pigrocrm.core.actor import Actor
 from pigrocrm.core.customers.schemas import CustomerCreate
 from pigrocrm.core.customers.service import CustomerService
-from pigrocrm.core.emitter.schemas import AziendaUpsert
-from pigrocrm.core.emitter.service import AziendaService
+from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+from pigrocrm.core.emitter.service import LegalEntityService
 from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
 from pigrocrm.core.fiscal.service import FiscalProfileService
 from pigrocrm.core.invoices.schemas import InvoiceCreate, InvoiceIssue, InvoiceLineIn
@@ -33,8 +33,8 @@ RIGA = {"descrizione": "Consulenza", "quantita": "2", "prezzo_unitario": "100.00
 def _emitter(session: Session) -> None:
     # The issuer every PDF header prints: `render_proforma_pdf` refuses to render
     # without one, the same way `issue` does.
-    AziendaService(session).upsert_default(
-        AziendaUpsert(
+    LegalEntityService(session).upsert_default(
+        LegalEntityUpsert(
             ragione_sociale="Studio Rossi",
             partita_iva="01234567890",
             indirizzo="Via Vittorio Veneto 12",

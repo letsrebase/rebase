@@ -7,7 +7,7 @@
  * here and in this browser (per space and per user, the key shape
  * `features/get-started/invoiceHandoff.ts` uses) and never in the URL.
  *
- * What reads it: the list hooks, through `useAziendaScope`, and the two lists that name
+ * What reads it: the list hooks, through `useLegalEntityScope`, and the two lists that name
  * the azienda on a row in «tutte» (the invoice number, the customer column). What never
  * reads it: a list that already has an owner. A customer's or a deal's tab shows that
  * owner's rows whatever the sidebar says, otherwise opening a deal of azienda A with B
@@ -26,11 +26,11 @@ import { useAuth } from './auth'
 import { queryKeys } from './query'
 import { tenantPrefix } from './tenant'
 
-export type AziendaRecord = components['schemas']['AziendaRead']
+export type LegalEntityRecord = components['schemas']['LegalEntityRead']
 
-export interface AziendaValue {
+export interface LegalEntityValue {
   /** The active aziende of the space, the default first; empty until the list has loaded. */
-  aziende: AziendaRecord[]
+  aziende: LegalEntityRecord[]
   /** The selected azienda's id, or `null` for «Tutte le aziende». */
   selected: string | null
   select: (id: string | null) => void
@@ -43,10 +43,10 @@ export interface AziendaValue {
    *  a label rather than a control, since there is nothing to choose between. */
   pinned: boolean
   /** The active azienda an id names, or `undefined` for `null` and for an id no longer there. */
-  byId: (id: string | null | undefined) => AziendaRecord | undefined
+  byId: (id: string | null | undefined) => LegalEntityRecord | undefined
 }
 
-const ONE_AZIENDA: AziendaValue = {
+const ONE_AZIENDA: LegalEntityValue = {
   aziende: [],
   selected: null,
   select: () => {},
@@ -56,33 +56,33 @@ const ONE_AZIENDA: AziendaValue = {
   byId: () => undefined,
 }
 
-export const AziendaContext = createContext<AziendaValue>(ONE_AZIENDA)
+export const LegalEntityContext = createContext<LegalEntityValue>(ONE_AZIENDA)
 
-export function aziendaKey(userId: string): string {
+export function legalEntityKey(userId: string): string {
   return `pigrocrm.azienda:${tenantPrefix || '/'}:${userId}`
 }
 
 /** Every access is guarded: a browser that refuses storage simply forgets the choice. */
-export function readSelectedAzienda(userId: string): string | null {
+export function readSelectedLegalEntity(userId: string): string | null {
   if (!userId) return null
   try {
-    return window.localStorage.getItem(aziendaKey(userId))
+    return window.localStorage.getItem(legalEntityKey(userId))
   } catch {
     return null
   }
 }
 
-export function writeSelectedAzienda(userId: string, id: string | null): void {
+export function writeSelectedLegalEntity(userId: string, id: string | null): void {
   if (!userId) return
   try {
-    if (id === null) window.localStorage.removeItem(aziendaKey(userId))
-    else window.localStorage.setItem(aziendaKey(userId), id)
+    if (id === null) window.localStorage.removeItem(legalEntityKey(userId))
+    else window.localStorage.setItem(legalEntityKey(userId), id)
   } catch {
     // Storage refused: the choice holds until the page is left.
   }
 }
 
-export function AziendaProvider({ children }: { children: ReactNode }) {
+export function LegalEntityProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const userId = user?.id ?? ''
   // The same key `Impostazioni → Aziende` reads and its save invalidates, so a renamed
@@ -99,9 +99,9 @@ export function AziendaProvider({ children }: { children: ReactNode }) {
   // render rather than in an effect that would paint one frame with the wrong azienda.
   const [choice, setChoice] = useState<{ userId: string; id: string | null }>(() => ({
     userId,
-    id: readSelectedAzienda(userId),
+    id: readSelectedLegalEntity(userId),
   }))
-  const chosen = choice.userId === userId ? choice.id : readSelectedAzienda(userId)
+  const chosen = choice.userId === userId ? choice.id : readSelectedLegalEntity(userId)
 
   const several = aziende.length > 1
   // A scoped session (spec 2026-10-03 §1.11, §5): `me.aziende` is the list the person
@@ -121,7 +121,7 @@ export function AziendaProvider({ children }: { children: ReactNode }) {
   const select = useCallback(
     (id: string | null) => {
       setChoice({ userId, id })
-      writeSelectedAzienda(userId, id)
+      writeSelectedLegalEntity(userId, id)
     },
     [userId],
   )
@@ -129,15 +129,15 @@ export function AziendaProvider({ children }: { children: ReactNode }) {
     (id: string | null | undefined) => (id ? aziende.find((a) => a.id === id) : undefined),
     [aziende],
   )
-  const value = useMemo<AziendaValue>(
+  const value = useMemo<LegalEntityValue>(
     () => ({ aziende, selected, select, several, scoped, pinned, byId }),
     [aziende, selected, select, several, scoped, pinned, byId],
   )
-  return <AziendaContext value={value}>{children}</AziendaContext>
+  return <LegalEntityContext value={value}>{children}</LegalEntityContext>
 }
 
-export function useAzienda(): AziendaValue {
-  return use(AziendaContext)
+export function useLegalEntity(): LegalEntityValue {
+  return use(LegalEntityContext)
 }
 
 /**
@@ -145,8 +145,8 @@ export function useAzienda(): AziendaValue {
  * and the list has no owner of its own. The result is also the query key's argument, so a
  * switch of the sidebar is a new key and a fresh request, with no invalidation to forget.
  */
-export function useAziendaScope<P extends object>(params: P): P & { azienda_id?: string } {
-  const { selected } = useAzienda()
+export function useLegalEntityScope<P extends object>(params: P): P & { azienda_id?: string } {
+  const { selected } = useLegalEntity()
   const owner = params as { customer_id?: string; deal_id?: string }
   if (selected === null || owner.customer_id !== undefined || owner.deal_id !== undefined) {
     return params
@@ -159,20 +159,20 @@ export function useAziendaScope<P extends object>(params: P): P & { azienda_id?:
  * with one azienda, and with one selected, every row is that azienda's and a name on
  * each line would only repeat the sidebar.
  */
-export function useAziendeToName(): AziendaRecord[] | undefined {
-  const { aziende, selected, several } = useAzienda()
+export function useLegalEntitiesToName(): LegalEntityRecord[] | undefined {
+  const { aziende, selected, several } = useLegalEntity()
   return several && selected === null ? aziende : undefined
 }
 
 /**
  * The azienda `nazione` proposes for a new customer (REB-626, spec 2026-10-03 §1.6), read
  * from the server so the form shows what `POST /api/customers` would pick: the rule lives
- * in `AziendaService.propose` once. `enabled` is the caller's: the customer form asks only
+ * in `LegalEntityService.propose` once. `enabled` is the caller's: the customer form asks only
  * from the second azienda on, while creating, and until the person picks one by hand. A
  * nation is two letters, so a half-typed one asks nothing rather than flipping the picker
  * to the default between the first letter and the second.
  */
-export function useAziendaProposta(nazione: string, enabled: boolean) {
+export function useLegalEntityProposal(nazione: string, enabled: boolean) {
   const paese = nazione.trim().toUpperCase() || 'IT'
   return useQuery({
     queryKey: queryKeys.aziendaProposta(paese),

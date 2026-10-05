@@ -244,14 +244,14 @@ def _seed_default_azienda(connection: Connection) -> None:
     else."""
     from sqlalchemy import select
 
-    from pigrocrm.core.emitter.models import Azienda
+    from pigrocrm.core.emitter.models import LegalEntity
 
     # Since REB-623 the engine fixture commits one, so this is the fallback for a
     # database that has none (a test that removed it and left the worker without).
-    if connection.execute(select(Azienda.id).where(Azienda.predefinita.is_(True))).first():
+    if connection.execute(select(LegalEntity.id).where(LegalEntity.predefinita.is_(True))).first():
         return
     connection.execute(
-        Azienda.__table__.insert().values(
+        LegalEntity.__table__.insert().values(
             nome="Studio di prova", ragione_sociale="Studio di prova", predefinita=True
         )
     )
@@ -259,9 +259,9 @@ def _seed_default_azienda(connection: Connection) -> None:
 
 def _invoice_service(session: Session, storage: LocalFileStorage) -> Any:
     """`InvoiceService` with the two profiles `issue()` reads already in place."""
-    from pigrocrm.core.emitter.repository import AziendaRepository
-    from pigrocrm.core.emitter.schemas import AziendaUpsert
-    from pigrocrm.core.emitter.service import AziendaService
+    from pigrocrm.core.emitter.repository import LegalEntityRepository
+    from pigrocrm.core.emitter.schemas import LegalEntityUpsert
+    from pigrocrm.core.emitter.service import LegalEntityService
     from pigrocrm.core.fiscal.schemas import FiscalProfileUpsert
     from pigrocrm.core.fiscal.service import FiscalProfileService
     from pigrocrm.core.invoices.service import InvoiceService
@@ -274,10 +274,10 @@ def _invoice_service(session: Session, storage: LocalFileStorage) -> Any:
     # overwrite what the test set. The fiscal profile is guarded on its own row, so a
     # test installing a different regime first -- `rf01_fiscal_profile` does exactly
     # that -- keeps it.
-    seeded = AziendaRepository(session).default()
+    seeded = LegalEntityRepository(session).default()
     if seeded is None or not seeded.partita_iva:
-        AziendaService(session).upsert_default(
-            AziendaUpsert(
+        LegalEntityService(session).upsert_default(
+            LegalEntityUpsert(
                 ragione_sociale="Studio Rossi",
                 partita_iva="01234567890",
                 codice_fiscale="HMCRFT00A01H501K",
@@ -290,7 +290,7 @@ def _invoice_service(session: Session, storage: LocalFileStorage) -> Any:
             ),
             admin,
         )
-    azienda = AziendaRepository(session).default()
+    azienda = LegalEntityRepository(session).default()
     assert azienda is not None
     if FiscalProfileRepository(session).get(azienda.id) is None:
         FiscalProfileService(session).upsert(FiscalProfileUpsert(codice_regime="RF19"), admin)
