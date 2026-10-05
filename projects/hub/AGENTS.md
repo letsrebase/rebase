@@ -461,6 +461,41 @@ collide with the first: it takes the next free port and logs it, confirmed live 
 while another agent held 4173 on 2026-09-10. Read the port off its own output rather than
 assuming 4173.
 
+## Testing on the preview
+
+Written from the 2026-09-29 end-to-end run. The container list and the `setrole` flags
+were re-checked read-only on 2026-10-05; the login, the match and the signing were not
+repeated, because they write data or send mail.
+
+- **The host is not prodbox.** `preview.letsrebase.com` shares its host with the hub's
+  production (`docs/migrations/2026-09-14-letsrebase.md`), a machine that is not Lorenzo's
+  prodbox. From the devbox that host is the `pigrocrm` ssh alias, which lives in the
+  devbox's own ssh config and is not defined in this repository. Touch only the
+  `rebase-preview-*` containers (`api-1`, `web-1`, `db-1`, `mcp-1`, `sweep-1`,
+  `campaigns-1`, `cards-1`), nothing else on that host. The compose flags for the preview
+  are in § "The team builder".
+- **Become admin.** `ssh pigrocrm docker exec rebase-preview-api-1 uv run --no-sync
+  rebase setrole --email <address> --role admin --nome <nome> --cognome <cognome>`.
+  `--nome` and `--cognome` are required when the address has no row yet (without them it
+  prompts on a tty and fails in `docker exec`, and `UserService.set_role` rejects empty
+  names); `--role member` demotes.
+- **Log in.** There is no password: a login is a magic link mailed through Resend, so a
+  `+alias` of an inbox you own (`you+hubtest@example.com`) works.
+- **Create a match** from the admin area, or with the `create_match` MCP tool, then send
+  it for signature.
+- **Sign on Documenso** with a headless browser at the `/sign/<token>` link from the
+  mail. The fields are a canvas, not form inputs: click the pad, type the name, «Next»,
+  then «Next Field», click the field by its coordinates, «Complete», «Sign». The journey
+  is in `docs/superpowers/specs/2026-09-23-documenso-probe.md` § 6. Repeat for each
+  document and each signer. The preview signs on production's Documenso
+  (`REBASE_DOCUMENSO_URL=https://firma.letsrebase.com`, the preview's own Documenso user,
+  § "Documenso, the signing site"), so the envelopes are created there;
+  `rebase-preview-api-1 uv run --no-sync rebase documenso-check` says whether it reaches it.
+- **A match sent for signature mails real addresses.** Give the freelancer and the
+  company only addresses you own.
+- **The preview keeps what earlier runs left**: test members, matches and envelopes stay
+  in its database, so expect rows you did not make and do not clean them up unasked.
+
 ## The database was inherited
 
 `signups` was created by PigroCRM's sidecar in production and holds real rows.
