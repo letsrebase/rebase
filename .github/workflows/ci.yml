@@ -4,7 +4,8 @@
 #      the full Python suite, the Playwright run, the images. Free and parallel, and
 #      the answer arrives before the push rather than minutes after it.
 #   2. `pull_request`: one cheap gate per project, scoped to what the diff can break.
-#   3. `push` to main: the heavy tier -- the images -- but scoped to the
+#   3. `push` to main: the heavy tier -- the images and the website's Playwright
+#      suite -- but scoped to the
 #      same filters. Scoping started 2026-09-09 because the repository was private and
 #      every minute here was billed (1,564 of a 2,000/month allowance in eight days,
 #      and a job that hits that limit dies in two seconds with no log, which reads as
@@ -736,6 +737,42 @@ jobs:
         # no state and the one variable is a host port.
         run: docker compose build
 
+  # Tier 3 for the one suite that drives the built site in a real browser (REB-663):
+  # cookie notice, UTM carry-through, the typewriter, and the order of the landing's
+  # window globals in the built bundle, none of which the `website` job's unit tests
+  # can see. Not on a pull_request, by the rule at the top of this file: Chromium and a
+  # build are the expensive half, and `preflight.json`'s `website-e2e` check runs the
+  # same `pnpm --filter website test:e2e` before the PR exists. `website` is also what
+  # a release tag (`website-v<semver>`) and the nightly select, so a release is proven
+  # by this suite too. `playwright.config.ts` builds and serves `dist` itself
+  # (`pnpm build && pnpm preview` on 4173), so no build step here.
+  website-e2e:
+    name: website · e2e
+    needs: changes
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && (needs.changes.outputs.all == 'true' || needs.changes.outputs.website == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile --filter website...
+
+      # The browser version is whatever the locked @playwright/test wants; `--with-deps`
+      # adds the system libraries a bare runner image may lack.
+      - name: Install Chromium
+        run: pnpm --filter website exec playwright install --with-deps chromium
+
+      - name: End-to-end tests
+        run: pnpm --filter website test:e2e
+
   hub-images:
     name: hub · images build
     needs: changes
@@ -785,7 +822,7 @@ jobs:
     # arrives. This is the only status check the repository should ever be asked to
     # require: every job name above can change forever without touching a ruleset.
     if: always()
-    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-web-lint, pigrocrm-api-types, website, hub-py, hub-web, hub-web-lint, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter]
+    needs: [changes, pigrocrm-py, pigrocrm-py-lint, pigrocrm-web, pigrocrm-web-lint, pigrocrm-api-types, website, website-e2e, hub-py, hub-web, hub-web-lint, shared-analytics, shared-ui, pigrocrm-images, website-image, hub-images, tooling-starter]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
