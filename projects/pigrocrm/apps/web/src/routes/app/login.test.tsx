@@ -191,4 +191,38 @@ describe('the chooser (REB-377)', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Crea un nuovo spazio' }))
     expect(navigate).toHaveBeenCalledWith({ to: '/app/register' })
   })
+
+  it('disables the create-space button and the other rows while a space is being entered', async () => {
+    mockSpaces([
+      { slug: 'studio', ruolo: 'admin' },
+      { slug: 'altro', ruolo: 'collaboratore' },
+    ])
+    let resolveEntering: (value: unknown) => void = () => {}
+    POST.mockReturnValue(new Promise((resolve) => (resolveEntering = resolve)))
+    const go = vi.fn()
+    render(<LoginPage go={go} />)
+    const create = await screen.findByRole('button', { name: 'Crea un nuovo spazio' })
+    expect(create).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: /studio/ }))
+    await waitFor(() => expect(create).toBeDisabled())
+    expect(screen.getByRole('button', { name: /altro/ })).toBeDisabled()
+    resolveEntering({ data: {}, response: { status: 200 } })
+    // A successful entry navigates away and keeps the guard; only a failure re-enables.
+    await waitFor(() => expect(go).toHaveBeenCalledWith('/studio/app/'))
+    expect(create).toBeDisabled()
+    expect(screen.getByRole('button', { name: /altro/ })).toBeDisabled()
+  })
+
+  it('re-enables the create-space button when entering fails', async () => {
+    mockSpaces([{ slug: 'studio', ruolo: 'admin' }])
+    let resolveEntering: (value: unknown) => void = () => {}
+    POST.mockReturnValue(new Promise((resolve) => (resolveEntering = resolve)))
+    render(<LoginPage go={vi.fn()} />)
+    const create = await screen.findByRole('button', { name: 'Crea un nuovo spazio' })
+    await userEvent.click(screen.getByRole('button', { name: /studio/ }))
+    await waitFor(() => expect(create).toBeDisabled())
+    resolveEntering({ error: { detail: 'No.' }, response: { status: 404 } })
+    await waitFor(() => expect(create).toBeEnabled())
+    expect(screen.getByRole('button', { name: /studio/ })).toBeEnabled()
+  })
 })
