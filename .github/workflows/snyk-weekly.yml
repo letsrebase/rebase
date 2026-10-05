@@ -160,6 +160,7 @@ jobs:
         working-directory: projects/pigrocrm
         env:
           POSTGRES_PASSWORD: build-only-never-used
+          PIGROCRM_APP_PASSWORD: build-only-never-used
           PIGROCRM_JWT_SECRET: build-only-never-used-and-long-enough-for-the-validator
           PIGROCRM_DATA_DIR: ./build-only-never-mounted
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

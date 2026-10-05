@@ -269,7 +269,7 @@
     },
     {
       "id": "pigrocrm-images",
-      "run": "cd projects/pigrocrm && POSTGRES_PASSWORD=build-only PIGROCRM_JWT_SECRET=build-only-and-long-enough-for-the-validator PIGROCRM_DATA_DIR=./build-only-never-mounted docker compose build",
+      "run": "cd projects/pigrocrm && POSTGRES_PASSWORD=build-only PIGROCRM_APP_PASSWORD=build-only PIGROCRM_JWT_SECRET=build-only-and-long-enough-for-the-validator PIGROCRM_DATA_DIR=./build-only-never-mounted docker compose build",
       "when": [
         "projects/pigrocrm/Dockerfile.api",
         "projects/pigrocrm/Dockerfile.web",

@@ -708,14 +708,15 @@ jobs:
         working-directory: projects/pigrocrm
         # The compose file's own build definitions, so this proves the same context
         # and the same Dockerfiles a deploy will use, rather than a parallel
-        # invocation that can drift from them. POSTGRES_PASSWORD, PIGROCRM_JWT_SECRET
-        # and (since REB-258) PIGROCRM_DATA_DIR are all `:?` there; a build reads none
-        # of them, but compose interpolates the whole file before building, so all
-        # three need a throwaway value, and the data directory has to stay
-        # path-shaped or compose reads the word as a named volume and refuses the
-        # project.
+        # invocation that can drift from them. POSTGRES_PASSWORD, PIGROCRM_JWT_SECRET,
+        # (since REB-258) PIGROCRM_DATA_DIR and (since REB-634) PIGROCRM_APP_PASSWORD
+        # are all `:?` there; a build reads none of them, but compose interpolates the
+        # whole file before building, so all four need a throwaway value, and the
+        # data directory has to stay path-shaped or compose reads the word as a named
+        # volume and refuses the project.
         env:
           POSTGRES_PASSWORD: build-only-never-used
+          PIGROCRM_APP_PASSWORD: build-only-never-used
           PIGROCRM_JWT_SECRET: build-only-never-used-and-long-enough-for-the-validator
           PIGROCRM_DATA_DIR: ./build-only-never-mounted
         run: docker compose build
