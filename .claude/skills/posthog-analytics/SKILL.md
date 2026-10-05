@@ -21,7 +21,7 @@ skill adds is the order of operations and the traps that cost a wasted afternoon
 | `projects/pigrocrm/apps/web` | `initAnalytics` from `@rebase/analytics/browser` in `main.tsx`, text masked in replay | the middleware table in `src/lib/analytics.ts`: a successful API call earns an event (`spazio_creato`, `fattura_emessa`, …) |
 | `projects/hub/apps/web` | the same `initAnalytics`, inputs masked | `src/lib/analytics.ts`: `useWizardAnalytics` (`wizard_iniziato`, `wizard_passo`, `wizard_completato`), `guida_scaricata` in `pages/member/Area.tsx` |
 | `projects/hub/apps/api` | `rebase_core.analytics` (`Tracker`), a background task after the row is committed | `iscrizione_completata` |
-| `projects/pigrocrm/apps/mcp` | `posthog.mcp.instrument` with `context=False` and `enable_exception_autocapture=False` | PostHog's own `$mcp_tool_call` and friends |
+| `projects/pigrocrm/apps/mcp` | `posthog.mcp.instrument` with `context=False`, `enable_exception_autocapture=False`, `enable_conversation_id=False`, `capture_model=False`, `report_missing=False` and `collect_feedback=False`, every option that shapes the tool surface named (the SDK flipped the conversation and model ones to on in 7.56.0; REB-642, `DECISIONS.md` 2026-10-05) | PostHog's own `$mcp_tool_call` and friends |
 | `projects/hub/apps/mcp` | not instrumented on purpose: its only users are admins | — |
 
 The key (`phc_…`) is public and committed in `shared/analytics/posthog.ts`; a second key
