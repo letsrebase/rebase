@@ -236,29 +236,18 @@ describe('/me, a card (REB-279: reads the merged `useMe`, gated on `ha_scheda`)'
     expect(screen.queryByText('Nessun CV')).toBeNull()
   })
 
-  it('gives both perk cards a growing description block, so a footer note cannot shift the button (REB-312)', async () => {
+  it('says the guide\'s size under its button, and gives the PigroCRM card no filler footer', async () => {
     meFetch(PROFILE)
     mount()
     const pigrocrmButton = await screen.findByRole('link', { name: /Apri PigroCRM/ })
     const guideButton = screen.getByRole('link', { name: /Scarica la guida/ })
     const pigrocrmCard = pigrocrmButton.parentElement
     const guideCard = guideButton.parentElement
-    // jsdom does not lay out flexbox, so the real proof that the two buttons land at
-    // the same height is the live browser screenshot; here we assert the structural
-    // fix instead: both cards wrap their eyebrow/title/description in a `flex-1`
-    // block that absorbs whatever space is left above the button (rather than the
-    // button itself carrying `mt-auto`), and both cards reserve the same footer slot
-    // below the button -- visible with its text on the guide card, present but
-    // `invisible` on the card with no footer note -- so a trailing note cannot push
-    // one button higher than the other.
-    expect(pigrocrmCard?.querySelector(':scope > .flex-1')).not.toBeNull()
-    expect(guideCard?.querySelector(':scope > .flex-1')).not.toBeNull()
-    expect(pigrocrmButton.className).not.toMatch(/\bmt-auto\b/)
-    expect(guideButton.className).not.toMatch(/\bmt-auto\b/)
-    const pigrocrmFooter = pigrocrmCard?.querySelector(':scope > p:last-child')
+    // The two boxes stack one per row (REB-641), so the invisible footer REB-312 kept on
+    // the PigroCRM card to level its button with the guide's is gone: a filler line
+    // under a button that has nothing beside it is only an empty row.
+    expect(pigrocrmCard?.lastElementChild).toBe(pigrocrmButton)
     const guideFooter = guideCard?.querySelector(':scope > p:last-child')
-    expect(pigrocrmFooter).toHaveClass('invisible')
-    expect(guideFooter).not.toHaveClass('invisible')
     expect(guideFooter).toHaveTextContent('PDF, 6 pagine, 48 KB.')
   })
 
@@ -316,12 +305,11 @@ describe('/me, no card (REB-279: a card-less admin reads name, email and role, n
   })
 })
 
-/** The two columns of the page below the header (REB-602): each must hold something, or
- *  the page reads as a half-empty screen with a gap at one side. */
-function columns(): HTMLElement[] {
+/** The stack below the header (REB-641): one column, and each of its children is one
+ *  section, so no two share a row. */
+function stack(): HTMLElement {
   const header = screen.getByRole('heading', { level: 1 }).closest('header')
-  const grid = header?.nextElementSibling
-  return Array.from(grid?.children ?? []) as HTMLElement[]
+  return header?.nextElementSibling as HTMLElement
 }
 
 describe('/me, a company request (REB-314: reads `ha_azienda` independently of `ha_scheda`)', () => {
@@ -415,55 +403,51 @@ describe('/me, a company request (REB-314: reads `ha_azienda` independently of `
   })
 })
 
-describe('/me, the page in two columns (REB-602), the referral panel on top of the left one (REB-610)', () => {
+describe('/me, one column in a fixed order (REB-641), the referral panel first (REB-610)', () => {
   const PERKS = ['PigroCRM è tuo, gratis', 'I primi passi da freelance']
-  const cases: [string, unknown, string[], string[]][] = [
-    ['a card only', PROFILE, ['La tua scheda', 'Contratti'], PERKS],
-    ['a company only', COMPANY_ONLY, [], ['La tua richiesta']],
-    ['a company with two requests', COMPANY_TWO_REQUESTS, [], ['Le tue richieste']],
-    ['a card and a company', BOTH, ['La tua scheda', 'Contratti'], ['La tua richiesta', ...PERKS]],
-    ['a card-less admin', CARDLESS_ADMIN, [], PERKS],
-    ['a plain member with nothing else', NOBODY, [], []],
+  const cases: [string, unknown, string[]][] = [
+    ['a card only', PROFILE, ['La tua scheda', ...PERKS, 'Contratti']],
+    ['a company only', COMPANY_ONLY, ['La tua richiesta']],
+    ['a company with two requests', COMPANY_TWO_REQUESTS, ['Le tue richieste']],
+    ['a card and a company', BOTH, ['La tua scheda', 'La tua richiesta', ...PERKS, 'Contratti']],
+    ['a card-less admin', CARDLESS_ADMIN, PERKS],
+    ['a plain member with nothing else', NOBODY, []],
   ]
 
-  it.each(cases)('opens the left column with the referral panel and fills the right for %s', async (_name, profile, alsoLeft, onTheRight) => {
+  it.each(cases)('reads referral, card, requests, perks, contracts for %s', async (_name, profile, after) => {
     meFetch(profile)
     mount()
     await screen.findByRole('heading', { level: 1 })
-    // The referral panel reads its own route: wait for it, so the columns are settled.
+    // The referral panel reads its own route: wait for it, so the page is settled.
     await screen.findByText('Nessuna segnalazione ancora.')
-    const [left, right] = columns() as [HTMLElement, HTMLElement]
-    expect(columns()).toHaveLength(2)
-    expect(right).not.toBeEmptyDOMElement()
-    const headings = within(left)
-      .getAllByRole('heading', { level: 2 })
-      .map((heading) => heading.textContent)
-    expect(headings[0]).toBe('Il tuo link di segnalazione')
-    expect(headings.slice(1)).toEqual(alsoLeft)
-    expect(within(right).queryAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual(
-      onTheRight,
-    )
-    expect(within(right).queryByText('Il tuo link di segnalazione')).toBeNull()
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)
+    expect(headings).toEqual(['Il tuo link di segnalazione', ...after])
   })
 
-  it('reads referral, card, contracts, requests, perks once the columns collapse', async () => {
+  it('puts every section in a row of its own, the two perks included', async () => {
     meFetch(BOTH)
     mount()
     await screen.findByText('Nessuna segnalazione ancora.')
-    const order = [
-      screen.getByRole('heading', { name: 'Il tuo link di segnalazione' }),
-      screen.getByRole('heading', { name: 'La tua scheda' }),
-      await screen.findByRole('heading', { name: 'Contratti' }),
-      screen.getByRole('heading', { name: 'La tua richiesta' }),
-      screen.getByRole('heading', { name: 'PigroCRM è tuo, gratis' }),
-    ]
-    order.slice(1).forEach((heading, index) => {
-      const before = order[index] as HTMLElement
-      expect(before.compareDocumentPosition(heading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    })
-    // Straight after the header: nothing but the header comes before it.
-    const header = screen.getByRole('heading', { level: 1 }).closest('header') as HTMLElement
-    expect(header.nextElementSibling?.firstElementChild?.firstElementChild).toContainElement(order[0] as HTMLElement)
+    const rows = Array.from(stack().children) as HTMLElement[]
+    // Five sections, one per row: referral, card, request, perks, contracts.
+    expect(rows.map((row) => row.tagName)).toEqual(['SECTION', 'SECTION', 'SECTION', 'SECTION', 'SECTION'])
+    expect(rows[0]).toContainElement(screen.getByRole('heading', { name: 'Il tuo link di segnalazione' }))
+    expect(rows[4]).toContainElement(screen.getByRole('heading', { name: 'Contratti' }))
+    // The perks are two boxes in one section, stacked at every viewport: no column
+    // class and no responsive variant on the section or on the stack.
+    const perks = screen.getByLabelText('I tuoi vantaggi')
+    expect(perks).toBe(rows[3])
+    expect(perks.className).not.toMatch(/grid-cols-|\b(sm|md|lg|xl|2xl):/)
+    expect(stack().className).not.toMatch(/grid-cols-|\b(sm|md|lg|xl|2xl):/)
+  })
+
+  it('shows the «Chi sei» fallback in the requests\' place, and nothing after it', async () => {
+    meFetch(NOBODY)
+    mount()
+    await screen.findByText('Nessuna segnalazione ancora.')
+    const rows = Array.from(stack().children) as HTMLElement[]
+    expect(rows).toHaveLength(2)
+    expect(rows[1]).toBe(screen.getByLabelText('Chi sei'))
   })
 })
 
