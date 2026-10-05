@@ -215,7 +215,7 @@ jobs:
             exit 1
           fi
           if ! ssh-keygen -F "${DEPLOY_HOST,,}" -f ~/.ssh/known_hosts >/dev/null; then
-            echo "::error::DEPLOY_KNOWN_HOSTS on environment ${ENVIRONMENT} holds no key for DEPLOY_HOST: a hashed line matches only the exact name or address it was scanned with, so scan the value DEPLOY_HOST holds, not another name of the same host."
+            echo "::error::DEPLOY_KNOWN_HOSTS on environment ${ENVIRONMENT} holds no key for DEPLOY_HOST: either the value is a bare public key (the host's .pub file) rather than a known_hosts line, or it is a hashed line scanned on another name or address of the same host. Scan the value DEPLOY_HOST holds with ssh-keyscan -H -t ed25519 (docs/adding-a-project.md § 7)."
             exit 1
           fi
           echo "host key pinned for environment ${ENVIRONMENT}; every connection below verifies against it"
