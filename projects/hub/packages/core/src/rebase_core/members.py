@@ -112,7 +112,7 @@ class MemberService:
     # ---- the identity behind a company request -----------------------------------------
 
     @staticmethod
-    def _live_requests(user_id: UUID) -> Select[tuple[Company]]:
+    def _live_requests(user_id: UUID) -> Select[Company]:
         return (
             select(Company)
             .where(Company.user_id == user_id, Company.deleted_at.is_(None))
@@ -349,4 +349,4 @@ class MemberService:
             select(Freelancer, User)
             .join(User, User.id == Freelancer.user_id)
             .where(func.lower(User.email) == email, Freelancer.deleted_at.is_(None))
-        ).first()  # type: ignore[return-value]
+        ).first()

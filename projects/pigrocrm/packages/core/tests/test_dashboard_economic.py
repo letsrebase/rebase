@@ -181,7 +181,7 @@ def rf01_corpus(db_engine: Engine) -> Iterator[Corpus]:
             session.commit()
 
 
-def _corpus_customers() -> Select[tuple[UUID]]:
+def _corpus_customers() -> Select[UUID]:
     return select(Customer.id).where(Customer.ragione_sociale.like(f"{_PREFIX} %"))
 
 

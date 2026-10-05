@@ -484,7 +484,7 @@ class SollecitiService:
             return None
         return self.repo.last_outbound_about(account.id, self._numero(invoice))
 
-    def _query(self, grace_cutoff: date) -> Select[CandidateRow]:
+    def _query(self, grace_cutoff: date) -> Select[*CandidateRow]:
         """The invoice/customer/reminder join, with conditions 1 and 2 in the `WHERE`.
 
         One aggregate over `payment_reminders` rather than N follow-up queries, and it is

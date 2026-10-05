@@ -9,7 +9,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from pydantic import TypeAdapter
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from rebase_core.campaigns.actions import done_at
@@ -305,21 +305,21 @@ def exclusions(
 ) -> dict[str, str]:
     if not emails:
         return {}
+    # `func.lower(...)` is untyped (`Function[Any]`), and a select of it is a select of
+    # unknown shape whose `scalars()` SQLAlchemy 2.1 cannot type: the annotation says
+    # what the function returns, and both sets are `set[str]` from there.
+    user_email: ColumnElement[str] = func.lower(User.email)
     admins = set(
-        session.scalars(
-            select(func.lower(User.email)).where(
-                User.role == "admin", func.lower(User.email).in_(emails)
-            )
-        )
+        session.scalars(select(user_email).where(User.role == "admin", user_email.in_(emails)))
     )
     # A card an admin marked «scartato» (REB-524), deleted or not: a turned-down person
     # stays turned down. By address, so the rule also holds on a company's list for the
     # same person, and before each mail for a card turned down after the list froze.
     discarded = set(
         session.scalars(
-            select(func.lower(User.email))
+            select(user_email)
             .join(Freelancer, Freelancer.user_id == User.id)
-            .where(Freelancer.stato == "scartato", func.lower(User.email).in_(emails))
+            .where(Freelancer.stato == "scartato", user_email.in_(emails))
         )
     )
     optout_rows = session.execute(

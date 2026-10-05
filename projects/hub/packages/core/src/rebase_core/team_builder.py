@@ -198,7 +198,7 @@ PROPOSAL_SCHEMA = ProposalAnswer.model_json_schema()
 # ---- the catalogue ---------------------------------------------------------------------
 
 
-def cloud_visible[Row: tuple[Any, ...]](stmt: Select[Row]) -> Select[Row]:
+def cloud_visible[*Ts](stmt: Select[*Ts]) -> Select[*Ts]:
     """The one filter of who is in the catalogue and the talent cloud (shared with D3):
     a live freelancer (`deleted_at IS NULL`), not turned down (`stato != 'scartato'`),
     with a card. `stmt` selects from `Freelancer` and has not joined `FreelancerCard`:

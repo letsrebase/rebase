@@ -14,7 +14,7 @@ cycle, which is exactly the failure mode spec 4 exists to prevent.
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.customers.models import Customer
@@ -43,10 +43,15 @@ class AddressRoster:
         and sorted. Sorted because the batching in `gmail/query.py` must be stable: an
         unstable order means two consecutive syncs issue different `q` strings for the
         same data, and the request-inspecting test in B1-7 could then pass by luck."""
-        people = select(func.lower(Person.email)).where(
-            Person.email.is_not(None), Person.deleted_at.is_(None)
-        )
-        customers = select(func.lower(Customer.email)).where(
+        # `func.lower(...)` is untyped (`Function[Any]`), and a select of it is a select
+        # of unknown shape whose `scalars()` SQLAlchemy 2.1 cannot type: the annotation
+        # says what the function returns, and the union's rows are `str` from there.
+        # `str`, not `str | None`, although both columns are nullable: each `WHERE` below
+        # keeps only the rows that have an address, and the annotation goes with that filter.
+        person_email: ColumnElement[str] = func.lower(Person.email)
+        customer_email: ColumnElement[str] = func.lower(Customer.email)
+        people = select(person_email).where(Person.email.is_not(None), Person.deleted_at.is_(None))
+        customers = select(customer_email).where(
             Customer.email.is_not(None), Customer.deleted_at.is_(None)
         )
         rows = self.session.execute(people.union(customers)).scalars().all()

@@ -420,9 +420,7 @@ def test_migration_0021_backfills_every_active_match_as_da_collegare(hub_postgre
         command.upgrade(config, "head")
 
         with engine.connect() as connection:
-            states = dict(
-                connection.execute(text("SELECT stato, pigro_stato FROM matches")).tuples().all()
-            )
+            states = dict(connection.execute(text("SELECT stato, pigro_stato FROM matches")).all())
         assert states == {
             "attivo": "da_collegare",
             "bozza": None,

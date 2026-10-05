@@ -13,7 +13,7 @@ this file is the structural counterpart of that.
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
-from typing import Any, NamedTuple, TypeVar
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, Select, SQLColumnExpression, and_, case, func, or_, select
@@ -28,11 +28,6 @@ from pigrocrm.core.invoices.models import Invoice, InvoiceLine
 from pigrocrm.core.money import ZERO_MONEY, line_value, round_money, sum_hours, sum_money
 from pigrocrm.core.timetracking.models import Cost, TimeEntry
 from pigrocrm.core.work_units.models import WORK_UNIT_COMMITTED_STATI, WorkUnit
-
-# `Self`-preserving, so a scoped statement keeps the row type its `select()` gave it and
-# the caller's `session.execute(...)` stays typed. A bare `Select[Any]` would work at
-# runtime and quietly turn every scoped query's rows into `Any`.
-_S = TypeVar("_S", bound=Select[Any])
 
 
 def _revenue_filter() -> tuple[ColumnElement[bool], ...]:
@@ -148,17 +143,21 @@ class AnalyticsRepository:
             )
         )
 
-    def _customer_scope(
-        self, stmt: _S, customer_id: UUID | None, column: InstrumentedAttribute[Any]
-    ) -> _S:
+    # Both scopes are generic over the statement's columns (`Select[*Ts]`, SQLAlchemy
+    # 2.1's own spelling), so a scoped statement keeps the row type its `select()` gave
+    # it and the caller's `session.execute(...)` stays typed. A bare `Select[Any]` would
+    # work at runtime and, since 2.1, means one column of `Any` rather than any shape.
+
+    def _customer_scope[*Ts](
+        self, stmt: Select[*Ts], customer_id: UUID | None, column: InstrumentedAttribute[Any]
+    ) -> Select[*Ts]:
         if customer_id is None:
             return stmt
-        scoped: _S = stmt.where(column.in_(select(Deal.id).where(Deal.customer_id == customer_id)))
-        return scoped
+        return stmt.where(column.in_(select(Deal.id).where(Deal.customer_id == customer_id)))
 
-    def _azienda_scope(
-        self, stmt: _S, azienda_id: UUID | None, column: InstrumentedAttribute[Any]
-    ) -> _S:
+    def _azienda_scope[*Ts](
+        self, stmt: Select[*Ts], azienda_id: UUID | None, column: InstrumentedAttribute[Any]
+    ) -> Select[*Ts]:
         """A deal-keyed table narrowed to one azienda through its deal (REB-630): an
         hour's azienda is the deal's, so the predicate is the same subquery
         `TimeEntryRepository.list` uses rather than a column that table would copy. A
@@ -166,8 +165,7 @@ class AnalyticsRepository:
         and every cost read in this file uses that column instead."""
         if azienda_id is None:
             return stmt
-        scoped: _S = stmt.where(column.in_(select(Deal.id).where(Deal.azienda_id == azienda_id)))
-        return scoped
+        return stmt.where(column.in_(select(Deal.id).where(Deal.azienda_id == azienda_id)))
 
     def revenue_in_range(
         self,
@@ -195,7 +193,13 @@ class AnalyticsRepository:
         # azienda, so a deal and its revenue can never land on two sides of the line
         # (an import may put an invoice on another azienda than its deal's).
         stmt = self._azienda_scope(stmt, azienda_id, Invoice.deal_id)
-        return {row[0]: Decimal(row[1]) for row in self.session.execute(stmt).all()}
+        # `deal_id is not None` restates the `WHERE` for the type checker: the column is
+        # nullable on the model and the statement already keeps only the rows that have one.
+        return {
+            deal_id: Decimal(total)
+            for deal_id, total in self.session.execute(stmt).all()
+            if deal_id is not None
+        }
 
     def costs_in_range(
         self, da: date, a: date, customer_id: UUID | None, azienda_id: UUID | None = None
@@ -224,7 +228,8 @@ class AnalyticsRepository:
         if azienda_id is not None:
             stmt = stmt.where(Cost.azienda_id == azienda_id)
         for deal_id, total in self.session.execute(stmt).all():
-            per_deal[deal_id] = Decimal(total)
+            if deal_id is not None:  # restates the `WHERE` for the type checker, as above
+                per_deal[deal_id] = Decimal(total)
 
         if customer_id is not None:
             return per_deal, ZERO_MONEY
