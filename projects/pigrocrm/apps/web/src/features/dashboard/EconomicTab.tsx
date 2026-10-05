@@ -38,7 +38,7 @@ type ConcentrationRow = EconomicOverview['concentrazione_clienti'][number]
  * in the order the server sent them, which is the selector's: the default first. A
  * customer billed by two aziende appears in both groups, once per share.
  */
-function byAzienda(rows: ConcentrationRow[]): { aziendaId: string; rows: ConcentrationRow[] }[] {
+function byLegalEntity(rows: ConcentrationRow[]): { aziendaId: string; rows: ConcentrationRow[] }[] {
   const groups: { aziendaId: string; rows: ConcentrationRow[] }[] = []
   for (const row of rows) {
     const last = groups[groups.length - 1]
@@ -297,7 +297,7 @@ export function EconomicTab({
           // customer who is a third of one azienda reads as a third, never as a tenth
           // of the whole (spec §1.9). An azienda deactivated meanwhile still owns its
           // year's invoices and is named as such.
-          byAzienda(concentrazione_clienti).map((group) => (
+          byLegalEntity(concentrazione_clienti).map((group) => (
             <div key={group.aziendaId} className="space-y-1">
               <h3 className="text-sm font-medium text-muted-foreground">
                 {byId(group.aziendaId)?.nome ?? 'Azienda non più attiva'}

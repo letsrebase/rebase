@@ -73,7 +73,7 @@ def propose_azienda(
 ) -> LegalEntityRead:
     """The azienda a new customer of `nazione` would be billed by when nobody picks one
     (REB-624, spec 2026-10-03 §1.6). The form and an agent both ask here, so the rule
-    lives in `LegalEntityService.propose` once; `POST /api/customers` applies the same one
+    lives in the service once; `POST /api/customers` applies the same one
     when `azienda_id` is left out."""
     return LegalEntityRead.model_validate(LegalEntityService(session).propose(nazione))
 
