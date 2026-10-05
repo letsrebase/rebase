@@ -74,25 +74,31 @@ def _generate_code() -> str:
 # admin form only offers «a giornata» and «a corpo» but the API takes any string, and the
 # letter is also edited by hand), so the day-rate branch is a reading of the text, not an
 # equality. How the mode OPENS decides: an optional noun that names the fee («tariffa»,
-# «pagamento»), an optional `a`, `per` or `al`, then the day word. «a giornata (8 ore)»,
-# «tariffa giornaliera» and «pagamento a giornata» are day rates; «forfait 20 giornate»,
-# «mezza giornata» or «a ore (giornata da 8 ore)» merely mention a day.
+# «pagamento»), an optional connective (`a`, `per`, `al`, `su base`), then the day word.
+# «a giornata (8 ore)», «tariffa giornaliera», «tariffa: giornaliera» and «compenso su
+# base giornaliera» are day rates; «forfait 20 giornate», «mezza giornata» or «a ore
+# (giornata da 8 ore)» merely mention a day. A mode that also says `a corpo`, the other
+# mode the admin form offers, is a lump sum whatever else it says: «pagamento giornaliero
+# (compenso a corpo)» is paid daily, but its fee is not a daily one.
 _DAY_RATE_START = re.compile(
-    r"(?:(?:tariffa|pagamento|compenso|corrispettivo|prezzo|costo|importo)\s+)?"
-    r"(?:(?:a|per|al)\s+)?"
+    r"(?:(?:tariffa|pagamento|compenso|corrispettivo|prezzo|costo|importo)[\s:-]+)?"
+    r"(?:(?:a|per|al|su base|in base a)\s+)?"
     r"(?:giornat\w*|giornalier\w*|giorn[oi]\b)"
 )
+_LUMP_SUM = re.compile(r"\ba corpo\b")
 
 
 def is_day_rate(modalita: str) -> bool:
     """Whether a letter's `modalita` prices the fee per day, whatever its spelling: case
     and surrounding or repeated whitespace are ignored, and the mode must open with
-    `giornata`, `giornaliera`, `giorno` or `giorni`, optionally after `a `, `per ` or
-    `al ` and optionally after a noun naming the fee (`tariffa`, `pagamento`,
-    `compenso`, `corrispettivo`, `prezzo`, `costo`, `importo`), with anything after it
-    (a note such as «(8 ore)») ignored. A mode that only mentions a day further on
-    (`forfait 20 giornate`, `mezza giornata`) is not one."""
-    return _DAY_RATE_START.match(" ".join(modalita.casefold().split())) is not None
+    `giornata`, `giornaliera`, `giorno` or `giorni`, optionally after `a `, `per `, `al `,
+    `su base ` or `in base a ` and optionally after a noun naming the fee (`tariffa`,
+    `pagamento`, `compenso`, `corrispettivo`, `prezzo`, `costo`, `importo`, with a colon
+    or dash allowed after it), with anything after it (a note such as «(8 ore)»)
+    ignored. A mode that only mentions a day further on (`forfait 20 giornate`, `mezza
+    giornata`), or that says `a corpo` anywhere, is not one."""
+    mode = " ".join(modalita.casefold().split())
+    return _DAY_RATE_START.match(mode) is not None and _LUMP_SUM.search(mode) is None
 
 
 def reward_base(
