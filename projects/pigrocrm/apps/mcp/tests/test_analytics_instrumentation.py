@@ -157,8 +157,10 @@ async def test_with_a_key_the_tools_are_the_ones_the_server_without_one_advertis
 ) -> None:
     """The SDK can reshape every tool from an option default: 7.56.0 turned on model
     capture (a required `llm_model` argument) and conversation correlation (a
-    `conversation_id` argument, a text block on each result asking the agent to echo
-    it). `install` names both off (REB-642), and this holds the whole `tools/list`, not
+    `conversation_id` argument whose description asks the agent to echo it, an
+    `_mcp_instructions` property on every output schema and structured result, and a
+    text block on a conversation's first result). `install` names both off (REB-642),
+    and the two virtual tools too, and this holds the whole `tools/list`, not
     one property, equal between the server a key instruments and the one it does not,
     through `build_server` itself rather than a hand-installed client, so the path a
     deployed CRM runs is the one under test."""
