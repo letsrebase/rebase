@@ -155,12 +155,17 @@ def test_a_read_and_the_version_see_a_row_changed_behind_the_session(db_session:
     remembers it. Simulated by an UPDATE outside the ORM on the same connection."""
     from datetime import timedelta
 
-    from sqlalchemy import text
+    from sqlalchemy import select, text
+
+    from pigrocrm.core.errors import StaleRow
+    from pigrocrm.core.space_settings.models import SpaceSetting
 
     service = SpaceSettingsService(db_session, BASE)
     first = service.update(SpaceSettingsUpdate(gmail_backfill_days=10), ADMIN, spazio="studio")
     assert first.updated_at is not None
-    assert service.read(ADMIN, spazio="studio").gmail_backfill_days == 10  # rows now in the session
+    # Held strongly, so the identity map keeps these instances through the test, as the
+    # request's session keeps the rows its dependency loaded.
+    held = {row.key: row for row in db_session.scalars(select(SpaceSetting)).all()}
     later = first.updated_at + timedelta(minutes=1)
     db_session.execute(
         text(
@@ -172,18 +177,24 @@ def test_a_read_and_the_version_see_a_row_changed_behind_the_session(db_session:
     db_session.execute(
         text("UPDATE space_settings SET updated_at = :at WHERE key = '_version'"), {"at": later}
     )
-    again = service.read(ADMIN, spazio="studio")
-    assert again.gmail_backfill_days == 20
-    assert again.updated_at == later
+    # The instances are stale now: what a plain select would have answered.
+    assert held["gmail_backfill_days"].value == "10"
+    assert held["_version"].updated_at == first.updated_at
+    # The version and the refusal read the database, before anything refreshes them.
     assert service.version() == later
-    from pigrocrm.core.errors import StaleRow
-
-    with pytest.raises(StaleRow):
+    with pytest.raises(StaleRow) as excinfo:
         service.update(
             SpaceSettingsUpdate(gmail_backfill_days=30, updated_at=first.updated_at),
             ADMIN,
             spazio="studio",
         )
+    assert excinfo.value.details["updated_at"] == later
+    # And a read refreshes the held instances with what it answers.
+    again = service.read(ADMIN, spazio="studio")
+    assert again.gmail_backfill_days == 20
+    assert again.updated_at == later
+    assert held["gmail_backfill_days"].value == "20"
+    assert held["_version"].updated_at == later
 
 
 def test_the_version_is_the_newest_override_row_and_a_stale_save_is_refused(

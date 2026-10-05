@@ -70,7 +70,10 @@ export function SpacePanel() {
     setAdopt(false)
   }
 
-  if (query.isError) return <QueryErrorBanner error={query.error} />
+  // A read that never succeeded is the error alone; a refetch that fails after one
+  // (a «Ricarica» that did not answer) shows the error above the form, which keeps the
+  // draft and the refusal, as the fiscal panel does (REB-622).
+  if (query.isError && !settings) return <QueryErrorBanner error={query.error} />
   if (!settings || !seeded) return <p className="text-muted-foreground text-sm">Caricamento…</p>
 
   const draft: Draft = { ...draftFrom(settings), ...edits }
@@ -104,6 +107,7 @@ export function SpacePanel() {
 
   return (
     <form onSubmit={onSubmit} className="space-y-6">
+      {query.isError ? <QueryErrorBanner error={query.error} /> : null}
       {stale !== 'none' ? (
         <StaleRowBanner phase={stale} onReload={() => void reload()} reloading={reloading} />
       ) : null}

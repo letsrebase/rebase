@@ -184,17 +184,23 @@ describe('the space panel', () => {
       body: { gmail_backfill_days: 21, updated_at: null },
     })
     expect(await screen.findByRole('alert')).toHaveTextContent('Qualcun altro ha salvato nel frattempo.')
-    // The reload fails: nothing was reloaded, so nothing says it was. This panel shows
-    // a failed read as the query's own error, as it does for any failed refetch, and
-    // the draft and the refusal are back the moment a read succeeds again.
+    // The reload fails: nothing was reloaded, so nothing says it was. The error shows
+    // above the form, which keeps the draft and the refusal with its «Ricarica», so
+    // the person can try again from here.
     GET.mockResolvedValueOnce({ error: { detail: 'database non raggiungibile' }, response: new Response(null, { status: 503 }) })
     await user.click(screen.getByRole('button', { name: 'Ricarica' }))
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('database non raggiungibile'))
+    await waitFor(() => expect(screen.getByText('database non raggiungibile')).toBeInTheDocument())
     expect(screen.queryByText(/Riga ricaricata/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Giorni di posta al primo collegamento')).toHaveValue(21)
+    expect(screen.getByText(/Qualcun altro ha salvato nel frattempo/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ricarica' })).toBeEnabled()
+    // And the next reload that answers brings their row under the edits.
     GET.mockResolvedValue({ data: theirs })
-    await client.invalidateQueries({ queryKey: ['settings', 'space'] })
-    await waitFor(() => expect(screen.getByLabelText('Giorni di posta al primo collegamento')).toHaveValue(21))
-    expect(screen.getByRole('alert')).toHaveTextContent('Qualcun altro ha salvato nel frattempo.')
+    await user.click(screen.getByRole('button', { name: 'Ricarica' }))
+    await waitFor(() => expect(screen.getByText(/Riga ricaricata/)).toBeInTheDocument())
+    expect(screen.queryByText('database non raggiungibile')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Giorni di posta al primo collegamento')).toHaveValue(21)
+    expect(screen.getByLabelText(/Accesso completo/)).toBeChecked()
   })
 
   it('locks the fields while a save is in flight, so nothing typed then is lost', async () => {
