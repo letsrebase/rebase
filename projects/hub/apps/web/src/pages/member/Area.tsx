@@ -2,6 +2,7 @@ import { capture } from '@rebase/analytics/browser'
 import { Link, useSearch } from '@tanstack/react-router'
 import { ArrowUpRight, Download, Pencil, Plus } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { Badge } from '@rebase/ui/badge'
 import { Button } from '@rebase/ui/button'
 import { member, type MemberRequest } from '@/lib/api'
 import { formatBytes, formatDate, formatDay, formatEuro } from '@/lib/format'
@@ -114,7 +115,9 @@ function RequestCard({ request, position, total }: { request: MemberRequest; pos
  *
  *  One column at every viewport, one section per row (REB-641): the referral link, the
  *  feature to highlight (REB-610), opens the page; then the card, the requests, the role
- *  (for a person with neither a card nor a request), the perks, and «Contratti» last.
+ *  (a «Ruolo» row, only for a non-admin with neither a card nor a request), the perks,
+ *  and «Contratti» last. Under the name, the header holds one badge per role the person
+ *  holds: Freelance (a card), Azienda (a request), Amministratore (REB-601).
  *  It was two columns from `lg` between REB-602 and REB-641, the referral, the card and
  *  the contracts on the left and the rest on the right, and the two stacks never lined
  *  up: a reader scanned both to find one thing. The column is `max-w-3xl`: wider than
@@ -199,7 +202,17 @@ export function Area() {
     </section>
   )
 
-  const roleSection = !value && requests.length === 0 && (
+  // What this person is: the singular forms of the admin sidebar's Talenti, Aziende and
+  // Amministratori, with «Freelance» as the member area calls a talent. A member with none of them gets no line and
+  // keeps the «Ruolo» row below; an admin with nothing else is already named here, so
+  // that row would only say it twice (REB-601).
+  const roles = [
+    profile.ha_scheda && 'Freelance',
+    profile.ha_azienda && 'Azienda',
+    profile.role === 'admin' && ROLE_LABELS.admin,
+  ].filter((label): label is string => typeof label === 'string')
+
+  const roleSection = !value && requests.length === 0 && profile.role !== 'admin' && (
     <section aria-label="Chi sei">
       <dl className="divide-y border bg-card">
         <Row label="Ruolo">{ROLE_LABELS[profile.role] ?? profile.role}</Row>
@@ -260,6 +273,15 @@ export function Area() {
           <h1 className="mt-1 text-3xl font-semibold tracking-tight">
             {profile.nome} {profile.cognome}
           </h1>
+          {roles.length > 0 && (
+            <div role="group" aria-label="Ruoli" className="mt-2 flex flex-wrap gap-2">
+              {roles.map((label) => (
+                <Badge key={label} variant="pill">
+                  {label}
+                </Badge>
+              ))}
+            </div>
+          )}
           <p className="mt-1 text-sm text-muted-foreground">
             Ti scriviamo a <span className="font-medium text-foreground">{profile.email}</span>.
             {profile.ha_scheda && ' Per cambiare indirizzo, rifai la candidatura con quello nuovo.'}

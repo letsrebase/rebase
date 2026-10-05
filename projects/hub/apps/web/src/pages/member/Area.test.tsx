@@ -517,3 +517,41 @@ describe('/me, «Contratti» (REB-392: on a card, never on a company-only profil
     expect(screen.queryByRole('heading', { name: 'Contratti' })).toBeNull()
   })
 })
+
+/** The header line that names what this person is (REB-601): one badge per role held. */
+describe('/me, the roles in the header (REB-601)', () => {
+  async function roles(profile: object): Promise<string[]> {
+    meFetch(profile)
+    mount()
+    await screen.findByRole('heading', { level: 1 })
+    const group = screen.queryByRole('group', { name: 'Ruoli' })
+    return group ? Array.from(group.children).map((badge) => badge.textContent ?? '') : []
+  }
+
+  it('names all three for an admin with a card and a company request', async () => {
+    expect(await roles({ ...BOTH, role: 'admin' })).toEqual(['Freelance', 'Azienda', 'Amministratore'])
+  })
+
+  it('names an admin who also has a card, with no company request', async () => {
+    expect(await roles({ ...PROFILE, role: 'admin' })).toEqual(['Freelance', 'Amministratore'])
+  })
+
+  it('names only the company for a company-only member', async () => {
+    expect(await roles(COMPANY_ONLY)).toEqual(['Azienda'])
+  })
+
+  it('names only the freelancer for a member with just a card', async () => {
+    expect(await roles(PROFILE)).toEqual(['Freelance'])
+  })
+
+  it('names nothing for a member with neither, and keeps the «Ruolo» row', async () => {
+    expect(await roles(NOBODY)).toEqual([])
+    expect(screen.getByText('Ruolo')).toBeInTheDocument()
+    expect(screen.getByText('Membro')).toBeInTheDocument()
+  })
+
+  it('names a card-less admin once, without a second «Ruolo» row', async () => {
+    expect(await roles(CARDLESS_ADMIN)).toEqual(['Amministratore'])
+    expect(screen.queryByText('Ruolo')).toBeNull()
+  })
+})
