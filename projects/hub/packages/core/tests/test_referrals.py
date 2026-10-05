@@ -276,6 +276,7 @@ def test_reward_base_formula(modalita: str, giorni: int | None, expected: Decima
         "compenso su base giornaliera",
         "in base a giornata",
         "a giornata (non a corpo)",
+        "a giornata (no a corpo)",
         "a giornata, senza a corpo",
     ],
 )
