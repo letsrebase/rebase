@@ -95,12 +95,20 @@ POLICIES: dict[str, tuple[str, str | None]] = {
     # is what lets the sync and the send write a message before its links exist: the
     # flush is an `INSERT ... RETURNING`, and Postgres applies the `SELECT` policy to
     # the rows an `INSERT` returns, so `WITH CHECK (true)` alone would not do.
+    # And a sent payment reminder follows its invoice, like its draft and its timeline
+    # row (CodeRabbit's third adversarial pass on PR #513): the message copies the
+    # draft's body, the draft remembers the Gmail id it left as, and
+    # `sollecito_di_messaggio` reads that chain as the owner, past the policies that
+    # would hide the draft from the very member this clause is for.
     "gmail_messages": (
-        "mailbox_mia(google_account_id) OR EXISTS (SELECT 1 FROM gmail_message_links l "
+        "(mailbox_mia(google_account_id) OR EXISTS (SELECT 1 FROM gmail_message_links l "
         "WHERE l.gmail_message_id = gmail_messages.id "
         "AND entita_visibile(l.entity_type, l.entity_id, scope_tutte())) "
         "OR (NOT EXISTS (SELECT 1 FROM gmail_message_links l "
-        "WHERE l.gmail_message_id = gmail_messages.id) AND scope_tutte())",
+        "WHERE l.gmail_message_id = gmail_messages.id) AND scope_tutte())) "
+        "AND (scope_tutte() "
+        "OR sollecito_di_messaggio(google_account_id, gmail_message_id) IS NULL "
+        "OR invoice_visibile(sollecito_di_messaggio(google_account_id, gmail_message_id)))",
         None,
     ),
     # The timeline: a row about an azienda-bound record follows that record; a row
@@ -123,6 +131,24 @@ POLICIES: dict[str, tuple[str, str | None]] = {
 }
 
 FUNCTIONS = [
+    # The invoice behind a sent payment reminder, or NULL for any other message. Read as
+    # the owner with «tutte» set for the call alone (`SET` on the function restores the
+    # caller's value on return), because the draft and the reminder are themselves
+    # policied and the member this answer is for cannot see them; the invoice's own
+    # visibility is then judged outside, under the caller's real scope.
+    """
+    CREATE OR REPLACE FUNCTION sollecito_di_messaggio(uuid, text) RETURNS uuid
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path = public
+    SET pigrocrm.aziende = '*'
+    AS $$
+      SELECT r.invoice_id
+      FROM email_drafts d
+      JOIN payment_reminders r ON r.id = d.payment_reminder_id
+      WHERE d.google_account_id = $1 AND d.sent_gmail_message_id = $2
+      LIMIT 1
+    $$
+    """,
     """
     CREATE OR REPLACE FUNCTION scope_tutte() RETURNS boolean
     LANGUAGE sql STABLE AS $$
@@ -248,6 +274,7 @@ FUNCTIONS = [
 ]
 
 FUNCTION_NAMES = [
+    "sollecito_di_messaggio(uuid, text)",
     "entita_visibile(text, uuid, boolean)",
     "mailbox_mia(uuid)",
     "work_unit_visibile(uuid)",

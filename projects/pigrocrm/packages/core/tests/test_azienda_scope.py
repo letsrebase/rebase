@@ -456,7 +456,13 @@ def test_a_reminder_s_draft_and_timeline_row_follow_the_invoice_not_the_moved_cu
     the row stay with the invoice, so the new azienda's members read neither, the old
     one's cannot open the customer anyway, and «tutte» reads both (CodeRabbit's second
     adversarial pass on PR #513)."""
-    from pigrocrm.core.gmail.models import EmailDraft, PaymentReminder
+    from pigrocrm.core.gmail.models import (
+        EmailDraft,
+        GmailMessage,
+        GmailMessageLink,
+        GoogleAccount,
+        PaymentReminder,
+    )
 
     factory = session_factory(world.engine)
     with factory() as session:
@@ -493,28 +499,80 @@ def test_a_reminder_s_draft_and_timeline_row_follow_the_invoice_not_the_moved_cu
         session.commit()
         draft_id, reminder_id = draft.id, reminder.id
 
+        # The reminder was sent: the message, in the scoped member's own mailbox,
+        # linked to the moved customer, with the draft remembering its Gmail id.
+        account = GoogleAccount(
+            user_id=world.user_id,
+            google_sub=f"{_PREFIX}-sub",
+            email_address=f"{_PREFIX.lower()}@example.test",
+            refresh_token_ciphertext=b"x",
+            refresh_token_nonce=b"x",
+        )
+        session.add(account)
+        session.flush()
+        message = GmailMessage(
+            google_account_id=account.id,
+            gmail_message_id=f"{_PREFIX}-m1",
+            gmail_thread_id=f"{_PREFIX}-t1",
+            direction="outbound",
+            subject=f"{_PREFIX} sollecito",
+            snippet="Fattura 2026/1",
+            internal_date=datetime.now(UTC),
+        )
+        session.add(message)
+        session.flush()
+        session.add(
+            GmailMessageLink(
+                gmail_message_id=message.id, entity_type="customer", entity_id=studio_customer
+            )
+        )
+        draft.google_account_id = account.id
+        draft.sent_gmail_message_id = message.gmail_message_id
+        session.commit()
+        draft_id, reminder_id, account_id, message_id = (
+            draft.id,
+            reminder.id,
+            account.id,
+            message.id,
+        )
+
     drafts = text(f"SELECT count(*) FROM email_drafts WHERE subject = '{_PREFIX} sollecito'")
     rows = text(f"SELECT count(*) FROM activities WHERE kind = '{_PREFIX}.sollecito'")
+    messages = text(f"SELECT count(*) FROM gmail_messages WHERE gmail_message_id = '{_PREFIX}-m1'")
     try:
         with _scoped(world, world.studio) as session:
             assert session.execute(drafts).scalar_one() == 0
             assert session.execute(rows).scalar_one() == 0
+            # The mailbox is this member's own and the link is to a customer they see:
+            # the invoice behind the message is not theirs, so neither is the message.
+            assert session.execute(messages).scalar_one() == 0
         with _scoped(world, world.estero) as session:
             assert session.execute(drafts).scalar_one() == 0
             assert session.execute(rows).scalar_one() == 0
+            # Own mailbox and own invoice: the message, though the customer is gone.
+            assert session.execute(messages).scalar_one() == 1
         with _scoped(world, world.studio, world.estero) as session:
             assert session.execute(drafts).scalar_one() == 1
             assert session.execute(rows).scalar_one() == 1
+            assert session.execute(messages).scalar_one() == 1
         session = session_factory(world.app)()
         bind_scope(session, Actor(id=world.user_id, type="user", role="collaboratore"))
         with session:
             assert session.execute(drafts).scalar_one() == 1
             assert session.execute(rows).scalar_one() == 1
+            assert session.execute(messages).scalar_one() == 1
+        with session_factory(world.app)() as session:
+            assert session.execute(messages).scalar_one() == 0
     finally:
         with factory() as session:
             session.execute(delete(Activity).where(Activity.kind == f"{_PREFIX}.sollecito"))
+            session.execute(
+                delete(GmailMessageLink).where(GmailMessageLink.gmail_message_id == message_id)
+            )
+            session.execute(delete(GmailMessage).where(GmailMessage.id == message_id))
             session.execute(delete(EmailDraft).where(EmailDraft.id == draft_id))
             session.execute(delete(PaymentReminder).where(PaymentReminder.id == reminder_id))
+            session.execute(delete(GoogleAccount).where(GoogleAccount.id == account_id))
             session.commit()
 
 
