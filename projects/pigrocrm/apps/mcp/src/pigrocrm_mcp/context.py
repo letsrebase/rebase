@@ -2,6 +2,7 @@ import contextvars
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import cast
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -103,6 +104,9 @@ class ScopedSessionProvider:
             session.close()
 
 
+_ACTOR_KEY = "pigrocrm_mcp_actor"
+
+
 class TokenActorProvider:
     """The actor a personal access token names, resolved again on every call (REB-634).
 
@@ -130,6 +134,15 @@ class TokenActorProvider:
                 actor = PatService(own).resolve(self._token)
                 own.commit()
                 return actor
+        # Once per logical call: the guard reads the actor to bind its scope and a tool
+        # may read it again, and the two must be the same person with the same scope,
+        # which is also what spares the second read and the second commit (Greptile
+        # and CodeRabbit on PR #513). Keyed on the call's own session, which the scope
+        # opens and closes, so the next call resolves afresh.
+        cached = session.info.get(_ACTOR_KEY)
+        if cached is not None:
+            return cast(Actor, cached)
         actor = PatService(session).resolve(self._token)
         session.commit()
+        session.info[_ACTOR_KEY] = actor
         return actor

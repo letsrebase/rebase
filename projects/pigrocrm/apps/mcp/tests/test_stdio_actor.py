@@ -68,7 +68,12 @@ def test_the_actor_is_resolved_inside_a_scope_and_outside_one(owner: Owner) -> N
     assert outside.id == owner.user_id and outside.role == "collaboratore"
     with sessions.scope():
         inside = provider()
+        # Once per call: the guard's read and a tool's read are the same actor, and the
+        # token's `last_used_at` is written once.
+        assert provider() is inside
     assert inside.id == owner.user_id
+    with sessions.scope():
+        assert provider() is not inside
 
 
 def test_a_role_changed_meanwhile_reaches_the_next_call(owner: Owner) -> None:
