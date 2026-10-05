@@ -745,6 +745,54 @@ def test_a_proposal_follows_its_contract_as_well_as_its_document(world: World) -
             session.commit()
 
 
+def test_hours_billed_on_an_invoice_out_of_sight_stay_frozen(world: World) -> None:
+    """A time entry follows its deal, and may be bound to a line of an invoice in another
+    azienda (an import put it there). The member who sees the deal and not the invoice
+    cannot resolve the line, and the guard that freezes billed hours must read that as
+    frozen rather than as free (CodeRabbit's seventh adversarial pass on PR #513)."""
+    from decimal import Decimal as D
+
+    from pigrocrm.core.errors import ImmutableField
+    from pigrocrm.core.timetracking.schemas import TimeEntryUpdate
+    from pigrocrm.core.timetracking.service import TimeEntryService
+
+    factory = session_factory(world.engine)
+    with factory() as session:
+        entry = session.execute(
+            select(TimeEntry)
+            .join(Deal, Deal.id == TimeEntry.deal_id)
+            .where(Deal.azienda_id == world.studio)
+        ).scalar_one()
+        line = session.execute(
+            select(InvoiceLine)
+            .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
+            .where(Invoice.azienda_id == world.estero)
+        ).scalar_one()
+        entry.invoice_line_id = line.id
+        session.commit()
+        entry_id = entry.id
+    try:
+        with _scoped(world, world.studio) as session, pytest.raises(ImmutableField):
+            TimeEntryService(session).update(
+                entry_id,
+                TimeEntryUpdate(ore=D("3.00")),
+                Actor(id=world.user_id, type="user", role="collaboratore", aziende=(world.studio,)),
+            )
+        with _scoped(world, world.studio, world.estero) as session:
+            with pytest.raises(ImmutableField):
+                TimeEntryService(session).update(
+                    entry_id,
+                    TimeEntryUpdate(ore=D("3.00")),
+                    Actor(id=world.user_id, type="user", role="collaboratore"),
+                )
+    finally:
+        with factory() as session:
+            entry = session.get(TimeEntry, entry_id)
+            assert entry is not None
+            entry.invoice_line_id = None
+            session.commit()
+
+
 def test_an_insert_across_the_line_is_refused_by_the_policy(world: World) -> None:
     with _scoped(world, world.estero) as session:
         studio_customer = session.execute(text("SELECT count(*) FROM customers")).scalar_one()

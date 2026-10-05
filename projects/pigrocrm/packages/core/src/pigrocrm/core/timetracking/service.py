@@ -125,7 +125,17 @@ def billed_entry_ids(session: Session, entries: Sequence[TimeEntry | TimeEntryRe
             )
         ).scalars()
     )
-    return {entry.id for entry in entries if entry.invoice_line_id in issued}
+    # A line this session cannot see at all freezes its entry as an issued one would
+    # (REB-634): since the row-level policies, an entry of a deal in one azienda may be
+    # bound to an invoice of another, which a member scoped to the first cannot read.
+    # Open, the guard would let them edit hours already billed; closed, the worst case
+    # is a draft line of an invoice out of their sight that they cannot touch until it
+    # is issued anyway (CodeRabbit's seventh adversarial pass on PR #513).
+    visible = set(
+        session.execute(select(InvoiceLine.id).where(InvoiceLine.id.in_(line_ids))).scalars()
+    )
+    frozen = issued | (line_ids - visible)
+    return {entry.id for entry in entries if entry.invoice_line_id in frozen}
 
 
 class TimeEntryService:
