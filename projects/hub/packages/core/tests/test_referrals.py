@@ -3,6 +3,7 @@ at the referred entity's first signed letter. The full sign-to-reward path reuse
 `test_signing.py`'s own fixtures (`FakeRenderer`, `FakeDocumenso`, `_active_framework`,
 `_sent`): nothing here runs pandoc or reaches a real Documenso."""
 
+import threading
 from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -25,6 +26,7 @@ from test_signing import (
 
 from rebase_core.companies import CompanyService
 from rebase_core.contract_schemas import ClienteData, LetteraFields, MatchCreate, MatchListItem
+from rebase_core.db import session_factory
 from rebase_core.errors import ValidationFailed
 from rebase_core.freelancers import FreelancerService
 from rebase_core.mail import RecordingSender
@@ -189,6 +191,7 @@ def test_link_signup_is_idempotent_and_refuses_self_referral(clean: Session) -> 
 
     service.link_signup("freelancer", freelancer_id, code, new_user_id=UUID(int=0))
     service.link_signup("freelancer", freelancer_id, code, new_user_id=UUID(int=0))
+    clean.commit()  # `link_signup` stages; the caller's unit of work commits
     rows = clean.scalars(select(Referral).where(Referral.entity_id == freelancer_id)).all()
     assert len(rows) == 1
     assert rows[0].referrer_user_id == referrer_id
@@ -197,6 +200,7 @@ def test_link_signup_is_idempotent_and_refuses_self_referral(clean: Session) -> 
     service.link_signup(
         "freelancer", other_freelancer_id, code, new_user_id=referrer_id
     )  # a member's own code, used for themself
+    clean.commit()
     assert clean.scalar(select(Referral).where(Referral.entity_id == other_freelancer_id)) is None
 
 
@@ -226,6 +230,58 @@ def test_a_companys_first_request_with_rif_links_the_referral_but_not_the_next_o
     assert first is not None and first.kind == "company"
     # The referente already had a request: the second one is not a fresh referral.
     assert clean.scalar(select(Referral).where(Referral.entity_id == second_company_id)) is None
+
+
+def _fail_after_the_card_is_written(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(self: ReferralService, code: str | None) -> User | None:
+        raise RuntimeError("the connection dropped after the card write")
+
+    monkeypatch.setattr(ReferralService, "resolve_referrer", boom)
+
+
+def test_a_freelancer_card_is_never_committed_without_its_referral(
+    clean: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """REB-566: `apply` committed the card and only then linked the referral, so a
+    failure between the two left a card that a retry short-circuited on, and the referral
+    was lost for good. Both writes are one commit now: either both land or neither does,
+    and the retry attributes the card."""
+    referrer_id = _member(clean)
+    code = ReferralService(clean).code_for(referrer_id)
+
+    with monkeypatch.context() as patched:
+        _fail_after_the_card_is_written(patched)
+        with pytest.raises(RuntimeError, match="connection dropped"):
+            _card(clean, rif=code)
+    clean.rollback()  # what the request's session does when it closes on the error
+
+    assert clean.scalar(select(Freelancer.id)) is None
+    assert clean.scalar(select(Referral.id)) is None
+
+    freelancer_id = _card(clean, rif=code)
+    row = clean.scalar(select(Referral).where(Referral.entity_id == freelancer_id))
+    assert row is not None and row.referrer_user_id == referrer_id
+
+
+def test_a_company_request_is_never_committed_without_its_referral(
+    clean: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """REB-566: the same one-commit rule for `CompanyService.request`."""
+    referrer_id = _member(clean)
+    code = ReferralService(clean).code_for(referrer_id)
+
+    with monkeypatch.context() as patched:
+        _fail_after_the_card_is_written(patched)
+        with pytest.raises(RuntimeError, match="connection dropped"):
+            _request(clean, rif=code)
+    clean.rollback()
+
+    assert clean.scalar(select(Company.id)) is None
+    assert clean.scalar(select(Referral.id)) is None
+
+    company_id = _request(clean, rif=code)
+    row = clean.scalar(select(Referral).where(Referral.entity_id == company_id))
+    assert row is not None and row.referrer_user_id == referrer_id
 
 
 # ---- the reward's base -------------------------------------------------------------
@@ -462,6 +518,146 @@ def test_set_price_only_before_confirmation(clean: Session) -> None:
     service.set_state(reward.id, "confermato", admin_id)
     with pytest.raises(ValidationFailed, match="prima della conferma"):
         service.set_price(reward.id, Decimal("1"), Decimal("1"))
+
+
+def _signed_reward(clean: Session, admin_id: UUID) -> UUID:
+    referrer_id = _member(clean)
+    code = ReferralService(clean).code_for(referrer_id)
+    freelancer_id = _card(clean, rif=code)
+    company_id = _request(clean)
+    _fiscal(clean, freelancer_id, admin_id)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    match = _sent_with_body(clean, renderer, fake, freelancer_id, company_id, admin_id)
+    _sign_the_letter(clean, renderer, fake, match)
+    reward = clean.scalar(select(ReferralReward))
+    assert reward is not None
+    return reward.id
+
+
+def test_a_stale_writer_cannot_reprice_a_reward_another_admin_just_confirmed(
+    clean: Session,
+) -> None:
+    """REB-566: `set_price` read `stato`, checked it, then wrote, with no lock. A second
+    session that had loaded the reward before the confirmation committed still saw
+    `da_confermare` and wrote its price over the confirmed figure. The locking read
+    re-reads the row, so the stale session is refused."""
+    admin_id = _admin(clean)
+    reward_id = _signed_reward(clean, admin_id)
+    before = clean.get(ReferralReward, reward_id)
+    assert before is not None
+    confirmed_amount = before.reward_amount
+
+    with session_factory(clean.get_bind())() as stale:  # type: ignore[arg-type]
+        loaded = stale.get(ReferralReward, reward_id)
+        assert loaded is not None and loaded.stato == "da_confermare"
+
+        ReferralService(clean).set_state(reward_id, "confermato", admin_id)
+
+        with pytest.raises(ValidationFailed, match="prima della conferma"):
+            ReferralService(stale).set_price(reward_id, Decimal("1.00"), Decimal("0.10"))
+
+    clean.expire_all()
+    stored = clean.get(ReferralReward, reward_id)
+    assert stored is not None
+    assert stored.stato == "confermato"
+    assert stored.reward_amount == confirmed_amount
+
+
+def test_a_stale_writer_cannot_confirm_a_reward_twice(clean: Session) -> None:
+    """REB-566: the same check-then-write gap in `set_state`: two admins confirming the
+    same reward must leave the first one's signature and timestamp, and the second is
+    told the reward has moved on."""
+    admin_id = _admin(clean)
+    other_admin = User(email="anna@rebase.it", nome="Anna", cognome="", role="admin")
+    clean.add(other_admin)
+    clean.commit()
+    reward_id = _signed_reward(clean, admin_id)
+
+    with session_factory(clean.get_bind())() as stale:  # type: ignore[arg-type]
+        loaded = stale.get(ReferralReward, reward_id)
+        assert loaded is not None and loaded.stato == "da_confermare"
+
+        ReferralService(clean).set_state(reward_id, "confermato", admin_id)
+
+        with pytest.raises(ValidationFailed, match="si passa solo a pagato"):
+            ReferralService(stale).set_state(reward_id, "confermato", other_admin.id)
+
+    clean.expire_all()
+    stored = clean.get(ReferralReward, reward_id)
+    assert stored is not None
+    assert stored.confirmed_by == admin_id
+
+
+def test_a_price_waits_for_the_confirmation_in_flight_then_is_refused(clean: Session) -> None:
+    """REB-566, Greptile on fb9dd39a2: the two stale-writer tests above finish the first
+    write before the second starts, so they would pass without the row lock too. This is
+    the overlap: `clean` has moved the reward to `confermato`, locked and uncommitted,
+    and a second session's `set_price` starts meanwhile. It must block on the locking
+    read and, once `clean` commits, see `confermato` and refuse. Without `FOR UPDATE` the
+    plain read returns the committed `da_confermare`, the check passes, and only the
+    final UPDATE waits, then writes the price over the confirmed figure: no error."""
+    admin_id = _admin(clean)
+    reward_id = _signed_reward(clean, admin_id)
+    row = clean.get(ReferralReward, reward_id, with_for_update=True)
+    assert row is not None
+    confirmed_amount = row.reward_amount
+    row.stato = "confermato"
+    row.confirmed_by = admin_id
+    clean.flush()
+
+    factory = session_factory(clean.get_bind())  # type: ignore[arg-type]
+    outcome: list[BaseException] = []
+    started = threading.Event()
+    backend: list[int] = []
+
+    def price_from_another_session() -> None:
+        # The session is opened, used and closed on this thread alone.
+        with factory() as other:
+            try:
+                backend.append(other.execute(text("SELECT pg_backend_pid()")).scalar_one())
+                started.set()
+                ReferralService(other).set_price(reward_id, Decimal("1.00"), Decimal("0.10"))
+            except ValidationFailed as exc:
+                outcome.append(exc)
+            finally:
+                other.rollback()
+                started.set()
+
+    worker = threading.Thread(target=price_from_another_session)
+    worker.start()
+    try:
+        assert started.wait(timeout=5), "the second session never connected"
+        # Wait until the database itself reports the worker parked on a lock inside the
+        # locking SELECT. Without `FOR UPDATE` that read never waits: the worker's first
+        # wait would be the UPDATE at commit, whose query text is not a SELECT. A
+        # transaction caches `pg_stat_activity` after its first read, and `clean` stays
+        # in one until the commit below, so each poll drops that cache first.
+        for _ in range(100):
+            clean.execute(text("SELECT pg_stat_clear_snapshot()"))
+            blocked = clean.execute(
+                text(
+                    "SELECT 1 FROM pg_stat_activity WHERE pid = :pid "
+                    "AND wait_event_type = 'Lock' AND query ILIKE 'SELECT%FOR UPDATE%'"
+                ),
+                {"pid": backend[0]},
+            ).first()
+            if blocked is not None:
+                break
+            worker.join(timeout=0.05)
+        assert blocked is not None, "set_price did not wait on the row the confirmation holds"
+    finally:
+        # Release the row whatever happened above, so a failed assertion above never
+        # leaves the worker parked on a lock the fixture's teardown then waits on.
+        clean.commit()
+        worker.join(timeout=5)
+
+    assert not worker.is_alive()
+    assert len(outcome) == 1 and "prima della conferma" in str(outcome[0])
+    clean.expire_all()
+    stored = clean.get(ReferralReward, reward_id)
+    assert stored is not None
+    assert stored.reward_amount == confirmed_amount
 
 
 def test_list_rewards_shows_a_referral_before_any_letter_is_signed(clean: Session) -> None:

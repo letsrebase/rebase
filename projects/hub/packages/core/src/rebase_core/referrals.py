@@ -177,7 +177,13 @@ class ReferralService:
         second time for the same row, but the `ON CONFLICT DO NOTHING` is the real
         guard, the same belt-and-braces every unique-key insert in this package keeps.
         Silent on every refusal -- an unknown code, a member referring themselves --
-        the same muteness the public routes that call this already keep."""
+        the same muteness the public routes that call this already keep.
+
+        Staged into the caller's transaction and never committed here, the way
+        `record_reward_if_signed` is: the caller writes the card and this row in one
+        commit, so a failure between the two cannot leave a card whose referral is
+        lost for good (a retried signup finds the card already there and never calls
+        this again)."""
         referrer = self.resolve_referrer(code)
         if referrer is None or referrer.id == new_user_id:
             return
@@ -191,7 +197,6 @@ class ReferralService:
             )
             .on_conflict_do_nothing(index_elements=[Referral.kind, Referral.entity_id])
         )
-        self.session.commit()
 
     def referrer_name(self, kind: str, entity_id: UUID) -> str | None:
         """Who referred this freelancer or this company, as a contract prints a name
@@ -633,7 +638,16 @@ class ReferralService:
         return self._ledger_items([row])[0]
 
     def _require_reward(self, reward_id: UUID) -> ReferralReward:
-        row = self.session.get(ReferralReward, reward_id)
+        """The reward, locked `FOR UPDATE` until the caller's commit: `set_state` and
+        `set_price` both read `stato`, decide, then write, and two admins (or a double
+        click) must not interleave those steps -- a price written over a reward the other
+        request just confirmed would change a figure already recorded against. The
+        second request waits here, then re-reads: `populate_existing`, because a locking
+        read does not overwrite an object this session already holds, so without it the
+        check would run on the stale state the lock was meant to refresh."""
+        row = self.session.get(
+            ReferralReward, reward_id, with_for_update=True, populate_existing=True
+        )
         if row is None:
             raise NotFound(ENTITY, reward_id)
         return row
