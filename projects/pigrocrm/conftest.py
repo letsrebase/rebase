@@ -113,20 +113,29 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 _TEMPLATE = "pigrocrm_template"
 
 
+# The revisions whose DDL `create_all` cannot express and the template applies after it,
+# in the order Alembic runs them: the policies of 0048 (REB-633), then 0049's rewrite of
+# the through-the-parent ones with the «tutte» fast path first (REB-656).
+_AZIENDA_SCOPE_REVISIONS = ("0048_azienda_scope.py", "0049_azienda_scope_fast_path.py")
+
+
 def _azienda_scope_statements() -> list[str]:
-    """`statements()` of migration 0048, loaded from the file: a revision is a script in
-    `versions/`, not a module on the path."""
+    """`statements()` of each revision above, loaded from the file: a revision is a
+    script in `versions/`, not a module on the path."""
     import importlib.util
     from pathlib import Path
 
-    path = (
-        Path(__file__).resolve().parent / "packages/core/migrations/versions/0048_azienda_scope.py"
-    )
-    spec = importlib.util.spec_from_file_location("pigrocrm_migration_0048", path)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return list(module.statements())
+    versions = Path(__file__).resolve().parent / "packages/core/migrations/versions"
+    out: list[str] = []
+    for filename in _AZIENDA_SCOPE_REVISIONS:
+        spec = importlib.util.spec_from_file_location(
+            f"pigrocrm_migration_{filename[:4]}", versions / filename
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        out.extend(module.statements())
+    return out
 
 
 @pytest.fixture(scope="session")
@@ -166,9 +175,10 @@ def pigrocrm_postgres(postgres_per_worker: Any) -> Any:
         with engine.begin() as connection:
             connection.execute(text(WORK_UNIT_TRIGGER_SQL))
             connection.execute(text(CONTRACT_EXPENSE_TRIGGER_SQL))
-            # The row-level policies of 0048 (REB-633), the other DDL `create_all` cannot
-            # express: read from the revision itself, so the template and production
-            # cannot disagree on a predicate. The suite's user is a superuser, which
+            # The row-level policies of 0048 (REB-633) and 0049's fast path on them
+            # (REB-656), the other DDL `create_all` cannot express: read from the
+            # revisions themselves, so the template and production cannot disagree on a
+            # predicate. The suite's user is a superuser, which
             # Postgres keeps outside every policy, so no existing test sees them; the
             # scope tests connect as the application role the boot creates and do.
             for statement in _azienda_scope_statements():
