@@ -72,7 +72,7 @@ class TimeEntryRepository:
         self.session.flush()
         return entry
 
-    def _live_for_deal(self, deal_id: UUID) -> Select[tuple[TimeEntry]]:
+    def _live_for_deal(self, deal_id: UUID) -> Select[TimeEntry]:
         return select(TimeEntry).where(TimeEntry.deal_id == deal_id, TimeEntry.deleted_at.is_(None))
 
     def for_deal(self, deal_id: UUID) -> list[TimeEntry]:

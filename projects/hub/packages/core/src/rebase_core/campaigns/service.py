@@ -529,35 +529,37 @@ class CampaignService:
         if not ids:
             return {}
         r = CampaignRecipient
+        # Eleven columns is one past what `select()` types positionally, so the counts
+        # are labelled with the field each one fills and read by name, not by index.
         rows = self.session.execute(
             select(
                 r.campaign_id,
-                func.count(),
-                func.count(case((r.stato == "in_coda", 1))),
-                func.count(case((r.stato == "inviata", 1))),
-                func.count(case((r.stato == "saltata", 1))),
-                func.count(case((r.stato == "fallita", 1))),
-                func.count(r.consegnata_at),
-                func.count(r.rimbalzata_at),
-                func.count(r.primo_clic_at),
-                func.count(r.entrato_at),
-                func.count(r.azione_at),
+                func.count().label("destinatari"),
+                func.count(case((r.stato == "in_coda", 1))).label("in_coda"),
+                func.count(case((r.stato == "inviata", 1))).label("inviate"),
+                func.count(case((r.stato == "saltata", 1))).label("saltate"),
+                func.count(case((r.stato == "fallita", 1))).label("fallite"),
+                func.count(r.consegnata_at).label("consegnate"),
+                func.count(r.rimbalzata_at).label("rimbalzate"),
+                func.count(r.primo_clic_at).label("cliccate"),
+                func.count(r.entrato_at).label("entrate"),
+                func.count(r.azione_at).label("azioni"),
             )
             .where(r.campaign_id.in_(ids))
             .group_by(r.campaign_id)
         ).all()
         return {
-            row[0]: CampaignCounts(
-                destinatari=row[1],
-                in_coda=row[2],
-                inviate=row[3],
-                saltate=row[4],
-                fallite=row[5],
-                consegnate=row[6],
-                rimbalzate=row[7],
-                cliccate=row[8],
-                entrate=row[9],
-                azioni=row[10],
+            row.campaign_id: CampaignCounts(
+                destinatari=row.destinatari,
+                in_coda=row.in_coda,
+                inviate=row.inviate,
+                saltate=row.saltate,
+                fallite=row.fallite,
+                consegnate=row.consegnate,
+                rimbalzate=row.rimbalzate,
+                cliccate=row.cliccate,
+                entrate=row.entrate,
+                azioni=row.azioni,
             )
             for row in rows
         }

@@ -317,11 +317,11 @@ def _filter_clauses(query: CloudTalentQuery) -> list[ColumnElement[bool]]:
 
 def _cloud_roles(session: Session) -> list[str]:
     """Each role of the cloud's cards once, sorted as a person reads them."""
-    roles = session.scalars(
-        cloud_visible(
-            select(FreelancerCard.card["ruolo"].astext).select_from(Freelancer)
-        ).distinct()
-    ).all()
+    # `astext` of a JSON path is untyped, and a select of it is a select of unknown shape
+    # whose `scalars()` SQLAlchemy 2.1 cannot type: the annotation says what the path
+    # answers, `None` included, for a card with no `ruolo`.
+    ruolo: ColumnElement[str | None] = FreelancerCard.card["ruolo"].astext
+    roles = session.scalars(cloud_visible(select(ruolo).select_from(Freelancer)).distinct()).all()
     return sorted({role for role in roles if role}, key=str.casefold)
 
 

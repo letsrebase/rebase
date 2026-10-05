@@ -29,6 +29,7 @@ from typing import Any, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import Row, Select, and_, literal, or_, select, union_all
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, aliased
@@ -57,6 +58,11 @@ from rebase_core.referral_schemas import (
 )
 
 ENTITY = "referral"
+# One row of `_ledger_query`: the referral, its reward and the referrer's card are outer
+# joins, so the second and the last column are `None` for a referral with no reward yet
+# or a referrer with no card. SQLAlchemy types the select without the `None` (a join does
+# not narrow a column's type); the rows are read under this alias, which carries it.
+_LedgerRow = Row[Referral, ReferralReward | None, str, str, str, UUID | None]
 # No 0/O/1/I: a code is read aloud or typed from a screenshot as often as it is clicked.
 _CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 _CENT = Decimal("0.01")
@@ -474,7 +480,7 @@ class ReferralService:
                         Match.stato.in_(EARNING_MATCH_STATES),
                         column.in_(ids),
                     )
-                    .distinct(column)
+                    .ext(distinct_on(column))
                     .order_by(column, Match.created_at.desc(), Match.id.desc())
                     .subquery()
                 )
@@ -518,7 +524,7 @@ class ReferralService:
             for match, company, user, freelancer_deleted_at, letter in rows
         }
 
-    def _ledger_items(self, rows: Sequence[Row[Any]]) -> list[ReferralLedgerItem]:
+    def _ledger_items(self, rows: Sequence[_LedgerRow]) -> list[ReferralLedgerItem]:
         """The page's rows as ledger items, every lookup batched over the whole page:
         the referred names (two queries at most), the match each reward's letter belongs
         to, the newest live match of each referral without a reward, those matches'
@@ -615,7 +621,7 @@ class ReferralService:
             )
         return items
 
-    def _ledger_query(self) -> Select[Any]:
+    def _ledger_query(self) -> Select[Referral, ReferralReward | None, str, str, str, UUID | None]:
         """Starts from `Referral`, outer-joined to its reward, so a referral with no
         reward yet (the referred party has not signed a first letter) still has a row
         on the ledger (P-REB-44) instead of being invisible until one exists. The

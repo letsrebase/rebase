@@ -816,9 +816,12 @@ class SigningService:
                 framework.id,
             )
             return False
+        # `Match.id`, not `ContractDocument.match_id`: the two are equal by the join, and
+        # the match's own key is typed as never missing, which a letter's nullable
+        # `match_id` is not.
         waiting = list(
             self.session.execute(
-                select(ContractDocument.id, ContractDocument.match_id)
+                select(ContractDocument.id, Match.id)
                 .join(Match, Match.id == ContractDocument.match_id)
                 .where(
                     ContractDocument.kind == LETTERA,

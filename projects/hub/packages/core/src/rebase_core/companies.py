@@ -93,7 +93,7 @@ def _list_stmt(
     origine: str | None,
     creato_da: datetime | None,
     creato_a: datetime | None,
-) -> Select[Any]:
+) -> Select[Company, User]:
     """Every company request, `stato` left for the caller to filter separately -- this
     statement backs both the listing and the per-state `GROUP BY` counts, which must
     see every state at once."""
