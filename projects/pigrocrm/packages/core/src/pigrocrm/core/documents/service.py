@@ -541,6 +541,7 @@ class DocumentService:
         actor: Actor,
         origine: dict[str, Any],
         commit: bool = True,
+        azienda_id: UUID | None = None,
     ) -> DocumentRead:
         """Bytes that arrived from somewhere else, filed as a document *and* its first
         version in one unit of work (slice 9 §3.5).
@@ -599,6 +600,9 @@ class DocumentService:
         document = self._create_row(
             DocumentCreate(customer_id=customer_id, deal_id=deal_id, tipo=tipo, titolo=titolo),
             actor,
+            # The record's own azienda when the caller names it (an imported invoice's
+            # original PDF is the invoice's, whatever azienda its customer is in now).
+            azienda_id=azienda_id,
         )
         self._add_version_row(document, data, content_type, actor)
         self.activities.record(

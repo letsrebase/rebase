@@ -628,6 +628,53 @@ def test_an_artefact_rendered_after_the_customer_moved_stays_with_the_invoice(
             session.commit()
 
 
+def test_an_imported_original_takes_the_azienda_the_caller_names(
+    world: World, tmp_path: Path
+) -> None:
+    """`import_bytes` is the one seam imported bytes enter through: an imported
+    invoice's original PDF names the invoice's azienda, so it stays there whatever
+    azienda the customer is in (CodeRabbit's fifth adversarial pass on PR #513)."""
+    from pigrocrm.core.config import Settings
+    from pigrocrm.core.documents.service import DocumentService
+    from pigrocrm.core.storage import LocalFileStorage
+
+    factory = session_factory(world.engine)
+    with factory() as session:
+        studio_customer = session.execute(
+            select(Customer.id).where(Customer.azienda_id == world.studio)
+        ).scalar_one()
+        created = DocumentService(
+            session,
+            LocalFileStorage(tmp_path),
+            Settings(_env_file=None),  # type: ignore[call-arg]
+        ).import_bytes(
+            customer_id=studio_customer,
+            tipo="fattura",
+            titolo=f"{_PREFIX} originale",
+            data=b"%PDF-1.4 x",
+            content_type="application/pdf",
+            actor=Actor.system(),
+            origine={"drive_file_id": "x"},
+            azienda_id=world.estero,
+        )
+    try:
+        assert created.azienda_id == world.estero
+        with _scoped(world, world.studio) as session:
+            assert session.get(Document, created.id) is None
+        with _scoped(world, world.estero) as session:
+            assert session.get(Document, created.id) is not None
+    finally:
+        with factory() as session:
+            from pigrocrm.core.documents.models import DocumentVersion
+
+            session.execute(delete(Activity).where(Activity.entity_id == created.id))
+            session.execute(
+                delete(DocumentVersion).where(DocumentVersion.document_id == created.id)
+            )
+            session.execute(delete(Document).where(Document.id == created.id))
+            session.commit()
+
+
 def test_an_insert_across_the_line_is_refused_by_the_policy(world: World) -> None:
     with _scoped(world, world.estero) as session:
         studio_customer = session.execute(text("SELECT count(*) FROM customers")).scalar_one()

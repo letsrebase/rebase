@@ -1600,6 +1600,9 @@ class InvoiceService:
                     data=pdf_sorgente.contenuto,
                     content_type=PDF_MIME,
                     actor=actor,
+                    # The invoice's azienda, the one the file landed on (spec §1.5), and
+                    # never the customer's current one.
+                    azienda_id=invoice.azienda_id,
                     # `DriveReader.read_bytes` answers with the bytes and the mime and no
                     # name, so the id is the provenance -- which is the part that
                     # identifies the file on Drive anyway, a name being neither unique
