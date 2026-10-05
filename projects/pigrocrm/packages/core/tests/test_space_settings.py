@@ -143,3 +143,81 @@ def test_a_borrowing_space_that_sets_its_own_client_gets_its_own_key_and_callbac
     own_key = service.overrides()["google_token_key"]
     assert own_key != base.google_token_key
     assert service.effective().google_token_key == own_key
+
+
+# ---- the version check (REB-622, spec 2026-10-03 §11) ----------------------------------
+
+
+def test_the_version_is_the_newest_override_row_and_a_stale_save_is_refused(
+    db_session: Session,
+) -> None:
+    from pigrocrm.core.errors import StaleRow
+
+    service = SpaceSettingsService(db_session, BASE)
+    assert service.version() is None
+    assert service.read(ADMIN, spazio="studio").updated_at is None
+
+    # A draft built on the empty state says so with an explicit `null`, and is accepted
+    # while nothing has been written.
+    first = service.update(
+        SpaceSettingsUpdate(mcp_full_access=True, updated_at=None), ADMIN, spazio="studio"
+    )
+    assert first.updated_at is not None
+    assert first.mcp_full_access is True
+
+    # The same `null` once a row exists is a draft built on a state that is gone.
+    with pytest.raises(StaleRow) as excinfo:
+        service.update(
+            SpaceSettingsUpdate(gmail_backfill_days=10, updated_at=None), ADMIN, spazio="studio"
+        )
+    assert excinfo.value.code == "stale_row"
+    assert excinfo.value.details == {"entity": "space_settings", "updated_at": first.updated_at}
+    assert service.effective().gmail_backfill_days == BASE.gmail_backfill_days
+
+    # The current version is accepted, moves the version, and the previous one is stale.
+    second = service.update(
+        SpaceSettingsUpdate(gmail_backfill_days=10, updated_at=first.updated_at),
+        ADMIN,
+        spazio="studio",
+    )
+    assert second.gmail_backfill_days == 10
+    assert second.updated_at is not None and second.updated_at > first.updated_at
+    with pytest.raises(StaleRow):
+        service.update(
+            SpaceSettingsUpdate(gmail_backfill_days=20, updated_at=first.updated_at),
+            ADMIN,
+            spazio="studio",
+        )
+
+    # A body that leaves the key out is an older client: nothing is checked, and the
+    # version row never reaches `Settings` or the page.
+    third = service.update(SpaceSettingsUpdate(gmail_backfill_days=20), ADMIN, spazio="studio")
+    assert third.gmail_backfill_days == 20
+    assert "_version" not in service.overrides()
+    assert "_version" not in third.sovrascritte
+
+    # Clearing an override moves the version even when a newer row stays on top: the
+    # client id was written first, the backfill after it, and the clear touches no
+    # override row's `updated_at`; the reserved row is what moves.
+    with_client = service.update(
+        SpaceSettingsUpdate(google_client_id="abc.apps", updated_at=third.updated_at),
+        ADMIN,
+        spazio="studio",
+    )
+    newer = service.update(
+        SpaceSettingsUpdate(gmail_backfill_days=25, updated_at=with_client.updated_at),
+        ADMIN,
+        spazio="studio",
+    )
+    cleared = service.update(
+        SpaceSettingsUpdate(google_client_id="", updated_at=newer.updated_at),
+        ADMIN,
+        spazio="studio",
+    )
+    assert "google_client_id" not in cleared.sovrascritte
+    assert cleared.updated_at is not None and cleared.updated_at > newer.updated_at  # type: ignore[operator]
+    # A save that changes nothing leaves the version where it was.
+    same = service.update(
+        SpaceSettingsUpdate(updated_at=cleared.updated_at), ADMIN, spazio="studio"
+    )
+    assert same.updated_at == cleared.updated_at

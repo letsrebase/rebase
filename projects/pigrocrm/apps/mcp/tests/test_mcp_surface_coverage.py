@@ -510,6 +510,11 @@ _CONFIGURAZIONE: dict[Method, str] = {
         "ogni richiesta, prima che esista un actor"
     ),
     ("SpaceSettingsService", "effective"): "come `overrides`, gia' applicate a `Settings`",
+    ("SpaceSettingsService", "version"): (
+        "an internal read (REB-622): the newest override row's `updated_at`, which `read` "
+        "answers and `update` checks a save against; no actor, and nothing an agent would "
+        "do with it, since no tool writes these settings"
+    ),
     ("AutomationConfigService", "update_automation_config"): (
         "decide che cosa il CRM fa **da solo** ai dati futuri, senza nessuno nel mezzo: "
         "e' la stessa famiglia di `PipelineService.update`, un grado piu' seria. Un agente "

@@ -491,7 +491,11 @@ export function useSaveFiscalProfile(aziendaId: string) {
           body: body as never,
         }),
       ),
-    onSuccess: () => {
+    onSuccess: (saved) => {
+      // The row as saved goes into the cache first (REB-622: the panel's form compares
+      // its version with the row's, and a prop that lagged the save by one round trip
+      // read as another admin's older row), then the refetch confirms it.
+      queryClient.setQueryData(queryKeys.fiscalProfile(aziendaId), saved)
       void queryClient.invalidateQueries({ queryKey: queryKeys.fiscalProfile(aziendaId) })
     },
   })

@@ -14,6 +14,7 @@ from pigrocrm.core.fiscal.pack import PACK_NON_IT
 from pigrocrm.core.fiscal.regime import resolve_regime
 from pigrocrm.core.fiscal.repository import FiscalProfileRepository
 from pigrocrm.core.fiscal.schemas import FiscalProfileRead, FiscalProfileUpsert, FiscalSnapshot
+from pigrocrm.core.versioning import require_unchanged
 
 ENTITY = "fiscal_profile"
 ZERO = Decimal("0.00")
@@ -72,13 +73,31 @@ class FiscalProfileService:
         let two concurrent first-time saves poison the session with a raw
         `IntegrityError` instead of surfacing a clean `Conflict`. Same shape, same
         reason, as `LegalEntityService.upsert_default`.
+
+        A body that names the version it was built on (`updated_at`, REB-622) is
+        refused when the row has moved since, before anything is assigned. `null` is
+        the version of a profile not saved yet: sent on a first save it is accepted,
+        sent once a row exists it is a draft built on nothing and is refused, as is a
+        timestamp sent for a profile that does not exist. A body without the key
+        checks nothing.
         """
         actor.require_admin("update_fiscal_profile")
-        payload = data.model_dump()
+        payload = data.model_dump(exclude={"updated_at"})
         self.check(payload)
         azienda = self.aziende.resolve(azienda_id)
 
         profile = self.repo.get(azienda.id)
+        if "updated_at" in data.model_fields_set:
+            # The row's lock before the comparison, as `LegalEntityService.update` takes
+            # it: two saves with one version must not both pass. A first save has no
+            # row to lock; the unique key on `azienda_id` is what refuses the second.
+            if profile is not None:
+                self.session.refresh(profile, with_for_update=True)
+            require_unchanged(
+                ENTITY,
+                sent=data.updated_at,
+                current=None if profile is None else profile.updated_at,
+            )
         try:
             if profile is None:
                 profile = self.repo.add(FiscalProfile(**payload, azienda_id=azienda.id))

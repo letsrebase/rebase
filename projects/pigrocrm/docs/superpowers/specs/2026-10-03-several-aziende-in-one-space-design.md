@@ -913,3 +913,31 @@ Added as the milestones land, dated, never rewriting the sections above.
   routes, the JSON fields (`azienda_id`, `aziende`), the MCP tools and their parameters,
   the UI copy, the SQL functions, the tables and columns. The decision of §10 on
   `emitter_profile` stands.
+- **2026-10-05, the version check on a settings save (REB-622).** Every whole-row
+  settings `PUT` is checked against the row it was built on: `PUT /api/aziende/{id}`,
+  `PUT /api/aziende/{id}/fiscal-profile` and `PUT /api/settings/space` take an optional
+  `updated_at`, the one the read answered, and the service refuses a mismatch with
+  `StaleRow` (code `stale_row`, 409 «Riga cambiata nel frattempo», «qualcun altro ha
+  salvato nel frattempo: ricarica e riprova», the row's current `updated_at` in the
+  details) before anything is assigned. The comparison lives once, in
+  `core/versioning.py`, and is equality of instants, not ordering. The check runs
+  whenever the key was *sent*, `null` included: `null` is the version of a profile not
+  saved yet (the panel's first save) and of space settings nothing was written to, so a
+  draft built on that state is refused once a row exists; the azienda's row always
+  exists, so `null` there is refused outright. A body without the key keeps the
+  whole-row replace as it was: the MCP tools read right before they write and send
+  none, and `LegalEntityCreate` does not take the key at all. The row is locked before
+  the comparison (`refresh(with_for_update=True)`), and the row-less space settings take
+  `pg_advisory_xact_lock`, so two saves carrying one version cannot both pass under
+  READ COMMITTED. The space settings' version is the newest row of the table: a
+  reserved `_version` row, outside `OVERRIDABLE_KEYS`, is stamped on every write that
+  changed something, since `max(updated_at)` over the overrides stood still when an
+  older override was cleared under a newer one; `SpaceSetting.updated_at` gained a
+  python-side insert default beside `now()`, so two rows one transaction inserts do not
+  share a version. The three panels send the version they were seeded from, follow a
+  newer row only while untouched, and on a 409 show «Qualcun altro ha salvato nel
+  frattempo.» with «Ricarica»: the reload takes the other admin's row under the fields
+  the person touched, and the banner stays until a save lands; the two save hooks write
+  the answer into the cache before invalidating, so the form never re-adopts the row
+  before the save. Not here: the field-level `PATCH`es of the lists and detail pages,
+  and the MCP tools.

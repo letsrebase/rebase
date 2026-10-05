@@ -2193,7 +2193,9 @@ export interface paths {
         /**
          * Update Azienda
          * @description Whole-row replacement, as the single profile always was: a key left out goes
-         *     back to its default.
+         *     back to its default. With `updated_at` in the body, the row's version the draft was
+         *     built on, a save on a row somebody else saved since answers 409 `stale_row`
+         *     (REB-622).
          */
         put: operations["update_azienda_api_aziende__azienda_id__put"];
         post?: never;
@@ -2240,7 +2242,11 @@ export interface paths {
          *     facts, and nothing can be issued without it.
          */
         get: operations["get_fiscal_profile_api_aziende__azienda_id__fiscal_profile_get"];
-        /** Upsert Fiscal Profile */
+        /**
+         * Upsert Fiscal Profile
+         * @description Whole-row, like the azienda's own `PUT`; with `updated_at` in the body, a save on
+         *     a profile somebody else saved since answers 409 `stale_row` (REB-622).
+         */
         put: operations["upsert_fiscal_profile_api_aziende__azienda_id__fiscal_profile_put"];
         post?: never;
         delete?: never;
@@ -3107,7 +3113,12 @@ export interface paths {
         };
         /** Read */
         get: operations["read_api_settings_space_get"];
-        /** Update */
+        /**
+         * Update
+         * @description Only the keys sent change; with `updated_at` in the body (the read's own, `null`
+         *     included), a save on settings somebody else saved since answers 409 `stale_row`
+         *     (REB-622).
+         */
         put: operations["update_api_settings_space_put"];
         post?: never;
         delete?: never;
@@ -6094,6 +6105,11 @@ export interface components {
              * @default 26.07
              */
             aliquota_inps: number | string | null;
+            /**
+             * Updated At
+             * @description L'`updated_at` letto sul profilo da cui parte questa modifica: se nel frattempo qualcun altro ha salvato, la richiesta e' rifiutata con 409 `stale_row`. Omesso, nessun controllo.
+             */
+            updated_at?: string | null;
         };
         /**
          * GmailBackfillRequest
@@ -7103,18 +7119,11 @@ export interface components {
         };
         /**
          * LegalEntityUpsert
-         * @description One shape for the first save and for every update: the fields are the same and
-         *     all of them are required or defaulted, so a write is always a whole row.
-         *
-         *     `nome` is optional on purpose: a space with one azienda never typed one, and the
-         *     service derives it from `ragione_sociale` (cut to the column width) when it is
-         *     missing, which is also what the migration did for the row every space already had.
-         *
-         *     `partita_iva` and `codice_sdi` carry no `max_length`, exactly as `CustomerCreate`
-         *     does: the service's `_check_fiscal` already requires an exact 11-digit / 7-character
-         *     match, which is stricter, and adding a Pydantic bound would make a 12-digit input
-         *     raise pydantic's own `ValidationError` instead of this project's `ValidationFailed`
-         *     -- a regression, not a fix.
+         * @description One shape for the first save and for every update, plus the version check of
+         *     REB-622 (spec 2026-10-03 §11): `updated_at` is the row the caller built its draft
+         *     on, read off `LegalEntityRead`, and a save whose value is not the row's own is
+         *     refused with `StaleRow` (409) instead of overwriting another admin's fields. Left
+         *     out, nothing is checked: the MCP tools read right before they write.
          */
         LegalEntityUpsert: {
             /** Nome */
@@ -7152,6 +7161,11 @@ export interface components {
             firma_email?: string | null;
             /** Regime Fiscale */
             regime_fiscale?: string | null;
+            /**
+             * Updated At
+             * @description L'`updated_at` letto sulla riga da cui parte questa modifica: se nel frattempo qualcun altro ha salvato, la richiesta e' rifiutata con 409 `stale_row`. Omesso, nessun controllo.
+             */
+            updated_at?: string | null;
         };
         /** LinkRequest */
         LinkRequest: {
@@ -8583,6 +8597,8 @@ export interface components {
             concentrazione_soglia_preferita: number;
             /** Sovrascritte */
             sovrascritte: string[];
+            /** Updated At */
+            updated_at: string | null;
         };
         /**
          * SpaceSettingsUpdate
@@ -8610,6 +8626,11 @@ export interface components {
             gmail_backfill_days?: number | null;
             /** Concentrazione Soglia Preferita */
             concentrazione_soglia_preferita?: number | null;
+            /**
+             * Updated At
+             * @description L'`updated_at` letto sulle impostazioni da cui parte questa modifica (`null` compreso): se nel frattempo qualcun altro ha salvato, la richiesta e' rifiutata con 409 `stale_row`. Omesso, nessun controllo.
+             */
+            updated_at?: string | null;
         };
         /**
          * SuggestedCustomer

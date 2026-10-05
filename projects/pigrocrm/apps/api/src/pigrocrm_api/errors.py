@@ -41,6 +41,10 @@ STATUS_BY_CODE: dict[str, int] = {
     # like the other "the world is not in a state where this write fits" codes.
     "last_active_admin": 409,
     "self_account_change": 409,
+    # REB-622: a whole-row settings save built on a row that changed since it was read.
+    # 409 like the other "the world moved under this write" codes; `updated_at` in the
+    # document is the row's current version, and the SPA offers a reload.
+    "stale_row": 409,
     "domain_error": 400,
 }
 
@@ -59,6 +63,7 @@ TITLE_BY_CODE: dict[str, str] = {
     "invitation_used": "Invito già usato",
     "last_active_admin": "Amministratore insufficiente",
     "self_account_change": "Modifica non consentita sul proprio account",
+    "stale_row": "Riga cambiata nel frattempo",
     "domain_error": "Errore di dominio",
 }
 

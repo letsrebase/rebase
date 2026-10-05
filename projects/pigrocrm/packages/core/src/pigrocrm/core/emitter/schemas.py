@@ -31,9 +31,10 @@ REGIME_FISCALE_MAX_LENGTH = 200
 FIRMA_EMAIL_MAX_LENGTH = 2_000
 
 
-class LegalEntityUpsert(BaseModel):
-    """One shape for the first save and for every update: the fields are the same and
-    all of them are required or defaulted, so a write is always a whole row.
+class LegalEntityFields(BaseModel):
+    """The fields a write names: the body of `LegalEntityUpsert` minus the version it
+    carries since REB-622, and the body `LegalEntityCreate` extends, since a row being
+    created has no version to have been built on.
 
     `nome` is optional on purpose: a space with one azienda never typed one, and the
     service derives it from `ragione_sociale` (cut to the column width) when it is
@@ -69,7 +70,26 @@ class LegalEntityUpsert(BaseModel):
     regime_fiscale: SafeStr | None = Field(default=None, max_length=REGIME_FISCALE_MAX_LENGTH)
 
 
-class LegalEntityCreate(LegalEntityUpsert):
+class LegalEntityUpsert(LegalEntityFields):
+    """One shape for the first save and for every update, plus the version check of
+    REB-622 (spec 2026-10-03 §11): `updated_at` is the row the caller built its draft
+    on, read off `LegalEntityRead`, and a save whose value is not the row's own is
+    refused with `StaleRow` (409) instead of overwriting another admin's fields. Left
+    out, nothing is checked: the MCP tools read right before they write. Sent as
+    `null` it is a draft built on no row, which this table, where the row always
+    exists, refuses."""
+
+    updated_at: datetime | None = Field(
+        default=None,
+        description=(
+            "L'`updated_at` letto sulla riga da cui parte questa modifica: se nel "
+            "frattempo qualcun altro ha salvato, la richiesta è rifiutata con 409 "
+            "`stale_row`. Omesso, nessun controllo."
+        ),
+    )
+
+
+class LegalEntityCreate(LegalEntityFields):
     """A second azienda, born with its fiscal profile (spec 2026-10-03 §1.2, §3, §9
     milestone 5): the upsert's fields, a required short name, and the profile body
     `PUT /api/aziende/{id}/fiscal-profile` takes. One request, one transaction, so no

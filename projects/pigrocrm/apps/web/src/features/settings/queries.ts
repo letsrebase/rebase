@@ -364,7 +364,10 @@ export function useLegalEntities() {
 /** `PUT`, not `PATCH`: `LegalEntityUpsert` is one shape for every write, because a
  *  write is always a whole row. Slice 3 builds FatturaPA on this row, so a partial
  *  save leaving `partita_iva` empty would surface much later as an invalid invoice.
- *  Invalidates the list, which is where every reader of this azienda gets it from. */
+ *  The answer is the row as saved: written into the list at once, so the panel's row
+ *  moves with the save and not one round trip later (REB-622: the form compares its
+ *  version with the row's, and a prop that lagged the save read as another admin's
+ *  older row), then the list is invalidated, which is where every reader gets it from. */
 export function useSaveLegalEntity(aziendaId: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -375,7 +378,12 @@ export function useSaveLegalEntity(aziendaId: string) {
           body: body as unknown as LegalEntityUpsertBody,
         }),
       ),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.aziende }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData<LegalEntityRecord[]>(queryKeys.aziende, (previous) =>
+        previous?.map((azienda) => (azienda.id === saved.id ? saved : azienda)),
+      )
+      void queryClient.invalidateQueries({ queryKey: queryKeys.aziende })
+    },
   })
 }
 

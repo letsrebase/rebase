@@ -88,7 +88,9 @@ def update_azienda(
     azienda_id: UUID, data: LegalEntityUpsert, session: SessionDep, actor: ActorDep
 ) -> LegalEntityRead:
     """Whole-row replacement, as the single profile always was: a key left out goes
-    back to its default."""
+    back to its default. With `updated_at` in the body, the row's version the draft was
+    built on, a save on a row somebody else saved since answers 409 `stale_row`
+    (REB-622)."""
     return LegalEntityService(session).update(azienda_id, data, actor)
 
 
@@ -123,6 +125,8 @@ def get_fiscal_profile(azienda_id: UUID, session: SessionDep, actor: ActorDep) -
 def upsert_fiscal_profile(
     azienda_id: UUID, data: FiscalProfileUpsert, session: SessionDep, actor: ActorDep
 ) -> FiscalProfileRead:
+    """Whole-row, like the azienda's own `PUT`; with `updated_at` in the body, a save on
+    a profile somebody else saved since answers 409 `stale_row` (REB-622)."""
     return FiscalProfileService(session).upsert(data, actor, azienda_id)
 
 

@@ -1,9 +1,10 @@
 import base64
 import secrets
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -16,11 +17,22 @@ from pigrocrm.core.space_settings.schemas import (
     SpaceSettingsRead,
     SpaceSettingsUpdate,
 )
+from pigrocrm.core.versioning import require_unchanged
 
 ENTITY = "space_settings"
 # The timeline wants an entity id and there is exactly one settings object per
 # database, so it gets one fixed id.
 SETTINGS_ID = UUID("00000000-0000-0000-0000-00000000c0f6")
+# The row that carries the version a save is checked against (REB-622). Not in
+# `OVERRIDABLE_KEYS`, so `overrides()` never hands it to `Settings` and the page never
+# lists it; written on every write that changed something, so clearing an override under
+# a newer one moves the version too, which `max(updated_at)` over the overrides alone
+# would not. Its value is the stamp as text, only so that each write is an UPDATE the
+# ORM emits (an unchanged value emits none, and `onupdate` would not fire).
+VERSION_KEY = "_version"
+# The advisory lock a versioned save takes for the comparison, since these settings have
+# no single row to lock: the same for every writer of one database, and transaction-scoped.
+VERSION_LOCK = 0xC0F6
 
 _BOOLS = {"google_app_unverified", "mcp_full_access"}
 _INTS = {
@@ -102,6 +114,14 @@ class SpaceSettingsService:
     def effective(self) -> Settings:
         return apply_overrides(self.base, self.overrides())
 
+    def version(self) -> datetime | None:
+        """What `SpaceSettingsRead.updated_at` says and what a save compares with
+        (REB-622): the newest row's `updated_at`, the reserved `VERSION_KEY` row's after
+        the first write under this code and the newest override's on a database written
+        before it, `None` with no row at all. One value for the whole settings object,
+        since the page saves it as one, over a table that keeps one row per key."""
+        return self.session.scalar(select(func.max(SpaceSetting.updated_at)))
+
     def read(self, actor: Actor, *, spazio: str | None) -> SpaceSettingsRead:
         actor.require_admin("read_space_settings")
         return self._read(spazio=spazio)
@@ -110,8 +130,15 @@ class SpaceSettingsService:
         self, data: SpaceSettingsUpdate, actor: Actor, *, spazio: str | None
     ) -> SpaceSettingsRead:
         actor.require_unscoped_admin("update_space_settings")
+        # Sent, not merely non-null (REB-622): the version is `None` on a database with
+        # no row yet, and a draft built on that state has to be refused once a row
+        # exists, so an explicit `null` is a real check and only an absent key is none.
+        # Under the advisory lock, so two saves carrying one version cannot both pass.
+        if "updated_at" in data.model_fields_set:
+            self.session.execute(select(func.pg_advisory_xact_lock(VERSION_LOCK)))
+            require_unchanged(ENTITY, sent=data.updated_at, current=self.version())
         changed: list[str] = []
-        for key in data.model_fields_set:
+        for key in data.model_fields_set - {"updated_at"}:
             value = getattr(data, key)
             if value is None:
                 continue
@@ -136,6 +163,7 @@ class SpaceSettingsService:
             self.activities.record(
                 ENTITY, SETTINGS_ID, "updated", actor, {"chiavi": sorted(set(changed))}
             )
+            self._set(VERSION_KEY, datetime.now(UTC).isoformat())
         self.session.commit()
         return self._read(spazio=spazio)
 
@@ -180,4 +208,5 @@ class SpaceSettingsService:
             concentrazione_soglia_preferita=settings.concentrazione_soglia_preferita,
             sovrascritte=sorted(key for key in overrides if key not in SECRET_KEYS)
             + sorted(key for key in overrides if key in SECRET_KEYS),
+            updated_at=self.version(),
         )
