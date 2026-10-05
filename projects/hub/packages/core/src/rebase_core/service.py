@@ -39,6 +39,7 @@ class SignupService:
             nome=data.nome,
             cognome=data.cognome,
             linkedin_url=data.linkedin_url,
+            rif=data.rif,
             **utm,
         )
         self.session.add(row)
