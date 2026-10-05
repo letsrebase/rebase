@@ -26,8 +26,16 @@
  * dependency real: static imports of a module finish evaluating before the importing
  * module's own top-level code runs, in a bundle and in a browser alike, so
  * `window.__typewriter` is always set by the time the code below reads it.
+ *
+ * REB-575: the same holds for the other two globals this file reads, `window.__utm`
+ * (utm.js) and `window.__pigroField` (field.js), so they are imported the same way. The
+ * three scripts still sit in index.html's markup for a browser running the source, and
+ * Vite rewrites them into this one entry; the imports are what keep the order true when
+ * Rollup splits the chunks differently. e2e/site.spec.ts checks it on the built bundle.
  */
+import './utm.js'
 import './typewriter.js'
+import './field.js'
 ;(function () {
   function reveal() {
     var blocks = document.querySelectorAll('[data-reveal]')

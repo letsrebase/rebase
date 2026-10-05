@@ -349,6 +349,43 @@ test.describe('every page of the site', () => {
 // page at `/` and a 200 for any path at all, so a test written against `/` checked a
 // page production never serves there. These pin the served map to deploy/nginx.conf's:
 // the same file under each name, the same redirect, and a 404 where nginx has one.
+
+// REB-575: landing.js reads window.__utm, window.__typewriter and window.__pigroField,
+// which three other scripts assign. Vite does not promise the order of plain module
+// scripts across chunks, so this watches the built bundle itself: an accessor on each
+// global logs when it is assigned and when it is read, and no read may come before its
+// assignment, whichever chunk Rollup put the assigner in. Unit tests load the source
+// with `new Function` and cannot see this.
+test('/ defines each window global before landing.js reads it, in the built bundle', async ({ page }) => {
+  await page.addInitScript(() => {
+    const log: string[] = []
+    ;(window as unknown as { __globalsLog: string[] }).__globalsLog = log
+    for (const name of ['__utm', '__typewriter', '__pigroField']) {
+      let value: unknown
+      Object.defineProperty(window, name, {
+        configurable: true,
+        get() {
+          log.push(`read ${name}`)
+          return value
+        },
+        set(next) {
+          log.push(`set ${name}`)
+          value = next
+        },
+      })
+    }
+  })
+  await page.goto('/', { waitUntil: 'networkidle' })
+  const log = await page.evaluate(() => (window as unknown as { __globalsLog: string[] }).__globalsLog)
+  for (const name of ['__utm', '__typewriter', '__pigroField']) {
+    expect(log, name).toContain(`set ${name}`)
+    expect(log, name).toContain(`read ${name}`)
+    expect(log.indexOf(`set ${name}`), `${name} assigned before first read: ${log.join(', ')}`).toBeLessThan(log.indexOf(`read ${name}`))
+  }
+  // And what the reads were for happened: the field is mounted on its canvas.
+  expect(await page.evaluate(() => (document.getElementById('field') as HTMLCanvasElement).width)).toBeGreaterThan(300)
+})
+
 // The campaign follows the visitor into the hub (ORB-166): every door on the landing
 // carries the six UTM keys the page was opened with, and nothing else does.
 test.describe('a visitor from a campaign', () => {
