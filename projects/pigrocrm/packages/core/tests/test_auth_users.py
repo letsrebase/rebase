@@ -626,6 +626,35 @@ def _member(session: Session, email: str, ruolo: str = "collaboratore") -> UUID:
     )
 
 
+def test_create_writes_the_scope_with_the_row_and_refuses_an_empty_one(db_session: Session) -> None:
+    from pigrocrm.core.activities.models import Activity
+
+    ltd = _azienda(db_session, "rebase ltd")
+    created = UserService(db_session).create(
+        UserCreate(
+            email="s@x.it", password="supersegreta1", nome="S", ruolo="admin", aziende=[ltd]
+        ),
+        ADMIN,
+    )
+    assert created.aziende == [ltd]
+    row = db_session.get(User, created.id)
+    assert row is not None and row.ambito_limitato is True
+    assert [s.azienda_id for s in row.scopes] == [ltd]
+    entry = (
+        db_session.execute(
+            select(Activity).where(Activity.entity_type == "user", Activity.entity_id == created.id)
+        )
+        .scalars()
+        .all()[0]
+    )
+    assert entry.payload["aziende"] == [str(ltd)]
+    with pytest.raises(ValidationFailed) as refused:
+        UserService(db_session).create(
+            UserCreate(email="t@x.it", password="supersegreta1", nome="T", aziende=[]), ADMIN
+        )
+    assert refused.value.details["field"] == "aziende"
+
+
 def test_update_scopes_a_member_and_null_clears_the_scope(db_session: Session) -> None:
     ltd = _azienda(db_session, "rebase ltd")
     member = _member(db_session, "m@x.it")

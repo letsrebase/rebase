@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select, text
@@ -124,6 +125,16 @@ class UserService:
     def create(self, data: UserCreate, actor: Actor) -> UserRead:
         actor.require_unscoped_admin("create_user")
         require_verified_identity(self.session, actor, "create_user")
+        # The scope checked like an update's (no empty list, active aziende only), and
+        # written with the row below rather than after its commit: in between, a scoped
+        # admin would count as an unscoped one for a concurrent `update`'s guard.
+        return self.create_scoped(data, actor, check_scope(self.session, ENTITY, data.aziende))
+
+    def create_scoped(self, data: UserCreate, actor: Actor, aziende: list[UUID] | None) -> UserRead:
+        """`create` with an already-checked scope, possibly empty: what an accepted
+        invitation whose aziende were deactivated meanwhile opens (spec §1.11), which
+        `check_scope` would refuse to a request. Same guards, same single transaction."""
+        actor.require_unscoped_admin("create_user")
         if data.password is None:
             # A user with no password enters with a link by mail (spec 2026-09-12 §6.2).
             # Only the provisioning of a space may create one: an admin adding a
@@ -156,13 +167,16 @@ class UserService:
         )
         try:
             self.repo.add(user)
+            if aziende is not None:
+                apply_scope(self.session, user, aziende)
             # `email` and `ruolo` only. The password never appears -- not the plaintext
             # the caller sent, not the argon2 hash stored on the row -- because a
             # timeline entry is read by more people, and kept for longer, than the
             # column it would have been copied from.
-            self.activities.record(
-                ENTITY, user.id, "created", actor, {"email": user.email, "ruolo": user.ruolo}
-            )
+            payload: dict[str, Any] = {"email": user.email, "ruolo": user.ruolo}
+            if aziende is not None:
+                payload["aziende"] = [str(a) for a in aziende]
+            self.activities.record(ENTITY, user.id, "created", actor, payload)
             self.session.commit()
         except IntegrityError as exc:
             # The pre-check above cannot cover a race between two concurrent requests:

@@ -9110,6 +9110,8 @@ export interface components {
              * Format: email
              */
             email: string;
+            /** Aziende */
+            aziende?: string[] | null;
             /** Password */
             password?: string | null;
             /** Nome */

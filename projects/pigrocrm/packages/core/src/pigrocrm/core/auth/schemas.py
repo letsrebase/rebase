@@ -81,6 +81,10 @@ class InvitationPeek(BaseModel):
 
 class UserCreate(BaseModel):
     email: EmailStr
+    # The aziende the new account will see (spec 2026-10-03 §1.11), written in the same
+    # transaction as the row: an account is never, not even between two commits, an
+    # unscoped admin it was not meant to be. `null` or left out is the whole space.
+    aziende: list[UUID] | None = None
     # `None` only for a space's first admin, created by the signup wizard (spec
     # 2026-09-12 §6.4): the person enters with a link by mail and never had a password.
     # `UserService.create` refuses it from anyone but the system.

@@ -40,7 +40,7 @@ from pigrocrm.core.auth.schemas import (
     UserCreate,
     UserRead,
 )
-from pigrocrm.core.auth.scope import active_only, apply_scope, check_scope
+from pigrocrm.core.auth.scope import active_only, check_scope
 from pigrocrm.core.auth.service import UserService, require_verified_identity
 from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
@@ -267,9 +267,17 @@ class InvitationService:
         # read-back narrows by construction, not by check. pat_service.py:148 carries the
         # same ignore for the same reason.
         ruolo: Role = row.ruolo  # type: ignore[assignment]
-        user = UserService(self.session).create(
+        # The scope the invitation carried, kept to the aziende still active at the
+        # click (spec §1.11): an invitation whose every azienda was deactivated
+        # meanwhile opens an account that sees nothing, and the Team panel says so.
+        # Nothing turns an empty scope into «tutte». Written in the same transaction
+        # as the row (CodeRabbit on PR #513): between a commit of the row and a commit
+        # of its scope, a scoped admin would have counted as an unscoped one.
+        scope = active_only(self.session, list(row.aziende)) if row.aziende is not None else None
+        user = UserService(self.session).create_scoped(
             UserCreate(email=row.email, password=None, nome=chosen, ruolo=ruolo),
             Actor.system(),
+            scope,
         )
         now = datetime.now(UTC)
         spent = self.session.execute(
@@ -294,12 +302,6 @@ class InvitationService:
             if fresh.email_verificata_il is None:
                 fresh.email_verificata_il = now
             fresh.last_login_at = now
-            # The scope the invitation carried, kept to the aziende still active at the
-            # click (spec §1.11): an invitation whose every azienda was deactivated
-            # meanwhile opens an account that sees nothing, and the Team panel says so.
-            # Nothing turns an empty scope into «tutte».
-            if row.aziende is not None:
-                apply_scope(self.session, fresh, active_only(self.session, list(row.aziende)))
             user = UserRead.model_validate(fresh)
         self.activities.record(ENTITY, row.id, "accepted", Actor.system(), {"email": row.email})
         self.activities.record(
