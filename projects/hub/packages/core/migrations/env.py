@@ -19,7 +19,15 @@ if not _configured_url or _configured_url == _PLACEHOLDER_URL:
     config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # `disable_existing_loggers` defaults to True, which is right for `alembic
+    # upgrade` from a shell and wrong inside the API process: `upgrade_to_head` runs
+    # this file in-process (a signup provisions this way), and the default disables
+    # every logger the ini does not name -- including other projects' loggers alive
+    # on the same test worker, which is how a hub migration left `pigrocrm.core.mail`
+    # silent and its `caplog` assertions empty under xdist. The pigrocrm `env.py` was
+    # fixed the same way (REB-190); this is its twin (REB-660). Pinned by
+    # `test_a_migration_leaves_the_host_process_loggers_emitting`.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
