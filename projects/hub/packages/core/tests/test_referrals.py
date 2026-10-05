@@ -6,7 +6,7 @@ at the referred entity's first signed letter. The full sign-to-reward path reuse
 import re
 import threading
 from collections.abc import Callable, Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -41,10 +41,25 @@ from rebase_core.errors import ValidationFailed
 from rebase_core.freelancers import FreelancerService
 from rebase_core.mail import RecordingSender
 from rebase_core.matches import MatchService
-from rebase_core.models import Company, Freelancer, Login, Match, Referral, ReferralReward, User
+from rebase_core.models import (
+    Company,
+    Freelancer,
+    Login,
+    Match,
+    Referral,
+    ReferralReward,
+    Signup,
+    User,
+)
 from rebase_core.referral_evidence import domains_match, email_domain
 from rebase_core.referrals import ReferralService, reward_base
-from rebase_core.schemas import CompanyCreate, FreelancerCreate, SignupUtm
+from rebase_core.schemas import (
+    CompanyCreate,
+    FreelancerCreate,
+    FreelancerDraft,
+    SignupCreate,
+    SignupUtm,
+)
 from rebase_core.users import UserService
 
 TABLES = (
@@ -247,6 +262,108 @@ def test_a_freelancer_application_with_rif_links_the_referral(clean: Session) ->
     row = clean.scalar(select(Referral).where(Referral.entity_id == freelancer_id))
     assert row is not None
     assert (row.kind, row.referrer_user_id) == ("freelancer", referrer_id)
+
+
+def _signup_with(session: Session, **extra: object) -> UUID:
+    from rebase_core.service import SignupService
+
+    payload: dict[str, object] = {"email": "cold@studio.it", "nome": "Cold", "cognome": "Lead"}
+    payload.update(extra)
+    return SignupService(session).subscribe(SignupCreate(**payload)).id  # type: ignore[arg-type]
+
+
+def _draft_for(session: Session, signup_id: UUID) -> UUID:
+    return (
+        FreelancerService(session)
+        .draft_from_signup(
+            signup_id,
+            FreelancerDraft(
+                nome="Cold",
+                cognome="Lead",
+                posizione="Backend developer",
+                fonti=["https://cold.dev"],
+            ),
+            "Claude",
+        )
+        .id
+    )
+
+
+def test_a_signups_rif_is_stored_on_the_signup_and_credits_nobody_yet(clean: Session) -> None:
+    code = ReferralService(clean).code_for(_member(clean))
+
+    signup_id = _signup_with(clean, rif=code)
+
+    assert clean.get(Signup, signup_id).rif == code  # type: ignore[union-attr]
+    assert clean.scalar(select(Referral)) is None
+
+
+def test_drafting_a_card_from_a_signup_with_rif_makes_a_pending_referral(clean: Session) -> None:
+    referrer_id = _member(clean)
+    code = ReferralService(clean).code_for(referrer_id)
+    signup_id = _signup_with(clean, rif=code.lower())
+
+    card_id = _draft_for(clean, signup_id)
+    _draft_for(clean, signup_id)  # a second research adds no second referral
+
+    rows = clean.scalars(select(Referral)).all()
+    assert len(rows) == 1
+    assert (rows[0].kind, rows[0].entity_id, rows[0].referrer_user_id) == (
+        "freelancer",
+        card_id,
+        referrer_id,
+    )
+    assert (rows[0].stato, rows[0].verified_at) == ("da_verificare", None)
+
+
+def test_the_referred_person_first_login_verifies_a_signup_referral(clean: Session) -> None:
+    code = ReferralService(clean).code_for(_member(clean))
+    card_id = _draft_for(clean, _signup_with(clean, rif=code))
+    owner = clean.scalar(select(Freelancer.user_id).where(Freelancer.id == card_id))
+    assert owner is not None
+
+    ReferralService(clean).verify_on_login(owner, datetime.now(UTC) + timedelta(minutes=1))
+    clean.commit()
+
+    row = clean.scalar(select(Referral))
+    assert row is not None and (row.stato, row.verified_via) == ("verificato", "accesso")
+
+
+def test_a_signup_without_rif_drafts_a_card_with_no_referral(clean: Session) -> None:
+    _draft_for(clean, _signup_with(clean))
+
+    assert clean.scalar(select(Referral)) is None
+
+
+def test_a_garbage_or_unknown_rif_never_breaks_the_signup_or_the_draft(clean: Session) -> None:
+    _member(clean)  # codes exist; this one is not among them
+    garbage = _signup_with(clean, email="a@studio.it", rif="not a code!!")
+    unknown = _signup_with(clean, email="b@studio.it", rif="ZZZZZZZZZZ")
+
+    assert clean.get(Signup, garbage).rif is None  # type: ignore[union-attr]
+    _draft_for(clean, garbage)
+    _draft_for(clean, unknown)
+
+    assert clean.scalar(select(Referral)) is None
+
+
+def test_a_member_drafted_from_their_own_signup_code_refers_nobody(clean: Session) -> None:
+    code = ReferralService(clean).code_for(_member(clean, "cold@studio.it"))
+
+    _draft_for(clean, _signup_with(clean, rif=code))
+
+    assert clean.scalar(select(Referral)) is None
+
+
+def test_a_second_signup_fills_an_empty_rif_but_never_replaces_one(clean: Session) -> None:
+    service = ReferralService(clean)
+    first, second = service.code_for(_member(clean)), service.code_for(_member(clean, "b@c.it"))
+    signup_id = _signup_with(clean)
+
+    _signup_with(clean, rif=first)
+    _signup_with(clean, rif=second)
+
+    assert clean.get(Signup, signup_id).rif == first  # type: ignore[union-attr]
 
 
 def test_a_companys_first_request_with_rif_links_the_referral_but_not_the_next_one(

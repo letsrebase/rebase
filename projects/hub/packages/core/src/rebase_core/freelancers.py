@@ -316,6 +316,14 @@ class FreelancerService:
         row.links = list(data.links)
         row.compilata_da = "admin"
         try:
+            # The referral the visitor arrived with (REB-554) is made with the card, in one
+            # commit, the way `apply` does: pending until the person's first magic-link
+            # login (REB-658), so a signup that never becomes a card credits nobody. A
+            # second research finds it already there (`ON CONFLICT DO NOTHING`).
+            self.session.flush()
+            ReferralService(self.session).link_signup(
+                "freelancer", row.id, signup.rif, new_user_id=row.user_id
+            )
             self.session.commit()
         except IntegrityError:
             # Two first drafts racing on one address: the index decides, and the loser

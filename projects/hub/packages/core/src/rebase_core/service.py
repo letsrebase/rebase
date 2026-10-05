@@ -39,6 +39,7 @@ class SignupService:
             nome=data.nome,
             cognome=data.cognome,
             linkedin_url=data.linkedin_url,
+            rif=data.rif,
             **utm,
         )
         self.session.add(row)
@@ -98,7 +99,7 @@ class SignupService:
         already there.
         """
         changed = False
-        for field in ("nome", "cognome", "linkedin_url"):
+        for field in ("nome", "cognome", "linkedin_url", "rif"):
             value = getattr(data, field)
             if value is not None and not (getattr(row, field) or "").strip():
                 setattr(row, field, value)

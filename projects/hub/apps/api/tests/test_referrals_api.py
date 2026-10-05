@@ -296,3 +296,44 @@ def _login(client: TestClient, sender: RecordingSender, email: str = ADMIN_EMAIL
     match = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", sender.sent[-1].text)
     assert match
     assert client.post("/api/hub/auth/enter", json={"token": match.group(1)}).status_code == 200
+
+
+def test_a_cold_signup_with_rif_ends_in_a_pending_ledger_row_once_an_admin_drafts_the_card(
+    client: TestClient, sender: RecordingSender, api_session: Session, admin: None
+) -> None:
+    """REB-554: the visitor's `?rif=` rides the community signup, and the referral is
+    made only when an admin turns that signup into a card, pending like any other."""
+    _member(api_session)
+    _enter(client, sender, "mario@community.it")
+    code = client.get("/api/hub/me/referral").json()["code"]
+    client.cookies.clear()
+    reset_rate_limit()
+
+    posted = client.post(
+        "/api/community/signups",
+        json={"email": "cold@studio.it", "nome": "Cold", "cognome": "Lead", "rif": code},
+    )
+    assert posted.status_code == 201 and posted.json() == {"ok": True}
+    assert api_session.query(Referral).count() == 0  # a signup is not a user yet
+
+    _login(client, sender)
+    signup_id = next(
+        item["id"]
+        for item in client.get("/api/hub/signups").json()["iscrizioni"]
+        if item["email"] == "cold@studio.it"
+    )
+    drafted = client.post(
+        f"/api/hub/signups/{signup_id}/card",
+        json={
+            "nome": "Cold",
+            "cognome": "Lead",
+            "posizione": "Backend developer",
+            "fonti": ["https://cold.dev"],
+        },
+    )
+    assert drafted.status_code == 201, drafted.text
+
+    items = client.get("/api/hub/referrals").json()["items"]
+    assert len(items) == 1
+    assert items[0]["referral_stato"] == "da_verificare"
+    assert items[0]["referred_nome"] == "Cold Lead"
