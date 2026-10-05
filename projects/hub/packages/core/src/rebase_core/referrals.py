@@ -21,6 +21,7 @@ question the P-REB-44 spike raised is answered, grounded in `Match.giorni_previs
 (REB-497), an admin's own estimate of the engagement's billable days.
 """
 
+import re
 import secrets
 from collections.abc import Iterable, Mapping, Sequence
 from decimal import Decimal
@@ -69,12 +70,29 @@ def _generate_code() -> str:
     return "".join(secrets.choice(_CODE_ALPHABET) for _ in range(REFERRAL_CODE_LENGTH))
 
 
+# `modalita` is free text end to end (`LetteraFields.modalita` is a bounded `SafeStr`, the
+# admin form only offers «a giornata» and «a corpo» but the API takes any string, and the
+# letter is also edited by hand), so the day-rate branch is a reading of the text, not an
+# equality. Only how the mode STARTS decides: «a giornata (8 ore)» is a day rate,
+# «forfait 20 giornate» or «a ore (giornata da 8 ore)» merely mention a day.
+_DAY_RATE_START = re.compile(r"(?:a |per |al )?(?:giornat\w*|giornalier\w*|giorn[oi]\b)")
+
+
+def is_day_rate(modalita: str) -> bool:
+    """Whether a letter's `modalita` prices the fee per day, whatever its spelling: case
+    and surrounding or repeated whitespace are ignored, and the mode must open with
+    `giornata`, `giornaliera`, `giorno` or `giorni`, optionally after `a `, `per ` or
+    `al `, with anything after it (a note such as «(8 ore)») ignored. A mode that only
+    mentions a day further on (`forfait 20 giornate`, `mezza giornata`) is not one."""
+    return _DAY_RATE_START.match(" ".join(modalita.casefold().split())) is not None
+
+
 def reward_base(
     budget_giornaliero: Decimal, compenso: Decimal, modalita: str, giorni_previsti: int | None
 ) -> Decimal | None:
     """Rebase's own margin on a letter, the base a referral reward is a rate of.
 
-    A day-rate letter (`modalita == 'a giornata'`, both `budget_giornaliero` and
+    A day-rate letter (`is_day_rate(modalita)`, both `budget_giornaliero` and
     `compenso` already daily) has a well-defined margin per day,
     `budget_giornaliero - compenso`, projected over `giorni_previsti` when an admin
     estimated one, else one day's margin -- the conservative floor a reward never
@@ -85,7 +103,7 @@ def reward_base(
     same figure `ReferralReward.base_amount` leaves null for exactly that case. Never
     negative: a fee above the client's budget is rebase's own loss on that letter, not
     a negative reward for whoever made the referral."""
-    if modalita.strip() == "a giornata":
+    if is_day_rate(modalita):
         margin_per_day = budget_giornaliero - compenso
         days = giorni_previsti if giorni_previsti is not None else 1
         return max(Decimal("0"), margin_per_day * days)
