@@ -105,6 +105,12 @@ jobs:
       # the registry, so it fails when Postgres does.
       health-url: http://127.0.0.1:8081/api/tenants/zzz-healthcheck/disponibile
       url: https://preview.pigro.letsrebase.com
+      # The role password the API connects as (REB-634): a secret the compose file
+      # requires, templated into the host `.env` from the environment secret of the
+      # same name, since the host `.env` is never rsynced and nobody runs an SSH edit
+      # on it (REB-650).
+      env-secrets: |
+        PIGROCRM_APP_PASSWORD
     secrets: inherit
 
   production:
@@ -124,4 +130,7 @@ jobs:
       compose-project: pigrocrm
       health-url: http://127.0.0.1:8080/api/tenants/zzz-healthcheck/disponibile
       url: https://pigro.letsrebase.com
+      # Same managed secret as the preview, from production's own environment (REB-650).
+      env-secrets: |
+        PIGROCRM_APP_PASSWORD
     secrets: inherit

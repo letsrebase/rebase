@@ -65,6 +65,21 @@ on:
         type: string
         required: false
         default: ''
+      env-secrets:
+        description: >-
+          Newline-separated names of this environment's secrets to write into the
+          host `.env` before the stack starts, one `NAME=value` line each. The host
+          `.env` is never in the repository and never rsynced: it holds each
+          environment's own non-secret config (ports, data directories, the public
+          URL) plus whatever secrets were put there by hand at provisioning. A secret
+          the compose file requires that nobody can add by hand, because nobody but
+          the host's provisioner has SSH, is listed here instead and templated in from
+          the Environment secret of the same name (REB-650). Every name listed must be
+          set on the environment, or the deploy fails loudly. Empty by default, which
+          is today's behaviour for every caller that omits it.
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -173,6 +188,85 @@ jobs:
             --exclude 'node_modules' --exclude 'dist' --exclude '.venv' \
             --exclude 'data' --exclude 'var' \
             ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}"
+
+      - name: Write managed secrets into the host .env
+        # The host `.env` is hand-written and never rsynced (the step above excludes
+        # it), so a secret the compose file requires had no way onto the host but a
+        # person with SSH editing the file: `PIGROCRM_APP_PASSWORD`, required since
+        # REB-634, failed every preview from the day it landed because nobody who runs
+        # the board has SSH to the host. This writes each name the caller lists in
+        # `env-secrets` into `${DEPLOY_PATH}/.env`, from the environment's own secret
+        # of the same name, replacing that one line and leaving every other line the
+        # file already holds untouched (REB-650).
+        #
+        # The values come from the inherited `secrets` context as one JSON blob, never
+        # as a workflow input (an input is not masked in a log, a secret is). Each value
+        # reaches the host base64-encoded on the ssh connection's stdin, which the remote
+        # decodes: only the secret name and the env file path travel as arguments, the
+        # way the DEPLOY_SSH_KEY above is written to a file rather than passed on a
+        # command line, so the value never lands in a process list or a log. Single-line
+        # secrets only, which is what a `.env` line can hold. A name listed but unset on
+        # the environment is a loud failure: the deploy is here to guarantee the managed
+        # secrets are present, not to skip a missing one.
+        if: inputs.env-secrets != ''
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          SECRETS_JSON: ${{ toJSON(secrets) }}
+          WANT: ${{ inputs.env-secrets }}
+        run: |
+          set -euo pipefail
+          # Runs on the host with NAME and ENVFILE in its environment and the value's
+          # base64 on stdin. No secret is in this string, so it is safe as an argument.
+          # grep's exit 1 is "no line matched" (the first write of this key, or an empty
+          # file) and is expected; its exit 2 is a real read error, which must abort and
+          # leave the file alone rather than be swallowed into an empty temp that then
+          # replaces the whole hand-written .env.
+          remote='
+            set -euo pipefail
+            umask 077
+            touch "$ENVFILE"
+            value=$(base64 -d)
+            tmp=$(mktemp "${ENVFILE}.XXXXXX")
+            trap "rm -f \"$tmp\"" EXIT
+            rc=0
+            grep -v -E "^${NAME}=" "$ENVFILE" > "$tmp" || rc=$?
+            if [ "$rc" -gt 1 ]; then
+              echo "cannot read ${ENVFILE} (grep rc=${rc}); leaving it untouched" >&2
+              exit 1
+            fi
+            printf "%s=%s\n" "$NAME" "$value" >> "$tmp"
+            chmod 600 "$tmp"
+            mv "$tmp" "$ENVFILE"
+            trap - EXIT
+            echo "seeded ${NAME} into ${ENVFILE}"'
+          while IFS= read -r name; do
+            name="${name#"${name%%[![:space:]]*}"}"
+            name="${name%"${name##*[![:space:]]}"}"
+            [ -z "$name" ] && continue
+            # `jq -j` plus the trailing-`x` guard keep the value byte-exact: `jq -r`
+            # appends a newline and `$(...)` then strips every trailing newline, which
+            # would hide a secret that legitimately ends in one. Captured exactly, a
+            # value with any newline (trailing or internal) is rejected rather than
+            # written: a `.env` line holds one line, so a multi-line secret does not
+            # belong here, and silently dropping a trailing newline would change the
+            # secret without saying so.
+            value=$(printf '%s' "$SECRETS_JSON" | jq -j --arg k "$name" '.[$k] // ""'; printf x)
+            value=${value%x}
+            if [ -z "$value" ]; then
+              echo "::error::Environment ${ENVIRONMENT} has no value for ${name}, listed in env-secrets."
+              exit 1
+            fi
+            if [ "$value" != "${value%%$'\n'*}" ]; then
+              echo "::error::Secret ${name} contains a newline; env-secrets holds single-line values only."
+              exit 1
+            fi
+            printf '%s' "$value" | base64 | tr -d '\n' \
+              | ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
+                  "NAME='${name}' ENVFILE='${DEPLOY_PATH}/.env' bash -c '${remote}'"
+          done <<< "$WANT"
 
       - name: Build and start the stack
         env:
