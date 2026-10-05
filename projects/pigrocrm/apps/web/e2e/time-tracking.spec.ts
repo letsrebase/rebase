@@ -88,18 +88,25 @@ test.describe('time tracking', () => {
     // would come back 401.
     const { dealId } = await seedDealWithRate(page.request, { nome, tariffa: '80.000000' })
 
-    // Both days this test writes into have to fall in the *same* calendar month: the
-    // month it later closes is one month, and a Monday that is the last day of one
-    // would put Tuesday in the next. Only the Monday of a week can be a month's last
-    // day, and the Monday seven days earlier never is, so stepping the grid back one
-    // week is always enough. `weekDays` anchors on "today", so the step has to be made
-    // through the screen's own «Settimana precedente» control every time this test
-    // returns to it.
-    let lunedi = lunediDi(new Date())
+    // Both days this test writes into have to be real, writable days, and in the *same*
+    // calendar month. Writable: the API refuses a day after today (`422 data futura`),
+    // so on a Monday this week's Tuesday is tomorrow and the write the test makes into
+    // it never reaches the period lock it is there to prove. Same month: the month it
+    // later closes is one month, and a Monday that is the last day of one would put
+    // Tuesday in the next. Stepping back a week until neither holds is at most two steps
+    // (a Monday that is the 7th steps onto the previous month's last day, and one more
+    // clears it). `weekDays` anchors on "today", so the steps have to be made through the
+    // screen's own «Settimana precedente» control every time this test returns to it.
+    const oggi = new Date()
+    const oggiAMezzanotte = new Date(oggi.getFullYear(), oggi.getMonth(), oggi.getDate())
+    let lunedi = lunediDi(oggi)
     let settimaneIndietro = 0
-    if (piuGiorni(lunedi, 1).getMonth() !== lunedi.getMonth()) {
+    while (
+      piuGiorni(lunedi, 1) > oggiAMezzanotte ||
+      piuGiorni(lunedi, 1).getMonth() !== lunedi.getMonth()
+    ) {
       lunedi = piuGiorni(lunedi, -7)
-      settimaneIndietro = 1
+      settimaneIndietro += 1
     }
     const martedi = piuGiorni(lunedi, 1)
     const anno = lunedi.getFullYear()
