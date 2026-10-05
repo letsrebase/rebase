@@ -84,6 +84,7 @@ def propose_in_the_cloud(
         data,
         origine="cloud",
         user_id=caller.user_id,
+        company_id=caller.company_id,
         session=session,
         settings=settings,
         builder=builder,
@@ -102,21 +103,16 @@ def request_in_the_cloud(
     background: BackgroundTasks,
 ) -> TeamRequestCreated:
     """«Assumi team» on the caller's own cloud proposal (`proposal_id`: 409 once
-    requested, 422 when it is not theirs, older than a day or has nobody, and 422 «La
-    proposta è di un altro contesto: rigenerala.» when it is older than the caller's
-    newest live grant, so made for another company) or «Richiedi» on one card
+    requested, 422 when it is not theirs, older than a day or has nobody, and 422 «Il
+    talent cloud con cui hai fatto questa proposta non è più aperto per te…» when the
+    caller holds no live grant for the company the proposal was made under, which is
+    the company it is filed for; a proposal from before the company was kept falls back
+    to «La proposta è di un altro contesto: rigenerala.» when it is older than the
+    caller's newest live grant) or «Richiedi» on one card
     (`freelancer_id`: 404 «Profilo non disponibile.» outside the cloud)."""
     service = TeamRequestService(session, settings=settings, tracker=tracker)
     if data.proposal_id is not None:
-        read, mail = service.create_in_cloud(
-            data.proposal_id,
-            azienda=caller.azienda,
-            email=caller.email,
-            telefono=caller.telefono,
-            user_id=caller.user_id,
-            company_id=caller.company_id,
-            granted_at=caller.granted_at,
-        )
+        read, mail = service.create_in_cloud(data.proposal_id, caller=caller)
     else:
         assert data.freelancer_id is not None  # `CloudRequestCreate` holds one of the two
         read = service.create_for_talent(

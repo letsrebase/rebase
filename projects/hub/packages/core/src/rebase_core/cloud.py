@@ -162,6 +162,21 @@ class TalentCloudService:
             .limit(1)
         )
 
+    def live_for(self, user_id: UUID, company_id: UUID) -> TalentCloudGrant | None:
+        """This person's live grant for this company, on a request that is still
+        there, or `None`: what a cloud proposal made under that company needs to still
+        stand for «Assumi team» (REB-578)."""
+        return self.session.scalar(
+            select(TalentCloudGrant)
+            .join(Company, Company.id == TalentCloudGrant.company_id)
+            .where(
+                TalentCloudGrant.user_id == user_id,
+                TalentCloudGrant.company_id == company_id,
+                TalentCloudGrant.revoked_at.is_(None),
+                Company.deleted_at.is_(None),
+            )
+        )
+
     def _live(self, user_id: UUID, company_id: UUID) -> TalentCloudGrant | None:
         return self.session.scalar(
             select(TalentCloudGrant).where(
@@ -235,9 +250,11 @@ class NotInTheCloud(NotFound):
 class CloudCaller:
     """Who is asking in the cloud: the signed-in person, their address and phone (none
     when they gave none), and the company of their newest live grant, which is who a
-    proposal and a request from the cloud are for (spec § 1). `granted_at` is that
-    grant's: a proposal older than it was made while another company was the caller's,
-    and «Assumi team» refuses it (`TeamRequestService.create_in_cloud`)."""
+    proposal and a request from the cloud are for (spec § 1). A proposal keeps that
+    company (REB-578) and «Assumi team» files under it while the caller still holds a
+    live grant for it. `granted_at` is the newest grant's: a proposal from before the
+    company was kept, older than it, was made while another company was the caller's and
+    is refused (`TeamRequestService.create_in_cloud`)."""
 
     user_id: UUID
     email: str

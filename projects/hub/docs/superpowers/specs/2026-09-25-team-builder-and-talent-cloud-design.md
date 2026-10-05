@@ -102,7 +102,9 @@ opens the cloud from a company request's page; the grant is the referente's for 
 company, one live grant per person and company: a second request of the same referente
 for the same company finds the one that exists, a person behind two companies holds
 two grants and opens the cloud through either, and what they propose there is
-attributed to the newest live grant's company.
+attributed to the newest live grant's company. The proposal keeps that company
+(`team_proposals.company_id`, REB-578, migration 0029): «Assumi team» files it for that
+company, or is refused with 422 when the caller no longer holds a live grant for it.
 The referente signs in as they already do and finds «Talent cloud»: every card with the
 person's name, surname, links and CV beside the anonymous description, a vetted badge
 where it applies, filters by role, seniority, skill, work mode and price band, the same

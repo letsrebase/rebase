@@ -833,21 +833,13 @@ def test_the_builder_files_its_own_cloud_proposal_at_once(
     assert caller is not None
 
     def hire(proposal_id: UUID) -> Any:
-        return service.create_in_cloud(
-            proposal_id,
-            azienda="Acme S.r.l.",
-            email="wile@acme.it",
-            telefono=None,
-            user_id=user_id,
-            company_id=acme,
-            granted_at=caller.granted_at,
-        )
+        return service.create_in_cloud(proposal_id, caller=caller)
 
     read, mail = hire(own)
 
     assert (read.origine, read.telefono, read.user_id, read.company_id) == (
         "cloud",
-        None,
+        "+39 345 1234567",
         user_id,
         acme,
     )
@@ -856,7 +848,7 @@ def test_the_builder_files_its_own_cloud_proposal_at_once(
     assert [talent.freelancer_id for talent in read.talenti] == [ada]
     assert mail.subject == "Nuova richiesta team da Acme S.r.l." and RIASSUNTO in mail.text
     stored = talents.get_one(TeamRequest, read.id)
-    assert (stored.origine, stored.telefono) == ("cloud", None)
+    assert (stored.origine, stored.telefono) == ("cloud", "+39 345 1234567")
 
     # Another person's cloud proposal, a public one, or one older than a day: the one
     # sentence of every refusal.

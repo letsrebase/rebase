@@ -443,6 +443,7 @@ class TeamBuilder:
         *,
         origine: str,
         user_id: UUID | None,
+        company_id: UUID | None = None,
         now: datetime | None = None,
     ) -> TeamProposalRead:
         """A new proposal for `data`, written and read back: public (no ids, no card
@@ -451,7 +452,9 @@ class TeamBuilder:
         proposal is asked and stamped at, one read of the clock for the whole of it: the
         route passes the one its daily cap counted from, so a call to Claude that ends
         past midnight in Rome is not checked on one day and written on the next
-        (REB-581). Without it, the clock is read once here."""
+        (REB-581). Without it, the clock is read once here. `company_id` is the company
+        of the grant a cloud proposal is made under (REB-578), kept on the row so
+        «Assumi team» files under it; `None` for the public page and the admin."""
         if not self.settings.team_builder_enabled or self.llm is None:
             raise TeamBuilderOff(OFF_SENTENCE)
         if origine not in TEAM_PROPOSAL_ORIGINS:
@@ -468,6 +471,7 @@ class TeamBuilder:
                 previous,
                 origine=origine,
                 user_id=user_id,
+                company_id=company_id,
                 riassunto=NO_FIT_SENTENCE,
                 luogo={"locale": False, "dove": None},
                 team=[],
@@ -489,7 +493,13 @@ class TeamBuilder:
             # refusal is the product.
             try:
                 self._write_attempt(
-                    data, previous, origine=origine, user_id=user_id, error=exc, at=at
+                    data,
+                    previous,
+                    origine=origine,
+                    user_id=user_id,
+                    company_id=company_id,
+                    error=exc,
+                    at=at,
                 )
             except Exception:
                 self.session.rollback()
@@ -506,6 +516,7 @@ class TeamBuilder:
             previous,
             origine=origine,
             user_id=user_id,
+            company_id=company_id,
             riassunto=riassunto,
             luogo=answer.luogo.model_dump(),
             team=team,
@@ -528,6 +539,7 @@ class TeamBuilder:
         origine: str,
         user_id: UUID | None,
         error: DomainError,
+        company_id: UUID | None = None,
         now: datetime | None = None,
     ) -> None:
         """The ask the route refused before this engine ran (`TeamBuilderBusy`: every
@@ -543,7 +555,15 @@ class TeamBuilder:
             previous = self._previous(data.previous_id, origine=origine, user_id=user_id, at=at)
         except ValidationFailed:
             previous = None
-        self._write_attempt(data, previous, origine=origine, user_id=user_id, error=error, at=at)
+        self._write_attempt(
+            data,
+            previous,
+            origine=origine,
+            user_id=user_id,
+            company_id=company_id,
+            error=error,
+            at=at,
+        )
 
     def list_recent(
         self,
@@ -637,6 +657,7 @@ class TeamBuilder:
         *,
         origine: str,
         user_id: UUID | None,
+        company_id: UUID | None,
         riassunto: str,
         luogo: dict[str, Any],
         team: list[dict[str, Any]],
@@ -663,6 +684,7 @@ class TeamBuilder:
             cache_read_tokens=response.cache_read_tokens if response is not None else 0,
             origine=origine,
             user_id=user_id,
+            company_id=company_id,
             persone=data.persone,
             created_at=at,
         )
@@ -688,6 +710,7 @@ class TeamBuilder:
         *,
         origine: str,
         user_id: UUID | None,
+        company_id: UUID | None,
         error: DomainError,
         at: datetime,
     ) -> None:
@@ -711,6 +734,7 @@ class TeamBuilder:
             cache_read_tokens=0,
             origine=origine,
             user_id=user_id,
+            company_id=company_id,
             persone=data.persone,
             errore=error.code,
             created_at=at,
