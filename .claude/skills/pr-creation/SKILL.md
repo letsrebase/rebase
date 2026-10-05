@@ -250,25 +250,40 @@ gh pr create --body-file pr-body.md \
    `ci` job is the only status that matters; the others may skip by path filter. A red
    run gets a line on the card (`**CI red:** run ..., <job>, <cause>`) when you see it,
    and the sha of the fix on the same comment when you push it.
-3. **Two reviewers read every push, and CodeRabbit then reads Greptile.** Greptile and
-   CodeRabbit both start by themselves when the PR opens and again on every push
-   (CodeRabbit's settings are `.coderabbit.yaml`, Greptile's `.greptile/config.json`;
-   a field that file leaves out keeps its value from app.greptile.com). Each sha goes
-   through the same round: Greptile's review (a), CodeRabbit's own review (b), then
-   CodeRabbit against Greptile (c), then every finding fixed or answered (d). Run (a)
-   and (b) as background jobs next to the CI watch; (c) waits for both. Each block
-   below starts from `git rev-parse HEAD`, because a background job is a fresh shell.
-   On a milestone's draft PR the loop runs after `gh pr ready`, on the sha that will
-   merge: neither reviewer reads a draft (`drafts: false` in `.coderabbit.yaml`,
-   `triggerOnDrafts: false` in `.greptile/config.json`).
+3. **Two reviewers read every push, and CodeRabbit then reads Greptile.** Both start
+   by themselves when the PR opens or turns ready. On a later push CodeRabbit starts
+   again by itself and Greptile does not: `autoReview` in `.greptile/config.json` is
+   `["open"]`, the dashboard's «On PR opened», so every push after the first to a PR
+   that is open for review is followed at once by `gh pr comment <n> --body
+   '@greptileai'` (#529: no run on `0efee8e70` or `3a397226d` until the comment, then
+   one within fifteen seconds of it). CodeRabbit's settings are `.coderabbit.yaml`,
+   Greptile's `.greptile/config.json`, which holds every value app.greptile.com stores
+   that Greptile's reference documents a field for, as read there on 2026-10-05. The
+   rest stays in the dashboard: the check's threshold, the comments outside the diff,
+   image badges, the comment header, the «Fix with your Agent» defaults, TREX, who may
+   create rules, the Linear integration. Each sha goes through the same round:
+   Greptile's review (a), CodeRabbit's own review (b), then CodeRabbit against
+   Greptile (c), then every finding fixed or answered (d). Run (a) and (b) as
+   background jobs next to the CI watch; (c) waits for both. Each block below starts
+   from `git rev-parse HEAD`, because a background job is a fresh shell. On a
+   milestone's draft PR the loop runs after `gh pr ready`, on the sha that will merge:
+   neither reviewer reads a draft by itself (`drafts: false` in `.coderabbit.yaml`,
+   `triggerOnDrafts: false` in `.greptile/config.json`), and an `@greptileai` on a
+   draft would review a sha that does not merge.
 
-   A Dependabot PR gets no CodeRabbit review by itself: `.coderabbit.yaml` skips the
-   bot, because Dependabot opens its PRs a dozen at a time (#369 to #380) and CodeRabbit
-   allows ten reviews an hour. Whoever picks one up to merge it comments
-   `@coderabbitai review` on that PR, one PR at a time, and runs the loop from (b).
+   A Dependabot PR gets neither review by itself. `.coderabbit.yaml` skips the bot,
+   because Dependabot opens its PRs a dozen at a time (#369 to #380) and CodeRabbit
+   allows ten reviews an hour. `excludeAuthors` in `.greptile/config.json` skips it
+   too, as the dashboard's author filter did before the file held it: #515 got no
+   run, and #514, #516 and #517 one only when asked. Whoever picks one up to merge it
+   comments `@greptileai` and `@coderabbitai review` on that PR, one PR at a time, and
+   runs the loop from (a). The dashboard's filter let that `@greptileai` through; if
+   the file's does not, and a bot PR gets no run within ten minutes of the comment,
+   say so in a comment on the PR and tell the person before you merge.
 
-   **a. Greptile.** It reviews the PRs here (a trial since PR #262, ending 2026-10-06
-   unless the plan changes; it reviewed all six PRs from #262 to #267, #265 clean):
+   **a. Greptile.** It reviews the PRs here (a trial from PR #262; on 2026-10-05 its
+   Billing page reads «Free plan», this repository marked «Open source», none of the
+   period's 50 credits used; it reviewed all six PRs from #262 to #267, #265 clean):
    inline findings, each with a `P0`, `P1` or `P2` badge, and a summary headed
    `Confidence Score: N/5`. Where that summary lands is `shouldUpdateDescription` in
    `.greptile/config.json` (before the file existed, 2026-10-05, it was the «Update
@@ -279,8 +294,9 @@ gh pr create --body-file pr-body.md \
    which says why the score is what it is. The
    score of a given sha is read from that sha's own `Greptile Review` check run, never
    from the summary, which may still be the last round's: `success` is 5/5 (the
-   check's threshold, set in app.greptile.com, Status Checks, which has no field in
-   the file), `failure` is under it, with `Confidence N/5` in its title (`Confidence
+   check's threshold, «Required confidence to pass» in app.greptile.com, Status
+   Checks, read as 5 on 2026-10-05, which has no documented field for the file),
+   `failure` is under it, with `Confidence N/5` in its title (`Confidence
    2/5`, #388's first commit). GitHub lets a
    PR merge over that `failure`, since only `ci` is required, but this loop does not: it
    ends on `success`. When the run raised findings, it also leaves a review by the bot
@@ -315,12 +331,14 @@ gh pr create --body-file pr-body.md \
    on the check run until it completes is not a score. A review with a body and no
    inline comment is Greptile not reviewing (#259 and #260, `Your trial has ended`; its
    reviews here have an empty body): say so on the card and tell the person before you
-   merge. Ten minutes with no completed run on the head sha: `gh pr comment <n> --body
-   '@greptileai'` once, which re-triggers it, and run the wait again; still nothing, say
-   so on the card and go on without the comments command. A later push may get no run on
-   its own: three of #268's five commits got none in ten minutes and one within thirty
-   seconds of the comment, the other two were reviewed unprompted (2026-09-22); #367's
-   third commit had none after eleven minutes.
+   merge. Ten minutes with no completed run on the head sha, counted on a later push
+   from the `@greptileai` that followed it: `gh pr comment <n> --body '@greptileai'`
+   once, which re-triggers it, and run the wait again; still nothing, say so on the
+   card and go on without the comments command. A later push with no comment gets no
+   run, which is `autoReview: ["open"]` and not a fault: on #268 only the opening
+   commit was reviewed unprompted, each of the four later runs started within thirty
+   seconds of an `@greptileai` and none before it (2026-09-22); #367's third commit
+   had none after eleven minutes.
 
    **b. CodeRabbit, its own review.** It shows on the commit as a `CodeRabbit` commit
    status: `Review in progress`, then `Review completed`, or `Review skipped: ...` with
