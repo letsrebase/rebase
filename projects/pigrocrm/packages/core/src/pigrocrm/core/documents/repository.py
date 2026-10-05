@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, desc, func, select
+from sqlalchemy import ColumnElement, desc, func, select, text
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.dashboard.schemas import PendingOffer
@@ -14,7 +14,6 @@ from pigrocrm.core.db import (
 from pigrocrm.core.deals.models import Deal
 from pigrocrm.core.documents.models import Document, DocumentVersion
 from pigrocrm.core.documents.schemas import DOCUMENT_SORTS, DocumentListQuery
-from pigrocrm.core.invoices.models import Invoice
 from pigrocrm.core.pipeline.models import PipelineStage
 
 
@@ -132,8 +131,12 @@ class DocumentRepository:
         """The `tipo` (`fattura` or `proforma`) of the invoice row that names this
         document as its PDF, a soft-deleted one included, or `None` when no invoice does.
         See `DocumentService._check_invoice_pdf` for why that is the test."""
-        stmt = select(Invoice.tipo).where(Invoice.pdf_document_id == document_id).limit(1)
-        return self.session.execute(stmt).scalar_one_or_none()
+        # Through the definer function of migration 0048 rather than a query on
+        # `invoices`: an invoice this session cannot see (another azienda's, named on a
+        # document it can) must still answer, or the guard would fail open (REB-634).
+        return self.session.execute(
+            text("SELECT tipo_fattura_del_pdf(:document_id)"), {"document_id": document_id}
+        ).scalar_one_or_none()
 
     def pending_offers(self, limit: int = 20, azienda_id: UUID | None = None) -> list[PendingOffer]:
         """Sent offers still awaiting an answer, oldest first, with their age in days.

@@ -156,6 +156,19 @@ FUNCTIONS = [
       LIMIT 1
     $$
     """,
+    # The `tipo` of the invoice that names a document as its PDF, past the policies: the
+    # guard that keeps a non-PDF version off an invoice's document must see an invoice
+    # the uploader cannot, or «no invoice» would mean «go ahead» for exactly the member
+    # who may not (CodeRabbit's eighth adversarial pass on PR #513).
+    """
+    CREATE OR REPLACE FUNCTION tipo_fattura_del_pdf(uuid) RETURNS text
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path = public
+    SET pigrocrm.aziende = '*'
+    AS $$
+      SELECT tipo FROM invoices WHERE pdf_document_id = $1 LIMIT 1
+    $$
+    """,
     """
     CREATE OR REPLACE FUNCTION scope_tutte() RETURNS boolean
     LANGUAGE sql STABLE AS $$
@@ -283,6 +296,7 @@ FUNCTIONS = [
 
 FUNCTION_NAMES = [
     "sollecito_di_messaggio(uuid, text)",
+    "tipo_fattura_del_pdf(uuid)",
     "entita_visibile(text, uuid, boolean)",
     "mailbox_mia(uuid)",
     "work_unit_visibile(uuid)",

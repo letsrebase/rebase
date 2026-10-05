@@ -792,6 +792,54 @@ def test_hours_billed_on_an_invoice_out_of_sight_stay_frozen(world: World) -> No
             session.commit()
 
 
+def test_a_non_pdf_version_is_refused_on_an_invoice_s_document_out_of_sight(
+    world: World, tmp_path: Path
+) -> None:
+    """The guard that keeps a non-PDF version off an invoice's PDF asks past the policies
+    (`tipo_fattura_del_pdf`, a definer function): an invoice the uploader cannot see
+    still answers, so «no invoice» cannot mean «go ahead» for the one member who may
+    not (CodeRabbit's eighth adversarial pass on PR #513)."""
+    from pigrocrm.core.config import Settings
+    from pigrocrm.core.documents.service import DocumentService
+    from pigrocrm.core.errors import ValidationFailed
+    from pigrocrm.core.storage import LocalFileStorage
+
+    factory = session_factory(world.engine)
+    with factory() as session:
+        studio_document = session.execute(
+            select(Document).where(Document.azienda_id == world.studio)
+        ).scalar_one()
+        invoice = session.execute(
+            select(Invoice).where(Invoice.azienda_id == world.estero)
+        ).scalar_one()
+        invoice.pdf_document_id = studio_document.id  # a link legacy data may hold
+        session.commit()
+        document_id, invoice_id = studio_document.id, invoice.id
+    try:
+        with _scoped(world, world.studio) as session:
+            service = DocumentService(
+                session,
+                LocalFileStorage(tmp_path),
+                Settings(_env_file=None),  # type: ignore[call-arg]
+            )
+            with pytest.raises(ValidationFailed) as refused:
+                service.add_version(
+                    document_id,
+                    b"<xml/>",
+                    "application/xml",
+                    Actor(
+                        id=world.user_id, type="user", role="collaboratore", aziende=(world.studio,)
+                    ),
+                )
+            assert refused.value.details["field"] == "content_type"
+    finally:
+        with factory() as session:
+            invoice = session.get(Invoice, invoice_id)
+            assert invoice is not None
+            invoice.pdf_document_id = None
+            session.commit()
+
+
 def test_an_insert_across_the_line_is_refused_by_the_policy(world: World) -> None:
     with _scoped(world, world.estero) as session:
         studio_customer = session.execute(text("SELECT count(*) FROM customers")).scalar_one()
