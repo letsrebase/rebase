@@ -1205,6 +1205,12 @@ class TalentCloudGrant(Base, PrimaryKeyMixin):
 # ---- referrals: an existing member's link to who they brought in (P-REB-44) -----------
 
 REFERRAL_KINDS = ("freelancer", "company")
+# A referral is `da_verificare` from signup until the referred person proves they hold the
+# address it was posted with (REB-658), and only then `verificato`; `verified_via` says
+# which proof: `accesso` (a magic-link login after the referral was recorded), `lettera`
+# (a referred freelancer's own signature of a letter) or `storico` (a referral that
+# already counted before this state existed, migration 0030).
+REFERRAL_STATES = ("da_verificare", "verificato")
 REWARD_STATES = ("da_confermare", "confermato", "pagato")
 # The base and the reward round to the cent, like every other amount this schema
 # stores; a rate is a fraction, `0.10`/`0.30`, four places so a future rate like
@@ -1223,7 +1229,13 @@ class Referral(Base, PrimaryKeyMixin, TimestampMixin):
     later, additional request (`rebase_core.members.create_additional_request`) is not
     a fresh referral either -- rebase already knew that company. `referrer_user_id` is
     the code's owner read at signup time and kept even though a member's own code
-    never changes, so a referral and its referrer can never drift apart under it."""
+    never changes, so a referral and its referrer can never drift apart under it.
+
+    `stato` is whether the referred person has proved they hold the address the
+    referral was posted with (design record 2026-10-05, REB-658): the public routes do
+    not verify it, so a referral is `da_verificare` when it is made and counts (a
+    reward is written, a ledger row is confirmable) only once `verificato`.
+    `verified_at` and `verified_via` are set together with it, and only then."""
 
     __tablename__ = "referrals"
 
@@ -1231,11 +1243,23 @@ class Referral(Base, PrimaryKeyMixin, TimestampMixin):
     kind: Mapped[str] = mapped_column(String(10), nullable=False)
     entity_id: Mapped[UUID] = mapped_column(nullable=False)
     code: Mapped[str] = mapped_column(String(REFERRAL_CODE_LENGTH), nullable=False)
+    stato: Mapped[str] = mapped_column(
+        String(14), nullable=False, default="da_verificare", server_default="da_verificare"
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    verified_via: Mapped[str | None] = mapped_column(String(10), default=None)
 
     __table_args__ = (
         Index("uq_referrals_kind_entity", "kind", "entity_id", unique=True),
         Index("ix_referrals_referrer", "referrer_user_id", "created_at"),
         CheckConstraint("kind IN ('freelancer', 'company')", name="ck_referrals_kind"),
+        CheckConstraint(
+            "(stato = 'da_verificare' AND verified_at IS NULL AND verified_via IS NULL) "
+            "OR (stato = 'verificato' AND verified_at IS NOT NULL "
+            "AND verified_via IS NOT NULL "
+            "AND verified_via IN ('accesso', 'lettera', 'storico'))",
+            name="ck_referrals_verification",
+        ),
     )
 
 

@@ -40,6 +40,9 @@ const CONFIRMED_REWARD = {
   base_amount: '7000.00',
   reward_amount: '700.00',
   stato: 'da_confermare',
+  referral_stato: 'verificato',
+  verified_at: '2026-09-27T08:00:00Z',
+  verified_via: 'accesso',
   note: null,
   created_at: '2026-09-26T10:00:00Z',
   confirmed_at: null,
@@ -373,6 +376,72 @@ describe('the Referral admin page (P-REB-44)', () => {
     expect(screen.queryByText('9.999,00 €')).toBeNull()
     expect(screen.queryByText('Previsto')).toBeNull()
     expect(within(screen.getAllByRole('row')[1]!).getByText('Da confermare')).toBeInTheDocument()
+  })
+
+  it('says what verified a referral that counts (REB-658)', async () => {
+    mount([CONFIRMED_REWARD])
+    await screen.findByText('Ada Lovelace')
+    const row = screen.getByText('Ada Lovelace').closest('tr')!
+    expect(within(row).getByText(/Verificato con il primo accesso · 27 set 2026/)).toBeInTheDocument()
+    expect(within(row).queryByText('Da verificare')).toBeNull()
+  })
+
+  it('says in whole sentences that a signed letter verified a referral, or that it already counted (REB-658)', async () => {
+    mount([
+      { ...CONFIRMED_REWARD, verified_via: 'lettera' },
+      { ...UNPRICED_REWARD, verified_via: 'storico' },
+    ])
+    await screen.findByText('Ada Lovelace')
+    const rows = screen.getAllByRole('row')
+    expect(rows[1]).toHaveTextContent('Verificato con la lettera firmata · 27 set 2026')
+    expect(rows[2]).toHaveTextContent('Già contava prima della verifica · 27 set 2026')
+  })
+
+  it('shows a company whose referente has not logged in as pending, with nothing to confirm or estimate (REB-658)', async () => {
+    mount([
+      {
+        ...PENDING_REFERRAL,
+        referral_id: 'ref4',
+        kind: 'company',
+        referred_id: 'c4',
+        referred_nome: 'Rossi Srl',
+        referral_stato: 'da_verificare',
+        verified_at: null,
+        verified_via: null,
+      },
+    ])
+    await screen.findByText('Rossi Srl')
+    const row = screen.getByText('Rossi Srl').closest('tr')!
+
+    expect(within(row).getByText('Da verificare')).toBeInTheDocument()
+    expect(within(row).getByText("Non conta finché l'azienda non fa il primo accesso")).toBeInTheDocument()
+    expect(within(row).getByText('Non ancora verificato')).toBeInTheDocument()
+    expect(within(row).queryByText('In attesa')).toBeNull()
+    expect(within(row).queryByRole('button')).toBeNull()
+  })
+
+  it('keeps the estimate of a pending freelancer, whose own signature would verify them (REB-658)', async () => {
+    mount([
+      {
+        ...PENDING_REFERRAL,
+        match_id: 'm5',
+        match_freelancer_id: 'f3',
+        match_freelancer_nome: 'Grace Hopper',
+        match_nome_azienda: 'Bianchi Srl',
+        match_figura_richiesta: 'Designer',
+        projected_rate: '0.1000',
+        projected_amount: '350.00',
+        referral_stato: 'da_verificare',
+        verified_at: null,
+        verified_via: null,
+      },
+    ])
+    await screen.findByText('Bianchi Srl')
+    const row = screen.getByText('Bianchi Srl').closest('tr')!
+
+    expect(within(row).getByText('Da verificare')).toBeInTheDocument()
+    expect(within(row).getByText('Stima al 10%, se il match firma')).toBeInTheDocument()
+    expect(within(row).queryByText('Previsto')).toBeNull()
   })
 
   it('shows an empty state with no referral yet', async () => {

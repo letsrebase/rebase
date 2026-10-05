@@ -3,6 +3,7 @@ at the referred entity's first signed letter. The full sign-to-reward path reuse
 `test_signing.py`'s own fixtures (`FakeRenderer`, `FakeDocumenso`, `_active_framework`,
 `_sent`): nothing here runs pandoc or reaches a real Documenso."""
 
+import re
 import threading
 from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime
@@ -13,6 +14,7 @@ import pytest
 from fakes_contracts import FakeRenderer
 from fakes_documenso import FakeDocumenso
 from sqlalchemy import event, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from test_matches import PDF, SIGNER, TODAY, _documents, _fiscal
 from test_signing import (
@@ -25,6 +27,7 @@ from test_signing import (
 )
 
 from rebase_core.companies import CompanyService
+from rebase_core.config import Settings
 from rebase_core.contract_schemas import (
     DAY_RATE,
     LUMP_SUM,
@@ -42,6 +45,7 @@ from rebase_core.models import Company, Freelancer, Login, Match, Referral, Refe
 from rebase_core.referral_evidence import domains_match, email_domain
 from rebase_core.referrals import ReferralService, reward_base
 from rebase_core.schemas import CompanyCreate, FreelancerCreate, SignupUtm
+from rebase_core.users import UserService
 
 TABLES = (
     "referral_rewards",
@@ -129,6 +133,18 @@ def _request(
     payload.update(change)
     row, _ = CompanyService(session).request(CompanyCreate(**payload))  # type: ignore[arg-type]
     return row.id
+
+
+def _log_in(session: Session, email: str) -> None:
+    """A real magic-link login: the mail `request_link` writes, its token spent by
+    `enter`, the one door that records a `Login` and verifies the referrals naming the
+    person."""
+    users = UserService(session, Settings(_env_file=None))  # type: ignore[call-arg]
+    mail = users.request_link(email)
+    assert mail is not None
+    token = re.search(r"/entra\?t=([A-Za-z0-9_-]+)", mail.text)
+    assert token is not None
+    assert users.enter(token.group(1)) is not None
 
 
 def _match_body(
@@ -359,6 +375,7 @@ def test_a_referred_freelancer_and_a_referred_company_each_earn_a_reward_once(
     admin_id = _admin(clean)
     freelancer_id = _card(clean, rif=code)
     company_id = _request(clean, rif=code)
+    _log_in(clean, "wile@acme.it")
     _fiscal(clean, freelancer_id, admin_id)
     _active_framework(clean, freelancer_id, admin_id)
     renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
@@ -392,6 +409,186 @@ def test_a_referred_freelancer_and_a_referred_company_each_earn_a_reward_once(
         .where(Referral.referrer_user_id == referrer_id)
     ).all()
     assert len(again) == 2
+
+
+# ---- a referral counts once the referred person is verified (REB-658) --------------
+
+
+def _referral_of(session: Session, entity_id: UUID) -> Referral:
+    session.expire_all()
+    row = session.scalar(select(Referral).where(Referral.entity_id == entity_id))
+    assert row is not None
+    return row
+
+
+def test_a_referral_is_pending_when_it_is_made_and_has_nothing_to_confirm(clean: Session) -> None:
+    code = ReferralService(clean).code_for(_member(clean))
+    card_id = _card(clean, rif=code)
+    company_id = _request(clean, rif=code)
+
+    for entity_id in (card_id, company_id):
+        referral = _referral_of(clean, entity_id)
+        assert (referral.stato, referral.verified_at, referral.verified_via) == (
+            "da_verificare",
+            None,
+            None,
+        )
+    items = ReferralService(clean).list_rewards().items
+    assert {(i.kind, i.referral_stato, i.reward_id, i.stato) for i in items} == {
+        ("freelancer", "da_verificare", None, None),
+        ("company", "da_verificare", None, None),
+    }
+
+
+def test_the_first_login_after_the_referral_verifies_it_and_only_the_loggers_own(
+    clean: Session,
+) -> None:
+    code = ReferralService(clean).code_for(_member(clean))
+    ada = _card(clean, rif=code)
+    grace = _card(clean, email="grace@studio.it", rif=code)
+    wile = _request(clean, rif=code)
+
+    _log_in(clean, "ada@studio.it")
+
+    verified = _referral_of(clean, ada)
+    assert (verified.stato, verified.verified_via) == ("verificato", "accesso")
+    assert verified.verified_at is not None and verified.verified_at >= verified.created_at
+    assert _referral_of(clean, grace).stato == "da_verificare"
+    assert _referral_of(clean, wile).stato == "da_verificare"
+
+    # A second login changes nothing: the proof is the first one.
+    first = verified.verified_at
+    _log_in(clean, "ada@studio.it")
+    assert _referral_of(clean, ada).verified_at == first
+
+    _log_in(clean, "wile@acme.it")
+    assert _referral_of(clean, wile).stato == "verificato"
+
+
+def test_a_login_from_before_the_referral_proves_nothing_about_it(clean: Session) -> None:
+    """Someone posts the address of a member who already logged in, with an accomplice's
+    code: the old login must not count the new referral at once."""
+    _request(clean, email="ada@studio.it")
+    _log_in(clean, "ada@studio.it")
+    code = ReferralService(clean).code_for(_member(clean))
+
+    card_id = _card(clean, email="ada@studio.it", rif=code)
+
+    assert _referral_of(clean, card_id).stato == "da_verificare"
+    _log_in(clean, "ada@studio.it")
+    assert _referral_of(clean, card_id).stato == "verificato"
+
+
+def test_a_squatted_company_earns_nothing_until_its_referente_logs_in_then_pays_the_squatter(
+    clean: Session,
+) -> None:
+    """The squatting case, end to end. Someone posts a prospect's address with an
+    accomplice's code. A freelancer is matched with that company and signs; the real
+    referente has never logged in, so nothing is owed. When they do, the attribution
+    they never made counts, for the accomplice and for nobody else: the first writer wins
+    an address's attribution (REB-646), the proof here is of the person, not of the code."""
+    accomplice = ReferralService(clean).code_for(_member(clean, "accomplice@community.it"))
+    honest = ReferralService(clean).code_for(_member(clean, "honest@community.it"))
+    admin_id = _admin(clean)
+    freelancer_id = _card(clean)
+    company_id = _request(clean, email="prospect@acme.it", rif=accomplice)
+    _fiscal(clean, freelancer_id, admin_id)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    match = _sent_with_body(clean, renderer, fake, freelancer_id, company_id, admin_id)
+
+    listed = {r.kind: r for r in _match_list(clean)[0].referrals}
+    assert listed["company"].stato == "da_verificare"
+    assert (listed["company"].rate, listed["company"].amount) == (None, None)
+    (ledger,) = ReferralService(clean).list_rewards().items
+    assert (ledger.referral_stato, ledger.match_id, ledger.projected_amount) == (
+        "da_verificare",
+        None,
+        None,
+    )
+
+    _sign_the_letter(clean, renderer, fake, match)
+    assert clean.scalar(select(ReferralReward)) is None
+
+    # The real person comes back with the code of someone who did refer them: no change.
+    _request(clean, email="prospect@acme.it", rif=honest)
+    assert clean.scalar(select(ReferralReward)) is None
+
+    _log_in(clean, "prospect@acme.it")
+
+    (item,) = ReferralService(clean).list_rewards().items
+    assert item.referral_stato == "verificato" and item.verified_via == "accesso"
+    assert item.referrer_email == "accomplice@community.it"
+    assert (item.stato, item.base_amount, item.reward_amount) == (
+        "da_confermare",
+        Decimal("7000.00"),
+        Decimal("2100.00"),
+    )
+    assert item.match_id == match.id
+    (reward,) = clean.scalars(select(ReferralReward)).all()
+    assert reward.document_id == _letter_of(clean, match.id).id
+
+
+def test_a_referred_freelancers_own_signature_verifies_them_and_writes_the_reward(
+    clean: Session,
+) -> None:
+    code = ReferralService(clean).code_for(_member(clean))
+    admin_id = _admin(clean)
+    freelancer_id = _card(clean, rif=code)
+    company_id = _request(clean, rif=code)
+    _fiscal(clean, freelancer_id, admin_id)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    match = _sent_with_body(clean, renderer, fake, freelancer_id, company_id, admin_id)
+    # Before the signature the pending freelancer's reward is still projected: signing
+    # is what verifies them. The pending company's is not.
+    by_kind = {i.kind: i for i in ReferralService(clean).list_rewards().items}
+    assert by_kind["freelancer"].projected_amount == Decimal("700.00")
+    assert by_kind["company"].projected_amount is None and by_kind["company"].match_id is None
+
+    _sign_the_letter(clean, renderer, fake, match)
+
+    freelancer = _referral_of(clean, freelancer_id)
+    assert (freelancer.stato, freelancer.verified_via) == ("verificato", "lettera")
+    assert freelancer.verified_at == _letter_of(clean, match.id).signed_at
+    assert _referral_of(clean, company_id).stato == "da_verificare"
+    (reward,) = clean.scalars(select(ReferralReward)).all()
+    assert reward.referral_id == freelancer.id and reward.reward_amount == Decimal("700.00")
+
+
+def test_a_login_after_the_signature_does_not_write_a_second_reward(clean: Session) -> None:
+    code = ReferralService(clean).code_for(_member(clean))
+    admin_id = _admin(clean)
+    freelancer_id = _card(clean, rif=code)
+    company_id = _request(clean, rif=code)
+    _fiscal(clean, freelancer_id, admin_id)
+    _active_framework(clean, freelancer_id, admin_id)
+    renderer, fake = FakeRenderer(draft=False), FakeDocumenso()
+    match = _sent_with_body(clean, renderer, fake, freelancer_id, company_id, admin_id)
+    _sign_the_letter(clean, renderer, fake, match)
+
+    _log_in(clean, "ada@studio.it")
+    _log_in(clean, "wile@acme.it")
+
+    assert len(clean.scalars(select(ReferralReward)).all()) == 2
+    assert _referral_of(clean, freelancer_id).verified_via == "lettera"
+    assert _referral_of(clean, company_id).verified_via == "accesso"
+
+
+def test_the_database_refuses_a_referral_half_verified(clean: Session) -> None:
+    code = ReferralService(clean).code_for(_member(clean))
+    card_id = _card(clean, rif=code)
+
+    for statement in (
+        "UPDATE referrals SET stato = 'verificato'",
+        "UPDATE referrals SET verified_at = now()",
+        "UPDATE referrals SET stato = 'verificato', verified_at = now()",
+        "UPDATE referrals SET stato = 'verificato', verified_at = now(), verified_via = 'x'",
+    ):
+        with pytest.raises(IntegrityError):
+            clean.execute(text(statement))
+        clean.rollback()
+    assert _referral_of(clean, card_id).stato == "da_verificare"
 
 
 def test_an_unreferred_match_earns_no_reward(clean: Session) -> None:
@@ -793,12 +990,15 @@ def _statements(session: Session) -> tuple[list[str], Callable[[], None]]:
 
 def _referred_pair(clean: Session) -> tuple[UUID, UUID, UUID, UUID]:
     """A referrer, and a freelancer card and a company request both brought in by his
-    code, with tax data and an active framework agreement so a match can be written."""
+    code, with tax data and an active framework agreement so a match can be written. The
+    company's referente has logged in since, so both referrals are verified on the
+    company side too (the freelancer's is by its own signature)."""
     referrer_id = _member(clean)
     code = ReferralService(clean).code_for(referrer_id)
     admin_id = _admin(clean)
     freelancer_id = _card(clean, rif=code)
     company_id = _request(clean, rif=code)
+    _log_in(clean, "wile@acme.it")
     _fiscal(clean, freelancer_id, admin_id)
     _active_framework(clean, freelancer_id, admin_id)
     return referrer_id, admin_id, freelancer_id, company_id
@@ -1049,6 +1249,7 @@ def test_the_ledger_reads_a_page_in_a_row_independent_number_of_queries(clean: S
     for index in range(4):
         freelancer_id = _card(clean, email=f"f{index}@studio.it", rif=code)
         company_id = _request(clean, email=f"c{index}@acme.it", rif=code)
+        _log_in(clean, f"c{index}@acme.it")
         _fiscal(clean, freelancer_id, admin_id)
         _active_framework(clean, freelancer_id, admin_id)
         service.create(freelancer_id, _match_body(company_id), admin_id)
