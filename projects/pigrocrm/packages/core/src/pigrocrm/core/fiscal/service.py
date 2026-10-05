@@ -19,11 +19,12 @@ from pigrocrm.core.versioning import require_unchanged
 
 ENTITY = "fiscal_profile"
 ZERO = Decimal("0.00")
-# The first half of the advisory lock a versioned save takes per azienda (REB-622), the
-# second being the azienda id hashed: a profile not saved yet has no row to lock, and two
-# first saves sent with `updated_at: null` would otherwise both read «no row», both pass
-# the comparison, and the loser would meet the unique key as a generic `conflict` instead
-# of the `stale_row` the panel knows how to recover from. Transaction-scoped.
+# The first half of the advisory lock every save takes per azienda (REB-622), the second
+# being the azienda id hashed: a profile not saved yet has no row to lock, and two first
+# saves would otherwise both read «no row»; two versioned ones would both pass the
+# comparison and the loser would meet the unique key as a generic `conflict` instead of
+# the `stale_row` the panel knows how to recover from, and a versionless one (the MCP
+# tool) would race a versioned one to the insert. Transaction-scoped.
 VERSION_LOCK = 0xF15C
 
 
@@ -93,18 +94,17 @@ class FiscalProfileService:
         self.check(payload)
         azienda = self.aziende.resolve(azienda_id)
 
-        versioned = "updated_at" in data.model_fields_set
-        if versioned:
-            # Before the read, so two versioned saves on one azienda run one after the
-            # other and the second reads what the first committed: a row where it
-            # expected none (`null` sent) is `stale_row`, never the unique key's
-            # `conflict`. Then the row's own lock, as `LegalEntityService.update` takes
-            # it, which also orders a versioned save after an unversioned one in flight.
-            self.session.execute(
-                select(func.pg_advisory_xact_lock(VERSION_LOCK, func.hashtext(str(azienda.id))))
-            )
+        # Before the read and on every save, versioned or not, so two saves on one
+        # azienda run one after the other and the second reads what the first
+        # committed: a versioned one finding a row where it expected none (`null` sent)
+        # is `stale_row`, never the unique key's `conflict`, and a versionless one
+        # finding the row updates it instead of racing it to the insert. Then the row's
+        # own lock for a versioned save, as `LegalEntityService.update` takes it.
+        self.session.execute(
+            select(func.pg_advisory_xact_lock(VERSION_LOCK, func.hashtext(str(azienda.id))))
+        )
         profile = self.repo.get(azienda.id)
-        if versioned:
+        if "updated_at" in data.model_fields_set:
             if profile is not None:
                 self.session.refresh(profile, with_for_update=True)
             require_unchanged(

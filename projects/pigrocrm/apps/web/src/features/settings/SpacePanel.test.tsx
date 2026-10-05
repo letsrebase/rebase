@@ -185,11 +185,32 @@ describe('the space panel', () => {
     })
     expect(await screen.findByRole('alert')).toHaveTextContent('Qualcun altro ha salvato nel frattempo.')
     // The reload fails: nothing was reloaded, so nothing says it was. This panel shows
-    // a failed read as the query's own error, as it does for any failed refetch.
-    GET.mockResolvedValue({ error: { detail: 'database non raggiungibile' }, response: new Response(null, { status: 503 }) })
+    // a failed read as the query's own error, as it does for any failed refetch, and
+    // the draft and the refusal are back the moment a read succeeds again.
+    GET.mockResolvedValueOnce({ error: { detail: 'database non raggiungibile' }, response: new Response(null, { status: 503 }) })
     await user.click(screen.getByRole('button', { name: 'Ricarica' }))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('database non raggiungibile'))
     expect(screen.queryByText(/Riga ricaricata/)).not.toBeInTheDocument()
+    GET.mockResolvedValue({ data: theirs })
+    await client.invalidateQueries({ queryKey: ['settings', 'space'] })
+    await waitFor(() => expect(screen.getByLabelText('Giorni di posta al primo collegamento')).toHaveValue(21))
+    expect(screen.getByRole('alert')).toHaveTextContent('Qualcun altro ha salvato nel frattempo.')
+  })
+
+  it('locks the fields while a save is in flight, so nothing typed then is lost', async () => {
+    let finish!: (value: unknown) => void
+    PUT.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    const user = userEvent.setup()
+    renderPanel()
+    await waitFor(() => expect(screen.getByText('Spazio studio')).toBeInTheDocument())
+    const backfill = screen.getByLabelText('Giorni di posta al primo collegamento')
+    await user.clear(backfill)
+    await user.type(backfill, '21')
+    await user.click(screen.getByRole('button', { name: 'Salva' }))
+    await waitFor(() => expect(screen.getByLabelText('Giorni di posta al primo collegamento')).toBeDisabled())
+    expect(screen.getByLabelText(/Accesso completo/)).toBeDisabled()
+    finish({ data: { ...SETTINGS, gmail_backfill_days: 21, updated_at: '2026-08-21T09:00:00Z' } })
+    await waitFor(() => expect(screen.getByLabelText('Giorni di posta al primo collegamento')).toBeEnabled())
   })
 
   it('on a stale refusal offers Ricarica, which keeps the edits over the reloaded settings', async () => {

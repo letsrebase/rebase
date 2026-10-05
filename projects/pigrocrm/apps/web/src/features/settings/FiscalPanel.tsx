@@ -198,6 +198,8 @@ function bodyFrom(values: Values): Record<string, unknown> {
 
 export function FiscalPanel({ aziendaId }: { aziendaId: string }) {
   const profile = useFiscalProfile(aziendaId)
+  // `data` is `undefined` only before the first successful read: a 404 is `null`.
+  const unreadable = profile.isError && profile.data === undefined
 
   return (
     <div className="space-y-4">
@@ -213,31 +215,27 @@ export function FiscalPanel({ aziendaId }: { aziendaId: string }) {
 
       {profile.isError ? <QueryErrorBanner error={profile.error} /> : null}
 
-      {!profile.isLoading && !profile.isError && profile.data === null ? (
+      {!profile.isLoading && !unreadable && profile.data === null ? (
         <p className="text-muted-foreground text-sm">
           Profilo non ancora configurato: senza di esso non è possibile emettere fatture.
         </p>
       ) : null}
 
-      {profile.isLoading || profile.isError ? null : (
-        // A failed read hides the form entirely -- `isError`, not just `isLoading`.
-        // A 404 is not an error here (`useFiscalProfile` maps it to `null`, "not configured
-        // yet"), so this branch only fires on a *real* failure: the row may well exist
-        // and simply be unreadable. Rendering the blank form in that state invites
-        // somebody to fill it in and press Salva, and the save is a PUT of every key --
-        // it would overwrite a stored profile the panel was never able to show them.
-        // Keyed on identity so the form seeds at mount rather than in an effect: one
-        // render with the right values, and a later refetch cannot overwrite what the
-        // user is typing. The form follows a newer row while it is untouched and sends
-        // the version it was seeded from with every save (REB-622), as the azienda's.
-        <FiscalForm
-          // The azienda is part of the key: two aziende without a profile would
-          // otherwise share one mounted form, and values typed for the first would be
-          // saved under the second after a switch.
-          key={`${aziendaId}:${profile.data?.id ?? 'nuovo'}`}
-          aziendaId={aziendaId}
-          profile={profile.data ?? null}
-        />
+      {profile.isLoading || unreadable ? null : (
+        // A read that never succeeded hides the form entirely (`unreadable`). A 404 is
+        // not an error here (`useFiscalProfile` maps it to `null`, "not configured yet"),
+        // so that only fires on a *real* failure: the row may well exist and simply be
+        // unreadable, and rendering the blank form in that state invites somebody to
+        // fill it in and press Salva, a PUT of every key over a profile the panel was
+        // never able to show them. A refetch that fails *after* a read succeeded leaves
+        // the form up, with the error above it: a draft and a stale refusal survive a
+        // «Ricarica» that did not answer (REB-622).
+        // Keyed on the azienda alone, so the form seeds at mount rather than in an
+        // effect and a profile that appears under it (another admin's first save) is a
+        // row that arrived, which the form follows while untouched and adopts on
+        // «Ricarica», never a remount that drops the draft. Two aziende without a
+        // profile still get a form each.
+        <FiscalForm key={aziendaId} aziendaId={aziendaId} profile={profile.data ?? null} />
       )}
     </div>
   )

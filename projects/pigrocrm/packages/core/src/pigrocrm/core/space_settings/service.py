@@ -108,9 +108,23 @@ class SpaceSettingsService:
         self.base = base
         self.activities = ActivityService(session)
 
-    def overrides(self) -> dict[str, str]:
-        rows = self.session.scalars(select(SpaceSetting)).all()
+    def _rows(self) -> list[SpaceSetting]:
+        """The table in one statement, so the values and the version a read answers come
+        from one snapshot (REB-622): under READ COMMITTED two statements can straddle
+        another admin's commit, and a read that paired the old values with the new
+        version would let a save built on it pass the check and land over theirs."""
+        return list(self.session.scalars(select(SpaceSetting)).all())
+
+    @staticmethod
+    def _overrides_of(rows: list[SpaceSetting]) -> dict[str, str]:
         return {row.key: row.value for row in rows if row.key in OVERRIDABLE_KEYS}
+
+    @staticmethod
+    def _version_of(rows: list[SpaceSetting]) -> datetime | None:
+        return max((row.updated_at for row in rows), default=None)
+
+    def overrides(self) -> dict[str, str]:
+        return self._overrides_of(self._rows())
 
     def effective(self) -> Settings:
         return apply_overrides(self.base, self.overrides())
@@ -121,7 +135,7 @@ class SpaceSettingsService:
         the first write under this code and the newest override's on a database written
         before it, `None` with no row at all. One value for the whole settings object,
         since the page saves it as one, over a table that keeps one row per key."""
-        return self.session.scalar(select(func.max(SpaceSetting.updated_at)))
+        return self._version_of(self._rows())
 
     def read(self, actor: Actor, *, spazio: str | None) -> SpaceSettingsRead:
         actor.require_admin("read_space_settings")
@@ -184,7 +198,8 @@ class SpaceSettingsService:
         return True
 
     def _read(self, *, spazio: str | None) -> SpaceSettingsRead:
-        overrides = self.overrides()
+        rows = self._rows()
+        overrides = self._overrides_of(rows)
         settings = apply_overrides(self.base, overrides)
         public_url = settings.public_url.rstrip("/")
         return SpaceSettingsRead(
@@ -210,5 +225,5 @@ class SpaceSettingsService:
             concentrazione_soglia_preferita=settings.concentrazione_soglia_preferita,
             sovrascritte=sorted(key for key in overrides if key not in SECRET_KEYS)
             + sorted(key for key in overrides if key in SECRET_KEYS),
-            updated_at=self.version(),
+            updated_at=self._version_of(rows),
         )

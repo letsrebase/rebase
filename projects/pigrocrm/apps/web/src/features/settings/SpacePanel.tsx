@@ -107,6 +107,10 @@ export function SpacePanel() {
       {stale !== 'none' ? (
         <StaleRowBanner phase={stale} onReload={() => void reload()} reloading={reloading} />
       ) : null}
+      {/* Locked while a save is in flight, like the other two panels' fields: the
+          success clears the edits, and an edit made between the PUT and its answer
+          would go with them. */}
+      <fieldset disabled={save.isPending} className="min-w-0 space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>{settings.spazio ? `Spazio ${settings.spazio}` : 'Installazione radice'}</CardTitle>
@@ -287,6 +291,7 @@ export function SpacePanel() {
           ))}
         </CardContent>
       </Card>
+      </fieldset>
 
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={!dirty || save.isPending}>
