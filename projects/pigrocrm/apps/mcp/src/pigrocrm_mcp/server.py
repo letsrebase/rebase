@@ -244,8 +244,11 @@ def build_server(
             @functools.wraps(fn)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 with _session_scope():
-                    bind_scope(context.session, context.actor)
                     try:
+                        # Inside the `try`: resolving the actor can refuse (a token
+                        # revoked since, its owner deactivated), and that refusal is
+                        # the client's to read, translated like any other.
+                        bind_scope(context.session, context.actor)
                         return await fn(*args, **kwargs)
                     except DomainError as exc:
                         context.session.rollback()
@@ -265,10 +268,13 @@ def build_server(
         @functools.wraps(fn)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             with _session_scope():
-                # The actor's scope on this call's session (REB-634): a PAT carries its
-                # owner's aziende, and the database answers those rows and no other.
-                bind_scope(context.session, context.actor)
                 try:
+                    # The actor's scope on this call's session (REB-634): a PAT carries
+                    # its owner's aziende, and the database answers those rows and no
+                    # other. Inside the `try`, since resolving the actor can refuse (a
+                    # token revoked since, its owner deactivated) and that refusal is
+                    # the client's to read, translated like any other.
+                    bind_scope(context.session, context.actor)
                     return fn(*args, **kwargs)
                 except DomainError as exc:
                     context.session.rollback()
