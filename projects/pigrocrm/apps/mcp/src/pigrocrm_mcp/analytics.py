@@ -21,7 +21,15 @@ response, the duration and the error flag; this module decides four things aroun
   already learned. Off. It would also file every exception a tool raises as an
   `$exception` for Error Tracking; `_guard` raises on purpose to hand an agent «cliente
   non trovato», and that is guidance, not a defect. Off too: `$mcp_tool_call` keeps
-  `$mcp_is_error` and the message regardless.
+  `$mcp_is_error` and the message regardless. The same goes for the two the SDK turned
+  on by default in 7.56.0, model capture (a required `llm_model` argument on every
+  tool) and conversation correlation (a `conversation_id` argument whose description
+  asks the agent to echo it, an `_mcp_instructions` property on eligible output
+  schemas and the matching object-valued structured results, and a text block
+  whenever the SDK mints a conversation id), and for the two virtual tools the SDK can add to the
+  listing, `report_missing` and `collect_feedback`: all off, named explicitly, decided
+  on REB-642. `test_analytics_instrumentation.py` holds `tools/list` equal with and
+  without a key, so an SDK default cannot reshape the surface again unnoticed.
 - **One client per process, flushed at exit.** The HTTP transport builds one server per
   space; each shares the one client built here, and `shutdown()` at the end of the
   process (the stdio `main`, the HTTP lifespan) is what gets the last call's event out
@@ -132,12 +140,24 @@ def install(
     from posthog.mcp import instrument
     from posthog.mcp.types import MCPAnalyticsOptions
 
+    # Every option the tool surface depends on is named here, never left to the SDK's
+    # default: posthog 7.56.0 flipped `capture_model` and `enable_conversation_id` from
+    # off to on, and Dependabot's bump to 7.60.1 (PR #516) would have given every tool a
+    # required `llm_model` argument, a `conversation_id` and an `_mcp_instructions`
+    # output property, with no test noticing (REB-642). Both stay off by decision on that
+    # card, and so do the two virtual tools the SDK can add to the listing
+    # (`report_missing`, `collect_feedback`), off by default today: an agent receives the
+    # schemas the uninstrumented server advertises, exactly.
     instrument(
         mcp,
         resolved,
         MCPAnalyticsOptions(
             context=False,
             enable_exception_autocapture=False,
+            enable_conversation_id=False,
+            capture_model=False,
+            report_missing=False,
+            collect_feedback=False,
             identify=identity_for(actor_provider, space or space_group(settings)),
         ),
     )
