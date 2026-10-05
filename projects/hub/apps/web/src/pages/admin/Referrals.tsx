@@ -254,10 +254,18 @@ function EvidenceCell({ item }: { item: ReferralLedgerItem }) {
         </div>
       </dl>
       <p className={evidence.same_email_domain ? 'font-medium' : 'text-muted-foreground'}>
-        {evidence.same_email_domain ? 'Stesso dominio email' : 'Dominio email diverso'}
+        {evidence.same_email_domain === null
+          ? 'Dominio email non disponibile'
+          : evidence.same_email_domain
+            ? 'Stesso dominio email'
+            : 'Dominio email diverso'}
       </p>
-      <p className={evidence.ever_logged_in ? 'text-muted-foreground' : 'font-medium'}>
-        {evidence.ever_logged_in ? 'Ha già fatto accesso' : 'Non ha mai fatto accesso'}
+      <p className={evidence.ever_logged_in === false ? 'font-medium' : 'text-muted-foreground'}>
+        {evidence.ever_logged_in === null
+          ? 'Accessi non disponibili'
+          : evidence.ever_logged_in
+            ? 'Ha già fatto accesso'
+            : 'Non ha mai fatto accesso'}
       </p>
     </div>
   )

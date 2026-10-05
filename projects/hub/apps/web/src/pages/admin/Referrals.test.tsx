@@ -157,6 +157,20 @@ describe('the Referral admin page (P-REB-44)', () => {
     expect(within(row).getByText('Fonte').nextElementSibling).toHaveTextContent('-')
   })
 
+  it('says the domain and the logins are unavailable, not negative, when the referred row is gone (REB-657)', async () => {
+    mount([
+      {
+        ...CONFIRMED_REWARD,
+        evidence: { ...CONFIRMED_REWARD.evidence, utm_source: null, same_email_domain: null, ever_logged_in: null },
+      },
+    ])
+    await screen.findByText('Ada Lovelace')
+    const row = screen.getByText('Ada Lovelace').closest('tr')!
+    expect(within(row).getByText('Dominio email non disponibile')).toBeInTheDocument()
+    expect(within(row).getByText('Accessi non disponibili')).toBeInTheDocument()
+    expect(within(row).queryByText('Non ha mai fatto accesso')).toBeNull()
+  })
+
   it('shows a reward rate to two decimals at most, not rounded to a whole percent', async () => {
     // Regression: the row used to round to toFixed(0), so a valid 10.50% rate read
     // as 11% and an admin could not check how the amount was computed (Greptile).

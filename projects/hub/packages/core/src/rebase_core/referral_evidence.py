@@ -150,13 +150,22 @@ def referral_evidence(
     for referral, referrer_email in pairs:
         entry = referred.get((referral.kind, referral.entity_id))
         # A referred row hard-deleted from under its referral leaves only the referral's
-        # own moment to show, and nothing to compare or to have logged in.
+        # own moment to show; the person's email and logins cannot be looked up, so both
+        # flags are unknown (`None`), never a reassuring `False`.
+        if entry is None:
+            result[referral.id] = ReferralEvidence(
+                code=referral.code,
+                signed_up_at=referral.created_at,
+                utm_source=None,
+                same_email_domain=None,
+                ever_logged_in=None,
+            )
+            continue
         result[referral.id] = ReferralEvidence(
             code=referral.code,
-            signed_up_at=entry.created_at if entry is not None else referral.created_at,
-            utm_source=entry.utm_source if entry is not None else None,
-            same_email_domain=entry is not None
-            and domains_match(referrer_email, emails.get(entry.user_id, "")),
-            ever_logged_in=entry is not None and entry.user_id in logged_in,
+            signed_up_at=entry.created_at,
+            utm_source=entry.utm_source,
+            same_email_domain=domains_match(referrer_email, emails.get(entry.user_id, "")),
+            ever_logged_in=entry.user_id in logged_in,
         )
     return result

@@ -70,13 +70,15 @@ class ReferralEvidence(BaseModel):
     where that signup came from when one was recorded, `same_email_domain` whether the
     referred and referring addresses share the domain of an organisation (a shared
     public provider such as `gmail.com` never counts), and `ever_logged_in` whether the
-    referred person has ever entered through a magic link."""
+    referred person has ever entered through a magic link. Both flags are `None` when
+    the referred card or request was hard-deleted: nothing can be said, which is not
+    the same as no."""
 
     code: str
     signed_up_at: datetime
     utm_source: str | None
-    same_email_domain: bool
-    ever_logged_in: bool
+    same_email_domain: bool | None
+    ever_logged_in: bool | None
 
 
 class ReferralLedgerItem(BaseModel):

@@ -1655,8 +1655,9 @@ export interface ReferralEvidence {
   code: string
   signed_up_at: string
   utm_source: string | null
-  same_email_domain: boolean
-  ever_logged_in: boolean
+  /** `null` for both when the referred card or request was hard-deleted: unknown. */
+  same_email_domain: boolean | null
+  ever_logged_in: boolean | null
 }
 
 /** One row of the admin's referral ledger (`GET /api/hub/referrals`): the referrer,

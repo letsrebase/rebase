@@ -1145,10 +1145,11 @@ def test_the_evidence_falls_back_on_the_referral_when_the_referred_row_is_gone(
     evidence = _evidence(clean, card_id)
 
     assert evidence.signed_up_at == referral.created_at
+    # Unknown, not a reassuring "no": the person's email and logins cannot be looked up.
     assert (evidence.utm_source, evidence.same_email_domain, evidence.ever_logged_in) == (
         None,
-        False,
-        False,
+        None,
+        None,
     )
 
 
