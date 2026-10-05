@@ -75,7 +75,7 @@ class LegalEntityCreate(LegalEntityUpsert):
     `PUT /api/aziende/{id}/fiscal-profile` takes. One request, one transaction, so no
     azienda ever exists that `issue` would refuse with `NotFound("fiscal_profile")`.
 
-    `nome` is required here where `LegalEntityUpsert` derives it: the first azienda of a
+    `nome` is required here where the whole-row upsert derives it: the first azienda of a
     space was never named, but the second is created to be told apart from the first,
     in the sidebar and on every list, and a derived name is a ragione sociale cut to
     eighty characters."""

@@ -6014,7 +6014,7 @@ export interface components {
          * FiscalProfileUpsert
          * @description One shape for create and update: there is only ever one row, so "create" and
          *     "update" are the same operation with the same required fields -- the same decision
-         *     `LegalEntityUpsert` already made.
+         *     the azienda's own upsert already made.
          *
          *     `codice_regime` carries `max_length` because the column is `String(4)` and the
          *     service's own `.fullmatch` check is *not* a length check on its own for a value
@@ -6934,7 +6934,7 @@ export interface components {
          *     `PUT /api/aziende/{id}/fiscal-profile` takes. One request, one transaction, so no
          *     azienda ever exists that `issue` would refuse with `NotFound("fiscal_profile")`.
          *
-         *     `nome` is required here where `LegalEntityUpsert` derives it: the first azienda of a
+         *     `nome` is required here where the whole-row upsert derives it: the first azienda of a
          *     space was never named, but the second is created to be told apart from the first,
          *     in the sidebar and on every list, and a derived name is a ragione sociale cut to
          *     eighty characters.
