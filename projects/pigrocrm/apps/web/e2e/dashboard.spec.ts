@@ -266,7 +266,7 @@ test.describe('il ciclo completo — metà umana', () => {
     }).toPass()
   })
 
-  test('le tre schede sono raggiungibili e il periodo è nell’URL', async ({ page }) => {
+  test('the three tabs are reachable and the period is in the URL', async ({ page }) => {
     await loginAsAdmin(page)
     await ensureSpaceHasWork(page)
     const { da, a } = currentMonth()
