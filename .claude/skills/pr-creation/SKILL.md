@@ -252,13 +252,15 @@ gh pr create --body-file pr-body.md \
    and the sha of the fix on the same comment when you push it.
 3. **Two reviewers read every push, and CodeRabbit then reads Greptile.** Greptile and
    CodeRabbit both start by themselves when the PR opens and again on every push
-   (CodeRabbit's settings are `.coderabbit.yaml`). Each sha goes through the same
-   round: Greptile's review (a), CodeRabbit's own review (b), then CodeRabbit against
-   Greptile (c), then every finding fixed or answered (d). Run (a) and (b) as
-   background jobs next to the CI watch; (c) waits for both. Each block below starts
-   from `git rev-parse HEAD`, because a background job is a fresh shell. On a
-   milestone's draft PR the loop runs after `gh pr ready`, on the sha that will merge:
-   neither reviewer reads a draft (`drafts: false` in `.coderabbit.yaml`).
+   (CodeRabbit's settings are `.coderabbit.yaml`, Greptile's `.greptile/config.json`;
+   a field that file leaves out keeps its value from app.greptile.com). Each sha goes
+   through the same round: Greptile's review (a), CodeRabbit's own review (b), then
+   CodeRabbit against Greptile (c), then every finding fixed or answered (d). Run (a)
+   and (b) as background jobs next to the CI watch; (c) waits for both. Each block
+   below starts from `git rev-parse HEAD`, because a background job is a fresh shell.
+   On a milestone's draft PR the loop runs after `gh pr ready`, on the sha that will
+   merge: neither reviewer reads a draft (`drafts: false` in `.coderabbit.yaml`,
+   `triggerOnDrafts: false` in `.greptile/config.json`).
 
    A Dependabot PR gets no CodeRabbit review by itself: `.coderabbit.yaml` skips the
    bot, because Dependabot opens its PRs a dozen at a time (#369 to #380) and CodeRabbit
@@ -268,15 +270,18 @@ gh pr create --body-file pr-body.md \
    **a. Greptile.** It reviews the PRs here (a trial since PR #262, ending 2026-10-06
    unless the plan changes; it reviewed all six PRs from #262 to #267, #265 clean):
    inline findings, each with a `P0`, `P1` or `P2` badge, and a summary headed
-   `Confidence Score: N/5`. Where that summary lands is the «Update pull request
-   description» switch in app.greptile.com, PR Summaries: on, it is written into the
-   PR's own description between `<!-- greptile_comment -->` markers, which is where
-   #266 and #267 read `4/5` and merged anyway; off, since 2026-09-22, it is a
-   conversation comment by the bot, which says why the score is what it is. The score of
-   a given sha is read from that sha's own `Greptile Review` check run, never from the
-   summary, which may still be the last round's: `success` is 5/5 (the check's
-   threshold, set in app.greptile.com, Status Checks), `failure` is under it, with
-   `Confidence N/5` in its title (`Confidence 2/5`, #388's first commit). GitHub lets a
+   `Confidence Score: N/5`. Where that summary lands is `shouldUpdateDescription` in
+   `.greptile/config.json` (before the file existed, 2026-10-05, it was the «Update
+   pull request description» switch in app.greptile.com, PR Summaries): `true` writes
+   it into the PR's own description between `<!-- greptile_comment -->` markers,
+   which is where #266 and #267 read `4/5` and merged anyway; `false`, the value since
+   the switch went off on 2026-09-22, makes it a conversation comment by the bot,
+   which says why the score is what it is. The
+   score of a given sha is read from that sha's own `Greptile Review` check run, never
+   from the summary, which may still be the last round's: `success` is 5/5 (the
+   check's threshold, set in app.greptile.com, Status Checks, which has no field in
+   the file), `failure` is under it, with `Confidence N/5` in its title (`Confidence
+   2/5`, #388's first commit). GitHub lets a
    PR merge over that `failure`, since only `ci` is required, but this loop does not: it
    ends on `success`. When the run raised findings, it also leaves a review by the bot
    with an empty body that owns them. Greptile's replies in its own threads are reviews
