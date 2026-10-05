@@ -561,6 +561,9 @@ class EmailSendService:
             return
         row.send_state = state
         row.last_error = error
+        # A reminder's attempt names its invoice, so the row follows the invoice's
+        # azienda on the timeline and not only the customer's (REB-634).
+        reminder = self.repo.reminder_for_draft(draft_id)
         if kind is not None:
             # Last before the commit, per `ActivityService.record`. The payload carries
             # the subject and our own `Message-ID` -- the two things a person needs to
@@ -570,7 +573,11 @@ class EmailSendService:
                 row.entity_id,
                 kind,
                 actor,
-                {"subject": row.subject, "message_id_header": row.message_id_header},
+                {
+                    "subject": row.subject,
+                    "message_id_header": row.message_id_header,
+                    **({"invoice_id": str(reminder.invoice_id)} if reminder is not None else {}),
+                },
             )
         self.session.commit()
 
@@ -624,6 +631,9 @@ class EmailSendService:
                 "subject": row.subject,
                 "to_addresses": list(row.to_addresses),
                 "gmail_message_id": gmail_message_id,
+                # Named, so the row follows the invoice's azienda on the timeline and not
+                # only the customer's, which may have moved since (REB-634).
+                **({"invoice_id": str(reminder.invoice_id)} if reminder is not None else {}),
             },
         )
         self.session.commit()

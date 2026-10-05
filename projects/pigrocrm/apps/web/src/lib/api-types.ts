@@ -6616,6 +6616,8 @@ export interface components {
              * @enum {string}
              */
             ruolo: "admin" | "collaboratore" | "readonly";
+            /** Aziende */
+            aziende?: string[] | null;
         };
         /**
          * InvitationPeek
@@ -6652,6 +6654,8 @@ export interface components {
              * @enum {string}
              */
             ruolo: "admin" | "collaboratore" | "readonly";
+            /** Aziende */
+            aziende?: string[] | null;
             /**
              * Invited By
              * Format: uuid
@@ -9106,6 +9110,8 @@ export interface components {
              * Format: email
              */
             email: string;
+            /** Aziende */
+            aziende?: string[] | null;
             /** Password */
             password?: string | null;
             /** Nome */
@@ -9146,6 +9152,8 @@ export interface components {
             ruolo: "admin" | "collaboratore" | "readonly";
             /** Attivo */
             attivo: boolean;
+            /** Aziende */
+            aziende?: string[] | null;
             /** Digest Settimanale */
             digest_settimanale: boolean;
             /** Tariffa Oraria Default */
@@ -9168,6 +9176,8 @@ export interface components {
             ruolo?: ("admin" | "collaboratore" | "readonly") | null;
             /** Attivo */
             attivo?: boolean | null;
+            /** Aziende */
+            aziende?: string[] | null;
             /** Digest Settimanale */
             digest_settimanale?: boolean | null;
             /** Tariffa Oraria Default */

@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from pigrocrm.core.errors import AgentForbidden, PermissionDenied
+from pigrocrm.core.errors import AgentForbidden, PermissionDenied, ScopedAdmin
 
 ActorType = Literal["user", "mcp", "system", "rebase"]
 Role = Literal["admin", "collaboratore", "readonly"]
@@ -162,6 +162,12 @@ class Actor(BaseModel):
     # presenting a PAT behave exactly like the MCP transport -- the asymmetry that let a
     # `curl` issue an invoice while the tool was unregistered (commit 086c561).
     full_access: bool = False
+    # The aziende this actor may see and write (REB-633, spec 2026-10-03 §1.11, §4):
+    # `None` for an unscoped actor (`users.ambito_limitato` false, `system`, `rebase`),
+    # the tuple of `user_aziende` rows, possibly empty, for a scoped one. Carried on the
+    # actor so the one place that binds it (`db/scope.py`) needs nothing but the actor;
+    # the rows themselves are hidden by Postgres, never by a check at the point of use.
+    aziende: tuple[UUID, ...] | None = None
 
     @classmethod
     def system(cls) -> Self:
@@ -181,6 +187,10 @@ class Actor(BaseModel):
     @property
     def can_administer(self) -> bool:
         return self.role in ADMIN_ROLES
+
+    @property
+    def scoped(self) -> bool:
+        return self.aziende is not None
 
     def _refuse_if_agent(self, action: str) -> None:
         """Checked before the role, deliberately.
@@ -220,3 +230,13 @@ class Actor(BaseModel):
         self._refuse_if_agent(action)
         if not self.can_administer:
             raise PermissionDenied(action, list(ADMIN_ROLES), self.role)
+
+    def require_unscoped_admin(self, action: str) -> None:
+        """`require_admin`, and the whole space in view (spec 2026-10-03 §1.11): the
+        configuration a space decides for itself (Team, Spazio, Google, Drive, templates,
+        stages, categories, period locks) is an unscoped admin's. A scoped admin keeps
+        the role, and the refusal names what is missing rather than the role, so nobody
+        is invited to hand them a bigger one."""
+        self.require_admin(action)
+        if self.scoped:
+            raise ScopedAdmin(action)

@@ -465,6 +465,10 @@ _CREDENZIALI: dict[Method, str] = {
     ): "e' la pagina d'accettazione che legge l'invito, non un'operazione",
     ("InvitationService", "accept"): "e' il passo d'ingresso dell'invitato, non un'operazione",
     ("UserService", "create"): "creare utenti e' amministrazione dell'account",
+    ("UserService", "create_scoped"): (
+        "la variante di `create` che un invito accettato usa per scrivere l'ambito "
+        "nella stessa transazione della riga: amministrazione dell'account, come `create`"
+    ),
     ("UserService", "update"): "cambiare ruoli e' amministrazione dell'account",
     ("UserService", "update_own_digest"): (
         "e' la preferenza di una persona sulla mail che riceve il lunedi' (REB-221), "

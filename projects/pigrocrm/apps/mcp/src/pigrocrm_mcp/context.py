@@ -2,6 +2,7 @@ import contextvars
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from typing import cast
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -101,3 +102,47 @@ class ScopedSessionProvider:
         finally:
             _CURRENT_SESSION.reset(token)
             session.close()
+
+
+_ACTOR_KEY = "pigrocrm_mcp_actor"
+
+
+class TokenActorProvider:
+    """The actor a personal access token names, resolved again on every call (REB-634).
+
+    The stdio server used to resolve its token once and hand the same actor to every
+    call for the life of the process: a scope narrowed, a role lowered or a token
+    revoked meanwhile never reached a client that stayed connected. The HTTP transport
+    resolves per request; this is the stdio equivalent. Inside a tool's scope it reads
+    on that call's own session, so the actor and the rows it then sees are one
+    transaction's; outside one, which is where the analytics' identity callback runs
+    (`analytics.identity_for`), it opens a session of its own and closes it, rather
+    than refusing. `resolve` stamps `last_used_at`, hence the commit.
+    """
+
+    def __init__(self, sessions: ScopedSessionProvider, token: str) -> None:
+        self._sessions = sessions
+        self._token = token
+
+    def __call__(self) -> Actor:
+        from pigrocrm.core.auth.pat_service import PatService
+
+        try:
+            session = self._sessions()
+        except RuntimeError:
+            with self._sessions.scope() as own:
+                actor = PatService(own).resolve(self._token)
+                own.commit()
+                return actor
+        # Once per logical call: the guard reads the actor to bind its scope and a tool
+        # may read it again, and the two must be the same person with the same scope,
+        # which is also what spares the second read and the second commit (Greptile
+        # and CodeRabbit on PR #513). Keyed on the call's own session, which the scope
+        # opens and closes, so the next call resolves afresh.
+        cached = session.info.get(_ACTOR_KEY)
+        if cached is not None:
+            return cast(Actor, cached)
+        actor = PatService(session).resolve(self._token)
+        session.commit()
+        session.info[_ACTOR_KEY] = actor
+        return actor

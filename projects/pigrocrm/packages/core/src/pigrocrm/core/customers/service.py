@@ -345,12 +345,17 @@ class CustomerService:
         if customer is None:
             raise NotFound(ENTITY, customer_id)
 
-        active_deals = self.repo.count_active_deals(customer_id)
-        if active_deals:
+        # Decided on every active deal, the ones out of this member's sight included
+        # (REB-634); said with the ones they see, since the number of the others is a
+        # fact about another azienda (Greptile on PR #513).
+        if self.repo.count_active_deals(customer_id):
+            visible = self.repo.count_visible_active_deals(customer_id)
             raise Conflict(
                 ENTITY,
-                "il cliente ha deal attivi: archivia prima i deal",
-                active_deals=active_deals,
+                "il cliente ha deal attivi: archivia prima i deal"
+                if visible
+                else "il cliente ha deal attivi in un'azienda che non vedi",
+                active_deals=visible,
             )
 
         customer.deleted_at = datetime.now(UTC)

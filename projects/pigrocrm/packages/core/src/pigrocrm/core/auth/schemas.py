@@ -41,6 +41,10 @@ class InvitationCreate(BaseModel):
     email: EmailStr
     nome: SafeStr | None = Field(default=None, max_length=NOME_MAX_LENGTH)
     ruolo: Role = "collaboratore"
+    # The aziende the invitee will see (spec 2026-10-03 §1.11): omitted or `null` is
+    # every azienda, as before; a list scopes them to those; an empty list is refused by
+    # the service, since «nessuna azienda» is a deactivation and not a scope.
+    aziende: list[UUID] | None = None
 
     @field_validator("email", mode="before")
     @classmethod
@@ -59,6 +63,7 @@ class InvitationRead(BaseModel):
     email: str
     nome: str | None
     ruolo: Role
+    aziende: list[UUID] | None = None
     invited_by: UUID
     expires_at: datetime
     created_at: datetime
@@ -76,6 +81,10 @@ class InvitationPeek(BaseModel):
 
 class UserCreate(BaseModel):
     email: EmailStr
+    # The aziende the new account will see (spec 2026-10-03 §1.11), written in the same
+    # transaction as the row: an account is never, not even between two commits, an
+    # unscoped admin it was not meant to be. `null` or left out is the whole space.
+    aziende: list[UUID] | None = None
     # `None` only for a space's first admin, created by the signup wizard (spec
     # 2026-09-12 §6.4): the person enters with a link by mail and never had a password.
     # `UserService.create` refuses it from anyone but the system.
@@ -99,6 +108,10 @@ class UserUpdate(BaseModel):
     nome: SafeStr | None = Field(default=None, max_length=NOME_MAX_LENGTH)
     ruolo: Role | None = None
     attivo: bool | None = None
+    # The member's scope (spec 2026-10-03 §1.11): a list scopes them, an explicit
+    # `null` clears the scope back to every azienda, and a key left out leaves it as it
+    # is, which `UserService.update` tells apart through `model_fields_set`.
+    aziende: list[UUID] | None = None
     digest_settimanale: bool | None = None
     tariffa_oraria_default: Decimal | None = Field(
         default=None, max_digits=FACTOR_MAX_DIGITS, decimal_places=FACTOR_DECIMAL_PLACES, ge=0
@@ -125,6 +138,9 @@ class UserRead(BaseModel):
     nome: str
     ruolo: Role
     attivo: bool
+    # `None` for a member who sees the whole space, the ids otherwise (REB-633): what
+    # the SPA reads to pin the selector and what the Team panel shows on a row.
+    aziende: list[UUID] | None = None
     digest_settimanale: bool
     tariffa_oraria_default: Decimal | None
     costo_orario_default: Decimal | None

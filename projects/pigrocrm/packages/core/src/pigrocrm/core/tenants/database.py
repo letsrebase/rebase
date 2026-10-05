@@ -44,5 +44,13 @@ def tenant_database_name(slug: str) -> str:
 
 
 def tenant_database_url(settings: Settings, db_name: str) -> URL:
-    """A space's database lives on the CRM's server, under the CRM's credentials."""
+    """A space's database lives on the CRM's server, under the CRM's credentials: the
+    application role's, which every request runs as."""
     return make_url(settings.database_url).set(database=db_name)
+
+
+def tenant_owner_database_url(settings: Settings, db_name: str) -> URL:
+    """The same database as the owner: for its migration, its furnishing and the grants
+    to the application role (REB-634). The same URL as above when the installation has
+    one, which `Settings.owner_database_url` says."""
+    return make_url(settings.owner_database_url).set(database=db_name)

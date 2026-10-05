@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from pigrocrm.core.activities.service import ActivityService
@@ -113,19 +113,25 @@ def billed_entry_ids(session: Session, entries: Sequence[TimeEntry | TimeEntryRe
     line_ids = {entry.invoice_line_id for entry in entries if entry.invoice_line_id is not None}
     if not line_ids:
         return set()
-    issued = set(
-        session.execute(
-            select(InvoiceLine.id)
-            .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
-            .where(
-                InvoiceLine.id.in_(line_ids),
-                Invoice.tipo == "fattura",
-                Invoice.stato == "emessa",
-                Invoice.deleted_at.is_(None),
-            )
-        ).scalars()
+    # Still one query: every line this session can see, with whether its invoice is
+    # issued. A line the session cannot see at all freezes its entry as an issued one
+    # would (REB-634): since the row-level policies, an entry of a deal in one azienda
+    # may be bound to an invoice of another, which a member scoped to the first cannot
+    # read. Open, the guard would let them edit hours already billed; closed, the worst
+    # case is a draft line of an invoice out of their sight that they cannot touch until
+    # it is issued anyway (CodeRabbit's seventh adversarial pass on PR #513).
+    issued_flag = and_(
+        Invoice.tipo == "fattura", Invoice.stato == "emessa", Invoice.deleted_at.is_(None)
     )
-    return {entry.id for entry in entries if entry.invoice_line_id in issued}
+    seen = session.execute(
+        select(InvoiceLine.id, issued_flag)
+        .join(Invoice, Invoice.id == InvoiceLine.invoice_id)
+        .where(InvoiceLine.id.in_(line_ids))
+    ).all()
+    visible = {line_id for line_id, _ in seen}
+    issued = {line_id for line_id, is_issued in seen if is_issued}
+    frozen = issued | (line_ids - visible)
+    return {entry.id for entry in entries if entry.invoice_line_id in frozen}
 
 
 class TimeEntryService:
@@ -421,7 +427,7 @@ class TimeEntryService:
         from the start, ahead of the rest; task 4B-1 converted every other service to
         the same contract via `supplied_changes` (residual A14).
         """
-        actor.require_admin("update_user_rates")
+        actor.require_unscoped_admin("update_user_rates")
         user = self.users.get(user_id)
         if user is None:
             raise NotFound("user", user_id)
@@ -471,7 +477,7 @@ class TimeEntryService:
         Returns how many entries were rewritten, so a caller can say "12 voci
         aggiornate" instead of "done".
         """
-        actor.require_admin("recalculate_rates")
+        actor.require_unscoped_admin("recalculate_rates")
         if data.a < data.da:
             raise ValidationFailed(
                 ENTITY, "a", "intervallo invertito", expected="una data non anteriore a 'da'"

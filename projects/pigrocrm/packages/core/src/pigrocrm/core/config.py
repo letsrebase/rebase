@@ -33,6 +33,14 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="PIGROCRM_", env_file=".env", extra="ignore")
 
     database_url: str = "postgresql+psycopg://pigrocrm:pigrocrm@localhost:5432/pigrocrm"
+    # The owner's URL, for what the application role may not do: `alembic upgrade`,
+    # `ensure-space-defaults`, `CREATE DATABASE` and the grants themselves (REB-634, spec
+    # 2026-10-03 §4 «The role»). `database_url` above is the role every request runs as,
+    # `pigrocrm_app` in the compose stack, which Postgres keeps inside the row-level
+    # policies; the owner and a superuser are not kept there. Empty means one URL for
+    # both, which is what a development checkout and the test suite run with: then no
+    # second role exists, nothing is created at boot, and a superuser sees every row.
+    admin_database_url: str = ""
     # The registry of spaces -- which slug maps to which database; see
     # docs/superpowers/specs/2026-09-08-spazi-un-database-per-tenant-design.md. Empty
     # means the CRM's own server and credentials, database `pigrocrm_tenants`. Each
@@ -315,6 +323,11 @@ class Settings(BaseSettings):
                 f"timezone {value!r} is not in the IANA tz database (examples: Europe/Rome, UTC)"
             )
         return value
+
+    @property
+    def owner_database_url(self) -> str:
+        """`admin_database_url`, or `database_url` when none was configured."""
+        return self.admin_database_url or self.database_url
 
 
 @lru_cache

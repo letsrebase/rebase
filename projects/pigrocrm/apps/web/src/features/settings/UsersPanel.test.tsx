@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { UsersPanel } from './UsersPanel'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { AziendaContext, type AziendaRecord, type AziendaValue } from '@/lib/azienda'
 
 vi.mock('@/lib/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/api')>()
@@ -76,11 +77,29 @@ function respond(routes: Record<string, () => unknown>) {
   })
 }
 
-function renderPanel() {
+const HUMANCRAFT = { id: 'a1', nome: 'humancraft', predefinita: true, attiva: true } as AziendaRecord
+const REBASE = { id: 'a2', nome: 'rebase', predefinita: false, attiva: true } as AziendaRecord
+
+/** The provider's value for a two-azienda space, the shape `AppShell` reads too. */
+function twoAziende(): AziendaValue {
+  const aziende = [HUMANCRAFT, REBASE]
+  return {
+    aziende,
+    selected: null,
+    select: vi.fn(),
+    several: true,
+    scoped: false,
+    pinned: false,
+    byId: (id) => aziende.find((a) => a.id === id),
+  }
+}
+
+function renderPanel(azienda?: AziendaValue) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const panel = <UsersPanel />
   return render(
     <QueryClientProvider client={client}>
-      <UsersPanel />
+      {azienda ? <AziendaContext value={azienda}>{panel}</AziendaContext> : panel}
     </QueryClientProvider>,
   )
 }
@@ -428,6 +447,182 @@ describe('UsersPanel', () => {
       renderPanel()
 
       expect(await screen.findByRole('combobox', { name: /ruolo di ada admin/i })).toBeDisabled()
+    })
+  })
+
+  // --- the scope of a member (REB-635, spec 2026-10-03 §1.11, §5 Team) --------------------
+
+  describe('the aziende a member sees', () => {
+    const SCOPED_USER = { ...OTHER_ACTIVE_USER, id: 'u4', nome: 'Bea Scoped', aziende: ['a2'] }
+    const EMPTIED_USER = { ...OTHER_ACTIVE_USER, id: 'u5', nome: 'Carla Vuota', aziende: [] }
+
+    it('says «Tutte», the names, or that no azienda is active, from the second azienda on', async () => {
+      respond({
+        ...lists,
+        '/api/users': () => ok([{ ...ADMIN, aziende: null }, SCOPED_USER, EMPTIED_USER]),
+        '/api/users/invites': () => ok([{ ...PENDING_INVITE, aziende: ['a1', 'a2'] }]),
+      })
+      renderPanel(twoAziende())
+
+      const rows = await screen.findAllByRole('row')
+      const text = rows.map((row) => row.textContent ?? '').join('\n')
+      expect(screen.getAllByRole('columnheader', { name: 'Aziende' })).toHaveLength(2)
+      expect(text).toContain('Tutte')
+      expect(text).toContain('nessuna azienda attiva')
+      expect(screen.getByRole('row', { name: /Bea Scoped/ })).toHaveTextContent('rebase')
+      expect(screen.getByRole('row', { name: /Luca/ })).toHaveTextContent('humancraft, rebase')
+    })
+
+    it('draws no column and sends no scope in a one-azienda space where nobody is scoped', async () => {
+      respond({ ...lists, '/api/users': () => ok([OTHER_ACTIVE_USER]) })
+      vi.mocked(api.POST).mockReturnValueOnce(Promise.resolve(ok(PENDING_INVITE, 201)))
+      renderPanel()
+
+      await screen.findByRole('row', { name: /Altro Utente/ })
+      expect(screen.queryByRole('columnheader', { name: 'Aziende' })).not.toBeInTheDocument()
+      await userEvent.click(screen.getByRole('button', { name: /^invita$/i }))
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+      await userEvent.type(screen.getByLabelText('Email'), 'giulia@pigro.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Invia invito' }))
+      await waitFor(() =>
+        expect(api.POST).toHaveBeenCalledWith(
+          '/api/users/invites',
+          expect.objectContaining({
+            body: { email: 'giulia@pigro.it', nome: null, ruolo: 'collaboratore' },
+          }),
+        ),
+      )
+    })
+
+    it('still shows a stranded scope in a one-azienda space, so an admin can widen it', async () => {
+      // The second azienda was deactivated after Bea was scoped to it: the space is back
+      // to one azienda, the selector is gone, and Bea sees nothing until this row says so.
+      respond({ ...lists, '/api/users': () => ok([SCOPED_USER]) })
+      vi.mocked(api.PATCH).mockReturnValueOnce(
+        Promise.resolve(ok({ ...SCOPED_USER, aziende: null })),
+      )
+      const one: AziendaValue = {
+        ...twoAziende(),
+        aziende: [HUMANCRAFT],
+        several: false,
+        byId: (id) => (id === 'a1' ? HUMANCRAFT : undefined),
+      }
+      renderPanel(one)
+
+      const row = await screen.findByRole('row', { name: /Bea Scoped/ })
+      expect(row).toHaveTextContent('nessuna azienda attiva')
+      await openRowMenu('Bea Scoped')
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Aziende…' }))
+      // The one azienda, unchecked (it is not in Bea's scope); checking it is «tutte».
+      const box = await screen.findByLabelText('humancraft')
+      expect(box).not.toBeChecked()
+      await userEvent.click(box)
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      await waitFor(() =>
+        expect(api.PATCH).toHaveBeenCalledWith(
+          '/api/users/{user_id}',
+          expect.objectContaining({ body: { aziende: null } }),
+        ),
+      )
+    })
+
+    it('invites with every azienda checked as the whole space, and with one unchecked as a scope', async () => {
+      respond(lists)
+      vi.mocked(api.POST).mockReturnValue(Promise.resolve(ok(PENDING_INVITE, 201)))
+      renderPanel(twoAziende())
+
+      await userEvent.click(await screen.findByRole('button', { name: /^invita$/i }))
+      const boxes = screen.getAllByRole('checkbox')
+      expect(boxes).toHaveLength(2)
+      boxes.forEach((box) => expect(box).toBeChecked())
+      await userEvent.type(screen.getByLabelText('Email'), 'tutti@pigro.it')
+      await userEvent.click(screen.getByRole('button', { name: 'Invia invito' }))
+      await waitFor(() =>
+        expect(api.POST).toHaveBeenLastCalledWith(
+          '/api/users/invites',
+          expect.objectContaining({
+            body: { email: 'tutti@pigro.it', nome: null, ruolo: 'collaboratore', aziende: null },
+          }),
+        ),
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: /^invita$/i }))
+      await userEvent.type(screen.getByLabelText('Email'), 'bea@pigro.it')
+      await userEvent.click(screen.getByLabelText('humancraft'))
+      await userEvent.click(screen.getByRole('button', { name: 'Invia invito' }))
+      await waitFor(() =>
+        expect(api.POST).toHaveBeenLastCalledWith(
+          '/api/users/invites',
+          expect.objectContaining({
+            body: { email: 'bea@pigro.it', nome: null, ruolo: 'collaboratore', aziende: ['a2'] },
+          }),
+        ),
+      )
+    })
+
+    it('refuses to send an invitation with no azienda checked', async () => {
+      respond(lists)
+      renderPanel(twoAziende())
+
+      await userEvent.click(await screen.findByRole('button', { name: /^invita$/i }))
+      await userEvent.click(screen.getByLabelText('humancraft'))
+      await userEvent.click(screen.getByLabelText('rebase'))
+      expect(screen.getByRole('button', { name: 'Invia invito' })).toBeDisabled()
+      expect(api.POST).not.toHaveBeenCalled()
+    })
+
+    it('edits a member’s scope from the row’s menu through PATCH /api/users/{id}', async () => {
+      respond({ ...lists, '/api/users': () => ok([OTHER_ACTIVE_USER]) })
+      vi.mocked(api.PATCH).mockReturnValueOnce(
+        Promise.resolve(ok({ ...OTHER_ACTIVE_USER, aziende: ['a2'] })),
+      )
+      renderPanel(twoAziende())
+
+      await openRowMenu('Altro Utente')
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Aziende…' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(dialog).toHaveTextContent('Aziende di Altro Utente')
+      // An unscoped member opens with everything checked.
+      screen.getAllByRole('checkbox').forEach((box) => expect(box).toBeChecked())
+      await userEvent.click(screen.getByLabelText('humancraft'))
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+
+      await waitFor(() =>
+        expect(api.PATCH).toHaveBeenCalledWith(
+          '/api/users/{user_id}',
+          expect.objectContaining({
+            params: { path: { user_id: 'u3' } },
+            body: { aziende: ['a2'] },
+          }),
+        ),
+      )
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Aziende aggiornate'))
+      // The row reads the mutation's own answer.
+      expect(await screen.findByRole('row', { name: /Altro Utente/ })).toHaveTextContent('rebase')
+    })
+
+    it('shows the server’s refusal of the last unscoped admin in the dialog', async () => {
+      respond({ ...lists, '/api/users': () => ok([ADMIN]) })
+      vi.mocked(api.PATCH).mockReturnValueOnce(
+        Promise.resolve(
+          failed(
+            {
+              code: 'last_unscoped_admin',
+              detail: 'lo spazio deve tenere almeno un amministratore che veda tutte le aziende',
+              field: 'aziende',
+            },
+            409,
+          ),
+        ),
+      )
+      renderPanel(twoAziende())
+
+      await openRowMenu('Ada Admin')
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Aziende…' }))
+      await userEvent.click(await screen.findByLabelText('humancraft'))
+      await userEvent.click(screen.getByRole('button', { name: 'Salva' }))
+      expect(await screen.findByText(/deve tenere almeno un amministratore/)).toBeInTheDocument()
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
     })
   })
 })

@@ -23,8 +23,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@rebase/ui/select'
+import { Checkbox } from '@rebase/ui/checkbox'
 import { fieldErrorFrom, toProblem, type ProblemDetail } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
+import { useAzienda, type AziendaRecord } from '@/lib/azienda'
+import { scopeBody, scopeLabel } from './scope'
 import { roleLabel } from '@/lib/roles'
 import {
   useInviteUser,
@@ -43,7 +46,51 @@ const ROLES: { value: UserRecord['ruolo']; label: string }[] = [
   { value: 'readonly', label: 'Sola lettura' },
 ]
 
-const KNOWN_FIELDS = ['email', 'nome', 'ruolo']
+const KNOWN_FIELDS = ['email', 'nome', 'ruolo', 'aziende']
+
+function AziendeChecklist({
+  aziende,
+  checked,
+  onChange,
+  idPrefix,
+  error,
+}: {
+  aziende: AziendaRecord[]
+  checked: string[]
+  onChange: (next: string[]) => void
+  idPrefix: string
+  error?: string
+}) {
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-sm font-medium">Aziende</legend>
+      <p className="text-sm text-muted-foreground">
+        Vedrà solo le aziende selezionate: clienti, deal, documenti, fatture e cruscotti. Tutte
+        selezionate significa tutto lo spazio, anche le aziende che aggiungerai.
+      </p>
+      {aziende.map((azienda) => {
+        const id = `${idPrefix}-${azienda.id}`
+        return (
+          <div key={azienda.id} className="flex items-center gap-2">
+            <Checkbox
+              id={id}
+              checked={checked.includes(azienda.id)}
+              onCheckedChange={(value) =>
+                onChange(
+                  value === true
+                    ? [...checked, azienda.id]
+                    : checked.filter((item) => item !== azienda.id),
+                )
+              }
+            />
+            <Label htmlFor={id}>{azienda.nome}</Label>
+          </div>
+        )
+      })}
+      {error && <p className="text-sm text-destructive">{error}</p>}
+    </fieldset>
+  )
+}
 
 /** «gg/mm/aaaa, hh:mm»: date and short time, shared by the invitation's «Scade il…»
  *  (spec §2's seven-day window made visible) and the member's «Ultimo accesso»
@@ -64,6 +111,15 @@ export function UsersPanel() {
   const [nome, setNome] = useState('')
   const [ruolo, setRuolo] = useState<UserRecord['ruolo']>('collaboratore')
   const [problem, setProblem] = useState<ProblemDetail | null>(null)
+  // The scope (REB-635): the checked aziende of the invite, and the member whose scope
+  // is being edited with theirs. Drawn from the second azienda on, like the selector.
+  const azienda = useAzienda()
+  const several = azienda.aziende.length > 1
+  const [inviteAziende, setInviteAziende] = useState<string[]>([])
+  const [scopeOf, setScopeOf] = useState<UserRecord | null>(null)
+  const [scopeAziende, setScopeAziende] = useState<string[]>([])
+  const [scopeProblem, setScopeProblem] = useState<ProblemDetail | null>(null)
+  const byId = (id: string) => azienda.byId(id)
 
   const users = useUsers()
   const invites = usePendingInvites()
@@ -71,6 +127,14 @@ export function UsersPanel() {
   const resend = useResendInvite()
   const revoke = useRevokeInvite()
   const update = useUpdateUser()
+  // The scope column and the row action are drawn from the second azienda on, and
+  // also in a one-azienda space while somebody still carries a scope: a member whose
+  // aziende were all deactivated sees nothing, and this is where an admin reads
+  // «nessuna azienda attiva» and widens them back.
+  const showScope =
+    several ||
+    (users.data ?? []).some((u) => Array.isArray(u.aziende)) ||
+    (invites.data ?? []).some((i) => Array.isArray(i.aziende))
 
   const fieldError = problem ? fieldErrorFrom(problem) : null
   const banner = unattributed(problem)
@@ -80,7 +144,35 @@ export function UsersPanel() {
     setEmail('')
     setNome('')
     setRuolo('collaboratore')
+    setInviteAziende(azienda.aziende.map((a) => a.id))
     setOpen(true)
+  }
+
+  function openScope(user: UserRecord) {
+    setScopeProblem(null)
+    setScopeOf(user)
+    // Only the ids the checklist draws: an azienda deactivated since the scope was set
+    // is not there to uncheck, and sending it back would be refused as inactive.
+    setScopeAziende(
+      Array.isArray(user.aziende)
+        ? user.aziende.filter((id) => azienda.byId(id) !== undefined)
+        : azienda.aziende.map((a) => a.id),
+    )
+  }
+
+  function saveScope() {
+    if (!scopeOf) return
+    setScopeProblem(null)
+    update.mutate(
+      { userId: scopeOf.id, body: { aziende: scopeBody(scopeAziende, azienda.aziende) } },
+      {
+        onSuccess: () => {
+          toast.success('Aziende aggiornate')
+          setScopeOf(null)
+        },
+        onError: (error) => setScopeProblem(toProblem(error)),
+      },
+    )
   }
 
   function submit() {
@@ -89,7 +181,13 @@ export function UsersPanel() {
       // The empty optional name is sent as null, the shape the API's own schema
       // answers `InvitationCreate.nome` with: the acceptance page asks for one when
       // the invitation carried none (spec §1), so "blank" here means "not known yet".
-      { email, nome: nome.trim() === '' ? null : nome.trim(), ruolo },
+      // The scope only from the second azienda on: a one-azienda space sends none.
+      {
+        email,
+        nome: nome.trim() === '' ? null : nome.trim(),
+        ruolo,
+        ...(several ? { aziende: scopeBody(inviteAziende, azienda.aziende) } : {}),
+      },
       {
         onSuccess: () => {
           toast.success('Invito inviato')
@@ -146,6 +244,15 @@ export function UsersPanel() {
         )
       },
     },
+    ...(showScope
+      ? [
+          {
+            header: 'Aziende',
+            id: 'aziende',
+            cell: (info) => scopeLabel(info.row.original.aziende, byId),
+          } satisfies ColumnDef<DataTableFeatures, UserRecord>,
+        ]
+      : []),
     {
       header: 'Stato',
       id: 'attivo',
@@ -184,6 +291,15 @@ export function UsersPanel() {
           <RowActions
             label={`Azioni per ${user.nome}`}
             items={[
+              ...(showScope
+                ? [
+                    {
+                      label: 'Aziende…',
+                      disabled: update.isPending,
+                      onSelect: () => openScope(user),
+                    },
+                  ]
+                : []),
               {
                 label: user.attivo ? 'Disattiva' : 'Riattiva',
                 disabled: update.isPending || (user.attivo && isSelf),
@@ -218,6 +334,15 @@ export function UsersPanel() {
       accessorKey: 'ruolo',
       cell: (info) => roleLabel(info.row.original.ruolo),
     },
+    ...(showScope
+      ? [
+          {
+            header: 'Aziende',
+            id: 'aziende',
+            cell: (info) => scopeLabel(info.row.original.aziende, byId),
+          } satisfies ColumnDef<DataTableFeatures, InvitationRecord>,
+        ]
+      : []),
     {
       header: 'Scadenza',
       id: 'scadenza',
@@ -357,13 +482,66 @@ export function UsersPanel() {
                 </SelectContent>
               </Select>
             </div>
+            {several && (
+              <AziendeChecklist
+                aziende={azienda.aziende}
+                checked={inviteAziende}
+                onChange={setInviteAziende}
+                idPrefix="invite-azienda"
+                error={fieldError?.field === 'aziende' ? fieldError.message : undefined}
+              />
+            )}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>
               Annulla
             </Button>
-            <Button onClick={submit} disabled={invite.isPending}>
+            <Button
+              onClick={submit}
+              disabled={invite.isPending || (several && inviteAziende.length === 0)}
+            >
               {invite.isPending ? 'Invio…' : 'Invia invito'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={scopeOf !== null} onOpenChange={(next) => !next && setScopeOf(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Aziende di {scopeOf?.nome}</DialogTitle>
+            <DialogDescription>
+              La modifica vale dalla prossima richiesta. Lo spazio tiene sempre almeno un
+              amministratore che vede tutte le aziende.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {scopeProblem && fieldErrorFrom(scopeProblem)?.field !== 'aziende' && (
+              <p
+                role="alert"
+                className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                {scopeProblem.detail}
+              </p>
+            )}
+            <AziendeChecklist
+              aziende={azienda.aziende}
+              checked={scopeAziende}
+              onChange={setScopeAziende}
+              idPrefix="scope-azienda"
+              error={
+                scopeProblem && fieldErrorFrom(scopeProblem)?.field === 'aziende'
+                  ? fieldErrorFrom(scopeProblem)?.message
+                  : undefined
+              }
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setScopeOf(null)}>
+              Annulla
+            </Button>
+            <Button onClick={saveScope} disabled={update.isPending || scopeAziende.length === 0}>
+              {update.isPending ? 'Salvataggio…' : 'Salva'}
             </Button>
           </DialogFooter>
         </DialogContent>

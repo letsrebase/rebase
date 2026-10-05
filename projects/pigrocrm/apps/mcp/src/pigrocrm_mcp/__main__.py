@@ -6,7 +6,7 @@ from pigrocrm.core.config import get_settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
 from pigrocrm.core.errors import DomainError
 from pigrocrm_mcp import analytics
-from pigrocrm_mcp.context import ScopedSessionProvider
+from pigrocrm_mcp.context import ScopedSessionProvider, TokenActorProvider
 from pigrocrm_mcp.server import build_server
 
 PAT_ENV_VAR = "PIGROCRM_TOKEN"
@@ -24,13 +24,17 @@ def main() -> int:
     engine = create_engine_from_settings(get_settings())
     provider = ScopedSessionProvider(session_factory(engine))
 
-    # The PAT is resolved once, at start-up, in its own short-lived session: the
-    # actor does not change for the life of the process, and resolving it inside a
-    # per-call scope would hit the database on every tool call for an answer that
-    # cannot have changed.
+    # The PAT is resolved at start-up, so a bad token is one line on stderr and no
+    # server, and again on every call: the role, the active flag and, since REB-634,
+    # the azienda scope travel on the actor, and a process that kept the actor it
+    # started with would keep a scope its person no longer has, for as long as the
+    # client stays connected (CodeRabbit on PR #513). The HTTP transport already
+    # resolves per request. One read of two small tables per call, inside the call's
+    # own session, which the guard binds before the tool body runs.
     with provider.scope() as bootstrap:
         try:
-            actor = PatService(bootstrap).resolve(token)
+            PatService(bootstrap).resolve(token)
+            bootstrap.commit()
         except DomainError as exc:
             print(f"Token non valido: {exc.message}", file=sys.stderr)
             return 1
@@ -39,7 +43,7 @@ def main() -> int:
     # adapter schedules captures on the server's loop, and `run` returning tears that
     # loop down. Without a key there is no client and `shutdown` does nothing.
     try:
-        build_server(provider, lambda: actor).run("stdio")
+        build_server(provider, TokenActorProvider(provider, token)).run("stdio")
     finally:
         analytics.shutdown()
     return 0

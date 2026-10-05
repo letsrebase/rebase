@@ -843,3 +843,65 @@ Added as the milestones land, dated, never rewriting the sections above.
   lands on right after. The ordinary regime sends no natura beside its rate and the
   foreign one sends what the settings panel sends, so the server's own refusals name a
   field the form shows.
+- **2026-10-04, milestone «Invite a person to one azienda», the core (REB-633).**
+  Migration `0048` creates the eleven SQL functions of §4 and one `FOR ALL` policy named
+  `ambito_azienda` on each of the twenty-eight tables that reach an azienda, with
+  `FORCE ROW LEVEL SECURITY` so the owner of the schema is not exempt. The scope is two
+  transaction-local settings, `pigrocrm.aziende` (`*`, a comma-joined list of ids, or
+  the empty string) and `pigrocrm.user_id`, written by `db/scope.py`'s `bind_scope` on
+  the open transaction and again at every `after_begin`, because a service commits in
+  the middle of a request; a connection with nothing bound sees nothing, which is the
+  closed default of §4. `Actor.aziende` is `None` for the whole space and a tuple
+  otherwise, and `require_unscoped_admin` guards the space-level actions (team, pipeline,
+  fields, templates, settings, categories, locks, automations, Drive) with the
+  `permission_denied` refusal «serve un amministratore senza limiti di azienda»; a
+  scoped admin keeps every other admin action. An invitation carries `aziende`
+  (checked: no empty list, no unknown or inactive azienda) and `accept` writes the flag
+  and the rows, dropping an azienda deactivated in between without ever widening to
+  «tutte» (§1.11). `UserUpdate.aziende` sets the scope when present and `null` clears
+  it; the last unscoped active admin cannot be scoped or demoted (`LastUnscopedAdmin`,
+  409). The weekly digest is built once per distinct scope among its recipients, and the
+  Gmail sync binds the mailbox owner's scope. The test database's user is a superuser,
+  which bypasses RLS, so the proof runs through a `pigrocrm_app_test` role created by
+  the test itself; the application's own role is REB-634's work.
+- **2026-10-04, same milestone, the role and the routes (REB-634).** Two URLs, as §10
+  decided: `PIGROCRM_DATABASE_URL` is the application role's, `PIGROCRM_ADMIN_DATABASE_URL`
+  the owner's, and `Settings.owner_database_url` falls back to the first when the second
+  is empty, which is what a checkout and the test suite run with. `db/role.py` creates
+  the role named by the application URL, sets the password that URL carries, and grants
+  it tables, sequences and default privileges on the database it is called for; the
+  boot (`ensure-space-defaults`) runs it on the root and on every space after each
+  migration, provisioning runs it on a new space, and a one-URL installation skips it.
+  The compose file builds the application URL from `PIGROCRM_APP_PASSWORD`, required
+  like `POSTGRES_PASSWORD`. Alembic, the registry's side database and `CREATE DATABASE`
+  read the owner's URL; the owner's sessions that write policied rows (provisioning,
+  the furnishing, the e2e seed) bind the system actor's scope, since `FORCE` binds the
+  owner too. `get_actor` and `callback_actor` build the actor with `actor_for` and bind
+  the scope on the request's session; the snapshot session takes the actor and binds it
+  before its first statement; a PAT carries its owner's scope and the MCP guard binds it
+  at every call. A write the policy refuses outright (`insufficient_privilege`, 42501)
+  is `OutOfScope`, code `not_found`, so the API answers 404 and a tool answers the same
+  sentence; a write the service refuses first (an azienda the policy hides cannot be
+  resolved) is the 404 it already was. `aziende` reached the routes with the schemas of
+  REB-633 and `api-types.ts` is regenerated; the HTTP boundary is
+  `apps/api/tests/test_azienda_scope_api.py` and the MCP one
+  `apps/mcp/tests/test_azienda_scope_mcp.py`, both through the role the boot makes. The
+  test template carries the policies of 0048 (`projects/pigrocrm/conftest.py`), so a
+  clone of it is what production is; the suite's own user stays a superuser and sees
+  everything. The e2e stack runs the two roles too.
+- **2026-10-04, same milestone, the SPA (REB-635).** `AziendaProvider` reads `me.aziende`:
+  `scoped` says the session is limited, and a scoped person with one visible azienda is
+  `pinned`, the selection fixed to it whatever the browser remembered, so the lists and
+  the dashboards ask for that azienda by name and the sidebar draws its name in place of
+  the selector; with several, the selector offers theirs with «Tutte le aziende» first,
+  since the server already answers their aziende alone. The Team panel, from the second
+  azienda on: an «Aziende» checklist on the invite with every active azienda checked, an
+  «Aziende» column on the members and on the pending invitations («Tutte», the names, or
+  «nessuna azienda attiva» for a scope the deactivations emptied), and an «Aziende…» row
+  action that edits a member's scope in a dialog of the same checklist. Every active
+  azienda checked is sent as `null`, the whole space, so a person who sees them all today
+  sees the next one too; nothing checked cannot be sent. `e2e/aziende.spec.ts` proves the
+  boundary on the stack through the application role: a member scoped from the panel
+  signs in on a second context, reads the pinned label, lists their azienda's customer
+  alone and gets a 404 on the other azienda's by id; the spec deactivates the second
+  azienda at the end so the fiscal pages of the other specs keep one active azienda.

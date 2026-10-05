@@ -2,10 +2,11 @@ import statistics
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
+from uuid import UUID, uuid4
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import text
+from sqlalchemy import Engine, delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -603,3 +604,171 @@ def test_nothing_refused_leaves_the_row_untouched(db_session: Session) -> None:
 
     row = UserRepository(db_session).get(solo.id)
     assert row is not None and row.ruolo == "admin" and row.attivo is True
+
+
+# --- the member's scope (REB-633, spec 2026-10-03 §1.11) -----------------------------
+
+
+def _azienda(session: Session, nome: str) -> UUID:
+    from pigrocrm.core.emitter.models import Azienda
+
+    row = Azienda(nome=nome, ragione_sociale=nome.title(), nazione="GB")
+    session.add(row)
+    session.flush()
+    return row.id
+
+
+def _member(session: Session, email: str, ruolo: str = "collaboratore") -> UUID:
+    return (
+        UserService(session)
+        .create(UserCreate(email=email, password="supersegreta1", nome="M", ruolo=ruolo), ADMIN)  # type: ignore[arg-type]
+        .id
+    )
+
+
+def test_create_writes_the_scope_with_the_row_and_refuses_an_empty_one(db_session: Session) -> None:
+    from pigrocrm.core.activities.models import Activity
+
+    ltd = _azienda(db_session, "rebase ltd")
+    created = UserService(db_session).create(
+        UserCreate(
+            email="s@x.it", password="supersegreta1", nome="S", ruolo="admin", aziende=[ltd]
+        ),
+        ADMIN,
+    )
+    assert created.aziende == [ltd]
+    row = db_session.get(User, created.id)
+    assert row is not None and row.ambito_limitato is True
+    assert [s.azienda_id for s in row.scopes] == [ltd]
+    entry = (
+        db_session.execute(
+            select(Activity).where(Activity.entity_type == "user", Activity.entity_id == created.id)
+        )
+        .scalars()
+        .all()[0]
+    )
+    assert entry.payload["aziende"] == [str(ltd)]
+    with pytest.raises(ValidationFailed) as refused:
+        UserService(db_session).create(
+            UserCreate(email="t@x.it", password="supersegreta1", nome="T", aziende=[]), ADMIN
+        )
+    assert refused.value.details["field"] == "aziende"
+
+
+def test_update_scopes_a_member_and_null_clears_the_scope(db_session: Session) -> None:
+    ltd = _azienda(db_session, "rebase ltd")
+    member = _member(db_session, "m@x.it")
+    service = UserService(db_session)
+    scoped = service.update(member, UserUpdate(aziende=[ltd]), ADMIN)
+    assert scoped.aziende == [ltd]
+    # Left out: left alone.
+    assert service.update(member, UserUpdate(nome="Mara"), ADMIN).aziende == [ltd]
+    # Explicit null: the whole space again.
+    assert service.update(member, UserUpdate(aziende=None), ADMIN).aziende is None
+    row = db_session.get(User, member)
+    assert row is not None and row.ambito_limitato is False and row.scopes == []
+
+
+def test_the_scope_change_is_on_the_timeline(db_session: Session) -> None:
+    from pigrocrm.core.activities.models import Activity
+
+    ltd = _azienda(db_session, "rebase ltd")
+    member = _member(db_session, "m@x.it")
+    UserService(db_session).update(member, UserUpdate(aziende=[ltd]), ADMIN)
+    rows = (
+        db_session.execute(
+            select(Activity).where(Activity.entity_type == "user", Activity.entity_id == member)
+        )
+        .scalars()
+        .all()
+    )
+    last = rows[-1]
+    assert "aziende" in last.payload["changed"] and "ambito_limitato" in last.payload["changed"]
+    assert last.payload["aziende"] == [str(ltd)]
+
+
+def test_the_space_keeps_one_active_admin_who_sees_everything(db_session: Session) -> None:
+    from pigrocrm.core.auth.service import LastUnscopedAdmin
+
+    ltd = _azienda(db_session, "rebase ltd")
+    only = _member(db_session, "a@x.it", "admin")
+    second = _member(db_session, "b@x.it", "admin")
+    service = UserService(db_session)
+    # Two unscoped admins: either may be scoped.
+    assert service.update(second, UserUpdate(aziende=[ltd]), ADMIN).aziende == [ltd]
+    # Now `only` is the last one who sees the whole space: scoping them is refused,
+    # and so is demoting them, with the field that caused it named.
+    with pytest.raises(LastUnscopedAdmin) as refused:
+        service.update(only, UserUpdate(aziende=[ltd]), ADMIN)
+    assert refused.value.details["field"] == "aziende"
+    with pytest.raises(LastUnscopedAdmin):
+        service.update(only, UserUpdate(ruolo="collaboratore"), ADMIN)
+    # Widening the second back makes room again.
+    service.update(second, UserUpdate(aziende=None), ADMIN)
+    assert service.update(only, UserUpdate(aziende=[ltd]), ADMIN).aziende == [ltd]
+
+
+def test_two_requests_scoping_the_last_two_unscoped_admins_at_once_leave_one(
+    db_engine: Engine,
+) -> None:
+    """Check-then-write, serialised: both requests count the other as the one who
+    stays, so without the advisory lock both go through and nobody is left who can
+    manage the space. Committed rows, two sessions, a barrier before the two calls."""
+    from threading import Barrier, Thread
+
+    from pigrocrm.core.auth.service import LastUnscopedAdmin
+    from pigrocrm.core.db import session_factory
+
+    prefix = f"race-{uuid4().hex[:8]}"
+    factory = session_factory(db_engine)
+    with factory() as session:
+        ltd = _azienda(session, f"{prefix} ltd")
+        first = _member(session, f"{prefix}-a@x.it", "admin")
+        second = _member(session, f"{prefix}-b@x.it", "admin")
+        session.commit()
+    outcomes: dict[UUID, str] = {}
+    ready = Barrier(2)
+
+    def scope(user_id: UUID) -> None:
+        with factory() as session:
+            ready.wait()
+            try:
+                UserService(session).update(user_id, UserUpdate(aziende=[ltd]), ADMIN)
+                outcomes[user_id] = "scoped"
+            except LastUnscopedAdmin:
+                outcomes[user_id] = "refused"
+
+    try:
+        threads = [Thread(target=scope, args=(uid,)) for uid in (first, second)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        assert sorted(outcomes.values()) == ["refused", "scoped"], outcomes
+        with factory() as session:
+            left = session.execute(
+                select(func.count(User.id)).where(
+                    User.id.in_([first, second]), User.ambito_limitato.is_(False)
+                )
+            ).scalar_one()
+            assert left == 1
+    finally:
+        with factory() as session:
+            from pigrocrm.core.activities.models import Activity
+            from pigrocrm.core.emitter.models import Azienda
+
+            session.execute(delete(Activity).where(Activity.entity_id.in_([first, second])))
+            session.execute(delete(User).where(User.id.in_([first, second])))
+            session.execute(delete(Azienda).where(Azienda.id == ltd))
+            session.commit()
+
+
+def test_a_scoped_admin_cannot_manage_the_team(db_session: Session) -> None:
+    from pigrocrm.core.errors import ScopedAdmin
+
+    ltd = _azienda(db_session, "rebase ltd")
+    scoped = Actor(id=None, type="user", role="admin", aziende=(ltd,))
+    with pytest.raises(ScopedAdmin):
+        UserService(db_session).create(
+            UserCreate(email="e@f.it", password="supersegreta1", nome="E", ruolo="readonly"), scoped
+        )

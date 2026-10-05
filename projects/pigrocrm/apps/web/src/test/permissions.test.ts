@@ -61,7 +61,11 @@ function guardedActions(source: string): { write: Set<string>; admin: Set<string
   const admin = new Set<string>()
   // `require_write("x")` / `require_admin("x")`, and the named-argument form the routers
   // do not use but the services do: `actor.require_write(_CONST)`.
-  const call = /require_(write|admin)\(\s*(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*\)/g
+  // `require_unscoped_admin` (REB-633) is the admin guard plus a scope the table does
+  // not model: a scoped admin is still an admin to the SPA, and the server's own words
+  // say what is missing when it refuses (`ScopedAdmin`).
+  const call =
+    /require_(write|admin|unscoped_admin)\(\s*(?:"([^"]+)"|([A-Za-z_][A-Za-z0-9_]*))\s*\)/g
   const assignment = /([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]+)"/g
   const constants = new Map<string, string>()
   for (const [, name, value] of source.matchAll(assignment)) {

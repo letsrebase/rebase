@@ -40,7 +40,9 @@ from pigrocrm.core.auth.schemas import (
     UserCreate,
     UserRead,
 )
+from pigrocrm.core.auth.scope import active_only, check_scope
 from pigrocrm.core.auth.service import UserService, require_verified_identity
+from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.errors import Conflict, DomainError, NotFound, ValidationFailed
 
 # Seven days, not fifteen minutes: an invitation is handed to someone who may not open
@@ -114,8 +116,9 @@ class InvitationService:
 
         The address claim is checked here before any row is written; the index is the
         race guard behind the read, the same shape `UserService.create` uses."""
-        actor.require_admin("invite_user")
+        actor.require_unscoped_admin("invite_user")
         require_verified_identity(self.session, actor, "invite_user")
+        aziende = check_scope(self.session, ENTITY, data.aziende)
         email = data.email
         now = datetime.now(UTC)
         # `invited_by` is a real FK: a system actor has no id to leave as the trail,
@@ -141,6 +144,7 @@ class InvitationService:
             open_row.email = email
             open_row.nome = data.nome
             open_row.ruolo = data.ruolo
+            open_row.aziende = aziende
             open_row.token_hash = _hash(raw)
             open_row.invited_by = actor.id
             open_row.expires_at = expires_at
@@ -150,6 +154,7 @@ class InvitationService:
                 email=email,
                 nome=data.nome,
                 ruolo=data.ruolo,
+                aziende=aziende,
                 token_hash=_hash(raw),
                 invited_by=actor.id,
                 expires_at=expires_at,
@@ -190,7 +195,7 @@ class InvitationService:
         from a repeat one either). Another space's id, an unknown id, or a terminal
         row are all 404: there is nothing to resend, and the reason is not the
         caller's business."""
-        actor.require_admin("resend_invite")
+        actor.require_unscoped_admin("resend_invite")
         require_verified_identity(self.session, actor, "invite_user")
         row = self._pending_row(invitation_id)
         raw = secrets.token_urlsafe(32)
@@ -204,7 +209,7 @@ class InvitationService:
         """Sets `revoked_at` and nothing else; the row stays, because a revoked
         invitation is exactly the record an admin needs to see was undone. 404 for a
         terminal row: there is nothing left to take back."""
-        actor.require_admin("revoke_invite")
+        actor.require_unscoped_admin("revoke_invite")
         row = self._pending_row(invitation_id)
         row.revoked_at = datetime.now(UTC)
         self.activities.record(ENTITY, row.id, "revoked", actor, {"email": row.email})
@@ -244,7 +249,13 @@ class InvitationService:
         user: both pass the reads, `UserService.create`'s own unique email index lets
         one win, and this is the belt behind that brace. `nome` is required when the
         invitation carried none; an empty effective name never reaches the column.
+
+        Bound to the system actor's scope first (REB-634): this runs on a public route,
+        with no actor and nothing bound, and `active_only` reads `emitter_profile`, a
+        policied table. Unbound, the application role would read no azienda at all and
+        every scoped invitation would open an account that sees nothing.
         """
+        bind_scope(self.session, Actor.system())
         row = self._live_row(raw)
         chosen = (nome or row.nome or "").strip()
         if not chosen:
@@ -256,9 +267,17 @@ class InvitationService:
         # read-back narrows by construction, not by check. pat_service.py:148 carries the
         # same ignore for the same reason.
         ruolo: Role = row.ruolo  # type: ignore[assignment]
-        user = UserService(self.session).create(
+        # The scope the invitation carried, kept to the aziende still active at the
+        # click (spec §1.11): an invitation whose every azienda was deactivated
+        # meanwhile opens an account that sees nothing, and the Team panel says so.
+        # Nothing turns an empty scope into «tutte». Written in the same transaction
+        # as the row (CodeRabbit on PR #513): between a commit of the row and a commit
+        # of its scope, a scoped admin would have counted as an unscoped one.
+        scope = active_only(self.session, list(row.aziende)) if row.aziende is not None else None
+        user = UserService(self.session).create_scoped(
             UserCreate(email=row.email, password=None, nome=chosen, ruolo=ruolo),
             Actor.system(),
+            scope,
         )
         now = datetime.now(UTC)
         spent = self.session.execute(

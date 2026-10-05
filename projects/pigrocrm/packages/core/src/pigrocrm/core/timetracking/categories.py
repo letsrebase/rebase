@@ -94,7 +94,7 @@ class CostCategoryService:
         self.activities = ActivityService(session)
 
     def create_cost_category(self, data: CostCategoryCreate, actor: Actor) -> CostCategoryRead:
-        actor.require_admin("create_cost_category")
+        actor.require_unscoped_admin("create_cost_category")
         nome = data.nome.strip()
         if not nome:
             raise ValidationFailed(ENTITY, "nome", "nome vuoto", expected="un nome non vuoto")
@@ -117,7 +117,7 @@ class CostCategoryService:
     def update_cost_category(
         self, category_id: UUID, data: CostCategoryUpdate, actor: Actor
     ) -> CostCategoryRead:
-        actor.require_admin("update_cost_category")
+        actor.require_unscoped_admin("update_cost_category")
         category = self._require(category_id)
         changes = supplied_changes(data)
         reject_cleared_columns(ENTITY, CostCategory, changes)
@@ -147,7 +147,7 @@ class CostCategoryService:
         orphan rows nobody can see -- the first of slice 1 §5.6's three rules. The
         stored `category_id` on every existing cost keeps resolving, so a report from
         last year still names its categories."""
-        actor.require_admin("archive_cost_category")
+        actor.require_unscoped_admin("archive_cost_category")
         category = self._require(category_id)
         category.archiviata = True
         self.activities.record(
@@ -157,7 +157,7 @@ class CostCategoryService:
         return CostCategoryRead.model_validate(category)
 
     def unarchive_cost_category(self, category_id: UUID, actor: Actor) -> CostCategoryRead:
-        actor.require_admin("unarchive_cost_category")
+        actor.require_unscoped_admin("unarchive_cost_category")
         category = self._require(category_id)
         category.archiviata = False
         self.activities.record(ENTITY, category.id, "unarchived", actor)
@@ -172,7 +172,7 @@ class CostCategoryService:
         seed row produced a duplicate on the next seed. Returns only what it actually
         created, so a caller can tell "seeded" from "already there".
         """
-        actor.require_admin("seed_cost_categories")
+        actor.require_unscoped_admin("seed_cost_categories")
         created: list[CostCategoryRead] = []
         for code, nome, posizione in SEED_CATEGORIES:
             if self.repo.get_by_code(code) is not None:

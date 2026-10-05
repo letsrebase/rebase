@@ -1576,6 +1576,20 @@ class InvoiceService:
                 )
             )
         if isinstance(pdf_sorgente, UUID):
+            # The original must already sit with the invoice's azienda: a document of
+            # another azienda (the customer's current one, after a move) named as this
+            # invoice's PDF would be readable, and replaceable, by members who cannot
+            # see the invoice (CodeRabbit's eighth adversarial pass on PR #513). Here
+            # rather than among the pure checks, since the azienda is resolved after
+            # them; a refusal rolls the row back like any other.
+            original = self.documents.repo.get(pdf_sorgente)
+            if original is not None and original.azienda_id != invoice.azienda_id:
+                raise ValidationFailed(
+                    ENTITY,
+                    "pdf_sorgente",
+                    "il documento appartiene a un'altra azienda",
+                    expected=f"un documento dell'azienda {invoice.azienda_id}",
+                )
             invoice.pdf_document_id = pdf_sorgente
         elif pdf_sorgente is not None:
             # `commit=False`: the `documents` row belongs to *this* transaction. With the
@@ -1600,6 +1614,9 @@ class InvoiceService:
                     data=pdf_sorgente.contenuto,
                     content_type=PDF_MIME,
                     actor=actor,
+                    # The invoice's azienda, the one the file landed on (spec §1.5), and
+                    # never the customer's current one.
+                    azienda_id=invoice.azienda_id,
                     # `DriveReader.read_bytes` answers with the bytes and the mime and no
                     # name, so the id is the provenance -- which is the part that
                     # identifies the file on Drive anyway, a name being neither unique
@@ -2260,9 +2277,13 @@ class InvoiceService:
             document = self.documents.repo.get(existing_id)
             if document is not None:
                 return document
+        # The invoice's own azienda, never the customer's current one: a customer moved
+        # since the invoice was issued keeps the invoice where it was (spec §1.7), and
+        # so must the artefacts rendered for it afterwards.
         created = self.documents.create(
             DocumentCreate(customer_id=invoice.customer_id, tipo=tipo, titolo=titolo),  # type: ignore[arg-type]
             actor,
+            azienda_id=invoice.azienda_id,
         )
         document = self.documents.repo.get(created.id)
         if document is None:  # pragma: no cover - just created in this transaction

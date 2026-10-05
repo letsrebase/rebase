@@ -12,6 +12,7 @@ from pigrocrm.core.activities.service import ActivityService
 from pigrocrm.core.actor import Actor, Role
 from pigrocrm.core.auth.models import User
 from pigrocrm.core.auth.pat_models import PersonalAccessToken
+from pigrocrm.core.auth.scope import scope_of
 from pigrocrm.core.auth.service import ENTITY as USER_ENTITY
 from pigrocrm.core.auth.service import require_verified_identity
 from pigrocrm.core.config import Settings, get_settings
@@ -189,7 +190,13 @@ class PatService:
         # `AGENT_FORBIDDEN_ACTIONS` for what that opens and why it is a decision about a
         # machine rather than about a role.
         resolved = Actor(
-            id=user.id, type="mcp", role=role, full_access=self.settings.mcp_full_access
+            id=user.id,
+            type="mcp",
+            role=role,
+            full_access=self.settings.mcp_full_access,
+            # The owner's scope travels on the credential (REB-634): an agent sees the
+            # aziende its person sees, read fresh here like the role.
+            aziende=scope_of(user),
         )
         # Only the *first* use is recorded, not every one. `resolve()` runs on every
         # single request an agent makes, so an entry per call would double the write

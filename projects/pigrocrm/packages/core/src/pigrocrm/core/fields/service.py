@@ -78,7 +78,7 @@ class FieldDefinitionService:
         self.activities = ActivityService(session)
 
     def create(self, data: FieldDefinitionCreate, actor: Actor) -> FieldDefinitionRead:
-        actor.require_admin("create_field_definition")
+        actor.require_unscoped_admin("create_field_definition")
         if not data.key:
             raise ValidationFailed(
                 "field_definition", "key", "chiave vuota dopo la normalizzazione"
@@ -141,7 +141,7 @@ class FieldDefinitionService:
     def update(
         self, field_id: UUID, data: FieldDefinitionUpdate, actor: Actor
     ) -> FieldDefinitionRead:
-        actor.require_admin("update_field_definition")
+        actor.require_unscoped_admin("update_field_definition")
         field = self.repo.get(field_id)
         if field is None:
             raise NotFound("field_definition", field_id)
@@ -176,7 +176,7 @@ class FieldDefinitionService:
         reserved is what keeps archiving from reopening it through the back door. Use
         `unarchive` to bring the field back -- the stored data was never touched.
         """
-        actor.require_admin("archive_field_definition")
+        actor.require_unscoped_admin("archive_field_definition")
         field = self.repo.get(field_id)
         if field is None:
             raise NotFound("field_definition", field_id)
@@ -193,7 +193,7 @@ class FieldDefinitionService:
     def unarchive(self, field_id: UUID, actor: Actor) -> FieldDefinitionRead:
         """Symmetric to `archive`. Only visibility changes -- archiving never touched
         the stored JSONB values, so there is nothing to restore in the data itself."""
-        actor.require_admin("unarchive_field_definition")
+        actor.require_unscoped_admin("unarchive_field_definition")
         field = self.repo.get(field_id)
         if field is None:
             raise NotFound("field_definition", field_id)

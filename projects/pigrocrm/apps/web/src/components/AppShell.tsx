@@ -513,7 +513,26 @@ export function AppShell({
           </button>
         </div>
 
-        {azienda.several ? (
+        {azienda.pinned ? (
+          // A scoped person with one azienda (REB-635): its name where the selector
+          // would be, so the lists below still read as «of this azienda», and no
+          // control, since there is nothing to choose between.
+          <div className="px-3 pb-3">
+            <p
+              role="note"
+              aria-label="Azienda"
+              className={cn(
+                'flex h-9 items-center gap-2 border border-sidebar-border bg-sidebar-accent/50 px-3 text-sm text-sidebar-foreground/70',
+                rail && 'justify-center px-0',
+              )}
+            >
+              <Building2 className="size-4 shrink-0" aria-hidden="true" />
+              <span className={cn('flex-1 truncate text-left', rail && 'sr-only')}>
+                {azienda.aziende[0]?.nome}
+              </span>
+            </p>
+          </div>
+        ) : azienda.several ? (
           <div className="px-3 pb-3">
             <Select
               value={azienda.selected ?? EVERY_AZIENDA}

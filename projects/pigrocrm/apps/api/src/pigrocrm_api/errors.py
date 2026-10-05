@@ -6,8 +6,10 @@ from fastapi.openapi.constants import REF_PREFIX
 from fastapi.openapi.utils import validation_error_definition, validation_error_response_definition
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.exc import DBAPIError
 
-from pigrocrm.core.errors import DomainError
+from pigrocrm.core.db.scope import is_policy_refusal
+from pigrocrm.core.errors import DomainError, OutOfScope
 
 STATUS_BY_CODE: dict[str, int] = {
     "not_found": 404,
@@ -92,6 +94,18 @@ async def domain_error_handler(request: Request, exc: Exception) -> JSONResponse
             }
         ),
     )
+
+
+async def insufficient_privilege_handler(request: Request, exc: Exception) -> JSONResponse:
+    """A write the row-level policies refused is answered as the row not existing
+    (REB-634, spec 2026-10-03 §3): a scoped person reads a 404 for a row outside their
+    scope, because for them it is not there, and a write that reaches outside gets the
+    same answer rather than a 500 that says more than the status should. Any other
+    database error is not this handler's and goes on to the 500 it always was."""
+    assert isinstance(exc, DBAPIError)
+    if not is_policy_refusal(exc):
+        raise exc
+    return await domain_error_handler(request, OutOfScope())
 
 
 class ProblemDetail(BaseModel):

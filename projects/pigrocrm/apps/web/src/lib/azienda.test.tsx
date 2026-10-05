@@ -14,9 +14,14 @@ import {
   type AziendaRecord,
 } from './azienda'
 
-const mockAuth = vi.hoisted(() => ({ userId: 'u1' as string }))
+const mockAuth = vi.hoisted(() => ({
+  userId: 'u1' as string,
+  aziende: null as string[] | null,
+}))
 vi.mock('@/lib/auth', () => ({
-  useAuth: () => ({ user: mockAuth.userId ? { id: mockAuth.userId } : null }),
+  useAuth: () => ({
+    user: mockAuth.userId ? { id: mockAuth.userId, aziende: mockAuth.aziende } : null,
+  }),
 }))
 
 vi.mock('@/lib/tenant', async (importOriginal) => {
@@ -60,6 +65,7 @@ function wrapper({ children }: { children: ReactNode }) {
 beforeEach(() => {
   localStorage.clear()
   mockAuth.userId = 'u1'
+  mockAuth.aziende = null
   GET.mockReset()
   serve([HUMANCRAFT])
 })
@@ -107,6 +113,43 @@ describe('AziendaProvider', () => {
     renderHook(() => useAzienda(), { wrapper })
     expect(GET).not.toHaveBeenCalledWith('/api/aziende')
   })
+
+  // --- a scoped session (REB-635, spec 2026-10-03 §1.11, §5) ---------------------------
+
+  it('pins the selection for a scoped person with one azienda, whatever was stored', async () => {
+    mockAuth.aziende = ['a2']
+    serve([REBASE]) // what the server answers a person scoped to «rebase»
+    localStorage.setItem(aziendaKey('u1'), 'a1')
+    const { result } = renderHook(() => useAzienda(), { wrapper })
+    await waitFor(() => expect(result.current.aziende).toHaveLength(1))
+    expect(result.current.scoped).toBe(true)
+    expect(result.current.pinned).toBe(true)
+    expect(result.current.several).toBe(false)
+    expect(result.current.selected).toBe('a2')
+    // The pinned selection reaches a list's request like a chosen one would.
+    const scope = renderHook(() => useAziendaScope({ limit: 50 }), { wrapper })
+    await waitFor(() => expect(scope.result.current).toEqual({ limit: 50, azienda_id: 'a2' }))
+  })
+
+  it('offers a scoped person with several aziende theirs, with nothing pinned', async () => {
+    mockAuth.aziende = ['a1', 'a2']
+    serve([HUMANCRAFT, REBASE])
+    const { result } = renderHook(() => useAzienda(), { wrapper })
+    await waitFor(() => expect(result.current.several).toBe(true))
+    expect(result.current.scoped).toBe(true)
+    expect(result.current.pinned).toBe(false)
+    expect(result.current.selected).toBeNull()
+    act(() => result.current.select('a1'))
+    expect(result.current.selected).toBe('a1')
+  })
+
+  it('is not pinned for an unscoped person with one azienda: nothing is sent, as before', async () => {
+    const { result } = renderHook(() => useAzienda(), { wrapper })
+    await waitFor(() => expect(result.current.aziende).toHaveLength(1))
+    expect(result.current.scoped).toBe(false)
+    expect(result.current.pinned).toBe(false)
+    expect(result.current.selected).toBeNull()
+  })
 })
 
 describe('useAziendaScope', () => {
@@ -116,6 +159,8 @@ describe('useAziendaScope', () => {
       selected,
       select: vi.fn(),
       several,
+      scoped: false,
+      pinned: false,
       byId: () => undefined,
     }
     return ({ children }: { children: ReactNode }) => {

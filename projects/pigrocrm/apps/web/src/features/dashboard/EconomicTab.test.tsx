@@ -463,7 +463,7 @@ function twoAziende(selected: string | null): AziendaValue {
     aziende: [HUMANCRAFT, REBASE_LTD],
     selected,
     select: vi.fn(),
-    several: true,
+    several: true, scoped: false, pinned: false,
     byId: (id) => [HUMANCRAFT, REBASE_LTD].find((a) => a.id === id),
   }
 }

@@ -1,7 +1,7 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, text
 
 import pigrocrm.core.models_registry  # noqa: F401  (populates Base.metadata)
 from pigrocrm.core.config import get_settings
@@ -21,7 +21,10 @@ config = context.config
 _PLACEHOLDER_URL = "driver://user:pass@localhost/dbname"
 _configured_url = config.get_main_option("sqlalchemy.url", "")
 if not _configured_url or _configured_url == _PLACEHOLDER_URL:
-    config.set_main_option("sqlalchemy.url", get_settings().database_url)
+    # The owner's URL (REB-634): the application role may not alter a table it does
+    # not own, and `alembic upgrade head` in the image's CMD runs with the same
+    # environment as the API.
+    config.set_main_option("sqlalchemy.url", get_settings().owner_database_url)
 
 if config.config_file_name is not None:
     # `disable_existing_loggers` defaults to True, which is right for `alembic upgrade`
@@ -57,6 +60,12 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
+        # Since 0048 every azienda-scoped table carries FORCE ROW LEVEL SECURITY, which
+        # binds the owner too; a data migration that backfills one of them (0045 to
+        # 0047 did) would otherwise touch zero rows and report success. Session-level,
+        # since Alembic may open a transaction per revision (REB-634).
+        connection.execute(text("SELECT set_config('pigrocrm.aziende', '*', false)"))
+        connection.commit()
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()

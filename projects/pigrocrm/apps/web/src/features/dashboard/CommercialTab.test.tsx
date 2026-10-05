@@ -282,7 +282,7 @@ describe('CommercialTab, with an azienda selected', () => {
       aziende: [],
       selected: 'a-2',
       select: vi.fn(),
-      several: true,
+      several: true, scoped: false, pinned: false,
       byId: () => undefined,
     }
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

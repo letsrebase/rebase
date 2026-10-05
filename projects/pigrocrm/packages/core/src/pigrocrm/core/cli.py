@@ -4,7 +4,6 @@ import sys
 import traceback
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
-from typing import cast
 from uuid import UUID
 
 from sqlalchemy import Engine
@@ -13,12 +12,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from pigrocrm.core import telemetry
-from pigrocrm.core.actor import Actor, Role
+from pigrocrm.core.actor import Actor
 from pigrocrm.core.auth.repository import UserRepository
 from pigrocrm.core.auth.schemas import UserCreate
+from pigrocrm.core.auth.scope import actor_for
 from pigrocrm.core.auth.service import UserService
 from pigrocrm.core.config import Settings, get_settings
 from pigrocrm.core.db import create_engine_from_settings, session_factory
+from pigrocrm.core.db.scope import bind_scope
 from pigrocrm.core.digest.run import DigestOutcome, DigestRun
 from pigrocrm.core.digest.service import previous_week, week_containing
 from pigrocrm.core.emitter.models import Azienda
@@ -195,11 +196,28 @@ def ensure_space_defaults() -> int:
     installation is not in the registry and is not touched."""
     from sqlalchemy import create_engine, select
 
+    from pigrocrm.core.db.role import ensure_application_role
+    from pigrocrm.core.db.scope import bind_scope
     from pigrocrm.core.tenants import Tenant, ensure_defaults, ensure_tenants_database
-    from pigrocrm.core.tenants.database import tenant_database_url
+    from pigrocrm.core.tenants.database import tenant_database_url, tenant_owner_database_url
     from pigrocrm.core.tenants.service import migrate_to_head
 
     settings = get_settings()
+    # The application role first, on the root (REB-634, spec 2026-10-03 §4 «The role»):
+    # the CMD has just migrated the root as the owner, and every request from here on
+    # connects as the role `PIGROCRM_DATABASE_URL` names, which must exist and be
+    # granted before uvicorn answers. One URL means no role, and one line that says so.
+    try:
+        if ensure_application_role(settings.owner_database_url, settings.database_url):
+            print(f"{ROOT_LABEL}: ruolo applicativo pronto")
+        else:
+            print(f"{ROOT_LABEL}: un solo URL, nessun ruolo applicativo da creare")
+    except Exception as exc:  # noqa: BLE001 - reported, then the boot stops
+        # The one failure this command does not swallow: uvicorn would start with a URL
+        # that cannot log in, and every request of every space would be a 500. The CMD
+        # chains on this exit code, so the container restarts and says why.
+        print(f"{ROOT_LABEL}: ruolo applicativo non creato ({type(exc).__name__})", file=sys.stderr)
+        return 1
     try:
         registry = ensure_tenants_database(settings)
         try:
@@ -217,13 +235,17 @@ def ensure_space_defaults() -> int:
         print("nessuno spazio nel registro")
         return 0
     for slug, db_name in spaces:
-        url = tenant_database_url(settings, db_name)
+        # As the owner: the migration, the grants and the furnishing are the owner's
+        # work, and the furnished rows (`FORCE ROW LEVEL SECURITY` binds the owner too)
+        # go in under the system actor's scope.
+        url = tenant_owner_database_url(settings, db_name)
         engine = create_engine(url, future=True)
         try:
             try:
                 before = _schema_revision(engine)
                 migrate_to_head(settings, url.render_as_string(hide_password=False))
                 after = _schema_revision(engine)
+                ensure_application_role(url, tenant_database_url(settings, db_name))
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 print(f"{slug}: non migrato ({type(exc).__name__})", file=sys.stderr)
                 continue
@@ -233,6 +255,7 @@ def ensure_space_defaults() -> int:
                 print(f"{slug}: schema migrato da {before or 'zero'} a {after}")
             try:
                 with session_factory(engine)() as space:
+                    bind_scope(space, Actor.system())
                     report = ensure_defaults(space, nome=slug)
             except Exception as exc:  # noqa: BLE001 - one space must not stop the others
                 print(f"{slug}: non arredato ({type(exc).__name__})", file=sys.stderr)
@@ -700,6 +723,10 @@ def _sync_mailbox(
                 # Removed between the listing and now: the owner disconnected it.
                 raise Conflict("google_account", "nessuna casella Google collegata")
             actor = _cron_actor(session, account)
+            # The owner's own scope, never «tutte» (spec 2026-10-03 §4): a scoped
+            # owner's mailbox is matched against the customers and people their scope
+            # can see, so the sync writes no link on another azienda's customer.
+            bind_scope(session, actor)
             report = GmailSyncService(
                 session, settings=settings, transport=transport, tokens=tokens
             ).sync(actor)
@@ -764,7 +791,7 @@ def _cron_actor(session: Session, account: GoogleAccount) -> Actor:
     # `cast` and not a runtime check: `Actor` is a pydantic model and validates `role`
     # against the same literal on construction, so a column holding something else
     # raises there rather than travelling on unnoticed.
-    actor = Actor(id=user.id, type="system", role=cast(Role, user.ruolo))
+    actor = actor_for(user, "system")
     if not actor.can_write:
         raise Conflict(
             "google_account",

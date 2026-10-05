@@ -237,7 +237,9 @@ class DocumentService:
 
     # ---- documents ------------------------------------------------------------
 
-    def _create_row(self, data: DocumentCreate, actor: Actor) -> Document:
+    def _create_row(
+        self, data: DocumentCreate, actor: Actor, *, azienda_id: UUID | None = None
+    ) -> Document:
         """Everything `create` does except the commit, so `import_bytes` can compose it
         with `_add_version_row` inside one transaction.
 
@@ -249,15 +251,29 @@ class DocumentService:
         """
         actor.require_write("create_document")
         payload = data.model_dump()
-        self._check_owner(payload["customer_id"], payload["deal_id"], payload["contract_id"])
+        if azienda_id is None:
+            # The owner is the authority on the azienda, so it must be there to ask. A
+            # caller that names the azienda is filing a record's own child (an invoice's
+            # artefact) and the record already holds its owner: that owner may have moved
+            # to an azienda this member cannot see, and the artefact must still render
+            # (Greptile on PR #513).
+            self._check_owner(payload["customer_id"], payload["deal_id"], payload["contract_id"])
         # Only an offer has a state; everything else keeps NULL. A new offer starts as
         # a draft rather than stateless, so a Kanban-style state picker always has a
         # value to show.
         is_offer = payload["tipo"] == "offerta"
         payload["stato"] = (payload.get("stato") or "bozza") if is_offer else None
         payload["custom_fields"] = self._validated_custom(payload.get("custom_fields") or {})
-        payload["azienda_id"] = self._azienda_of_owner(
-            payload["customer_id"], payload["deal_id"], payload["contract_id"]
+        # The owner's azienda, unless the caller names the record's own: an invoice's
+        # artefact is the invoice's, and the invoice keeps its azienda when its customer
+        # moves (spec §1.7), so a PDF rendered after the move must not land where the
+        # customer is now (CodeRabbit's fourth adversarial pass on PR #513).
+        payload["azienda_id"] = (
+            azienda_id
+            if azienda_id is not None
+            else self._azienda_of_owner(
+                payload["customer_id"], payload["deal_id"], payload["contract_id"]
+            )
         )
 
         document = self.repo.add(Document(**payload))
@@ -270,8 +286,10 @@ class DocumentService:
         )
         return document
 
-    def create(self, data: DocumentCreate, actor: Actor) -> DocumentRead:
-        document = self._create_row(data, actor)
+    def create(
+        self, data: DocumentCreate, actor: Actor, *, azienda_id: UUID | None = None
+    ) -> DocumentRead:
+        document = self._create_row(data, actor, azienda_id=azienda_id)
         self.session.commit()
         return DocumentRead.model_validate(document)
 
@@ -529,6 +547,7 @@ class DocumentService:
         actor: Actor,
         origine: dict[str, Any],
         commit: bool = True,
+        azienda_id: UUID | None = None,
     ) -> DocumentRead:
         """Bytes that arrived from somewhere else, filed as a document *and* its first
         version in one unit of work (slice 9 §3.5).
@@ -587,6 +606,9 @@ class DocumentService:
         document = self._create_row(
             DocumentCreate(customer_id=customer_id, deal_id=deal_id, tipo=tipo, titolo=titolo),
             actor,
+            # The record's own azienda when the caller names it (an imported invoice's
+            # original PDF is the invoice's, whatever azienda its customer is in now).
+            azienda_id=azienda_id,
         )
         self._add_version_row(document, data, content_type, actor)
         self.activities.record(

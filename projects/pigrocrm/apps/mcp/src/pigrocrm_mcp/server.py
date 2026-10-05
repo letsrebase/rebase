@@ -11,9 +11,11 @@ from mcp.server.mcpserver import Context
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.exceptions import MCPError
 from mcp.types import INVALID_PARAMS
+from sqlalchemy.exc import DBAPIError
 
 from pigrocrm.core.config import Settings, get_settings, gmail_configured
-from pigrocrm.core.errors import DomainError
+from pigrocrm.core.db.scope import bind_scope, is_policy_refusal
+from pigrocrm.core.errors import DomainError, OutOfScope
 from pigrocrm.core.fields.schemas import EntityType
 from pigrocrm.core.storage import DocumentStorage, storage_from_settings
 from pigrocrm_mcp import analytics
@@ -84,6 +86,16 @@ def _as_protocol_error(exc: DomainError) -> MCPError:
     """
     code = INVALID_PARAMS if exc.code == "not_found" else DOMAIN_REFUSAL
     return MCPError(code=code, message=to_agent_message(exc))
+
+
+def _policy_refusal(exc: DBAPIError) -> DomainError:
+    """The one database error a tool translates (REB-634): a write the azienda scope
+    refused reads as a record that is not there, like the read of it would. Anything
+    else, a missing grant included, is re-raised as it was; the API maps it the same
+    way (`pigrocrm_api.errors`)."""
+    if not is_policy_refusal(exc):
+        raise exc
+    return OutOfScope()
 
 
 def build_server(
@@ -233,6 +245,10 @@ def build_server(
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
                 with _session_scope():
                     try:
+                        # Inside the `try`: resolving the actor can refuse (a token
+                        # revoked since, its owner deactivated), and that refusal is
+                        # the client's to read, translated like any other.
+                        bind_scope(context.session, context.actor)
                         return await fn(*args, **kwargs)
                     except DomainError as exc:
                         context.session.rollback()
@@ -240,6 +256,9 @@ def build_server(
                     except ValueError as exc:
                         context.session.rollback()
                         raise translate(to_domain_error(exc)) from exc
+                    except DBAPIError as exc:
+                        context.session.rollback()
+                        raise translate(_policy_refusal(exc)) from exc
                     except Exception:
                         context.session.rollback()
                         raise
@@ -250,6 +269,12 @@ def build_server(
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             with _session_scope():
                 try:
+                    # The actor's scope on this call's session (REB-634): a PAT carries
+                    # its owner's aziende, and the database answers those rows and no
+                    # other. Inside the `try`, since resolving the actor can refuse (a
+                    # token revoked since, its owner deactivated) and that refusal is
+                    # the client's to read, translated like any other.
+                    bind_scope(context.session, context.actor)
                     return fn(*args, **kwargs)
                 except DomainError as exc:
                     context.session.rollback()
@@ -257,6 +282,9 @@ def build_server(
                 except ValueError as exc:
                     context.session.rollback()
                     raise translate(to_domain_error(exc)) from exc
+                except DBAPIError as exc:
+                    context.session.rollback()
+                    raise translate(_policy_refusal(exc)) from exc
                 except Exception:
                     context.session.rollback()
                     raise

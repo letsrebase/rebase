@@ -161,7 +161,12 @@ export type InvitationRecord = components['schemas']['InvitationRead']
 export function useInviteUser() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (body: { email: string; nome: string | null; ruolo: string }) =>
+    mutationFn: (body: {
+      email: string
+      nome: string | null
+      ruolo: string
+      aziende?: string[] | null
+    }) =>
       unwrap(
         api.POST('/api/users/invites', {
           body: body as unknown as InvitationCreateBody,

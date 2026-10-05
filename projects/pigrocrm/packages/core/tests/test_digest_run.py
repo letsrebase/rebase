@@ -877,3 +877,125 @@ def test_a_send_that_blows_up_names_the_type_and_writes_nothing(corpus: Corpus) 
     assert cattura.chiamate == []
     assert _riga(corpus.engine, corpus.iso) is None
     assert _attivita(corpus.engine) == []
+
+
+# --- one report per distinct scope (REB-633, spec 2026-10-03 §4) ----------------------
+
+
+def test_a_scoped_titolare_does_not_empty_the_week_for_everyone_else(
+    corpus: Corpus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The space's emptiness is asked as the space, not as the titolare: Ada scoped to an
+    azienda with no records still has Bruno's unscoped report built and sent, and her
+    own is built inside her scope (Greptile on PR #513)."""
+    from sqlalchemy import text
+
+    from pigrocrm.core.auth.models import UserAzienda
+    from pigrocrm.core.db.scope import SCOPE_SETTING
+    from pigrocrm.core.digest.service import DigestService
+    from pigrocrm.core.emitter.models import Azienda
+
+    factory = session_factory(corpus.engine)
+    with factory() as session:
+        empty = Azienda(nome=f"{_PREFIX} vuota", ragione_sociale=f"{_PREFIX} Vuota", nazione="GB")
+        session.add(empty)
+        session.flush()
+        ada = session.get(User, corpus.destinatari[0])
+        assert ada is not None
+        ada.ambito_limitato = True
+        session.add(UserAzienda(user_id=ada.id, azienda_id=empty.id))
+        session.commit()
+        empty_id = empty.id
+
+    bound: list[str] = []
+    original = DigestService.build
+
+    def _recording(self: DigestService, actor: Any, settimana: tuple[date, date]) -> WeeklyDigest:
+        digest = original(self, actor, settimana)
+        bound.append(
+            self.session.execute(
+                text(f"SELECT current_setting('{SCOPE_SETTING}', true)")
+            ).scalar_one()
+        )
+        return digest
+
+    monkeypatch.setattr(DigestService, "build", _recording)
+    sender = RecordingSender()
+    try:
+        esito = _esegui(
+            corpus.engine, settimana=corpus.settimana, titolare=corpus.titolare, sender=sender
+        )
+        assert esito == DigestOutcome(
+            slug=SLUG, esito="inviato", settimana=corpus.iso, destinatari=2
+        )
+        assert bound == [str(empty_id), "*"]
+        assert [mail.to for mail in sender.sent] == [corpus.titolare, corpus.collega]
+    finally:
+        with factory() as session:
+            session.execute(delete(Azienda).where(Azienda.id == empty_id))
+            session.commit()
+
+
+def test_a_scoped_recipient_gets_a_report_built_inside_their_scope(
+    corpus: Corpus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bruno may see one azienda, Ada the whole space: the report is rendered twice, once
+    with `*` bound and once with Bruno's azienda, each sent to its own group, and the
+    session is handed back inside the titolare's scope."""
+    from sqlalchemy import text
+
+    from pigrocrm.core.auth.models import UserAzienda
+    from pigrocrm.core.db.scope import SCOPE_SETTING
+    from pigrocrm.core.digest.service import DigestService
+
+    factory = session_factory(corpus.engine)
+    with factory() as session:
+        azienda_id = session.execute(select(Customer.azienda_id)).scalars().first()
+        assert azienda_id is not None
+        bruno = session.get(User, corpus.destinatari[1])
+        assert bruno is not None
+        bruno.ambito_limitato = True
+        session.add(UserAzienda(user_id=bruno.id, azienda_id=azienda_id))
+        session.commit()
+
+    bound: list[str] = []
+    original = DigestService.build
+    probed: list[str] = []
+    original_probe = DigestRun._spazio_vuoto
+
+    def _recording_probe(self: DigestRun) -> bool:
+        probed.append(
+            self.session.execute(
+                text(f"SELECT current_setting('{SCOPE_SETTING}', true)")
+            ).scalar_one()
+        )
+        return original_probe(self)
+
+    monkeypatch.setattr(DigestRun, "_spazio_vuoto", _recording_probe)
+
+    def _recording(self: DigestService, actor: Any, settimana: tuple[date, date]) -> WeeklyDigest:
+        digest = original(self, actor, settimana)
+        bound.append(
+            self.session.execute(
+                text(f"SELECT current_setting('{SCOPE_SETTING}', true)")
+            ).scalar_one()
+        )
+        return digest
+
+    monkeypatch.setattr(DigestService, "build", _recording)
+    sender = RecordingSender()
+    with factory() as session:
+        run = DigestRun(session, SETTINGS, sender=sender, tracker=None, public_url=PUBLIC_URL)
+        esito = run.send_for_space(SLUG, corpus.titolare, corpus.settimana)
+        assert not session.in_transaction()
+        back = session.execute(
+            text(f"SELECT current_setting('{SCOPE_SETTING}', true)")
+        ).scalar_one()
+
+    assert esito.esito == "inviato" and esito.destinatari == 2
+    # The emptiness probe, the first read of a policied table, already ran as «tutte».
+    assert probed == ["*"]
+    assert bound == ["*", str(azienda_id)]
+    assert [mail.to for mail in sender.sent] == [corpus.titolare, corpus.collega]
+    # The titolare's scope is what the session carries once the groups are done.
+    assert back == "*"
